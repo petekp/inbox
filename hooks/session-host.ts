@@ -101,8 +101,8 @@ export type SessionHost<S extends Session> = {
   isDeliveryHeldUntilRun?: boolean
   /** Throws when `deliver` could not start. Run before a sent record is saved, so a message that cannot go leaves no record. */
   prepare?(s: S): Promise<void>
-  /** Opens a link or path, or copies text. Returns why it could not, or null. */
-  perform(s: S, effect: Extract<Effect, { kind: 'open' | 'copy' }>): Promise<string | null>
+  /** Opens a link or path, copies text, or scrolls the conversation to a row. Returns why it could not, or null. */
+  perform(s: S, effect: Extract<Effect, { kind: 'open' | 'copy' | 'scroll' }>): Promise<string | null>
   /**
    * Fetches the session's PRs as a press asks, and resolves once that fetch ends. A failed fetch resolves too: the
    * session's `prViews` then says why, which the press's result reads.
@@ -314,3 +314,6 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
     await Promise.all(writing)
   }
 }
+
+/** Why a host whose conversation no plugin can scroll, as in Codex and omp, refuses a scroll effect. */
+export const NO_CONVERSATION_SCROLL = 'this app does not let the inbox scroll its conversation'

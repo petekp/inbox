@@ -60,6 +60,7 @@ const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref'
   answer: 'id',
   type: 'id',
   explain: 'id',
+  'show-explanation': 'id',
   compare: 'id',
   done: 'id',
   dismiss: 'id',

@@ -89,6 +89,7 @@ export function sessionView(
   settleWindowMs: number,
   holds: Holds = NO_HOLDS,
   notes: Record<string, RowNote> = {},
+  canScrollConversation = false,
 ): SessionView {
   const l = s.ledger
   const lastActions = withoutStalePending(s.lastActions, now)
@@ -105,6 +106,7 @@ export function sessionView(
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
     collapsed: collapsedRows(s),
+    canScrollConversation,
   })
 
   return {

@@ -5,6 +5,7 @@ Part of [the look map](../looks.md#files).
 | File | Role |
 | --- | --- |
 | `hooks/claude.ts` | Mod only. Claude transcript, command, dialog and stop helpers. |
+| `hooks/explanation-reply.ts` | Mod only. Saves the transcript row where an explanation's reply begins, for Show explanation, and words a refused scroll for the row. |
 | `hooks/register.tsx` | Mod adapter and host. Runs the Pane render. It reads the drawn state, builds the handlers for the calls that need `$`, and calls the `pane-*.tsx` files, which draw every tab. It also runs the band, the per-reply update and the press runner. It keeps the drawn session in an engine atom, saves each conversation's session in the engine store, and builds the mod's `SessionHost`. The plugin directory refuses `$` passed to a function another of the mod's files declares, so every function that takes `$` lives in this file. |
 | `hooks/pane-context.ts` | Mod only. The types the Pane render hands its drawing files: `PaneBase` for the values the render computed, `PaneClient` for whether the surface draws Clients, `PaneHandlers` for the calls that need `$`, and `Row`, the shape every list row is drawn from. |
 | `hooks/pane-frame.tsx` | Mod only. The pane's frame in both looks: the tab bar, the inline rail, banners and the status block. |

@@ -249,6 +249,7 @@ import {
 } from './mod-sessions'
 import { isPrFetchBusy, queuePrFetch } from './mod-pr-queue'
 import { cancelUndoScroll, mod, paneState, resetTurn, sessionState, suspendUndoReveal } from './mod-state'
+import { scrollFailure, withExplanationAwaited, withExplanationReply, withReplyWaitEnded } from './explanation-reply'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
 import {
   arrivedSelection,
@@ -675,10 +676,14 @@ async function askInboxModel(
 
 async function perform(
   $: EngineInterface,
-  effect: Extract<Effect, { kind: 'open' | 'copy' }>,
+  effect: Extract<Effect, { kind: 'open' | 'copy' | 'scroll' }>,
   surface: UiPressArgument['surface'],
 ): Promise<string | null> {
   try {
+    if (effect.kind === 'scroll') {
+      const r = await $.ui.scroll({ to: { requestId: effect.requestId }, block: 'start' })
+      return r.deny === undefined ? null : scrollFailure(r.deny)
+    }
     if (effect.kind === 'open') {
       const calls = commandCalls($)
       const [home, folder] = await Promise.all([calls.home(), sessionFolder(calls)])
@@ -1090,10 +1095,12 @@ async function notePrompt(
     match = s => ({ state: s, sentBy: null }),
     isTyped = false,
     personSource = 'prompt',
+    isOwnTurn = true,
   }: {
     match?: (s: Session) => { state: Session; sentBy: SentBy | null }
     isTyped?: boolean
     personSource?: 'prompt' | 'command'
+    isOwnTurn?: boolean
   } = {},
 ): Promise<string[]> {
   const [now, isShown] = await Promise.all([$.clock.now(), isPaneShown($)])
@@ -1101,7 +1108,8 @@ async function notePrompt(
   let notes: string[] = []
   await commit($, currentOwner(), s => {
     const matched = match(s)
-    const r = recordPrompt(CLAUDE_CODE, matched.state, text, isShown, matched.sentBy, personSource)
+    const lastActions = withExplanationAwaited(s.lastActions, matched.state.lastActions, isOwnTurn)
+    const r = recordPrompt(CLAUDE_CODE, { ...matched.state, lastActions }, text, isShown, matched.sentBy, personSource)
     notes = r.notes
     return isTyped ? messageTyped(r.state, now) : r.state
   })
@@ -1886,8 +1894,10 @@ async function runDemoPress(
     later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
 }
 
+/** The drawn session and its view. `canScrollConversation` is whether the surface drawing it can scroll the conversation. */
 async function drawnState(
   $: EngineInterface,
+  canScrollConversation = false,
 ): Promise<
   DemoCopy & { view: SessionView; isDemo: boolean; showsDemoNotices: boolean; isUnread: boolean; now: number }
 > {
@@ -1916,7 +1926,8 @@ async function drawnState(
 
   const isUnread = demo === null && unreadable === conversation.id
 
-  const view = sessionView(drawnSession(session, drawn, demo !== null, now), now, SETTLED_MS, holds, drawn.notes)
+  const drawnFrom = drawnSession(session, drawn, demo !== null, now)
+  const view = sessionView(drawnFrom, now, SETTLED_MS, holds, drawn.notes, canScrollConversation)
   redrawAtNextFold($, view, presence.lastTypedMessageAt, now)
 
   return {
@@ -2124,7 +2135,11 @@ async function applyConversation(
   // The pane now shows another conversation, so it starts a new showing.
   await syncShown($, { since: loadedAt })
   const turns = await $.session.turns().catch(() => null)
-  const cutOff = (s: Session) => statusChanged(cutOffTurn(cutOffUpdate(s), loadedAt), o => childrenCutOff(o, loadedAt))
+  const cutOff = (s: Session) => {
+    const loaded = statusChanged(cutOffTurn(cutOffUpdate(s), loadedAt), o => childrenCutOff(o, loadedAt))
+
+    return { ...loaded, lastActions: withReplyWaitEnded(loaded.lastActions) }
+  }
   // Before notePlace's save, so this conversation is never saved with the previous one's tool fields.
   await replaceDrawn($, s => withLoadedToolFields(cutOff(s), by, saved?.session, parent, turns))
   if (revision !== sessionState.loadRevision) return
@@ -2580,7 +2595,8 @@ export const register: Register = on => {
     const running =
       listed && new Set(listed.filter(a => a.status === 'running' || a.status === 'pending').map(a => a.id))
     await commit($, currentOwner(), s => {
-      const ended = turnEnded(s, endedAt)
+      const turnOver = turnEnded(s, endedAt)
+      const ended = { ...turnOver, lastActions: withReplyWaitEnded(turnOver.lastActions) }
       const withSubagents = running ? statusChanged(ended, o => subagentsSettled(o, running, endedAt)) : ended
       const withDelegates = inHerdr
         ? statusChanged(withSubagents, o => delegatesSettled(o, inHerdr, endedAt))
@@ -2623,12 +2639,23 @@ export const register: Register = on => {
       if (!mod.isOn || e.agentId) return next(e)
       const text = messageText(e.message)
       const count = noteStored(text)
-      const notes = await notePrompt($, text, { match: current => arrived(current, text, count) })
+      const match = (current: Session) => arrived(current, text, count)
+      const notes = await notePrompt($, text, { match, isOwnTurn: e.door === 'prompt' })
       if (notes.length > 0) await appendContext($, notes)
 
       return next(e)
     },
   )
+
+  on('session.append', { door: 'response' }, async ($, e, next) => {
+    const r = await next(e)
+    if (!mod.isOn || e.agentId || messageText(e.message).trim() === '') return r
+    const { lastActions } = await read($, SESSION)
+    if (withExplanationReply(lastActions, e.uuid) !== lastActions)
+      await commit($, currentOwner(), s => ({ ...s, lastActions: withExplanationReply(s.lastActions, e.uuid) }))
+
+    return r
+  })
 
   on('session.append', { door: 'command' }, async ($, e, next) => {
     const r = await next(e)
@@ -2874,6 +2901,8 @@ export const register: Register = on => {
     // Desktop draws every Button as a native button, and only clicks reach the pane: no letters, key hints or hidden hotkeys.
     const look = lookOf(e.surface)
     paneState.paneLook = look
+    // The Claude app's pane reports `isFullscreen` too, but its `$.ui.scroll` answers "transcript not scrollable here".
+    const canScrollConversation = e.surface === 'terminal' && e.viewport?.isFullscreen === true
     const hasClient = look === 'desktop' && 'Client' in elements
     // The mobile app draws no text field, so there the typed reply is not offered.
     const Input = 'Input' in elements ? elements.Input : null
@@ -2907,7 +2936,7 @@ export const register: Register = on => {
       statusUnfolded,
       closedAll,
     ] = await Promise.all([
-      drawnState($),
+      drawnState($, canScrollConversation),
       read($, TAB),
       readPage($),
       read($, SELECTION),

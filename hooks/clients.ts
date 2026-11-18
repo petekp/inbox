@@ -1,16 +1,4 @@
-import type { FeatureId } from './client-features'
-
-/**
- * The parity record: how each host supports each feature. `full` means the host does what the shared flow
- * describes. `different` means the person gets the feature another way. `unsupported` means the person gets none of it.
- */
-
-/** A host. Terminal and desktop share `claude-code`, since both run the mod. */
-export type ClientId = 'claude-code' | 'codex' | 'omp'
-
-type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: string }
-
-type Client = { support: Record<FeatureId, Support> }
+import type { Client, ClientId } from './client-features'
 
 export const CLIENTS: Record<ClientId, Client> = {
   'claude-code': {
@@ -112,6 +100,11 @@ export const CLIENTS: Record<ClientId, Client> = {
       'suggested-goal': { kind: 'full' },
       'remote-typed-reply-admission': { kind: 'full' },
       'remote-draft-retention': { kind: 'full' },
+      'show-explanation': {
+        kind: 'different',
+        reason:
+          'Only the fullscreen terminal lets a plugin scroll the conversation, so the classic terminal and the Claude app draw no Show explanation.',
+      },
     },
   },
   codex: {
@@ -287,6 +280,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       },
       'remote-typed-reply-admission': { kind: 'full' },
       'remote-draft-retention': { kind: 'full' },
+      'show-explanation': {
+        kind: 'unsupported',
+        reason: 'Codex gives a plugin no call that scrolls its conversation.',
+      },
     },
   },
   omp: {
@@ -391,6 +388,10 @@ export const CLIENTS: Record<ClientId, Client> = {
       'suggested-goal': { kind: 'full' },
       'remote-typed-reply-admission': { kind: 'full' },
       'remote-draft-retention': { kind: 'full' },
+      'show-explanation': {
+        kind: 'unsupported',
+        reason: "omp's conversation is the terminal's own scrollback, which no extension can scroll.",
+      },
     },
   },
 }

@@ -457,7 +457,11 @@ var CLIENTS = {
       },
       "suggested-goal": { kind: "full" },
       "remote-typed-reply-admission": { kind: "full" },
-      "remote-draft-retention": { kind: "full" }
+      "remote-draft-retention": { kind: "full" },
+      "show-explanation": {
+        kind: "different",
+        reason: "Only the fullscreen terminal lets a plugin scroll the conversation, so the classic terminal and the Claude app draw no Show explanation."
+      }
     }
   },
   codex: {
@@ -610,7 +614,11 @@ var CLIENTS = {
         reason: "Clicks only, as for the goal: the Codex Status has no row selection."
       },
       "remote-typed-reply-admission": { kind: "full" },
-      "remote-draft-retention": { kind: "full" }
+      "remote-draft-retention": { kind: "full" },
+      "show-explanation": {
+        kind: "unsupported",
+        reason: "Codex gives a plugin no call that scrolls its conversation."
+      }
     }
   },
   omp: {
@@ -709,7 +717,11 @@ var CLIENTS = {
       },
       "suggested-goal": { kind: "full" },
       "remote-typed-reply-admission": { kind: "full" },
-      "remote-draft-retention": { kind: "full" }
+      "remote-draft-retention": { kind: "full" },
+      "show-explanation": {
+        kind: "unsupported",
+        reason: "omp's conversation is the terminal's own scrollback, which no extension can scroll."
+      }
     }
   }
 };
@@ -1522,6 +1534,8 @@ function pressText(p) {
       return "Reply";
     case "issue":
       return ISSUE_LABEL;
+    case "show-explanation":
+      return SHOW_EXPLANATION_LABEL;
     case "step":
       return p.label;
     case "remove-goal":
@@ -1538,6 +1552,7 @@ function capitalized(text) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 var ISSUE_LABEL = "File issue";
+var SHOW_EXPLANATION_LABEL = "Show explanation";
 
 // ../hooks/banners.ts
 function groupEmptyText(title) {
@@ -4231,7 +4246,11 @@ function pendingResult(effects, at, pressId) {
 }
 function localLast(last, pressed, pending) {
   const result = { ...pending, action: pressed.action };
-  return last && last.kind !== "local" ? { ...last, result } : { kind: "local", ...pressed, at: result.at, result };
+  return last && last.kind !== "local" ? { ...last, result } : { kind: "local", ...pressed, at: result.at, result, ...keptExplanation(last) };
+}
+function keptExplanation(previous) {
+  const replyId = previous?.explanation?.replyId;
+  return replyId ? { explanation: { replyId } } : {};
 }
 function retryOf(id, last) {
   if (!/^[if]\d+$/.test(id))
@@ -4278,7 +4297,8 @@ function recordPress(kind, action, text, ctx, previous) {
     text,
     at: ctx.now,
     turnsStarted: ctx.turnsStarted,
-    ...isRepeatOf(previous, action) ? { isRepeat: true } : {}
+    ...isRepeatOf(previous, action) ? { isRepeat: true } : {},
+    ...keptExplanation(previous)
   };
 }
 function held(last, message, by, ctx) {
@@ -4320,6 +4340,14 @@ function pressed(ledger, last, p, ctx) {
     if (closedFinding && isUndoable(closedFinding))
       return { ...unchanged, ledger: reopenFinding(ledger, p.id), reopenedId: p.id };
     return stale;
+  }
+  if (p.action === "show-explanation") {
+    const replyId = last?.explanation?.replyId;
+    if (!replyId)
+      return stale;
+    const effects = [{ kind: "scroll", requestId: replyId, name: "the explanation" }];
+    const pressedAs = { action: actionId(p), text: pressText(p) };
+    return { ledger, last: localLast(last, pressedAs, pendingResult(effects, ctx.now, ctx.localPressId)), effects };
   }
   const finding = ledger.findings.find((f) => f.id === p.id);
   if (finding) {
@@ -4849,7 +4877,9 @@ function rowFeedbackText(row, look) {
 function pressUnderWaySince(f) {
   if (f?.is === "working" || f?.is === "sending")
     return f.at;
-  return f?.is === "local" && f.result.state === "pending" ? f.result.at : null;
+  if (f?.is !== "local")
+    return null;
+  return f.talkOutSince ?? (f.result.state === "pending" ? f.result.at : null);
 }
 function prTabHoldSince(f) {
   return f?.is === "working" && f.isHandoff === true ? null : pressUnderWaySince(f);
@@ -4858,8 +4888,12 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   const result = last?.result;
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
-  if (result && (result.state !== "done" || now - result.at < SETTLED_MS))
-    return { is: "local", result };
+  if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
+    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now) : null;
+    const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
+    const talkOutSince = isTalkOut ? under.at : undefined;
+    return { is: "local", result, ...talkOutSince === undefined ? {} : { talkOutSince } };
+  }
   if (!last || last.kind === "local")
     return null;
   const delivery = last.delivery;
@@ -4950,6 +4984,8 @@ function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
 function pressOutAction(last, f) {
+  if (f?.is === "local" && f.result.state !== "pending" && f.talkOutSince !== undefined)
+    return last?.action ?? null;
   if (!isPressOut(f))
     return null;
   return (f?.is === "local" ? f.result.action : last?.action) ?? null;
@@ -4970,14 +5006,16 @@ var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
   copy: { pending: "Copying", done: "Copied", failed: "copy" },
   "refresh-prs": { pending: "Refreshing", done: "Refreshed", failed: "refresh" },
-  rerun: { pending: "Starting a re-run of", done: "Started a re-run of", failed: "start a re-run of" }
+  rerun: { pending: "Starting a re-run of", done: "Started a re-run of", failed: "start a re-run of" },
+  scroll: { pending: "Showing", done: "Shown", failed: "show" }
 };
+var doneText = (p) => p.kind === "scroll" ? "Shown in the conversation" : `${VERBS[p.kind].done} ${p.name}`;
 function localText(r, look) {
   const isPrs = r.parts.length > 1 && r.parts.every((p) => p.kind === "open" && p.error === null && /^PR #\d+$/.test(p.name));
   const parts = isPrs ? [{ ...r.parts[0], name: `${r.parts.length} PRs` }] : r.parts;
   if (r.state === "pending")
     return `${parts.map((p) => `${VERBS[p.kind].pending} ${p.name}`).join(DOT)}\u2026`;
-  const text = parts.map((p) => p.error === null ? `${VERBS[p.kind].done} ${p.name}` : `Could not ${VERBS[p.kind].failed} ${p.name}: ${p.error}`).join(DOT);
+  const text = parts.map((p) => p.error === null ? doneText(p) : `Could not ${VERBS[p.kind].failed} ${p.name}: ${p.error}`).join(DOT);
   if (r.state === "failed")
     return text;
   const isCommand = parts.some((p) => p.kind === "copy" && p.isCommand);
@@ -7312,6 +7350,7 @@ function stepKind(step) {
 }
 var FOLLOW_UPS = new Set([
   "type",
+  "show-explanation",
   "explain",
   "compare",
   "discuss",
@@ -7323,6 +7362,7 @@ var ACTION_KEYS = {
   address: "a",
   issue: "i",
   type: "t",
+  "show-explanation": "s",
   explain: "e",
   compare: "p",
   discuss: "d",
@@ -7332,17 +7372,19 @@ var ACTION_KEYS = {
 function latestUndo(undos) {
   return undos.reduce((latest, u) => latest === null || u.at >= latest.at ? u : latest, null);
 }
-function actionsOf(row, last, state, feedback, isUndoOut = false) {
+function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConversation = false) {
   const { id, item, steps } = row;
   const pressing = pressOutAction(last, feedback);
   const out = outAction(last, feedback);
+  const isFirstExplanationOut = last?.explanation?.isFirstReply === true && pressing === "explain";
+  const isExplanationShown = canScrollConversation && last?.explanation?.replyId !== undefined && !isFirstExplanationOut;
   const action = (press, label, kind, flags = {}) => {
     const pressAction = actionId(press);
     return {
       press,
       label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "type" || press.action === "discuss" || press.action === "explain" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "type" || press.action === "discuss" || press.action === "explain" || press.action === "show-explanation" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
       ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps[press.step]) ? { icon: stepIconKind(steps[press.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
@@ -7359,12 +7401,16 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       action({ action: "discard", id }, ROW_COPY.discard, "view")
     ];
   const stepActions = steps.map((s, n) => action({ action: "step", id, step: n, label: s.label }, s.label, stepKind(s)));
+  const explainActions = [
+    ...isExplanationShown ? [action({ action: "show-explanation", id }, SHOW_EXPLANATION_LABEL, "local")] : [],
+    action({ action: "explain", id }, "Explain", "talk")
+  ];
   if (!item)
     return [
       action({ action: "address", id }, row.finding ? fixLabel(row.finding) : "Fix", "handoff"),
       action({ action: "issue", id }, ISSUE_LABEL, "handoff"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk"),
+      ...explainActions,
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
@@ -7373,7 +7419,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
       ...stepActions,
       action({ action: "done", id }, "Done", "mark"),
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
-      action({ action: "explain", id }, "Explain", "talk"),
+      ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
   const isFolding = item.options.length > OPTIONS_FOLD_AT;
@@ -7385,7 +7431,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false) {
     })),
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
-    action({ action: "explain", id }, "Explain", "talk"),
+    ...explainActions,
     ...showsCompare(item) ? [action({ action: "compare", id }, "Compare", "talk")] : [],
     action({ action: "dismiss", id }, "Dismiss", "mark")
   ];
@@ -7647,7 +7693,8 @@ function inboxView({
   listInput,
   undoShown,
   undoOut = [],
-  collapsed = []
+  collapsed = [],
+  canScrollConversation = false
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
@@ -7734,7 +7781,7 @@ function inboxView({
     const state = stateOf(row.id);
     const last = lastActions[row.id];
     const feedback = feedbackIn(row.id, state, last, notes[row.id], turns, now, row.item?.reportedAt);
-    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt), undoOut.includes(row.id));
+    const actions = actionsOf(row, last, state, pressFeedbackIn(row.id, state, last, turns, now, row.item?.reportedAt), undoOut.includes(row.id), canScrollConversation);
     const held = state.is === "open" ? heldSubjectsOf(ledger.overview, row.id) : [];
     return {
       ...row,
@@ -8038,7 +8085,7 @@ function updateRecovery(s) {
     return "unreadable";
   return presence.failedAttempts > 1 ? "failed-again" : "waiting";
 }
-function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canScrollConversation = false) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
   const inbox = inboxView({
@@ -8052,7 +8099,8 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}) {
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
-    collapsed: collapsedRows(s)
+    collapsed: collapsedRows(s),
+    canScrollConversation
   });
   return {
     ...inbox,
@@ -12409,6 +12457,7 @@ async function runUpdates(host) {
     await Promise.all(writing);
   }
 }
+var NO_CONVERSATION_SCROLL = "this app does not let the inbox scroll its conversation";
 
 // ../hooks/session-version.ts
 var SESSION_VERSION = 1;
@@ -13492,6 +13541,7 @@ var PRESS_TARGETS = {
   answer: "id",
   type: "id",
   explain: "id",
+  "show-explanation": "id",
   compare: "id",
   done: "id",
   dismiss: "id",
@@ -14979,7 +15029,7 @@ function sessionCalls(context) {
         const why = await sendToAgent(ctx, text);
         return why === null ? { state: "accepted", queuedId: null } : { state: "rejected", reason: why };
       },
-      perform: async (_s, effect) => effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
+      perform: async (_s, effect) => effect.kind === "scroll" ? NO_CONVERSATION_SCROLL : effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
       refreshPrsIfDue: async () => fetchPrsWhenDue(ctx, true),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true)),
       gh: {

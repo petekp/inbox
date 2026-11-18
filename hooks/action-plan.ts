@@ -1,5 +1,5 @@
 import type { Item, PressKind, Finding, LastAction, Tab } from '../types'
-import { actionId, ISSUE_LABEL } from './press-labels'
+import { actionId, ISSUE_LABEL, SHOW_EXPLANATION_LABEL } from './press-labels'
 import { stepIconKind } from './help-steps'
 import type { HelpStep } from './help-steps'
 import type { RowPress } from './presses'
@@ -26,6 +26,7 @@ function stepKind(step: HelpStep): PressKind {
 
 const FOLLOW_UPS: ReadonlySet<RowPress['action']> = new Set([
   'type',
+  'show-explanation',
   'explain',
   'compare',
   'discuss',
@@ -37,6 +38,7 @@ const ACTION_KEYS: Partial<Record<RowPress['action'], string>> = {
   address: 'a',
   issue: 'i',
   type: 't',
+  'show-explanation': 's',
   explain: 'e',
   compare: 'p',
   discuss: 'd',
@@ -79,10 +81,13 @@ export function actionsOf(
   state: RowState,
   feedback: Feedback | null,
   isUndoOut = false,
+  canScrollConversation = false,
 ): ActionView[] {
   const { id, item, steps } = row
   const pressing = pressOutAction(last, feedback)
   const out = outAction(last, feedback)
+  const isFirstExplanationOut = last?.explanation?.isFirstReply === true && pressing === 'explain'
+  const isExplanationShown = canScrollConversation && last?.explanation?.replyId !== undefined && !isFirstExplanationOut
   const action = (
     press: RowPress,
     label: string,
@@ -101,6 +106,7 @@ export function actionsOf(
           : press.action === 'type' ||
               press.action === 'discuss' ||
               press.action === 'explain' ||
+              press.action === 'show-explanation' ||
               press.action === 'compare' ||
               press.action === 'dismiss' ||
               press.action === 'discard'
@@ -128,12 +134,16 @@ export function actionsOf(
       action({ action: 'discard', id }, ROW_COPY.discard, 'view'),
     ]
   const stepActions = steps.map((s, n) => action({ action: 'step', id, step: n, label: s.label }, s.label, stepKind(s)))
+  const explainActions = [
+    ...(isExplanationShown ? [action({ action: 'show-explanation', id }, SHOW_EXPLANATION_LABEL, 'local')] : []),
+    action({ action: 'explain', id }, 'Explain', 'talk'),
+  ]
   if (!item)
     return [
       action({ action: 'address', id }, row.finding ? fixLabel(row.finding) : 'Fix', 'handoff'),
       action({ action: 'issue', id }, ISSUE_LABEL, 'handoff'),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
-      action({ action: 'explain', id }, 'Explain', 'talk'),
+      ...explainActions,
       action({ action: 'discuss', id }, 'Discuss', 'talk'),
       action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
@@ -142,7 +152,7 @@ export function actionsOf(
       ...stepActions,
       action({ action: 'done', id }, 'Done', 'mark'),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
-      action({ action: 'explain', id }, 'Explain', 'talk'),
+      ...explainActions,
       action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
   const isFolding = item.options.length > OPTIONS_FOLD_AT
@@ -158,7 +168,7 @@ export function actionsOf(
     ),
     ...stepActions,
     action({ action: 'type', id, text: '' }, 'Reply', 'mark'),
-    action({ action: 'explain', id }, 'Explain', 'talk'),
+    ...explainActions,
     ...(showsCompare(item) ? [action({ action: 'compare', id }, 'Compare', 'talk')] : []),
     action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
   ]
