@@ -10,7 +10,7 @@ import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { NO_HOLDS } from '../../hooks/timing'
-import { ENTER_FADE_MS, ROW_STATE_MS, SLIDE_PX, enterDelayMs, stepRow } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, ROW_STATE_MS, SLIDE_PX, drawsPanel, enterDelayMs, stepRow } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springStep } from '../../hooks/springs'
 import { LINE_PT } from '../../hooks/layout'
 import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
@@ -35,26 +35,24 @@ const RESTS: Record<RowTarget, RowState | null> = {
   gone: null,
 }
 
-const WITH_PANEL = new Set<RowState>(['opening', 'open', 'closing', 'settling'])
-const trackOf = (state: RowState, hasPanel = WITH_PANEL.has(state)): RowTrack => ({ state, since: 0, hasPanel })
+const OPEN_FORM = new Set<RowState>(['opening', 'open', 'closing', 'settling'])
+const trackOf = (state: RowState, hasOpenForm = OPEN_FORM.has(state)): RowTrack => ({ state, since: 0, hasOpenForm })
 
-test('every row state reaches every target, and a row drawing its panel keeps it until its height has shrunk over it', () => {
+test('every row state reaches every target, a row drawing its panel keeps it until its height has shrunk over it, and a settling row draws none', () => {
   for (const state of ROW_STATES)
     for (const target of ROW_TARGETS) {
       const first = stepRow(trackOf(state), target, 0)
-      if (WITH_PANEL.has(state) && first)
-        assert.ok(
-          first.hasPanel && (WITH_PANEL.has(first.state) || first.state === 'leaving'),
-          `${state} toward ${target} dropped its panel as ${first.state}`,
-        )
+      if (drawsPanel(trackOf(state)) && first && first.state !== 'settling')
+        assert.ok(drawsPanel(first), `${state} toward ${target} dropped its panel as ${first.state}`)
+      if (first?.state === 'settling') assert.equal(drawsPanel(first), false, `${state} toward ${target}`)
       let track = first
       for (let n = 0; n < 2 && track && track.state !== RESTS[target]; n++)
         track = stepRow(track, target, track.since + ROW_STATE_MS[track.state])
       assert.equal(track?.state ?? null, RESTS[target], `${state} toward ${target}`)
-      if (track) assert.equal(track.hasPanel, track.state === 'open', `${state} toward ${target}`)
+      if (track) assert.equal(track.hasOpenForm, track.state === 'open', `${state} toward ${target}`)
     }
-  assert.equal(stepRow(trackOf('open'), 'gone', 0)?.hasPanel, true)
-  assert.equal(stepRow(trackOf('closed'), 'gone', 0)?.hasPanel, false)
+  assert.equal(drawsPanel(stepRow(trackOf('open'), 'gone', 0)!), true)
+  assert.equal(drawsPanel(stepRow(trackOf('closed'), 'gone', 0)!), false)
 })
 
 test('a row turned around mid-move starts the new move at once, and with reduced motion every move ends as it starts', () => {
@@ -71,8 +69,8 @@ test('a row turned around mid-move starts the new move at once, and with reduced
         RESTS[target],
         `${state} toward ${target}`,
       )
-  assert.deepEqual(stepRow(undefined, 'open', 0, true), { state: 'entering', since: 0, hasPanel: true })
-  assert.equal(stepRow(undefined, 'closed', 0, true)?.hasPanel, false)
+  assert.deepEqual(stepRow(undefined, 'open', 0, true), { state: 'entering', since: 0, hasOpenForm: true })
+  assert.equal(stepRow(undefined, 'closed', 0, true)?.hasOpenForm, false)
   assert.equal(stepRow(undefined, 'closed', 0, true, true)?.state, 'closed')
   assert.equal(stepRow(undefined, 'open', 0)?.state, 'open')
   const settledIn = stepRow(undefined, 'settled', 0, true)

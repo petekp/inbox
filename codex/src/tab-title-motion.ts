@@ -2,7 +2,7 @@ import { ENTER_FADE_MS, LEAVE_FADE_MS, SLIDE_PX, enterDelayMs } from '../../hook
 import { FRAME_MS } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
 import { fade, fadeShown, glide, glides, isRunning, springOf, stopFadeOut } from './tab-glide'
-import { atEndWeight } from './weight-ease'
+import { atEndWeight, weightEasesOf } from './weight-ease'
 
 /**
  * A row's line. While the row opens or closes it is a block that draws the title, wrapped as the open row's is, with
@@ -87,13 +87,24 @@ export function closeTitle(line: HTMLElement, from: SpringState, to: number, del
 export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | null {
   const line = el.querySelector<HTMLElement>(LINE)
   const full = line && fullOf(line)
-  if (full && !isOpening) stopFadeOut(full)
+  if (full && !isOpening) showClosedTitle(full)
   const was = line && glides.get(line)
   if (!line || !was || was.anim.playState === 'idle') return null
   const held = springOf(line, line.getBoundingClientRect().height)
   was.anim.cancel()
 
   return isOpening ? held : null
+}
+
+/**
+ * Shows the full title a close faded out. The clamped title it faded to already drew the closed weight, so a title
+ * that had faded takes that weight at once: easing it from the open weight would wrap a heavy title onto a line the
+ * closed row does not keep. A title that stayed shown eases.
+ */
+function showClosedTitle(full: HTMLElement) {
+  const wasFaded = (fadeShown(full) ?? 1) < 0.5
+  stopFadeOut(full)
+  if (wasFaded) weightEasesOf(full).forEach(a => a.finish())
 }
 
 /** Runs `measure` with every line glide inside `el` at its end, then puts each back, so `el` measures its natural height. */

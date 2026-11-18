@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { Window } from 'happy-dom'
 import { LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
+import TAB_HTML from '../src/tab.html'
 import { NO_HOLDS } from '../../hooks/timing'
 import type { Item } from '../../types'
 import { emptyState } from '../src/state'
@@ -23,11 +24,13 @@ const item = (id: string, ask: string, at: number): Item => ({
 })
 
 type Move = { key: string; delay: number; startsAt: number; scalesEdges: boolean }
+type Fade = { el: HTMLElement; from: number; to: number; delay: number }
 
 async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext) {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const window = new Window()
   const moves: Move[] = []
+  const fades: Fade[] = []
   const animate = window.HTMLElement.prototype.animate
   window.HTMLElement.prototype.animate = function (this: HTMLElement, ...args: Parameters<typeof animate>) {
     const [frames, timing] = args
@@ -35,6 +38,10 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
     if (key && Array.isArray(frames) && frames.some(f => 'height' in f)) {
       const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
       moves.push({ key, delay, startsAt: Date.now() + delay, scalesEdges: frames.some(f => 'paddingTop' in f) })
+    }
+    if (Array.isArray(frames) && frames.length > 1 && frames.every(f => 'opacity' in f)) {
+      const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
+      fades.push({ el: this, from: Number(frames[0]!.opacity), to: Number(frames.at(-1)!.opacity), delay })
     }
     const animation = animate.apply(this, args)
     animation.finished.catch(() => {})
@@ -112,6 +119,7 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
       window,
       state,
       moves,
+      fades,
       settle,
       after: async ms => {
         context.mock.timers.tick(ms)
@@ -132,12 +140,13 @@ type Harness = {
   window: Window
   state: ReturnType<typeof emptyState>
   moves: Move[]
+  fades: Fade[]
   settle: () => Promise<void>
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks', async context => {
-  await inTab(async ({ state, moves, settle, after }) => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens moves at once and fades its panel in once its space is nearly open, a close they turn back keeps its panel shown, a closing row’s clamped title draws the closed weight, and a dismissed open row draws only its settled line', async context => {
+  await inTab(async ({ state, moves, fades, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-read')
     await settle()
@@ -170,13 +179,59 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     await settle()
     await after(40)
     moves.length = 0
-    const line = Array.from(document.querySelectorAll<HTMLElement>('[data-motion]'))
-      .find(e => e.dataset.motion?.includes(pressed.id))
-      ?.querySelector<HTMLElement>('button.line')
-    line!.click()
-    await settle()
+    fades.length = 0
+    const rowOf = (id: string) =>
+      Array.from(document.querySelectorAll<HTMLElement>('[data-motion]')).find(e => e.dataset.motion?.includes(id))!
+    const press = async (id: string) => {
+      rowOf(id).querySelector<HTMLElement>('button.line')!.click()
+      await settle()
+    }
+    const panelFades = (id: string) =>
+      fades
+        .filter(f => f.el.matches('.panel') && rowOf(id).contains(f.el))
+        .map(({ from, to, delay }) => ({ from, to, delay }))
+    await press(pressed.id)
     const opens = moves.filter(m => m.key.includes(pressed.id))
     assert.ok(opens.length > 0, `pressing ${pressed.id} started no glide`)
     for (const m of opens) assert.ok(m.delay === 0, `${m.key} waits ${m.delay} ms after the person pressed it`)
+    const shows = panelFades(pressed.id)
+    assert.ok(
+      shows.some(f => f.from === 0 && f.to === 1 && f.delay > 0),
+      `the opened panel does not wait for its space: ${JSON.stringify(shows)}`,
+    )
+    const style = document.createElement('style')
+    style.textContent = [...TAB_HTML.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n')
+    document.head.append(style)
+    await after(ROW_STATE_MS.opening + 50)
+    await press('i1')
+    const title = (clamped: boolean) =>
+      rowOf(pressed.id).querySelector<HTMLElement>(`.row.closing .line .text${clamped ? '.short' : ':not(.short)'}`)!
+    assert.equal(getComputedStyle(title(false)).fontWeight, '600')
+    assert.notEqual(getComputedStyle(title(true)).fontWeight, '600')
+    await after(60)
+    fades.length = 0
+    await press(pressed.id)
+    assert.deepEqual(
+      panelFades(pressed.id).filter(f => f.from < 0.99),
+      [],
+      'a close the person turned back fades its shown panel in again from less than shown',
+    )
+    await after(ROW_STATE_MS.opening + 50)
+    const dismissed = {
+      id: pressed.id,
+      kind: pressed.kind,
+      ask: pressed.ask,
+      outcome: 'dismissed',
+      how: 'dismissed' as const,
+    }
+    state.ledger = {
+      ...state.ledger,
+      items: [item('i1', 'Check the build', 1)],
+      closed: [...state.ledger.closed, { ...dismissed, at: Date.now(), item: pressed }],
+    }
+    await read()
+    await settle()
+    assert.ok(rowOf(pressed.id).querySelector('.row.settled'), 'the dismissed row does not settle in place')
+    assert.ok(rowOf(pressed.id).querySelector('.panel') === null, 'the dismissed row still draws its panel')
   }, context)
 })

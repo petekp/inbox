@@ -90,7 +90,7 @@ Design every feature for every host from the start. Doing a host later is not a 
 
 ### 11. Details are the product
 
-The whole drawn shape of a control takes the click, not only its label. Nothing jumps or flickers, and no text is cut as its space moves: a space closes as soon as its content has faded, and content fades in once its space has opened. Where the host can animate, every change that moves or resizes something glides. It starts from where things are, carries what sits below along with it, and turns back from wherever it is. The desktop app is click-first; keys are a convenience, never the only way. Aim for the best result the platform allows, not the smallest change. When a limit seems to block that, check whether the limit is real before designing around it.
+The whole drawn shape of a control takes the click, not only its label. Nothing jumps or flickers, and no text is cut as its space moves: a space closes as soon as its content has faded, and content fades in once its space has opened. The person's own moves follow this rule too. Their space starts to move at once, and the content waits for it. Where the host can animate, every change that moves or resizes something glides. It starts from where things are, carries what sits below along with it, and turns back from wherever it is. The desktop app is click-first; keys are a convenience, never the only way. Aim for the best result the platform allows, not the smallest change. When a limit seems to block that, check whether the limit is real before designing around it.
 
 ### 12. Plain words
 

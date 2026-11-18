@@ -3,9 +3,10 @@ import { expect, test } from 'bun:test'
 import type { Block } from '../src/blocks'
 
 const { framesOf } = await import('./frames')
+const { FRAME_MS } = await import('../../hooks/springs')
 type Step = import('./frames').Step
 const { tabBlocks } = await import('../src/draw')
-const { NOW, demoScreen, dismissedPr, uiOn } = await import('./fixtures')
+const { NOW, demoScreen, dismissedPr, uiOn, withDismissedAsk } = await import('./fixtures')
 const { drawOuts } = await import('../src/out')
 
 const goalFieldOpening = () =>
@@ -139,7 +140,31 @@ test('a status under a row’s buttons that no press brought fades in once the r
   }).toEqual({ cuts: [], fadesOut: true, holds: true, shrinks: true })
 })
 
-test('a dismissed PR’s block glides between its open and dismissed forms in both directions, and the list moves only toward its new height', () => {
+function heightsPast(all: number[], ms: number): number[] {
+  const heights = all.slice(-Math.ceil(ms / FRAME_MS))
+  const start = heights[0] ?? 0
+  const end = heights.at(-1) ?? 0
+
+  return heights.filter(h => h < Math.min(start, end) - 0.5 || h > Math.max(start, end) + 0.5)
+}
+
+test('dismissing the open row moves the list only toward its new height and cuts no text', () => {
+  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
+  const dismissed = tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd13' }))
+  const frames = framesOf(
+    [
+      [0, open],
+      [0, dismissed],
+    ],
+    900,
+  )
+  expect({ outside: heightsPast(frames.heights, 900), cuts: frames.cuts.filter(c => c.at >= 0) }).toEqual({
+    outside: [],
+    cuts: [],
+  })
+})
+
+test('a dismissed PR’s block glides between its open and dismissed forms in both directions, cuts no text, and the list moves only toward its new height', () => {
   const open = tabBlocks(demoScreen(), uiOn('prs'))
   const dismissed = dismissedPr('acme/visor#29').blocks
   for (const [name, from, to] of [
@@ -154,9 +179,12 @@ test('a dismissed PR’s block glides between its open and dismissed forms in bo
       900,
     )
     const jumps = frames.jumps.filter(j => j.at >= 0)
-    const start = frames.heights[0] ?? 0
-    const end = frames.heights.at(-1) ?? 0
-    const isOutside = (h: number) => h < Math.min(start, end) - 0.5 || h > Math.max(start, end) + 0.5
-    expect({ name, jumps, outside: frames.heights.filter(isOutside) }).toEqual({ name, jumps: [], outside: [] })
+    const cuts = frames.cuts.filter(c => c.at >= 0)
+    expect({ name, jumps, cuts, outside: heightsPast(frames.heights, 900) }).toEqual({
+      name,
+      jumps: [],
+      cuts: [],
+      outside: [],
+    })
   }
 })
