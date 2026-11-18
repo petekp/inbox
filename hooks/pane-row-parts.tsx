@@ -311,6 +311,7 @@ export function paneRowParts(
     toggle: () => void,
     padY = DESKTOP_ROW_PAD,
     units?: CountsUnits,
+    textAt: number = ROW_COLUMNS.tree.textAt,
   ) =>
     hasClient ? (
       <Box key={`fold-row-${key}`} position="relative" width="100%">
@@ -344,7 +345,7 @@ export function paneRowParts(
         <Box flexDirection="row">{foldButton(key, label, isUnfolded, toggle, units)}</Box>,
         `fold-row-${key}`,
         0,
-        ROW_COLUMNS.tree.textAt,
+        textAt,
       )
     )
   /** The lines a desktop fold row takes: its chevron's height, in the pane's scroll rows. */
@@ -361,7 +362,14 @@ export function paneRowParts(
       onPress={() => void updateClosedAll(a => (a.includes(kind) ? a : [...a, kind]))}
     />
   )
-  const closedFold = (kind: FoldKind, closed: ClosedLine[], total: number, isUnfolded: boolean) => {
+  /** A group's Closed fold, its label at `textAt`, where the group's rows start their text. */
+  const closedFold = (
+    kind: FoldKind,
+    closed: ClosedLine[],
+    total: number,
+    isUnfolded: boolean,
+    textAt: number = ROW_COLUMNS.tree.textAt,
+  ) => {
     const earlier = earlierLabel(total, closed.length)
     return closed.length === 0
       ? []
@@ -377,6 +385,8 @@ export function paneRowParts(
                 updateClosedAll(a => a.filter(k => k !== kind)),
               ]),
             DESKTOP_LIST_MARGIN,
+            undefined,
+            textAt,
           ),
           ...(isUnfolded && look !== 'desktop' && !isInline
             ? [
