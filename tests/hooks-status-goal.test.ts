@@ -44,7 +44,7 @@ test('a goal the Status call writes shows at once under the Goal heading with it
   expect(w.sent).toEqual([])
 })
 
-test('a met goal hangs a ✓ beside Goal met, folds its finished milestones into a line that names them, which j reaches and f or a press opens, draws the head in its own section, and desktop’s fold line takes its click', async ($, on) => {
+test('a met goal hangs a ✓ beside Goal met, folds its finished milestones into a line that names them, which j reaches and f or a press opens, draws the head in its own section, and desktop’s fold line takes its click and keeps a Status row’s mark column', async ($, on) => {
   const { clock, pane } = await statusShown($, on, MET)
   const foldId = (
     (await pane.findAll({})).find(n => /^fold-status-goal-milestones-/.test(n.key ?? ''))?.key ?? ''
@@ -73,7 +73,7 @@ test('a met goal hangs a ✓ beside Goal met, folds its finished milestones into
   const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
   await clock.settle()
-  expect(await desktop.find({ key: `fold-status-${foldId}` })).toMatchObject({ type: 'Client' })
+  expect(await desktop.find({ key: `fold-status-${foldId}` })).toMatchObject({ type: 'Client', props: { props: { status: { mark: null } } } })
   await desktop.post({ isUnfolded: false }, { in: `fold-status-${foldId}` })
   await clock.settle()
   expect(await desktop.find({ key: 'goal-m1-name' })).toBeUndefined()
