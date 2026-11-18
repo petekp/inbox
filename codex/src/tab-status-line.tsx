@@ -195,6 +195,8 @@ export function StatusLine({
   if (row.kind === 'done-fold' || row.kind === 'counts') {
     const isUnfolded = statusUnfolded.has(row.id)
     const fold = foldMotion(row.id)
+    const chevron = <Icon name={isUnfolded ? 'down' : 'right'} />
+    const doneWords = row.kind === 'done-fold' ? row.text.split(' ') : []
 
     return (
       <>
@@ -206,22 +208,35 @@ export function StatusLine({
             onClick={e => clickFold(e, isUnfolded, () => toggleStatusFold(row.id))}
           >
             {row.kind === 'counts' ? (
-              <>
-                {COUNTS_LABEL}
-                {row.counts.map((c, n) => (
-                  <span key={n}>
-                    {n > 0 ? STALL_GAP : null}
+              row.counts.map((c, n) => {
+                const isLast = n === row.counts.length - 1
+                const unit = (
+                  <>
                     <span class={markClassOf(c.tone, false)}>
                       <MarkGlyph text={c.mark} />
                     </span>
                     {` ${c.text}`}
+                    {isLast ? chevron : null}
+                  </>
+                )
+
+                return (
+                  <span key={n}>
+                    {n === 0 ? COUNTS_LABEL : STALL_GAP}
+                    <span class={isLast ? 'fold-end' : undefined}>{unit}</span>
                   </span>
-                ))}
-              </>
+                )
+              })
             ) : (
-              row.text
+              <>
+                {doneWords.slice(0, -1).join(' ')}
+                {doneWords.length > 1 ? ' ' : null}
+                <span class="fold-end">
+                  {doneWords.at(-1)}
+                  {chevron}
+                </span>
+              </>
             )}
-            <Icon name={isUnfolded ? 'down' : 'right'} />
           </button>
         </div>
         {isUnfolded || closingFolds.has(fold) ? (
