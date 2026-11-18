@@ -92,8 +92,8 @@ export function stepLists(v: View): {
       kept.add(id)
       drawn.push(x)
       if (track.hasPanel && 'row' in x) {
-        const text = statusUnderOf(x.row)
-        const lines = text ? [{ id: x.row.id, text, tone: feedbackTone(x.row.feedback) }] : []
+        const { text, tone } = statusUnderOf(x.row)
+        const lines = text ? [{ id: x.row.id, text, tone }] : []
         pressLines.set(x.row.id, stepLines(lines, lastPressLines.get(x.row.id), pressMotion, now, changed, kept))
       }
     }
@@ -133,15 +133,16 @@ function pressOf(row: Row) {
   const isSending = isPressing && sending.get(row.id)?.pending === null
   const f = isFeedbackShown(row) ? row.feedback : null
   const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
+  const tone: FeedbackTone = isPressing ? 'muted' : feedbackTone(f)
 
-  return { isPressing, pending, isSending, f, label }
+  return { isPressing, pending, isSending, f, label, tone }
 }
 
-/** The status an open row draws under its buttons, while its press is out. */
-function statusUnderOf(row: Row): string | null {
-  const { pending, isSending, f, label } = pressOf(row)
+/** The status an open row draws under its buttons, while its press is out, and its tone. */
+function statusUnderOf(row: Row): { text: string | null; tone: FeedbackTone } {
+  const { pending, isSending, f, label, tone } = pressOf(row)
 
-  return !isSending && isStatusUnderActions(pending ?? f, true) ? label : null
+  return { text: !isSending && isStatusUnderActions(pending ?? f, true) ? label : null, tone }
 }
 
 const pressLines = new Map<string, (TextLine & { tone: FeedbackTone })[]>()
@@ -184,7 +185,7 @@ export function ListRow({
     </span>
   )
 
-  const { isPressing, pending, isSending, f, label } = pressOf(row)
+  const { isPressing, pending, isSending, f, label, tone } = pressOf(row)
   const ageAt = !isPressing && f && hasAge(f) ? f.at : null
   const lineForm = (isOpen: boolean): LineForm => {
     const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
@@ -196,7 +197,6 @@ export function ListRow({
   const drawn = lineForm(isSelected || isClosing)
   // A closing row also draws its closed line, hidden, so that collapse() measures the height it comes to rest at.
   const closed = isClosing ? lineForm(false) : null
-  const tone = isPressing ? 'muted' : feedbackTone(row.feedback)
   const afterTone = tone === 'muted' ? undefined : tone
   const after = (form: LineForm, only?: 'open' | 'closed') =>
     form.last ? (
