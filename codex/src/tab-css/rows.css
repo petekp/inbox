@@ -286,6 +286,10 @@
 .body .tree > p.option-choice + p.option-choice {
   --above: calc(1px + var(--item-gap));
 }
+/* Answers that start the tree sit `titleToBodyGapPt` under the title, as buttons sit under any text. */
+.body .tree > p.option-choice:first-child {
+  --above: var(--control-gap);
+}
 .body .tree > p.option-choice.tree-last::before {
   height: var(--above);
 }

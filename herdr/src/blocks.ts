@@ -113,7 +113,8 @@ export type RowBlock = {
    * The row's lines under its title. `tree` places a line on the tree that hangs from the title's mark: `trunk` passes
    * it, `tee` joins a branch to the trunk, and `last` ends the trunk at the last branch. `gapAbove` starts a line a
    * `LIST_GAP_PT`, a `CHILD_GAP_PT` or an `ITEM_GAP_PT` below the line above, as one option starts an item step below
-   * the option before it and its note a list step below its button. `isOptionNote` indents an option's note to its button's label. `lead` is an option's label, drawn in the
+   * the option before it and its note a list step below its button. On the first line, `title` starts it
+   * `titleToBodyGapPt` below the title. `isOptionNote` indents an option's note to its button's label. `lead` is an option's label, drawn in the
    * foreground color before `text`, which takes `tone`. `optionId` draws the row's option button of that id in place
    * of text.
    */
@@ -122,7 +123,7 @@ export type RowBlock = {
     text: string
     tone: Tone
     tree?: 'trunk' | 'tee' | 'last'
-    gapAbove?: 'list' | 'child' | 'item'
+    gapAbove?: 'title' | 'list' | 'child' | 'item'
     isOptionNote?: true
     optionId?: string
   }[]
