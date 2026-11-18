@@ -125,7 +125,7 @@ export function paneDesktopCard({
         paddingBottom={space.rowPad}
         {...(pal.selection ? { backgroundColor: pal.selection } : {})}
       >
-        <Box flexDirection="column" flexGrow={1} position="relative">
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} position="relative">
           <Box key={`view-${row.id}`} position="absolute" top={0} bottom={0} left={0} width={1} />
           {desktopFrame({
             key: `row-${row.id}-title`,

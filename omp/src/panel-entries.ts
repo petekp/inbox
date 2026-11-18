@@ -136,6 +136,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
           kind: g.kind,
           title: g.title,
           mark: { text: g.mark.mark, tone: g.mark.tone },
+          isRowLed: true,
           rows: view.needsYou[g.list].filter(r => isDrawnInPlace(r, ui.shownSince)),
           closed: view.needsYou.closed[g.list].map(d => ({ ...d, title: d.ask })),
         }))
@@ -143,6 +144,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
           kind,
           title: FINDING_GROUPS[kind].title,
           mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
+          isRowLed: false,
           rows: view.findings.rows.filter(r => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
           closed: view.findings.closed.filter(f => f.kind === kind).map(f => ({ ...f, at: f.closedAt })),
         }))

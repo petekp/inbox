@@ -30,8 +30,9 @@ import type { HelpKey, LegendEntry } from '../../hooks/help'
 import type { PanelPress, PanelScreen, PanelUi, Tone } from './panel'
 
 export const AGENT = 'omp'
-export const INDENT = 7
-/** Where a line with no lead indents its detail and buttons: one cell in from its title. */
+/** Where a led line's title, detail and buttons start. */
+export const INDENT = 6
+/** Where a line with no lead starts its title, detail and buttons. */
 export const UNLED_INDENT = INDENT - 3
 export const STOP_ID = 'stop'
 export const HERDR_ASK_ID = 'herdr-ask'
@@ -273,7 +274,15 @@ type ClosedLine = {
   mark: ResultMark
 }
 
-export type Group = { kind: FoldKind; title: string; mark?: Lead; rows: RowView[]; closed: ClosedLine[] }
+/** `isRowLed`: the group's rows draw a lead before their titles, as asks do and findings do not. */
+export type Group = {
+  kind: FoldKind
+  title: string
+  mark?: Lead
+  isRowLed: boolean
+  rows: RowView[]
+  closed: ClosedLine[]
+}
 
 const settledIn = (g: Group) => new Set(g.rows.filter(r => r.state.is === 'settled').map(r => r.id))
 export const isGroupEmpty = (g: Group) => g.rows.length === 0 && closedTotal(g.closed, settledIn(g)) === 0
@@ -319,7 +328,7 @@ export function groupEntries(
     kind: 'row',
     line: {
       ...blankLine(foldId(g.kind)),
-      lead: g.mark ? null : { text: '', tone: null },
+      lead: g.isRowLed ? { text: '', tone: null } : null,
       title: `${foldLabel(total)} ${foldGlyph(isUnfolded)}`,
       isDim: true,
       fold: g.kind,

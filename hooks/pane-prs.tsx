@@ -96,7 +96,7 @@ export function panePrRows(
         <Link href={t.reply?.url || t.url}>
           <Text underline>{threadWhere(t)}</Text>
         </Link>
-        {DOT}@{t.author}
+        {`${look === 'terminal' ? `${DOT.trimEnd()} ` : DOT}@${t.author}`}
       </Text>
     )
     const comment = (

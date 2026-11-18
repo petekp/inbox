@@ -1,6 +1,7 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import type { Mounted } from 'claude-code/testing'
+import type { ParentProps } from '../hooks/parent-client'
 import { STATUS_TEXT_LINES } from '../hooks/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
@@ -110,7 +111,7 @@ test('on the Status, while the goal shows milestones, work linked to none of the
   expect(await inline.find({ key: 'status-s2' })).toBeDefined()
 })
 
-test('on the Status, a parent folds its rows by its name or its f key and opens them again, in the terminal and on desktop', async ($, on) => {
+test('on the Status, a parent folds its rows by its name or its f key and opens them again, in the terminal and on desktop, where its chevron follows the name’s last word with a no-break space', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
 
@@ -164,6 +165,9 @@ test('on the Status, a parent folds its rows by its name or its f key and opens 
   await desktop.pointer({ type: 'down', x: 0, y: 1, button: 'left', in: 'tabs' })
   await clock.settle()
   expect(await desktop.find({ key: 'parent-s1' })).toMatchObject({ type: 'Client' })
+  const chevronPart = ((await desktop.find({ key: 'parent-s1' }))?.props.props as ParentProps).parts.at(-1)!.text
+  expect(chevronPart).toMatch(/^\u00a0[›v]/)
+  expect(chevronPart).not.toMatch(/ /)
   expect(await desktop.find({ key: 'status-c1' })).toBeUndefined()
   await desktop.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: 'parent-s1' })
   await clock.settle()

@@ -194,7 +194,10 @@ export function paneStatusGoal(
   const milestoneLine = (m: MilestoneRow): Drawn => {
     const mark = markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted)
     if (m.foldId !== null) {
-      const fold = path.foldedName({ ...m, foldId: m.foldId })
+      const fold = path.foldedName(
+        { ...m, foldId: m.foldId },
+        { text: m.mark, color: (m.tone ? pal.mark[m.tone] : pal.muted) ?? null },
+      )
       return look === 'desktop'
         ? fold
         : statusRowLine({ key: `status-${m.id}`, mark, content: [fold], isSelected: isSelected(m.id) })
