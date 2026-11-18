@@ -23,7 +23,7 @@ export function namedList(names: readonly string[]): string {
 }
 
 /** What a named fold says before the names it holds. Each closed status gets its own fold, in this order. */
-export const NAMED_FOLD_TEXT = { done: 'Also done: ', dropped: 'Also dropped: ' } as const
+export const NAMED_FOLD_TEXT = { done: 'Done: ', dropped: 'Dropped: ' } as const
 
 /** A part's closed work past its rows that the person has not seen, named in one fold for each closed status. */
 export const namedFolds = (prefix: string, named: Subject[], depth: number): StatusRow[] =>
