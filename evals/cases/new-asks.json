@@ -418,7 +418,7 @@
       {
         "new": "product",
         "kind": "question",
-        "rec": "\\bB\\b",
+        "rec": "\\bB\\b|second|price",
         "noOption": "[?=/]|http"
       }
     ]

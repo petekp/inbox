@@ -46,7 +46,7 @@ type Check =
       rec?: string | null
       help?: string
       design?: boolean
-      /** A pattern that none of the item's options, and not its rec, may match. */
+      /** A pattern that no option or rec of any new item like `new` may match. */
       noOption?: string
     }
   | { notNew: string }
@@ -148,8 +148,7 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
       (!c.kind || i.kind === c.kind) &&
       (c.rec === undefined || (c.rec === null ? i.rec === null : has(c.rec, i.rec))) &&
       (!c.help || i.helps.some(h => h.kind === c.help)) &&
-      (c.design === undefined || (i.isDesignChoice === true) === c.design) &&
-      (!c.noOption || ![...i.options, i.rec].some(o => has(c.noOption!, o))),
+      (c.design === undefined || (i.isDesignChoice === true) === c.design),
   )
   const out: string[] = []
   for (const c of checks) {
@@ -165,6 +164,12 @@ function failures(before: Ledger, after: Ledger, checks: Check[], masked: string
         out.push(
           `no new item like /${c.new}/: ${added.map(i => `"${i.ask}" kind=${i.kind} options=${i.options.join(' / ')} rec=${i.rec} design=${i.isDesignChoice === true} helps=${i.helps.map(h => h.kind).join('+') || '-'}`).join(', ')}`,
         )
+      const { noOption } = c
+      const withBadAnswer = noOption
+        ? added.filter(i => has(c.new, i.ask) && [...i.options, i.rec].some(o => has(noOption, o)))
+        : []
+      for (const i of withBadAnswer)
+        out.push(`new item "${i.ask}" has an answer like /${noOption}/: options=${i.options.join(' / ')} rec=${i.rec}`)
     } else if ('notNew' in c && added.some(i => has(c.notNew, i.ask))) out.push(`added an item like /${c.notNew}/`)
     else if ('noHelp' in c && added.some(i => i.helps.some(h => h.kind === c.noHelp))) out.push(`a ${c.noHelp} step`)
     else if ('waiting' in c) {
