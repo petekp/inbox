@@ -465,5 +465,40 @@
         "noIds": true
       }
     ]
+  },
+  {
+    "name": "record-options-without-url-parameters",
+    "about": "A choice between two page versions known only by their URL parameters is recorded with options and a rec in plain words, without links or parameters.",
+    "prompt": "Task: redesign the shop's product page. A helper agent mocked it twice in the card layout. Both versions run on the dev server, switched by a URL parameter: http://localhost:3000/product?dv=a and http://localhost:3000/product?dv=b. The helper recommends ?dv=b, because it doesn't show the price twice. Ask me which one to build out.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "has": ["options", "rec"],
+        "match": {
+          "rec": "\\bB\\b|second|price"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 0,
+        "match": {
+          "options": "[?=/]|http"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 0,
+        "match": {
+          "rec": "[?=/]|http"
+        }
+      },
+      {
+        "noIds": true
+      }
+    ]
   }
 ]
