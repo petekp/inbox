@@ -1,7 +1,7 @@
 import type { Item, PressKind } from '../types'
 import { UNDO_KEY } from './help'
 import type { ActionEmphasis } from './rows'
-import { isParentCollapsed, milestoneRows, unfoldedRows } from './status-folds'
+import { countsText, isParentCollapsed, milestoneRows, unfoldedRows } from './status-folds'
 import type { IsCollapsed } from './status-folds'
 import { shownMilestones } from './status-goal-page'
 import type { GoalBlock, MilestoneRow } from './status-goal-page'
@@ -50,6 +50,7 @@ function viewAsk(ask: { id: string; kind: Item['kind'] }): StatusKey {
  */
 export function statusKeyPlan(row: StatusRow): StatusKey[] {
   if (row.kind === 'done-fold') return [toggleFold(row.id, row.text)]
+  if (row.kind === 'counts') return [toggleFold(row.id, countsText(row.counts))]
 
   return row.kind === 'subject' && row.ask !== null ? [viewAsk(row.ask)] : []
 }

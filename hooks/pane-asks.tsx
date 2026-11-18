@@ -8,6 +8,7 @@ import { READ_FAILED_TEXT } from './mod-sessions'
 import { sessionState } from './mod-state'
 import type { PaneBase, PaneHandlers, Row } from './pane-context'
 import type { PaneFrame } from './pane-frame'
+import { partSpace } from './pane-part-space'
 import { childPos, type PaneRowLines } from './pane-row-lines'
 import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
@@ -31,16 +32,16 @@ export function paneAskRows(
   {
     now,
     look,
+    isInline,
     Text,
     pal,
     optionsShown,
     Box,
-    blankLine,
     terminalText,
     inlineText,
   }: Pick<
     PaneBase,
-    'now' | 'look' | 'Text' | 'pal' | 'optionsShown' | 'Box' | 'blankLine' | 'terminalText' | 'inlineText'
+    'now' | 'look' | 'isInline' | 'Text' | 'pal' | 'optionsShown' | 'Box' | 'terminalText' | 'inlineText'
   >,
   { rowKeyActions }: Pick<PaneHandlers, 'rowKeyActions'>,
 ) {
@@ -68,13 +69,17 @@ export function paneAskRows(
     }
   }
   const findingBody = (detail: string, path: string | null, fitted?: TerminalSpan[][]) => (
-    <Box flexDirection="column" rowGap={blankLine}>
-      <Text wrap="wrap">{fitted ? terminalText(fitted) : inlineText(detail)}</Text>
+    <Box flexDirection="column" rowGap={partSpace(look, isInline, 'desktopFrame')('detail', 'file')}>
+      <Box key="detail">
+        <Text wrap="wrap">{fitted ? terminalText(fitted) : inlineText(detail)}</Text>
+      </Box>
       {path ? (
-        <Text wrap="wrap">
-          <Text color={pal.muted}>{ROW_COPY.relevantFile}</Text>
-          <Text color="permission">{path}</Text>
-        </Text>
+        <Box key="file">
+          <Text wrap="wrap">
+            <Text color={pal.muted}>{ROW_COPY.relevantFile}</Text>
+            <Text color="permission">{path}</Text>
+          </Text>
+        </Box>
       ) : null}
     </Box>
   )
@@ -88,6 +93,7 @@ export function paneAskRows(
     titleAfter: `${DOT}${ago(now - (r.at ?? now))}`,
     line: { text: r.title },
     body: findingBody(r.detail ?? '', r.fileName),
+    bodyEnd: r.fileName ? 'file' : 'detail',
     clippedBody: (lines, width) =>
       lines < 1
         ? null

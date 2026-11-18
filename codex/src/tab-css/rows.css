@@ -71,16 +71,9 @@
   display: flex;
   flex-direction: column;
 }
-/* Its space above is padding, not a gap, so the row's height grows smoothly when the panel mounts. */
 .panel {
   display: flex;
   flex-direction: column;
-  gap: var(--control-gap);
-  padding: var(--control-gap) 0 0;
-}
-/* A question's tree starts under its title as a title's detail does. */
-.panel:has(> .body > .tree) {
-  padding-top: var(--inside-gap);
 }
 .row > .panel {
   grid-column: 2 / -1;
@@ -186,7 +179,8 @@
 .row.collapsed:not(.closing) .open-only {
   display: none;
 }
-.quote {
+.quote,
+.pre-line {
   white-space: pre-line;
 }
 .row.collapsed:hover {
@@ -207,7 +201,8 @@
 .body p {
   margin: 0;
 }
-.body p + p {
+/* A PR row's lines sit a list step apart. */
+.body p + p:not([data-part]) {
   margin-top: var(--list-gap);
 }
 .body .option-description {
@@ -235,13 +230,7 @@
   position: relative;
 }
 .body .tree > p {
-  --above: 1px;
   position: relative;
-  padding: var(--above) 0 1px;
-}
-/* A question's context, earlier answer, answers and Holds up line sit a child step apart. */
-.body .tree > p + p {
-  --above: calc(1px + var(--child-gap));
 }
 .body .tree:not(.plain) > p::before {
   content: '';
@@ -273,10 +262,6 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--list-gap);
-}
-.body .tree > p.option-choice + p.option-choice {
-  --above: calc(1px + var(--item-gap));
 }
 .body .tree > p.option-choice.tree-last::before {
   height: var(--above);

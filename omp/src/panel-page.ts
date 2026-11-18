@@ -10,7 +10,7 @@ import { pageFocus } from './panel-keys'
 import type { ButtonFace } from './panel-lines'
 import { collapsedIn, indented, wrapText } from './panel-text'
 import { foldGlyph } from '../../hooks/fold-chevron'
-import { isParentCollapsed, parentChevron } from '../../hooks/status-folds'
+import { COUNTS_LABEL, isParentCollapsed, parentChevron } from '../../hooks/status-folds'
 import type { Style } from './panel'
 
 const TREE_ARMS: Record<StatusBranch, { first: string; rest: string }> = {
@@ -214,6 +214,8 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
 
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s)
   }
+  if (row.kind === 'counts')
+    return countsFoldLines(row.counts, d.ui.statusUnfolded.includes(row.id), isSelected, textAt, width, s)
   if (row.kind === 'done-fold') {
     const chevron = foldGlyph(d.ui.statusUnfolded.includes(row.id))
 
@@ -227,33 +229,44 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
       partHeading(row.text, width, s, PAGE_TEXT_AT, row.isTitle),
       ...(row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []),
     ]
-  if (row.kind === 'counts') return countLines(row.counts, textAt, width, s)
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }
 
 /**
- * Other work's counts, each mark in its tone with its count, joined by `STALL_GAP`. A count that does not fit starts the
- * next line without the gap, so a count stays with its mark.
+ * Other work's counts fold: its label, then each mark in its tone with its count, joined by `STALL_GAP`, then the
+ * chevron. A count that does not fit starts the next line without the gap, so a count stays with its mark, and the
+ * chevron stays with the last count.
  */
-function countLines(
+function countsFoldLines(
   counts: (StatusRow & { kind: 'counts' })['counts'],
+  isUnfolded: boolean,
+  isSelected: boolean,
   textAt: number,
   width: number,
   s: Style,
 ): string[] {
   const room = Math.max(1, width - textAt)
   const gap = { cells: cellWidth(STALL_GAP), text: s.dim(STALL_GAP) }
-  const lines: { cells: number; text: string }[] = []
-  for (const c of counts) {
-    const count = {
-      cells: cellWidth(`${c.mark} ${c.text}`),
-      text: feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`),
+  const chevron = foldGlyph(isUnfolded)
+  const parts = counts.map((c, n) => {
+    const tail = n === counts.length - 1 ? ` ${chevron}` : ''
+    const chevronPaint = isSelected ? s.tone('accent', tail) : s.dim(tail)
+
+    return {
+      cells: cellWidth(`${c.mark} ${c.text}${tail}`),
+      text: feedbackPaint(c.tone, s)(c.mark) + s.dim(` ${c.text}`) + chevronPaint,
     }
-    const line = lines.at(-1)
-    if (line && line.cells + gap.cells + count.cells <= room) {
-      line.cells += gap.cells + count.cells
-      line.text += gap.text + count.text
-    } else lines.push(count)
+  })
+  const lines: { cells: number; text: string }[] = [
+    { cells: cellWidth(COUNTS_LABEL), text: (isSelected ? s.bold : s.dim)(COUNTS_LABEL) },
+  ]
+  for (const [n, part] of parts.entries()) {
+    const line = lines.at(-1)!
+    const joiner = n === 0 ? { cells: 0, text: '' } : gap
+    if (line.cells + joiner.cells + part.cells <= room) {
+      line.cells += joiner.cells + part.cells
+      line.text += joiner.text + part.text
+    } else lines.push(part)
   }
 
   return lines.map(l => ' '.repeat(textAt) + l.text)

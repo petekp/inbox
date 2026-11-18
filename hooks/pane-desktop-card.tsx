@@ -4,7 +4,7 @@ import type { paneDesktopTree } from './pane-desktop-tree'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
-import { CHILD_GAP_PT, ITEM_GAP_PT, LIST_GAP_PT } from './layout'
+import type { RowPart } from './row-parts'
 import {
   DESKTOP_ANSWER_BUTTON_PT,
   DESKTOP_ANSWER_LABEL_CELLS,
@@ -13,13 +13,15 @@ import {
   DESKTOP_MARK_CELLS,
   DESKTOP_ROW_PT,
   DESKTOP_TREE_AT,
-  desktopPad,
 } from './pane-sizes'
 
 /** An answer's arm meets its button's middle, which sits lower than a line of text's middle. */
 const ANSWER_ARM_AT = (DESKTOP_ANSWER_BUTTON_PT - DESKTOP_HAIR_PT) / 2 / DESKTOP_ROW_PT
 
 const isAnswer = (en: AskEntry | undefined) => en?.option !== undefined || en?.options !== undefined
+
+/** An answer's note or reason joins the answer above it, so one frame and one piece of the tree hold both. */
+const isJoined = (en: AskEntry) => en.noteOf !== undefined
 
 /**
  * A selected row's card on desktop when its lines hang from the row's ◆ on a tree: the title, each branch, and the
@@ -31,26 +33,28 @@ export function paneDesktopCard({
   Text,
   pal,
   space,
-  blankLine,
   desktopFrame,
   desktopTreeLine,
   gutterMark,
   sideAge,
   keyedButton,
-}: Pick<PaneBase, 'Box' | 'Text' | 'pal' | 'space' | 'blankLine'> &
-  Pick<PaneRowKeys, 'keyedButton'> &
+  partSpace,
+}: Pick<PaneBase, 'Box' | 'Text' | 'pal' | 'space'> & {
+  /** The space between two parts of the card, from `partSpace` in its `desktopCard` form. */
+  partSpace: (above: RowPart, below: Exclude<RowPart, 'title'>) => number
+} & Pick<PaneRowKeys, 'keyedButton'> &
   Pick<PaneRowFrame, 'desktopFrame'> &
   Pick<ReturnType<typeof paneDesktopTree>, 'desktopTreeLine'> &
   Pick<PaneRowLines, 'gutterMark' | 'sideAge'>) {
   const hungMarkCenter = DESKTOP_TREE_AT - 1
   const text = (en: AskEntry) => (
-    <Text key={en.key} wrap="wrap">
+    <Text wrap="wrap">
       {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
       {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
       <Text color={pal.muted}>{en.rest}</Text>
     </Text>
   )
-  const line = (rowId: string, en: AskEntry) =>
+  const line = (rowId: string, en: AskEntry, above: AskEntry | undefined) =>
     en.options ? (
       <Box key={en.key} flexDirection="row" columnGap={space.buttonGap}>
         {en.options.map(keyedButton(rowId))}
@@ -60,11 +64,11 @@ export function paneDesktopCard({
         {keyedButton(rowId)(en.option)}
       </Box>
     ) : en.noteOf ? (
-      <Box key={en.key} marginTop={desktopPad(LIST_GAP_PT)} paddingLeft={DESKTOP_ANSWER_LABEL_CELLS}>
+      <Box key={en.key} marginTop={partSpace(above?.part ?? 'title', en.part)} paddingLeft={DESKTOP_ANSWER_LABEL_CELLS}>
         {text(en)}
       </Box>
     ) : (
-      text(en)
+      <Box key={en.key}>{text(en)}</Box>
     )
   /** The frames inside the card draw no border, so nothing lies between one frame's line and the next. */
   const treeBox = (
@@ -82,18 +86,15 @@ export function paneDesktopCard({
       seam: 0,
       ...(armAt === undefined ? {} : { armAt }),
     })
-  /**
-   * The padding that puts a gap between two groups: half under the one above and half above the one below. Two answers
-   * sit `ITEM_GAP_PT` apart, more than the `LIST_GAP_PT` between an answer's button and its note, and the other
-   * lines `CHILD_GAP_PT`.
-   */
-  const halfGapBetween = (above: AskEntry[] | undefined, below: AskEntry[] | undefined) =>
-    isAnswer(above?.[0]) && isAnswer(below?.[0]) ? desktopPad(ITEM_GAP_PT / 2) : desktopPad(CHILD_GAP_PT / 2)
+  /** The space above a frame's first part, under the title or the frame above it. */
+  const spaceAbove = (above: AskEntry[] | undefined, below: AskEntry[], top: RowPart) =>
+    partSpace(above?.at(-1)?.part ?? top, below[0]!.part)
 
   return ({
     row,
     entries,
     title,
+    body,
     status,
     keys,
     gapY,
@@ -101,12 +102,15 @@ export function paneDesktopCard({
     row: Row
     entries: AskEntry[]
     title: JSX.Element
+    /** The row's body under its title, and the part it ends with. */
+    body: { node: JSX.Element; end: RowPart } | null
     status: { text: string; color: string | undefined }[]
     keys: JSX.Element
     gapY: number
   }) => {
+    const top = body?.end ?? 'title'
     const groups = entries.reduce<AskEntry[][]>(
-      (all, en) => (en.key.startsWith('reason-') ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
+      (all, en) => (isJoined(en) ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
       [],
     )
 
@@ -132,11 +136,21 @@ export function paneDesktopCard({
             mark: gutterMark(row),
             side: <Text color={pal.age}>{sideAge(row)}</Text>,
             tree: treeBox(`row-${row.id}-trunk`, 'down', 0),
-            children: [title, row.subtitle ?? null, row.body ? <Box marginTop={blankLine}>{row.body}</Box> : null],
+            children: [
+              title,
+              row.subtitle ?? null,
+              body ? (
+                <Box key="detail" marginTop={partSpace('title', 'detail')}>
+                  {body.node}
+                </Box>
+              ) : null,
+            ],
           })}
           {groups.map((group, n) => {
-            const padY = n > 0 ? halfGapBetween(groups[n - 1], group) : 0
-            const padBelow = n < groups.length - 1 ? halfGapBetween(group, groups[n + 1]) : 0
+            // Two frames split the space between them, so the tree's piece in each reaches the other's.
+            const above = spaceAbove(groups[n - 1], group, top)
+            const padY = n > 0 ? above / 2 : above
+            const padBelow = n < groups.length - 1 ? spaceAbove(group, groups[n + 1]!, top) / 2 : 0
             const { pos } = group[0]!
             const shape = pos === 'mid' || pos === 'last' || pos === 'pass' ? pos : null
 
@@ -155,17 +169,18 @@ export function paneDesktopCard({
                     isAnswer(group[0]) ? ANSWER_ARM_AT : undefined,
                   )
                 : null,
-              children: group.map(en => line(row.id, en)),
+              children: group.map((en, k) => line(row.id, en, group[k - 1])),
             })
           })}
           {desktopFrame({
             key: `row-${row.id}-keys`,
             markCells: DESKTOP_MARK_CELLS,
             isBordered: false,
+            padY: 0,
             padBelow: 0,
             children: [
               status.length > 0 ? (
-                <Box flexDirection="column" marginTop={blankLine}>
+                <Box key="status" flexDirection="column" marginTop={partSpace(entries.at(-1)?.part ?? top, 'status')}>
                   {status.map(st => (
                     <Text color={st.color} wrap="wrap">
                       {st.text}

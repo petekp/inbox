@@ -9,6 +9,9 @@ export const SPACE_UNIT = 4
 /** The line height of the Herdr panel's and the Codex tab's 13-point text. */
 export const LINE_PT = 5 * SPACE_UNIT
 
+/** The height of one line of the desktop pane's text, in points. */
+export const DESKTOP_LINE_PT = 19
+
 /** Between the lines of one item, such as a title and its detail. */
 export const INSIDE_GAP_PT = 0
 

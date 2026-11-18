@@ -1,4 +1,6 @@
 import { RowActions } from './row-actions'
+import type { RowPart } from '../../hooks/row-parts'
+import { partAttrs } from './tab-part-gap'
 import { closedTitleTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
@@ -267,12 +269,21 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
     note ? <div class="muted">{note}</div> : null,
     errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null,
   ].filter(Boolean)
+  const bodyEnd: RowPart = row.body ? (row.bodyEnd?.() ?? 'detail') : 'title'
+  const actionsAbove: RowPart = notes.length > 0 ? 'status' : bodyEnd
+  const lines = pressLines.get(row.id) ?? []
+  const actionsPart = isTyping ? 'field' : 'buttons'
 
   return (
     <div class={isClosing ? 'panel closing' : 'panel'} inert={isClosing}>
-      {row.body ? <div class="body">{row.body()}</div> : null}
-      {notes.length > 0 ? <div>{notes}</div> : null}
+      {row.body ? (
+        <div class="body" {...(row.bodyEnd ? {} : partAttrs('title', 'detail'))}>
+          {row.body()}
+        </div>
+      ) : null}
+      {notes.length > 0 ? <div {...partAttrs(bodyEnd, 'status')}>{notes}</div> : null}
       <RowActions
+        part={partAttrs(actionsAbove, actionsPart)}
         keys={keys}
         more={more}
         followsAnswers={row.options.length > 0 && keys[0]?.emphasis !== 'quiet'}
@@ -301,13 +312,18 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
         }
         isBlocked={isOpenGuarded}
       />
-      {(pressLines.get(row.id) ?? []).map(l => (
-        <div key={l.id} class="muted" {...lineMotion(pressMotion(l.id))}>
+      {lines.map((l, n) => (
+        <div
+          key={l.id}
+          class="muted"
+          {...partAttrs(n === 0 ? actionsPart : 'result', 'result')}
+          {...lineMotion(pressMotion(l.id))}
+        >
           {l.text}
         </div>
       ))}
       {copied ? (
-        <div>
+        <div {...partAttrs(lines.length > 0 ? 'result' : actionsPart, 'copy')}>
           <div class="muted">Copy {copied.name} from here:</div>
           <textarea rows={3} readOnly value={copied.text} onFocus={e => e.currentTarget.select()} />
           <button
