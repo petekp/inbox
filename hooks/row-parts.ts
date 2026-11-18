@@ -65,7 +65,6 @@ export type PartGap = { step: GapStep; forms: Partial<Record<PartForm, number>>;
 /** A blank line on desktop: a written 1, which the pane draws as half its line. */
 export const DESKTOP_BLANK_LINE_PT = DESKTOP_LINE_PT / 2
 
-
 const TITLE_PARTS: readonly RowPart[] = ['title', 'titleStatus']
 const TREE_TEXT: readonly RowPart[] = ['holdsUp', 'context', 'earlier']
 const BODY_PARTS: readonly RowPart[] = ['detail', 'file']

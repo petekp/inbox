@@ -25,7 +25,6 @@ const DRAWN_OWN_WAY = [
   'context → earlier',
 ]
 
-
 function casePartLists(): RowPart[][] {
   const demo = sessionView(demoSession(NOW, 'Claude'), NOW, SETTLED_MS)
   const bases: RowView[] = [...demo.needsYou.questions, ...demo.needsYou.tasks, ...demo.findings.rows]
@@ -149,9 +148,13 @@ test('each pair of neighboring parts in the row cases draws the gap listed for i
 })
 
 test('in every look, each gap that joins two parts into a group draws smaller than each gap between groups, but for the pairs a look draws its own way', () => {
-  const pairs = [...new Map(casePartLists().flatMap(partPairs).map(p => [`${p[0]} → ${p[1]}`, p])).entries()].filter(
-    ([name]) => !DRAWN_OWN_WAY.includes(name),
-  )
+  const pairs = [
+    ...new Map(
+      casePartLists()
+        .flatMap(partPairs)
+        .map(p => [`${p[0]} → ${p[1]}`, p]),
+    ).entries(),
+  ].filter(([name]) => !DRAWN_OWN_WAY.includes(name))
   const isGroup = ([above, below]: [RowPart, Exclude<RowPart, 'title'>]) => partGap(above, below).step in GROUP_STEPS
   const widest = (form: PartForm) =>
     Math.max(...pairs.filter(([, p]) => isGroup(p)).map(([, [a, b]]) => partPt(a, b, form)))

@@ -172,7 +172,9 @@ const below = (n: Node) => num(n.props?.marginBottom ?? n.props?.marginY ?? n.pr
 const padTop = (n: Node) => num(n.props?.paddingTop ?? n.props?.paddingY ?? n.props?.padding)
 const padBottom = (n: Node) => num(n.props?.paddingBottom ?? n.props?.paddingY ?? n.props?.padding)
 const textOf = (n: Node): string =>
-  (n.children ?? []).map(k => (typeof k === 'string' ? k : typeof k === 'object' && k ? textOf(k as Node) : '')).join('')
+  (n.children ?? [])
+    .map(k => (typeof k === 'string' ? k : typeof k === 'object' && k ? textOf(k as Node) : ''))
+    .join('')
 const hasContent = (n: Node): boolean =>
   !isAbsolute(n) && (n.type === 'Box' ? kidsOf(n).some(hasContent) : n.type !== 'Text' || textOf(n) !== '')
 const takesSpace = (n: Node) =>

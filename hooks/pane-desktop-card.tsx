@@ -180,11 +180,7 @@ export function paneDesktopCard({
             padBelow: 0,
             children: [
               status.length > 0 ? (
-                <Box
-                  key="status"
-                  flexDirection="column"
-                  marginTop={partSpace(entries.at(-1)?.part ?? top, 'status')}
-                >
+                <Box key="status" flexDirection="column" marginTop={partSpace(entries.at(-1)?.part ?? top, 'status')}>
                   {status.map(st => (
                     <Text color={st.color} wrap="wrap">
                       {st.text}
