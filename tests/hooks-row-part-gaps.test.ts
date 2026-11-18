@@ -17,7 +17,7 @@ import type { RowCase, RowKind } from './row-part-cases'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-type Node = { type?: string; key?: string; props: Record<string, unknown>; children: unknown[] }
+type Node = { type: string; key?: string; props?: Record<string, unknown>; children?: unknown[] }
 type Look = 'desktop' | 'terminal'
 type Seeded = { ledger: Ledger; lastActions: Record<string, LastAction> }
 
@@ -161,19 +161,22 @@ function expectedSpaces(look: Look, c: RowCase, row: RowView): string[] {
   })
 }
 
-const keyOf = (n: Node) => String(n.key ?? n.props.key ?? '')
+const keyOf = (n: Node) => String(n.key ?? n.props?.key ?? '')
 const kidsOf = (n: Node) =>
-  (n.children ?? []).filter((k): k is Node => typeof k === 'object' && k !== null && 'props' in k)
-const isAbsolute = (n: Node) => n.props.position === 'absolute'
-const isRow = (n: Node) => n.type === 'Box' && n.props.flexDirection === 'row'
+  (n.children ?? []).filter((k): k is Node => typeof k === 'object' && k !== null && 'type' in k)
+const isAbsolute = (n: Node) => n.props?.position === 'absolute'
+const isRow = (n: Node) => n.type === 'Box' && n.props?.flexDirection === 'row'
 const num = (v: unknown) => Number(v ?? 0)
-const above = (n: Node) => num(n.props.marginTop ?? n.props.marginY ?? n.props.margin)
-const below = (n: Node) => num(n.props.marginBottom ?? n.props.marginY ?? n.props.margin)
-const padTop = (n: Node) => num(n.props.paddingTop ?? n.props.paddingY ?? n.props.padding)
-const padBottom = (n: Node) => num(n.props.paddingBottom ?? n.props.paddingY ?? n.props.padding)
+const above = (n: Node) => num(n.props?.marginTop ?? n.props?.marginY ?? n.props?.margin)
+const below = (n: Node) => num(n.props?.marginBottom ?? n.props?.marginY ?? n.props?.margin)
+const padTop = (n: Node) => num(n.props?.paddingTop ?? n.props?.paddingY ?? n.props?.padding)
+const padBottom = (n: Node) => num(n.props?.paddingBottom ?? n.props?.paddingY ?? n.props?.padding)
+const textOf = (n: Node): string =>
+  (n.children ?? []).map(k => (typeof k === 'string' ? k : typeof k === 'object' && k ? textOf(k as Node) : '')).join('')
 const hasContent = (n: Node): boolean =>
-  !isAbsolute(n) &&
-  (n.type !== 'Box' || kidsOf(n).some(hasContent) || (n.children ?? []).some(k => typeof k === 'string'))
+  !isAbsolute(n) && (n.type === 'Box' ? kidsOf(n).some(hasContent) : n.type !== 'Text' || textOf(n) !== '')
+const takesSpace = (n: Node) =>
+  hasContent(n) || num(n.props?.height) > 0 || above(n) + below(n) + padTop(n) + padBottom(n) > 0
 
 function partOf(n: Node, title: string, typing: boolean): RowPart | null {
   const key = keyOf(n)
@@ -185,55 +188,53 @@ function partOf(n: Node, title: string, typing: boolean): RowPart | null {
 }
 
 function drawnSpaces(row: Node, title: string, typing: boolean, unit: number): string[] {
-  const parents = new Map<Node, Node>()
-  const walk = (n: Node) => kidsOf(n).forEach(k => (parents.set(k, n), walk(k)))
-  walk(row)
-  const marked: Node[] = []
-  const mark = (n: Node) => {
+  const hasPart = (n: Node): boolean => partOf(n, title, typing) !== null || kidsOf(n).some(hasPart)
+  const out: string[] = []
+  const parts: { part: RowPart; node: Node }[] = []
+  let owner: Node | null = null
+  let ownerPart: RowPart | null = null
+  let space = 0
+  const shown = (n: Node) => {
+    const at = parts.at(-1)
+    if (!at) out.push(`${keyOf(n) || n.type} outside any part, after ${ownerPart}`)
+    else if (at.node !== owner) {
+      if (ownerPart) out.push(`${ownerPart} ${at.part} ${space * unit}`)
+      owner = at.node
+      ownerPart = at.part
+    }
+    space = 0
+  }
+  const visit = (n: Node) => {
     if (isAbsolute(n)) return
     const part = partOf(n, title, typing)
-    if (part && marked.every(m => partOf(m, title, typing) !== part || !isInside(n, m))) marked.push(n)
-    kidsOf(n).forEach(mark)
-  }
-  const isInside = (n: Node, outer: Node): boolean =>
-    n === outer || (parents.has(n) && isInside(parents.get(n)!, outer))
-  mark(row)
-  const partAround = (n: Node): RowPart | null => {
-    for (let at: Node | undefined = n; at; at = parents.get(at)) {
-      const part = partOf(at, title, typing)
-      if (part) return part
+    const isNewPart = part !== null && parts.at(-1)?.part !== part
+    if (isNewPart) parts.push({ part, node: n })
+    space += above(n)
+    if (n.type !== 'Box') {
+      if (hasContent(n)) shown(n)
+    } else if (!hasContent(n)) space += Math.max(num(n.props?.height), padTop(n) + padBottom(n))
+    else if (isRow(n)) {
+      const inner = kidsOf(n).find(hasPart)
+      space += padTop(n)
+      if (inner) visit(inner)
+      else shown(n)
+      space += padBottom(n)
+    } else {
+      space += padTop(n)
+      kidsOf(n)
+        .filter(k => !isAbsolute(k) && takesSpace(k))
+        .forEach((k, i) => {
+          if (i > 0) space += num(n.props?.rowGap ?? n.props?.gap)
+          visit(k)
+        })
+      space += padBottom(n)
     }
-    const inner = marked.filter(m => isInside(m, n)).at(-1)
-
-    return inner ? partOf(inner, title, typing) : null
+    space += below(n)
+    if (isNewPart) parts.pop()
   }
+  visit(row)
 
-  return marked.slice(1).map(node => {
-    let space = above(node)
-    let at = node
-    for (;;) {
-      const parent = parents.get(at)
-      if (!parent) return `none ${partOf(node, title, typing)} ${space * unit}`
-      const flow = kidsOf(parent).filter(hasContent)
-      const index = flow.indexOf(at)
-      if (isRow(parent) || index <= 0) {
-        space += padTop(parent) + above(parent)
-        at = parent
-        continue
-      }
-      space += num(parent.props.rowGap)
-      let prev = flow[index - 1]!
-      space += below(prev) + padBottom(prev)
-      while (!isRow(prev) && prev.type === 'Box' && !partOf(prev, title, typing)) {
-        const last = kidsOf(prev).filter(hasContent).at(-1)
-        if (!last) break
-        prev = last
-        space += below(prev) + padBottom(prev)
-      }
-
-      return `${partAround(prev)} ${partOf(node, title, typing)} ${space * unit}`
-    }
-  })
+  return out
 }
 
 const sessions = (['question', 'task', 'finding'] as const).flatMap(kind => {
