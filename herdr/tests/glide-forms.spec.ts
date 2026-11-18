@@ -57,6 +57,14 @@ test('the empty Status page’s goal field opens and closes with no jump, and cu
   }
 })
 
+test('a first draw with the empty Status page’s goal field already open shows Set and Cancel at once', () => {
+  const buttons = framesOf([[0, emptyStatus('goal')]], 0).fading.filter(f => f.id === 'buttons goal')
+  expect({ isDrawn: buttons.length > 0, hidden: buttons.filter(f => f.opacity < 1) }).toEqual({
+    isDrawn: true,
+    hidden: [],
+  })
+})
+
 function sendingOn(open: Block[]): Block[] {
   const out = {
     pressId: 'p5',

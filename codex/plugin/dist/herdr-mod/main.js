@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T10:20:23.640Z. 299069 characters follow.
+// Built at 2026-11-18T10:26:11.582Z. 299137 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -6139,14 +6139,15 @@ function spacedEls(blocks, p, el) {
 
 // src/paint-empty.ts
 function emptyEl(b, p, isInert) {
-  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(fitEl(`${b.id} content`, p, emptyContentEl(b, p, isInert)));
+  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(fitEl(contentKey(b), p, emptyContentEl(b, p, isInert)));
 }
+var contentKey = (b) => `${b.id} content`;
 function controlsEl(b, p, isInert) {
   const key = `${b.id} field`;
   const field = b.under?.field ?? null;
   const buttons = b.under?.buttons ?? [];
   const height = p.heights.get(key) ?? 0;
-  const opening = { isOpen: height > 0, height };
+  const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), height };
   const fieldBox = field ? div6().w_full().pt(CONTROL_GAP).child(fieldEl(field, p, 0, isInert, opening)) : div6();
   return v_flex3().w_full().items_center().child(sizeEl(key, p, fieldBox).w_full()).when(buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(buttons.map((x) => buttonEl(x, p, isInert)))));
 }
