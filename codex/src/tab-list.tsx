@@ -214,7 +214,6 @@ export function ListRow({
       </span>
     ) : null
   const isSideSplit = closed !== null && closed.side !== drawn.side
-  // An opening or closing row also draws its title clamped, as the closed row does, over its full title.
   const isTitleMoving = isClosing || (track.hasPanel && track.state === 'opening')
   const textParts = () => (
     <>
