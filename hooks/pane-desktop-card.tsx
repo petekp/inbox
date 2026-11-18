@@ -87,13 +87,14 @@ export function paneDesktopCard({
       ...(armAt === undefined ? {} : { armAt }),
     })
   /** The space above a frame's first part, under the title or the frame above it. */
-  const spaceAbove = (above: AskEntry[] | undefined, below: AskEntry[]) =>
-    partSpace(above?.at(-1)?.part ?? 'title', below[0]!.part)
+  const spaceAbove = (above: AskEntry[] | undefined, below: AskEntry[], top: RowPart) =>
+    partSpace(above?.at(-1)?.part ?? top, below[0]!.part)
 
   return ({
     row,
     entries,
     title,
+    body,
     status,
     keys,
     gapY,
@@ -101,10 +102,13 @@ export function paneDesktopCard({
     row: Row
     entries: AskEntry[]
     title: JSX.Element
+    /** The row's body under its title, and the part it ends with. */
+    body: { node: JSX.Element; end: RowPart } | null
     status: { text: string; color: string | undefined }[]
     keys: JSX.Element
     gapY: number
   }) => {
+    const top = body?.end ?? 'title'
     const groups = entries.reduce<AskEntry[][]>(
       (all, en) => (isJoined(en) ? [...all.slice(0, -1), [...all.at(-1)!, en]] : [...all, [en]]),
       [],
@@ -132,13 +136,21 @@ export function paneDesktopCard({
             mark: gutterMark(row),
             side: <Text color={pal.age}>{sideAge(row)}</Text>,
             tree: treeBox(`row-${row.id}-trunk`, 'down', 0),
-            children: [title, row.subtitle ?? null],
+            children: [
+              title,
+              row.subtitle ?? null,
+              body ? (
+                <Box key="detail" marginTop={partSpace('title', 'detail')}>
+                  {body.node}
+                </Box>
+              ) : null,
+            ],
           })}
           {groups.map((group, n) => {
             // Two frames split the space between them, so the tree's piece in each reaches the other's.
-            const above = spaceAbove(groups[n - 1], group)
+            const above = spaceAbove(groups[n - 1], group, top)
             const padY = n > 0 ? above / 2 : above
-            const padBelow = n < groups.length - 1 ? spaceAbove(group, groups[n + 1]!) / 2 : 0
+            const padBelow = n < groups.length - 1 ? spaceAbove(group, groups[n + 1]!, top) / 2 : 0
             const { pos } = group[0]!
             const shape = pos === 'mid' || pos === 'last' || pos === 'pass' ? pos : null
 
@@ -171,7 +183,7 @@ export function paneDesktopCard({
                 <Box
                   key="status"
                   flexDirection="column"
-                  marginTop={partSpace(entries.at(-1)?.part ?? 'title', 'status')}
+                  marginTop={partSpace(entries.at(-1)?.part ?? top, 'status')}
                 >
                   {status.map(st => (
                     <Text color={st.color} wrap="wrap">

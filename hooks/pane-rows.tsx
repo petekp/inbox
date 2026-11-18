@@ -357,6 +357,7 @@ export function paneRows(
         row,
         entries: treeEntries,
         title: desktopTitle,
+        body: body ? { node: body, end: bodyEnd } : null,
         status,
         keys: keysBlock,
         gapY: selectedGapY,
