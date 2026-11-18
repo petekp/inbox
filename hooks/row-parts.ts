@@ -42,7 +42,7 @@ export type RowPart = (typeof ROW_PARTS)[number]
  * The steps of the scale a gap between two parts takes. `inside` and `list` join two parts into one group, as a title
  * and the line under it, or an answer and its note. `child`, `control` and `item` sit between groups. Every step inside
  * a group is smaller than every step between groups, so space shows what belongs together. Herdr draws every gap at
- its step. The other looks draw some pairs at their own value, and for those the rule can break.
+ * its step. The other looks draw some pairs at their own value, and for those the rule can break.
  */
 export const GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT } as const
 export const BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT } as const
@@ -57,8 +57,8 @@ const STEP_PT: Record<GapStep, number> = { ...GROUP_STEPS, ...BETWEEN_STEPS }
 export type PartForm = 'herdr' | 'codex' | 'desktopCard' | 'desktopFrame'
 
 /**
- * The gap between two parts: the step every form draws, the points a form draws where it differs from the step, and the blank
- * rows the docked terminal draws. omp and the inline terminal draw no blank row inside a row.
+ * The gap between two parts: its step, the points a form draws where it differs from the step, and the blank rows
+ * the docked terminal draws. omp and the inline terminal draw no blank row inside a row.
  */
 export type PartGap = { step: GapStep; forms: Partial<Record<PartForm, number>>; rows: 0 | 1 }
 
@@ -146,7 +146,7 @@ export function partPt(above: RowPart, below: Exclude<RowPart, 'title'>, form: P
   return g.forms[form] ?? STEP_PT[g.step] + (form === 'codex' ? codexTreeExtra(above, below) : 0)
 }
 
-/** The blank rows between two neighboring parts in a look that draws whole rows: none unless it is the docked terminal. */
+/** The blank rows between two neighboring parts in a look drawn in whole rows: none but in the docked terminal. */
 export function partRows(above: RowPart, below: Exclude<RowPart, 'title'>, isDocked: boolean): number {
   return isDocked ? partGap(above, below).rows : 0
 }
