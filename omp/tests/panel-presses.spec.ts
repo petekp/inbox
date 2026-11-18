@@ -189,7 +189,7 @@ test('a reply folds its row to one line with its mark and label, and the selecti
   const { row, screen } = await afterReply()
   const lines = text(screen, onRow(row)).split('\n')
   const at = lines.findIndex(l => l.includes(row.title))
-  expect(lines[at]).toMatch(/❯ .*✓ Replied: go with B/)
+  expect(lines[at]).toMatch(/❯[├└]─ .*✓ Replied: go with B/)
   expect(lines[at + 1]).not.toContain('↵')
 
   const moved = afterHandOff(screen, onRow(row), row.id, NOW)

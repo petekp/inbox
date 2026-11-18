@@ -14,11 +14,11 @@ const NONE = '   '
  * An open ask's Holds up line, context, earlier answer and answers' lines, in that order, as a tree that hangs from the ◆
  * before its title. The arms start under the ◆ and the text starts in the title's column. With no answer line or Holds
  * up, the context draws alone with no tree. Answers the line's `answerRow` lets sit side by side, and that fit the
- * room, share one arm, with the recommendation's reason under them. `pad` is the row's extra indent.
+ * room, share one arm, with the recommendation's reason under them. `at` is the ◆'s column.
  */
 export function askTreeLines(
   line: Line,
-  pad: number,
+  at: number,
   width: number,
   s: Style,
   /** An answer's button as the lines of its cell, given its index among the line's buttons and the room it has. */
@@ -28,7 +28,7 @@ export function askTreeLines(
 ): string[] {
   const row = line.row
   if (!row || row.state.is !== 'open') return []
-  const margin = ' '.repeat(3 + pad)
+  const margin = ' '.repeat(at)
   const room = Math.max(10, width - margin.length - TRUNK.length - 1)
   const branches = line.buttons.flatMap((b, index) => (b.option ? [{ b, index, note: b.option.note }] : []))
   const holdsUp = row.holdsUpLine

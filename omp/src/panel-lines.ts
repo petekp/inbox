@@ -30,10 +30,8 @@ import type { HelpKey, LegendEntry } from '../../hooks/help'
 import type { PanelPress, PanelScreen, PanelUi, Tone } from './panel'
 
 export const AGENT = 'omp'
-/** Where a led line's title, detail and buttons start. */
-export const INDENT = 6
-/** Where a line with no lead starts its title, detail and buttons. */
-export const UNLED_INDENT = INDENT - 3
+/** Cells a lead and the space after it take before a led line's title. */
+export const LEAD_CELLS = 3
 export const STOP_ID = 'stop'
 export const HERDR_ASK_ID = 'herdr-ask'
 
@@ -54,13 +52,21 @@ export type Button = {
 /** What a button draws. A Status button presses nothing the host runs, so it has a face and no `press`. */
 export type ButtonFace = Omit<Button, 'press'>
 
+/**
+ * Where a line sits on the tree that hangs from its group heading's mark, as the terminal's group rows do. `mid` and
+ * `last` rows draw an arm off the trunk, and the trunk runs beside a `mid` row's other lines. `off` lines, such as the
+ * Closed fold, sit in the group under the tree's last row, with no arm.
+ */
+export type TreePlace = 'mid' | 'last' | 'off'
+
 /** `dim` draws the lead as the panel's other muted marks. */
 export type Lead = { text: string; tone: Tone | 'dim' | null }
 
 export type Line = {
   id: string
-  /** Extra indent, for the rows under a PR. */
+  /** Extra indent, for the rows under a PR. A row on a tree takes none: its arm shows where it hangs. */
   depth: number
+  tree?: TreePlace
   /** The mark before the title: ◆ on an open question or task. A Finds row has none, so its title starts in the mark's place. */
   lead: Lead | null
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
@@ -311,6 +317,13 @@ function closedLines(d: ClosedLine): Line {
   }
 }
 
+/** `entries`' rows hung on their group's tree, each on an arm, the last on └─. */
+export function onTree(entries: Entry[]): Entry[] {
+  const last = entries.findLastIndex(e => e.kind === 'row')
+
+  return entries.map((e, n) => (e.kind === 'row' ? { ...e, line: { ...e.line, tree: n === last ? 'last' : 'mid' } } : e))
+}
+
 export function groupEntries(
   g: Group,
   { unfolded, closedAll, optionsShown }: Pick<PanelUi, 'unfolded' | 'closedAll' | 'optionsShown'>,
@@ -320,14 +333,15 @@ export function groupEntries(
   const out: Entry[] = [
     { kind: 'heading', text: g.title, count: waitingCount(g.rows), ...(g.mark ? { mark: g.mark } : {}) },
   ]
-  out.push(...g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row, optionsShown.includes(row.id)) })))
-  if (g.rows.length === 0) out.push({ kind: 'note', text: groupEmptyText(g.title), indent: 3 })
+  out.push(...onTree(g.rows.map((row): Entry => ({ kind: 'row', line: lineOfRow(row, optionsShown.includes(row.id)) }))))
+  if (g.rows.length === 0) out.push({ kind: 'note', text: groupEmptyText(g.title), indent: 4 })
   if (total === 0) return out
   const isUnfolded = unfolded.includes(g.kind)
   out.push({
     kind: 'row',
     line: {
       ...blankLine(foldId(g.kind)),
+      tree: 'off',
       lead: g.isRowLed ? { text: '', tone: null } : null,
       title: `${foldLabel(total)} ${foldGlyph(isUnfolded)}`,
       isDim: true,
@@ -337,7 +351,7 @@ export function groupEntries(
   })
   if (!isUnfolded) return out
   const shown = closedShown(g.closed, settled, closedAll.includes(g.kind))
-  out.push(...shown.map((d): Entry => ({ kind: 'row', line: closedLines(d) })))
+  out.push(...shown.map((d): Entry => ({ kind: 'row', line: { ...closedLines(d), tree: 'off' } })))
   const earlier = earlierLabel(total, shown.length)
   if (earlier)
     out.push({
@@ -345,6 +359,7 @@ export function groupEntries(
       line: {
         ...blankLine(`earlier ${g.kind}`),
         depth: 1,
+        tree: 'off',
         title: earlier,
         isDim: true,
         earlierOf: g.kind,

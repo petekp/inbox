@@ -80,7 +80,7 @@ async function replyThenReopen(panel: ReturnType<typeof open>['panel'], reply: s
   await flush()
   const lines = panel.render(80)
 
-  return lines[lines.findIndex(l => l.includes('Your answer:')) + 1]!.trim()
+  return lines[lines.findIndex(l => l.includes('Your answer:')) + 1]!.replace(/^ │ /, '').trim()
 }
 
 test('a reply typed in the panel reaches the source as a type press, and Reply then opens an empty field', async () => {
@@ -139,7 +139,7 @@ test('a reply draft is in the field of a panel opened after the one that began i
   second.panel.handleInput('t')
   await flush()
   const lines = second.panel.render(80)
-  expect(lines[lines.findIndex(l => l.includes('Your answer:')) + 1]!.trim()).toBe('hi')
+  expect(lines[lines.findIndex(l => l.includes('Your answer:')) + 1]!.replace(/^ │ /, '').trim()).toBe('hi')
 })
 
 test('a reply that was sent leaves no draft for the next panel', async () => {
