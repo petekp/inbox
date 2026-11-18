@@ -37,7 +37,12 @@ function controlsEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boo
   const buttons = b.under?.buttons ?? []
   const height = p.heights.get(key) ?? 0
   const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), height }
-  const fieldBox = field ? div().w_full().pt(CONTROL_GAP).child(fieldEl(field, p, 0, isInert, opening)) : div()
+  const fieldBox = field
+    ? div()
+        .w_full()
+        .pt(CONTROL_GAP)
+        .child(fieldEl(field, p, 0, isInert, opening))
+    : div()
 
   return v_flex()
     .w_full()
