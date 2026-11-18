@@ -39,7 +39,7 @@ When the system asks for reduced motion, every duration is 0, and Undo's fill st
 4. **A settled row leaves.** It fades and its height collapses, 200 ms, and only then is it removed. The rows below slide up.
 5. **The Closed fold opens or closes.** The closed list's height moves. Its chevron switches from right to down at once, with no turn.
 6. **The field opens.** The field and its buttons fade in where the follow-ups were.
-7. **A tab switches.** The new tab's body fades in, 150 ms.
+7. **A tab switches.** The new tab draws at once, since it is a new page with nothing in common with the last one. Only the first page fades in.
 8. **A note or error appears under the tab row.** It fades in.
 
 Only what appears or leaves moves, including rows a poll brings. Hover, press and selection fills and text colors change at once, as a native control's do.

@@ -1,7 +1,12 @@
+/* The first page fades in. A page drawn after a switch draws at once. */
 .banner,
 .empty,
 main {
   transition: opacity var(--page-fade);
+}
+.banner,
+.empty,
+:root:not(.page-switched) main {
   @starting-style {
     opacity: 0;
   }
