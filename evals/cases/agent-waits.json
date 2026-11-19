@@ -1,0 +1,103 @@
+[
+  {
+    "name": "wait-on-coordinator-go-not-new",
+    "about": "A delegate that messages its coordinator and waits for the coordinator's go adds no question for the person.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 3,
+      "card": {
+        "goal": "Add retry to the upload client",
+        "done": [],
+        "now": "Waiting to run the full checks",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "<hc from=\"t1c\">Go. Add the retry with backoff as you proposed, then report back before the full checks.</hc>",
+      "turn": 6,
+      "activity": [
+        "edited src/upload/client.ts",
+        "edited tests/upload-client.test.ts",
+        "ran: npm test -- upload-client",
+        "ran: hc send t1c \"ready for check.sh: retry with backoff in the upload client, focused tests pass\""
+      ],
+      "reply": "The upload client now retries a failed part up to 3 times, with backoff from 200 ms. The focused tests pass, including a new one for a part that fails twice.\n\nI messaged the coordinator that it's ready for check.sh. Once it gives the go, I'll run check.sh, commit, push and open the PR. Waiting for your go."
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "wait-on-coordinator-keeps-person-question",
+    "about": "A delegate that waits on its coordinator's go and also asks the person a real question still adds that question.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 3,
+      "card": {
+        "goal": "Add retry to the upload client",
+        "done": [],
+        "now": "Waiting to run the full checks",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "<hc from=\"t1c\">Go. Add the retry with backoff as you proposed, then report back before the full checks.</hc>",
+      "turn": 6,
+      "activity": [
+        "edited src/upload/client.ts",
+        "edited tests/upload-client.test.ts",
+        "ran: npm test -- upload-client",
+        "ran: hc send t1c \"ready for check.sh: retry with backoff in the upload client, focused tests pass\""
+      ],
+      "reply": "The upload client now retries a failed part up to 3 times, with backoff from 200 ms. The focused tests pass.\n\nI messaged the coordinator that it's ready for check.sh, and I'm waiting for its go.\n\nOne question for you: should a retry also cover a 429 rate-limit answer, or only network errors? I'd go with only network errors, since the server's own limit should stand."
+    },
+    "checks": [
+      {
+        "new": "429|rate",
+        "kind": "question",
+        "rec": "network"
+      },
+      {
+        "added": 1
+      }
+    ]
+  },
+  {
+    "name": "wait-on-person-go-is-question",
+    "about": "A reply that waits on the person's go before it commits and pushes, with no other agent in the turn, asks for that go.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 3,
+      "card": {
+        "goal": "Add retry to the upload client",
+        "done": [],
+        "now": "Waiting to commit",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "add the retry with backoff as you proposed",
+      "turn": 6,
+      "activity": [
+        "edited src/upload/client.ts",
+        "edited tests/upload-client.test.ts",
+        "ran: npm test -- upload-client"
+      ],
+      "reply": "The upload client now retries a failed part up to 3 times, with backoff from 200 ms. The focused tests pass, including a new one for a part that fails twice.\n\nOnce you give the go, I'll commit, push and open the PR. Waiting for your go."
+    },
+    "checks": [
+      {
+        "new": "commit|push|PR|go",
+        "kind": "question"
+      },
+      {
+        "added": 1
+      }
+    ]
+  }
+]
