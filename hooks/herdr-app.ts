@@ -5,7 +5,7 @@ import type { EnvelopeSource } from './herdr'
 import { fileTime, isLookFile, isPressFile, isPrsShownFile, pressFile } from './herdr-press-file'
 import { withCollapse } from './collapse'
 import type { HerdrFile } from './herdr-press-file'
-import { press } from './host-press'
+import { startPress } from './host-press'
 import type { PressHost, PressOutcome } from './host-press'
 import { lookReportedOn } from './session-status'
 import { rowsInPlace } from './session-presses'
@@ -167,10 +167,19 @@ export async function unpublishSession(
 }
 
 /**
- * Applies one press file for `sessionId`: a press, or a look at the Status. False leaves the file for later, as when the
- * host no longer runs that session. A rejection is logged, and the file is removed as for an applied press.
+ * A file a host applied. `waiting` runs what waits for the agent's turn to end: a press's message the host holds until
+ * then, and the opens and copies after it. Null when the file is done.
  */
-export type ApplyPress = (sessionId: string, file: HerdrFile) => Promise<boolean>
+export type StartedFile = { waiting: (() => Promise<unknown>) | null }
+
+const DONE: StartedFile = { waiting: null }
+
+/**
+ * Applies one press file for `sessionId`: a press, or a look at the Status. Resolves once it is done, or once it is
+ * saved with a message that waits for the agent's turn. Null leaves the file for later, as when the host no longer runs
+ * that session. A rejection is logged, and the file is removed as for an applied press.
+ */
+export type ApplyPress = (sessionId: string, file: HerdrFile) => Promise<StartedFile | null>
 
 /** The most characters of a name or reason from a press file that a log line holds. */
 const LOGGED_CHARS = 100
@@ -183,7 +192,9 @@ const logged = (text: string) => clipLabel(text, LOGGED_CHARS)
  * reads a folder only when `owns` says this process runs the session there. Legacy files use a process-specific rename.
  * Version-2 files stay in place until application returns; their saved command admission prevents repeated effects. A
  * file `pressFile` refuses or that cannot be read is logged and removed. One drain of a folder runs at a time, and a
- * drain asked for while one runs runs once more after it, so a press that lands mid-drain is not missed.
+ * drain asked for while one runs runs once more after it, so a press that lands mid-drain is not missed. The drain does
+ * not wait for what a file leaves `waiting`, so a message held until the agent's turn ends holds up no file behind it.
+ * Each folder's waiting messages run one after another, so they reach the agent in press order.
  */
 export function pressDrainer(
   files: PressFiles,
@@ -193,6 +204,14 @@ export function pressDrainer(
 ): (appHome: string, sessionId: string) => Promise<void> {
   const takenMark = `.${Math.random().toString(36).slice(2)}.taken`
   const draining = new Map<string, { again: boolean; done: Promise<void> }>()
+  const waitingRuns = new Map<string, Promise<void>>()
+  const runInOrder = (folder: string, waiting: () => Promise<unknown>, onError: (err: unknown) => void) => {
+    const next = (waitingRuns.get(folder) ?? Promise.resolve()).then(waiting).then(() => undefined, onError)
+    waitingRuns.set(folder, next)
+    void next.then(() => {
+      if (waitingRuns.get(folder) === next) waitingRuns.delete(folder)
+    })
+  }
 
   const drainOnce = async (folder: string, sessionId: string) => {
     const names = [...(await files.list(folder).catch(() => []))].filter(name => name.endsWith('.json')).sort()
@@ -223,12 +242,14 @@ export function pressDrainer(
         await files.remove(taken).catch(() => undefined)
       }
     }
+    const failed = (file: HerdrFile) => (err: unknown) => log(`Herdr press ${logged(file.id)} failed: ${message(err)}`)
     for (const { path, taken, file } of waiting.sort((a, b) => fileTime(a.file) - fileTime(b.file))) {
-      const isTaken = await apply(sessionId, file).catch((err: unknown) => {
-        log(`Herdr press ${logged(file.id)} failed: ${message(err)}`)
-        return file.format !== 2
+      const started = await apply(sessionId, file).catch((err: unknown) => {
+        failed(file)(err)
+        return file.format === 2 ? null : DONE
       })
-      if (isTaken) {
+      if (started) {
+        if (started.waiting) runInOrder(folder, started.waiting, failed(file))
         await files
           .remove(taken)
           .catch((err: unknown) => log(`Herdr press ${logged(file.id)} not removed: ${message(err)}`))
@@ -299,21 +320,36 @@ const LOOK_OUTCOME: PressOutcome = {
 }
 
 /**
+ * A file the Herdr look wrote, applied: done with its outcome, or saved with a message the host holds until the agent's
+ * turn ends, which `finish` sends before the press's opens and copies.
+ */
+type StartedHerdrFile = { is: 'done'; outcome: PressOutcome } | { is: 'waiting'; finish(): Promise<PressOutcome> }
+
+const finished = (outcome: PressOutcome): StartedHerdrFile => ({ is: 'done', outcome })
+
+/** A host's `StartedFile` for a started Herdr file, which runs `after` with the press's outcome once it is known. */
+export const startedFile = (started: StartedHerdrFile, after: (outcome: PressOutcome) => void): StartedFile => {
+  if (started.is === 'waiting') return { waiting: async () => after(await started.finish()) }
+  after(started.outcome)
+  return DONE
+}
+
+/**
  * Applies a file the Herdr look wrote. A look at the Status counts as `lookReportedOn` counts it, a collapse is
  * saved as `withCollapse` saves it, and a report that the look shows the PRs tab makes the host read the session's PRs
- * if they are due. A press is applied,
- * then saved as the session's `lastHerdrPress`, so the next publish tells the look the outcome even when the press
- * changed nothing. When the look ran the press's opens and copies, `perform` answers with their result instead of
- * running them again.
+ * if they are due. A press is applied, then named as the session's `lastHerdrPress`, so the next publish tells the look
+ * the outcome even when the press changed nothing. When the look ran the press's opens and copies, `perform` answers
+ * with their result instead of running them again. A message the host holds until the agent's turn ends is saved as
+ * queued, which is its row's outcome until then: that press is named once saved, and waits to run.
  */
-export async function applyHerdrFile<S extends Session>(
+export async function startHerdrFile<S extends Session>(
   host: PressHost<S>,
   file: HerdrFile,
   sessionId = '',
-): Promise<PressOutcome> {
+): Promise<StartedHerdrFile> {
   if (file.format === 2) {
-    if (file.kind === 'command') return applyRemoteCommand(host, file, sessionId)
-    if (file.session !== sessionId) return LOOK_OUTCOME
+    if (file.kind === 'command') return finished(await applyRemoteCommand(host, file, sessionId))
+    if (file.session !== sessionId) return finished(LOOK_OUTCOME)
     const now = await host.now()
     let refresh = false
     await host.update(s => {
@@ -343,30 +379,51 @@ export async function applyHerdrFile<S extends Session>(
       return next
     })
     if (refresh) await host.refreshPrsIfDue?.()
-    return LOOK_OUTCOME
+    return finished(LOOK_OUTCOME)
   }
   if (isLookFile(file)) {
     await host.update(s => lookReportedOn(s, file.look))
-    return LOOK_OUTCOME
+    return finished(LOOK_OUTCOME)
   }
   if (isPrsShownFile(file)) {
     await host.refreshPrsIfDue?.()
-    return LOOK_OUTCOME
+    return finished(LOOK_OUTCOME)
   }
   if (!isPressFile(file)) {
     const { row, isCollapsed, at } = file.collapse
     await host.update(s => withCollapse(s, row, isCollapsed, at))
-    return LOOK_OUTCOME
+    return finished(LOOK_OUTCOME)
   }
   const { result } = file
-  const outcome = await press(
+  const started = await startPress(
     result ? { ...host, perform: async () => result.error } : host,
     file.press,
     false,
     file.holds,
   )
-  const lastHerdrPress = { id: file.id, outcome: outcome.note === 'stale' ? 'stale' : 'applied' } as const
-  await host.update(s => ({ ...s, lastHerdrPress }))
+  const saveLast = (outcome: PressOutcome | null) =>
+    host.update(s => ({
+      ...s,
+      lastHerdrPress: { id: file.id, outcome: outcome?.note === 'stale' ? 'stale' : 'applied' } as const,
+    }))
+  const isQueuedOnSave =
+    host.isDeliveryHeldUntilRun === true && (started.effects?.some(e => e.kind === 'send') ?? false)
+  if (!isQueuedOnSave) {
+    const outcome = await started.finish()
+    await saveLast(outcome)
+    return finished(outcome)
+  }
+  const lastUnsaved = await saveLast(null).then(
+    () => null,
+    (err: unknown) => err,
+  )
 
-  return outcome
+  return {
+    is: 'waiting',
+    finish: async () => {
+      const outcome = await started.finish()
+      if (lastUnsaved !== null) throw lastUnsaved
+      return outcome
+    },
+  }
 }

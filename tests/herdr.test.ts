@@ -5,7 +5,7 @@ import type { Run } from '../hooks/gh'
 import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrReporter, herdrTarget } from '../hooks/herdr'
 import { pressFile } from '../hooks/herdr-press-file'
 import type { EnvelopeSource } from '../hooks/herdr'
-import { applyHerdrFile, publishSession } from '../hooks/herdr-app'
+import { publishSession, startHerdrFile } from '../hooks/herdr-app'
 import type { PublishFiles } from '../hooks/herdr-app'
 import type { PressHost } from '../hooks/host-press'
 import type { Session } from '../types'
@@ -225,7 +225,7 @@ describe('a report that the Herdr look shows the PRs tab', () => {
     const file = pressFile(JSON.stringify(REPORT))
     if (!file.ok) throw new Error(file.reason)
 
-    await applyHerdrFile(host, file.file, 's1')
+    await startHerdrFile(host, file.file, 's1')
 
     expect([refreshes, updates]).toEqual([1, 0])
   })

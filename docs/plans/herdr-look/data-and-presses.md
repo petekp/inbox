@@ -92,7 +92,7 @@ Some presses only open or copy something, with no message to the agent: Open a l
 - **Open a file:** in the person's editor, as the other looks do, or in a Herdr pane beside the agent. Herdr ships a `files` mod, but whether it opens one file from props is not checked.
 - **Copy:** GPUI's clipboard write.
 
-The host still records the press's last action, such as "✓ Opened plan.md", so it shows after a reload and in every look. The press file carries the mod's result as `result: { error }`, where `error` is null for a success. When `result` is present, the host's `perform` returns it instead of opening or copying a second time. When it is absent, the host opens or copies as for any other look. `hooks/herdr-app.ts:applyHerdrFile` does this for every host. Codex's own copy does nothing, because its tab copies, so the look always sends `result` for a Copy.
+The host still records the press's last action, such as "✓ Opened plan.md", so it shows after a reload and in every look. The press file carries the mod's result as `result: { error }`, where `error` is null for a success. When `result` is present, the host's `perform` returns it instead of opening or copying a second time. When it is absent, the host opens or copies as for any other look. `hooks/herdr-app.ts:startHerdrFile` does this for every host. Codex's own copy does nothing, because its tab copies, so the look always sends `result` for a Copy.
 
 ## Looks at the Status
 
@@ -104,7 +104,7 @@ A host counts a subject as seen once a look at the Status showed its row after t
 
 `shown` gives, for each subject, when its row was last on screen during the look. A look file has no `press` and no `pressedAt`, so a host that predates it refuses it as `no pressedAt`, logs one line and deletes it.
 
-Each host applies it with the shared `hooks/herdr-app.ts:applyHerdrFile`, which calls `hooks/status-children.ts:lookReported`:
+Each host applies it with the shared `hooks/herdr-app.ts:startHerdrFile`, which calls `hooks/status-children.ts:lookReported`:
 
 - A look shorter than `LOOK_MIN_MS` counts nothing, as for every look.
 - A look that ended after the last look counts as `lookEnded` counts it. A subject counts as seen when `shown` says its row was on screen after it last changed.

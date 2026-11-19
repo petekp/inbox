@@ -2,12 +2,16 @@ import type { Timer } from 'claude-code'
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import type { EnvelopeSource } from '../hooks/herdr'
-import { pressDrainer, publishedText, PUBLISH_LIMIT_BYTES } from '../hooks/herdr-app'
+import { pressDrainer, publishedText, PUBLISH_LIMIT_BYTES, startedFile, startHerdrFile } from '../hooks/herdr-app'
 import type { PressFiles } from '../hooks/herdr-app'
 import { listenForHerdrPresses } from '../hooks/mod-herdr'
 import type { HerdrCalls } from '../hooks/mod-herdr'
+import { CLAUDE_CODE } from '../hooks/model-text'
 import { emptySession } from '../hooks/session-files'
-import type { Closed } from '../types'
+import { recorded } from '../hooks/session-presses'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
+import type { Closed, Session } from '../types'
+import { fakeHost } from './session-fake-host'
 
 const SOURCE: EnvelopeSource = { host: 'omp', agent: 'omp', sessionId: 's1', terminal: 't1', writtenAt: 5 }
 
@@ -66,6 +70,7 @@ describe('pressDrainer', () => {
   const pressText = (id: string, pressedAt: number, action = 'done') =>
     JSON.stringify({ format: 1, id, pressedAt, press: { action, id: `i-${id}` }, holds: HOLDS })
   const owned = async () => true
+  const DONE = { waiting: null }
 
   function folder(files: Record<string, string>, unreadable: string[] = []): PressFiles {
     return {
@@ -102,7 +107,7 @@ describe('pressDrainer', () => {
       owned,
       async (_id, file) => {
         applied.push(file.id)
-        return true
+        return DONE
       },
       text => logged.push(text),
     )
@@ -134,7 +139,7 @@ describe('pressDrainer', () => {
       owned,
       async (_id, file) => {
         applied.push(file.id)
-        return true
+        return DONE
       },
       text => logged.push(text),
     )
@@ -155,7 +160,7 @@ describe('pressDrainer', () => {
       owned,
       async (_id, file) => {
         if (isTaking) applied.push(file.id)
-        return isTaking
+        return isTaking ? DONE : null
       },
       () => undefined,
     )
@@ -182,7 +187,7 @@ describe('pressDrainer', () => {
         owned,
         async (_id, file) => {
           applied.push(file.id)
-          return true
+          return DONE
         },
         () => undefined,
       )
@@ -193,12 +198,94 @@ describe('pressDrainer', () => {
     expect(files).toEqual({})
   })
 
+  const settled = async () => {
+    for (let i = 0; i < 200; i++) await Promise.resolve()
+  }
+
+  async function pressesDuringTurn(isDeliveryHeldUntilRun: boolean) {
+    let endTurn = () => {}
+    const turnEnds = new Promise<void>(resolve => {
+      endTurn = resolve
+    })
+    const delivered: string[] = []
+    const host = {
+      ...fakeHost(async () => null).host,
+      isDeliveryHeldUntilRun,
+      deliver: async (_s: Session, text: string) => {
+        delivered.push(text)
+        await turnEnds
+        return { state: 'accepted' as const, queuedId: null }
+      },
+    }
+    for (const ask of ['Sign in to npm', 'Rotate the key'])
+      await host.update(s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask }, 1, TOOL_FIELDS).state)
+    const rows = (await host.read()).ledger.items.map(i => i.id)
+    const files: Record<string, string> = {}
+    let pressedAt = 0
+    const pressRow = (id: string, action: 'explain' | 'discuss', row: number) => {
+      pressedAt += 10
+      files[`${dir}/${id}.json`] = JSON.stringify({
+        format: 1,
+        id,
+        pressedAt,
+        press: { action, id: rows[row - 1] },
+        holds: HOLDS,
+      })
+    }
+    const drain = pressDrainer(
+      folder(files),
+      owned,
+      async (id, file) => startedFile(await startHerdrFile(host, file, id), () => undefined),
+      () => undefined,
+    )
+    const isDrained = (draining = drain('/app', 's1')) =>
+      Promise.race([draining.then(() => true), settled().then(() => false)])
+    const lastPress = async () => (await host.read()).lastHerdrPress?.id
+
+    return { delivered, endTurn, files, pressRow, drain, isDrained, lastPress }
+  }
+
+  test('a press whose message waits for the agent’s turn is named at once, and the presses after it apply meanwhile and send in order', async () => {
+    const turn = await pressesDuringTurn(true)
+    turn.pressRow('p1', 'explain', 1)
+    expect(await turn.isDrained()).toBe(true)
+    expect(await turn.lastPress()).toBe('p1')
+
+    turn.pressRow('p2', 'discuss', 2)
+    expect(await turn.isDrained()).toBe(true)
+    expect(await turn.lastPress()).toBe('p2')
+
+    turn.pressRow('p3', 'explain', 2)
+    expect(await turn.isDrained()).toBe(true)
+    await settled()
+    expect([await turn.lastPress(), turn.delivered.length, turn.files]).toEqual(['p3', 1, {}])
+
+    turn.endTurn()
+    await settled()
+    expect([await turn.lastPress(), turn.delivered.map(text => text.includes('Sign in to npm'))]).toEqual([
+      'p3',
+      [true, false],
+    ])
+  })
+
+  test('a press whose message the host confirms is applied in the drain and named once the message is delivered', async () => {
+    const turn = await pressesDuringTurn(false)
+    turn.pressRow('p1', 'explain', 1)
+    const draining = turn.drain('/app', 's1')
+    expect(await turn.isDrained(draining)).toBe(false)
+    expect([await turn.lastPress(), turn.delivered.length]).toEqual([undefined, 1])
+
+    turn.endTurn()
+    await draining
+    expect([await turn.lastPress(), turn.files]).toEqual(['p1', {}])
+  })
+
   test('a folder whose session this process does not run is left as it is', async () => {
     const files: Record<string, string> = { [`${dir}/a.json`]: pressText('p1', 10) }
     const drain = pressDrainer(
       folder(files),
       async () => false,
-      async () => true,
+      async () => DONE,
       () => undefined,
     )
 
@@ -277,7 +364,7 @@ describe('listenForHerdrPresses', () => {
     const stop = await listenForHerdrPresses(
       c,
       () => 's1',
-      async () => false,
+      async () => null,
     )
     await settle()
     expect(reads).toHaveLength(1)
@@ -309,7 +396,7 @@ describe('listenForHerdrPresses', () => {
     const stop = await listenForHerdrPresses(
       c,
       () => 's1',
-      async () => false,
+      async () => null,
     )
     empty.end()
     await settle()
@@ -323,7 +410,7 @@ describe('listenForHerdrPresses', () => {
     await listenForHerdrPresses(
       c,
       () => 's1',
-      async () => false,
+      async () => null,
     )
     await settle()
 

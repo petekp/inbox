@@ -16,6 +16,8 @@ import type { RemoteCommand } from '../../hooks/remote-commands'
 import { NO_HOLDS } from '../../hooks/timing'
 import { tempDir, removeTempDir } from './helpers'
 
+const DONE = { waiting: null }
+
 const HOLDS = { replies: {}, discarded: {}, shownSince: null }
 
 function writePress(appHome: string, sessionId: string, id: string) {
@@ -54,6 +56,7 @@ test("the server applies presses for this terminal's Codex sessions, at start an
     { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' },
     async (sessionId: string, file: HerdrFile) => {
       applied.push([sessionId, file.id])
+      return DONE
     },
     () => undefined,
   )
@@ -87,6 +90,7 @@ test('a press folder named outside the session-id rule, or a press file too larg
     { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' },
     async (_sessionId: string, file: HerdrFile) => {
       applied.push(file.id)
+      return DONE
     },
     text => logged.push(text),
   )
@@ -103,7 +107,7 @@ test('outside an app terminal the server follows no presses', () => {
   assert.equal(
     followCodexPresses(
       { HERDR_PANE_ID: 'p1' },
-      async () => undefined,
+      async () => DONE,
       () => undefined,
     ),
     null,
@@ -148,7 +152,7 @@ test("a press the look ran itself records the look's result, and each look press
     tabHtml: '<html></html>',
     fallbackCli: async () => 'codex',
     followHerdrPresses: given => {
-      apply = given
+      apply = async (id, file) => void (await (await given(id, file)).waiting?.())
     },
   })
   const look = (id: string, press: PressFile['press'], result?: PressFile['result']): PressFile => ({
@@ -197,7 +201,7 @@ test('a look file the Herdr look wrote counts the Status subjects it showed as s
     tabHtml: '<html></html>',
     fallbackCli: async () => 'codex',
     followHerdrPresses: given => {
-      apply = given
+      apply = async (id, file) => void (await (await given(id, file)).waiting?.())
     },
   })
 
@@ -291,7 +295,7 @@ test('a remote typed reply retains its outcome and does not queue twice after th
       tabHtml: '<html></html>',
       fallbackCli: async () => 'codex',
       followHerdrPresses: given => {
-        apply = given
+        apply = async (id, file) => void (await (await given(id, file)).waiting?.())
       },
     })
     return (file: HerdrFile) => apply!('remote-session', file)

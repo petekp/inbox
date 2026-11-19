@@ -98,7 +98,8 @@ import {
 import { ghIn } from './gh'
 import { isGhUnstartable, pathProbe, placeChange, runOf, sessionFolder } from './mod-commands'
 import type { HerdrFile } from './herdr-press-file'
-import { applyHerdrFile } from './herdr-app'
+import { startedFile, startHerdrFile } from './herdr-app'
+import type { StartedFile } from './herdr-app'
 import {
   delegatesAsked,
   followDelegates as followHerdrDelegates,
@@ -415,16 +416,14 @@ function publishStatus($: EngineInterface, isEnding = false, isExit = false): Pr
   )
 }
 
-/** Applies a Herdr look's press. False when it is for another conversation. */
-async function herdrPress($: EngineInterface, id: string, f: HerdrFile): Promise<boolean> {
-  if (id !== conversation.id) return false
-  if (
-    (await applyHerdrFile({ ...hostOf($, currentOwner(), 'terminal'), refreshPrsIfDue: () => pollPrs($, true) }, f, id))
-      .wakesAfterSettle
-  )
-    later($, SETTLED_MS, () => wakeAfterSettle($))
+/** Applies a Herdr look's press, and gives what waits for the agent's turn. Null when it is for another conversation. */
+async function herdrPress($: EngineInterface, id: string, f: HerdrFile): Promise<StartedFile | null> {
+  if (id !== conversation.id) return null
+  const host = { ...hostOf($, currentOwner(), 'terminal'), refreshPrsIfDue: () => pollPrs($, true) }
 
-  return true
+  return startedFile(await startHerdrFile(host, f, id), outcome => {
+    if (outcome.wakesAfterSettle) later($, SETTLED_MS, () => wakeAfterSettle($))
+  })
 }
 
 async function setStop($: EngineInterface, stop: Stop | null) {

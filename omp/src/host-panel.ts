@@ -1,7 +1,8 @@
 import { version } from '../package.json'
 
 import type { PrPress } from '../../hooks/pr-press'
-import { applyHerdrFile } from '../../hooks/herdr-app'
+import { startedFile, startHerdrFile } from '../../hooks/herdr-app'
+import type { StartedFile } from '../../hooks/herdr-app'
 import type { HerdrFile } from '../../hooks/herdr-press-file'
 import type { RowPress } from '../../hooks/presses'
 import { lookEndedOn, withLook } from '../../hooks/session-status'
@@ -50,8 +51,11 @@ export type Inbox = {
   onChange(ctx: OmpContext, listener: () => void): () => void
   /** Applies a press for the session. */
   press(ctx: OmpContext, p: RowPress | PrPress, holds: Holds): Promise<PressOutcome>
-  /** Applies a file the Herdr look wrote: a press, whose opens and copies it may have run, or a look at the Status. */
-  herdrFile(ctx: OmpContext, file: HerdrFile): Promise<void>
+  /**
+   * Applies a file the Herdr look wrote: a press, whose opens and copies it may have run, or a look at the Status. Gives
+   * what waits for the agent's turn to end.
+   */
+  herdrFile(ctx: OmpContext, file: HerdrFile): Promise<StartedFile>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(ctx: OmpContext): Promise<string | null>
   /** Saves the row `row` as collapsed or expanded. */
@@ -149,7 +153,9 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       return outcome
     },
     herdrFile: async (ctx, file) => {
-      if ((await applyHerdrFile(hostFor(ctx), file, sessionIdOf(ctx))).wakesAfterSettle) wakeLater(ctx)
+      return startedFile(await startHerdrFile(hostFor(ctx), file, sessionIdOf(ctx)), outcome => {
+        if (outcome.wakesAfterSettle) wakeLater(ctx)
+      })
     },
     resume: ctx => sendToAgent(ctx, RESUME_TEXT),
     collapse: async (ctx, row, isCollapsed) => {

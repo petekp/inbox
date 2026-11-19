@@ -11,7 +11,7 @@ import { startInHerdrApp } from '../../hooks/herdr-start'
 import type { SweepFiles } from '../../hooks/herdr-sweep'
 import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
-import type { PressFiles } from '../../hooks/herdr-app'
+import type { PressFiles, StartedFile } from '../../hooks/herdr-app'
 import { isSessionFile } from '../../hooks/session-files'
 
 const pressFiles: PressFiles = {
@@ -91,7 +91,7 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
  */
 export function followCodexPresses(
   env: NodeJS.ProcessEnv,
-  apply: (sessionId: string, file: HerdrFile) => Promise<void>,
+  apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>,
   log: (text: string) => void,
 ): (() => void) | null {
   const target = herdrTarget(env)
@@ -102,10 +102,7 @@ export function followCodexPresses(
   const drain = pressDrainer(
     pressFiles,
     id => isPublishedHere(path => readFile(path, 'utf8'), appHome, id, 'codex', terminal),
-    async (id, file) => {
-      await apply(id, file)
-      return true
-    },
+    apply,
     log,
   )
   const drainAll = async () => {
