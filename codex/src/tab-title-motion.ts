@@ -2,7 +2,6 @@ import { titleSwapMs } from '../../hooks/row-motion'
 import { FRAME_MS } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
 import { fade, fadeShown, glide, glides, isRunning, springOf, stopFadeOut } from './tab-glide'
-import { atEndWeight, weightEasesOf } from './weight-ease'
 
 /**
  * A row's line. While the row opens or closes it is a block that draws the title, wrapped as the open row's is, with
@@ -31,8 +30,6 @@ function swapTitle({ full, short }: { full: HTMLElement; short: HTMLElement }, i
   fade(short, isOpen ? 1 : 0, isOpen ? 0 : 1, 0, true, false, delay)
 }
 
-const heightOf = (el: HTMLElement) => atEndWeight(el, () => el.getBoundingClientRect().height)
-
 /**
  * Starts an opening row's title move, after `delay` ms. The line grows from the closed title's height to the open
  * title's, with the title in its closed form, and the open form takes its place once the line comes to rest
@@ -44,8 +41,8 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
   const title = line && titleOf(line)
   if (!line || !title) return
   glides.get(line)?.anim.cancel()
-  const to = heightOf(line)
-  const from: SpringState = held ?? { x: Math.min(heightOf(title.short), to), v: 0 }
+  const to = line.getBoundingClientRect().height
+  const from: SpringState = held ?? { x: Math.min(title.short.getBoundingClientRect().height, to), v: 0 }
   if (to - from.x < 0.5 && Math.abs(from.v) * FRAME_MS < 0.5) {
     if (fadeShown(title.full) !== null) swapTitle(title, true, 0)
     return
@@ -61,7 +58,7 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
  */
 export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
   const title = titleOf(line)
-  const end = title ? Math.max(to, heightOf(title.short)) : to
+  const end = title ? Math.max(to, title.short.getBoundingClientRect().height) : to
   if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null)) swapTitle(title, false, 0)
   glide(line, 'height', from, end, true, false, delay)
 }
@@ -75,24 +72,13 @@ export function closeTitle(line: HTMLElement, from: SpringState, to: number, del
 export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | null {
   const line = el.querySelector<HTMLElement>(LINE)
   const full = line && fullOf(line)
-  if (full && !isOpening) showClosedTitle(full)
+  if (full && !isOpening) stopFadeOut(full)
   const was = line && glides.get(line)
   if (!line || !was || was.anim.playState === 'idle') return null
   const held = springOf(line, line.getBoundingClientRect().height)
   was.anim.cancel()
 
   return isOpening ? held : null
-}
-
-/**
- * Shows the full title a close hid. The clamped title shown in its place already drew the closed weight, so a title
- * that was hidden takes that weight at once: easing it from the open weight would wrap a heavy title onto a line the
- * closed row does not keep. A title that stayed shown eases.
- */
-function showClosedTitle(full: HTMLElement) {
-  const wasHidden = (fadeShown(full) ?? 1) < 0.5
-  stopFadeOut(full)
-  if (wasHidden) weightEasesOf(full).forEach(a => a.finish())
 }
 
 /** Runs `measure` with every line glide inside `el` at its end, then puts each back, so `el` measures its natural height. */

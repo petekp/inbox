@@ -31,11 +31,6 @@ nav {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  font-variation-settings: 'wght' 400;
-  transition: font-variation-settings var(--fade);
-}
-.tab.shown .tab-word {
-  font-variation-settings: 'wght' 600;
 }
 .tab-word::after {
   content: attr(data-label);
@@ -43,7 +38,6 @@ nav {
   overflow: clip;
   visibility: hidden;
   font-weight: 600;
-  font-variation-settings: 'wght' 600;
 }
 .help-tab {
   display: inline-flex;
