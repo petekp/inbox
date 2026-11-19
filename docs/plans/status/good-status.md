@@ -61,7 +61,7 @@ A judge or a rule judges a page against the facts up to that point in the sessio
 The first words the person reads tell them what the session is focused on, in their own terms. The title names that focus in a few words, like a row's name. The line under it says what the session is doing about it. The head stays the same while the work goes on, and changes when the focus moves. When the work is done and nothing follows, the head still names it.
 
 - **Good:** `Offline sync` over `Adding offline sync to the notes app`, unchanged through a lint fix, new tests and a question.
-- **Good:** a coordinator that shipped 2.4 and now runs the sync fix and 2.5 reads `2.5 release` over `Fixing the sync bug, then shipping 2.5`.
+- **Good:** a coordinator that shipped 2.4 and now runs the sync fix and 2.5 reads `2.5 release` over `Fixing the sync bug for 2.5`. The description never adds the work after it, as `then shipping 2.5` would.
 - **Good:** `2.4 release` over `Shipping notes 2.4 to the store`, after 2.4 shipped, when the person asked for nothing more. Its row reads ✓.
 - **Bad:** the same head two hours after 2.4 shipped, while the session works on the sync bug.
 - **Bad:** a coordinator's head names one small stream, such as `Hooks release`, while most of its work is on sync and 2.5.

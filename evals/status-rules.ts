@@ -8,6 +8,7 @@ import { isOpenPiece, rightStatuses } from './status-facts'
 import type { Facts, Piece } from './status-facts'
 import { ASK_RULES } from './status-rules-asks'
 import { GOAL_RULES } from './status-rules-goal'
+import { HEAD_RULES } from './status-rules-head'
 import { HOLD_RULES } from './status-holds'
 import type { Step, StepResult } from './status-replay'
 import {
@@ -465,4 +466,4 @@ const FIXED_RULES: Rule[] = [
   },
 ]
 
-export const RULES: Rule[] = [...FIXED_RULES, ...ASK_RULES, ...GOAL_RULES, ...HOLD_RULES]
+export const RULES: Rule[] = [...FIXED_RULES, ...HEAD_RULES, ...ASK_RULES, ...GOAL_RULES, ...HOLD_RULES]

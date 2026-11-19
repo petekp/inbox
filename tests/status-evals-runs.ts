@@ -23,7 +23,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'coordinator-day': [
     'DONE: s1 | merges edits on reconnect\nDONE: s2 | live in both stores\nDONE: m2 | merges edits on reconnect\nDONE: m3 | live in both stores\nSERVES: s4 | -\nSERVES: s5 | -\nSERVES: s6 | -\nSERVES: s7 | -',
     [
-      'HEAD: Vanishing notes | Fixing the archive bug, then shipping 2.5',
+      'HEAD: Vanishing notes | Fixing the archive bug for 2.5',
       'DONE: s6 | filed for later',
       'DONE: s7 | filed for later',
       'NEW: working | Vanishing notes | cause unknown',
