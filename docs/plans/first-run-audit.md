@@ -1,5 +1,7 @@
 # First-run audit, 2026-11-19
 
+Status: proposed. The doc fixes are built; the code fixes it recommends are not.
+
 This audit followed a new user through their first ten minutes with the inbox in each client. It ranks what stopped or confused them. For each gap it says what changed in the docs, and what still needs a code fix.
 
 ## How it ran
