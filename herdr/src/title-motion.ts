@@ -21,9 +21,9 @@ export type TitleGlide = {
 
 /**
  * How a title draws in this draw while it moves. `isWrapShown` says whether its wrapped form shows, else its one-line
- * form. `isBoxWrapped` says whether its box moves to the wrapped height, else to one line.
+ * form.
  */
-export type TitleMotion = { isWrapShown: boolean; isBoxWrapped: boolean }
+export type TitleMotion = { isWrapShown: boolean }
 
 const wraps = (height: number | undefined): height is number => height !== undefined && height > LINE_PT + 0.5
 
@@ -65,7 +65,7 @@ export function titleMotion(g: TitleGlide | null, now: number): TitleMotion | nu
   if (g === null) return null
   const hasSwapped = g.swapsAt !== null && now >= g.swapsAt
 
-  return { isWrapShown: g.isWrapped === hasSwapped, isBoxWrapped: g.isWrapped }
+  return { isWrapShown: g.isWrapped === hasSwapped }
 }
 
 /** The times a title glide changes how it draws, so the look draws again then. */

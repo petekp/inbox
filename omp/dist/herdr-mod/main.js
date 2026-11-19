@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T05:09:29.177Z. 300106 characters follow.
+// Built at 2026-11-19T05:17:47.947Z. 300029 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5399,7 +5399,7 @@ function titleMotion(g, now) {
   if (g === null)
     return null;
   const hasSwapped = g.swapsAt !== null && now >= g.swapsAt;
-  return { isWrapShown: g.isWrapped === hasSwapped, isBoxWrapped: g.isWrapped };
+  return { isWrapShown: g.isWrapped === hasSwapped };
 }
 var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
 
@@ -6024,8 +6024,7 @@ function fitEl(key, p, el, isPaneSized = false) {
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
 }
 var titleHeightOf = (r, p) => {
-  const m = p.motion.get(r.id);
-  const isWrapped = isOpenRow(r) || m?.isHeightHeld === true || m?.title?.isBoxWrapped === true;
+  const isWrapped = isOpenRow(r) || p.motion.get(r.id)?.isHeightHeld === true;
   return isWrapped ? p.heights.get(titleId(r.id)) : LINE_HEIGHT;
 };
 function titleEl(r, p, el) {
