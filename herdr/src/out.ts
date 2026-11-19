@@ -1,4 +1,4 @@
-import { feedbackText, feedbackTone, type FeedbackTone } from '../../hooks/feedback'
+import { feedbackText, feedbackTone, holdsStatusWhileOut, type FeedbackTone } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
 import { actionId } from '../../hooks/press-labels'
 import { isPressConfirmed } from '../../hooks/press-reducer'
@@ -6,10 +6,9 @@ import { pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import { deliveryLabel } from '../../hooks/rows'
-import { holdsStatusWhileOut } from '../../hooks/row-motion'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
-import type { LocalResult, RowNote } from '../../types'
+import type { LocalResult, PressKind, RowNote } from '../../types'
 import type { Block, Button } from './blocks'
 import type { LastPress } from './files'
 
@@ -22,8 +21,9 @@ const REREAD_AFTER_MS = 5_000
 export const GIVE_UP_MS = 15_000
 
 /**
- * A press the look sent that has no result yet. `action` is its button's action id. `label` is its button's label,
- * and `reply` the text a reply sends. `pending` is what its opens, copies or refreshes read while under way, or null
+ * A press the look sent that has no result yet. `action` is its button's action id, and `kind` its button's kind as
+ * the press found it, or null for a press that no plan action makes. `label` is its button's label, and `reply` the
+ * text a reply sends. `pending` is what its opens, copies or refreshes read while under way, or null
  * for a press that sends, which reads `SENDING`. `result` is how the opens and copies the look ran itself went.
  * `before` is the row as the look drew it when pressed. `isWritten` is whether its press file is written, and
  * `waitingSince` when it was, or when the look last found a host had it. `isTaken` is whether the last read found the
@@ -34,6 +34,7 @@ export type Out = {
   rowId: string
   path: string
   action: string
+  kind: PressKind | null
   label: string
   reply?: string
   pending: Feedback | null
@@ -166,22 +167,18 @@ export function nextOutCheckAt(outs: readonly Out[], now: number): number | null
 const withOutButtons = (buttons: Button[], outRows: ReadonlySet<string>): Button[] =>
   buttons.map(b => (b.does.is === 'press' && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b))
 
-/** Whether `out`'s button among `buttons` is a Mark press, which draws no status of its own while it is out. */
-const isStatusHeld = (out: Out, buttons: readonly Button[]): boolean =>
-  buttons.some(b => b.does.is === 'press' && outAction(b.does.press) === out.action && holdsStatusWhileOut(b.does.kind))
-
 /**
  * The blocks with the look's presses drawn: every press button on a row with a press out draws out, and the row's
  * line reads the press under way, how the look's own opens went, or why a press ended unreported, in place of the line
  * the publish gave. While the press is out, its line reads as the press under way, wherever a look places that, unless
- * it is a Mark press, as `holdsStatusWhileOut` says.
+ * its kind holds the row's status, as `holdsStatusWhileOut` says.
  */
 export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<string, RowLine>, now: number): Block[] {
   const byRow = new Map(outs.map(o => [o.rowId, o]))
   const outRows = new Set(byRow.keys())
-  const lineOf = (id: string, buttons: readonly Button[]): RowLine | null => {
+  const lineOf = (id: string): RowLine | null => {
     const out = byRow.get(id)
-    if (!out || isStatusHeld(out, buttons)) return lines[id] ?? null
+    if (!out || holdsStatusWhileOut(out.kind)) return lines[id] ?? null
     const source: Feedback = out.pending ?? { is: 'sending', label: SENDING, at: now }
     if (out.result) return { ...resultLine(out.result), source }
     return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted', source }
@@ -189,11 +186,11 @@ export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<st
 
   return blocks.map((b): Block => {
     if (b.kind === 'row' || b.kind === 'pr' || b.kind === 'line' || b.kind === 'banner') {
-      const line = lineOf(b.id, b.buttons)
+      const line = lineOf(b.id)
       return { ...b, buttons: withOutButtons(b.buttons, outRows), ...(line ? { feedback: line } : {}) }
     }
     if (b.kind === 'empty' && b.under) {
-      const line = lineOf(b.under.id, b.under.buttons)
+      const line = lineOf(b.under.id)
       const under = {
         ...b.under,
         buttons: withOutButtons(b.under.buttons, outRows),

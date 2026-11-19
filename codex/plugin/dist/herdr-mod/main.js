@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T06:12:26.191Z. 300396 characters follow.
+// Built at 2026-11-19T07:07:30.407Z. 300272 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -2392,6 +2392,7 @@ function isStatusUnderActions(f, isOpen) {
   const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
   return isOpen && (isPressOut(f) || isDoneStillWaiting);
 }
+var holdsStatusWhileOut = (kind) => kind === "mark";
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
@@ -5204,7 +5205,6 @@ function enterDelayMs(height, from = { x: 0, v: 0 }) {
 function titleSwapMs(height, from) {
   return (springFrames(from, height).length - 1) * FRAME_MS;
 }
-var holdsStatusWhileOut = (kind) => kind === "mark";
 var drawsPanel = (track) => track.hasOpenForm && track.state !== "settling";
 var ROW_FADE_MS = {
   entering: ENTER_FADE_MS,
@@ -6595,13 +6595,12 @@ function nextOutCheckAt(outs, now) {
   return later.length ? Math.min(...later) : null;
 }
 var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
-var isStatusHeld = (out, buttons) => buttons.some((b) => b.does.is === "press" && outAction2(b.does.press) === out.action && holdsStatusWhileOut(b.does.kind));
 function drawOuts(blocks, outs, lines, now) {
   const byRow = new Map(outs.map((o) => [o.rowId, o]));
   const outRows = new Set(byRow.keys());
-  const lineOf = (id, buttons) => {
+  const lineOf = (id) => {
     const out = byRow.get(id);
-    if (!out || isStatusHeld(out, buttons))
+    if (!out || holdsStatusWhileOut(out.kind))
       return lines[id] ?? null;
     const source = out.pending ?? { is: "sending", label: SENDING, at: now };
     if (out.result)
@@ -6610,11 +6609,11 @@ function drawOuts(blocks, outs, lines, now) {
   };
   return blocks.map((b) => {
     if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
-      const line = lineOf(b.id, b.buttons);
+      const line = lineOf(b.id);
       return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
     }
     if (b.kind === "empty" && b.under) {
-      const line = lineOf(b.under.id, b.under.buttons);
+      const line = lineOf(b.under.id);
       const under = {
         ...b.under,
         buttons: withOutButtons(b.under.buttons, outRows),
@@ -6665,7 +6664,7 @@ class PressQueue {
   constructor(io) {
     this.io = io;
   }
-  send(target, press, effects, label, reply) {
+  send(target, press, effects, label, kind, reply) {
     const rowId = pressRowId(press);
     const refuse = (reason) => {
       this.lines[rowId] = notSentLine(reason);
@@ -6683,6 +6682,7 @@ class PressQueue {
       rowId,
       path: pressPath(target.appHome, target.sessionId, pressId),
       action: outAction2(press),
+      kind,
       label,
       ...reply !== undefined ? { reply } : {},
       pending,
@@ -7181,11 +7181,12 @@ class Inbox extends View {
       return;
     const isGoal = rowId === GOAL_KEYS_ID;
     const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send;
-    const isSent = this.send({ action: "type", id: rowId, text }, [], label, cx, isGoal ? undefined : text);
+    const typed = { is: "press", press: { action: "type", id: rowId, text }, effects: [], kind: null };
+    const isSent = this.send(typed, label, cx, isGoal ? undefined : text);
     this.ui = afterSend(this.ui, rowId, isSent);
     this.closeStaleField();
   }
-  send(press, effects, label, cx, reply) {
+  send(d, label, cx, reply) {
     const read = this.read?.is === "read" ? this.read : null;
     const target = this.sessionId && read && this.view ? {
       appHome: appHome(),
@@ -7195,7 +7196,7 @@ class Inbox extends View {
       holds: this.holds(Date.now()),
       projectFolder: read.projectFolder
     } : null;
-    const sent = this.queue.send(target, press, effects, label, reply);
+    const sent = this.queue.send(target, d.press, d.effects, label, d.kind, reply);
     cx.notify();
     if (sent.is === "refused")
       return false;
@@ -7222,7 +7223,7 @@ class Inbox extends View {
       this.collapse(d.id, d.isCollapsed, cx);
     else if (d.is === "press") {
       this.ui = afterPress(this.ui, d.press);
-      this.send(d.press, d.effects, b.label, cx);
+      this.send(d, b.label, cx);
     } else if (d.is === "type")
       this.type(d);
     else if (d.is === "send")

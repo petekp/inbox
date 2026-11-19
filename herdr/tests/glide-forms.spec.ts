@@ -1,6 +1,7 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
 import type { Block } from '../src/blocks'
+import type { PressKind } from '../../types'
 
 const { framesOf } = await import('./frames')
 const { FRAME_MS } = await import('../../hooks/springs')
@@ -8,6 +9,7 @@ type Step = import('./frames').Step
 const { tabBlocks } = await import('../src/draw')
 const { NOW, demoScreen, dismissedPr, uiOn, withDismissedAsk } = await import('./fixtures')
 const { drawOuts } = await import('../src/out')
+const { keyMove } = await import('../src/keys')
 
 const goalFieldOpening = () =>
   framesOf(
@@ -66,13 +68,13 @@ test('a first draw with the empty Status page’s goal field already open shows 
   })
 })
 
-function outOn(open: Block[], rowId: string, action: string, label: string): Block[] {
-  const out = { pressId: 'p5', rowId, path: '/x', action, label, pending: null, result: null }
+function outOn(open: Block[], rowId: string, action: string, label: string, kind: PressKind): Block[] {
+  const out = { pressId: 'p5', rowId, path: '/x', action, kind, label, pending: null, result: null }
 
   return drawOuts(open, [{ ...out, before: '', isWritten: true, waitingSince: NOW, isTaken: false }], {}, NOW)
 }
 
-const sendingOn = (open: Block[]) => outOn(open, 'd11', 'discuss', 'Discuss')
+const sendingOn = (open: Block[]) => outOn(open, 'd11', 'discuss', 'Discuss', 'talk')
 
 test('closing the goal field while its buttons fade in never shows them more than if it had stayed open', () => {
   const closed = tabBlocks(demoScreen(), uiOn('overview'))
@@ -191,10 +193,10 @@ test('a Dismiss whose reply lands 16, 100 or 300 ms after its press moves the li
     [
       'row',
       openRow,
-      outOn(openRow, 'd13', 'dismiss', 'Dismiss'),
+      outOn(openRow, 'd13', 'dismiss', 'Dismiss', 'mark'),
       tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd13' })),
     ],
-    ['pr', openPr, outOn(openPr, `pr:${ref}`, 'pr-dismiss', 'Dismiss'), dismissedPr(ref).blocks],
+    ['pr', openPr, outOn(openPr, `pr:${ref}`, 'pr-dismiss', 'Dismiss', 'mark'), dismissedPr(ref).blocks],
   ] as const
   for (const [name, open, pressed, dismissed] of cases)
     for (const replyAt of [16, 100, 300]) {
@@ -212,4 +214,14 @@ test('a Dismiss whose reply lands 16, 100 or 300 ms after its press moves the li
         outside: [],
       })
     }
+})
+
+test('a Dismiss out on a row the cursor leaves with j before its reply grows no status on the row it closes', () => {
+  const pressedOn = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
+  const move = keyMove('j', [], pressedOn, null)
+  const left = tabBlocks(demoScreen(), uiOn('needsYou', { selected: move?.is === 'select' ? move.id : null }))
+  const pressedThenLeft = outOn(left, 'd13', 'dismiss', 'Dismiss', 'mark')
+  const statusOf = (blocks: Block[]) =>
+    blocks.find((b): b is Extract<Block, { kind: 'row' }> => b.kind === 'row' && b.id === 'd13')?.feedback
+  expect({ move: move?.is, status: statusOf(pressedThenLeft) }).toEqual({ move: 'select', status: statusOf(left) })
 })

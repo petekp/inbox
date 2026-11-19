@@ -1,9 +1,15 @@
 import { ago } from '../../hooks/text'
 import { DOT } from '../../hooks/rows'
-import { feedbackOf, feedbackText, feedbackTone, hasAge, type FeedbackTone } from '../../hooks/feedback'
+import {
+  feedbackOf,
+  feedbackText,
+  feedbackTone,
+  hasAge,
+  holdsStatusWhileOut,
+  type FeedbackTone,
+} from '../../hooks/feedback'
 import { prMarkId, isBlockPressShown } from '../../hooks/pr-rows'
 import { isDismissed } from '../../hooks/pr-views'
-import { holdsStatusWhileOut } from '../../hooks/row-motion'
 import type { PrView } from '../../types'
 import type { TabView as View } from './core'
 import { sending, SENDING, errors } from './tab-state'

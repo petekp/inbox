@@ -41,8 +41,8 @@ const open = [{ kind: 'open' as const, target: '/w/plan.md', name: 'plan.md' }]
 
 test('a press is refused, with the reason on its row, when its row has a press out or there is no session', () => {
   const queue = new PressQueue(fakeIo().io)
-  expect(queue.send(target, { action: 'done', id: rowId }, [], 'Done').is).toBe('sent')
-  const again = queue.send(target, { action: 'type', id: rowId, text: 'hi' }, [], 'Send', 'hi')
+  expect(queue.send(target, { action: 'done', id: rowId }, [], 'Done', 'mark').is).toBe('sent')
+  const again = queue.send(target, { action: 'type', id: rowId, text: 'hi' }, [], 'Send', null, 'hi')
   expect(again.is).toBe('refused')
   expect(queue.lines[rowId]).toEqual({
     text: 'Not sent: the last press on this row has not finished.',
@@ -50,13 +50,13 @@ test('a press is refused, with the reason on its row, when its row has a press o
     source: { is: 'notSent', reason: 'the last press on this row has not finished.', retry: null },
   })
   expect(queue.outs.length).toBe(1)
-  expect(new PressQueue(fakeIo().io).send(null, { action: 'done', id: rowId }, [], 'Done').is).toBe('refused')
+  expect(new PressQueue(fakeIo().io).send(null, { action: 'done', id: rowId }, [], 'Done', 'mark').is).toBe('refused')
 })
 
 test('a press shows its own opens’ result at once, then writes its file with it and wakes the session file’s terminal', async () => {
   const { io, files, woken, clock } = fakeIo()
   const queue = new PressQueue(io)
-  const sent = queue.send(target, { action: 'done', id: rowId }, open, 'Open plan')
+  const sent = queue.send(target, { action: 'done', id: rowId }, open, 'Open plan', 'local')
   if (sent.is !== 'sent') throw new Error('refused')
   const drawn: (string | undefined)[] = []
   await sent.finish(
@@ -79,7 +79,7 @@ test('a press shows its own opens’ result at once, then writes its file with i
 test('a press whose file is not yet written is not taken and does not give up', async () => {
   const { io, clock } = fakeIo()
   const queue = new PressQueue(io)
-  const sent = queue.send(target, { action: 'done', id: rowId }, open, 'Open plan')
+  const sent = queue.send(target, { action: 'done', id: rowId }, open, 'Open plan', 'local')
   if (sent.is !== 'sent') throw new Error('refused')
   let finishOpen = () => undefined as void
   const finishing = sent.finish(
@@ -97,7 +97,7 @@ test('a press whose file is not yet written is not taken and does not give up', 
 test('at the give-up time the look takes back a press no host took, and one a host took meanwhile waits as taken', async () => {
   const lost = fakeIo()
   const queue = new PressQueue(lost.io)
-  const sent = queue.send(target, { action: 'done', id: rowId }, [], 'Done')
+  const sent = queue.send(target, { action: 'done', id: rowId }, [], 'Done', 'mark')
   if (sent.is === 'sent')
     await sent.finish(
       async (_e, pending) => pending,
@@ -111,7 +111,7 @@ test('at the give-up time the look takes back a press no host took, and one a ho
 
   const raced = fakeIo({ isGone: async () => false, claim: async () => false })
   const held = new PressQueue(raced.io)
-  const pressed = held.send(target, { action: 'done', id: rowId }, [], 'Done')
+  const pressed = held.send(target, { action: 'done', id: rowId }, [], 'Done', 'mark')
   if (pressed.is === 'sent')
     await pressed.finish(
       async (_e, pending) => pending,
@@ -127,7 +127,7 @@ const REPLY = 'Call it hello'
 const typed = { action: 'type' as const, id: rowId, text: REPLY }
 
 async function sendReply(queue: PressQueue) {
-  const sent = queue.send(target, typed, [], 'Send', REPLY)
+  const sent = queue.send(target, typed, [], 'Send', null, REPLY)
   if (sent.is !== 'sent') throw new Error('refused')
   const pressId = queue.outs.at(-1)!.pressId
   await sent.finish(
