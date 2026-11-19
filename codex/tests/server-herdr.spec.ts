@@ -1,3 +1,4 @@
+import { pressFile } from '../../hooks/herdr-press-file'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -410,6 +411,94 @@ test('desktop companion reads are passive and viewer updates preserve the origin
     assert.equal(after.shownTab, 'needsYou')
     assert.deepEqual(after.lookRows, { subject: now - 50 })
     assert.ok(after.remoteViewers['companion-viewer-1234'])
+  } finally {
+    await removeTempDir(dir, handle)
+  }
+})
+
+test('companion goal controls reject stale views and retain outcomes across retries', async () => {
+  const dir = tempDir()
+  const now = 2_000_000
+  const session = 'goal-session'
+  await updateState(
+    dir,
+    session,
+    s => s,
+    () => now,
+  )
+  const handle = makeServer({
+    dir,
+    now: () => now,
+    exec: async () => {
+      throw new Error('Goal controls must not execute an agent command')
+    },
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    comparePage: '/fixture/compare.html',
+  })
+  const scope = [{ id: session, name: 'Goal controls' }]
+  let sequence = 0
+  const command = async (press: RemoteCommand['press']): Promise<RemoteCommand> => ({
+    format: 2,
+    kind: 'command',
+    id: `${now.toString(36)}-goal-control-fixture-${++sequence}`,
+    session,
+    issuedAt: now,
+    expected: remoteRowVersion(await readState(dir, session), 'goal'),
+    press,
+  })
+  const apply = (file: RemoteCommand) => {
+    const parsed = pressFile(JSON.stringify(file))
+    assert.ok(parsed.ok)
+    assert.ok(parsed.file.format === 2)
+    return handle.companion({ version: 1, operation: 'apply', session, file: parsed.file }, scope)
+  }
+  const state = () => readState(dir, session)
+  try {
+    await apply(await command({ action: 'type', id: 'goal', text: 'Finish the settings screen' }))
+    assert.equal((await state()).ledger.overview?.goal?.text, 'Finish the settings screen')
+    const staleRemove = await command({ action: 'remove-goal', id: 'goal' })
+    await apply(await command({ action: 'type', id: 'goal', text: 'Finish the profile screen' }))
+    await apply(staleRemove)
+    assert.equal((await state()).remoteCommands[staleRemove.id]?.state, 'stale')
+    assert.equal((await state()).ledger.overview?.goal?.text, 'Finish the profile screen')
+    const remove = await command({ action: 'remove-goal', id: 'goal' })
+    await apply(remove)
+    assert.equal((await state()).ledger.overview?.goal, null)
+    assert.equal((await state()).remoteCommands[remove.id]?.state, 'applied')
+    await apply(await command({ action: 'restore-goal', id: 'goal' }))
+    assert.equal((await state()).ledger.overview?.goal?.text, 'Finish the profile screen')
+    await apply(remove)
+    assert.equal((await state()).ledger.overview?.goal?.text, 'Finish the profile screen')
+    await apply(await command({ action: 'remove-goal', id: 'goal' }))
+    await updateState(
+      dir,
+      session,
+      s => ({
+        ...s,
+        ledger: { ...s.ledger, overview: { ...s.ledger.overview!, suggestedGoal: 'Ship the settings screen' } },
+      }),
+      () => now,
+    )
+    const staleSuggestion = await command({ action: 'take-goal', id: 'goal' })
+    await updateState(
+      dir,
+      session,
+      s => ({
+        ...s,
+        ledger: { ...s.ledger, overview: { ...s.ledger.overview!, suggestedGoal: 'Ship the profile screen' } },
+      }),
+      () => now,
+    )
+    await apply(staleSuggestion)
+    assert.equal((await state()).remoteCommands[staleSuggestion.id]?.state, 'stale')
+    assert.equal((await state()).ledger.overview?.goal, null)
+    const take = await command({ action: 'take-goal', id: 'goal' })
+    await apply(take)
+    assert.equal((await state()).ledger.overview?.goal?.text, 'Ship the profile screen')
+    assert.equal((await state()).remoteCommands[take.id]?.state, 'applied')
+    await apply(take)
+    assert.equal((await state()).ledger.overview?.goal?.text, 'Ship the profile screen')
   } finally {
     await removeTempDir(dir, handle)
   }
