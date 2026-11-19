@@ -64,9 +64,10 @@ let heightWaitMs = 0
 
 /**
  * When the panel of each row that closed while its panel showed has faded out, by row, so that row's height starts to
- * shrink. A row that opens again drops its own, since its panel no longer fades. `closeWaitMs` is how long a row or
- * block that starts to open or enter in this draw waits for the last of them, the person's own moves included, so a
- * row the selection opens grows as the row it closes shrinks. Its selection shows at once.
+ * shrink. A row that opens again drops its own, since its panel no longer fades, and still waits for the others.
+ * `closeWaitMs` is how long a row or block that starts to open or enter in this draw waits for the last of them, the
+ * person's own moves included, so a row the selection opens grows as the row it closes shrinks. Its selection shows
+ * at once.
  */
 const closeHolds = new Map<string, number>()
 let closeWaitMs = 0
@@ -209,9 +210,7 @@ function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const key = el.dataset.motion!
   const state = drawnRows.get(key)?.track.state
   const isRowMoving = isUnderWay(el)
-  const part = drawnRows.has(key) ? el.querySelector(OPEN_PART) : null
-  const turnsCloseBack = part !== null && was?.openPart === part
-  const closeWait = state === 'opening' && changed.has(key) && !turnsCloseBack ? closeWaitMs : 0
+  const closeWait = state === 'opening' && changed.has(key) ? closeWaitMs : 0
   const held = state === 'closing' ? null : releaseLine(el, state === 'opening')
   moveRow(el, was, changed, carried, closeWait)
   const wait = Math.max(tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0, closeWait)
