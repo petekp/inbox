@@ -51,6 +51,6 @@ export function buttons(root: HTMLElement) {
 
 export function named(root: HTMLElement, label: string) {
   const button = buttons(root).find(b => b.textContent === label)
-  assert.ok(button, `${label} is available`)
+  assert.ok(button !== undefined, `${label} is available`)
   return button
 }

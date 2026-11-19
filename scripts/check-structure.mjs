@@ -6,6 +6,7 @@ import { checkClassNames } from './structure/class-names.mjs'
 import { checkChevrons } from './structure/chevrons.mjs'
 import { checkCursors } from './structure/cursors.mjs'
 import { checkDocs, checkLookMap } from './structure/docs.mjs'
+import { checkElementAsserts } from './structure/element-asserts.mjs'
 import { checkEmptyTab } from './structure/empty-tab.mjs'
 import { checkHooksModules } from './structure/hooks-module.mjs'
 import { checkImports } from './structure/imports.mjs'
@@ -25,6 +26,7 @@ for (const check of [
   checkChevrons,
   checkCursors,
   checkOverflow,
+  checkElementAsserts,
 ])
   check(ROOT, errors)
 
