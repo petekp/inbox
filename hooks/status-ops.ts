@@ -145,19 +145,19 @@ export function applyOps(
     return o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
   }
   /**
-   * The subject that closed since the person last looked whose name `name` repeats, the latest first: the same key
-   * words, or every word of a name of two words or more, as "Retry button bug" repeats "Retry button". A NEW for it
-   * reopens it, so the page shows one row for the piece, not one for each time it finished. A subject this answer
-   * closed is not reopened by it, so a DONE and a NEW for follow-up work stay two rows.
+   * The subject that closed since the person last looked whose name `name` repeats word for word, the latest first. A
+   * NEW for it reopens it, so the page shows one row for the piece, not one for each time it finished. A longer name,
+   * as "Retry button release" after "Retry button", is other work. A subject this answer closed is not reopened by it,
+   * so a DONE and a NEW for follow-up work stay two rows.
    */
   const closedUnseen = (name: string) => {
-    const said = words(clipWords(name, NAME_KEPT))
-    const repeats = (s: Subject) => {
-      const own = [...words(s.name)]
-      return nameKey(s.name) === nameKey([...said].join(' ')) || (own.length >= 2 && own.every(w => said.has(w)))
-    }
+    const key = nameKey(clipWords(name, NAME_KEPT))
 
-    return o.subjects.findLast(s => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && repeats(s)) ?? null
+    return (
+      o.subjects.findLast(
+        s => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && nameKey(s.name) === key,
+      ) ?? null
+    )
   }
   /** A was line and a merged line stay until the person has seen them. The page shows them only on rows that changed since the last look. */
   const forgetSeenWas = (s: Subject) => {

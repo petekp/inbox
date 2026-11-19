@@ -12,6 +12,9 @@ import {
 } from './status-limits'
 import { ago, duration } from './text'
 
+/** The mark on a line in <finished> for a subject that closed since the person last looked. Only such a subject may reopen. */
+export const NOT_SEEN = 'not seen yet'
+
 export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: number): boolean {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
 }
@@ -95,7 +98,7 @@ export function childActive(o: SessionStatus | null, ref: string, at: number): S
 
 /**
  * The subjects as the call reads them at `now`: open ones with ids and how long ago each last changed, and finished
- * names it must not add again.
+ * names it must not add again, each marked `NOT_SEEN` when it closed since the person last looked.
  */
 export function subjectsText(o: SessionStatus | null, now: number): { open: string; finished: string } {
   const subjects = o?.subjects ?? []
@@ -106,7 +109,7 @@ export function subjectsText(o: SessionStatus | null, now: number): { open: stri
   const finished = subjects
     .filter(s => !isOpen(s))
     .slice(-FINISHED_READ)
-    .map(s => `${s.id} | ${s.status} | ${s.name}`)
+    .map(s => `${s.id} | ${s.status} | ${s.name}${o !== null && isSubjectSeen(o, s) ? '' : ` | ${NOT_SEEN}`}`)
 
   return { open: open.join(NL) || '(none yet)', finished: finished.join(NL) }
 }

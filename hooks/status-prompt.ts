@@ -2,7 +2,7 @@ import type { Exchange, HostTask, Item, Session, SessionStatus } from '../types'
 import type { Host } from './model-text'
 import { tasksText } from './host-tasks'
 import { NL, personText } from './ledger-prompt'
-import { asksText, idleText, runningText, subjectsText } from './status-children'
+import { asksText, idleText, NOT_SEEN, runningText, subjectsText } from './status-children'
 import { DESCRIPTION_WORDS, NAME_WORDS, OPEN_SUBJECTS, TEXT_WORDS } from './status-limits'
 import { GOAL_INPUT, GOAL_LINES, goalBlocks, goalRules } from './status-prompt-goal'
 import type { GoalPartId } from './status-prompt-goal'
@@ -29,7 +29,7 @@ You read the list as it is and one exchange, and answer with the changes the exc
 Input:
 - <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
 - <subjects>: the open subjects, one per line: id | status | name | where it stands | how long ago it last changed
-- <finished>: subjects already done or dropped. Do not add them again.
+- <finished>: subjects already done or dropped, one per line: id | done or dropped | name, then | ${NOT_SEEN} when it closed since the person last looked. Do not add them again.
 - <running>: work apart from the turn, such as a subagent, a background task, a workflow or a delegate session, that runs, or that finished since you last read the list, one per line: id | kind | name | the subject it belongs to, or - when it has none yet | running, blocked at a question or an approval, or finished
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet | why the agent asked it, when it said
 - <idle>: the working subjects that have not changed for a day or more and that no item in <asks> or <running> holds up, one per line: id | name | how long since it changed
@@ -66,7 +66,7 @@ Status is one of: working, queued, waits-on-other.
 - waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
-- Change a subject by its id. Write NEW only when no subject in <subjects> covers it: first check each one for the same work under another name, such as the bug a fix is for. When work in <finished> comes back, as a fixed bug that breaks again or a piece found not done, SET its id to reopen it. Never set a done subject working again for any other reason: new work on the same outcome, a follow-up or a release is a NEW subject.
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it: first check each one for the same work under another name, such as the bug a fix is for. When work in <finished> marked ${NOT_SEEN} comes back, as a fixed bug that breaks again or a piece found not done, SET its id to reopen it. Every other finished subject stays finished: work on it that comes back, new work on the same outcome, a follow-up or a release is a NEW subject, never that one set working again.
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason. A subject is finished when all the work its name names is done. Work that goes through PRs is done once its last PR merges, not when its delegate finishes, its review comes back clean or its checks pass. A release is done when it is published. Work its name does not cover, such as a release or another change, is a NEW subject with a name that does not repeat the finished one's.
