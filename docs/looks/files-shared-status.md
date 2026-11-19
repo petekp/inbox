@@ -7,6 +7,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the merged line and the text before a stall. |
 | `hooks/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order, with each part's folds after its open or its closed rows, and the counts by mark. |
 | `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds no operation. A line that is not an operation is left out. |
+| `hooks/status-freshness.ts` | Shared module. When a Status call last changed what the page says, and the Status tab's status line: a failed update, or "Not updated in 2h" after five calls that read agent work and changed nothing. |
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
 | `hooks/status-goal-ops.ts` | Shared module. How an answer and the goal's presses change the goal: GOAL and RETIRE lines, MILESTONE and SERVES lines, milestones moved by id, met, Remove goal and its Undo, and a typed goal. |

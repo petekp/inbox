@@ -13,7 +13,8 @@ import type { Session } from '../types'
 import { fakeHost } from './session-fake-host'
 
 const MIN = 60_000
-const FIRST = 'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built\nSUGGEST: -'
+const FIRST =
+  'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built\nSUGGEST: -'
 const MOVED = 'SET: s1 | working | queue and retry built\nSUGGEST: -'
 
 function session(answers: string[]) {
@@ -44,7 +45,11 @@ test('the Status tab says the page is not updated once five calls that read agen
   await call('edited file-5.ts')
   expect(await line()).toMatch(/^Not updated in \d+[mhd]$/)
 
-  const { call: next, line: nextLine, start: nextStart } = session([FIRST, ...Array(5).fill('NO CHANGE\nSUGGEST: -'), MOVED])
+  const {
+    call: next,
+    line: nextLine,
+    start: nextStart,
+  } = session([FIRST, ...Array(5).fill('NO CHANGE\nSUGGEST: -'), MOVED])
   await nextStart()
   for (let n = 0; n <= 5; n += 1) await next(`edited file-${n}.ts`)
   expect(await nextLine()).not.toBeNull()

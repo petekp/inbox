@@ -155,7 +155,8 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'head-description': {
     at: 0,
-    answer: 'SET: s2 | working | syncs on reconnect, merging clashing edits left\nSET: m2 | working | syncs on reconnect\nSET: m3 | queued | not started',
+    answer:
+      'SET: s2 | working | syncs on reconnect, merging clashing edits left\nSET: m2 | working | syncs on reconnect\nSET: m3 | queued | not started',
     breaks: 'head-follows',
   },
 }

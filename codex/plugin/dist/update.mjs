@@ -5926,12 +5926,15 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
   const prompt = statusCallPrompt(input, call.exchange);
   const system = hostStatusSystem(host.names);
   const heards = [];
-  const { last } = await askStatus(async (retry) => {
-    const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
-    const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now());
-    heards.push({ kind, heard });
-    return heard;
-  }, nextGoalRetry(input.last, prompt));
+  const { last } = await askStatus(
+    async (retry) => {
+      const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
+      const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now());
+      heards.push({ kind, heard });
+      return heard;
+    },
+    nextGoalRetry(input.last, prompt)
+  );
   const attempts = heards.map((h) => attemptOf(h.heard));
   const answer = last.text === null ? null : parseStatus(last.text);
   let before = null;

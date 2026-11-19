@@ -26,7 +26,7 @@ export type Op =
   | { kind: 'suggest'; text: string | null }
 
 /** A milestone as a GOAL line writes it: its status, its name, and where it stands, which is empty when the line gives none. */
-export type GoalMilestone = { status: SubjectStatus; name: string; text: string }
+type GoalMilestone = { status: SubjectStatus; name: string; text: string }
 
 /** What the Status call answered: nothing to change, or the changes to make. */
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }

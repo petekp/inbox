@@ -17,10 +17,13 @@ const isAsked = (o: SessionStatus | null) => goalBlocks(o, 30 * MIN).some(b => b
 
 async function asked(last: SessionStatus | null, answers: string[]) {
   const prompts: string[] = []
-  const { last: applied } = await askStatus(async retry => {
-    prompts.push(retry ?? PROMPT)
-    return { text: answers.shift() ?? null }
-  }, nextGoalRetry(last, PROMPT))
+  const { last: applied } = await askStatus(
+    async retry => {
+      prompts.push(retry ?? PROMPT)
+      return { text: answers.shift() ?? null }
+    },
+    nextGoalRetry(last, PROMPT),
+  )
 
   return { prompts, applied: parseStatus(applied.text) }
 }
@@ -30,7 +33,9 @@ test('the call is asked for the next goal while no goal runs and none is suggest
   expect(isAsked(met())).toBe(true)
   expect(isAsked(null)).toBe(true)
   expect(isAsked(after(met(), 'SUGGEST: Import shipped to the store', 25 * MIN))).toBe(false)
-  expect(isAsked(after(null, `${WORK}\nGOAL: Import ready to demo | working Import works; queued Error messages`, 20 * MIN))).toBe(false)
+  expect(
+    isAsked(after(null, `${WORK}\nGOAL: Import ready to demo | working Import works; queued Error messages`, 20 * MIN)),
+  ).toBe(false)
 })
 
 test('an answer with no GOAL or SUGGEST line while the next goal is asked is asked once more, with that answer, and the second applies', async () => {

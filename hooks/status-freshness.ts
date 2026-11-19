@@ -7,7 +7,7 @@ import { duration } from './text'
  * stale. In the saved call records, 0.7% of calls reached 5, in 2% of sessions, and the change that ended such a run
  * was no larger than after a short one, so the page was behind rather than waiting for a big change.
  */
-export const STALE_AFTER_CALLS = 5
+const STALE_AFTER_CALLS = 5
 
 const STATUS_FAILED =
   "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try."

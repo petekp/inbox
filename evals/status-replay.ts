@@ -239,17 +239,20 @@ async function statusCall(
   const input: StatusCallInput = { last: s.ledger.overview, asks: s.ledger.items, tasks, now }
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
-  const { last } = await askStatus(async retry => {
-    const kind = { call: 'status', reads: read.kind, isRetry: logs.length > 0 } as const
-    const answer = await timed(
-      deps,
-      kind,
-      retry ?? prompt,
-      deps.system ?? hostStatusSystem(deps.agent === 'codex' ? CODEX : CLAUDE_CODE),
-    )
-    logs.push(answer.log)
-    return answer
-  }, nextGoalRetry(input.last, prompt))
+  const { last } = await askStatus(
+    async retry => {
+      const kind = { call: 'status', reads: read.kind, isRetry: logs.length > 0 } as const
+      const answer = await timed(
+        deps,
+        kind,
+        retry ?? prompt,
+        deps.system ?? hostStatusSystem(deps.agent === 'codex' ? CODEX : CLAUDE_CODE),
+      )
+      logs.push(answer.log)
+      return answer
+    },
+    nextGoalRetry(input.last, prompt),
+  )
   const log = {
     ...logs[logs.length - 1]!,
     answers: logs.flatMap(l => l.answers),
