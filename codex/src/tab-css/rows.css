@@ -91,8 +91,6 @@
   min-width: 0;
 }
 .line .text {
-  font-variation-settings: 'wght' 400;
-  transition: font-variation-settings var(--fade);
   min-width: 0;
 }
 /* A closed row's title takes two lines at most, cut with an ellipsis. Its status is a part of its own, so the cut never
@@ -132,7 +130,6 @@
 .row.selected .line .text:not(.short),
 .row.closing .line .text:not(.short) {
   font-weight: 600;
-  font-variation-settings: 'wght' 600;
 }
 /* A moving row's title in its closed form, which shows in place of the full title under it. */
 .row .line .text.short {
@@ -147,12 +144,10 @@
 .row.closing .line .after {
   white-space: normal;
   font-weight: 400;
-  font-variation-settings: 'wght' 400;
 }
 .line .lead {
   color: var(--muted);
   font-weight: 400;
-  font-variation-settings: 'wght' 400;
 }
 /* A closed row's meta line, such as a review thread's place, is drawn whole, its parts wrapping as `.parted` sets them. */
 .line .meta {
