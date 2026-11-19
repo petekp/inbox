@@ -141,7 +141,7 @@ function shownPanel(el: HTMLElement): HTMLElement | null {
 
 /** How long a row that starts to open in this draw waits for the panels of closing rows to fade out, in ms. */
 function closeWaitOf(els: HTMLElement[], changed: ReadonlySet<string>): number {
-  const now = performance.now()
+  const now = Date.now()
   const startsClose = els.some(
     el =>
       changed.has(el.dataset.motion!) && drawnRows.get(el.dataset.motion!)?.track.state === 'closing' && shownPanel(el),

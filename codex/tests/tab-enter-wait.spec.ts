@@ -28,6 +28,8 @@ type Fade = { el: HTMLElement; from: number; to: number; delay: number }
 
 async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext) {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
+  const now = performance.now
+  performance.now = () => Date.now()
   const window = new Window()
   const moves: Move[] = []
   const fades: Fade[] = []
@@ -127,6 +129,7 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
       },
     })
   } finally {
+    performance.now = now
     await window.happyDOM.abort()
     await window.happyDOM.close()
     for (const [key, descriptor] of previous) {
