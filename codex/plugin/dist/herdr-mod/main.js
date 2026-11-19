@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T07:19:21.453Z. 301794 characters follow.
+// Built at 2026-11-19T07:37:36.389Z. 301915 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5384,9 +5384,15 @@ function openedAt(g, now) {
 var shutTo = (height, ms) => ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING);
 
 // src/panel-steps.ts
-function stepsFrom(now, shutForMs, height) {
+var spaceNow = (s, now) => springStep(s.box, s.to, now - s.at);
+function aimSpace(last, to, now) {
+  if (last === null)
+    return { box: { x: to, v: 0 }, at: now, to };
+  return to === last.to ? last : { box: spaceNow(last, now), at: now, to };
+}
+function stepsFrom(now, space, height) {
   let at = now;
-  return turnBackFades(height, shutTo(height, shutForMs)).map((step) => {
+  return turnBackFades(height, space ? spaceNow(space, now) : { x: height, v: 0 }).map((step) => {
     const started = { ...step, at };
     at += step.ms;
     return started;
@@ -5534,7 +5540,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const height = heightOf(panelId(id)) ?? 0;
     if (height <= 0 || t.track.state !== "open" && t.track.state !== "opening")
       return false;
-    const isTurnedBack = t.panelShutForMs !== null;
+    const isTurnedBack = t.panelSteps !== null;
     const fadesAt = isTurnedBack ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height);
     return t.track.state === "open" || now >= fadesAt;
   };
@@ -5569,9 +5575,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
     const under = stepUnder(last?.under ?? null, block, now, isInput);
     const isTurnedBack = isStart && track.state === "opening" && last?.track.state === "closing";
-    const leftOutAt = last?.panelLeftOutAt ?? null;
-    const panelShutForMs = track.state !== "opening" ? null : isTurnedBack ? leftOutAt === null ? 0 : now - leftOutAt : isStart ? null : last?.panelShutForMs ?? null;
-    const panelSteps = track.state !== "opening" ? null : isTurnedBack ? stepsFrom(now, panelShutForMs ?? 0, heightOf(panelId(block.id)) ?? 0) : isStart ? null : last?.panelSteps ?? null;
+    const panelHeight = heightOf(panelId(block.id));
+    const panelSteps = track.state !== "opening" ? null : isTurnedBack ? stepsFrom(now, last?.panelSpace ?? null, panelHeight ?? 0) : isStart ? null : last?.panelSteps ?? null;
     const panelStep = panelSteps?.findLast((step) => step.at <= now) ?? null;
     const panelHeldUntil = track.state !== "closing" ? 0 : isStart ? panelHolds.get(block.id) ?? now : last?.panelHeldUntil ?? 0;
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
@@ -5579,7 +5584,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
     const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil);
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state));
-    const panelLeftOutAt = track.state !== "closing" ? null : (isStart ? null : leftOutAt) ?? (isLeftOut ? now : null);
+    const holdsPanel = drawsPanel(track) && !isLeftOut;
+    const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
     const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), isHeld) : null;
     rows.set(block.id, {
       track,
@@ -5590,10 +5596,9 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       springId,
       isInputMove,
       under,
-      panelShutForMs,
+      panelSpace,
       panelSteps,
-      panelHeldUntil,
-      panelLeftOutAt
+      panelHeldUntil
     });
     motion.set(block.id, {
       state: track.state,

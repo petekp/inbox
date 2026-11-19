@@ -136,7 +136,15 @@ const frameOf = (opacity: number, slides: boolean): Keyframe =>
 const fillOf = (hold: boolean, delay: number): FillMode =>
   hold && delay > 0 ? 'both' : hold ? 'forwards' : delay > 0 ? 'backwards' : 'none'
 
-export function fade(el: HTMLElement, from: number, to: number, ms: number, hold = false, slide = false, delay = 0) {
+export function fade(
+  el: HTMLElement,
+  from: number,
+  to: number,
+  ms: number,
+  hold = false,
+  slide = false,
+  delay = 0,
+): Animation {
   fades.get(el)?.anim.cancel()
   if (slide) slides.add(el)
   const isSliding = slides.has(el)
@@ -148,6 +156,7 @@ export function fade(el: HTMLElement, from: number, to: number, ms: number, hold
     fill: fillOf(hold, delay),
   })
   fades.set(el, { to, anim })
+  return anim
 }
 
 /** The opacity an element's fade draws now, or null when no fade has drawn it since its last cancel. */

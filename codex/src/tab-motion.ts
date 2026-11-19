@@ -277,21 +277,20 @@ function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: 
 }
 
 /**
- * Fades an element from `from` through `steps` after `delay` ms, each step once the one before it ends. A step it
- * already shows is skipped. A fade that replaces a step cancels it, which ends the steps after it.
+ * Fades an element from `from` through `steps` after `delay` ms, each step once the one before it ends. A step before
+ * the last whose opacity it already shows is skipped. A fade that replaces a step cancels it, which ends the steps
+ * after it.
  */
 function fadeThrough(el: HTMLElement, from: number, steps: FadeStep[], delay: number) {
   const [step, ...rest] = steps
   if (!step) return
   if (from >= step.to && rest.length > 0) return fadeThrough(el, from, rest, delay)
-  fade(el, from, step.to, step.ms, rest.length > 0, false, delay)
+  const anim = fade(el, from, step.to, step.ms, rest.length > 0, false, delay)
   if (rest.length > 0)
-    el.getAnimations()
-      .at(-1)
-      ?.finished.then(
-        () => fadeThrough(el, step.to, rest, 0),
-        () => {},
-      )
+    anim.finished.then(
+      () => fadeThrough(el, step.to, rest, 0),
+      () => {},
+    )
 }
 
 /** A panel's Holds up line, which the closed line draws in the same place once the row's close ends. */

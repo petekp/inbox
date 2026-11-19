@@ -5,8 +5,8 @@ import type { Block, RowBlock } from './blocks'
 import type { TabCell } from './draw'
 import { MOVED_TO, copyIdOf, panelId, titleId } from './heights'
 import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce } from './block-glide'
-import { stepsFrom } from './panel-steps'
-import type { PanelStep } from './panel-steps'
+import { aimSpace, stepsFrom } from './panel-steps'
+import type { PanelSpace, PanelStep } from './panel-steps'
 import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
 import type { TitleGlide, TitleMotion } from './title-motion'
@@ -19,11 +19,9 @@ import type { UnderLine, UnderMotion } from './under-line'
  * of a row's title between its one-line and wrapped forms. `springId` names the boxes of a block that moved to another
  * place, which are new so that they start from no height, and is null for a block that never moved. `isInputMove` says
  * the block's move started in a draw that followed the person's input. `under` is the status under a row's buttons as
- * it comes and goes. `panelShutForMs` is how long an opening row's panel space had been shutting when the open turned
- * a close back, null when the open starts from a shut space, and `panelSteps` the steps its panel then fades in, each
- * with its start. `panelHeldUntil` is when a closing row's panel has faded
- * out, so its box lets go of the panel's height. `panelLeftOutAt` is the draw in which a closing row's box let go, so
- * the space starts shrinking, and null until it has.
+ * it comes and goes. `panelSpace` is the spring of the row's panel space, and `panelSteps` the steps an opening row's
+ * panel fades in, each with its start, when the open turned a close back. `panelHeldUntil` is when a closing row's
+ * panel has faded out, so its box lets go of the panel's height.
  */
 type Tracked = {
   track: RowTrack
@@ -34,10 +32,9 @@ type Tracked = {
   springId: string | null
   isInputMove: boolean
   under: UnderLine | null
-  panelShutForMs: number | null
+  panelSpace: PanelSpace | null
   panelSteps: PanelStep[] | null
   panelHeldUntil: number
-  panelLeftOutAt: number | null
 }
 
 /**
@@ -196,7 +193,7 @@ export function moveRows(
   const isPanelShown = (t: Tracked, id: string): boolean => {
     const height = heightOf(panelId(id)) ?? 0
     if (height <= 0 || (t.track.state !== 'open' && t.track.state !== 'opening')) return false
-    const isTurnedBack = t.panelShutForMs !== null
+    const isTurnedBack = t.panelSteps !== null
     const fadesAt = isTurnedBack ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height)
 
     return t.track.state === 'open' || now >= fadesAt
@@ -246,22 +243,12 @@ export function moveRows(
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
     const under = stepUnder(last?.under ?? null, block, now, isInput)
     const isTurnedBack = isStart && track.state === 'opening' && last?.track.state === 'closing'
-    const leftOutAt = last?.panelLeftOutAt ?? null
-    const panelShutForMs =
-      track.state !== 'opening'
-        ? null
-        : isTurnedBack
-          ? leftOutAt === null
-            ? 0
-            : now - leftOutAt
-          : isStart
-            ? null
-            : (last?.panelShutForMs ?? null)
+    const panelHeight = heightOf(panelId(block.id))
     const panelSteps =
       track.state !== 'opening'
         ? null
         : isTurnedBack
-          ? stepsFrom(now, panelShutForMs ?? 0, heightOf(panelId(block.id)) ?? 0)
+          ? stepsFrom(now, last?.panelSpace ?? null, panelHeight ?? 0)
           : isStart
             ? null
             : (last?.panelSteps ?? null)
@@ -273,7 +260,12 @@ export function moveRows(
     const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove
     const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil)
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))
-    const panelLeftOutAt = track.state !== 'closing' ? null : ((isStart ? null : leftOutAt) ?? (isLeftOut ? now : null))
+    const holdsPanel = drawsPanel(track) && !isLeftOut
+    const panelSpace = aimSpace(
+      last?.panelSpace ?? null,
+      holdsPanel ? (panelHeight ?? last?.panelSpace?.to ?? 0) : 0,
+      now,
+    )
     const title =
       block.kind === 'row' && last && !isOpenFormSwapped
         ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), isHeld)
@@ -287,10 +279,9 @@ export function moveRows(
       springId,
       isInputMove,
       under,
-      panelShutForMs,
+      panelSpace,
       panelSteps,
       panelHeldUntil,
-      panelLeftOutAt,
     })
     motion.set(block.id, {
       state: track.state,
