@@ -34,8 +34,9 @@ import { checkActions, prBlockActions, threadActions } from './pr-tab'
 import { type DrawnPr, isDismissed } from './pr-views'
 import { checkKey, commentLine, commentParts, readableComment, readiness, threadWhere } from './prs'
 import { DOT, settledLabel, settledMark, type SettledState } from './rows'
-import { lineCount, terminalTextLines } from './terminal-text'
-import { clipLabel } from './text'
+import { desktopTextPt } from './desktop-metrics'
+import { glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } from './terminal-text'
+import { cellWidth, clipLabel } from './text'
 import { runningMark } from './timing'
 
 export function panePrRows(
@@ -91,18 +92,34 @@ export function panePrRows(
   const threadRow = (pr: PrView, t: PrThread): Row => {
     const id = prThreadId(pr, t)
     const { rest } = commentParts(t.body)
-    const where = (
-      <Text color={pal.muted} wrap="wrap">
+    /** The thread's file and line, then its author, on the same line when both `fits` one line. */
+    const where = (fits: ((text: string) => boolean) | null) => {
+      const link = (
         <Link href={t.reply?.url || t.url}>
           <Text underline>{threadWhere(t)}</Text>
         </Link>
-        {`${look === 'terminal' ? `${DOT.trimEnd()} ` : DOT}@${t.author}`}
-      </Text>
-    )
-    const comment = (
+      )
+      const author = `${DOT}@${t.author}`
+      const by = fits === null ? null : statusAfterTitle(author, threadWhere(t), fits)
+
+      return by?.isUnder ? (
+        <Box flexDirection="column">
+          <Text color={pal.muted} wrap="wrap">
+            {link}
+          </Text>
+          <Text color={pal.muted}>{by.text}</Text>
+        </Box>
+      ) : (
+        <Text color={pal.muted} wrap="wrap">
+          {link}
+          {by ? by.text : author}
+        </Text>
+      )
+    }
+    const commentAt = (fits: ((text: string) => boolean) | null) => (
       <Box flexDirection="column">
         {rest ? <Markdown text={clipLabel(rest, PR_QUOTE_CHARS)} /> : null}
-        {where}
+        {where(fits)}
         {t.reply ? (
           <Markdown text={`**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}`} />
         ) : null}
@@ -114,7 +131,8 @@ export function panePrRows(
       const restLines = terminalTextLines(rest, width).length
       const replyLines = terminalTextLines(replyText, width).length
       const rawTextLines = lineCount(rest, width) + 1 + lineCount(replyText, width)
-      if (rawTextLines <= lines && restLines + 1 + replyLines <= lines) return comment
+      const fits = (text: string) => cellWidth(text) <= width
+      if (rawTextLines <= lines && restLines + 1 + replyLines <= lines) return commentAt(fits)
       const restShown = Math.min(restLines, lines - 1)
       const replyShown = Math.min(replyLines, lines - 1 - restShown)
 
@@ -123,7 +141,7 @@ export function panePrRows(
           {rest && restShown > 0 ? (
             <Text wrap="wrap">{terminalText(terminalTextLines(rest, width, restShown))}</Text>
           ) : null}
-          {where}
+          {where(fits)}
           {replyShown > 0 ? (
             <Text wrap="wrap">{terminalText(terminalTextLines(replyText, width, replyShown))}</Text>
           ) : null}
@@ -147,7 +165,8 @@ export function panePrRows(
         text: commentLine(t.body),
         after: text.meta,
       },
-      body: comment,
+      body: commentAt(null),
+      bodyAt: commentAt,
       clippedBody: clippedComment,
       keys: () => actions.keys.map(a => prKeyAction(a, t.id)),
       moreKeys: () => actions.more.map(a => prKeyAction(a, t.id)),
@@ -190,11 +209,14 @@ export function panePrBlocks({
   listRow,
   prKeyAction,
   desktopLabel,
+  desktopRowTextPt,
+  listColumns,
   keyRow,
   emptyState,
   banner,
 }: Pick<
   PaneBase,
+  | 'listColumns'
   | 'look'
   | 'pal'
   | 'Text'
@@ -217,7 +239,7 @@ export function panePrBlocks({
   Pick<PaneRowLines, 'markGlyph' | 'divided' | 'lastActionText' | 'withDoneText'> &
   Pick<PaneRows, 'listRow'> &
   Pick<PanePrRows, 'prKeyAction'> &
-  Pick<PaneRowKeys, 'desktopLabel' | 'keyRow'> &
+  Pick<PaneRowKeys, 'desktopLabel' | 'desktopRowTextPt' | 'keyRow'> &
   Pick<PaneAskTabs, 'emptyState'> &
   Pick<PaneFrame, 'banner'>) {
   const settledPrBlock = (pr: PrView, state: SettledState) => {
@@ -270,13 +292,26 @@ export function panePrBlocks({
     const prLast = isPrLastShown ? lastActionText(prMarkId(pr.ref)) : null
     const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses).map(a => prKeyAction(a, pr.ref))
 
+    const fits = (text: string) =>
+      look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : cellWidth(text) <= listColumns - 2
+    const statusParts = [statusHead, ...unlisted]
+    const isStatusBeside = fits(`#${pr.number}\u2002${pr.title}\u2002${statusParts.join(DOT)}`)
+    const statusLines = isStatusBeside ? [statusParts.join(glued(DOT))] : partedLines(statusParts, fits)
+    const statusText = (line: string, n: number) => [
+      <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>
+        {n === 0 ? line.slice(0, statusHead.length) : ''}
+      </Text>,
+      <Text color={pal.muted}>{n === 0 ? line.slice(statusHead.length) : line}</Text>,
+    ]
     const titleLine = (
-      <Text wrap="wrap">
-        <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
-        <Text bold>{pr.title}</Text>
-        <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>{`\u2002${statusHead}`}</Text>
-        <Text color={pal.muted}>{unlisted.map(r => `${DOT}${r}`).join('')}</Text>
-      </Text>
+      <Box flexDirection="column">
+        <Text wrap="wrap">
+          <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
+          <Text bold>{pr.title}</Text>
+          {isStatusBeside ? ['\u2002', ...statusText(statusLines[0]!, 0)] : null}
+        </Text>
+        {isStatusBeside ? null : statusLines.map((line, n) => <Text wrap="wrap">{statusText(line, n)}</Text>)}
+      </Box>
     )
     const statusBlock = (
       <Box flexDirection="column">

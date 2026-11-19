@@ -165,10 +165,8 @@ export function paneStatus(
     pal,
     listColumns,
     statusMarkAt,
-    markWidth,
     statusFrameEdge,
     desktopBlockWidth,
-    statusTextWidth,
   })
   /** One line of the Status tab's list: a mark and its text, `depth` steps in. Each step sits under the text of the row it hangs from. */
   const statusRowLine = ({

@@ -1,6 +1,7 @@
 import { ledgerActions } from './row-actions'
 import { clipLabel } from '../../hooks/text'
-import { allRows, DOT, replyHint, ROW_COPY, shortAgo } from '../../hooks/rows'
+import { allRows, replyHint, ROW_COPY, shortAgo } from '../../hooks/rows'
+import { Sep } from './tab-parted'
 import { drawnLists, rowAfterClose } from '../../hooks/action-plan'
 import type { AnswerRow } from '../../hooks/action-plan'
 import { isRowTab } from '../../hooks/tabs'
@@ -351,11 +352,15 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
     body: () => (
       <div>
         {rest ? <p class="quote">{inlineHtml(clipLabel(rest, PR_QUOTE_CHARS))}</p> : null}
-        <p class="muted">
-          <button type="button" class="link" onClick={press('thread-open', openEffect && pendingLocal(openEffect))}>
-            {where}
-          </button>
-          {`${DOT}@${t.author}`}
+        <p class="muted parted">
+          <span class="part">
+            <button type="button" class="link" onClick={press('thread-open', openEffect && pendingLocal(openEffect))}>
+              {where}
+            </button>
+          </span>
+          <span class="part">
+            <Sep />@{t.author}
+          </span>
         </p>
         {t.reply ? (
           <p class="quote">

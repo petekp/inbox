@@ -1,0 +1,34 @@
+/* A line of parts joined by ` · ` (`Sep`). Each part after the first leads with its separator, and a part that does not
+   fit beside the one before it moves whole to the next line. The line reaches --sep-w left of the text edge and clips
+   that strip, so a separator that starts a line is not drawn. The first part, and each later line of a part that wraps,
+   starts at the text edge. */
+/* The separator's slot: its dot is centred in about the width ` · ` takes in the tab's font. */
+:root {
+  --sep-w: 1.5em;
+}
+.parted {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  margin-left: calc(-1 * var(--sep-w));
+  clip-path: inset(0 0 0 var(--sep-w));
+}
+.parted > .part {
+  min-width: 0;
+  max-width: 100%;
+  padding-left: var(--sep-w);
+  text-indent: calc(-1 * var(--sep-w));
+}
+.parted > .part:first-child {
+  max-width: calc(100% - var(--sep-w));
+  margin-left: var(--sep-w);
+  padding-left: 0;
+  text-indent: 0;
+}
+.parted .sep {
+  display: inline-block;
+  width: var(--sep-w);
+  text-align: center;
+  text-indent: 0;
+  color: var(--muted);
+}

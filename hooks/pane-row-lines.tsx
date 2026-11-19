@@ -1,5 +1,5 @@
 import type { UiPressArgument } from 'claude-code'
-import { DESKTOP_CHARS_PER_CELL, DESKTOP_CLIP_CHARS_PER_CELL } from './desktop-metrics'
+import { DESKTOP_CHARS_PER_CELL, DESKTOP_CLIP_CHARS_PER_CELL, desktopTextPt } from './desktop-metrics'
 import { MUTED_MARK, mutedMarkSvg, RUNNING_SVG_CELLS, runningSvg, toneSvg, WORKING_MARK } from './desktop-svg'
 import { textMark } from './marks'
 import { WORKING } from './palettes'
@@ -27,9 +27,10 @@ import {
   TREE_LINE_AT,
 } from './pane-sizes'
 import type { RowProps } from './row-client'
+import { COLLAPSED_TITLE_LINES } from './row-parts'
 import { DOT, type ResultMark, rowMark, rowResultMark, type RowView, shortAgo } from './rows'
-import { desktopSpanLines, LEADING_DOT, type TreePos, treeText } from './terminal-text'
-import { ago, clipLabel } from './text'
+import { desktopSpanLines, LEADING_DOT, partedLines, statusAfterTitle, type TreePos, treeText } from './terminal-text'
+import { ago, cellWidth, clipLabel } from './text'
 import { resultGlyph, runningMark } from './timing'
 
 const holdsUpLineOf = (r: RowView | undefined) => r?.holdsUpLine ?? null
@@ -220,7 +221,7 @@ export function paneRowLines({
     const room = Math.max(12, budget - (meta ? 0 : (line.after?.length ?? 0)))
     const text = line.text.trim()
     const space = text.lastIndexOf(' ', room)
-    const isWrapped = look === 'terminal' && row.hasSecondLine === true && text.length > room && space > 0
+    const isWrapped = look === 'terminal' && text.length > room && space > 0
     const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
     const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
     const afterRoom = budget - first.length
@@ -259,8 +260,8 @@ export function paneRowLines({
         </Box>
         {second ? <Box paddingLeft={line.before?.length ?? 0}>{titleButton(`title-${row.id}-2`, second)}</Box> : null}
         {meta ? (
-          <Text wrap="truncate-end" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
-            {withDoneText(meta, line.afterDoneText)}
+          <Text wrap="wrap" color={line.afterTone ? pal.tone[line.afterTone] : pal.muted}>
+            {withDoneText(partedLines(meta.split(DOT), s => cellWidth(s) <= width).join('\n'), line.afterDoneText)}
           </Text>
         ) : null}
         {holdsUpLine ? (
@@ -309,9 +310,13 @@ export function paneRowLines({
     const f = feedbackLabel(row.id, row)
     const before = row.line?.before ?? ''
     const text = (row.line?.text ?? row.title).trim()
-    const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, row.hasSecondLine ? 4 : 2, {
+    const status = f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim()
+    const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, COLLAPSED_TITLE_LINES, {
       isCutAtWord: true,
     })
+    const after = status
+      ? statusAfterTitle(`${DOT}${status}`, before + text, s => desktopTextPt(s) <= textColumnPt)
+      : null
 
     return {
       markCells: DESKTOP_MARK_CELLS,
@@ -319,7 +324,8 @@ export function paneRowLines({
       before,
       title: titleSpans.map(s => s.text).join(''),
       titleColor: titleColor ?? null,
-      after: f?.isAfterTitle ? f.text : (row.line?.after ?? '').replace(LEADING_DOT, '').trim(),
+      after: after?.text ?? '',
+      isAfterUnder: after?.isUnder ?? false,
       note: holdsUpLineOf(row.view) ?? '',
       side: sideAge(row),
       padY: DESKTOP_ROW_PAD,

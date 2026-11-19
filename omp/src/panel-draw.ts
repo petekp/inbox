@@ -7,13 +7,14 @@ import { resultGlyph, runningMark } from '../../hooks/timing'
 import { closedTitleClock, newRowIn, steppedTitleTint } from '../../hooks/arrivals'
 import { UNDO_KEY } from '../../hooks/help'
 import { textMark } from '../../hooks/marks'
+import { COLLAPSED_TITLE_LINES } from '../../hooks/row-parts'
 import type { BannerView } from '../../hooks/banners'
 import type { ResultMark } from '../../hooks/rows'
 import { askTreeLines } from './panel-ask-tree'
 import { focusOf } from './panel-keys'
 import { AGENT, LEAD_CELLS, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
-import { cutTitle, fit, indented, spread, visibleLength, wrapText } from './panel-text'
+import { cutTitle, fit, indented, spread, titleLines, visibleLength, wrapText } from './panel-text'
 import type { PanelScreen, PanelUi, Style, Tone } from './panel'
 
 /** The tint a row's title, lead and mark take, at its strength now. */
@@ -156,6 +157,17 @@ export function paintMark(m: { mark: string; tone: Tone | null; isRunning: boole
   return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : textMark(m.mark))
 }
 
+/** A collapsed row's feedback whole on its own lines at `indent`, its mark leading the first. */
+function wholeStatus(line: Line, mark: string, indent: number, room: number, s: Style): string[] {
+  if (!line.feedback) return []
+  const markCells = visibleLength(mark)
+  const paint = feedbackPaint(line.feedback.tone, s)
+
+  return wrapText(line.feedback.text, Math.max(10, room - indent - markCells - 1)).map(
+    (l, n) => ' '.repeat(indent) + (n === 0 ? mark : ' '.repeat(markCells)) + paint(l),
+  )
+}
+
 export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const { ui, width, now, style: s } = d
   if (line.isTabButtons) {
@@ -206,25 +218,41 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     : `${line.tree === 'off' ? ' ' : ''} ${' '.repeat(pad)}${cursor} ${lead}`
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width
-  const shownTitle = line.mark
-    ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after))
-    : line.title
-  const ownTitle = line.isDim
-    ? s.dim(shownTitle)
-    : line.titleTone
-      ? s.tone(line.titleTone, s.bold(shownTitle))
-      : isOpen
-        ? s.bold(shownTitle)
-        : shownTitle
-  const title = tint ? s.tint(tint.tone, tint.share, ownTitle) : ownTitle
-  const first = spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width)
+  const paintTitle = (text: string) => {
+    const own = line.isDim
+      ? s.dim(text)
+      : line.titleTone
+        ? s.tone(line.titleTone, s.bold(text))
+        : isOpen
+          ? s.bold(text)
+          : text
+    return tint ? s.tint(tint.tone, tint.share, own) : own
+  }
   // The lines under a row on the tree draw in the room right of its trunk, or of the space left of a last row's arm.
   const gutter = line.tree === 'mid' ? ` ${s.dim('│')} ` : line.tree === 'last' ? '   ' : ''
   const room = width - visibleLength(gutter)
-  const lines = (rest: string[]) => [first, ...rest.map(l => gutter + l)]
-  if (line.settled || isShut(line, ui)) return [first]
   const leadAt = (isOnTree ? 4 : line.tree === 'off' ? 4 + pad : 3 + pad) - visibleLength(gutter)
   const indent = leadAt + (line.lead === null ? 0 : LEAD_CELLS)
+  const titleRoom = besideAge - visibleLength(head)
+  const isRowLine = line.row !== null && line.settled === null && status === ''
+  const wrapped =
+    isRowLine && cellWidth(line.title) + visibleLength(after) > titleRoom
+      ? titleLines(line.title, titleRoom, room - indent - 1, isOpen ? Infinity : COLLAPSED_TITLE_LINES)
+      : null
+  const shownTitle = line.mark
+    ? cutTitle(line.title, titleRoom - visibleLength(status) - visibleLength(after))
+    : line.title
+  const first = wrapped
+    ? spread(`${head}${paintTitle(wrapped[0]!)}`, `${age} `, width)
+    : spread(fit(`${head}${paintTitle(shownTitle)}${status}${after}`, besideAge), `${age} `, width)
+  const underTitle = wrapped
+    ? [
+        ...wrapped.slice(1).map(t => ' '.repeat(indent) + paintTitle(t)),
+        ...(statusUnder ? [] : wholeStatus(line, mark, indent, room, s)),
+      ]
+    : []
+  const lines = (rest: string[]) => [first, ...[...underTitle, ...rest].map(l => gutter + l)]
+  if (line.settled || isShut(line, ui)) return lines([])
   const out: string[] = []
   const holdsUp = line.row?.holdsUpLine
   const focused = ui.typing === line.id ? -1 : focusOf(line, ui)

@@ -183,14 +183,48 @@ export function wrapped(text: string, width: number): string[] {
 }
 
 export const glued = (after: string) => after.replace(/(?<=.)[ \u2002]/gs, c => (c === ' ' ? '\u00a0' : '\u2007'))
-// The Codex tab wraps a suffix too long for one line between words, so this does too. Claude Code's terminal
-// wraps only at a plain space, not at DOT's en space, so a suffix that moves to the next line follows a plain one.
-export const unbroken = (after: string, title: string, fits: (text: string) => boolean) => {
-  const lastWord = title.slice(Math.max(0, title.trimEnd().lastIndexOf(' ') + 1))
-  if (fits(lastWord + after)) return glued(after)
-  const dot = after.startsWith(DOT) ? `${DOT.trimEnd()} ` : ''
-  const rest = after.slice(dot.length)
-  const firstBreak = rest.indexOf(' ')
 
-  return dot + (fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak))
+/**
+ * A status drawn after a title, `after`, which starts with DOT. It stays beside the title when the title and the whole
+ * status fit on one line. Otherwise it starts a line of its own under the title, without the DOT, since no line starts
+ * or ends in a separator. There it wraps between words when it is too long for one line, as the Codex tab's does, and
+ * a status of several DOT-joined parts takes `partedLines`, one line feed between lines.
+ */
+export function statusAfterTitle(
+  after: string,
+  title: string,
+  fits: (text: string) => boolean,
+): { text: string; isUnder: boolean } {
+  if (fits(title + after)) return { text: glued(after), isUnder: false }
+  const rest = after.replace(LEADING_DOT, '')
+  const firstBreak = rest.indexOf(' ')
+  if (rest.includes(DOT)) return { text: partedLines(rest.split(DOT), fits).join('\n'), isUnder: true }
+  const text = fits(rest) || firstBreak < 0 ? glued(rest) : glued(rest.slice(0, firstBreak)) + rest.slice(firstBreak)
+
+  return { text, isUnder: true }
+}
+
+/**
+ * `parts` set in lines that `fits`, joined by DOT within a line. A part that does not fit beside the line before it
+ * starts a new line without DOT, so no line starts or ends in a separator. A part longer than a line wraps by itself.
+ */
+export function partedLines(parts: string[], fits: (text: string) => boolean): string[] {
+  const separator = glued(DOT)
+
+  return parts.reduce<string[]>((lines, part) => {
+    const joined = `${lines.at(-1)}${separator}${part}`
+    return lines.length > 0 && fits(joined) ? [...lines.slice(0, -1), joined] : [...lines, part]
+  }, [])
+}
+
+/**
+ * A settled row's title and result label as `fits` measures a line. Every look cuts a settled title to one line, so the
+ * list does not jump when the row folds into the one-line Closed fold. The label, cut to one line, follows
+ * `statusAfterTitle`.
+ */
+export function settledTitleLine(title: string, label: string, fits: (text: string) => boolean) {
+  const cut = (text: string) => (fits(text) ? text : `${cutForEllipsis(text, fits)}…`)
+  const shown = cut(title)
+
+  return { title: shown, after: statusAfterTitle(`${DOT}${cut(label)}`, shown, fits) }
 }
