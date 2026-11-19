@@ -32,6 +32,42 @@ export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 })
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
 }
 
+/** The most a row's panel shows while it fades back in and the edge of its regrowing space may still cut its lines. */
+export const TURNED_BACK_CUT_OPACITY = 0.5
+
+/** One step of a fade: to `to` opacity over `ms` ms, after the step before it. */
+export type FadeStep = { to: number; ms: number }
+
+/**
+ * How a row's panel fades back in when the row opens again while it closes: steps that start at once, from the
+ * opacity the panel shows, so the row is never near its open height with an empty panel. While the row's box still
+ * holds the panel's height, the panel fades in over `ENTER_FADE_MS`. Once the box has begun to shrink, the space,
+ * opening to `height` px from `from`, is short, so the panel first fades to `TURNED_BACK_CUT_OPACITY` until the space
+ * is nearly open (`enterDelayMs`), and the edge of the space cuts its lines only while they are that faint. It then
+ * fades to full over `ENTER_FADE_MS`, as an opening panel does.
+ */
+export function turnBackFades(height: number, from: SpringState): FadeStep[] {
+  const dimMs = enterDelayMs(height, from)
+  const full: FadeStep = { to: 1, ms: ENTER_FADE_MS }
+
+  return dimMs > 0 ? [{ to: TURNED_BACK_CUT_OPACITY, ms: dimMs }, full] : [full]
+}
+
+/** The most any other text shows where the edge of a moving space cuts it. */
+export const CUT_OPACITY = 0.2
+
+/**
+ * How a row's panel fades out when the row closes again while its turned-back panel is still faint, its space short of
+ * open, from the `opacity` it shows. The space shuts from where it is, at once, so the panel steps at once to
+ * `CUT_OPACITY` if it shows more, and fades from there to none over `LEAVE_FADE_MS`. Its text stays drawn while its
+ * space shuts, and the shutting edge cuts it only while it is that faint.
+ */
+export function faintCloseFades(opacity: number): FadeStep[] {
+  const out: FadeStep = { to: 0, ms: LEAVE_FADE_MS }
+
+  return opacity > CUT_OPACITY ? [{ to: CUT_OPACITY, ms: 0 }, out] : [out]
+}
+
 /**
  * How long an opening row's title keeps its closed form, in ms: until its space, opening to `height` px from `from`,
  * comes to rest. The open form then takes its place in one frame, which moves nothing and cuts no line. A closing

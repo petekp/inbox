@@ -2,19 +2,18 @@ import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 
 import { EMPTY } from '../hooks/ledger'
 import { guidanceText } from '../hooks/model-text'
-import { promptNotes, TOLD_NOTHING } from '../hooks/inbox-text'
 import { toolAnswer } from '../hooks/tools'
 import type { AgentTool } from '../hooks/tools'
 import { OMP } from '../omp/src/texts'
 import type { LastAction, Ledger } from '../types'
-import { probeTools, type CaseTools } from './probe-tools'
+import { ompNotes, probeTools, type CaseTools } from './probe-tools'
 
 /**
  * The stand-in for omp/src/host.ts in the agent eval, as probe.ts is for the MCP hosts. It registers the real `record`
  * and `close` tools and answers them from the case's ledger. It mirrors only what decides what the model reads in
  * host.ts: the tools, the guidance appended to the system prompt, and the inbox notes as a hidden custom message.
- * `promptNotes` is the function host.ts reaches through `notePrompt`. The real host's state, panel and band are not
- * loaded.
+ * `ompNotes` calls `promptNotes`, the function host.ts reaches through `notePrompt`. The real host's state, panel and
+ * band are not loaded.
  *
  * The runner passes the case through the environment. INBOX_EVAL_STATE holds `{ shown, ledger, lastActions, tools }`: the inbox the
  * agent is shown, the inbox the tools answer from, the person's latest press on each row, and the case's tools. INBOX_EVAL_LOG is the file each call is appended to. INBOX_EVAL_TOOLS is
@@ -79,12 +78,7 @@ export default function (pi: Pi): void {
     const text = guidanceText(OMP)
     const systemPrompt =
       !isGuided || event.systemPrompt.includes(text) ? event.systemPrompt : [...event.systemPrompt, text]
-    const { notes } = promptNotes(
-      OMP,
-      { ...shown, turn: shown.turn + 1 },
-      { text: event.prompt, isPress: false, isOpen: false },
-      TOLD_NOTHING,
-    )
+    const notes = ompNotes(OMP, shown, event.prompt)
     if (notes.length === 0) return { systemPrompt }
 
     return {

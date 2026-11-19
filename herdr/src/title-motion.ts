@@ -1,21 +1,24 @@
 import { LINE_PT } from '../../hooks/layout'
 import { titleSwapMs } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springStep } from '../../hooks/springs'
+import type { SpringState } from '../../hooks/springs'
 
 /**
  * How a row's title moves between its one-line form, cut with an ellipsis, and its wrapped form, while it moves. Both
  * forms are drawn, one over the other, and one shows at a time, since they wrap at different places. An opening
  * title's box grows to the wrapped height from the start, and the wrapped form takes the one-line form's place at
  * `swapsAt`, once that box has come to rest, so `swapsAt` is null until the wrapped height is measured. A closing title
- * takes its one-line form at once, and its box shrinks to one line unless its row's height holds. `shrunkForMs` is how
- * long the box of an opening that turned a close back had been shrinking, null when it opens from one line at rest. At
- * `endsAt` the title draws one form again.
+ * takes its one-line form at once, and its box shrinks to one line unless its row's height holds. `box` is the title
+ * box's spring at `boxAt`, the draw that last set its target, and `boxTo` that target, so a move that turns back
+ * counts from where the box really is. At `endsAt` the title draws one form again.
  */
 export type TitleGlide = {
   isWrapped: boolean
   since: number
   swapsAt: number | null
-  shrunkForMs: number | null
+  box: SpringState
+  boxAt: number
+  boxTo: number
   endsAt: number
 }
 
@@ -27,11 +30,26 @@ export type TitleMotion = { isWrapShown: boolean }
 
 const wraps = (height: number | undefined): height is number => height !== undefined && height > LINE_PT + 0.5
 
+const boxNow = (g: TitleGlide, now: number): SpringState => springStep(g.box, g.boxTo, now - g.boxAt)
+
+/**
+ * The glide with its box's target set to `to` in this draw, as the look sets it. An opening title swaps once the box
+ * rests at the wrapped height, counted from where the box is now.
+ */
+function aimed(g: TitleGlide, to: number, now: number): TitleGlide {
+  if (to === g.boxTo && (g.swapsAt !== null || !g.isWrapped)) return g
+  const box = boxNow(g, now)
+  const restsAt = now + titleSwapMs(to, box)
+  const swapsAt = !g.isWrapped ? g.swapsAt : wraps(to) ? restsAt : null
+
+  return { ...g, box, boxAt: now, boxTo: to, swapsAt, endsAt: Math.max(g.endsAt, restsAt + FRAME_MS) }
+}
+
 /**
  * A row's title glide in this draw, from its last glide, whether the row was and is open, the title's measured height,
- * which is the wrapped height while the row is open or its title moves, and `heldUntil`, when the row's height stopped
- * holding while its last close's panel faded. A title that fits on one line has no glide. An open that turns a close
- * back grows the box from where it is, and shows the wrapped form at once if the box still holds the wrapped height.
+ * which is the wrapped height while the row is open or its title moves, and whether a closing row's height holds in
+ * this draw while its panel fades. A title that fits on one line has no glide. An open that turns a close back grows
+ * the box from where it is, and shows the wrapped form at once if the box still rests at the wrapped height.
  */
 export function stepTitle(
   last: TitleGlide | null,
@@ -39,26 +57,40 @@ export function stepTitle(
   isOpen: boolean,
   now: number,
   height: number | undefined,
-  heldUntil = 0,
+  isHeld = false,
 ): TitleGlide | null {
   const live = last !== null && now < last.endsAt ? last : null
+  const to = (isOpen || isHeld) && wraps(height) ? height : LINE_PT
   if (isOpen && !wasOpen) {
-    const shrunkForMs = live && !live.isWrapped ? Math.max(0, now - Math.max(live.since, heldUntil)) : null
+    const box = live ? boxNow(live, now) : { x: LINE_PT, v: 0 }
+    const endsAt = now + 2 * FRAME_MS + HEIGHT_SETTLE_MS
+    const opening = {
+      isWrapped: true,
+      since: now,
+      swapsAt: null,
+      box,
+      boxAt: now,
+      boxTo: live?.boxTo ?? LINE_PT,
+      endsAt,
+    }
 
-    return { isWrapped: true, since: now, swapsAt: null, shrunkForMs, endsAt: now + 2 * FRAME_MS + HEIGHT_SETTLE_MS }
+    return aimed(opening, to, now)
   }
   if (!isOpen && wasOpen) {
     if (!wraps(height)) return null
+    const box = live ? boxNow(live, now) : { x: height, v: 0 }
+    const endsAt = now + HEIGHT_SETTLE_MS + FRAME_MS
 
-    return { isWrapped: false, since: now, swapsAt: now, shrunkForMs: null, endsAt: now + HEIGHT_SETTLE_MS + FRAME_MS }
+    return aimed(
+      { isWrapped: false, since: now, swapsAt: now, box, boxAt: now, boxTo: live?.boxTo ?? height, endsAt },
+      to,
+      now,
+    )
   }
-  if (!live || !live.isWrapped || live.swapsAt !== null || now === live.since) return live
-  if (!wraps(height)) return null
-  const from =
-    live.shrunkForMs === null ? { x: LINE_PT, v: 0 } : springStep({ x: height, v: 0 }, LINE_PT, live.shrunkForMs)
-  const swapsAt = now + titleSwapMs(height, from)
+  if (!live) return null
+  if (live.isWrapped && live.swapsAt === null && now !== live.since && !wraps(height)) return null
 
-  return { ...live, swapsAt, endsAt: Math.max(live.endsAt, swapsAt + FRAME_MS) }
+  return aimed(live, to, now)
 }
 
 export function titleMotion(g: TitleGlide | null, now: number): TitleMotion | null {
