@@ -279,7 +279,8 @@ export default class Inbox extends View {
     if (text === '') return
     const isGoal = rowId === GOAL_KEYS_ID
     const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send
-    const isSent = this.send({ action: 'type', id: rowId, text }, [], label, cx, isGoal ? undefined : text)
+    const typed: Does = { is: 'press', press: { action: 'type', id: rowId, text }, effects: [], kind: null }
+    const isSent = this.send(typed, label, cx, isGoal ? undefined : text)
     this.ui = afterSend(this.ui, rowId, isSent)
     this.closeStaleField()
   }
@@ -288,13 +289,7 @@ export default class Inbox extends View {
    * Sends a press through the queue: the look runs its opens and copies, with the task's clipboard, then writes the
    * press file and wakes the host on the terminal the session file names. Returns whether the press went.
    */
-  send(
-    press: Extract<Does, { is: 'press' }>['press'],
-    effects: Extract<Does, { is: 'press' }>['effects'],
-    label: string,
-    cx: Context,
-    reply?: string,
-  ): boolean {
+  send(d: Extract<Does, { is: 'press' }>, label: string, cx: Context, reply?: string): boolean {
     const read = this.read?.is === 'read' ? this.read : null
     const target: PressTarget | null =
       this.sessionId && read && this.view
@@ -307,7 +302,7 @@ export default class Inbox extends View {
             projectFolder: read.projectFolder,
           }
         : null
-    const sent = this.queue.send(target, press, effects, label, reply)
+    const sent = this.queue.send(target, d.press, d.effects, label, d.kind, reply)
     cx.notify()
     if (sent.is === 'refused') return false
     const queue = this.queue
@@ -334,7 +329,7 @@ export default class Inbox extends View {
     else if (d.is === 'collapse') this.collapse(d.id, d.isCollapsed, cx)
     else if (d.is === 'press') {
       this.ui = afterPress(this.ui, d.press)
-      this.send(d.press, d.effects, b.label, cx)
+      this.send(d, b.label, cx)
     } else if (d.is === 'type') this.type(d)
     else if (d.is === 'send') this.submit(d.rowId, cx)
     else if (d.is === 'leave') this.leave(d.rowId, d.isDiscard, cx)

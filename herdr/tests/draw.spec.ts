@@ -255,7 +255,11 @@ test('the PRs tab draws Clear merged and closed above the first PR, m presses it
   if (line?.kind !== 'line') throw new Error('no Clear merged and closed line')
   expect(at).toBeLessThan(blocks.findIndex(b => b.kind === 'pr'))
   expect(line.buttons.map(b => [b.label, b.hotkey, b.does])).toEqual([
-    ['Clear merged and closed', 'm', { is: 'press', press: { action: 'pr-clear-finished' }, effects: [] }],
+    [
+      'Clear merged and closed',
+      'm',
+      { is: 'press', press: { action: 'pr-clear-finished' }, effects: [], kind: 'mark' },
+    ],
   ])
   const thread = blocks.find(b => b.kind === 'row' && b.isSelectable)
   if (thread?.kind !== 'row') throw new Error('no thread row')

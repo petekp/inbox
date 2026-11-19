@@ -47,8 +47,9 @@ function outOn(rowId: string, overrides: Partial<Out> = {}): Out {
     pressId: 'p5',
     rowId,
     path: '/x',
-    action: 'done',
-    label: 'Done',
+    action: 'discuss',
+    kind: 'talk',
+    label: 'Discuss',
     pending: null,
     result: null,
     before: rowSignature(view, rowId),
@@ -67,7 +68,7 @@ test('a press waits until its file is written, and by the give-up time reads not
   expect(settleOuts([unwritten], view, null, NOW + GIVE_UP_MS * 2).outs).toEqual([unwritten])
   expect(settleOuts([outOn(rowId, { isTaken: true })], view, null, NOW + 100).outs.length).toBe(1)
   const taken = settleOuts([outOn(rowId, { isTaken: true })], view, null, NOW + GIVE_UP_MS)
-  expect(taken.lines[rowId]?.text).toBe('Not confirmed: Done')
+  expect(taken.lines[rowId]?.text).toBe('Not confirmed: Discuss')
   expect(taken.notes).toEqual({})
   const lost = settleOuts([outOn(rowId)], view, null, NOW + GIVE_UP_MS)
   expect(lost.outs).toEqual([])
