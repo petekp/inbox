@@ -13,10 +13,11 @@ import type { ModelCall, Replay } from '../evals/status-replay'
 import { REPLAYS } from '../evals/status-replays'
 import { blockingFailures, gradeReplay, gradeStep, tally } from '../evals/status-grade'
 import { RULES } from '../evals/status-rules'
-import { subject, statusOf, sessionOf, baseScene, contextOf, PATH_SCENES, SCENES } from './status-evals-scenes'
+import { subject, statusOf, sessionOf, baseScene, contextOf } from './status-evals-scene-base'
+import { PATH_SCENES, SCENES } from './status-evals-scenes'
 import { GOOD_RUNS, OTHER_GOOD_RUNS } from './status-evals-runs'
 import { BAD_RUNS } from './status-evals-bad-runs'
-import type { Scene } from './status-evals-scenes'
+import type { Scene } from './status-evals-scene-base'
 
 function failuresOf(rule: string, change?: (s: Scene) => void): string[] {
   const scene = baseScene()
@@ -41,9 +42,12 @@ test('each rule passes and fails a page on the paths beside its main one', () =>
 
 function scripted(answers: string[]): ModelCall {
   const queue = [...answers]
-  return async () => {
+  let last = ''
+  return async prompt => {
+    if (prompt.includes('<your-answer>')) return { text: `${last}\nSUGGEST: -` }
     if (queue.length === 0) throw new Error('the script ran out of answers')
-    return { text: queue.shift()! }
+    last = queue.shift()!
+    return { text: last }
   }
 }
 
@@ -203,7 +207,7 @@ test('a replay from a call record sends the prompt the record holds, at the time
     agent: 'claude',
     ask: async prompt => {
       prompts.push(prompt)
-      return { text: 'SET: s1 | working | syncs on reconnect' }
+      return { text: 'SET: s1 | working | syncs on reconnect\nSUGGEST: -' }
     },
   })
 

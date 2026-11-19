@@ -57,20 +57,22 @@ if [ "${1:-}" = "--suite" ]; then
 fi
 bundle=$(mktemp -d)
 trap 'rm -rf "$bundle"' EXIT
-esbuild="$DIR/codex/node_modules/.bin/esbuild"
+# esbuild names each bundled file by its path from the folder it runs in, so it runs from the repo: a bundle
+# started from another folder would hash differently in the results file.
+esbuild() { (cd "$DIR" && "$DIR/codex/node_modules/.bin/esbuild" "$@"); }
 case "$suite" in
     model)
-        "$esbuild" "$DIR/evals/run.ts" --bundle --platform=node --format=esm \
+        esbuild "$DIR/evals/run.ts" --bundle --platform=node --format=esm \
             --outfile="$bundle/run.mjs" --log-level=warning
         INBOX_EVAL_ROOT="$DIR" node "$bundle/run.mjs" --cases "$DIR/evals/cases" "$@"
         ;;
     agent)
-        "$esbuild" "$DIR/evals/agent.ts" "$DIR/evals/probe.ts" "$DIR/evals/omp-probe.ts" --bundle --platform=node --format=esm \
+        esbuild "$DIR/evals/agent.ts" "$DIR/evals/probe.ts" "$DIR/evals/omp-probe.ts" --bundle --platform=node --format=esm \
             --outdir="$bundle" --out-extension:.js=.mjs --log-level=warning
         INBOX_EVAL_ROOT="$DIR" node "$bundle/agent.mjs" --cases "$DIR/evals/agent-cases" "$@"
         ;;
     status)
-        "$esbuild" "$DIR/evals/status-run.ts" --bundle --platform=node --format=esm \
+        esbuild "$DIR/evals/status-run.ts" --bundle --platform=node --format=esm \
             --outfile="$bundle/status-run.mjs" --log-level=warning
         INBOX_EVAL_ROOT="$DIR" node "$bundle/status-run.mjs" "$@"
         ;;

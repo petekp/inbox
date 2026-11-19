@@ -1,15 +1,8 @@
-import { parseStatus } from '../hooks/status'
 import { startSession } from './status-replay'
 import type { Replay, StepResult } from './status-replay'
+import { isAnswerWritten } from './status-rule-helpers'
 import { RULES } from './status-rules'
 import type { Reads, RuleContext, RuleResult } from './status-rules'
-
-/** Whether the Status answer the host applied at this step wrote a change. */
-function isAnswerWritten(result: StepResult): boolean {
-  const call = result.calls.find(c => c.kind === 'status')
-
-  return call !== undefined && call.overLimit === null && parseStatus(call.answers.at(-1) ?? null)?.kind === 'ops'
-}
 
 function isOpportunity(reads: Reads, { step, result }: RuleContext): boolean {
   if (step.call === undefined) return false

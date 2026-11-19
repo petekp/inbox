@@ -1,6 +1,8 @@
+import { parseStatus } from '../hooks/status'
 import { isOpen } from '../hooks/status-limits'
 import type { Milestone, SessionStatus, Subject } from '../types'
 import type { Facts, Piece } from './status-facts'
+import type { StepResult } from './status-replay'
 
 /** A word that names a time, which code writes and the model never does. */
 export const TIME_WORDS =
@@ -71,6 +73,24 @@ export function headOffFocus(o: SessionStatus | null, { focusMatch, pastMatch }:
   return isPastShown ? `the head "${shown}" still names /${pastMatch}/` : null
 }
 
+/** Whether the Status answer the host applied at this step wrote a change. */
+export function isAnswerWritten(result: StepResult): boolean {
+  const call = result.calls.find(c => c.kind === 'status')
+
+  return call !== undefined && call.overLimit === null && parseStatus(call.answers.at(-1) ?? null)?.kind === 'ops'
+}
+
+/** Whether the facts keep the title pattern they had before the step, and the head's title matched it then. */
+export function isTitleKept(result: StepResult, before: { overview: SessionStatus | null; facts: Facts }): boolean {
+  const pattern = result.facts.titleMatch
+
+  return (
+    !!pattern &&
+    pattern === before.facts.titleMatch &&
+    new RegExp(pattern, 'i').test(before.overview?.head?.title ?? '')
+  )
+}
+
 /** The goal's milestones, once a goal is set and has them. */
 export const milestonesOf = (o: SessionStatus | null): Milestone[] =>
   o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []
@@ -82,6 +102,13 @@ export const milestonesOf = (o: SessionStatus | null): Milestone[] =>
 export function milestonesFor(m: { id: string; match: string }, facts: Pick<Facts, 'pieces'>, o: SessionStatus | null) {
   const named = milestonesOf(o).filter(x => new RegExp(m.match, 'i').test(x.name))
   if (named.length > 0 || !o) return named
+
+  return milestonesHolding(m, facts, o)
+}
+
+/** The page's milestones that hold the subject of a piece that serves one of the facts' milestones. */
+export function milestonesHolding(m: { id: string }, facts: Pick<Facts, 'pieces'>, o: SessionStatus | null) {
+  if (!o) return []
   const serving = facts.pieces.filter(p => p.serves === m.id || p.servesAlso === m.id)
   const held = new Set(serving.flatMap(p => subjectsFor(p, o)).map(s => o.serves[s.id]))
 

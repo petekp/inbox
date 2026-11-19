@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T05:17:47.947Z. 300029 characters follow.
+// Built at 2026-11-19T22:34:35.746Z. 304228 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -156,7 +156,9 @@ var EMPTY_SESSION_STATUS = {
   nextMilestoneId: 1,
   serves: {},
   goalRefused: null,
-  suggestedGoal: null
+  suggestedGoal: null,
+  changedAt: null,
+  quietCalls: 0
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -683,6 +685,8 @@ function upgradeStatus(saved) {
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
     lastCallReadAt: "lastCallReadAt" in o ? time2(o.lastCallReadAt) : newestEnd(children),
+    changedAt: time2(o.changedAt),
+    quietCalls: time2(o.quietCalls) ?? 0,
     ...goal
   };
 }
@@ -1164,6 +1168,18 @@ function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
 
+// ../hooks/status-freshness.ts
+var STALE_AFTER_CALLS = 5;
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
+function statusPageLine(s, now) {
+  const o = s.ledger.overview;
+  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
+  return {
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
+  };
+}
+
 // ../hooks/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 
@@ -1537,15 +1553,21 @@ function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
 }
+function workCountText(m, o) {
+  const work = o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === m.id);
+  const done = work.filter((s) => s.status === "done").length;
+  const isUnsaid = isOpen(m) && m.text.trim() === "" && done < work.length;
+  return isUnsaid ? `${done} of ${work.length} done` : null;
+}
 function milestoneRow(step, o, items) {
   const m = step.milestone;
-  const isOpen = m.status !== "done" && m.status !== "dropped";
+  const isOpen2 = isOpen(m);
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
   const holds = items.filter((i) => {
     const to = o.askSubjects[i.id] ?? [];
     return to.some((id) => id === m.id || servingIds.has(id));
   });
-  const isHeld = isOpen && holds.length > 0;
+  const isHeld = isOpen2 && holds.length > 0;
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
   const direct = oldestAsk(items, o.askSubjects, m.id);
@@ -1557,11 +1579,11 @@ function milestoneRow(step, o, items) {
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isBold: isOpen,
+    isBold: isOpen2,
     isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
-    text: textBeyondName(m.name, m.text),
+    text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
@@ -1599,7 +1621,6 @@ function goalPage(o, items) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";
@@ -1770,7 +1791,7 @@ function statusPage(s, now) {
     ...goalParts,
     goal,
     rows,
-    error: s.overviewFailure ? STATUS_FAILED : null
+    ...statusPageLine(s, now)
   };
 }
 function seenSubjectIds(row) {
@@ -2392,6 +2413,7 @@ function isStatusUnderActions(f, isOpen) {
   const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
   return isOpen && (isPressOut(f) || isDoneStillWaiting);
 }
+var holdsStatusWhileOut = (kind) => kind === "mark";
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
@@ -3717,10 +3739,12 @@ function heldLabel(c) {
     return `Answered: ${c.outcome}`;
   return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
 }
-function footerError(tab, status, statusPageError) {
+function footerError(tab, status, page) {
   if (tab === "prs")
     return null;
-  return (tab === "overview" ? statusPageError : null) ?? status.error;
+  if (tab !== "overview")
+    return status.error;
+  return page?.error ?? status.error ?? page?.stale ?? null;
 }
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
@@ -3915,7 +3939,8 @@ var PR_TONE = {
 };
 function prButton(pr, a, id) {
   const effect = pr ? prPressEffect(pr, a.press) : null;
-  const b = button(id, a.label, a.emphasis, { is: "press", press: a.press, effects: effect ? [effect] : [] }, a.hotkey);
+  const does = { is: "press", press: a.press, effects: effect ? [effect] : [], kind: a.kind };
+  const b = button(id, a.label, a.emphasis, does, a.hotkey);
   return { ...b, isOut: a.isOut };
 }
 function prFeedback(screen, id) {
@@ -3987,7 +4012,8 @@ function settledPr(d) {
       ...button(`${id} undo`, ROW_COPY.undo, "quiet", {
         is: "press",
         press: { action: "pr-undo", ref: pr.ref },
-        effects: []
+        effects: [],
+        kind: null
       }),
       runsOutAt: state.at + SETTLED_MS
     }
@@ -4207,7 +4233,7 @@ function doesOf(k) {
     return { is: "nothing" };
   if (p.action === "type-goal")
     return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
-  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
+  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [], kind: k.kind };
 }
 function keyButtons(id, keys, from = 0) {
   return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)));
@@ -4479,7 +4505,7 @@ function rowDoes(row, press, kind, agent) {
     return { is: "leave", rowId: row.id, isDiscard: true };
   const step = press.action === "step" ? row.steps[press.step] : undefined;
   const effects = kind === "local" && row.item && step ? stepEffects(row.item, step) : [];
-  return { is: "press", press, effects };
+  return { is: "press", press, effects, kind };
 }
 function rowButtons(row, isAllShown, agent) {
   const { options, keys, more } = rowKeyPlan(row, isAllShown);
@@ -4598,7 +4624,7 @@ function rowBlock(row, ui, selected, screen) {
 }
 function closedBlock(d, now) {
   const action = closedLineAction(d);
-  const closedDoes = action ? { is: "press", press: action.press, effects: [] } : { is: "nothing" };
+  const closedDoes = action ? { is: "press", press: action.press, effects: [], kind: null } : { is: "nothing" };
   return {
     kind: "row",
     id: `closed ${d.id}`,
@@ -4723,7 +4749,7 @@ function tabCells(screen, tab) {
   }));
 }
 function chrome(screen, tab) {
-  const error = footerError(tab, screen.view.status, screen.view.statusPage.error);
+  const error = footerError(tab, screen.view.status, screen.view.statusPage);
   return { banners: tabBarBanners([], error, null) };
 }
 function tabBlocks(screen, ui) {
@@ -5156,17 +5182,19 @@ var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
 var LONGEST_MOVE_PX = 2000;
 var FRAME_MS = 16;
 var STEP_MS = 1;
+var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
 function springStep(s, target, ms, spring = HEIGHT_SPRING) {
   const w = 2 * Math.PI / spring.response;
   let { x, v } = s;
   for (let t = 0;t < ms; t += STEP_MS) {
+    if (t % FRAME_MS === 0 && isAtRest({ x, v }, target, spring))
+      return { x: target, v: 0 };
     const dt = Math.min(STEP_MS, ms - t);
     v += (-w * w * (x - target) - 2 * spring.damping * w * v) * dt;
     x += v * dt;
   }
   return { x, v };
 }
-var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
 function springFrames(from, target, spring = HEIGHT_SPRING) {
   const frames = [from.x];
   let s = from;
@@ -5198,6 +5226,17 @@ var SLIDE_PX = 8;
 function enterDelayMs(height, from = { x: 0, v: 0 }) {
   const at = springFrames(from, height).findLastIndex((x) => height - x > SLIDE_PX / 2) + 1;
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
+}
+var TURNED_BACK_CUT_OPACITY = 0.5;
+function turnBackFades(height, from) {
+  const dimMs = enterDelayMs(height, from);
+  const full = { to: 1, ms: ENTER_FADE_MS };
+  return dimMs > 0 ? [{ to: TURNED_BACK_CUT_OPACITY, ms: dimMs }, full] : [full];
+}
+var CUT_OPACITY = 0.2;
+function faintCloseFades(opacity) {
+  const out = { to: 0, ms: LEAVE_FADE_MS };
+  return opacity > CUT_OPACITY ? [{ to: CUT_OPACITY, ms: 0 }, out] : [out];
 }
 function titleSwapMs(height, from) {
   return (springFrames(from, height).length - 1) * FRAME_MS;
@@ -5374,26 +5413,91 @@ function openedAt(g, now) {
 }
 var shutTo = (height, ms) => ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING);
 
+// src/panel-steps.ts
+var spaceNow = (s, now) => springStep(s.box, s.to, now - s.at);
+function aimSpace(last, to, now) {
+  if (last === null)
+    return { box: { x: to, v: 0 }, at: now, to };
+  return to === last.to ? last : { box: spaceNow(last, now), at: now, to };
+}
+function timed(now, from, fades) {
+  let at = now;
+  let opacity = from;
+  return fades.map((step) => {
+    const started = { ...step, at, from: opacity };
+    at += Math.max(step.ms, NEXT_FRAME_MS);
+    opacity = step.to;
+    return started;
+  });
+}
+function stepsFrom(now, space, height, opacity) {
+  return timed(now, opacity, turnBackFades(height, space ? spaceNow(space, now) : { x: height, v: 0 }));
+}
+var faintCloseSteps = (now, steps) => {
+  const opacity = opacityAt(steps, now);
+  return timed(now, opacity, faintCloseFades(opacity));
+};
+function easeOut(x) {
+  const at = (t, control) => 3 * (1 - t) * t * t * control + t ** 3;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0;i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (at(mid, 0.58) < x)
+      lo = mid;
+    else
+      hi = mid;
+  }
+  return at((lo + hi) / 2, 1);
+}
+function opacityAt(steps, now) {
+  const step = steps.findLast((s) => s.at <= now) ?? steps[0];
+  if (!step)
+    return 0;
+  const share = step.ms > 0 ? Math.min(1, Math.max(0, (now - step.at) / step.ms)) : 1;
+  return step.from + (step.to - step.from) * easeOut(share);
+}
+
 // src/title-motion.ts
 var wraps = (height) => height !== undefined && height > LINE_PT + 0.5;
-function stepTitle(last, wasOpen, isOpen, now, height, heldUntil = 0) {
+var boxNow = (g, now) => springStep(g.box, g.boxTo, now - g.boxAt);
+function aimed(g, to, now) {
+  if (to === g.boxTo && (g.swapsAt !== null || !g.isWrapped))
+    return g;
+  const box = boxNow(g, now);
+  const restsAt = now + titleSwapMs(to, box);
+  const swapsAt = !g.isWrapped ? g.swapsAt : wraps(to) ? restsAt : null;
+  return { ...g, box, boxAt: now, boxTo: to, swapsAt, endsAt: Math.max(g.endsAt, restsAt + FRAME_MS) };
+}
+function stepTitle(last, wasOpen, isOpen, now, height, isHeld = false) {
   const live = last !== null && now < last.endsAt ? last : null;
+  const to = (isOpen || isHeld) && wraps(height) ? height : LINE_PT;
   if (isOpen && !wasOpen) {
-    const shrunkForMs = live && !live.isWrapped ? Math.max(0, now - Math.max(live.since, heldUntil)) : null;
-    return { isWrapped: true, since: now, swapsAt: null, shrunkForMs, endsAt: now + 2 * FRAME_MS + HEIGHT_SETTLE_MS };
+    const box = live ? boxNow(live, now) : { x: LINE_PT, v: 0 };
+    const endsAt = now + 2 * FRAME_MS + HEIGHT_SETTLE_MS;
+    const opening = {
+      isWrapped: true,
+      since: now,
+      swapsAt: null,
+      box,
+      boxAt: now,
+      boxTo: live?.boxTo ?? LINE_PT,
+      endsAt
+    };
+    return aimed(opening, to, now);
   }
   if (!isOpen && wasOpen) {
     if (!wraps(height))
       return null;
-    return { isWrapped: false, since: now, swapsAt: now, shrunkForMs: null, endsAt: now + HEIGHT_SETTLE_MS + FRAME_MS };
+    const box = live ? boxNow(live, now) : { x: height, v: 0 };
+    const endsAt = now + HEIGHT_SETTLE_MS + FRAME_MS;
+    return aimed({ isWrapped: false, since: now, swapsAt: now, box, boxAt: now, boxTo: live?.boxTo ?? height, endsAt }, to, now);
   }
-  if (!live || !live.isWrapped || live.swapsAt !== null || now === live.since)
-    return live;
-  if (!wraps(height))
+  if (!live)
     return null;
-  const from = live.shrunkForMs === null ? { x: LINE_PT, v: 0 } : springStep({ x: height, v: 0 }, LINE_PT, live.shrunkForMs);
-  const swapsAt = now + titleSwapMs(height, from);
-  return { ...live, swapsAt, endsAt: Math.max(live.endsAt, swapsAt + FRAME_MS) };
+  if (live.isWrapped && live.swapsAt === null && now !== live.since && !wraps(height))
+    return null;
+  return aimed(live, to, now);
 }
 function titleMotion(g, now) {
   if (g === null)
@@ -5495,10 +5599,10 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const height = heightOf(panelId(id)) ?? 0;
     if (height <= 0 || t.track.state !== "open" && t.track.state !== "opening")
       return false;
-    const waitMs = enterDelayMs(height, shutTo(height, t.panelShutForMs));
-    const fadesAt = t.track.since + (t.panelShutForMs === null ? NEXT_FRAME_MS : 0) + waitMs;
-    return t.track.state === "open" || now >= fadesAt;
+    const fadesAt = t.panelSteps ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height);
+    return t.track.state === "open" || now >= fadesAt && !isPanelFaint(t);
   };
+  const isPanelFaint = (t) => t.track.state === "opening" && t.panelSteps !== null && now < (t.panelSteps.at(-1)?.at ?? now);
   const panelFadeWaitMs = (t) => t.track.state === "open" ? NEXT_FRAME_MS : 0;
   const panelHolds = new Map(blocks.flatMap((b) => {
     const old = was.rows.get(b.id);
@@ -5522,7 +5626,6 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isOpen = block.kind === "row" && isOpenRow(block);
     const wasOpen = last?.block.kind === "row" && isOpenRow(last.block);
     const isOpenFormSwapped = track.hasOpenForm && !drawsPanel(track);
-    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)), last?.panelHeldUntil) : null;
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const isPressed = block.kind === "field";
@@ -5531,9 +5634,20 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
     const under = stepUnder(last?.under ?? null, block, now, isInput);
     const isTurnedBack = isStart && track.state === "opening" && last?.track.state === "closing";
-    const shutFrom = last ? Math.max(last.track.since, last.panelHeldUntil) : now;
-    const panelShutForMs = track.state !== "opening" ? null : isTurnedBack ? Math.max(0, now - shutFrom) : isStart ? null : last?.panelShutForMs ?? null;
+    const panelHeight = heightOf(panelId(block.id));
+    const lastSteps = last?.panelSteps ?? null;
+    const isFaintClose = isStart && track.state === "closing" && last !== undefined && isPanelFaint(last);
+    const panelSteps = track.state !== "opening" && track.state !== "closing" ? null : isTurnedBack ? stepsFrom(now, last?.panelSpace ?? null, panelHeight ?? 0, lastSteps ? opacityAt(lastSteps, now) : 0) : isFaintClose && lastSteps ? faintCloseSteps(now, lastSteps) : isStart ? null : lastSteps;
+    const panelStep = panelSteps?.findLast((step) => step.at <= now) ?? null;
     const panelHeldUntil = track.state !== "closing" ? 0 : isStart ? panelHolds.get(block.id) ?? now : last?.panelHeldUntil ?? 0;
+    const closing = track.state === "closing" && block.kind === "row" ? opened : null;
+    const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
+    const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
+    const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil);
+    const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state));
+    const holdsPanel = drawsPanel(track) && !isLeftOut;
+    const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
+    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), isHeld) : null;
     rows.set(block.id, {
       track,
       block,
@@ -5543,13 +5657,10 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       springId,
       isInputMove,
       under,
-      panelShutForMs,
+      panelSpace,
+      panelSteps,
       panelHeldUntil
     });
-    const closing = track.state === "closing" && block.kind === "row" ? opened : null;
-    const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
-    const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
-    const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil);
     motion.set(block.id, {
       state: track.state,
       isStart,
@@ -5558,11 +5669,11 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       fadeMs: glide?.fadeMs ?? 0,
       waitsForSpace: glide?.waitsForSpace ?? false,
       shutForMs: glide?.shutForMs ?? null,
-      panel: panelOf(track.state, isStart, last?.track.state, closing),
+      panel: panelStep?.to ?? panelOf(track.state, isStart, last?.track.state, closing),
       isPanelWaiting: track.state === "opening",
-      panelShutForMs: isTurnedBack ? panelShutForMs : null,
+      panelFadeMs: panelStep?.ms ?? null,
       closing,
-      isPanelLeftOut: closing !== null && !isHeld && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
+      isPanelLeftOut: isLeftOut || wasClosing && block.kind === "row",
       title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,
@@ -5607,7 +5718,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     holdsUntil,
     closeHoldsUntil,
     opensAfterClose,
-    t.panelHeldUntil
+    t.panelHeldUntil,
+    ...(t.panelSteps ?? []).map((step) => step.at)
   ]).filter((at) => at > now);
   return {
     blocks: drawn,
@@ -6423,8 +6535,10 @@ function panelEl(r, m, p, isLeaving, titleEnd) {
   const key = panelId(r.id);
   const opacity = m?.panel ?? null;
   const height = p.heights.get(key) ?? 0;
-  const delay = m?.isPanelWaiting ? enterDelayMs(height, shutTo(height, m.panelShutForMs)) : 0;
-  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], delay, easing: "ease-out" };
+  const turnBackFadeMs = m?.panelFadeMs ?? null;
+  const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0;
+  const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? "open"];
+  const glide = { duration, delay, easing: "ease-out" };
   return [
     v_flex6().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];
@@ -6597,7 +6711,7 @@ function drawOuts(blocks, outs, lines, now) {
   const outRows = new Set(byRow.keys());
   const lineOf = (id) => {
     const out = byRow.get(id);
-    if (!out)
+    if (!out || holdsStatusWhileOut(out.kind))
       return lines[id] ?? null;
     const source = out.pending ?? { is: "sending", label: SENDING, at: now };
     if (out.result)
@@ -6661,7 +6775,7 @@ class PressQueue {
   constructor(io) {
     this.io = io;
   }
-  send(target, press, effects, label, reply) {
+  send(target, press, effects, label, kind, reply) {
     const rowId = pressRowId(press);
     const refuse = (reason) => {
       this.lines[rowId] = notSentLine(reason);
@@ -6679,6 +6793,7 @@ class PressQueue {
       rowId,
       path: pressPath(target.appHome, target.sessionId, pressId),
       action: outAction2(press),
+      kind,
       label,
       ...reply !== undefined ? { reply } : {},
       pending,
@@ -7177,11 +7292,12 @@ class Inbox extends View {
       return;
     const isGoal = rowId === GOAL_KEYS_ID;
     const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send;
-    const isSent = this.send({ action: "type", id: rowId, text }, [], label, cx, isGoal ? undefined : text);
+    const typed = { is: "press", press: { action: "type", id: rowId, text }, effects: [], kind: null };
+    const isSent = this.send(typed, label, cx, isGoal ? undefined : text);
     this.ui = afterSend(this.ui, rowId, isSent);
     this.closeStaleField();
   }
-  send(press, effects, label, cx, reply) {
+  send(d, label, cx, reply) {
     const read = this.read?.is === "read" ? this.read : null;
     const target = this.sessionId && read && this.view ? {
       appHome: appHome(),
@@ -7191,7 +7307,7 @@ class Inbox extends View {
       holds: this.holds(Date.now()),
       projectFolder: read.projectFolder
     } : null;
-    const sent = this.queue.send(target, press, effects, label, reply);
+    const sent = this.queue.send(target, d.press, d.effects, label, d.kind, reply);
     cx.notify();
     if (sent.is === "refused")
       return false;
@@ -7218,7 +7334,7 @@ class Inbox extends View {
       this.collapse(d.id, d.isCollapsed, cx);
     else if (d.is === "press") {
       this.ui = afterPress(this.ui, d.press);
-      this.send(d.press, d.effects, b.label, cx);
+      this.send(d, b.label, cx);
     } else if (d.is === "type")
       this.type(d);
     else if (d.is === "send")

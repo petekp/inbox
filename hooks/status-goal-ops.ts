@@ -180,20 +180,21 @@ export function withRestatedGoalAsMilestones(o: SessionStatus | null, ops: Op[],
 
   return ops.flatMap(op =>
     op.kind === 'goal' && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text)
-      ? op.milestones.map(m => ({ kind: 'milestone' as const, status: m.status, name: m.name, text: '' }))
+      ? op.milestones.map(m => ({ kind: 'milestone' as const, status: m.status, name: m.name, text: m.text }))
       : [op],
   )
 }
 
 /**
- * The goal a GOAL line sets, with its milestones as it wrote them. Each open milestone of the goal before it that the
- * line names again with an open status carries on into the new one of that name: its open subjects and asks stay linked to it, and while
- * its status is the same it keeps where it stands and when it started. Every other link goes.
+ * The goal a GOAL line sets, with its milestones as it wrote them, each with where it stands when the line gives it.
+ * Each open milestone of the goal before it that the line names again with an open status carries on into the new one
+ * of that name: its open subjects and asks stay linked to it, and while its status is the same and the line gives it no
+ * text, it keeps where it stands. Every other link goes.
  */
 function inferredGoal(
   o: SessionStatus,
   text: string,
-  named: readonly { name: string; status: Milestone['status'] }[],
+  named: readonly { name: string; status: Milestone['status']; text: string }[],
   now: number,
 ): SessionStatus {
   const earlier = (name: string) => o.milestones.find(m => isOpen(m) && nameKey(m.name) === nameKey(name))
@@ -207,7 +208,7 @@ function inferredGoal(
       id,
       name: m.name,
       status: m.status,
-      text: isSame ? was.text : '',
+      text: m.text || (isSame ? was.text : ''),
       was: null,
       changedAt: now,
       closedAt: isOpen(m) ? null : now,
@@ -288,7 +289,9 @@ export function applyGoalOp(
     const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now)
     const milestones =
       op.kind === 'goal'
-        ? op.milestones.slice(0, MILESTONES_MAX).map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status }))
+        ? op.milestones
+            .slice(0, MILESTONES_MAX)
+            .map(m => ({ name: clipWords(m.name, NAME_KEPT), status: m.status, text: clipWords(m.text, TEXT_KEPT) }))
         : []
     const placed = new Map(
       servesLines.flatMap(l => {

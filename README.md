@@ -6,7 +6,7 @@ Inbox provides immediately apparent relief here by giving your agent an organize
 
 Even better, Inbox provides your agent a place to surface latent issues and opportunities, ones that it might otherwise gloss over in the interest of exclusively addressing the task at hand.
 
-Inbox is available for Claude Code in the terminal and desktop app, Codex in the ChatGPT desktop app, and omp in the terminal. Each variant is uniquely crafted for each platform, but works in same fundamental way in all of them.
+Inbox is available for Claude Code in the terminal and desktop app, Codex in the ChatGPT desktop app, and omp in the terminal. In the Herdr app, it can also open in a pane beside the terminal. Each variant is uniquely crafted for each platform, but works in same fundamental way in all of them.
 
 ## How it works
 https://github.com/user-attachments/assets/a493119c-4d8b-46e0-a18a-bd0ecf041b6b
@@ -32,11 +32,13 @@ desktop app on this machine.
 
 To install from the Claude desktop app instead, open a Code session:
 
-1. Click **+** beside the prompt, then **Add plugins**.
-2. In the Directory, click **+** at the top right, then **Add from a
-   repository**.
-3. Enter `petekp/inbox` and click **Sync**.
-4. Click **+** on Inbox.
+1. Click **+** beside the prompt, then **Plugins**, then **Manage plugins**.
+2. On the Plugins page, click **Add** at the top right, then **Add
+   marketplace**, then **Add from a repository**.
+3. Type `petekp/inbox`, pick **inbox / petekp** from the list, and click
+   **Sync**.
+4. On Inbox, click **Add to this computer**.
+5. Go back to your session and type `/inbox` to open the pane.
 
 This installs it for your user account, so it works in the terminal too.
 `/plugin` does not run in the desktop app, and the inbox does not reach the
@@ -64,6 +66,13 @@ claude plugin update inbox
 ```sh
 codex plugin marketplace add petekp/inbox
 codex plugin add inbox@inbox
+```
+
+If your shell says `command not found: codex`, use the copy inside the
+ChatGPT app in place of `codex` in both commands:
+
+```sh
+/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex
 ```
 
 Then, in the ChatGPT desktop app, trust the plugin's hooks: click the hook icon
@@ -129,6 +138,16 @@ The PRs tab needs the GitHub CLI, `gh`, signed in.
 
 Type `/inbox` in Claude Code or omp, or open the Inbox tab in the ChatGPT app. The
 inbox has four tabs: Status, Asks, Finds and PRs.
+
+The inbox starts empty. Give your agent a task, and the first rows come after
+its reply: a question it asked you, with its answers as buttons, and the Status
+of the work. In Claude Code, the line above the prompt shows once the inbox
+has something.
+
+To see every part with sample items, run `/inbox demo` in Claude Code or omp.
+Presses on them change only the samples. In Claude Code, press Hide demo or run
+the command again to go back. `/inbox demo recording` leaves out the notices
+that mark the samples, for a video. In omp, they last until the panel closes.
 
 ### Status
 
@@ -244,12 +263,14 @@ ChatGPT app has no such line. omp has a line with the same counts. It says
 
 In a Herdr app terminal, the inbox can open in a pane beside the terminal.
 
-1. Start Claude Code, omp or Codex in a Herdr app terminal. The first time, the
-   inbox asks "Install the inbox's Herdr mod?". Press Install.
-   Claude Code and omp ask in their own inbox. Codex asks on the ChatGPT app's
+1. Start Claude Code or omp in a Herdr app terminal, and type `/inbox`. The
+   first time, the inbox opens in the terminal and asks "Install the inbox's
+   Herdr mod?". Press Install. The ChatGPT app asks the same question on its
    Inbox tab.
-2. Type `/inbox` in Claude Code or omp. The inbox opens in a pane to the right
-   of the terminal. Claude Code's Open inbox button does the same.
+2. Type `/inbox` again. The inbox opens in a pane to the right of the
+   terminal. Claude Code's Open inbox button does the same. If you pressed
+   Install in another session or app and the inbox still opens in the
+   terminal, restart Claude Code.
 3. The pane shows the inbox of the terminal you last focused in its tab. It has
    Asks, Finds and PRs, and you can press every button. ← and → switch tabs,
    `j` and `k` move between rows, and esc gives the keys back to the terminal.
@@ -286,12 +307,6 @@ To tell the counts apart by each tab's color, add this row to `rows` under
 
 Herdr puts ` · ` between the tokens that have a value, and leaves the line out
 when none has one.
-
-To see every part with sample items in Claude Code, run `/inbox demo`. Presses
-on them change only the samples and send nothing. Press Hide demo, or run the
-command again, to go back to your own items. `/inbox demo recording` shows the
-same samples without the notices that mark them, for recording a video. Run
-`/inbox demo` to end it.
 
 ## Cost
 
@@ -384,47 +399,4 @@ It also adds the `/inbox` command.
 
 ## Developing
 
-Read [AGENTS.md](AGENTS.md) first. [docs/looks.md](docs/looks.md) says which
-file owns each rule and where the four looks differ on purpose.
-
-Run the mod from a clone:
-
-```sh
-claude --plugin-dir /path/to/inbox
-```
-
-The session reloads the mod when you change one of its files.
-
-The Codex plugin shares the rules in `hooks/` with the mod. Rebuild its
-bundles after changing either:
-
-```sh
-npm --prefix codex ci         # once
-npm --prefix codex run build
-```
-
-[codex/README.md](codex/README.md) covers trying a build in Codex.
-
-The omp extension in `omp/` shares the rules in `hooks/` too. It runs on Bun,
-and omp installs it from a bundle, so rebuild the bundle after changing
-`omp/src` or the shared modules:
-
-```sh
-bun install --cwd omp --frozen-lockfile --ignore-scripts   # once
-npm --prefix omp run build
-```
-
-Bun's bundler writes different output in different Bun versions. So the build
-runs the Bun version that `omp/package.json` pins, whichever Bun starts it, and
-the install above puts that Bun in `omp/node_modules`. The pin covers macOS on
-Apple silicon only. On another platform, add the matching `@oven/bun-*` package
-at the same version to the `devDependencies` in `omp/package.json`, or build
-with that Bun version installed.
-
-Try a build in omp with a fresh `HOME`, so it cannot touch your own omp
-settings or inbox: `env HOME=/path/to/empty/folder omp -e omp/src/host.ts`.
-
-`./scripts/check.sh` runs Prettier, a file-size check, `claude plugin validate`, a type check and
-the tests, and checks the Codex bundles and the omp bundle are current. The type check needs the
-types Claude Code writes to `.claude-plugin/types/` the first time it loads
-the mod.
+[docs/developing.md](docs/developing.md) says how to run and build the inbox from a clone.

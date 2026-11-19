@@ -23,13 +23,13 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'coordinator-day': [
     'DONE: s1 | merges edits on reconnect\nDONE: s2 | live in both stores\nDONE: m2 | merges edits on reconnect\nDONE: m3 | live in both stores\nSERVES: s4 | -\nSERVES: s5 | -\nSERVES: s6 | -\nSERVES: s7 | -',
     [
-      'HEAD: Vanishing notes | Fixing the archive bug, then shipping 2.5',
+      'HEAD: Vanishing notes | Fixing the archive bug for 2.5',
       'DONE: s6 | filed for later',
       'DONE: s7 | filed for later',
       'NEW: working | Vanishing notes | cause unknown',
       'NEW: queued | 2.5 release | after the bug fix',
       'LINK: c3 | Vanishing notes',
-      'GOAL: Notes 2.5 in the stores | working Notes stop vanishing; queued 2.5 live',
+      'GOAL: Notes 2.5 in the stores | working Notes stop vanishing: cause unknown; queued 2.5 live: after the bug fix',
       'SERVES: s11 | Notes stop vanishing',
       'SERVES: s12 | 2.5 live',
       'SERVES: s3 | -',
@@ -65,7 +65,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'NEW: queued | Sync conflicts | not started',
       'NEW: queued | Sync toggle | not started',
       'NEW: queued | 2.5 release | not started',
-      'GOAL: Offline sync in 2.5 | working Works offline; queued Conflicts handled; queued 2.5 live',
+      'GOAL: Offline sync in 2.5 | working Works offline: edits queue offline; queued Conflicts handled: not started; queued 2.5 live: not started',
       'SERVES: s1 | Works offline',
       'SERVES: s2 | Conflicts handled',
       'SERVES: s3 | Works offline',
@@ -113,7 +113,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
   ],
   'removed-goal': ['SET: s1 | working | notes, tags and attachments import'],
   'milestone-work-done': [
-    'SET: s4 | working | recent after pinned, title matches left\nSERVES: s5 | m3',
+    'SET: s4 | working | recent after pinned, title matches left\nSERVES: s5 | m3\nSET: m2 | working | ranking left\nSET: m3 | queued | not started',
     'SET: m1 | working | iPad loses edits\nNEW: working | iPad background sync | flush on background\nSERVES: iPad background sync | m1',
   ],
   'goal-met-next': [
@@ -199,7 +199,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'DROP: s2 | demo is off',
       'NEW: working | Search index | 0.8 s on large libraries',
       'NEW: queued | Search ranking | not started',
-      'GOAL: Search under 100 ms in 3.1 | working Index fast; queued Ranking done; queued 3.1 live',
+      'GOAL: Search under 100 ms in 3.1 | working Index fast: 0.8 s on large libraries; queued Ranking done: not started; queued 3.1 live',
       'SERVES: Search index | Index fast',
       'SERVES: Search ranking | Ranking done',
     ].join('\n'),
@@ -215,13 +215,30 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: Dark theme colors | -',
       'SERVES: Dark mode toggle | -',
       'GOAL: Dark mode in 3.1 | working Colors ready; queued Toggle shipped',
+      'SET: m1 | queued | on hold',
+      'SET: m2 | queued | not started',
     ].join('\n'),
   ],
   'goal-on-busy-page': [['SET: s2 | working | open the notebook as a viewer', ...servesLines].join('\n')],
+  'goal-names-release': [
+    [
+      'DONE: s13 | Folder survives Windows updates',
+      'SET: s5 | working | Rebuilds on every keystroke',
+      'HEAD: Search speed | Reducing delays in large note libraries',
+      'MILESTONE: working | Searches under 100ms | Repeated rebuilds identified',
+      'MILESTONE: queued | 2.6 published | Awaiting search improvements',
+      'NEXT: 2.6 published',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
+      'SERVES: s5 | Searches under 100ms',
+    ].join('\n'),
+  ],
   'mid-turn-activity': ['DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match, recency not in yet'],
   'milestone-dropped': [
     [
       'DROP: m2 | 2.5 ships as a web beta first',
+      'SET: m1 | working | merge on reconnect drafted',
+      'SET: m3 | queued | changelog not started',
       'SET: s2 | queued | waits for the store release',
       'SET: s3 | queued | waits for the store release',
       'SERVES: s2 | -',
@@ -235,6 +252,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'DONE: s2 | merged and shipped in the 2.5 beta',
       'DONE: m1 | sync fix and banner shipped',
       'SET: s3 | working | sync and banner covered, store text left',
+      'SET: m2 | queued | store text left',
     ].join('\n'),
   ],
   'goal-awaiting-milestones': [
@@ -268,7 +286,18 @@ export const GOOD_RUNS: Record<string, string[]> = {
     'DONE: s1 | fix merged\nNEW: working | 2.5 beta | building with the share sheet fix',
   ],
   'head-description': [
-    'SET: s2 | working | syncs on reconnect, merging clashing edits left\nHEAD: Shared lists | Getting edits to sync after time offline',
+    'SET: s2 | working | syncs on reconnect, merging clashing edits left\nHEAD: Shared lists | Getting edits to sync after time offline\nSET: m2 | working | syncs on reconnect\nSET: m3 | queued | not started',
+  ],
+  'head-after-done': [
+    [
+      'HEAD: Greet and pad | Adding --repeat and settling how pad() handles long strings',
+      'NEW: working | Repeat flag | added',
+      'DONE: Repeat flag | added',
+      'NEW: working | Pad trimming | cut or keep long strings',
+      'LINK: i1 | Pad trimming',
+    ].join('\n'),
+    'DONE: s2 | long strings kept whole',
+    'NO CHANGE',
   ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
@@ -314,7 +343,7 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'next-milestone': [
     [
       'SET: s1 | working | deletes next',
-      'GOAL: Notes 2.4 released | working Conflicts resolved; queued Export button shipped; queued Store release',
+      'GOAL: Notes 2.4 released | working Conflicts resolved: deletes next; queued Export button shipped: not started; queued Store release',
       'SERVES: s1 | m1',
       'SERVES: s2 | m2',
     ].join('\n'),

@@ -1,6 +1,13 @@
 import { ago } from '../../hooks/text'
 import { DOT } from '../../hooks/rows'
-import { feedbackOf, feedbackText, feedbackTone, hasAge, type FeedbackTone } from '../../hooks/feedback'
+import {
+  feedbackOf,
+  feedbackText,
+  feedbackTone,
+  hasAge,
+  holdsStatusWhileOut,
+  type FeedbackTone,
+} from '../../hooks/feedback'
 import { prMarkId, isBlockPressShown } from '../../hooks/pr-rows'
 import { isDismissed } from '../../hooks/pr-views'
 import type { PrView } from '../../types'
@@ -17,12 +24,16 @@ export function prLastLine(v: View, pr: PrView): PressLine | null {
   return pressLine(v, prMarkId(pr.ref), !isDismissed(v.lastActions, pr.ref) && isBlockPressShown(pr, v.lastActions))
 }
 
-/** A press's status under its buttons. `showsLast` says whether it draws the row's last press once that is saved. */
+/**
+ * A press's status under its buttons. `showsLast` says whether it draws the row's last press once that is saved. A
+ * Mark press out, such as Dismiss, draws none of its own, as `holdsStatusWhileOut` says.
+ */
 export function pressLine(v: View, id: string, showsLast: boolean): PressLine | null {
   const out = sending.get(id)
-  const pending = outPending(v, id)
+  const shownOut = out && !holdsStatusWhileOut(out.kind) ? out : null
+  const pending = shownOut ? outPending(v, id) : null
   if (pending) return { text: feedbackText(pending, 'codex'), age: null, tone: 'muted' }
-  if (out && out.pending === null) return { text: SENDING, age: null, tone: 'muted' }
+  if (shownOut && shownOut.pending === null) return { text: SENDING, age: null, tone: 'muted' }
   const error = errors.get(id)
   if (error) return { text: error, age: null, tone: 'error' }
   const note = noteOf(id)

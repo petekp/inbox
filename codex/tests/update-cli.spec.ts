@@ -116,7 +116,7 @@ test('a reply with a NUL byte reaches codex on stdin, and both calls of its upda
   writeFileSync(
     answers,
     JSON.stringify({
-      [PARTS_STATUS_SYSTEM]: 'HEAD: Building the deploy script | Writing a script that deploys the app',
+      [PARTS_STATUS_SYSTEM]: 'HEAD: Building the deploy script | Writing a script that deploys the app\nSUGGEST: -',
     }),
   )
   writeFileSync(

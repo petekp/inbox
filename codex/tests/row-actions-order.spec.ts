@@ -133,7 +133,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     ['A (recommended)', 'B', 'C', 'D', 'All 6 options', 'Run tests', 'Reply', 'Explain', 'Compare', 'Dismiss'],
   )
   await act(() => named(root, 'All 6 options').click())
-  assert.ok(named(root, 'F'))
+  named(root, 'F')
   await act(() => named(root, 'F').click())
   const answered = answer as PressResult | null
   assert.ok(answered && !('stale' in answered))

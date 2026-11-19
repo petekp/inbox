@@ -48,10 +48,6 @@ export const CLAUDE_CODE: Client = {
       kind: 'different',
       reason: 'The terminal steps the fade in 6 colors. Desktop holds the tint, then drops it.',
     },
-    'weight-transitions': {
-      kind: 'unsupported',
-      reason: 'A terminal cell is bold or not, and the desktop pane has no CSS and no weight between.',
-    },
     'pending-answer-mark': { kind: 'full' },
     'tab-symbols': { kind: 'full' },
     'dim-pressed-button': {
@@ -66,6 +62,7 @@ export const CLAUDE_CODE: Client = {
     'status-children': { kind: 'full' },
     'child-names': { kind: 'full' },
     'status-failed-warning': { kind: 'full' },
+    'status-stale-line': { kind: 'full' },
     'asks-holds-up-line': { kind: 'full' },
     'asks-tree': { kind: 'full' },
     'answers-side-by-side': { kind: 'full' },

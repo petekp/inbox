@@ -4,11 +4,12 @@ import { tooBigMilestones } from '../hooks/status-prompt-goal'
 import { milestonePath } from '../hooks/status-path'
 import { rightStatuses } from './status-facts'
 import type { MilestoneFact } from './status-facts'
-import { label, milestonesFor, milestonesOf, subjectsFor } from './status-rule-helpers'
-import type { Milestone, SubjectStatus } from '../types'
+import { label, milestonesFor, milestonesHolding, milestonesOf, subjectsFor } from './status-rule-helpers'
+import type { Milestone, SessionStatus, SubjectStatus } from '../types'
 import type { Rule, RuleContext } from './status-rules'
 
 const hasCall = ({ step }: RuleContext) => step.call !== undefined
+const isOpenMilestone = (m: Milestone) => m.status === 'working' || m.status === 'queued'
 
 /**
  * The statuses right for one page milestone that stands for several of the facts' milestones: done once all are done,
@@ -126,7 +127,7 @@ export const GOAL_RULES: Rule[] = [
     id: 'milestones-true',
     reads: 'facts',
     property: 15,
-    text: "Each of the goal's milestones in the facts has a milestone with a status its state allows, or none when it is dropped, and a goal has them once a call has read it.",
+    text: "Each of the goal's milestones in the facts has a milestone with a status its state allows, or none when it is dropped, and a goal has them once a call has read it. A working one may be planned in steps: while one of its milestones, or the one its work serves, is working, the others may be queued.",
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       if (!o?.goal) return []
@@ -136,11 +137,18 @@ export const GOAL_RULES: Rule[] = [
           : []
       const facts = result.facts.goal?.milestones ?? []
       const standsFor = (x: Milestone) => facts.filter(m => milestonesFor(m, result.facts, o).some(y => y.id === x.id))
+      const isStartedElsewhere = (m: MilestoneFact) =>
+        m.state === 'working' &&
+        [...milestonesFor(m, result.facts, o), ...milestonesHolding(m, result.facts, o)].some(
+          y => y.status === 'working',
+        )
+      const isLaterStep = (x: Milestone) =>
+        x.status === 'queued' && standsFor(x).every(m => rightStatuses(m).includes('queued') || isStartedElsewhere(m))
       return facts.flatMap(m => {
         const saved = milestonesFor(m, result.facts, o)
         if (saved.length === 0) return m.state === 'dropped' ? [] : [`no milestone for ${m.name}`]
         return saved
-          .filter(x => !rightForAll(standsFor(x)).includes(x.status))
+          .filter(x => !rightForAll(standsFor(x)).includes(x.status) && !isLaterStep(x))
           .map(x => `"${x.name}" is ${x.status}, and ${m.name} is ${m.state}`)
       })
     },
@@ -161,6 +169,22 @@ export const GOAL_RULES: Rule[] = [
         ...(isCountWrong ? [`${kept.length} milestones for "${o.goal.text}"`] : []),
         ...kept.filter(m => subjects.has(nameKey(m.name))).map(m => `milestone "${m.name}" is named after a subject`),
       ]
+    },
+  },
+  {
+    id: 'milestone-text',
+    reads: 'answer',
+    property: 6,
+    text: 'An open milestone that open work serves, which the call read with no text, says where it stands after it.',
+    failures: ({ result, before }) => {
+      const blankServed = (o: SessionStatus | null) => {
+        const served = new Set(o?.subjects.filter(isOpen).map(s => o.serves[s.id]))
+        return milestonesOf(o).filter(m => isOpenMilestone(m) && served.has(m.id) && m.text.trim() === '')
+      }
+      const read = new Set(blankServed(before.overview).map(m => m.id))
+      return blankServed(result.session.ledger.overview)
+        .filter(m => read.has(m.id))
+        .map(m => `milestone "${m.name}" still has no text while work serves it`)
     },
   },
   {

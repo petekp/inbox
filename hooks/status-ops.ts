@@ -1,10 +1,11 @@
 import type { Milestone, SessionStatus, StatusHead, Subject } from '../types'
 import type { Op, StatusAnswer } from './status'
-import { isSubjectSeen } from './status-children'
+import { isChildRunning, isSubjectSeen } from './status-children'
 import {
   clipWords,
   DESCRIPTION_KEPT,
   EMPTY_SESSION_STATUS,
+  IDLE_AFTER_MS,
   isNumberOnly,
   isOpen,
   NAME_KEPT,
@@ -36,8 +37,26 @@ type AnswerWork = {
   isEarlierWorkFinished: boolean
   /** Work is under way after the answer: a subject is working, or the answer set one waiting. */
   isWorkUnderWay: boolean
+  /** No subject is working, waiting, held up by an open ask or worked on by a running child after the answer. */
+  isNothingUnderWay: boolean
+  /** The answer closed a subject that was open before it. */
+  isOpenWorkClosed: boolean
+  /** The answer closed a subject that was working or waiting before it. */
+  isUnderWayWorkClosed: boolean
+  /** The answer closed a subject it added. */
+  isClosedWorkNew: boolean
   /** Whether `description` names a subject the answer closed, by every content word of its name. */
   namesClosed(description: string): boolean
+  /** Whether `description` names any closed subject, by every content word of its name. */
+  namesFinished(description: string): boolean
+}
+
+function namesAny(subjects: readonly Subject[], description: string): boolean {
+  const said = words(description)
+  return subjects.some(s => {
+    const name = [...words(s.name)]
+    return name.length > 0 && name.every(w => said.has(w))
+  })
 }
 
 function answerWork(before: readonly Subject[], o: SessionStatus, now: number): AnswerWork {
@@ -52,39 +71,60 @@ function answerWork(before: readonly Subject[], o: SessionStatus, now: number): 
     return earlier !== undefined && isUnderWay(earlier)
   })
 
+  const asked = new Set(Object.values(o.askSubjects).flat())
+  const isWorkedOn = (s: Subject) => o.children.some(c => c.subjectId === s.id && isChildRunning(c, now))
+  const isHeld = (s: Subject) => isOpen(s) && (asked.has(s.id) || isWorkedOn(s))
+  const isNothingUnderWay = !o.subjects.some(s => isUnderWay(s) || isHeld(s))
+
   return {
     isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
     isWorkUnderWay: o.subjects.some(
       s => s.status === 'working' || (s.status === 'waits-on-other' && s.changedAt === now),
     ),
-    namesClosed: description => {
-      const said = words(description)
-      return closed.some(s => {
-        const name = [...words(s.name)]
-        return name.length > 0 && name.every(w => said.has(w))
-      })
-    },
+    isNothingUnderWay,
+    isOpenWorkClosed: closed.some(s => was.has(s.id)),
+    isUnderWayWorkClosed,
+    isClosedWorkNew,
+    namesClosed: description => namesAny(closed, description),
+    namesFinished: description =>
+      namesAny(
+        o.subjects.filter(s => !isOpen(s)),
+        description,
+      ),
   }
 }
 
 /**
- * Whether a head's description names work the answer finished while other work goes on, as "Fixing the sync bug, then
- * shipping 2.5" once the sync bug is done and 2.5 is under way.
+ * Whether a head's description no longer says what the session is doing. While other work goes on, a head that kept
+ * its title names work the answer finished, as "Fixing the sync bug, then shipping 2.5" once the sync bug is done and
+ * 2.5 is under way. Once nothing is under way, it is stale when it names any finished work, or when the answer finished
+ * the work it was about: under a kept title, any work that was open before the answer, and under a new title, work that
+ * was under way before it or that it started. A side fix that started and finished while the head's work waits queued
+ * leaves the description.
  */
-function isDescriptionStale(head: StatusHead | null, work: AnswerWork): boolean {
-  return head !== null && head.description !== '' && work.isWorkUnderWay && work.namesClosed(head.description)
+function isDescriptionStale(head: StatusHead | null, isTitleKept: boolean, work: AnswerWork): boolean {
+  if (head === null || head.description === '') return false
+  if (!work.isNothingUnderWay) return isTitleKept && work.namesClosed(head.description)
+  const isHeadWorkClosed = isTitleKept ? work.isOpenWorkClosed : work.isUnderWayWorkClosed || work.isClosedWorkNew
+
+  return isHeadWorkClosed || work.namesFinished(head.description)
 }
 
 /**
- * The head after a HEAD line, read once the answer's subject changes have applied. A head with no description takes
- * the line. A head with a description holds when the answer finished work that was under way before it, started none
- * it finished, and left none under way, since the call reads queued work as the next focus. Otherwise a line that
- * keeps the title keeps the title's wording and takes the line's description, so a corrected description applies, and
- * a line with another title replaces the head.
+ * The head after a HEAD line, read once the answer's subject changes have applied. While nothing is under way, a line
+ * that keeps the title changes nothing when the head has no description or the answer closed work that was open before
+ * it: then the call describes what comes after the work. A head with no description otherwise takes the line. A head
+ * with a description holds when the answer finished work that was under way before it, started none it finished, and
+ * left none under way, since the call reads queued work as the next focus. Otherwise a line that keeps the title keeps
+ * the title's wording and takes the line's description, so a corrected description applies, and a line with another
+ * title replaces the head.
  */
 function headAfter(last: StatusHead | null, op: Extract<Op, { kind: 'head' }>, work: AnswerWork): StatusHead {
   const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
-  if (last === null || last.description === '') return line
+  if (last === null) return line
+  const isIdleSameTitle = work.isNothingUnderWay && hasSameWords(last.title, op.title)
+  if (isIdleSameTitle && (last.description === '' || work.isOpenWorkClosed)) return last
+  if (last.description === '') return line
   const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay
   if (isQueuedWorkNext) return last
   if (!hasSameWords(last.title, op.title)) return line
@@ -144,19 +184,19 @@ export function applyOps(
     return o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
   }
   /**
-   * The subject that closed since the person last looked whose name `name` repeats, the latest first: the same key
-   * words, or every word of a name of two words or more, as "Retry button bug" repeats "Retry button". A NEW for it
-   * reopens it, so the page shows one row for the piece, not one for each time it finished. A subject this answer
-   * closed is not reopened by it, so a DONE and a NEW for follow-up work stay two rows.
+   * The subject that closed since the person last looked whose name `name` repeats word for word, the latest first. A
+   * NEW for it reopens it, so the page shows one row for the piece, not one for each time it finished. A longer name,
+   * as "Retry button release" after "Retry button", is other work. A subject this answer closed is not reopened by it,
+   * so a DONE and a NEW for follow-up work stay two rows.
    */
   const closedUnseen = (name: string) => {
-    const said = words(clipWords(name, NAME_KEPT))
-    const repeats = (s: Subject) => {
-      const own = [...words(s.name)]
-      return nameKey(s.name) === nameKey([...said].join(' ')) || (own.length >= 2 && own.every(w => said.has(w)))
-    }
+    const key = nameKey(clipWords(name, NAME_KEPT))
 
-    return o.subjects.findLast(s => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && repeats(s)) ?? null
+    return (
+      o.subjects.findLast(
+        s => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && nameKey(s.name) === key,
+      ) ?? null
+    )
   }
   /** A was line and a merged line stay until the person has seen them. The page shows them only on rows that changed since the last look. */
   const forgetSeenWas = (s: Subject) => {
@@ -177,8 +217,9 @@ export function applyOps(
     s.into = null
   }
   const set = (s: Subject, status: OpenStatus, text: string) => {
-    const isReworded = s.status === status && hasSameWords(s.text, text)
-    if (isReworded) return
+    const isUnchanged = s.status === status && hasSameWords(s.text, text)
+    const isWorkResumed = status === 'working' && now - s.changedAt >= IDLE_AFTER_MS
+    if (isUnchanged && !isWorkResumed) return
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
     s.closedAt = null
@@ -277,8 +318,8 @@ export function applyOps(
       }
     }
   }
-  const isHeadKept = o.head === (last?.head ?? null)
-  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+  const isTitleKept = !!o.head && !!last?.head && o.head.title === last.head.title
+  if (o.head && isDescriptionStale(o.head, isTitleKept, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
   const settled = settleGoal(o, now, readSetAt, named)
@@ -289,7 +330,8 @@ export function applyOps(
 /**
  * The Status after an answer, applied at `now`. `askIds` are the open asks. A removed goal's Undo lasts until an answer
  * from a call that did not read that goal applies: the call moved on from it. A refused GOAL or RETIRE line is kept
- * for one call: the answer after it, with lines or NO CHANGE, read it.
+ * for one call: the answer after it, with lines or NO CHANGE, read it. An answer whose only lines are `SUGGEST: -` while
+ * nothing is suggested changes nothing, as NO CHANGE does.
  */
 export function applyStatus(
   last: SessionStatus | null,
@@ -298,10 +340,15 @@ export function applyStatus(
   askIds: ReadonlySet<string>,
   readSetAt: number | null = last?.goal?.setAt ?? null,
 ): SessionStatus | null {
+  const isNoSuggestionOnly =
+    answer.kind === 'ops' &&
+    (last?.suggestedGoal ?? null) === null &&
+    answer.ops.every(op => op.kind === 'suggest' && op.text === null)
+  const changes = answer.kind === 'ops' && !isNoSuggestionOnly ? answer.ops : null
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last
-  const o = answer.kind === 'ops' ? applyOps(last, answer.ops, now, askIds, readSetAt) : read
+  const o = changes ? applyOps(last, changes, now, askIds, readSetAt) : read
   if (o === null) return null
-  const settled = answer.kind === 'ops' ? o : settleGoal(o, now, readSetAt, new Map())
+  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map())
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
 
   return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }

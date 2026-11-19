@@ -99,7 +99,7 @@ function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string):
   const step = press.action === 'step' ? row.steps[press.step] : undefined
   const effects = kind === 'local' && row.item && step ? stepEffects(row.item, step) : []
 
-  return { is: 'press', press, effects }
+  return { is: 'press', press, effects, kind }
 }
 
 /** The row's buttons in the plan's order: its options, which the tree draws, then its keys, then its follow-ups. */
@@ -275,7 +275,7 @@ type Group = { kind: FoldKind; title: string; mark: Mark | null; rows: RowView[]
 
 function closedBlock(d: ClosedLine, now: number): RowBlock {
   const action = closedLineAction(d)
-  const closedDoes: Does = action ? { is: 'press', press: action.press, effects: [] } : { is: 'nothing' }
+  const closedDoes: Does = action ? { is: 'press', press: action.press, effects: [], kind: null } : { is: 'nothing' }
 
   return {
     kind: 'row',
@@ -420,7 +420,7 @@ export function tabCells(screen: Pick<LookScreen, 'view'>, tab: ShownTab): TabCe
 
 /** The banners under the tabs, as every look draws them. */
 export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView[] } {
-  const error = footerError(tab, screen.view.status, screen.view.statusPage.error)
+  const error = footerError(tab, screen.view.status, screen.view.statusPage)
 
   return { banners: tabBarBanners([], error, null) }
 }

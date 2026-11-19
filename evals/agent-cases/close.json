@@ -229,6 +229,7 @@
     },
     "prompt": "I am not sure about the cache yet. What would you pick, and why?",
     "checks": [
+      { "reply": "redis|in.?memory" },
       {
         "calls": "close",
         "count": 0
@@ -403,6 +404,7 @@
     },
     "prompt": "Before the cache, quick one: what does the pagination bug in the orders list look like to you?",
     "checks": [
+      { "reply": "paginat|orders?[ -]list" },
       {
         "calls": "close",
         "count": 0
@@ -429,6 +431,6 @@
       ]
     },
     "prompt": "Not now on the parser tests finding, we'll get to it after the release. Write me a one-line release note for v1: it adds the greet command.",
-    "checks": [{ "calls": "close", "count": 0 }, { "noIds": true }]
+    "checks": [{ "reply": "greet" }, { "calls": "close", "count": 0 }, { "noIds": true }]
   }
 ]

@@ -6,7 +6,7 @@ import type { DrawnEntry, DrawnLists } from '../../hooks/action-plan'
 import type { Feedback } from '../../hooks/feedback'
 import type { RowPart } from '../../hooks/row-parts'
 import type { ShownTab } from '../../hooks/tabs'
-import type { Draft, Finding, Tab } from '../../types'
+import type { Draft, Finding, PressKind, Tab } from '../../types'
 import type { FoldGroup, SeenRows } from './arrivals'
 import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
 import type { TabView as View } from './core'
@@ -85,11 +85,19 @@ export const statusUnfolded = new Set<string>()
  * The latest press on its way, by row id: its request number, when it began on the tab's clock, its pending Local
  * result or null for a message, which reads SENDING, and its action, so its button draws as out before the view says
  * so. A reply's action is null, since a reply is never out. `lastBefore` is the row's saved last press when the press
- * started, from `lastPressKey`.
+ * started, from `lastPressKey`. `kind` is the kind of the plan action pressed, or null for a press that no plan action
+ * makes, such as Undo or a typed reply.
  */
 export const sending = new Map<
   string,
-  { seq: number; since: number; pending: Feedback | null; action: string | null; lastBefore: string }
+  {
+    seq: number
+    since: number
+    pending: Feedback | null
+    action: string | null
+    lastBefore: string
+    kind: PressKind | null
+  }
 >()
 
 /** When the oldest press the tab has not heard back on began, or null while none is out. */

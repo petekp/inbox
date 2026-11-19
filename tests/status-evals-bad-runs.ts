@@ -23,12 +23,12 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'milestone-work-done': {
     at: 0,
-    answer: 'SET: s4 | working | recent after pinned, title matches left',
+    answer: 'SET: s4 | working | recent after pinned, title matches left\nSET: m2 | working | ranking left',
     breaks: 'serves-linked',
   },
   'goal-met-next': {
     at: 1,
-    answer: GOOD_RUNS['goal-met-next']![1]!.replace(/^HEAD: [^\n]*\n/, ''),
+    answer: GOOD_RUNS['goal-met-next']![1]!.replace(/^HEAD: [^\n]*\n/, 'HEAD: 2.5 release | Shipping the 2.5 update\n'),
     breaks: 'head-follows',
   },
   'goal-wait': {
@@ -66,6 +66,14 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     at: 0,
     answer: `${GOOD_RUNS['typed-goal-kept']![0]!}\nSERVES: Dark theme colors | m1`,
     breaks: 'serves-linked',
+  },
+  'goal-names-release': {
+    at: 0,
+    answer: GOOD_RUNS['goal-names-release']![0]!.replace(
+      'MILESTONE: queued | 2.6 published | Awaiting search improvements\nNEXT: 2.6 published',
+      'MILESTONE: queued | Speed target verified | Under 100 ms unverified\nNEXT: Speed target verified',
+    ),
+    breaks: 'milestones-true',
   },
   'goal-on-busy-page': {
     at: 0,
@@ -130,7 +138,7 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'milestone-split': {
     at: 0,
-    answer: 'DONE: s9 | merged',
+    answer: 'DONE: s9 | merged\nSET: m1 | working | help icon merged',
     breaks: 'milestone-size',
   },
   'next-milestone': {
@@ -155,7 +163,9 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'head-description': {
     at: 0,
-    answer: 'SET: s2 | working | syncs on reconnect, merging clashing edits left',
+    answer:
+      'SET: s2 | working | syncs on reconnect, merging clashing edits left\nSET: m2 | working | syncs on reconnect\nSET: m3 | queued | not started',
     breaks: 'head-follows',
   },
+  'head-after-done': { at: 2, answer: 'HEAD: Greet flags | Adding options to greet', breaks: 'head-follows' },
 }

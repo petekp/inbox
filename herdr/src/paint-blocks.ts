@@ -30,7 +30,6 @@ import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
 import { PATH_X, lineColor, padOf, restId, sizeEl, titleEl } from './paint-space'
 import { panelId } from './heights'
-import { shutTo } from './block-glide'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
@@ -258,8 +257,10 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   const key = panelId(r.id)
   const opacity = m?.panel ?? null
   const height = p.heights.get(key) ?? 0
-  const delay = m?.isPanelWaiting ? enterDelayMs(height, shutTo(height, m.panelShutForMs)) : 0
-  const glide = { duration: ROW_FADE_MS[m?.state ?? 'open'], delay, easing: 'ease-out' as const }
+  const turnBackFadeMs = m?.panelFadeMs ?? null
+  const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0
+  const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? 'open']
+  const glide = { duration, delay, easing: 'ease-out' as const }
 
   return [
     v_flex()
