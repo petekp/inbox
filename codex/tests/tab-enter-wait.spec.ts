@@ -24,7 +24,7 @@ const item = (id: string, ask: string, at: number): Item => ({
 })
 
 type Move = { key: string; delay: number; startsAt: number; scalesEdges: boolean }
-type Fade = { el: HTMLElement; from: number; to: number; delay: number }
+type Fade = { el: HTMLElement; from: number; to: number; delay: number; anim: Animation }
 
 async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext) {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
@@ -41,12 +41,13 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
       const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
       moves.push({ key, delay, startsAt: Date.now() + delay, scalesEdges: frames.some(f => 'paddingTop' in f) })
     }
-    if (Array.isArray(frames) && frames.length > 1 && frames.every(f => 'opacity' in f)) {
-      const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
-      fades.push({ el: this, from: Number(frames[0]!.opacity), to: Number(frames.at(-1)!.opacity), delay })
-    }
     const animation = animate.apply(this, args)
     animation.finished.catch(() => {})
+    if (Array.isArray(frames) && frames.length > 1 && frames.every(f => 'opacity' in f)) {
+      const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
+      const [from, to] = [Number(frames[0]!.opacity), Number(frames.at(-1)!.opacity)]
+      fades.push({ el: this, from, to, delay, anim: animation as unknown as Animation })
+    }
     return animation
   }
   window.HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
@@ -225,15 +226,23 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
       rowOf(pressed.id).querySelector<HTMLElement>(`.row.closing .line .text${clamped ? '.short' : ':not(.short)'}`)!
     assert.equal(getComputedStyle(title(false)).fontWeight, '600')
     assert.notEqual(getComputedStyle(title(true)).fontWeight, '600')
-    await after(60)
-    fades.length = 0
-    await press(pressed.id)
-    assert.deepEqual(
-      panelFades(pressed.id).filter(f => f.from === 0),
-      [],
-      'a close the person turned back fades its panel in again from nothing',
-    )
-    await after(ROW_STATE_MS.opening + 50)
+    const fadesOut = () => fades.filter(f => f.to === 0 && f.el.closest('.panel') && rowOf(pressed.id).contains(f.el))
+    const stillFadingOut = () => fadesOut().filter(f => f.anim.playState !== 'idle').length
+    for (const turnsBackAtMs of [60, 0]) {
+      await after(turnsBackAtMs)
+      assert.ok(fadesOut().length > 0, `closing ${pressed.id} faded no panel out`)
+      fades.splice(0, fades.length, ...fadesOut())
+      await press(pressed.id)
+      assert.deepEqual(
+        panelFades(pressed.id).filter(f => f.from === 0),
+        [],
+        `a close the person turned back ${turnsBackAtMs} ms in fades its panel in again from nothing`,
+      )
+      assert.equal(stillFadingOut(), 0, `a close turned back ${turnsBackAtMs} ms in leaves its panel fading out`)
+      await after(ROW_STATE_MS.opening + 50)
+      fades.length = 0
+      if (turnsBackAtMs) await press('i1')
+    }
     const dismissed = {
       id: pressed.id,
       kind: pressed.kind,

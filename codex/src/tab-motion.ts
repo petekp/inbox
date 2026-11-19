@@ -16,6 +16,7 @@ import {
   isUnderWay,
   opacityOf,
   springOf,
+  stopFadeOut,
   waitLeftMs,
 } from './tab-glide'
 
@@ -253,7 +254,7 @@ function moveRow(
 
 /**
  * Fades an opening row's panel in once its space is nearly open, counted from where the space is. A panel the row
- * still drew as it closed turns back from the opacity it shows, and one that shows whole stays as it is.
+ * still drew as it closed turns back from the opacity it shows, and one that still shows whole stops its fade out.
  */
 function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
   const waits = delay + enterDelayMs(target, from)
@@ -261,6 +262,7 @@ function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: 
   for (const el of new Set([part, ...fadingParts(part)])) {
     const opacity = opacityOf(el)
     if (opacity < 0.99) fade(el, opacity, 1, ENTER_FADE_MS, false, false, waits)
+    else stopFadeOut(el)
   }
 }
 
