@@ -1,6 +1,8 @@
+import { parseStatus } from '../hooks/status'
 import { isOpen } from '../hooks/status-limits'
 import type { Milestone, SessionStatus, Subject } from '../types'
 import type { Facts, Piece } from './status-facts'
+import type { StepResult } from './status-replay'
 
 /** A word that names a time, which code writes and the model never does. */
 export const TIME_WORDS =
@@ -69,6 +71,24 @@ export function headOffFocus(o: SessionStatus | null, { focusMatch, pastMatch }:
   const isPastShown = !!pastMatch && !!o?.head && new RegExp(pastMatch, 'i').test(shown)
 
   return isPastShown ? `the head "${shown}" still names /${pastMatch}/` : null
+}
+
+/** Whether the Status answer the host applied at this step wrote a change. */
+export function isAnswerWritten(result: StepResult): boolean {
+  const call = result.calls.find(c => c.kind === 'status')
+
+  return call !== undefined && call.overLimit === null && parseStatus(call.answers.at(-1) ?? null)?.kind === 'ops'
+}
+
+/** Whether the facts keep the title pattern they had before the step, and the head's title matched it then. */
+export function isTitleKept(result: StepResult, before: { overview: SessionStatus | null; facts: Facts }): boolean {
+  const pattern = result.facts.titleMatch
+
+  return (
+    !!pattern &&
+    pattern === before.facts.titleMatch &&
+    new RegExp(pattern, 'i').test(before.overview?.head?.title ?? '')
+  )
 }
 
 /** The goal's milestones, once a goal is set and has them. */
