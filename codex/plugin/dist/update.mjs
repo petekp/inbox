@@ -4958,6 +4958,14 @@ function delegateRefs(command) {
 // ../hooks/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
 
+// ../hooks/session-presentation.ts
+var SESSION_FIELDS = Object.keys(emptySession()).filter(
+  (field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers"
+);
+function presentedSession(session) {
+  return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+}
+
 // ../hooks/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -5135,10 +5143,8 @@ function herdrLabels(tokens) {
   );
 }
 var HERDR_FORMAT = 1;
-var UNPUBLISHED_FIELDS = /* @__PURE__ */ new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 function herdrEnvelope(source, session, isTrimmed = false) {
-  const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+  const shared = presentedSession(session);
   const { lastHerdrPress } = session;
   const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source;
   return {

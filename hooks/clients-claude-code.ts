@@ -2,6 +2,10 @@ import type { Client } from './client-features'
 
 export const CLAUDE_CODE: Client = {
   support: {
+    'codex-desktop-companion': {
+      kind: 'unsupported',
+      reason: 'This connection uses Codex chat storage and its MCP host. This host publishes through Herdr instead.',
+    },
     'catch-up': { kind: 'full' },
     'failed-update-recovery': { kind: 'full' },
     'ledger-behind-state': { kind: 'full' },
