@@ -20,6 +20,7 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
 ## Parts
 
 - [Decisions](status/decisions.md): What was decided, and why.
+- [Decisions on the page's accuracy](status/decisions-accuracy.md): Decisions 22 and later, on keeping what the page says right and current.
 - [The page](status/page.md): What the page draws, and how it updates.
 - [What a good Status is](status/good-status.md): The properties a Status is checked against.
 - [How the Status is judged](status/judging.md): The eval suite, its rules, the judge and the pass bar.

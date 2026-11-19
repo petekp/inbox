@@ -1,5 +1,11 @@
 import { askStatus, parseStatus } from './status'
-import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, hostStatusSystem } from './status-prompt'
+import {
+  statusPrompt,
+  statusMidTurnPrompt,
+  statusCatchUpPrompt,
+  hostStatusSystem,
+  nextGoalRetry,
+} from './status-prompt'
 import type { StatusCallInput } from './status-prompt'
 import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './client-features'
@@ -7,6 +13,7 @@ import type { CallKind, Exchange, Session, SessionStatus, HostTask } from '../ty
 import type { Ask, UpdateHost } from './session-host'
 import { heardCall, withAnswer, withCall } from './call-record'
 import type { HeardCall } from './call-record'
+import { isActiveReply, withChangeNoted } from './status-freshness'
 
 /**
  * What a Status call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
@@ -53,6 +60,8 @@ type StatusAttempt = {
   answer: string | null
   error: string | null
   ms: number
+  /** The prompt this call read when it was not the record's `prompt`, as the next-goal retry's. Older records lack it. */
+  prompt?: string
 }
 
 /** A reader refuses a record of another version. */
@@ -136,13 +145,14 @@ export async function writeStatusRecord(records: StatusRecords, record: StatusRe
 }
 
 /** A Status call record's account of one call the host heard. */
-function attemptOf({ text, report, thrown, ms }: HeardCall): StatusAttempt {
+function attemptOf({ text, report, thrown, ms }: HeardCall, prompt: string | null): StatusAttempt {
   return {
     model: report?.model ?? null,
     answeredBy: report?.answeredBy ?? null,
     answer: text,
     error: text === null ? (thrown ?? report?.error ?? 'no answer, and the host gave no reason') : null,
     ms,
+    ...(prompt === null ? {} : { prompt }),
   }
 }
 
@@ -178,15 +188,17 @@ export async function askAndWriteStatus<S extends Session>(
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: readAt }
   const prompt = statusCallPrompt(input, call.exchange)
   const system = hostStatusSystem(host.names)
-  const heards: { kind: CallKind; heard: HeardCall }[] = []
-  const { last } = await askStatus(async () => {
-    const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
-    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now())
-    heards.push({ kind, heard })
-    return heard
-  })
-  const attempts = heards.map(h => attemptOf(h.heard))
-  const answer = last.text === null ? null : parseStatus(last.text)
+  const heards: { kind: CallKind; heard: HeardCall; retry: string | null }[] = []
+  const { answer, last } = await askStatus(
+    async retry => {
+      const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
+      const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now())
+      heards.push({ kind, heard, retry })
+      return heard
+    },
+    nextGoalRetry(input.last, prompt),
+  )
+  const attempts = heards.map(h => attemptOf(h.heard, h.retry))
   let before: SessionStatus | null = null
   let isWritten = false
   const answeredTurn = (x: S) => (call.exchange.kind === 'reply' ? call.exchange.exchange.turn : x.ledger.turn)
@@ -206,17 +218,13 @@ export async function askAndWriteStatus<S extends Session>(
     before = x.ledger.overview
     isWritten = isStatusCallCurrent(x, appliedAfter)
     const readSetAt = input.last?.goal?.setAt ?? null
-    return answer === null
-      ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === 'catch-up')
-      : appliedStatus(
-          x,
-          answer,
-          appliedAfter,
-          now,
-          readSetAt,
-          call.exchange.kind === 'catch-up' || call.isCatchUpImpossible === true,
-          input.now,
-        )
+    if (answer === null) return failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === 'catch-up')
+    const isCatchUp = call.exchange.kind === 'catch-up' || call.isCatchUpImpossible === true
+    const applied = appliedStatus(x, answer, appliedAfter, now, readSetAt, isCatchUp, input.now)
+    if (!isWritten) return applied
+    const overview = withChangeNoted(before, applied.ledger.overview, isActiveReply(call.exchange), now)
+
+    return { ...applied, ledger: { ...applied.ledger, overview } }
   })
   if (!host.records) return
   const record: StatusRecord = {

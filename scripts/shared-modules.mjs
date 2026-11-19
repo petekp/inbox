@@ -39,6 +39,7 @@ export const SHARED = [
   'host-tasks',
   'status',
   'status-children',
+  'status-freshness',
   'status-limits',
   'status-ops',
   'status-goal-ops',

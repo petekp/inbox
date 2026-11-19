@@ -21,7 +21,7 @@ import { CHILD_ROWS } from '../hooks/status-page-parts'
 import type { Child, SessionStatus } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
-test('the call reads open subjects with ids and how long ago each changed, finished ones by name, and running children with their links', () => {
+test('the call reads open subjects with ids and how long ago each changed, finished ones by name marked until the person has seen them close, and running children with their links', () => {
   const o = withChild(
     after(null, 'NEW: working | Offline mode | queue built\nNEW: queued | Docs | not started', 100),
     { ref: 't1', kind: 'subagent', name: 'npm test', startedAt: 150, endedAt: null, lastActivityAt: 150 },
@@ -31,8 +31,9 @@ test('the call reads open subjects with ids and how long ago each changed, finis
 
   expect(subjectsText(closed, 100 + 26 * 60 * MIN)).toEqual({
     open: 's1 | working | Offline mode | queue built | 26h ago',
-    finished: 's2 | done | Docs',
+    finished: 's2 | done | Docs | not seen yet',
   })
+  expect(subjectsText({ ...closed, lastLookAt: 300 }, 400).finished).toBe('s2 | done | Docs')
   expect(subjectsText(null, 0).open).toBe('(none yet)')
   expect(runningText(closed, 300)).toBe('c1 | subagent | npm test | - | running')
   expect(runningText(childEnded(closed, 't1', 250), 300)).toBe('')

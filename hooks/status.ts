@@ -14,7 +14,7 @@ export type Op =
   /** `ref` is a running child's id or an open ask's id. `subject` may name a milestone. */
   | { kind: 'link'; ref: string; subject: string }
   /** A goal the call sets from the session's work, with the milestones it needs. Code applies it only when it may. */
-  | { kind: 'goal'; text: string; milestones: { status: SubjectStatus; name: string }[] }
+  | { kind: 'goal'; text: string; milestones: GoalMilestone[] }
   /** Clears an inferred goal the session's work has left, when no next goal is clear. */
   | { kind: 'retire'; why: string }
   | { kind: 'milestone'; status: SubjectStatus; name: string; text: string }
@@ -24,6 +24,9 @@ export type Op =
   | { kind: 'next'; ref: string }
   /** The goal offered to the person while none runs, or null for none. */
   | { kind: 'suggest'; text: string | null }
+
+/** A milestone as a GOAL line writes it: its status, its name, and where it stands, which is empty when the line gives none. */
+type GoalMilestone = { status: SubjectStatus; name: string; text: string }
 
 /** What the Status call answered: nothing to change, or the changes to make. */
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
@@ -50,12 +53,15 @@ function anyStatus(s: string | undefined): SubjectStatus | null {
   return STATUSES.find(o => o === statusWord(s)) ?? null
 }
 
-/** A GOAL line's milestones, as `status name; status name`. A milestone with no known status is left out. */
-function goalMilestones(value: string | undefined): { status: SubjectStatus; name: string }[] {
+/**
+ * A GOAL line's milestones, as `status name: where it stands; status name`, where it stands being optional. A milestone
+ * with no known status is left out.
+ */
+function goalMilestones(value: string | undefined): GoalMilestone[] {
   return (value ?? '').split(';').flatMap(part => {
-    const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part)
+    const m = /^\s*(\S+)\s+(.+?)(?::\s*(.*?))?\s*$/.exec(part)
     const status = anyStatus(m?.[1])
-    return status && m?.[2] ? [{ status, name: m[2] }] : []
+    return status && m?.[2] ? [{ status, name: m[2], text: m[3] ?? '' }] : []
   })
 }
 
@@ -139,15 +145,36 @@ export function parseStatus(text: string | null): StatusAnswer | null {
 }
 
 /**
+ * The answer to apply after the next-goal retry: every line of `first`, and only the GOAL and SUGGEST lines of
+ * `retry`, so a retry that answers only the goal keeps the subject lines the first answer wrote.
+ */
+export function withNextGoal(first: StatusAnswer, retry: StatusAnswer | null): StatusAnswer {
+  const goalOps = retry?.kind === 'ops' ? retry.ops.filter(o => o.kind === 'goal' || o.kind === 'suggest') : []
+  if (goalOps.length === 0) return first
+
+  return { kind: 'ops', ops: [...(first.kind === 'ops' ? first.ops : []), ...goalOps] }
+}
+
+/**
  * Asks the Status call through `ask`, and once more when the answer holds no operation, as `parseStatus` refuses it.
- * A call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
- * the call was asked once.
+ * When `retryFor` gives a prompt for an answer that parses, the call is asked once more with that prompt, and the
+ * GOAL and SUGGEST lines of the second answer are added to the first. A call that gives no text is not asked again.
+ * Returns the answer to apply, null when none parsed, and the last call's result.
  */
 export async function askStatus<T extends { text: string | null }>(
-  ask: () => Promise<T>,
-): Promise<{ first: T; last: T }> {
-  const first = await ask()
-  const isUnreadable = first.text !== null && parseStatus(first.text) === null
+  ask: (prompt: string | null) => Promise<T>,
+  retryFor: (answer: StatusAnswer, text: string) => string | null = () => null,
+): Promise<{ answer: StatusAnswer | null; last: T }> {
+  const first = await ask(null)
+  if (first.text === null) return { answer: null, last: first }
+  const answer = parseStatus(first.text)
+  if (answer === null) {
+    const again = await ask(null)
+    return { answer: parseStatus(again.text), last: again }
+  }
+  const retry = retryFor(answer, first.text)
+  if (retry === null) return { answer, last: first }
+  const again = await ask(retry)
 
-  return { first, last: isUnreadable ? await ask() : first }
+  return { answer: withNextGoal(answer, parseStatus(again.text)), last: again }
 }

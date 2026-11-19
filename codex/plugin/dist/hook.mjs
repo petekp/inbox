@@ -66,7 +66,9 @@ var EMPTY_SESSION_STATUS = {
   nextMilestoneId: 1,
   serves: {},
   goalRefused: null,
-  suggestedGoal: null
+  suggestedGoal: null,
+  changedAt: null,
+  quietCalls: 0
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -454,6 +456,18 @@ function capitalized(text2) {
 var ISSUE_LABEL = "File issue";
 var SHOW_EXPLANATION_LABEL = "Show explanation";
 
+// ../hooks/status-freshness.ts
+var STALE_AFTER_CALLS = 5;
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
+function statusPageLine(s, now) {
+  const o = s.ledger.overview;
+  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
+  return {
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
+  };
+}
+
 // ../hooks/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 
@@ -801,9 +815,15 @@ function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
 }
+function workCountText(m, o) {
+  const work = o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === m.id);
+  const done = work.filter((s) => s.status === "done").length;
+  const isUnsaid = isOpen(m) && m.text.trim() === "" && done < work.length;
+  return isUnsaid ? `${done} of ${work.length} done` : null;
+}
 function milestoneRow(step, o, items) {
   const m = step.milestone;
-  const isOpen2 = m.status !== "done" && m.status !== "dropped";
+  const isOpen2 = isOpen(m);
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
   const holds = items.filter((i) => {
     const to = o.askSubjects[i.id] ?? [];
@@ -825,7 +845,7 @@ function milestoneRow(step, o, items) {
     isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
-    text: textBeyondName(m.name, m.text),
+    text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
@@ -865,7 +885,6 @@ function goalPage(o, items) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
 var STALL_GAP = " \xB7 ";
 var NEW_CLOSED_ROWS = 2;
@@ -1048,7 +1067,7 @@ function statusPage(s, now) {
     ...goalParts,
     goal,
     rows,
-    error: s.overviewFailure ? STATUS_FAILED : null
+    ...statusPageLine(s, now)
   };
 }
 
@@ -3122,6 +3141,8 @@ function upgradeStatus(saved) {
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
     lastCallReadAt: "lastCallReadAt" in o ? time2(o.lastCallReadAt) : newestEnd(children),
+    changedAt: time2(o.changedAt),
+    quietCalls: time2(o.quietCalls) ?? 0,
     ...goal
   };
 }

@@ -44,6 +44,7 @@ export type FeatureId =
   | 'status-children'
   | 'child-names'
   | 'status-failed-warning'
+  | 'status-stale-line'
   | 'asks-holds-up-line'
   | 'asks-tree'
   | 'answers-side-by-side'

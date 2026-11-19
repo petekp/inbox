@@ -192,6 +192,8 @@ export function upgradeStatus(saved: unknown): SessionStatus | null {
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map(s => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
     lastCallReadAt: 'lastCallReadAt' in o ? time(o.lastCallReadAt) : newestEnd(children),
+    changedAt: time(o.changedAt),
+    quietCalls: time(o.quietCalls) ?? 0,
     ...goal,
   }
 }

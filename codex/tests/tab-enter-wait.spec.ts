@@ -346,7 +346,10 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     )
     await after(ROW_STATE_MS.opening + 50)
     fades.length = 0
-    assert.ok(rowOf(pressed.id).querySelector('.panel .branch.holds-up'), `${pressed.id} draws no Holds up line`)
+    assert.ok(
+      rowOf(pressed.id).querySelector('.panel .branch.holds-up') !== null,
+      `${pressed.id} draws no Holds up line`,
+    )
     const third = item('i7', 'Answer the review', 7)
     state.ledger = { ...state.ledger, items: [...state.ledger.items, third] }
     await read()
@@ -393,7 +396,7 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     }
     await read()
     await settle()
-    assert.ok(rowOf(pressed.id).querySelector('.row.settled'), 'the dismissed row does not settle in place')
+    assert.ok(rowOf(pressed.id).querySelector('.row.settled') !== null, 'the dismissed row does not settle in place')
     assert.ok(rowOf(pressed.id).querySelector('.panel') === null, 'the dismissed row still draws its panel')
   }, context)
 })

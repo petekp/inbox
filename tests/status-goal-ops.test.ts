@@ -22,9 +22,9 @@ test('reads GOAL, RETIRE, MILESTONE and SERVES lines, leaving out a GOAL milesto
       kind: 'goal',
       text: 'Import ready to demo',
       milestones: [
-        { status: 'done', name: 'Import works' },
-        { status: 'working', name: 'Error messages' },
-        { status: 'queued', name: 'Demo script' },
+        { status: 'done', name: 'Import works', text: '' },
+        { status: 'working', name: 'Error messages', text: '' },
+        { status: 'queued', name: 'Demo script', text: '' },
       ],
     },
     { kind: 'retire', why: 'work moved to search' },

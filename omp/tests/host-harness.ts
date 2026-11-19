@@ -2,7 +2,9 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { parseStatus } from '../../hooks/status'
 import { STATUS_SYSTEM } from '../../hooks/status-prompt'
+import { answersNextGoal } from '../../hooks/status-suggest'
 import type { HostDeps } from '../src/host'
 
 type Handler = (event: any, ctx: any) => unknown
@@ -56,6 +58,13 @@ type World = {
 }
 
 export let w: World
+
+const withNextGoal = (text: string, prompt: string) => {
+  const answer = parseStatus(text)
+  const isNextGoalMissing = prompt.includes('<next-goal>') && answer !== null && !answersNextGoal(answer)
+
+  return isNextGoalMissing ? `${text}\nSUGGEST: -` : text
+}
 
 export function startWorld() {
   w = {
@@ -165,8 +174,9 @@ export const deps = (): HostDeps => ({
     if (isStatusCall) await w.statusHold
     const answer = isStatusCall ? w.statusReply : w.reply
     if (answer instanceof Error) throw answer
+    const text = isStatusCall ? withNextGoal(answer, call.prompt) : answer
 
-    return { stopReason: 'stop', content: [{ type: 'text', text: answer }] } as never
+    return { stopReason: 'stop', content: [{ type: 'text', text }] } as never
   },
   copy: async text => {
     w.copied.push(text)

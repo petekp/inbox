@@ -77,6 +77,8 @@ export const EMPTY_SESSION_STATUS: SessionStatus = {
   serves: {},
   goalRefused: null,
   suggestedGoal: null,
+  changedAt: null,
+  quietCalls: 0,
 }
 
 export type OpenStatus = Exclude<SubjectStatus, 'done' | 'dropped'>

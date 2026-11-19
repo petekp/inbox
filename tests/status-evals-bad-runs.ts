@@ -23,7 +23,7 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'milestone-work-done': {
     at: 0,
-    answer: 'SET: s4 | working | recent after pinned, title matches left',
+    answer: 'SET: s4 | working | recent after pinned, title matches left\nSET: m2 | working | ranking left',
     breaks: 'serves-linked',
   },
   'goal-met-next': {
@@ -130,7 +130,7 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'milestone-split': {
     at: 0,
-    answer: 'DONE: s9 | merged',
+    answer: 'DONE: s9 | merged\nSET: m1 | working | help icon merged',
     breaks: 'milestone-size',
   },
   'next-milestone': {
@@ -155,7 +155,8 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'head-description': {
     at: 0,
-    answer: 'SET: s2 | working | syncs on reconnect, merging clashing edits left',
+    answer:
+      'SET: s2 | working | syncs on reconnect, merging clashing edits left\nSET: m2 | working | syncs on reconnect\nSET: m3 | queued | not started',
     breaks: 'head-follows',
   },
 }

@@ -1,10 +1,18 @@
 import type { SessionStatus } from '../types'
-import type { Op } from './status'
+import type { Op, StatusAnswer } from './status'
 import { restatesGoal, setTypedGoal } from './status-goal-ops'
 import { clipWords, DESCRIPTION_KEPT } from './status-limits'
 
 /** Whether a goal is set and not met, so no goal is offered in its place. */
 export const hasRunningGoal = (o: SessionStatus): boolean => o.goal !== null && o.goal.metAt === null
+
+/** Whether the Status call is asked for the next goal: no goal runs and none is suggested. */
+export const isNextGoalAsked = (o: SessionStatus | null): boolean =>
+  o === null || (!hasRunningGoal(o) && o.suggestedGoal === null)
+
+/** Whether `answer` gives the next goal the call was asked for: a GOAL line, or a SUGGEST line with an outcome or -. */
+export const answersNextGoal = (answer: StatusAnswer): boolean =>
+  answer.kind === 'ops' && answer.ops.some(op => op.kind === 'goal' || op.kind === 'suggest')
 
 /** Whether `text` restates the goal, the goal before it or a goal the person removed. */
 function restatesKnownGoal(o: SessionStatus, text: string): boolean {

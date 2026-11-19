@@ -119,8 +119,8 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     assert.equal(state.ledger.items[0]?.id, 'i1')
     assert.equal(state.lastActions.i1?.kind, 'talk')
     named(root, 'Reply').click()
-    const input = root.querySelector('input')!
-    assert.ok(input)
+    const input = root.querySelector('input')
+    assert.ok(input !== null)
     assert.ok(document.activeElement === input, 'the reply field has focus')
     assert.deepEqual(
       buttons(root)

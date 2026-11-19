@@ -6,10 +6,14 @@ import {
   clipWords,
   EMPTY_SESSION_STATUS,
   FINISHED_READ,
+  IDLE_AFTER_MS,
   isOpen,
   NL,
 } from './status-limits'
-import { ago } from './text'
+import { ago, duration } from './text'
+
+/** The mark on a line in <finished> for a subject that closed since the person last looked. Only such a subject may reopen. */
+export const NOT_SEEN = 'not seen yet'
 
 export function isChildRunning(c: Pick<Child, 'startedAt' | 'endedAt'>, now: number): boolean {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now)
@@ -94,7 +98,7 @@ export function childActive(o: SessionStatus | null, ref: string, at: number): S
 
 /**
  * The subjects as the call reads them at `now`: open ones with ids and how long ago each last changed, and finished
- * names it must not add again.
+ * names it must not add again, each marked `NOT_SEEN` when it closed since the person last looked.
  */
 export function subjectsText(o: SessionStatus | null, now: number): { open: string; finished: string } {
   const subjects = o?.subjects ?? []
@@ -105,9 +109,29 @@ export function subjectsText(o: SessionStatus | null, now: number): { open: stri
   const finished = subjects
     .filter(s => !isOpen(s))
     .slice(-FINISHED_READ)
-    .map(s => `${s.id} | ${s.status} | ${s.name}`)
+    .map(s => `${s.id} | ${s.status} | ${s.name}${o !== null && isSubjectSeen(o, s) ? '' : ` | ${NOT_SEEN}`}`)
 
   return { open: open.join(NL) || '(none yet)', finished: finished.join(NL) }
+}
+
+/**
+ * The working subjects that have not changed for `IDLE_AFTER_MS` or more at `now`, that no ask in `asks` holds up and
+ * that no running child works for. The Status call reads them to say whether each is done or dropped.
+ */
+export function idleSubjects(o: SessionStatus | null, asks: readonly Pick<Item, 'id'>[], now: number): Subject[] {
+  const held = new Set(asks.flatMap(a => o?.askSubjects[a.id] ?? []))
+  const isWorkedOn = (s: Subject) => (o?.children ?? []).some(c => c.subjectId === s.id && isChildRunning(c, now))
+
+  return (o?.subjects ?? []).filter(
+    s => s.status === 'working' && now - s.changedAt >= IDLE_AFTER_MS && !held.has(s.id) && !isWorkedOn(s),
+  )
+}
+
+/** The idle subjects as the call reads them: each with how long it has gone without a change. */
+export function idleText(o: SessionStatus | null, asks: readonly Pick<Item, 'id'>[], now: number): string {
+  return idleSubjects(o, asks, now)
+    .map(s => `${s.id} | ${s.name} | ${duration(now - s.changedAt)}`)
+    .join(NL)
 }
 
 /** How a subject's link reads in <subjects> while a goal is set: its milestone, - for none, or ? when not linked yet. */
