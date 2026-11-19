@@ -218,6 +218,11 @@ const CLEAR = { text: 'Get offline sync into both stores', match: 'offline sync'
 
 const s1Of = (s: Scene) => s.after.subjects[0]!
 const s2Of = (s: Scene) => s.after.subjects[1]!
+const allDone = (s: Scene, description: string) => {
+  s.facts.pieces = s.facts.pieces.map(p => ({ ...p, state: 'done' }))
+  s.after.subjects = s.after.subjects.map(x => ({ ...x, status: 'done', closedAt: minutes(10) }))
+  s.after.head = { title: 'Offline sync', description }
+}
 
 export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene) => void }> = {
   'no-time-words': { bad: s => (s1Of(s).text = 'synced 5m ago') },
@@ -228,6 +233,10 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'head-follows': { bad: s => (s.after.head = { title: 'Lint error', description: 'Fixing the lint error' }) },
   'head-no-queued': {
     bad: s => (s.after.head = { title: 'Offline sync', description: 'Making the engine sync, then shipping 2.5' }),
+  },
+  'head-no-finished': {
+    good: s => allDone(s, ''),
+    bad: s => allDone(s, 'Making the engine sync on reconnect'),
   },
   'head-title-kept': {
     good: s => {
@@ -481,6 +490,18 @@ function linkedToMilestones(s: Scene, holdsUp: string[], ids: string[]) {
 }
 
 export const PATH_SCENES: { rule: string; path: string; good: (s: Scene) => void; bad: (s: Scene) => void }[] = [
+  {
+    rule: 'head-title',
+    path: 'a head with no description once no subject is working or waiting',
+    good: s => allDone(s, ''),
+    bad: s => (s.after.head = { title: 'Offline sync', description: '' }),
+  },
+  {
+    rule: 'head-follows',
+    path: 'a description cleared under the same title',
+    good: s => (s.after.head = { title: 'Offline sync', description: '' }),
+    bad: s => (s.after.head = { title: 'Offline sync', description: 'Fixing the lint error' }),
+  },
   {
     rule: 'open-pieces-kept',
     path: 'a queued piece that is the only one serving its milestone',

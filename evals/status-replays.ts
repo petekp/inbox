@@ -5,6 +5,7 @@ import { catchUpShipped } from './replays/catch-up-shipped'
 import { childrenFinished } from './replays/children-finished'
 import { coordinatorDay } from './replays/coordinator-day'
 import { fixThroughMerge } from './replays/fix-through-merge'
+import { headAfterDone } from './replays/head-after-done'
 import { headDescription } from './replays/head-description'
 import { removedGoal } from './replays/removed-goal'
 import { goalFromWork } from './replays/goal-from-work'
@@ -63,4 +64,5 @@ export const REPLAYS: Replay[] = [
   childrenFinished,
   fixThroughMerge,
   headDescription,
+  headAfterDone,
 ]
