@@ -58,7 +58,7 @@ fi
 bundle=$(mktemp -d)
 trap 'rm -rf "$bundle"' EXIT
 # esbuild names each bundled file by its path from the folder it runs in, so it runs from the repo: a bundle
-# started from another folder would hash differently in the results file and in each baseline's stamp.
+# started from another folder would hash differently in the results file.
 esbuild() { (cd "$DIR" && "$DIR/codex/node_modules/.bin/esbuild" "$@"); }
 case "$suite" in
     model)

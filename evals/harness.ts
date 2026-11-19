@@ -219,18 +219,24 @@ export function writeResults(path: string, about: Provenance, results: unknown[]
   writeFileSync(path, JSON.stringify({ ...about, stopped, results }, null, 1))
 }
 
-/** SHA-256 hashes of a case and of the text its agent's model reads for it. */
-type Stamp = { case: string; read: string }
+/**
+ * SHA-256 hashes of a case, of the text its agent's model reads for it, and of how the run is made and graded: the
+ * agent's settings and the source of the grading code.
+ */
+type Stamp = { case: string; read: string; grade: string }
 /** Keyed `<agent> <case>`. */
 export type Stamps = Record<string, Stamp>
 
-export function stamp(c: object, read: string[]): Stamp {
-  return { case: sha256(JSON.stringify(c)), read: sha256(read.join('\0')) }
+export function stamp(c: object, read: string[], grade: string[]): Stamp {
+  return { case: sha256(JSON.stringify(c)), read: sha256(read.join('\0')), grade: sha256(grade.join('\0')) }
 }
+
+/** A file of this repo, by its path from the repo's root. */
+export const repoFile = (path: string): string => readFileSync(join(ROOT, path), 'utf8')
 
 /**
  * A case's pass count from a run long enough to judge later runs by, keyed `<agent> <case>`, with the stamp of the
- * case and text it was set on. Baselines saved before stamps have none.
+ * case, text and grading it was set on. Baselines saved before stamps have none.
  */
 type Baseline = { passed: number; runs: number; commit: string; date: string; models: string[] } & Partial<Stamp>
 type Baselines = Record<string, Baseline>
@@ -311,9 +317,11 @@ function isBelowBaseline(passed: number, runs: number, b: Baseline): boolean {
 
 /** Why a baseline no longer describes what this run tests, or null when it still does. */
 function lapsed(b: Baseline, now: Stamp | undefined): string | null {
-  if (b.case === undefined || b.read === undefined) return 'it has no hash of its case and text'
+  if (b.case === undefined || b.read === undefined || b.grade === undefined)
+    return 'it has no hash of its case, text and grading'
   if (b.case !== now?.case) return 'its case changed since it was set'
   if (b.read !== now.read) return 'the text the model reads changed since it was set'
+  if (b.grade !== now.grade) return 'its grading or run settings changed since it was set'
 
   return null
 }

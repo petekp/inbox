@@ -1,7 +1,9 @@
+import { promptNotes, TOLD_NOTHING } from '../hooks/inbox-text'
+import { guidedCloseDescription } from '../hooks/model-text'
 import type { Host } from '../hooks/model-text'
 import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../hooks/tool-schemas'
 import { agentTools } from '../hooks/tools'
-import type { ToolFields } from '../types'
+import type { Ledger, ToolFields } from '../types'
 
 /** The inbox tools a case gives the agent: this build's, or with `0.3.0`, those a session that 0.3.0 started keeps. */
 export type CaseTools = '0.3.0'
@@ -29,6 +31,35 @@ export function probeTools(host: Host, tools: CaseTools | null | undefined) {
   }))
 
   return { tools: offered, fields }
+}
+
+/**
+ * The tools a probe serves, with their fields. Claude Code reads the guidance in `close`'s description, as in the mod;
+ * the other agents get it another way.
+ */
+export function servedTools(host: Host, tools: CaseTools | null | undefined, isClaudeGuided: boolean) {
+  const offered = probeTools(host, tools)
+  if (!isClaudeGuided) return offered
+  const guided = offered.tools.map(tool =>
+    tool.name === 'close'
+      ? {
+          ...tool,
+          description: guidedCloseDescription(host, tool.description).replaceAll('mcp__inbox__', 'mcp__probe__'),
+        }
+      : tool,
+  )
+
+  return { ...offered, tools: guided }
+}
+
+/** The inbox notes omp's host sends before `prompt`, as a hidden message, for the inbox the agent is `shown`. */
+export function ompNotes(host: Host, shown: Ledger, prompt: string): string[] {
+  return promptNotes(
+    host,
+    { ...shown, turn: shown.turn + 1 },
+    { text: prompt, isPress: false, isOpen: false },
+    TOLD_NOTHING,
+  ).notes
 }
 
 /** The record tool's description in 0.3.0, from `recordDescription` in v0.3.0's `hooks/tools.ts`. */
