@@ -1,4 +1,4 @@
-import { slideOffset } from '../../hooks/row-motion'
+import { enterDelayMs, slideOffset } from '../../hooks/row-motion'
 import { FRAME_MS, springFrames, springStep } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
 import { tabState, animations } from './tab-state'
@@ -53,6 +53,16 @@ export function waitLeftMs(el: HTMLElement): number {
   const g = glides.get(el)
 
   return g !== undefined && isRunning(g.anim) ? Math.max(0, g.startsAt - Date.now()) : 0
+}
+
+/**
+ * Whether an element's height, at `from`, glides toward a height it is still short of by more than an entering block
+ * waits for before its content fades in (`enterDelayMs`).
+ */
+export function isOpeningShort(el: HTMLElement, from: SpringState): boolean {
+  const g = glides.get(el)
+
+  return g !== undefined && g.size === 'height' && isRunning(g.anim) && enterDelayMs(g.to, from) > 0
 }
 
 /** Whether an element's running glide scales its padding and top margin with its height, as one that comes or goes. */

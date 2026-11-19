@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T07:37:36.389Z. 301915 characters follow.
+// Built at 2026-11-19T07:50:25.965Z. 302068 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5541,7 +5541,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     if (height <= 0 || t.track.state !== "open" && t.track.state !== "opening")
       return false;
     const isTurnedBack = t.panelSteps !== null;
-    const fadesAt = isTurnedBack ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height);
+    const fadesAt = isTurnedBack ? t.panelSteps?.at(-1)?.at ?? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height);
     return t.track.state === "open" || now >= fadesAt;
   };
   const panelFadeWaitMs = (t) => t.track.state === "open" ? NEXT_FRAME_MS : 0;
@@ -5585,6 +5585,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil);
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state));
     const holdsPanel = drawsPanel(track) && !isLeftOut;
+    const isHiddenAtOnce = closing !== null && isStart && !isHeld && last?.track.state === "opening";
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
     const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), isHeld) : null;
     rows.set(block.id, {
@@ -5610,7 +5611,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       shutForMs: glide?.shutForMs ?? null,
       panel: panelStep?.to ?? panelOf(track.state, isStart, last?.track.state, closing),
       isPanelWaiting: track.state === "opening",
-      panelFadeMs: panelStep?.ms ?? null,
+      panelFadeMs: panelStep?.ms ?? (isHiddenAtOnce ? 0 : null),
       closing,
       isPanelLeftOut: isLeftOut || wasClosing && block.kind === "row",
       title: titleMotion(title, now),

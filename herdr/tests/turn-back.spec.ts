@@ -64,6 +64,28 @@ test('a row turned back twice, closed again while its space regrows and opened a
   }
 })
 
+test('a row closed again while its turned-back panel is still faint hides the panel at once and cuts nothing that shows', () => {
+  const open = asks(ALL, 'd11')
+  const shut = asks(ALL, 'd11', null, ['d11'])
+  const timings: [number, number][] = [
+    [200, 400],
+    [200, 360],
+    [250, 420],
+  ]
+  for (const [backAt, shutAt] of timings) {
+    const frames = framesOf(
+      [
+        [0, open],
+        [0, shut, 'input'],
+        [backAt, open, 'input'],
+        [shutAt, shut, 'input'],
+      ],
+      1400,
+    )
+    expect({ shutAt, cuts: frames.cuts.filter(c => c.box === 'panel d11') }).toEqual({ shutAt, cuts: [] })
+  }
+})
+
 test('a click on a closing row’s title turns it back and fades its panel in at once, held under half while its space regrows, as a key does', async () => {
   let at = NOW
   const tick = () => setSystemTime(new Date((at += PRESS_GUARD_MS + 1)))

@@ -194,7 +194,9 @@ export function moveRows(
     const height = heightOf(panelId(id)) ?? 0
     if (height <= 0 || (t.track.state !== 'open' && t.track.state !== 'opening')) return false
     const isTurnedBack = t.panelSteps !== null
-    const fadesAt = isTurnedBack ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height)
+    const fadesAt = isTurnedBack
+      ? (t.panelSteps?.at(-1)?.at ?? t.track.since)
+      : t.track.since + NEXT_FRAME_MS + enterDelayMs(height)
 
     return t.track.state === 'open' || now >= fadesAt
   }
@@ -261,6 +263,7 @@ export function moveRows(
     const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil)
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))
     const holdsPanel = drawsPanel(track) && !isLeftOut
+    const isHiddenAtOnce = closing !== null && isStart && !isHeld && last?.track.state === 'opening'
     const panelSpace = aimSpace(
       last?.panelSpace ?? null,
       holdsPanel ? (panelHeight ?? last?.panelSpace?.to ?? 0) : 0,
@@ -293,7 +296,7 @@ export function moveRows(
       shutForMs: glide?.shutForMs ?? null,
       panel: panelStep?.to ?? panelOf(track.state, isStart, last?.track.state, closing),
       isPanelWaiting: track.state === 'opening',
-      panelFadeMs: panelStep?.ms ?? null,
+      panelFadeMs: panelStep?.ms ?? (isHiddenAtOnce ? 0 : null),
       closing,
       isPanelLeftOut: isLeftOut || (wasClosing && block.kind === 'row'),
       title: titleMotion(title, now),

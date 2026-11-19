@@ -19,6 +19,7 @@ import {
   glide,
   glides,
   isFadingIn,
+  isOpeningShort,
   isRunning,
   isScalingEdges,
   isUnderWay,
@@ -334,10 +335,10 @@ function isInsideLeaving(el: HTMLElement): boolean {
 /**
  * Shrinks an entry to the height it comes to rest at, over what it drew open and still draws, inert: a closing row's
  * panel or a PR block's body. A closing row's panel fades out first, while the entry holds its height, so the shrinking
- * height never cuts a line of it that shows. A panel that shows nothing yet, as one still waiting to fade in, stays
- * hidden and holds nothing. A settling PR block's dismissed head replaces the line above its body, so
- * the body keeps the top it had at `openTop` while the height shrinks over it. A settling row draws only its settled
- * line.
+ * height never cuts a line of it that shows. A panel that shows nothing yet, as one still waiting to fade in, or one
+ * turned back that shows faint while its space is still short of open, hides at once and holds nothing. A settling PR
+ * block's dismissed head replaces the line above its body, so the body keeps the top it had at `openTop` while the
+ * height shrinks over it. A settling row draws only its settled line.
  */
 function collapse(
   el: HTMLElement,
@@ -346,6 +347,7 @@ function collapse(
   openTop: number | null,
   delay: number,
 ) {
+  const isShort = state === 'closing' && isOpeningShort(el, from)
   const part = el.querySelector<HTMLElement>('.closing[inert]')
   // A closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
   const row = el.querySelector<HTMLElement>('.row.closing')
@@ -360,7 +362,7 @@ function collapse(
   if (part) part.style.display = ''
   row?.classList.add('closing')
   if (part && state === 'settling' && openTop !== null) keepTop(el, part, openTop)
-  const shown = state === 'closing' ? shownPanel(el) : null
+  const shown = state === 'closing' && !isShort ? shownPanel(el) : null
   if (shown) for (const p of fadingParts(shown)) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
   else if (part && state === 'closing') fade(part, 0, 0, 0, true)
   const opacity = opacityOf(el)
