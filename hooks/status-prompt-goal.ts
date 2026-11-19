@@ -2,7 +2,7 @@ import type { GoalRefusal, SessionStatus } from '../types'
 import { NL } from './ledger-prompt'
 import { goalLeftFor, heldSubjects, lastProgressAt } from './status-goal-gate'
 import { isOpen, MILESTONE_SUBJECTS, MILESTONES_MAX, MILESTONES_MIN, NAME_WORDS, TEXT_WORDS } from './status-limits'
-import { hasRunningGoal } from './status-suggest'
+import { hasRunningGoal, isNextGoalAsked } from './status-suggest'
 import { duration } from './text'
 
 /** The mark on a milestone line that no subject serves. */
@@ -13,6 +13,9 @@ const NO_TEXT = 'no text'
 const NEXT_MARK = 'next'
 /** The mark on a milestone line `tooBigMilestones` names, with how many subjects serve it and how many milestones the goal has room for. */
 const tooBigMark = (count: number, room: number) => `too big, ${count} subjects, room for ${room}`
+
+/** What the `<next-goal>` block asks while no goal runs and none is suggested. */
+const NEXT_GOAL_ASK = `No goal runs and none is suggested. What is the work for next? Write GOAL when the goal is clear, else SUGGEST with the outcome the work most likely leads to, else SUGGEST: - when no outcome fits.`
 
 /** The lines the Status call writes for the goal, after the lines it writes for subjects. */
 export const GOAL_LINES = `GOAL: outcome | status name: where it stands; status name: where it stands
@@ -28,6 +31,7 @@ export const GOAL_INPUT = `- <goal>: the outcome the session's work is for, when
 - <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it, with | ${NO_TEXT} when open work serves it and it says nothing on where it stands, and with | ${tooBigMark(9, 2)} when more than ${MILESTONE_SUBJECTS} subjects serve it, open or done, two or more of them are open, and the goal has room for more milestones. Room for 2 means the goal can take 2 more.
 - <removed>: goals the person removed, as their key words, one per line
 - <suggested>: the goal offered to the person, while no goal is set or the goal is met
+- <next-goal>: there when no goal runs and none is suggested, to ask for the next goal
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`
 
 /**
@@ -38,7 +42,7 @@ export const GOAL_PARTS = {
   'goal-when-clear': `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   'goal-finish-line': `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   'goal-wait': `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
-  'goal-suggest': `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
+  'goal-suggest': `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. After a met goal, it is the next outcome the finished work leads to, such as shipping or releasing what the goal built. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. When <next-goal> is there, always answer it: GOAL when the goal is clear, else SUGGEST with an outcome, else SUGGEST: - when no outcome fits. Write it even when nothing else changed, after NO CHANGE. Write SUGGEST when <suggested> no longer fits the work and an outcome fits, and SUGGEST: - when it no longer fits and no outcome does. Write no SUGGEST while <suggested> fits. Never make a suggestion up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   'goal-not-again': `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   'goal-typed-kept': `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   'goal-outcome-happened': `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
@@ -121,7 +125,8 @@ export function tooBigMilestones(o: SessionStatus | null): Map<string, number> {
 
 /** The goal's input blocks at `now`: the goal and its milestones, the removed goals and the suggested goal. */
 export function goalBlocks(o: SessionStatus | null, now: number): string[] {
-  if (o === null) return []
+  const ask = isNextGoalAsked(o) ? [`<next-goal>${NL}${NEXT_GOAL_ASK}${NL}</next-goal>`] : []
+  if (o === null) return ask
   const g = o.goal
   const left = goalLeftFor(o, now)
   const refused = refusedLine(o, now)
@@ -159,5 +164,6 @@ export function goalBlocks(o: SessionStatus | null, now: number): string[] {
     ...(g && milestones.length > 0 ? [block('milestones', milestones.join(NL))] : []),
     ...(o.removedGoals.length > 0 ? [block('removed', o.removedGoals.join(NL))] : []),
     ...(o.suggestedGoal !== null && !hasRunningGoal(o) ? [block('suggested', o.suggestedGoal)] : []),
+    ...ask,
   ]
 }

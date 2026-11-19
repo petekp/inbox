@@ -186,7 +186,7 @@ test('a claimed Status call reads the running turn’s work with no reply and wr
   const prompts: string[] = []
   const { host } = fakeHost(async prompt => {
     prompts.push(prompt)
-    return 'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built'
+    return 'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built\nSUGGEST: -'
   })
   await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
   await refreshStatus(host)

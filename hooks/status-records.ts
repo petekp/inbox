@@ -1,5 +1,5 @@
 import { askStatus, parseStatus } from './status'
-import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, hostStatusSystem } from './status-prompt'
+import { statusPrompt, statusMidTurnPrompt, statusCatchUpPrompt, hostStatusSystem, nextGoalRetry } from './status-prompt'
 import type { StatusCallInput } from './status-prompt'
 import { failedStatus, appliedStatus, isStatusCallCurrent } from './session-status'
 import type { ClientId } from './client-features'
@@ -179,12 +179,12 @@ export async function askAndWriteStatus<S extends Session>(
   const prompt = statusCallPrompt(input, call.exchange)
   const system = hostStatusSystem(host.names)
   const heards: { kind: CallKind; heard: HeardCall }[] = []
-  const { last } = await askStatus(async () => {
+  const { last } = await askStatus(async retry => {
     const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
-    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now())
+    const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now())
     heards.push({ kind, heard })
     return heard
-  })
+  }, nextGoalRetry(input.last, prompt))
   const attempts = heards.map(h => attemptOf(h.heard))
   const answer = last.text === null ? null : parseStatus(last.text)
   let before: SessionStatus | null = null

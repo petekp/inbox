@@ -146,14 +146,21 @@ export function parseStatus(text: string | null): StatusAnswer | null {
 
 /**
  * Asks the Status call through `ask`, and once more when the answer holds no operation, as `parseStatus` refuses it.
- * A call that gives no text is not asked again. Returns the first answer and the one to apply, which are the same when
- * the call was asked once.
+ * When `retryFor` gives a prompt for an answer that parses, the call is asked once more with that prompt, and the
+ * second answer applies when it parses. A call that gives no text is not asked again. Returns the first answer and the
+ * one to apply, which are the same when the call was asked once.
  */
 export async function askStatus<T extends { text: string | null }>(
-  ask: () => Promise<T>,
+  ask: (prompt: string | null) => Promise<T>,
+  retryFor: (answer: StatusAnswer, text: string) => string | null = () => null,
 ): Promise<{ first: T; last: T }> {
-  const first = await ask()
-  const isUnreadable = first.text !== null && parseStatus(first.text) === null
+  const first = await ask(null)
+  if (first.text === null) return { first, last: first }
+  const answer = parseStatus(first.text)
+  if (answer === null) return { first, last: await ask(null) }
+  const retry = retryFor(answer, first.text)
+  if (retry === null) return { first, last: first }
+  const again = await ask(retry)
 
-  return { first, last: isUnreadable ? await ask() : first }
+  return { first, last: parseStatus(again.text) === null ? first : again }
 }

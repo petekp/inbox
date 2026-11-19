@@ -5,7 +5,7 @@ import { applyExchangeUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
 import { buildPrompt, systemText } from '../hooks/ledger-prompt'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { hostStatusSystem } from '../hooks/status-prompt'
+import { hostStatusSystem, nextGoalRetry } from '../hooks/status-prompt'
 import { screenText } from '../hooks/inbox-text'
 import type { StatusCallInput } from '../hooks/status-prompt'
 import { askStatus, parseStatus } from '../hooks/status'
@@ -239,17 +239,17 @@ async function statusCall(
   const input: StatusCallInput = { last: s.ledger.overview, asks: s.ledger.items, tasks, now }
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
-  const { last } = await askStatus(async () => {
+  const { last } = await askStatus(async retry => {
     const kind = { call: 'status', reads: read.kind, isRetry: logs.length > 0 } as const
     const answer = await timed(
       deps,
       kind,
-      prompt,
+      retry ?? prompt,
       deps.system ?? hostStatusSystem(deps.agent === 'codex' ? CODEX : CLAUDE_CODE),
     )
     logs.push(answer.log)
     return answer
-  })
+  }, nextGoalRetry(input.last, prompt))
   const log = {
     ...logs[logs.length - 1]!,
     answers: logs.flatMap(l => l.answers),

@@ -291,7 +291,8 @@ export function applyOps(
 /**
  * The Status after an answer, applied at `now`. `askIds` are the open asks. A removed goal's Undo lasts until an answer
  * from a call that did not read that goal applies: the call moved on from it. A refused GOAL or RETIRE line is kept
- * for one call: the answer after it, with lines or NO CHANGE, read it.
+ * for one call: the answer after it, with lines or NO CHANGE, read it. An answer whose only lines are `SUGGEST: -` while
+ * nothing is suggested changes nothing, as NO CHANGE does.
  */
 export function applyStatus(
   last: SessionStatus | null,
@@ -300,10 +301,15 @@ export function applyStatus(
   askIds: ReadonlySet<string>,
   readSetAt: number | null = last?.goal?.setAt ?? null,
 ): SessionStatus | null {
+  const isNoSuggestionOnly =
+    answer.kind === 'ops' &&
+    (last?.suggestedGoal ?? null) === null &&
+    answer.ops.every(op => op.kind === 'suggest' && op.text === null)
+  const changes = answer.kind === 'ops' && !isNoSuggestionOnly ? answer.ops : null
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last
-  const o = answer.kind === 'ops' ? applyOps(last, answer.ops, now, askIds, readSetAt) : read
+  const o = changes ? applyOps(last, changes, now, askIds, readSetAt) : read
   if (o === null) return null
-  const settled = answer.kind === 'ops' ? o : settleGoal(o, now, readSetAt, new Map())
+  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map())
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
 
   return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }

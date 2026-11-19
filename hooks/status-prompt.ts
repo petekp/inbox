@@ -6,6 +6,8 @@ import { asksText, idleText, runningText, subjectsText } from './status-children
 import { DESCRIPTION_WORDS, NAME_WORDS, OPEN_SUBJECTS, TEXT_WORDS } from './status-limits'
 import { GOAL_INPUT, GOAL_LINES, goalBlocks, goalRules } from './status-prompt-goal'
 import type { GoalPartId } from './status-prompt-goal'
+import { answersNextGoal, isNextGoalAsked } from './status-suggest'
+import type { StatusAnswer } from './status'
 import { clipMiddle, numberBlocks } from './text'
 
 /** The rules that give each part of the work the person would name its own subject, for a host that reads them. */
@@ -149,4 +151,19 @@ export function statusCatchUpPrompt(input: StatusCallInput, transcript: string):
     ...statusBlocks(input),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)
+}
+
+/**
+ * The prompt that asks the Status call once more when `last` asked for the next goal and its answer gave none: the
+ * prompt it read, its answer, and what the answer lacks. Null when the call was not asked or the answer gave one.
+ */
+export function nextGoalRetry(last: SessionStatus | null, prompt: string) {
+  return (answer: StatusAnswer, text: string): string | null =>
+    !isNextGoalAsked(last) || answersNextGoal(answer)
+      ? null
+      : [
+          prompt,
+          `<your-answer>${NL}${text}${NL}</your-answer>`,
+          'Your answer has no GOAL or SUGGEST line, and <next-goal> asks for one. Answer again with every line you meant, and add GOAL, SUGGEST with an outcome, or SUGGEST: - when no outcome fits.',
+        ].join(NL)
 }

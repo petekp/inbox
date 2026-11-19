@@ -970,6 +970,8 @@ function withoutGoal(o) {
 
 // ../hooks/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
+var isNextGoalAsked = (o) => o === null || !hasRunningGoal(o) && o.suggestedGoal === null;
+var answersNextGoal = (answer) => answer.kind === "ops" && answer.ops.some((op) => op.kind === "goal" || op.kind === "suggest");
 function restatesKnownGoal(o, text2) {
   const known = [o.goal?.text, o.goal?.was, ...o.removedGoals].filter((t) => typeof t === "string");
   return known.some((goal) => restatesGoal(text2, goal));
@@ -4879,10 +4881,12 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   return withSuggestion(nextRef === null ? settled : withNextMilestone(settled, nextRef, now), ops);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
+  const isNoSuggestionOnly = answer.kind === "ops" && (last?.suggestedGoal ?? null) === null && answer.ops.every((op) => op.kind === "suggest" && op.text === null);
+  const changes = answer.kind === "ops" && !isNoSuggestionOnly ? answer.ops : null;
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last;
-  const o = answer.kind === "ops" ? applyOps(last, answer.ops, now, askIds, readSetAt) : read;
+  const o = changes ? applyOps(last, changes, now, askIds, readSetAt) : read;
   if (o === null) return null;
-  const settled = answer.kind === "ops" ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Map());
+  const settled = changes ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Map());
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
   return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
 }
@@ -5523,10 +5527,15 @@ function parseStatus(text2) {
   const ops = afterRetractions(all);
   return ops.length === 0 ? { kind: "unchanged" } : { kind: "ops", ops };
 }
-async function askStatus(ask) {
-  const first = await ask();
-  const isUnreadable = first.text !== null && parseStatus(first.text) === null;
-  return { first, last: isUnreadable ? await ask() : first };
+async function askStatus(ask, retryFor = () => null) {
+  const first = await ask(null);
+  if (first.text === null) return { first, last: first };
+  const answer = parseStatus(first.text);
+  if (answer === null) return { first, last: await ask(null) };
+  const retry = retryFor(answer, first.text);
+  if (retry === null) return { first, last: first };
+  const again2 = await ask(retry);
+  return { first, last: parseStatus(again2.text) === null ? first : again2 };
 }
 
 // ../hooks/status-prompt-goal.ts
@@ -5534,6 +5543,7 @@ var NO_WORK_LINKED = "no work linked";
 var NO_TEXT = "no text";
 var NEXT_MARK = "next";
 var tooBigMark = (count, room) => `too big, ${count} subjects, room for ${room}`;
+var NEXT_GOAL_ASK = `No goal runs and none is suggested. What is the work for next? Write GOAL when the goal is clear, else SUGGEST with the outcome the work most likely leads to, else SUGGEST: - when no outcome fits.`;
 var GOAL_LINES = `GOAL: outcome | status name: where it stands; status name: where it stands
 RETIRE: why the goal no longer fits the work
 SUGGEST: outcome, or - for none
@@ -5545,12 +5555,13 @@ var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is s
 - <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it, with | ${NO_TEXT} when open work serves it and it says nothing on where it stands, and with | ${tooBigMark(9, 2)} when more than ${MILESTONE_SUBJECTS} subjects serve it, open or done, two or more of them are open, and the goal has room for more milestones. Room for 2 means the goal can take 2 more.
 - <removed>: goals the person removed, as their key words, one per line
 - <suggested>: the goal offered to the person, while no goal is set or the goal is met
+- <next-goal>: there when no goal runs and none is suggested, to ask for the next goal
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
 var GOAL_PARTS = {
   "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
-  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. Write SUGGEST when <suggested> is missing or no longer fits the work and an outcome fits, and SUGGEST: - when <suggested> no longer fits and no outcome does. Write no SUGGEST while <suggested> fits, or while <suggested> is missing and no outcome fits: never make one up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
+  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. After a met goal, it is the next outcome the finished work leads to, such as shipping or releasing what the goal built. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. When <next-goal> is there, always answer it: GOAL when the goal is clear, else SUGGEST with an outcome, else SUGGEST: - when no outcome fits. Write it even when nothing else changed, after NO CHANGE. Write SUGGEST when <suggested> no longer fits the work and an outcome fits, and SUGGEST: - when it no longer fits and no outcome does. Write no SUGGEST while <suggested> fits. Never make a suggestion up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
@@ -5605,7 +5616,8 @@ function tooBigMilestones(o) {
   );
 }
 function goalBlocks(o, now) {
-  if (o === null) return [];
+  const ask = isNextGoalAsked(o) ? [`<next-goal>${NL3}${NEXT_GOAL_ASK}${NL3}</next-goal>`] : [];
+  if (o === null) return ask;
   const g = o.goal;
   const left = goalLeftFor(o, now);
   const refused = refusedLine(o, now);
@@ -5637,7 +5649,8 @@ function goalBlocks(o, now) {
     ...g ? [block("goal", `${g.text}${state}${refused === null ? "" : `${NL3}${refused}`}`)] : [],
     ...g && milestones.length > 0 ? [block("milestones", milestones.join(NL3))] : [],
     ...o.removedGoals.length > 0 ? [block("removed", o.removedGoals.join(NL3))] : [],
-    ...o.suggestedGoal !== null && !hasRunningGoal(o) ? [block("suggested", o.suggestedGoal)] : []
+    ...o.suggestedGoal !== null && !hasRunningGoal(o) ? [block("suggested", o.suggestedGoal)] : [],
+    ...ask
   ];
 }
 
@@ -5754,6 +5767,13 @@ function statusCatchUpPrompt(input, transcript) {
     "Treat the conversation in <conversation> as the exchange. Its start may be cut. Answer with the changes that bring the list to where the conversation ends. A conversation often names one piece of work several ways. Match each piece to its subject in <subjects> or <finished> before you write NEW. A finished piece that the conversation only retells gets no line.",
     ...statusBlocks(input),
     `<conversation>${NL3}${numberBlocks(transcript)}${NL3}</conversation>`
+  ].join(NL3);
+}
+function nextGoalRetry(last, prompt) {
+  return (answer, text2) => !isNextGoalAsked(last) || answersNextGoal(answer) ? null : [
+    prompt,
+    `<your-answer>${NL3}${text2}${NL3}</your-answer>`,
+    "Your answer has no GOAL or SUGGEST line, and <next-goal> asks for one. Answer again with every line you meant, and add GOAL, SUGGEST with an outcome, or SUGGEST: - when no outcome fits."
   ].join(NL3);
 }
 
@@ -5876,12 +5896,12 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
   const prompt = statusCallPrompt(input, call.exchange);
   const system = hostStatusSystem(host.names);
   const heards = [];
-  const { last } = await askStatus(async () => {
+  const { last } = await askStatus(async (retry) => {
     const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
-    const heard = await heardCall(call.ask, prompt, system, kind, () => host.now());
+    const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now());
     heards.push({ kind, heard });
     return heard;
-  });
+  }, nextGoalRetry(input.last, prompt));
   const attempts = heards.map((h) => attemptOf(h.heard));
   const answer = last.text === null ? null : parseStatus(last.text);
   let before = null;
