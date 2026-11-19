@@ -11105,11 +11105,16 @@ function isDescriptionStale(head, work) {
   return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
 }
 function headAfter(last, op, work) {
-  const isComplete = last !== null && last.description !== "";
-  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
-  const isStale = isDescriptionStale(last, work);
-  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
-  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+  const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+  if (last === null || last.description === "")
+    return line;
+  const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay;
+  if (isQueuedWorkNext)
+    return last;
+  if (!hasSameWords(last.title, op.title))
+    return line;
+  const isSameDescription = line.description === "" || hasSameWords(last.description, line.description);
+  return isSameDescription ? last : { title: last.title, description: line.description };
 }
 var OP_ORDER = {
   none: 0,

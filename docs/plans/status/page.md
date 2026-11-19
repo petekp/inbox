@@ -60,7 +60,7 @@ Before any work, the page reads: "What this session's work is for, where each pa
 - **What code does with it:**
   - A new subject whose name holds the same key words as an open one updates that one. One that matches a subject finished since the person last looked reopens that subject, so the page shows the piece once.
   - A new subject or a head named only by a PR or issue number, such as "#3655" or "PR 3655", changes nothing: a number names no work, and the PRs tab shows the PR.
-  - An update that keeps the status and has the same content words, in any order, keeps the old text and its place. A head that keeps its title, or that comes with finished work and none under way, keeps the old head.
+  - An update that keeps the status and has the same content words, in any order, keeps the old text and its place. A head that comes with finished work and none under way keeps the old head. A head that keeps its title keeps the old title and takes the new description.
   - A line that is not an edit is left out, and the answer's edits apply. An answer with no edit is asked once more. If that fails too, the page stays as it was and the status line says so.
 - **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Status call, starts a Status call. That call reads the person's message and the turn's activity so far.
 - **On a catch-up.** The call reads the whole conversation and edits the current subjects.

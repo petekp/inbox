@@ -536,6 +536,12 @@ export const PATH_SCENES: { rule: string; path: string; good: (s: Scene) => void
     bad: s => childFinished(s, 'syncs on reconnect'),
   },
   {
+    rule: 'head-follows',
+    path: 'a head that moves back to the focus at a step where the focus did not move',
+    good: s => (s.before.head = { title: 'Lint error', description: 'Fixing the lint error' }),
+    bad: s => (s.before.head = { title: 'Offline sync', description: 'Wiring the settings toggle' }),
+  },
+  {
     rule: 'changes-move',
     path: 'a changed piece drawn as its milestone',
     good: s => milestoneChanged(s, 10),
