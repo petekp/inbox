@@ -11,7 +11,6 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-glide.ts` | Codex adapter. The Web Animations each move plays: the spring glide of a height or offset, and fades. |
 | `codex/src/tab-title-motion.ts` | Codex adapter. When a row's title swaps between its full and clamped forms while its line grows or shrinks, so one form shows at a time and the line never cuts a line of the title that shows. |
 | `codex/src/tab-page-variables.ts` | Codex adapter. The shared spacing scale and motion lengths, set as the CSS variables the tab's styles read. |
-| `codex/src/weight-ease.ts` | Codex adapter. Runs a measurement with every running font-weight ease at its end, so a height or line count is for the weight the text eases to. |
 | `codex/src/tab-fold-all.ts` | Codex adapter. `foldAllHere` applies a fold-all to the tab's folds through each fold's own toggle, so each animates and saves as a single click would, and `clickFold` turns an Option-click on a fold into a fold-all. |
 | `codex/src/tab-title-tint.tsx` | Codex adapter. A row's title in a span whose tint a Web Animation fades from the clock's point, so a row drawn again mid-fade does not start over. |
 | `codex/src/tab-line-steps.ts` | Codex adapter. Steps lines that come and go, such as banners and a press's status, through the row states, so a line enters and leaves from its place. |
