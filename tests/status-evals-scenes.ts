@@ -1,142 +1,11 @@
-import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
-import { emptySession } from '../hooks/session-files'
 import { statusListRows } from '../hooks/status-folds'
-import { statusPage } from '../hooks/status-page'
-import type { StatusPage } from '../hooks/status-page'
 import { HELD_MARK } from '../hooks/help'
 import { nameKey } from '../hooks/status-limits'
-import type { Item, Session, SessionStatus, Subject, SubjectStatus } from '../types'
-import type { Facts } from '../evals/status-facts'
+import type { SubjectStatus } from '../types'
 import { minutes } from '../evals/status-replay'
-import type { CallLog, Step, StepResult } from '../evals/status-replay'
-import type { RuleContext } from '../evals/status-rules'
-
-export function subject(id: string, status: SubjectStatus, name: string, text: string, changedAt: number): Subject {
-  const isClosed = status === 'done' || status === 'dropped'
-  return {
-    id,
-    name,
-    status,
-    text,
-    was: null,
-    merged: null,
-    createdAt: minutes(0),
-    changedAt: minutes(changedAt),
-    closedAt: isClosed ? minutes(changedAt) : null,
-    into: null,
-  }
-}
-
-export function statusOf(subjects: Subject[], more: Partial<SessionStatus> = {}): SessionStatus {
-  const head = { title: 'Offline sync', description: 'Adding offline sync to the notes app' }
-  return { ...EMPTY_SESSION_STATUS, head, subjects, nextId: subjects.length + 1, ...more }
-}
-
-export function sessionOf(o: SessionStatus, items: Item[], at: number): Session {
-  const base = emptySession()
-  return {
-    ...base,
-    ledger: { ...base.ledger, overview: o, items },
-    presence: { ...base.presence, lastReplyAt: minutes(at) },
-  }
-}
-
-function ask(id: string, text: string): Item {
-  return {
-    id,
-    kind: 'question',
-    label: null,
-    ask: text,
-    options: [],
-    rec: null,
-    helps: [],
-    turn: 1,
-    at: 0,
-    from: 'record',
-  }
-}
-
-export type Scene = {
-  before: SessionStatus
-  after: SessionStatus
-  items: Item[]
-  facts: Facts
-  step: Step
-  isStatusFailed: boolean
-  calls?: CallLog[]
-  /** Breaks the drawn page, for a code hold the page code itself would never break. */
-  page?: (p: StatusPage) => void
-}
-
-export function baseScene(): Scene {
-  const before = statusOf([
-    subject('s1', 'working', 'Sync engine', 'queues edits offline', 0),
-    subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
-  ])
-  const after = statusOf(
-    [
-      subject('s1', 'working', 'Sync engine', 'syncs on reconnect', 10),
-      subject('s2', 'queued', 'Sync conflicts', 'not started', 0),
-    ],
-    {
-      askSubjects: { i1: ['s2'] },
-      nextChildId: 2,
-      children: [
-        {
-          id: 'c1',
-          ref: 'toolu_a',
-          kind: 'subagent',
-          name: 'Review the sync engine diff',
-          subjectId: 's1',
-          startedAt: minutes(5),
-          endedAt: null,
-          lastActivityAt: minutes(9),
-          delegateState: null,
-        },
-      ],
-    },
-  )
-  const facts: Facts = {
-    focus: 'adding offline sync',
-    focusMatch: 'offline|sync',
-    pieces: [
-      { id: 'engine', names: ['Sync engine'], match: 'engine', state: 'working', stands: 'syncs on reconnect' },
-      { id: 'conflicts', names: ['Sync conflicts'], match: 'conflict', state: 'queued', stands: 'not started' },
-    ],
-    asks: [{ match: 'manual merge', text: 'Last-write-wins or manual merge?', holdsUp: ['conflicts'] }],
-    notWork: [],
-    children: [{ ref: 'toolu_a', does: 'Review the sync engine diff', serves: 'engine' }],
-    changed: ['engine'],
-  }
-  const step: Step = {
-    label: 'the engine works',
-    at: 10,
-    call: { kind: 'reply', person: null, activity: [], reply: '' },
-  }
-
-  return { before, after, items: [ask('i1', 'Last-write-wins or manual merge?')], facts, step, isStatusFailed: false }
-}
-
-export function contextOf(scene: Scene): RuleContext {
-  const session = sessionOf(scene.after, scene.items, 10)
-  const page = statusPage(session, minutes(10))
-  scene.page?.(page)
-  const result: StepResult = {
-    index: 0,
-    label: scene.step.label,
-    now: minutes(10),
-    session,
-    page,
-    text: '',
-    facts: scene.facts,
-    calls: scene.calls ?? [],
-    isStatusFailed: scene.isStatusFailed,
-    readSetAt: scene.step.call ? (scene.before.goal?.setAt ?? null) : null,
-  }
-  const beforeFacts = { ...scene.facts, changed: [] }
-
-  return { step: scene.step, result, before: { overview: scene.before, facts: beforeFacts } }
-}
+import type { CallLog } from '../evals/status-replay'
+import { subject } from './status-evals-scene-base'
+import type { Scene } from './status-evals-scene-base'
 
 function statusCall(answer: string): CallLog {
   return { kind: 'status', answers: [answer], model: null, ms: 0, outputTokens: null, costUsd: null, overLimit: null }
@@ -472,6 +341,13 @@ function oneMilestoneForBoth(s: Scene, survive: 'working' | 'done', status: Subj
   s.facts.goal!.milestones[0]!.state = survive
 }
 
+function inSteps(s: Scene, first: SubjectStatus, isOtherKept = true) {
+  withGoal(s)
+  const [m1, m2] = s.after.milestones
+  const steps = [{ ...m1!, name: 'Survive fix built', status: first }, { ...m1!, id: 'm3', status: 'queued' as const }]
+  s.after.milestones = isOtherKept ? [...steps, m2!] : steps
+}
+
 function renamedMilestone(s: Scene, status: SubjectStatus) {
   withGoal(s)
   s.after.milestones[0] = { ...s.after.milestones[0]!, name: 'Offline editing works', status }
@@ -555,6 +431,18 @@ export const PATH_SCENES: { rule: string; path: string; good: (s: Scene) => void
     path: 'one milestone for a working and a queued milestone',
     good: s => oneMilestoneForBoth(s, 'working', 'working'),
     bad: s => oneMilestoneForBoth(s, 'working', 'queued'),
+  },
+  {
+    rule: 'milestones-true',
+    path: 'a working milestone planned in steps',
+    good: s => inSteps(s, 'working'),
+    bad: s => inSteps(s, 'queued'),
+  },
+  {
+    rule: 'milestones-true',
+    path: 'a working milestone in steps, the other outcome left out',
+    good: s => inSteps(s, 'working'),
+    bad: s => inSteps(s, 'working', false),
   },
   {
     rule: 'milestones-true',

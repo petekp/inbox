@@ -35,7 +35,7 @@ The goal adds these:
 - No goal is set at a step that makes no next goal clear.
 - A step that makes the next goal clear, from the person's words or the work, shows that goal. At a step whose work names the outcome but not as the person's direction, the facts can also accept that outcome as the suggested goal while no goal runs.
 - While no goal runs, a step whose fact list names the outcome the work most likely leads to suggests that outcome as the goal.
-- Each milestone in the fact list has a milestone with a mark its state allows.
+- Each milestone in the fact list has a milestone with a mark its state allows. A working one may be planned in steps: while one of its milestones, or the one its work serves, is working, the others may be queued.
 - Where the fact list says which queued milestone the plan takes up next, that milestone is the next one on the path.
 - A goal has 2 to 5 milestones, none named after a subject.
 - A milestone the call read marked too big still has more than 6 subjects after the step only when none of them is open.

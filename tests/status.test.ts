@@ -18,7 +18,7 @@ import {
 } from '../hooks/help'
 import type { Item, SessionStatus } from '../types'
 import { minutes } from '../evals/status-replay'
-import { statusOf, subject } from './status-evals-scenes'
+import { statusOf, subject } from './status-evals-scene-base'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 
 test('a look keeps the time of the last look until the look ends, and counts only once the Status showed for five seconds', () => {

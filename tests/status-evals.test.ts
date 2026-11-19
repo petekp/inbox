@@ -13,10 +13,11 @@ import type { ModelCall, Replay } from '../evals/status-replay'
 import { REPLAYS } from '../evals/status-replays'
 import { blockingFailures, gradeReplay, gradeStep, tally } from '../evals/status-grade'
 import { RULES } from '../evals/status-rules'
-import { subject, statusOf, sessionOf, baseScene, contextOf, PATH_SCENES, SCENES } from './status-evals-scenes'
+import { subject, statusOf, sessionOf, baseScene, contextOf } from './status-evals-scene-base'
+import { PATH_SCENES, SCENES } from './status-evals-scenes'
 import { GOOD_RUNS, OTHER_GOOD_RUNS } from './status-evals-runs'
 import { BAD_RUNS } from './status-evals-bad-runs'
-import type { Scene } from './status-evals-scenes'
+import type { Scene } from './status-evals-scene-base'
 
 function failuresOf(rule: string, change?: (s: Scene) => void): string[] {
   const scene = baseScene()

@@ -102,6 +102,13 @@ export const milestonesOf = (o: SessionStatus | null): Milestone[] =>
 export function milestonesFor(m: { id: string; match: string }, facts: Pick<Facts, 'pieces'>, o: SessionStatus | null) {
   const named = milestonesOf(o).filter(x => new RegExp(m.match, 'i').test(x.name))
   if (named.length > 0 || !o) return named
+
+  return milestonesHolding(m, facts, o)
+}
+
+/** The page's milestones that hold the subject of a piece that serves one of the facts' milestones. */
+export function milestonesHolding(m: { id: string }, facts: Pick<Facts, 'pieces'>, o: SessionStatus | null) {
+  if (!o) return []
   const serving = facts.pieces.filter(p => p.serves === m.id || p.servesAlso === m.id)
   const held = new Set(serving.flatMap(p => subjectsFor(p, o)).map(s => o.serves[s.id]))
 

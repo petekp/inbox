@@ -4,7 +4,7 @@ import { tooBigMilestones } from '../hooks/status-prompt-goal'
 import { milestonePath } from '../hooks/status-path'
 import { rightStatuses } from './status-facts'
 import type { MilestoneFact } from './status-facts'
-import { label, milestonesFor, milestonesOf, subjectsFor } from './status-rule-helpers'
+import { label, milestonesFor, milestonesHolding, milestonesOf, subjectsFor } from './status-rule-helpers'
 import type { Milestone, SessionStatus, SubjectStatus } from '../types'
 import type { Rule, RuleContext } from './status-rules'
 
@@ -127,7 +127,7 @@ export const GOAL_RULES: Rule[] = [
     id: 'milestones-true',
     reads: 'facts',
     property: 15,
-    text: "Each of the goal's milestones in the facts has a milestone with a status its state allows, or none when it is dropped, and a goal has them once a call has read it.",
+    text: "Each of the goal's milestones in the facts has a milestone with a status its state allows, or none when it is dropped, and a goal has them once a call has read it. A working one may be planned in steps: while one of its milestones, or the one its work serves, is working, the others may be queued.",
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       if (!o?.goal) return []
@@ -137,11 +137,16 @@ export const GOAL_RULES: Rule[] = [
           : []
       const facts = result.facts.goal?.milestones ?? []
       const standsFor = (x: Milestone) => facts.filter(m => milestonesFor(m, result.facts, o).some(y => y.id === x.id))
+      const isStartedElsewhere = (m: MilestoneFact) =>
+        m.state === 'working' &&
+        [...milestonesFor(m, result.facts, o), ...milestonesHolding(m, result.facts, o)].some(y => y.status === 'working')
+      const isLaterStep = (x: Milestone) =>
+        x.status === 'queued' && standsFor(x).every(m => rightStatuses(m).includes('queued') || isStartedElsewhere(m))
       return facts.flatMap(m => {
         const saved = milestonesFor(m, result.facts, o)
         if (saved.length === 0) return m.state === 'dropped' ? [] : [`no milestone for ${m.name}`]
         return saved
-          .filter(x => !rightForAll(standsFor(x)).includes(x.status))
+          .filter(x => !rightForAll(standsFor(x)).includes(x.status) && !isLaterStep(x))
           .map(x => `"${x.name}" is ${x.status}, and ${m.name} is ${m.state}`)
       })
     },
