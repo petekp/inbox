@@ -69,7 +69,8 @@ The first words the person reads tell them what the session is focused on, in th
 - **Bad:** `Lint error` over `Fixing the lint error`, after one step on the way.
 - **Bad:** `Offline sync` over `PR ready for review`. That is where one piece stands, not the session's focus.
 - **Bad:** `Offline sync` over `Offline sync`. The description only repeats the title.
-- **Good:** `Now: Handling sync conflicts, then the settings toggle`, under the goal `Offline sync in 2.5`. While a goal is set, the head is one `Now:` line, and the goal already names the aim, so it names the part underway.
+- **Good:** `Now: Handling sync conflicts`, under the goal `Offline sync in 2.5`. While a goal is set, the head is one `Now:` line, and the goal already names the aim, so it names the part underway.
+- **Bad:** `Now: Handling sync conflicts, then the settings toggle`. The settings toggle comes later, and its row already says so.
 - **Bad:** `Now: Adding offline sync, shipping in 2.5`, under the goal `Offline sync in 2.5`. It only repeats the goal, and tells the person nothing the goal line does not.
 - **Bad:** the title `Add offline sync so notes save without a connection`. That is a sentence.
 
@@ -195,7 +196,7 @@ When the session drops one approach for another, the person sees both until they
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. The only time a subject row shows is how long an open subject has been idle, past a day. The goal's current milestone shows how long it has been under way, past an hour, as `now · 3h`. Code writes both, so neither goes stale. The milestone's time replaces the rule that only an idle row shows a time. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. When five Status calls in a row read agent work and changed nothing, it says how long it has gone without a change. The only time a subject row shows is how long an open subject has been idle, past a day. The goal's current milestone shows how long it has been under way, past an hour, as `now · 3h`. Code writes both, so neither goes stale. The milestone's time replaces the rule that only an idle row shows a time. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
 - **Good:** `◌ 2.4 release: in store review`, while the build waits for review.
