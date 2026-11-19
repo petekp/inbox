@@ -84,6 +84,12 @@ test('a head whose description names work that just finished, while other work g
   const fixMerged = 'DONE: s1 | merged\nSET: s2 | working | building 2.5'
   const redescribed = applyOps(one, opsOf(`${fixMerged}\nHEAD: 2.5 release | Shipping 2.5 to the stores`), 200, NO_ASKS)
   const unwritten = applyOps(one, opsOf(fixMerged), 200, NO_ASKS)
+  const rewordedStale = applyOps(
+    one,
+    opsOf(`${fixMerged}\nHEAD: 2.5 release | Wrapping up vanishing notes before shipping 2.5`),
+    200,
+    NO_ASKS,
+  )
   const nothingLeft = applyOps(one, opsOf('DONE: s1 | merged'), 200, NO_ASKS)
   const otherFinished = applyOps(
     applyOps(one, opsOf('NEW: working | README fix | typo found'), 150, NO_ASKS),
@@ -94,6 +100,7 @@ test('a head whose description names work that just finished, while other work g
 
   expect(redescribed.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
   expect(unwritten.head).toEqual({ title: '2.5 release', description: '' })
+  expect(rewordedStale.head).toEqual({ title: '2.5 release', description: '' })
   expect(nothingLeft.head).toEqual(one.head)
   expect(otherFinished.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
 })
