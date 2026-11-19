@@ -81,7 +81,7 @@ These run after every step of every replay, on the saved Status, the page `statu
 - On a step the fact list marks as a change, each changed piece's last-changed time moves.
 - On a reversal step, the right subject has a Prev line, and on a step of plain progress no new Prev line appears.
 - No Prev line on the drawn page ends cut with "…".
-- The head follows the fact list: it changes where the work moved, and holds where it did not. Its title no longer names finished work the focus moved on from. While a goal is set, the check reads the head's description, which the page draws as "Now:".
+- The head follows the fact list: it changes where the work moved, and holds where it did not, unless it was already off the focus before the step. Its title no longer names finished work the focus moved on from. While a goal is set, the check reads the head's description, which the page draws as "Now:".
 - While a call has failed and none has written since, the status line shows the failure.
 
 The goal adds these:

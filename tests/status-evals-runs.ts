@@ -267,6 +267,9 @@ export const GOOD_RUNS: Record<string, string[]> = {
     'SET: s1 | working | fix reviewed, merge left\nSET: s2 | working | toggle works, merge left',
     'DONE: s1 | fix merged\nNEW: working | 2.5 beta | building with the share sheet fix',
   ],
+  'head-description': [
+    'SET: s2 | working | syncs on reconnect, merging clashing edits left\nHEAD: Shared lists | Getting edits to sync after time offline',
+  ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
   ],
