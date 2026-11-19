@@ -31,7 +31,7 @@ export function withWorkDoneMilestones(o: SessionStatus, now: number): SessionSt
 
 /**
  * Starts each queued milestone whose linked work is under way: working while some of it is working, else waiting on
- * something outside the session. It keeps where it stands, so the page never shows it blank until a call writes again.
+ * something outside the session. It keeps the text it had while queued, which may be empty.
  */
 export function withWorkStartedMilestones(o: SessionStatus, now: number): SessionStatus {
   const startedAs = (m: Milestone): 'working' | 'waits-on-other' | null => {
