@@ -106,7 +106,7 @@ test('the built tab draws a handed-off task’s result in the done color of its 
   try {
     await tab.until(() => /Run tests/.test(tab.rowWith('Check the build')?.textContent ?? ''))
     const row = tab.rowWith('Check the build')
-    assert.ok(row?.querySelector('.mark.done'), 'the row has no done mark')
+    assert.ok(row?.querySelector('.mark.done') != null, 'the row has no done mark')
     assert.equal(row?.querySelector('.line .after')?.className, 'after tone-done')
   } finally {
     await tab.close()

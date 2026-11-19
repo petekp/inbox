@@ -212,7 +212,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.match(root.textContent ?? '', /The bar wraps at 320 px/)
     key('1')
     assert.equal(shownTab(), 'Status')
-    assert.ok(root.querySelector('.status-head'))
+    assert.ok(root.querySelector('.status-head') !== null)
     key('2')
     assert.equal(shownTab(), 'Asks1')
     assert.equal(root.querySelector('main .holds-up')?.textContent, 'Holds up Label')
@@ -236,7 +236,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     isOlderServer = false
     await afterPoll()
     assert.equal(shownTab(), 'Status')
-    assert.ok(root.querySelector('.status-head'))
+    assert.ok(root.querySelector('.status-head') !== null)
 
     assert.deepEqual(
       [...root.querySelectorAll('.tab')].map(b => b.getAttribute('title')),
@@ -246,7 +246,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.equal(shownTab(), 'PRs')
     key('2')
     assert.equal(shownTab(), 'Asks1')
-    assert.ok(root.querySelector('main .holds-up'), 'a row names what it holds up')
+    assert.ok(root.querySelector('main .holds-up') !== null, 'a row names what it holds up')
     key('5')
     assert.equal(shownTab(), 'Asks1')
 
@@ -254,7 +254,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     await afterPoll()
     key('1')
     assert.equal(shownTab(), 'Status')
-    assert.ok(root.querySelector('.status-head'))
+    assert.ok(root.querySelector('.status-head') !== null)
     assert.ok(![...root.querySelectorAll('main .mark')].some(m => m.textContent === '◆'))
     assert.deepEqual(
       [...root.querySelectorAll('main button')].map(b => b.textContent),
@@ -279,17 +279,17 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     await afterPoll()
     assert.equal(root.querySelector('.goal-offer h1')?.textContent, 'Next goal: “Ship 0.5.0 to the store”?')
     assert.deepEqual(labels(), ['Set goal', 'Edit'])
-    assert.equal(root.querySelector('.goal-heading .actions'), null)
+    assert.ok(root.querySelector('.goal-heading .actions') === null)
     await pressLabel('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Ship 0.5.0 to the store')
     assert.deepEqual(labels(), ['Set', 'Cancel'])
     await pressLabel('Cancel')
-    assert.equal(root.querySelector('#type-goal'), null)
+    assert.ok(root.querySelector('#type-goal') === null)
     assert.deepEqual(labels(), ['Set goal', 'Edit'])
     assert.match(goalHead() ?? '', /^Next goal: “Ship 0.5.0 to the store”\?/)
     await pressLabel('Set goal')
     assert.deepEqual(presses.at(-1), { action: 'take-goal', id: 'goal' })
-    assert.equal(root.querySelector('.goal-offer'), null)
+    assert.ok(root.querySelector('.goal-offer') === null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Ship 0.5.0 to the store')
     assert.deepEqual(labels(), ['Edit', 'Remove'])
     await pressLabel('Edit')
@@ -334,14 +334,14 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     )
     context.mock.timers.tick(ROW_STATE_MS.leaving + 100)
     await new Promise<void>(resolve => setImmediate(resolve))
-    assert.equal(root.querySelector('.part-title'), null)
+    assert.ok(root.querySelector('.part-title') === null)
     assert.deepEqual(buttons(), ['Edit', 'Remove'])
     await click('Edit')
     assert.equal((root.querySelector('#type-goal') as HTMLInputElement | null)?.value, 'Status tab shipped')
-    assert.equal(root.querySelector('.status-head.goal h1'), null)
+    assert.ok(root.querySelector('.status-head.goal h1') === null)
     assert.equal(root.querySelector('.goal-heading')?.textContent, 'Goal')
     await click('Cancel')
-    assert.equal(root.querySelector('#type-goal'), null)
+    assert.ok(root.querySelector('#type-goal') === null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab shipped')
 
     state.ledger = {
@@ -372,11 +372,11 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     await new Promise<void>(resolve => setImmediate(resolve))
     assert.deepEqual(presses.at(-1), { action: 'collapse', id: 's4', isCollapsed: true })
     assert.match(parentName().textContent ?? '', /^Status page\s+1$/)
-    assert.ok(root.querySelector('.row.has-children.connector-leaving'))
+    assert.ok(root.querySelector('.row.has-children.connector-leaving') !== null)
     context.mock.timers.tick(ROW_STATE_MS.leaving + 100)
     await new Promise<void>(resolve => setImmediate(resolve))
     assert.ok(!rowNames().includes('Read the draw code'))
-    assert.equal(root.querySelector('.row.has-children'), null)
+    assert.ok(root.querySelector('.row.has-children') === null)
     await afterPoll()
     assert.match(parentName().textContent ?? '', /^Status page\s+1$/)
     parentName().click()
@@ -384,7 +384,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.deepEqual(presses.at(-1), { action: 'collapse', id: 's4', isCollapsed: false })
     assert.match(parentName().textContent ?? '', /^Status page\s*$/)
     assert.ok(rowNames().includes('Read the draw code'))
-    assert.ok(root.querySelector('.row.has-children'))
+    assert.ok(root.querySelector('.row.has-children') !== null)
 
     await click('Edit')
     const field = window.document.querySelector('#type-goal')!
@@ -392,7 +392,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     field.dispatchEvent(new window.Event('input', { bubbles: true }))
     await click('Save')
     assert.deepEqual(presses.at(-1), { action: 'type', id: 'goal', text: 'Status tab in the store' })
-    assert.equal(root.querySelector('#type-goal'), null)
+    assert.ok(root.querySelector('#type-goal') === null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab in the store')
     assert.equal(
       [...root.querySelectorAll('.status-head.goal p')].at(-1)?.textContent,
