@@ -167,3 +167,38 @@ test('a row closed, opened and closed again a frame apart ends on one line and n
     })
   }
 })
+
+test('a row opened, closed before its panel shows and opened again swaps to its wrapped title only once the title box rests', () => {
+  const shut = asks(ALL, 'd11', null, ['d11'])
+  const open = asks(ALL, 'd11')
+  const sequences: Step[][] = [
+    ...[
+      [16, 32],
+      [30, 60],
+      [40, 80],
+      [64, 96],
+    ].map(([closeAt, openAt]): Step[] => [
+      [0, shut],
+      [0, open, 'input'],
+      [closeAt!, shut, 'input'],
+      [openAt!, open, 'input'],
+    ]),
+    [
+      [0, asks(ALL, 'd12')],
+      [0, open, 'input'],
+      [144, asks(ALL, 'd12'), 'input'],
+      [192, open, 'input'],
+    ],
+  ]
+  for (const steps of sequences) {
+    const title = titleOf(steps)
+    expect({ steps: steps.map(s => s[0]), ...title }).toMatchObject({
+      steps: steps.map(s => s[0]),
+      jumps: [],
+      wrapsAtEnd: 1,
+      isWrapShownOnlyOpen: true,
+      framesWithBothForms: [],
+      titleCuts: [],
+    })
+  }
+})

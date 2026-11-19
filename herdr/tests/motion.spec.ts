@@ -1,7 +1,7 @@
 import { expect, setSystemTime, test } from 'bun:test'
 
 import { prMarkId } from '../../hooks/pr-rows'
-import { ENTER_FADE_MS, LEAVE_FADE_MS } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { rowWaits, tabBlocks, tabCells } from '../src/draw'
@@ -315,10 +315,13 @@ test('a click on a collapsed row’s title fades its panel in once its space is 
   try {
     panel.measure(() => ({ width: 300, height: 40 }))
     const rowId = openRow([...panel.panel.tracks.rows.values()].map(r => r.block))
-    for (const _ of ['collapse', 'expand']) {
+    for (const move of ['collapse', 'expand']) {
       const title = allOf(panel.paint()).find(n => n.id === `title ${rowId}`)!
       tick()
       panel.click(title)
+      if (move !== 'collapse') continue
+      panel.paint()
+      setSystemTime(new Date((at += ROW_STATE_MS.closing)))
     }
     expect(
       allOf(panel.paint())

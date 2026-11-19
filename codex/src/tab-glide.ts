@@ -1,4 +1,4 @@
-import { slideOffset } from '../../hooks/row-motion'
+import { enterDelayMs, slideOffset } from '../../hooks/row-motion'
 import { FRAME_MS, springFrames, springStep } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
 import { tabState, animations } from './tab-state'
@@ -53,6 +53,16 @@ export function waitLeftMs(el: HTMLElement): number {
   const g = glides.get(el)
 
   return g !== undefined && isRunning(g.anim) ? Math.max(0, g.startsAt - Date.now()) : 0
+}
+
+/**
+ * Whether an element's height, at `from`, glides toward a height it is still short of by more than an entering block
+ * waits for before its content fades in (`enterDelayMs`).
+ */
+export function isOpeningShort(el: HTMLElement, from: SpringState): boolean {
+  const g = glides.get(el)
+
+  return g !== undefined && g.size === 'height' && isRunning(g.anim) && enterDelayMs(g.to, from) > 0
 }
 
 /** Whether an element's running glide scales its padding and top margin with its height, as one that comes or goes. */
@@ -136,7 +146,15 @@ const frameOf = (opacity: number, slides: boolean): Keyframe =>
 const fillOf = (hold: boolean, delay: number): FillMode =>
   hold && delay > 0 ? 'both' : hold ? 'forwards' : delay > 0 ? 'backwards' : 'none'
 
-export function fade(el: HTMLElement, from: number, to: number, ms: number, hold = false, slide = false, delay = 0) {
+export function fade(
+  el: HTMLElement,
+  from: number,
+  to: number,
+  ms: number,
+  hold = false,
+  slide = false,
+  delay = 0,
+): Animation {
   fades.get(el)?.anim.cancel()
   if (slide) slides.add(el)
   const isSliding = slides.has(el)
@@ -148,6 +166,7 @@ export function fade(el: HTMLElement, from: number, to: number, ms: number, hold
     fill: fillOf(hold, delay),
   })
   fades.set(el, { to, anim })
+  return anim
 }
 
 /** The opacity an element's fade draws now, or null when no fade has drawn it since its last cancel. */
