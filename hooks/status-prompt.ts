@@ -164,6 +164,6 @@ export function nextGoalRetry(last: SessionStatus | null, prompt: string) {
       : [
           prompt,
           `<your-answer>${NL}${text}${NL}</your-answer>`,
-          'Your answer has no GOAL or SUGGEST line, and <next-goal> asks for one. Answer again with every line you meant, and add GOAL, SUGGEST with an outcome, or SUGGEST: - when no outcome fits.',
+          'Your answer has no GOAL or SUGGEST line, and <next-goal> asks for one. Answer again with every line you meant, and add GOAL, SUGGEST with the outcome open work leads to, or SUGGEST: - when no subject is open.',
         ].join(NL)
 }
