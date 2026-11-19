@@ -7,6 +7,7 @@ import type { CallKind, Exchange, Session, SessionStatus, HostTask } from '../ty
 import type { Ask, UpdateHost } from './session-host'
 import { heardCall, withAnswer, withCall } from './call-record'
 import type { HeardCall } from './call-record'
+import { isActiveExchange, withChangeNoted } from './status-freshness'
 
 /**
  * What a Status call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
@@ -206,17 +207,13 @@ export async function askAndWriteStatus<S extends Session>(
     before = x.ledger.overview
     isWritten = isStatusCallCurrent(x, appliedAfter)
     const readSetAt = input.last?.goal?.setAt ?? null
-    return answer === null
-      ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === 'catch-up')
-      : appliedStatus(
-          x,
-          answer,
-          appliedAfter,
-          now,
-          readSetAt,
-          call.exchange.kind === 'catch-up' || call.isCatchUpImpossible === true,
-          input.now,
-        )
+    if (answer === null) return failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === 'catch-up')
+    const isCatchUp = call.exchange.kind === 'catch-up' || call.isCatchUpImpossible === true
+    const applied = appliedStatus(x, answer, appliedAfter, now, readSetAt, isCatchUp, input.now)
+    if (!isWritten) return applied
+    const overview = withChangeNoted(before, applied.ledger.overview, isActiveExchange(call.exchange), now)
+
+    return { ...applied, ledger: { ...applied.ledger, overview } }
   })
   if (!host.records) return
   const record: StatusRecord = {

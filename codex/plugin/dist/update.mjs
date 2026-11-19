@@ -101,7 +101,9 @@ var EMPTY_SESSION_STATUS = {
   nextMilestoneId: 1,
   serves: {},
   goalRefused: null,
-  suggestedGoal: null
+  suggestedGoal: null,
+  changedAt: null,
+  quietCalls: 0
 };
 var OPEN_STATUSES = ["working", "queued", "waits-on-other"];
 var STATUSES = [...OPEN_STATUSES, "done", "dropped"];
@@ -1150,6 +1152,33 @@ function isSubjectSeen(o, s) {
   return seenAt !== null && s.changedAt <= seenAt;
 }
 
+// ../hooks/status-freshness.ts
+var STALE_AFTER_CALLS = 5;
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
+function pageWords(o) {
+  if (o === null) return "";
+  const subjects = o.subjects.map((s) => [s.id, s.status, s.name, s.text]);
+  const milestones = o.milestones.map((m) => [m.id, m.status, m.text]);
+  return JSON.stringify([o.head, subjects, o.goal?.text, o.goal?.metAt, milestones, o.suggestedGoal]);
+}
+function isActiveExchange(read) {
+  if (read.kind === "reply") return read.exchange.activity.length > 0;
+  return read.kind === "mid-turn" && read.turn.activity.length > 0;
+}
+function withChangeNoted(before, after, isActive, now) {
+  if (after === null) return null;
+  if (pageWords(before) !== pageWords(after)) return { ...after, changedAt: now, quietCalls: 0 };
+  return isActive ? { ...after, quietCalls: after.quietCalls + 1 } : after;
+}
+function statusPageLine(s, now) {
+  const o = s.ledger.overview;
+  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
+  return {
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
+  };
+}
+
 // ../hooks/status-page-parts.ts
 var LISTED_NAMES = 2;
 var namedFoldMore = (n) => `+${n} more`;
@@ -1406,7 +1435,6 @@ function goalPage(o, items) {
 }
 
 // ../hooks/status-page.ts
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 var OTHER_WORK = "Other work";
 var STALL_GAP = " \xB7 ";
 var NEW_CLOSED_ROWS = 2;
@@ -1589,7 +1617,7 @@ function statusPage(s, now) {
     ...goalParts,
     goal,
     rows,
-    error: s.overviewFailure ? STATUS_FAILED : null
+    ...statusPageLine(s, now)
   };
 }
 
@@ -3884,6 +3912,8 @@ function upgradeStatus(saved) {
     missedInLastLook: missedOf(o.missedInLastLook, new Set(subjects.map((s) => s.id))),
     look: lookAt === null ? null : { startedAt: lookAt },
     lastCallReadAt: "lastCallReadAt" in o ? time2(o.lastCallReadAt) : newestEnd(children),
+    changedAt: time2(o.changedAt),
+    quietCalls: time2(o.quietCalls) ?? 0,
     ...goal
   };
 }
@@ -5922,15 +5952,12 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
     before = x.ledger.overview;
     isWritten = isStatusCallCurrent(x, appliedAfter);
     const readSetAt = input.last?.goal?.setAt ?? null;
-    return answer === null ? failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up") : appliedStatus(
-      x,
-      answer,
-      appliedAfter,
-      now,
-      readSetAt,
-      call.exchange.kind === "catch-up" || call.isCatchUpImpossible === true,
-      input.now
-    );
+    if (answer === null) return failedStatus(x, last.text, appliedAfter, now, call.exchange.kind === "catch-up");
+    const isCatchUp = call.exchange.kind === "catch-up" || call.isCatchUpImpossible === true;
+    const applied2 = appliedStatus(x, answer, appliedAfter, now, readSetAt, isCatchUp, input.now);
+    if (!isWritten) return applied2;
+    const overview = withChangeNoted(before, applied2.ledger.overview, isActiveExchange(call.exchange), now);
+    return { ...applied2, ledger: { ...applied2.ledger, overview } };
   });
   if (!host.records) return;
   const record2 = {

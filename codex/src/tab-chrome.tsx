@@ -87,7 +87,7 @@ export function tabBanners(v: View): BannerLine[] {
 }
 
 function footerErrorOf(v: View) {
-  return footerError(drawnTab(), v.status, v.statusPage?.error ?? null)
+  return footerError(drawnTab(), v.status, v.statusPage ?? null)
 }
 
 export function Status() {

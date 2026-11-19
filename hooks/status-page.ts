@@ -2,6 +2,7 @@ import type { Child, Item, Ledger, Session, Subject } from '../types'
 import { isChildRunning, isChildSettled, isChildShown, isSubjectSeen } from './status-children'
 import { isOpen, OPEN_SUBJECTS } from './status-limits'
 import { cutAtPhrase } from './text'
+import { statusPageLine } from './status-freshness'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
@@ -17,9 +18,6 @@ import {
   unplacedChildren,
 } from './status-page-parts'
 import type { ListContext, PartSplit } from './status-page-parts'
-
-const STATUS_FAILED =
-  "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try."
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'
@@ -131,6 +129,8 @@ export type StatusPage = GoalParts & {
   rows: StatusRow[]
   /** The status line's error while the last Status call wrote nothing. */
   error: string | null
+  /** The status line while the Status changed nothing through several exchanges with agent activity. */
+  stale: string | null
 }
 
 const OTHER_WORK = 'Other work'
@@ -421,7 +421,7 @@ export function statusPage(
     ...goalParts,
     goal,
     rows,
-    error: s.overviewFailure ? STATUS_FAILED : null,
+    ...statusPageLine(s, now),
   }
 }
 

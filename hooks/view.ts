@@ -26,6 +26,7 @@ import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, close
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
 import { doneLabel, feedbackOf, fixLabel, feedbackIn, pressUnderWaySince, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
+import type { StatusPage } from './status-page'
 import { actionsOf } from './action-plan'
 import { earlierLineOf } from './earlier-answers'
 
@@ -385,12 +386,18 @@ function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
 
 /**
  * The failed-update text under the tabs for the shown tab, or null. A failed ledger update is about rows, so it shows on
- * every tab but the PRs tab. On the Status tab, `statusPageError` shows in its place.
+ * every tab but the PRs tab. On the Status tab, the page's own error shows in its place, and the page's stale line
+ * shows when neither failed.
  */
-export function footerError(tab: ShownTab, status: ItemStatus, statusPageError: string | null): string | null {
+export function footerError(
+  tab: ShownTab,
+  status: ItemStatus,
+  page: Pick<StatusPage, 'error' | 'stale'> | null,
+): string | null {
   if (tab === 'prs') return null
+  if (tab !== 'overview') return status.error
 
-  return (tab === 'overview' ? statusPageError : null) ?? status.error
+  return page?.error ?? status.error ?? page?.stale ?? null
 }
 
 /**

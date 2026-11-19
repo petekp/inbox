@@ -71,6 +71,7 @@ export const OMP: Client = {
     },
     'child-names': { kind: 'full' },
     'status-failed-warning': { kind: 'full' },
+    'status-stale-line': { kind: 'full' },
     'asks-holds-up-line': { kind: 'full' },
     'asks-tree': { kind: 'full' },
     'answers-side-by-side': { kind: 'full' },

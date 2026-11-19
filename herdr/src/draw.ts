@@ -420,7 +420,7 @@ export function tabCells(screen: Pick<LookScreen, 'view'>, tab: ShownTab): TabCe
 
 /** The banners under the tabs, as every look draws them. */
 export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView[] } {
-  const error = footerError(tab, screen.view.status, screen.view.statusPage.error)
+  const error = footerError(tab, screen.view.status, screen.view.statusPage)
 
   return { banners: tabBarBanners([], error, null) }
 }

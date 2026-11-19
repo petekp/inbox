@@ -389,8 +389,8 @@ test('a failed Status call shows in the status line on the Status tab, in place 
   )
   const v = sessionView(failed, 1000, 1000, NO_HOLDS)
 
-  expect(v.statusPage.error).not.toBeNull()
-  expect(footerError('overview', v.status, v.statusPage.error)).toBe(v.statusPage.error)
-  expect(footerError('needsYou', v.status, v.statusPage.error)).toBe(v.status.error)
-  expect(footerError('prs', v.status, v.statusPage.error)).toBeNull()
+  expect(v.statusPage).not.toBeNull()
+  expect(footerError('overview', v.status, v.statusPage)).toBe(v.statusPage.error)
+  expect(footerError('needsYou', v.status, v.statusPage)).toBe(v.status.error)
+  expect(footerError('prs', v.status, v.statusPage)).toBeNull()
 })
