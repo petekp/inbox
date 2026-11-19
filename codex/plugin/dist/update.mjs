@@ -4749,14 +4749,15 @@ function answerWork(before, o, now) {
 function isDescriptionStale(head, isTitleKept, work) {
   if (head === null || head.description === "") return false;
   const isClosedWorkNamed = work.namesClosed(head.description);
-  if (!work.isNothingUnderWay) return isTitleKept && work.isWorkUnderWay && isClosedWorkNamed;
-  const isNewWorkTheHead = work.isClosedWorkNew && (!isTitleKept || isClosedWorkNamed);
-  return work.isUnderWayWorkClosed || isNewWorkTheHead;
+  if (!work.isNothingUnderWay) return isTitleKept && isClosedWorkNamed;
+  const isNewWorkTheHead = work.isClosedWorkNew && !isTitleKept;
+  return work.isUnderWayWorkClosed || isNewWorkTheHead || isClosedWorkNamed;
 }
 function headAfter(last, op, work) {
   const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
   if (last === null) return line;
-  if (last.description === "") return hasSameWords(last.title, op.title) && work.isNothingUnderWay ? last : line;
+  if (work.isNothingUnderWay && hasSameWords(last.title, op.title)) return last;
+  if (last.description === "") return line;
   const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay;
   if (isQueuedWorkNext) return last;
   if (!hasSameWords(last.title, op.title)) return line;

@@ -83,30 +83,31 @@ function answerWork(before: readonly Subject[], o: SessionStatus, now: number): 
  * Whether a head's description no longer says what the session is doing. While other work goes on, a head that kept
  * its title names work the answer finished, as "Fixing the sync bug, then shipping 2.5" once the sync bug is done and
  * 2.5 is under way. Once no subject is working or waiting, it is stale when the answer finished the work it was about:
- * work that was under way before the answer, or work the answer started and finished when the head is new or names
- * that work. A side fix that started and finished while the head's work waits queued leaves the description.
+ * work that was under way before the answer, work the answer started and finished under a new head, or any work it
+ * names. A side fix that started and finished while the head's work waits queued leaves the description.
  */
 function isDescriptionStale(head: StatusHead | null, isTitleKept: boolean, work: AnswerWork): boolean {
   if (head === null || head.description === '') return false
   const isClosedWorkNamed = work.namesClosed(head.description)
-  if (!work.isNothingUnderWay) return isTitleKept && work.isWorkUnderWay && isClosedWorkNamed
-  const isNewWorkTheHead = work.isClosedWorkNew && (!isTitleKept || isClosedWorkNamed)
+  if (!work.isNothingUnderWay) return isTitleKept && isClosedWorkNamed
+  const isNewWorkTheHead = work.isClosedWorkNew && !isTitleKept
 
-  return work.isUnderWayWorkClosed || isNewWorkTheHead
+  return work.isUnderWayWorkClosed || isNewWorkTheHead || isClosedWorkNamed
 }
 
 /**
- * The head after a HEAD line, read once the answer's subject changes have applied. A head with no description takes
- * the line, except one that keeps the title while no subject is working or waiting: with nothing under way, the call
- * describes what comes after the work. A head with a description holds when the answer finished work that was under
- * way before it, started none it finished, and left none under way, since the call reads queued work as the next
- * focus. Otherwise a line that keeps the title keeps the title's wording and takes the line's description, so a
- * corrected description applies, and a line with another title replaces the head.
+ * The head after a HEAD line, read once the answer's subject changes have applied. While no subject is working or
+ * waiting, a line that keeps the title changes nothing: with nothing under way, the call describes what comes after the
+ * work. Otherwise a head with no description takes the line. A head with a description holds when the answer finished
+ * work that was under way before it, started none it finished, and left none under way, since the call reads queued
+ * work as the next focus. Otherwise a line that keeps the title keeps the title's wording and takes the line's
+ * description, so a corrected description applies, and a line with another title replaces the head.
  */
 function headAfter(last: StatusHead | null, op: Extract<Op, { kind: 'head' }>, work: AnswerWork): StatusHead {
   const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
   if (last === null) return line
-  if (last.description === '') return hasSameWords(last.title, op.title) && work.isNothingUnderWay ? last : line
+  if (work.isNothingUnderWay && hasSameWords(last.title, op.title)) return last
+  if (last.description === '') return line
   const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay
   if (isQueuedWorkNext) return last
   if (!hasSameWords(last.title, op.title)) return line

@@ -148,6 +148,28 @@ test('once the last working or waiting subject closes, or work the head names st
     200,
     NO_ASKS,
   )
+  const queuedLast = after(
+    null,
+    'HEAD: Greet and pad | Deciding pad() trimming\nNEW: queued | Pad trimming | asked',
+    100,
+  )
+  const queuedClosed = applyOps(
+    queuedLast,
+    opsOf('DONE: s1 | long strings kept whole\nHEAD: Greet and pad | Watching for feedback on the CLI'),
+    200,
+    NO_ASKS,
+  )
+  const idleRewrite = applyOps(queuedLast, opsOf('HEAD: Greet and pad | Watching for feedback'), 200, NO_ASKS)
+  const docsWaiting = applyOps(
+    after(
+      null,
+      'HEAD: Sync fix | Fixing the sync bug\nNEW: working | Sync bug | found\nNEW: waits-on-other | Docs PR | in review',
+      100,
+    ),
+    opsOf('DONE: s1 | fixed'),
+    200,
+    NO_ASKS,
+  )
   const inReview = applyOps(
     after(
       null,
@@ -170,6 +192,9 @@ test('once the last working or waiting subject closes, or work the head names st
   expect(resumed.head).toEqual({ title: 'Greet and pad', description: 'Adding a short flag for --repeat' })
   expect(sideFix.head).toBe(searching.head)
   expect(namedFix.head).toEqual({ title: 'Greet CLI', description: '' })
+  expect(queuedClosed.head).toEqual({ title: 'Greet and pad', description: '' })
+  expect(idleRewrite.head).toBe(queuedLast.head)
+  expect(docsWaiting.head).toEqual({ title: 'Sync fix', description: '' })
   expect(inReview.head).toEqual({ title: '2.5 release', description: 'Getting 2.5 through store review' })
 })
 

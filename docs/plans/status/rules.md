@@ -8,7 +8,7 @@ These run after every step of every replay, on the saved Status, the page `statu
 
 - No text the model writes holds a time word or a date: the head, the goal, a milestone, a name, where it stands, or a Prev line.
 - A name has at most 3 words, no "…" and no question mark. So do the head's title and a milestone's name.
-- The head has a title and a one-line description, and the description does not repeat the title. While no subject is working or waiting, it may have no description.
+- The head has a title and a one-line description, and the description does not repeat the title. While no piece in the fact list is working or waiting, it may have no description.
 - A text names no command, file, hash, ticket or PR number, or count of tests, files, commits, lines, calls or checks.
 - No name, where it stands, head, milestone or goal joins clipped phrases with a semicolon, as in "engine done; retries left".
 - The head holds no status word, such as "ready", "merged", "passes" or "waiting".

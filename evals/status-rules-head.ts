@@ -59,13 +59,11 @@ export const HEAD_RULES: Rule[] = [
     id: 'head-title',
     reads: 'answer',
     property: 1,
-    text: 'The head is a title of at most 3 words, with no "…" or question mark, and a description that does not repeat it. While no subject is working or waiting, it may have no description.',
+    text: 'The head is a title of at most 3 words, with no "…" or question mark, and a description that does not repeat it. While no piece is working or waiting, it may have no description.',
     failures: ({ result }) => {
       const head = result.page.head
       if (head === null) return ['the page has no head']
-      const isWorkUnderWay = (result.session.ledger.overview?.subjects ?? []).some(
-        s => s.status === 'working' || s.status === 'waits-on-other',
-      )
+      const isWorkUnderWay = result.facts.pieces.some(p => p.state === 'working' || p.state === 'waits-on-other')
       const titleWords = new Set(head.title.toLowerCase().match(WORD) ?? [])
       const descriptionWords = head.description?.toLowerCase().match(WORD) ?? []
       const isTitleLong = head.title.trim().split(/\s+/).length > NAME_WORDS
