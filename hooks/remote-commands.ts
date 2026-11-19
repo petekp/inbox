@@ -27,6 +27,15 @@ function newRevision(host: Pick<PressHost<Session>, 'newId'>): string {
 }
 
 export function remoteRowVersion(s: Session, id: string): string {
+  if (id === 'goal') {
+    const overview = s.ledger.overview
+    return JSON.stringify([
+      overview?.goal ?? null,
+      overview?.goalRemoved ?? null,
+      overview?.suggestedGoal ?? null,
+      s.lastActions[id] ?? null,
+    ])
+  }
   const item = s.ledger.items.find(row => row.id === id)
   const normalized = item && Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'dialog'))
   return JSON.stringify([
@@ -101,6 +110,9 @@ export const REMOTE_ACTIONS: readonly RowPress['action'][] = [
   'explain',
   'issue',
   'discard',
+  'remove-goal',
+  'restore-goal',
+  'take-goal',
 ]
 
 export function supportsRemotePress(p: Pick<RowPress, 'action'>): boolean {

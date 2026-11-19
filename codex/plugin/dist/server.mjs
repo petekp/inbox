@@ -383,9 +383,8 @@ function pressFile(text) {
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
   }
   if (file.format === 2 && file.kind === "command") {
-    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16e3 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && /^[if]\d{1,16}$/.test(file.press.id) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8e3 : file.press.action === "answer" ? typeof file.press.option === "string" && file.press.option.length <= 8e3 && file.press.option.trim() !== "" : ["done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"].includes(
-      String(file.press.action)
-    ));
+    const isGoalPress = isRecord(file.press) && file.press.id === "goal";
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16e3 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8e3 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8e3 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"]).includes(String(file.press.action)));
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
   }
   if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` };
@@ -601,10 +600,6 @@ function detachedUpdate(dir2, env, script) {
   };
 }
 
-// src/host.ts
-import { appendFile, mkdir as mkdir2, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join as join3 } from "node:path";
-
 // ../hooks/tool-schemas.ts
 var RECORD_SCHEMA = {
   type: "object",
@@ -728,6 +723,16 @@ var FAILED_UPDATE_TEXT = {
   unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
 
+// ../hooks/host-prs.ts
+var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
+
+// ../hooks/remote-commands.ts
+var LIFETIME_MS = 24 * 60 * 6e4;
+
+// src/host.ts
+import { appendFile, mkdir as mkdir2, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join as join3 } from "node:path";
+
 // ../hooks/question-history.ts
 var DAY_MS3 = 24 * 60 * 6e4;
 var HISTORY_KEEP_MS = 180 * DAY_MS3;
@@ -749,12 +754,6 @@ var STATUS_REFRESH_MS = 10 * 6e4;
 // src/settle.ts
 var POLL_MS = 3e3;
 var SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS;
-
-// ../hooks/host-prs.ts
-var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
-
-// ../hooks/remote-commands.ts
-var LIFETIME_MS = 24 * 60 * 6e4;
 
 // ../hooks/herdr-app.ts
 var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
