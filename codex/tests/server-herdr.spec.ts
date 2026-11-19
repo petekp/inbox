@@ -13,7 +13,7 @@ import { readState, updateState } from '../src/state'
 import { remoteRowVersion } from '../../hooks/remote-commands'
 import type { RemoteCommand } from '../../hooks/remote-commands'
 import { NO_HOLDS } from '../../hooks/timing'
-import { tempDir } from './helpers'
+import { tempDir, removeTempDir } from './helpers'
 
 const HOLDS = { replies: {}, discarded: {}, shownSince: null }
 
@@ -314,4 +314,103 @@ test('a remote typed reply retains its outcome and does not queue twice after th
   assert.equal(calls.filter(args => args.includes('queue')).length, 1)
   assert.deepEqual(after.remoteCommands[command.id], first.remoteCommands[command.id])
   assert.equal(after.ledger.items[0]?.id, 'i1')
+})
+
+test('desktop companion reads are passive and viewer updates preserve the original tab', async () => {
+  const dir = tempDir()
+  let calls = 0
+  const now = Date.now()
+  await updateState(
+    dir,
+    'companion-session',
+    s => ({
+      ...s,
+      lastAnswers: {
+        ledger: { at: now, turn: 1, reads: 'reply', isParsed: true, text: 'private model answer', chars: 20 },
+        status: null,
+      },
+      heldRows: ['i1'],
+      shownSince: now - 100,
+      shownTab: 'needsYou',
+      lookRows: { subject: now - 50 },
+    }),
+    () => now,
+  )
+  const handle = makeServer({
+    dir,
+    now: () => now,
+    exec: async () => {
+      calls++
+      return { code: 0, stdout: '', stderr: '' }
+    },
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    comparePage: '/fixture/compare.html',
+  })
+  const scope = [{ id: 'companion-session', name: 'Fixture' }]
+  const path = join(dir, 'sessions/companion-session.json')
+  const before = readFileSync(path, 'utf8')
+  try {
+    const listing = (await handle.companion({ version: 1, operation: 'list' }, scope)) as { sessions: { id: string }[] }
+    assert.deepEqual(
+      listing.sessions.map(s => s.id),
+      ['companion-session'],
+    )
+    const view = (await handle.companion(
+      { version: 1, operation: 'view', session: 'companion-session', opened: false },
+      scope,
+    )) as {
+      writtenAt: number
+      session: { remoteCommands: object; remoteViewers: object; lastAnswers: { ledger: unknown; status: unknown } }
+    }
+    assert.ok(view.writtenAt > 0)
+    assert.deepEqual(view.session.remoteCommands, {})
+    assert.deepEqual(view.session.remoteViewers, {})
+    assert.deepEqual(view.session.lastAnswers, { ledger: null, status: null })
+    assert.equal(readFileSync(path, 'utf8'), before)
+    assert.equal(calls, 0)
+    await assert.rejects(
+      handle.companion({ version: 1, operation: 'view', session: 'missing', opened: true }, [
+        { id: 'missing', name: 'Missing' },
+      ]),
+    )
+    assert.equal(existsSync(join(dir, 'sessions/missing.json')), false)
+    const missingList = (await handle.companion({ version: 1, operation: 'list' }, [
+      { id: 'missing', name: 'Missing' },
+    ])) as { sessions: { id: string; available: boolean }[] }
+    assert.deepEqual(
+      missingList.sessions.map(s => ({ id: s.id, available: s.available })),
+      [{ id: 'missing', available: false }],
+    )
+    await handle.companion(
+      {
+        version: 1,
+        operation: 'apply',
+        session: 'companion-session',
+        file: {
+          format: 2,
+          kind: 'viewer',
+          id: 'companion-viewer-1234',
+          session: 'companion-session',
+          issuedAt: now,
+          generation: 1,
+          sequence: 1,
+          active: true,
+          replies: ['i2'],
+          tab: 'prs',
+          shownRows: [],
+          listActive: false,
+        },
+      },
+      scope,
+    )
+    const after = await readState(dir, 'companion-session')
+    assert.deepEqual(after.heldRows, ['i1'])
+    assert.equal(after.shownSince, now - 100)
+    assert.equal(after.shownTab, 'needsYou')
+    assert.deepEqual(after.lookRows, { subject: now - 50 })
+    assert.ok(after.remoteViewers['companion-viewer-1234'])
+  } finally {
+    await removeTempDir(dir, handle)
+  }
 })

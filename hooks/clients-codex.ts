@@ -2,6 +2,7 @@ import type { Client } from './client-features'
 
 export const CODEX: Client = {
   support: {
+    'codex-desktop-companion': { kind: 'full' },
     'catch-up': {
       kind: 'different',
       reason:

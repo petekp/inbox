@@ -7,7 +7,8 @@ import { delegateRef, hasRunningDelegate, onceEvery } from './children'
 import { delegatesInHc } from './hc-terminals'
 import { SESSION_LABEL } from './herdr-labels'
 import type { ClientId } from './client-features'
-import { emptySession, sessionFile } from './session-files'
+import { sessionFile } from './session-files'
+import { presentedSession } from './session-presentation'
 import { UNSTARTABLE_CODE } from './gh'
 import type { Run } from './gh'
 import type { SessionView } from './session-view'
@@ -442,12 +443,9 @@ export type HerdrEnvelope = Omit<EnvelopeSource, 'isFetchingPrs' | 'isNextBuild'
   session: Session
 }
 
-const UNPUBLISHED_FIELDS = new Set(['remoteCommands', 'remoteViewers', 'remoteCommandFloor', 'lastAnswers'])
-const SESSION_FIELDS = Object.keys(emptySession()).filter(field => !UNPUBLISHED_FIELDS.has(field))
-
 /** Publishes shared presentation state, without command history, viewer leases, host fields or model answers. */
 export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimmed = false): HerdrEnvelope {
-  const shared = Object.fromEntries(SESSION_FIELDS.map(field => [field, session[field as keyof Session]]))
+  const shared = presentedSession(session)
 
   const { lastHerdrPress } = session
   const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source

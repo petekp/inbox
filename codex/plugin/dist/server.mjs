@@ -1,45 +1,10 @@
 // Built by codex/build.mjs from codex/src and hooks/. Do not edit.
 
-// src/server-main.ts
-import { readdir, stat as stat2 } from "node:fs/promises";
-import { dirname as dirname2, join as join3 } from "node:path";
-import { createInterface } from "node:readline";
-import { fileURLToPath, pathToFileURL } from "node:url";
-
-// src/data-dir.ts
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
+// src/companion-listener.ts
+import { createHash } from "node:crypto";
+import net from "node:net";
+import { chmod, lstat, mkdir, readFile, unlink, realpath } from "node:fs/promises";
 import { join } from "node:path";
-function dataDir(env, pluginRoot2) {
-  const fromEnv = env.INBOX_DATA || env.PLUGIN_DATA;
-  if (fromEnv) return fromEnv;
-  const m = pluginRoot2.match(/^(.*)\/plugins\/cache\/([^/]+)\/([^/]+)\/[^/]+$/);
-  if (m) return `${m[1]}/plugins/data/${m[3]}-${m[2]}`;
-  return join(homedir(), ".codex", "inbox-dev");
-}
-async function devBuild(dir2) {
-  try {
-    const d = JSON.parse(await readFile(join(dir2, "dev.json"), "utf8"));
-    if (typeof d.pid !== "number") return null;
-    process.kill(d.pid, 0);
-    return d;
-  } catch {
-    return null;
-  }
-}
-
-// src/detached-update.ts
-import { spawn } from "node:child_process";
-function detachedUpdate(dir2, env, script) {
-  return (sessionId, mode) => {
-    const child = spawn(process.execPath, [script, sessionId, ...mode ? [mode] : []], {
-      detached: true,
-      stdio: "ignore",
-      env: { ...env, INBOX_DATA: dir2 }
-    });
-    child.unref();
-  };
-}
 
 // ../hooks/status-limits.ts
 var GOAL_LEFT_MS = 30 * 6e4;
@@ -65,6 +30,10 @@ var SYNONYMS = [
 ];
 var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
 
+// ../hooks/ledger-close.ts
+var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
+var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
+
 // ../hooks/text.ts
 var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
 var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
@@ -81,9 +50,26 @@ var GRAPHEME = new RegExp(
 );
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 
-// ../hooks/ledger-close.ts
-var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
-var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
+// ../hooks/ledger-update.ts
+var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
+
+// ../hooks/ledger.ts
+var EMPTY = {
+  overview: null,
+  items: [],
+  closed: [],
+  findings: [],
+  closedFindings: [],
+  prs: [],
+  prOrder: null,
+  nextId: 1,
+  turn: 0,
+  batchTurn: 0,
+  updates: 0
+};
+
+// ../hooks/inbox-text.ts
+var TOLD_NOTHING = { inbox: null, closed: [] };
 
 // ../hooks/tabs.ts
 var TAB_NAMES = [
@@ -199,33 +185,14 @@ var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
 // ../hooks/timing.ts
 var SETTLED_MS = 5120;
 var COMPARE_LIMIT_MS = 30 * 6e4;
+function listInputOf(raw) {
+  if (typeof raw !== "object" || raw === null) return null;
+  const { since, last } = raw;
+  const isTime2 = (x) => typeof x === "number" && Number.isFinite(x);
+  return isTime2(since) && isTime2(last) ? { since, last } : null;
+}
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
-
-// src/host.ts
-import { appendFile, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join as join2 } from "node:path";
-
-// ../hooks/ledger-update.ts
-var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
-
-// ../hooks/ledger.ts
-var EMPTY = {
-  overview: null,
-  items: [],
-  closed: [],
-  findings: [],
-  closedFindings: [],
-  prs: [],
-  prOrder: null,
-  nextId: 1,
-  turn: 0,
-  batchTurn: 0,
-  updates: 0
-};
-
-// ../hooks/inbox-text.ts
-var TOLD_NOTHING = { inbox: null, closed: [] };
 
 // ../hooks/rows.ts
 var NEEDS_YOU_GROUPS = [
@@ -305,6 +272,338 @@ function emptySession() {
     toolFields: null
   };
 }
+var SESSION_FILE = /^[\w-]{1,100}\.json$/;
+var isSessionFile = (name) => SESSION_FILE.test(name);
+
+// ../hooks/session-presentation.ts
+var SESSION_FIELDS = Object.keys(emptySession()).filter(
+  (field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers"
+);
+
+// ../hooks/herdr.ts
+var STATUS_TOKEN = "inbox";
+var STOP_TOKEN = "inbox-stop";
+var FOCUS_TOKEN = "inbox-focus";
+var COUNT_TOKENS = {
+  needsYou: "inbox-needs-you",
+  findings: "inbox-findings",
+  prs: "inbox-prs"
+};
+var CLEARED_TOKENS = Object.fromEntries(
+  [STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
+);
+function herdrAppHome(env) {
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const named = env.HERDR_APP_HOME;
+  return named ? named.startsWith("/") ? named : null : home && `${home}/.config/herdr-app`;
+}
+function herdrTarget(env) {
+  const pane = env.HERDR_PANE_ID;
+  if (pane) return { kind: "pane", pane };
+  const terminal = env.HC_TERMINAL_ID;
+  if (!terminal) return null;
+  const home = env.HOME?.startsWith("/") ? env.HOME : null;
+  const appHome = herdrAppHome(env);
+  const installed = (name) => home ? [name, `${home}/.local/bin/${name}`] : [name];
+  return { kind: "terminal", terminal, appHome, hc: installed("hc"), herdrApp: installed("herdr-app") };
+}
+var HERDR_FORMAT = 1;
+
+// ../hooks/herdr-press-file.ts
+var PRESS_TARGETS = {
+  answer: "id",
+  type: "id",
+  explain: "id",
+  "show-explanation": "id",
+  compare: "id",
+  done: "id",
+  dismiss: "id",
+  address: "id",
+  issue: "id",
+  discuss: "id",
+  undo: "id",
+  discard: "id",
+  step: "id",
+  "remove-goal": "id",
+  "restore-goal": "id",
+  "take-goal": "id",
+  "thread-address": "ref",
+  "thread-draft": "ref",
+  "thread-discuss": "ref",
+  "thread-open": "ref",
+  "pr-conflicts": "ref",
+  "pr-address-all": "ref",
+  "pr-merge": "ref",
+  "pr-open": "ref",
+  "pr-dismiss": "ref",
+  "pr-undo": "ref",
+  "check-fix": "ref",
+  "check-rerun": "ref",
+  log: "ref",
+  "pr-rank-again": null,
+  "pr-refresh": null,
+  "pr-clear-finished": null
+};
+var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");
+function pressProblem(press2) {
+  if (!isRecord(press2) || typeof press2.action !== "string") return "press has no action";
+  if (!Object.hasOwn(PRESS_TARGETS, press2.action)) return `unknown action ${press2.action}`;
+  const target = PRESS_TARGETS[press2.action];
+  return target === null || typeof press2[target] === "string" ? null : `${press2.action} has no ${target}`;
+}
+function holdsProblem(holds) {
+  if (!isRecord(holds)) return "no holds";
+  if (!isTimes(holds.replies) || !isTimes(holds.discarded)) return "holds without replies or discarded times";
+  return holds.shownSince === null || typeof holds.shownSince === "number" ? null : "holds without shownSince";
+}
+function resultProblem(result) {
+  if (result === void 0) return null;
+  return isRecord(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
+}
+var isTime = (x) => typeof x === "number" && Number.isFinite(x);
+function lookProblem(look) {
+  if (!isRecord(look) || !isTime(look.startedAt) || !isTime(look.endedAt)) return "look without its times";
+  if (look.endedAt < look.startedAt) return "look ends before it starts";
+  if (!isTime(look.drawnWrittenAt)) return "look without when its Status was written";
+  return isTimes(look.shown) ? null : "look without shown rows";
+}
+function pressFile(text) {
+  let file;
+  try {
+    file = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: "not JSON" };
+  }
+  if (!isRecord(file)) return { ok: false, reason: "not an object" };
+  if (file.format === 2 && file.kind === "viewer") {
+    const ids = (value) => Array.isArray(value) && value.length <= 256 && value.every((id) => typeof id === "string" && /^[\w-]{1,100}$/.test(id));
+    const integer = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+    const valid = typeof file.id === "string" && /^[\w-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && integer(file.generation) && integer(file.sequence) && typeof file.active === "boolean" && typeof file.listActive === "boolean" && (file.seenAt === void 0 || isTime(file.seenAt)) && (file.visibleForMs === void 0 || isTime(file.visibleForMs) && file.visibleForMs >= 0) && ["overview", "needsYou", "findings", "prs"].includes(String(file.tab)) && ids(file.replies) && ids(file.shownRows);
+    return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
+  }
+  if (file.format === 2 && file.kind === "command") {
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16e3 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && /^[if]\d{1,16}$/.test(file.press.id) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8e3 : file.press.action === "answer" ? typeof file.press.option === "string" && file.press.option.length <= 8e3 && file.press.option.trim() !== "" : ["done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"].includes(
+      String(file.press.action)
+    ));
+    return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
+  }
+  if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` };
+  if (typeof file.id !== "string" || file.id === "") return { ok: false, reason: "no id" };
+  if ("look" in file) {
+    const reason2 = lookProblem(file.look);
+    return reason2 ? { ok: false, reason: reason2 } : { ok: true, file };
+  }
+  if ("prsShown" in file) {
+    return isRecord(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
+  }
+  if ("collapse" in file) {
+    const c = file.collapse;
+    const isCollapse = isRecord(c) && typeof c.row === "string" && typeof c.isCollapsed === "boolean" && isTime(c.at);
+    return isCollapse ? { ok: true, file } : { ok: false, reason: "collapse without row or time" };
+  }
+  if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
+    return { ok: false, reason: "no pressedAt" };
+  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
+  if (reason) return { ok: false, reason };
+  const read = file;
+  return { ok: true, file: { ...read, holds: { ...read.holds, listInput: listInputOf(read.holds.listInput) } } };
+}
+
+// src/companion-listener.ts
+async function scope(dir2) {
+  const path = join(dir2, "companion.json");
+  const info = await lstat(path);
+  if (!info.isFile() || info.isSymbolicLink() || info.size > 16384 || info.uid !== process.getuid?.() || (info.mode & 63) !== 0)
+    throw new Error("The companion configuration must be a private file owned by this user.");
+  const value = JSON.parse(await readFile(path, "utf8"));
+  if (!value || typeof value !== "object" || !("enabled" in value) || value.enabled !== true || !("sessions" in value) || !Array.isArray(value.sessions) || value.sessions.length > 64)
+    throw new Error("The companion connection is not enabled.");
+  const sessions = [];
+  for (const row of value.sessions) {
+    if (!row || typeof row.id !== "string" || !isSessionFile(`${row.id}.json`) || typeof row.name !== "string" || row.name.length > 160)
+      throw new Error("The companion session configuration is invalid.");
+    sessions.push({ id: row.id, name: row.name });
+  }
+  return sessions;
+}
+function parse(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid companion request.");
+  const v = value;
+  if (v.version !== 1) throw new Error("Unsupported companion protocol.");
+  const keys = Object.keys(v).sort().join(",");
+  if (v.operation === "list" && keys === "operation,version") return { version: 1, operation: "list" };
+  if (typeof v.session !== "string" || !isSessionFile(`${v.session}.json`))
+    throw new Error("Invalid companion session.");
+  if (v.operation === "view" && keys === "opened,operation,session,version" && typeof v.opened === "boolean")
+    return { version: 1, operation: "view", session: v.session, opened: v.opened };
+  if (v.operation === "apply" && keys === "file,operation,session,version") {
+    const file = pressFile(JSON.stringify(v.file));
+    if (file.ok && file.file.format === 2 && file.file.session === v.session)
+      return { version: 1, operation: "apply", session: v.session, file: file.file };
+  }
+  throw new Error("Invalid companion operation.");
+}
+async function liveSocket(path) {
+  return new Promise((resolve) => {
+    const client = net.createConnection(path);
+    const finish = (live) => {
+      client.destroy();
+      resolve(live);
+    };
+    client.once("connect", () => finish(true));
+    client.once("error", () => finish(false));
+    client.setTimeout(500, () => finish(true));
+  });
+}
+async function startCompanion(dir2, handler, log) {
+  try {
+    await scope(dir2);
+  } catch (error) {
+    if (error.code !== "ENOENT")
+      log(error instanceof Error ? error.message : "Companion configuration failed.");
+    return async () => {
+    };
+  }
+  const profile = createHash("sha256").update(await realpath(dir2)).digest("hex");
+  const folder = join(dir2, "companion");
+  await mkdir(folder, { mode: 448 }).catch((error) => {
+    if (error.code !== "EEXIST") throw error;
+  });
+  const folderInfo = await lstat(folder);
+  if (!folderInfo.isDirectory() || folderInfo.isSymbolicLink() || folderInfo.uid !== process.getuid?.() || (folderInfo.mode & 63) !== 0)
+    throw new Error("The companion socket folder must be private.");
+  const path = join(folder, "bridge.sock");
+  if (Buffer.byteLength(path) > 103) throw new Error("The companion socket path is too long.");
+  const existing = await lstat(path).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (existing) {
+    if (!existing.isSocket() || existing.uid !== process.getuid?.() || await liveSocket(path)) return async () => {
+    };
+    const current2 = await lstat(path);
+    if (current2.ino !== existing.ino) return async () => {
+    };
+    await unlink(path);
+  }
+  const clients = /* @__PURE__ */ new Set();
+  let active = 0;
+  const server = net.createServer((client) => {
+    if (clients.size >= 8) {
+      client.destroy();
+      return;
+    }
+    clients.add(client);
+    const deadline = setTimeout(() => client.destroy(), 9e4);
+    deadline.unref();
+    client.once("close", () => {
+      clearTimeout(deadline);
+      clients.delete(client);
+    });
+    client.on("error", () => {
+    });
+    client.setTimeout(9e4, () => client.destroy());
+    let input = Buffer.alloc(0), started = false;
+    client.on("data", (chunk) => {
+      if (started) {
+        client.destroy();
+        return;
+      }
+      input = Buffer.concat([input, typeof chunk === "string" ? Buffer.from(chunk) : chunk]);
+      if (input.length > 65536) {
+        client.destroy();
+        return;
+      }
+      const end = input.indexOf(10);
+      if (end < 0) return;
+      started = true;
+      if (active >= 8) {
+        client.destroy();
+        return;
+      }
+      active++;
+      void (async () => {
+        try {
+          if (input.subarray(end + 1).toString().trim() !== "")
+            throw new Error("Use one request per connection.");
+          const request = parse(JSON.parse(input.subarray(0, end).toString("utf8")));
+          const sessions = await scope(dir2);
+          if ("session" in request && !sessions.some((s) => s.id === request.session))
+            throw new Error("This chat is not shared with the companion.");
+          const result = await (await handler())(request, sessions);
+          const response = JSON.stringify({ ok: true, profile, result });
+          if (Buffer.byteLength(response) > 4 * 1024 * 1024) throw new Error("The companion response is too large.");
+          client.end(response + "\n");
+        } catch (error) {
+          client.end(
+            JSON.stringify({ ok: false, error: error instanceof Error ? error.message : "Companion request failed." }) + "\n"
+          );
+        } finally {
+          active--;
+        }
+      })();
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(path, resolve);
+  });
+  server.on("error", (error) => log(error.message));
+  await chmod(path, 384);
+  const owned = await lstat(path);
+  return async () => {
+    for (const client of clients) client.destroy();
+    await new Promise((resolve) => server.close(() => resolve()));
+    const current2 = await lstat(path).catch(() => null);
+    if (current2?.ino === owned.ino) await unlink(path);
+  };
+}
+
+// src/server-main.ts
+import { readdir, stat as stat2 } from "node:fs/promises";
+import { dirname as dirname2, join as join4 } from "node:path";
+import { createInterface } from "node:readline";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+// src/data-dir.ts
+import { readFile as readFile2 } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join as join2 } from "node:path";
+function dataDir(env, pluginRoot2) {
+  const fromEnv = env.INBOX_DATA || env.PLUGIN_DATA;
+  if (fromEnv) return fromEnv;
+  const m = pluginRoot2.match(/^(.*)\/plugins\/cache\/([^/]+)\/([^/]+)\/[^/]+$/);
+  if (m) return `${m[1]}/plugins/data/${m[3]}-${m[2]}`;
+  return join2(homedir(), ".codex", "inbox-dev");
+}
+async function devBuild(dir2) {
+  try {
+    const d = JSON.parse(await readFile2(join2(dir2, "dev.json"), "utf8"));
+    if (typeof d.pid !== "number") return null;
+    process.kill(d.pid, 0);
+    return d;
+  } catch {
+    return null;
+  }
+}
+
+// src/detached-update.ts
+import { spawn } from "node:child_process";
+function detachedUpdate(dir2, env, script) {
+  return (sessionId, mode) => {
+    const child = spawn(process.execPath, [script, sessionId, ...mode ? [mode] : []], {
+      detached: true,
+      stdio: "ignore",
+      env: { ...env, INBOX_DATA: dir2 }
+    });
+    child.unref();
+  };
+}
+
+// src/host.ts
+import { appendFile, mkdir as mkdir2, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join as join3 } from "node:path";
 
 // ../hooks/tool-schemas.ts
 var RECORD_SCHEMA = {
@@ -451,21 +750,6 @@ var STATUS_REFRESH_MS = 10 * 6e4;
 var POLL_MS = 3e3;
 var SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS;
 
-// ../hooks/herdr.ts
-var STATUS_TOKEN = "inbox";
-var STOP_TOKEN = "inbox-stop";
-var FOCUS_TOKEN = "inbox-focus";
-var COUNT_TOKENS = {
-  needsYou: "inbox-needs-you",
-  findings: "inbox-findings",
-  prs: "inbox-prs"
-};
-var CLEARED_TOKENS = Object.fromEntries(
-  [STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null])
-);
-var UNPUBLISHED_FIELDS = /* @__PURE__ */ new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
-
 // ../hooks/host-prs.ts
 var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
 
@@ -479,7 +763,7 @@ var PUBLISH_LIMIT_BYTES = 1024 * 1024;
 // src/host.ts
 var HERDR_LOG_BYTES = 64 * 1024;
 function herdrLog(dir2) {
-  const path = join2(dir2, "herdr.log");
+  const path = join3(dir2, "herdr.log");
   return (text) => void (async () => {
     const size = await stat(path).then(
       (s) => s.size,
@@ -487,7 +771,7 @@ function herdrLog(dir2) {
     );
     const line = `${(/* @__PURE__ */ new Date()).toISOString()} ${text}
 `;
-    await mkdir(dir2, { recursive: true });
+    await mkdir2(dir2, { recursive: true });
     await (size > HERDR_LOG_BYTES ? writeFile(path, line) : appendFile(path, line));
   })().catch(() => void 0);
 }
@@ -565,7 +849,7 @@ async function withoutSharedTerminal(env, run2, pid, log) {
 var here = dirname2(fileURLToPath(import.meta.url));
 var pluginRoot = dirname2(here);
 var dir = dataDir(process.env, pluginRoot);
-var BUNDLE = join3("dist", "server-handler.mjs");
+var BUNDLE = join4("dist", "server-handler.mjs");
 await withoutSharedTerminal(process.env, run, process.ppid, herdrLog(dir));
 var exists = (path) => stat2(path).then(
   () => true,
@@ -581,11 +865,11 @@ function compareVersions(a, b) {
   return 0;
 }
 async function installedBundle() {
-  const own = join3(pluginRoot, BUNDLE);
+  const own = join4(pluginRoot, BUNDLE);
   if (await exists(own)) return own;
   const versions = (await readdir(dirname2(pluginRoot)).catch(() => [])).filter((name) => /^\d/.test(name));
   for (const version of versions.sort(compareVersions).reverse()) {
-    const bundle = join3(dirname2(pluginRoot), version, BUNDLE);
+    const bundle = join4(dirname2(pluginRoot), version, BUNDLE);
     if (await exists(bundle)) return bundle;
   }
   return null;
@@ -605,7 +889,7 @@ function load(url, path) {
       dir,
       () => loadError,
       () => isPluginFolderGone,
-      detachedUpdate(dir, process.env, join3(here, "update.mjs"))
+      detachedUpdate(dir, process.env, join4(here, "update.mjs"))
     )
   );
   handle.then(
@@ -642,6 +926,15 @@ async function currentHandler() {
 var reply = (r) => process.stdout.write(`${JSON.stringify(r)}
 `);
 var ready = Promise.resolve();
+var companion = herdrTarget(process.env) ? Promise.resolve(async () => {
+}) : startCompanion(dir, async () => (await currentHandler()).companion, herdrLog(dir)).catch((error) => {
+  herdrLog(dir)(error instanceof Error ? error.message : "Companion could not start.");
+  return async () => {
+  };
+});
+process.stdin.once("end", () => {
+  void companion.then((stop) => stop());
+});
 createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line) => {
   let message;
   try {

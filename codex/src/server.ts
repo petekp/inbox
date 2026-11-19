@@ -1,3 +1,5 @@
+import { makeCompanion } from './server-companion'
+import type { CompanionHandler } from './companion-protocol'
 import { delegatesSettled } from '../../hooks/children'
 import type { RunWithInput } from './run'
 import { delegatesInHerdr, herdrCheckGate } from '../../hooks/herdr'
@@ -90,7 +92,10 @@ export type PressReply = {
 }
 
 /** Answers one message. `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. */
-export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) & { settled(): Promise<void> }
+export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) & {
+  settled(): Promise<void>
+  companion: CompanionHandler
+}
 
 export function makeServer(given: ServerDeps): Server {
   const { onWrite } = given
@@ -264,5 +269,28 @@ export function makeServer(given: ServerDeps): Server {
     return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } }
   }
 
-  return Object.assign(handle, { settled: background.settled })
+  const companion = makeCompanion(deps, {
+    opened: async id => {
+      const errors: string[] = []
+      for (const recover of [wakeAfterSettle, catchUpOnOpen]) {
+        try {
+          await recover(id)
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : 'Inbox recovery could not finish.')
+        }
+      }
+      return errors
+    },
+    apply: onHerdrFile,
+    fetch: (id, state) =>
+      fetchPrsWhenDue(
+        id,
+        state,
+        Object.values(state.remoteViewers).some(
+          viewer => viewer.tab === 'prs' && !viewer.released && viewer.expiresAt > now(),
+        ),
+      ),
+    trust: hooksTrustNow,
+  })
+  return Object.assign(handle, { settled: background.settled, companion })
 }

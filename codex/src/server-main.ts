@@ -1,3 +1,5 @@
+import { startCompanion } from './companion-listener'
+import { herdrTarget } from '../../hooks/herdr'
 // Codex starts this process once per app launch and keeps it. So it only reads lines and passes each to the
 // handler module, which it imports again whenever that module's file changes: a reinstalled plugin, an update, or
 // the build `npm --prefix codex run dev` keeps while it runs. A change to this file itself still needs Codex restarted.
@@ -121,6 +123,16 @@ async function currentHandler(): Promise<Handler> {
 const reply = (r: unknown) => process.stdout.write(`${JSON.stringify(r)}\n`)
 // Each message waits for the handler of the one before it, so handlers start in arrival order. Their replies still finish in any order.
 let ready: Promise<unknown> = Promise.resolve()
+
+const companion = herdrTarget(process.env)
+  ? Promise.resolve(async () => {})
+  : startCompanion(dir, async () => (await currentHandler()).companion, herdrLog(dir)).catch(error => {
+      herdrLog(dir)(error instanceof Error ? error.message : 'Companion could not start.')
+      return async () => {}
+    })
+process.stdin.once('end', () => {
+  void companion.then(stop => stop())
+})
 
 createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', line => {
   let message: { id?: unknown }

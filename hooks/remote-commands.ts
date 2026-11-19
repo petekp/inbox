@@ -90,10 +90,21 @@ const rejected = (error: string): PressOutcome => ({
   wakesAfterSettle: false,
 })
 
+export const REMOTE_ACTIONS: readonly RowPress['action'][] = [
+  'type',
+  'answer',
+  'done',
+  'address',
+  'undo',
+  'dismiss',
+  'discuss',
+  'explain',
+  'issue',
+  'discard',
+]
+
 export function supportsRemotePress(p: Pick<RowPress, 'action'>): boolean {
-  return ['type', 'answer', 'done', 'address', 'undo', 'dismiss', 'discuss', 'explain', 'issue', 'discard'].includes(
-    p.action,
-  )
+  return REMOTE_ACTIONS.includes(p.action)
 }
 
 function isUnresolved(c: RemoteCommandRecord): boolean {

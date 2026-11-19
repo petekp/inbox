@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T02:04:15.465Z. 300633 characters follow.
+// Built at 2026-11-19T03:10:08.713Z. 300648 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -2936,6 +2936,9 @@ function sessionFields(saved, views) {
   };
 }
 
+// ../hooks/session-presentation.ts
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers");
+
 // ../hooks/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -2947,8 +2950,6 @@ var COUNT_TOKENS = {
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
 var HERDR_FORMAT = 1;
-var UNPUBLISHED_FIELDS = new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 function publishedSessionsFolder(appHome) {
   return `${appHome}/inbox/sessions`;
 }
