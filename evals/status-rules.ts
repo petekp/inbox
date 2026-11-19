@@ -155,6 +155,22 @@ const FIXED_RULES: Rule[] = [
     },
   },
   {
+    id: 'head-title-kept',
+    reads: 'facts',
+    property: 1,
+    text: 'A head title that names the whole focus in the facts stays on it while the facts keep that title, so it is never retitled to a piece of the work.',
+    failures: ({ result, before }) => {
+      const pattern = result.facts.titleMatch
+      if (!pattern || pattern !== before.facts.titleMatch) return []
+      const isWhole = (title: string) => new RegExp(pattern, 'i').test(title)
+      const was = before.overview?.head?.title ?? ''
+      const now = result.session.ledger.overview?.head?.title ?? ''
+      return isWhole(was) && !isWhole(now)
+        ? [`the head's title moved from "${was}" to "${now}", off the whole focus`]
+        : []
+    },
+  },
+  {
     id: 'no-duplicates',
     reads: 'answer',
     property: 4,
