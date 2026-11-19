@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-18T22:36:50.895Z. 300057 characters follow.
+// Built at 2026-11-19T00:47:52.797Z. 300047 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -1328,7 +1328,7 @@ function namedList(names) {
   const hidden = names.length - LISTED_NAMES;
   return [...names.slice(0, LISTED_NAMES), ...hidden > 0 ? [namedFoldMore(hidden)] : []].join(", ");
 }
-var NAMED_FOLD_TEXT = { done: "Also done: ", dropped: "Also dropped: " };
+var NAMED_FOLD_TEXT = { done: "Done: ", dropped: "Dropped: " };
 var namedFolds = (prefix, named, depth) => ["done", "dropped"].flatMap((status) => {
   const closed = named.filter((x) => x.status === status);
   return closed.length === 0 ? [] : [
