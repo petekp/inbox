@@ -191,7 +191,7 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
             file.press.option.trim() !== ''
           : (isGoalPress
               ? ['remove-goal', 'restore-goal', 'take-goal']
-              : ['done', 'address', 'undo', 'dismiss', 'discuss', 'explain', 'issue', 'discard']
+              : ['done', 'address', 'undo', 'dismiss', 'discuss', 'explain', 'compare', 'issue', 'discard']
             ).includes(String(file.press.action)))
     return valid ? { ok: true, file: file as RemoteCommand } : { ok: false, reason: 'invalid remote command' }
   }

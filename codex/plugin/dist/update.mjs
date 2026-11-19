@@ -3633,6 +3633,7 @@ var REMOTE_ACTIONS = [
   "dismiss",
   "discuss",
   "explain",
+  "compare",
   "issue",
   "discard",
   "remove-goal",
