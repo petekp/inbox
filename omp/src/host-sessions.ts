@@ -1,3 +1,4 @@
+import { REMOTE_ACTIONS } from '../../hooks/remote-commands'
 import { remoteViewerReceipts } from '../../hooks/remote-viewers'
 import { remoteReceipts } from '../../hooks/remote-command-state'
 import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
@@ -152,6 +153,7 @@ export function sessionCalls(context: HostContext) {
                 receipts: remoteReceipts(s),
                 viewers: remoteViewerReceipts(s),
                 remoteProtocol: 2,
+                remoteActions: REMOTE_ACTIONS,
                 remoteHistoryAfter: s.remoteCommandFloor ?? 0,
                 host: 'omp',
                 agent: OMP.agent,

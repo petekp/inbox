@@ -1,3 +1,4 @@
+import { REMOTE_ACTIONS } from './remote-commands'
 import type { Timer } from 'claude-code'
 import type { Dialog, Session, SessionStatus } from '../types'
 import type { Run } from './gh'
@@ -277,6 +278,7 @@ export async function publishToHerdr(
             receipts,
             viewers,
             remoteProtocol: 2,
+            remoteActions: REMOTE_ACTIONS,
             remoteHistoryAfter,
             host: 'claude-code',
             agent: CLAUDE_CODE.agent,
