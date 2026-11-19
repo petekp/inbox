@@ -139,7 +139,7 @@ export function contextOf(scene: Scene): RuleContext {
 }
 
 function statusCall(answer: string): CallLog {
-  return { kind: 'status', answers: [answer], model: null, ms: 0, outputTokens: null, overLimit: null }
+  return { kind: 'status', answers: [answer], model: null, ms: 0, outputTokens: null, costUsd: null, overLimit: null }
 }
 
 function withGoal(s: Scene) {
@@ -226,6 +226,16 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'no-semicolons': { bad: s => (s1Of(s).text = 'engine done; retries left') },
   'head-no-status': { bad: s => (s.after.head = { title: 'Offline sync', description: 'Offline sync ready' }) },
   'head-follows': { bad: s => (s.after.head = { title: 'Lint error', description: 'Fixing the lint error' }) },
+  'head-title-kept': {
+    good: s => {
+      s.facts.titleMatch = 'offline sync'
+      s.after.head = { title: 'Offline sync', description: 'Making the engine sync on reconnect' }
+    },
+    bad: s => {
+      s.facts.titleMatch = 'offline sync'
+      s.after.head = { title: 'Sync engine', description: 'Making the engine sync on reconnect' }
+    },
+  },
   'no-duplicates': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Sync engine work', 'tests', 10)) },
   'piece-once': { bad: s => s.after.subjects.push(subject('s3', 'working', 'Engine queue', 'syncs', 10)) },
   'open-pieces-kept': { bad: s => s.after.subjects.pop() },
@@ -534,6 +544,12 @@ export const PATH_SCENES: { rule: string; path: string; good: (s: Scene) => void
       s.after.askSubjects = { i1: ['s1'] }
     },
     bad: s => childFinished(s, 'syncs on reconnect'),
+  },
+  {
+    rule: 'head-follows',
+    path: 'a head that moves back to the focus at a step where the focus did not move',
+    good: s => (s.before.head = { title: 'Lint error', description: 'Fixing the lint error' }),
+    bad: s => (s.before.head = { title: 'Offline sync', description: 'Wiring the settings toggle' }),
   },
   {
     rule: 'changes-move',

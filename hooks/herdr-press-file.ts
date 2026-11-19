@@ -167,6 +167,7 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
     return valid ? { ok: true, file: file as RemoteViewerUpdate } : { ok: false, reason: 'invalid remote viewer' }
   }
   if (file.format === 2 && file.kind === 'command') {
+    const isGoalPress = isRecord(file.press) && file.press.id === 'goal'
     const valid =
       typeof file.id === 'string' &&
       /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) &&
@@ -180,14 +181,18 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
       pressProblem(file.press) === null &&
       isRecord(file.press) &&
       typeof file.press.id === 'string' &&
-      /^[if]\d{1,16}$/.test(file.press.id) &&
+      (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) &&
       (file.press.action === 'type'
         ? typeof file.press.text === 'string' && file.press.text.trim() !== '' && file.press.text.length <= 8000
         : file.press.action === 'answer'
-          ? typeof file.press.option === 'string' && file.press.option.length <= 8000 && file.press.option.trim() !== ''
-          : ['done', 'address', 'undo', 'dismiss', 'discuss', 'explain', 'issue', 'discard'].includes(
-              String(file.press.action),
-            ))
+          ? !isGoalPress &&
+            typeof file.press.option === 'string' &&
+            file.press.option.length <= 8000 &&
+            file.press.option.trim() !== ''
+          : (isGoalPress
+              ? ['remove-goal', 'restore-goal', 'take-goal']
+              : ['done', 'address', 'undo', 'dismiss', 'discuss', 'explain', 'issue', 'discard']
+            ).includes(String(file.press.action)))
     return valid ? { ok: true, file: file as RemoteCommand } : { ok: false, reason: 'invalid remote command' }
   }
   if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` }

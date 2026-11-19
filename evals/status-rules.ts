@@ -20,6 +20,7 @@ import {
   STATUS_WORDS,
   TIME_WORDS,
   WORD,
+  headOffFocus,
   headWords,
   isPlainLabel,
   keyWords,
@@ -137,21 +138,35 @@ const FIXED_RULES: Rule[] = [
     id: 'head-follows',
     reads: 'facts',
     property: 1,
-    text: 'The head names the focus in the facts, and its title no longer names finished work the focus moved on from. It changes where the focus moved, and holds where it did not.',
+    text: 'The head names the focus in the facts, and its title no longer names finished work the focus moved on from. It changes where the focus moved, and holds where it did not, unless it was off the focus before.',
     failures: ({ result, before }) => {
       const now = result.session.ledger.overview?.head ?? null
       const earlier = before.overview?.head ?? null
       const head = headWords(result.session.ledger.overview)
       const last = headWords(before.overview)
-      const { focusMatch, pastMatch } = result.facts
-      const isFocusSame = focusMatch === before.facts.focusMatch
+      const isFocusSame = result.facts.focusMatch === before.facts.focusMatch
       const isDescriptionFilled = earlier?.description === '' && now?.title === earlier.title
-      if (!new RegExp(focusMatch, 'i').test(head)) return [`the head "${head}" is not about /${focusMatch}/`]
-      const shown = result.session.ledger.overview?.goal ? now?.description || now?.title || '' : (now?.title ?? '')
-      if (pastMatch && now && new RegExp(pastMatch, 'i').test(shown))
-        return [`the head "${shown}" still names /${pastMatch}/`]
-      return isFocusSame && last !== '' && head !== last && !isDescriptionFilled
+      const off = headOffFocus(result.session.ledger.overview, result.facts)
+      if (off !== null) return [off]
+      const wasOff = last !== '' && headOffFocus(before.overview, before.facts) !== null
+      return isFocusSame && last !== '' && head !== last && !isDescriptionFilled && !wasOff
         ? [`the head moved from "${last}" to "${head}"`]
+        : []
+    },
+  },
+  {
+    id: 'head-title-kept',
+    reads: 'facts',
+    property: 1,
+    text: 'A head title that names the whole focus in the facts stays on it while the facts keep that title, so it is never retitled to a piece of the work.',
+    failures: ({ result, before }) => {
+      const pattern = result.facts.titleMatch
+      if (!pattern || pattern !== before.facts.titleMatch) return []
+      const isWhole = (title: string) => new RegExp(pattern, 'i').test(title)
+      const was = before.overview?.head?.title ?? ''
+      const now = result.session.ledger.overview?.head?.title ?? ''
+      return isWhole(was) && !isWhole(now)
+        ? [`the head's title moved from "${was}" to "${now}", off the whole focus`]
         : []
     },
   },

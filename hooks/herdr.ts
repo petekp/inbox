@@ -412,6 +412,7 @@ export type EnvelopeSource = {
   receipts?: ReturnType<typeof remoteReceipts>
   viewers?: ReturnType<typeof remoteViewerReceipts>
   remoteProtocol?: 2
+  remoteActions?: readonly string[]
   remoteHistoryAfter?: number
   host: ClientId
   agent: string

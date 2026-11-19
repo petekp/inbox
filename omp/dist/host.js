@@ -11692,11 +11692,16 @@ function isDescriptionStale(head, work) {
   return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
 }
 function headAfter(last, op, work) {
-  const isComplete = last !== null && last.description !== "";
-  const isSameTitle = last !== null && hasSameWords(last.title, op.title);
-  const isStale = isDescriptionStale(last, work);
-  const isHeld = isComplete && (isSameTitle && !isStale || work.isEarlierWorkFinished && !work.isWorkUnderWay);
-  return isHeld ? last : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+  const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
+  if (last === null || last.description === "")
+    return line;
+  const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay;
+  if (isQueuedWorkNext)
+    return last;
+  if (!hasSameWords(last.title, op.title))
+    return line;
+  const isSameDescription = line.description === "" || hasSameWords(last.description, line.description);
+  return isSameDescription ? last : { title: last.title, description: line.description };
 }
 var OP_ORDER = {
   none: 0,
@@ -12229,8 +12234,8 @@ Rules:
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
 - Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for an item in <running>, or its progress in its subject's text: code shows it under its subject. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When an item finished, as <running> or the exchange shows, and no other item in <running> still works for its subject, a subject that stays working says in where it stands what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate laying out the PDF" or "delegate finished". When neither the exchange nor where it stands says what came of the finished item, say its work is not checked yet: "PDF done, not checked". Keep where it stands when it already says what came of the item or what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other. Once all of its own work has merged, it is DONE, even when another subject's work follows. A release still waits until it is published.
-- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work.
-- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head that still holds, and never add progress, the next step or queued work to it.
+- Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty or has no description, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work. Write HEAD too when its description says the session is doing work that <finished> shows done, or work it is no longer doing: when the title still names the focus, keep it word for word and write a new description.
+- The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head while a working subject is part of what it names. When the work it names finished and no subject is working, keep it: queued work is not the focus until it starts. Never reword a head whose title and description both still hold, and never add progress, the next step or queued work to it.
 
 Goal:
 ${goalRules(without)}`;
@@ -13771,7 +13776,8 @@ function pressFile(text) {
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
   }
   if (file.format === 2 && file.kind === "command") {
-    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && /^[if]\d{1,16}$/.test(file.press.id) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8000 : file.press.action === "answer" ? typeof file.press.option === "string" && file.press.option.length <= 8000 && file.press.option.trim() !== "" : ["done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"].includes(String(file.press.action)));
+    const isGoalPress = isRecord(file.press) && file.press.id === "goal";
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8000 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8000 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"]).includes(String(file.press.action)));
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
   }
   if (file.format !== HERDR_FORMAT)
@@ -14186,6 +14192,15 @@ function newRevision(host) {
   return id;
 }
 function remoteRowVersion(s, id) {
+  if (id === "goal") {
+    const overview = s.ledger.overview;
+    return JSON.stringify([
+      overview?.goal ?? null,
+      overview?.goalRemoved ?? null,
+      overview?.suggestedGoal ?? null,
+      s.lastActions[id] ?? null
+    ]);
+  }
   const item = s.ledger.items.find((row) => row.id === id);
   const normalized = item && Object.fromEntries(Object.entries(item).filter(([key]) => key !== "dialog"));
   return JSON.stringify([
@@ -14239,7 +14254,10 @@ var REMOTE_ACTIONS = [
   "discuss",
   "explain",
   "issue",
-  "discard"
+  "discard",
+  "remove-goal",
+  "restore-goal",
+  "take-goal"
 ];
 function supportsRemotePress(p) {
   return REMOTE_ACTIONS.includes(p.action);
@@ -15151,6 +15169,7 @@ function sessionCalls(context) {
         receipts: remoteReceipts(s),
         viewers: remoteViewerReceipts(s),
         remoteProtocol: 2,
+        remoteActions: REMOTE_ACTIONS,
         remoteHistoryAfter: s.remoteCommandFloor ?? 0,
         host: "omp",
         agent: OMP2.agent,
