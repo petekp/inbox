@@ -4,7 +4,7 @@ import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import type { TabCell } from './draw'
 import { MOVED_TO, copyIdOf, panelId, titleId } from './heights'
-import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce, shutTo } from './block-glide'
+import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce } from './block-glide'
 import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
 import type { TitleGlide, TitleMotion } from './title-motion'
@@ -55,8 +55,8 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
  * `closing` the open form whose panel a closing row keeps drawn. `isPanelWaiting` says an opening row's panel fades in
  * once its space is nearly open, as an entering block's content does, the person's own move included. A row that turns
- * back from a close counts that wait from where its space is: `panelShutForMs` is how long the panel's space had been
- * shutting, and null when the open starts from a shut space. `isPanelLeftOut` says the row's content box moves to
+ * back from a close fades its panel in at once instead, over `turnBackFadeMs` counted from where its space is:
+ * `panelShutForMs` is how long the panel's space had been shutting, and null when the open starts from a shut space. `isPanelLeftOut` says the row's content box moves to
  * its measured height less its panel's: through a close once its panel has faded, through all of a close whose panel
  * showed nothing yet, as one that turns an open back before its panel faded in, and in the draw after a close, before
  * the row measures without the panel.
@@ -192,8 +192,8 @@ export function moveRows(
   const isPanelShown = (t: Tracked, id: string): boolean => {
     const height = heightOf(panelId(id)) ?? 0
     if (height <= 0 || (t.track.state !== 'open' && t.track.state !== 'opening')) return false
-    const waitMs = enterDelayMs(height, shutTo(height, t.panelShutForMs))
-    const fadesAt = t.track.since + (t.panelShutForMs === null ? NEXT_FRAME_MS : 0) + waitMs
+    const isTurnedBack = t.panelShutForMs !== null
+    const fadesAt = isTurnedBack ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height)
 
     return t.track.state === 'open' || now >= fadesAt
   }

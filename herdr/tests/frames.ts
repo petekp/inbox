@@ -7,7 +7,7 @@ import type { Painted } from './gpui-stand-in'
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
 const { moveRows, NO_TRACKS } = await import('../src/motion')
-const { Heights, MOVED_TO } = await import('../src/heights')
+const { Heights, MOVED_TO, panelId } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
 
@@ -15,6 +15,7 @@ const FRAME_MS = 16
 const PANE_WIDTH = 300
 const WRAP_AT = 40
 const CUT_MAX_OPACITY = 0.2
+const TURNED_BACK_PANEL_CUT_MAX_OPACITY = 0.8
 const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 
 type Box = { top: number; height: number }
@@ -320,6 +321,11 @@ class Frames {
     this.linesAbove = held.held
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
     this.tracks = moved.tracks
+    const turnedBackPanels = new Set(
+      [...moved.tracks.rows]
+        .filter(([, t]) => t.track.state === 'opening' && (t.panelShutForMs ?? 0) > 0)
+        .map(([id]) => panelId(id)),
+    )
     const paint = paintOf(moved.motion, this.heights, key => isFirst || resized.has(key), now, this.closedSeen)
     const tree = columnOf(
       spacedEls(moved.blocks, paint, b => blockEl(b, paint)),
@@ -336,7 +342,8 @@ class Frames {
       const box = boxOf(node)
       const opacity = this.fades.opacityOf(node)
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
-      if (opacity >= CUT_MAX_OPACITY) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
+      const maxOpacity = turnedBackPanels.has(box ?? '') ? TURNED_BACK_PANEL_CUT_MAX_OPACITY : CUT_MAX_OPACITY
+      if (opacity >= maxOpacity) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
     }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)

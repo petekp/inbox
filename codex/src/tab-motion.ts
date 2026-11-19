@@ -1,5 +1,5 @@
 import { atEndWeight } from './weight-ease'
-import { ENTER_FADE_MS, enterDelayMs, FADE_MS, isMoving, LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, enterDelayMs, FADE_MS, isMoving, LEAVE_FADE_MS, ROW_STATE_MS, turnBackFadeMs } from '../../hooks/row-motion'
 import type { RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
@@ -256,14 +256,14 @@ function moveRow(
 
 /**
  * Fades an opening row's panel in once its space is nearly open, counted from where the space is. A panel the row
- * still drew as it closed turns back from the opacity it shows, and one that still shows whole stops its fade out.
+ * still drew as it closed turns back at once, from the opacity it shows, over `turnBackFadeMs`, and one that still
+ * shows whole stops its fade out.
  */
 function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
-  const waits = delay + enterDelayMs(target, from)
-  if (!wasDrawn) return fade(part, 0, 1, ENTER_FADE_MS, false, false, waits)
+  if (!wasDrawn) return fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
   for (const el of new Set([part, ...fadingParts(part)])) {
     const opacity = opacityOf(el)
-    if (opacity < 0.99) fade(el, opacity, 1, ENTER_FADE_MS, false, false, waits)
+    if (opacity < 0.99) fade(el, opacity, 1, turnBackFadeMs(target, from), false, false, delay)
     else stopFadeOut(el)
   }
 }

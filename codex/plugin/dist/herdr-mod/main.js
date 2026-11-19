@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T05:32:52.997Z. 300660 characters follow.
+// Built at 2026-11-19T06:19:20.405Z. 300938 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5199,6 +5199,9 @@ function enterDelayMs(height, from = { x: 0, v: 0 }) {
   const at = springFrames(from, height).findLastIndex((x) => height - x > SLIDE_PX / 2) + 1;
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
 }
+function turnBackFadeMs(height, from) {
+  return enterDelayMs(height, from) + ENTER_FADE_MS;
+}
 function titleSwapMs(height, from) {
   return (springFrames(from, height).length - 1) * FRAME_MS;
 }
@@ -5515,8 +5518,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const height = heightOf(panelId(id)) ?? 0;
     if (height <= 0 || t.track.state !== "open" && t.track.state !== "opening")
       return false;
-    const waitMs = enterDelayMs(height, shutTo(height, t.panelShutForMs));
-    const fadesAt = t.track.since + (t.panelShutForMs === null ? NEXT_FRAME_MS : 0) + waitMs;
+    const isTurnedBack = t.panelShutForMs !== null;
+    const fadesAt = isTurnedBack ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height);
     return t.track.state === "open" || now >= fadesAt;
   };
   const panelFadeWaitMs = (t) => t.track.state === "open" ? NEXT_FRAME_MS : 0;
@@ -6446,8 +6449,11 @@ function panelEl(r, m, p, isLeaving, titleEnd) {
   const key = panelId(r.id);
   const opacity = m?.panel ?? null;
   const height = p.heights.get(key) ?? 0;
-  const delay = m?.isPanelWaiting ? enterDelayMs(height, shutTo(height, m.panelShutForMs)) : 0;
-  const glide = { duration: ROW_FADE_MS[m?.state ?? "open"], delay, easing: "ease-out" };
+  const isTurnedBack = m?.isPanelWaiting === true && m.panelShutForMs !== null;
+  const space = shutTo(height, m?.panelShutForMs ?? null);
+  const delay = m?.isPanelWaiting && !isTurnedBack ? enterDelayMs(height, space) : 0;
+  const duration = isTurnedBack ? turnBackFadeMs(height, space) : ROW_FADE_MS[m?.state ?? "open"];
+  const glide = { duration, delay, easing: "ease-out" };
   return [
     v_flex6().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
   ];

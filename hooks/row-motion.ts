@@ -33,6 +33,17 @@ export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 })
 }
 
 /**
+ * How long a row's panel takes to fade back in when the row opens again while it closes, in ms. The fade starts at
+ * once, from the opacity the panel shows, so the row is never near its open height with an empty panel. Its space,
+ * opening to `height` px from `from`, may still be short when the row turns back after the space began to shut. So
+ * the fade ends `ENTER_FADE_MS` after the space is nearly open (`enterDelayMs`), where an opening panel's fade ends,
+ * and the edge of the space cuts the panel's last lines only while they are faint.
+ */
+export function turnBackFadeMs(height: number, from: SpringState): number {
+  return enterDelayMs(height, from) + ENTER_FADE_MS
+}
+
+/**
  * How long an opening row's title keeps its closed form, in ms: until its space, opening to `height` px from `from`,
  * comes to rest. The open form then takes its place in one frame, which moves nothing and cuts no line. A closing
  * row's title takes its closed form at once, in the draw that starts the close, while its space still holds the open
