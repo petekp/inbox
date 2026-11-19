@@ -5,6 +5,7 @@ import { Window } from 'happy-dom'
 import { LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
 import TAB_HTML from '../src/tab.html'
 import { NO_HOLDS } from '../../hooks/timing'
+import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
 import type { Item } from '../../types'
 import { emptyState } from '../src/state'
 import { viewOf } from '../src/core'
@@ -24,13 +25,36 @@ const item = (id: string, ask: string, at: number): Item => ({
 })
 
 type Move = { key: string; delay: number; startsAt: number; scalesEdges: boolean }
-type Fade = { el: HTMLElement; from: number; to: number; delay: number }
+type Fade = {
+  el: HTMLElement
+  from: number
+  to: number
+  delay: number
+  startsAt: number
+  duration: number
+  fill: FillMode
+  anim: Animation
+}
+
+function opacityNow(f: Fade | undefined): number | null {
+  if (!f || f.anim.playState === 'idle') return null
+  const elapsed = Date.now() - f.startsAt
+  const holdsFirst = f.fill === 'backwards' || f.fill === 'both'
+  const holdsLast = f.fill === 'forwards' || f.fill === 'both'
+  if (elapsed < 0) return holdsFirst ? f.from : null
+  if (elapsed >= f.duration) return holdsLast ? f.to : null
+
+  return f.from + ((f.to - f.from) * elapsed) / f.duration
+}
 
 async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext) {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
+  const now = performance.now
+  performance.now = () => Date.now()
   const window = new Window()
   const moves: Move[] = []
   const fades: Fade[] = []
+  const lastFades = new WeakMap<object, Fade>()
   const animate = window.HTMLElement.prototype.animate
   window.HTMLElement.prototype.animate = function (this: HTMLElement, ...args: Parameters<typeof animate>) {
     const [frames, timing] = args
@@ -39,12 +63,25 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
       const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
       moves.push({ key, delay, startsAt: Date.now() + delay, scalesEdges: frames.some(f => 'paddingTop' in f) })
     }
-    if (Array.isArray(frames) && frames.length > 1 && frames.every(f => 'opacity' in f)) {
-      const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
-      fades.push({ el: this, from: Number(frames[0]!.opacity), to: Number(frames.at(-1)!.opacity), delay })
-    }
     const animation = animate.apply(this, args)
     animation.finished.catch(() => {})
+    if (Array.isArray(frames) && frames.length > 1 && frames.every(f => 'opacity' in f)) {
+      const options = (timing ?? {}) as KeyframeAnimationOptions
+      const delay = Number(options.delay ?? 0)
+      const [from, to] = [Number(frames[0]!.opacity), Number(frames.at(-1)!.opacity)]
+      const fade = {
+        el: this,
+        from,
+        to,
+        delay,
+        startsAt: Date.now() + delay,
+        duration: Number(options.duration ?? 0),
+        fill: options.fill ?? 'none',
+        anim: animation as unknown as Animation,
+      }
+      fades.push(fade)
+      lastFades.set(this, fade)
+    }
     return animation
   }
   window.HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
@@ -86,7 +123,18 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
     ResizeObserver: window.ResizeObserver,
     sessionStorage: window.sessionStorage,
     matchMedia: () => media,
-    getComputedStyle: window.getComputedStyle.bind(window),
+    getComputedStyle: (el: Parameters<typeof window.getComputedStyle>[0]) => {
+      const style = window.getComputedStyle(el)
+      const opacity = opacityNow(lastFades.get(el))
+      if (opacity === null) return style
+      return new Proxy(style, {
+        get: (s, k) => {
+          if (k === 'opacity') return String(opacity)
+          const value = Reflect.get(s, k, s)
+          return typeof value === 'function' ? value.bind(s) : value
+        },
+      })
+    },
     DEMO_BUTTON: false,
     DEMO_RECORDING: false,
   }
@@ -127,6 +175,7 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
       },
     })
   } finally {
+    performance.now = now
     await window.happyDOM.abort()
     await window.happyDOM.close()
     for (const [key, descriptor] of previous) {
@@ -145,7 +194,7 @@ type Harness = {
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens moves at once and fades its panel in once its space is nearly open, a close they turn back keeps its panel shown, a closing row’s clamped title draws the closed weight, and a dismissed open row draws only its settled line', async context => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, a moving row’s clamped title draws the closed weight, and a dismissed open row draws only its settled line', async context => {
   await inTab(async ({ state, moves, fades, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-read')
@@ -174,7 +223,23 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
       last = arriving
     }
     const pressed = item('i9', 'Update the changelog', 9)
-    state.ledger = { ...state.ledger, items: [item('i1', 'Check the build', 1), pressed] }
+    const subject = {
+      id: 's1',
+      name: 'Changelog',
+      status: 'working' as const,
+      text: 'notes for the release',
+      was: null,
+      merged: null,
+      createdAt: 1,
+      changedAt: 1,
+      closedAt: null,
+      into: null,
+    }
+    state.ledger = {
+      ...state.ledger,
+      overview: { ...EMPTY_SESSION_STATUS, subjects: [subject], askSubjects: { [pressed.id]: [subject.id] } },
+      items: [item('i1', 'Check the build', 1), pressed],
+    }
     await read()
     await settle()
     await after(40)
@@ -188,34 +253,94 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     }
     const panelFades = (id: string) =>
       fades
-        .filter(f => f.el.matches('.panel') && rowOf(id).contains(f.el))
+        .filter(f => f.el.closest('.panel') && rowOf(id).contains(f.el))
         .map(({ from, to, delay }) => ({ from, to, delay }))
     await press(pressed.id)
+    const shrinks = moves.filter(m => m.key.includes('i1'))
+    assert.ok(shrinks.length > 0, 'closing i1 started no glide')
+    for (const m of shrinks)
+      assert.ok(m.delay >= LEAVE_FADE_MS, `${m.key} shrinks ${m.delay} ms in, before its panel fades`)
+    assert.ok(
+      panelFades('i1').some(f => f.from === 1 && f.to === 0 && f.delay === 0),
+      `the closing panel does not fade out at once: ${JSON.stringify(panelFades('i1'))}`,
+    )
     const opens = moves.filter(m => m.key.includes(pressed.id))
     assert.ok(opens.length > 0, `pressing ${pressed.id} started no glide`)
-    for (const m of opens) assert.ok(m.delay === 0, `${m.key} waits ${m.delay} ms after the person pressed it`)
+    for (const m of opens)
+      assert.ok(
+        Math.abs(m.delay - LEAVE_FADE_MS) < 1,
+        `${m.key} waits ${m.delay} ms, not until the closing panel fades`,
+      )
     const shows = panelFades(pressed.id)
     assert.ok(
-      shows.some(f => f.from === 0 && f.to === 1 && f.delay > 0),
+      shows.some(f => f.from === 0 && f.to === 1 && f.delay > LEAVE_FADE_MS),
       `the opened panel does not wait for its space: ${JSON.stringify(shows)}`,
     )
     const style = document.createElement('style')
     style.textContent = [...TAB_HTML.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n')
     document.head.append(style)
-    await after(ROW_STATE_MS.opening + 50)
+    await after(ROW_STATE_MS.closing + 50)
     await press('i1')
+    const opening = rowOf('i1').querySelector<HTMLElement>('.row.selected .line .text.short')!
+    assert.notEqual(getComputedStyle(opening).fontWeight, '600')
     const title = (clamped: boolean) =>
       rowOf(pressed.id).querySelector<HTMLElement>(`.row.closing .line .text${clamped ? '.short' : ':not(.short)'}`)!
     assert.equal(getComputedStyle(title(false)).fontWeight, '600')
     assert.notEqual(getComputedStyle(title(true)).fontWeight, '600')
-    await after(60)
-    fades.length = 0
+    const fadesOut = () => fades.filter(f => f.to === 0 && f.el.closest('.panel') && rowOf(pressed.id).contains(f.el))
+    const stillFadingOut = () => fadesOut().filter(f => f.anim.playState !== 'idle').length
+    for (const turnsBackAtMs of [60, 0]) {
+      await after(turnsBackAtMs)
+      assert.ok(fadesOut().length > 0, `closing ${pressed.id} faded no panel out`)
+      fades.splice(0, fades.length, ...fadesOut())
+      await press(pressed.id)
+      assert.deepEqual(
+        panelFades(pressed.id).filter(f => f.from === 0),
+        [],
+        `a close the person turned back ${turnsBackAtMs} ms in fades its panel in again from nothing`,
+      )
+      assert.equal(stillFadingOut(), 0, `a close turned back ${turnsBackAtMs} ms in leaves its panel fading out`)
+      if (turnsBackAtMs)
+        assert.ok(
+          panelFades(pressed.id).some(f => f.from > 0 && f.from < 1 && f.to === 1),
+          `a close turned back ${turnsBackAtMs} ms in does not fade its panel back from what it shows`,
+        )
+      await after(ROW_STATE_MS.opening + 50)
+      fades.length = 0
+      if (turnsBackAtMs) await press('i1')
+    }
+    assert.ok(rowOf(pressed.id).querySelector('.panel .branch.holds-up'), `${pressed.id} draws no Holds up line`)
+    const third = item('i7', 'Answer the review', 7)
+    state.ledger = { ...state.ledger, items: [...state.ledger.items, third] }
+    await read()
+    await settle()
+    await after(ROW_STATE_MS.entering + 200)
+    const opensNow = async (id: string, what: string) => {
+      moves.length = 0
+      await press(id)
+      const opens = moves.filter(m => m.key.includes(id))
+      assert.ok(opens.length > 0, `pressing ${id} started no glide`)
+      for (const m of opens) assert.equal(m.delay, 0, `${m.key} waits ${m.delay} ms after ${what}`)
+    }
+    await press('i1')
+    const i1Shows = panelFades('i1').find(f => f.from === 0 && f.to === 1)
+    assert.ok(i1Shows && i1Shows.delay >= LEAVE_FADE_MS, `i1's panel shows too soon: ${JSON.stringify(i1Shows)}`)
+    await after(LEAVE_FADE_MS)
     await press(pressed.id)
-    assert.deepEqual(
-      panelFades(pressed.id).filter(f => f.from < 0.99),
-      [],
-      'a close the person turned back fades its shown panel in again from less than shown',
-    )
+    await opensNow(third.id, 'the close of a turned-back row whose panel shows nothing yet')
+    await after(ROW_STATE_MS.closing + 50)
+    await press('i1')
+    await after(60)
+    await press(third.id)
+    const arriving = item('i8', 'Rerun the checks', 8)
+    state.ledger = { ...state.ledger, items: [...state.ledger.items, arriving] }
+    moves.length = 0
+    await after(20)
+    await read()
+    await settle()
+    const grows = moves.filter(m => m.key.includes(arriving.id))
+    assert.ok(grows.length > 0, `${arriving.id} does not grow`)
+    for (const m of grows) assert.equal(m.delay, 0, `${m.key} waits ${m.delay} ms for a close that was turned back`)
     await after(ROW_STATE_MS.opening + 50)
     const dismissed = {
       id: pressed.id,
@@ -226,7 +351,7 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     }
     state.ledger = {
       ...state.ledger,
-      items: [item('i1', 'Check the build', 1)],
+      items: [item('i1', 'Check the build', 1), third, arriving],
       closed: [...state.ledger.closed, { ...dismissed, at: Date.now(), item: pressed }],
     }
     await read()

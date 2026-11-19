@@ -78,3 +78,6 @@ export class Heights {
 
 /** The key a row's title is measured under. */
 export const titleId = (id: string): string => `title ${id}`
+
+/** The key a row's panel is measured under, beside the row's own height. */
+export const panelId = (id: string): string => `panel ${id}`

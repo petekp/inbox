@@ -57,7 +57,8 @@ export type RowTrack = { state: RowState; since: number; hasOpenForm: boolean; e
 /**
  * Whether a row draws the open row's panel: while its open form is part of its move, except as it settles. A settling
  * row swaps its settled line and Undo in for its whole open row at once, with no panel and no glide of its title, and
- * only its height moves. A closing or leaving row keeps the panel drawn while its height shrinks over it.
+ * only its height moves. A closing or leaving row keeps the panel drawn while it fades out, and its height shrinks
+ * once the fade ends.
  */
 export const drawsPanel = (track: RowTrack): boolean => track.hasOpenForm && track.state !== 'settling'
 
@@ -76,12 +77,12 @@ export const ROW_FADE_MS: Record<RowState, number> = {
 
 /**
  * How long each moving state lasts, in ms: until its height spring and its fade have both come to rest, so a row
- * keeps what it moves away from drawn while any of it shows. A leaving row's spring starts once its fade ends. Resting
- * states are 0.
+ * keeps what it moves away from drawn while any of it shows. A leaving or closing row's spring starts once its fade
+ * ends. Resting states are 0.
  */
 export const ROW_STATE_MS: Record<RowState, number> = Object.fromEntries(
   Object.entries(ROW_FADE_MS).map(([state, fadeMs]) => {
-    const springStarts = state === 'leaving' ? LEAVE_FADE_MS : 0
+    const springStarts = state === 'leaving' || state === 'closing' ? LEAVE_FADE_MS : 0
 
     return [state, fadeMs > 0 ? Math.max(fadeMs, springStarts + HEIGHT_SETTLE_MS) : 0]
   }),
