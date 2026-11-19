@@ -159,6 +159,14 @@ const FIXED_RULES: Rule[] = [
     reads: 'facts',
     property: 1,
     text: 'A head title that names the whole focus in the facts stays on it while the facts keep that title, so it is never retitled to a piece of the work.',
+    opportunity: ({ result, before }) => {
+      const pattern = result.facts.titleMatch
+      return (
+        !!pattern &&
+        pattern === before.facts.titleMatch &&
+        new RegExp(pattern, 'i').test(before.overview?.head?.title ?? '')
+      )
+    },
     failures: ({ result, before }) => {
       const pattern = result.facts.titleMatch
       if (!pattern || pattern !== before.facts.titleMatch) return []
