@@ -64,7 +64,7 @@ test('a row turned back twice, closed again while its space regrows and opened a
   }
 })
 
-test('a row closed again while its turned-back panel is still faint hides the panel at once and cuts nothing that shows', () => {
+test('a row closed again while its turned-back panel is still faint keeps the panel drawn and cuts it only at 0.2 or under', () => {
   const open = asks(ALL, 'd11')
   const shut = asks(ALL, 'd11', null, ['d11'])
   const timings: [number, number][] = [
@@ -82,7 +82,12 @@ test('a row closed again while its turned-back panel is still faint hides the pa
       ],
       1400,
     )
-    expect({ shutAt, cuts: frames.cuts.filter(c => c.box === 'panel d11') }).toEqual({ shutAt, cuts: [] })
+    const closeStart = frames.fading.filter(f => f.id === 'panel d11' && f.at >= shutAt && f.at < shutAt + 32)
+    expect({
+      shutAt,
+      cuts: frames.cuts.filter(c => c.box === 'panel d11'),
+      isDrawnAsCloseStarts: closeStart.length > 0 && closeStart.every(f => f.opacity > 0),
+    }).toEqual({ shutAt, cuts: [], isDrawnAsCloseStarts: true })
   }
 })
 

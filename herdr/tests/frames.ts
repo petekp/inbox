@@ -10,12 +10,12 @@ const { moveRows, NO_TRACKS } = await import('../src/motion')
 const { Heights, MOVED_TO, panelId } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
-const { TURNED_BACK_CUT_OPACITY } = await import('../../hooks/row-motion')
+const { CUT_OPACITY, TURNED_BACK_CUT_OPACITY } = await import('../../hooks/row-motion')
+const { easeOut } = await import('../src/panel-steps')
 
 const FRAME_MS = 16
 const PANE_WIDTH = 300
 const WRAP_AT = 40
-const CUT_MAX_OPACITY = 0.2
 const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 
 type Box = { top: number; height: number }
@@ -152,20 +152,6 @@ class Springs {
       s.v = next.v
     }
   }
-}
-
-/** The progress of a CSS `ease-out` curve, cubic-bezier(0, 0, .58, 1), after the share `x` of its time. */
-function easeOut(x: number): number {
-  const at = (t: number, control: number) => 3 * (1 - t) * t * t * control + t ** 3
-  let lo = 0
-  let hi = 1
-  for (let i = 0; i < 30; i++) {
-    const mid = (lo + hi) / 2
-    if (at(mid, 0.58) < x) lo = mid
-    else hi = mid
-  }
-
-  return at((lo + hi) / 2, 1)
 }
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
@@ -342,8 +328,8 @@ class Frames {
       const box = boxOf(node)
       const opacity = this.fades.opacityOf(node)
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
-      const maxOpacity = turnedBackPanels.has(box ?? '') ? TURNED_BACK_CUT_OPACITY : CUT_MAX_OPACITY
-      if (opacity >= maxOpacity) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
+      const maxOpacity = turnedBackPanels.has(box ?? '') ? TURNED_BACK_CUT_OPACITY : CUT_OPACITY
+      if (opacity > maxOpacity) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
     }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)

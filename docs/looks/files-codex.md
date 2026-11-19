@@ -8,6 +8,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-state.ts` | Codex adapter. The page's state. `tabState` holds each value that more than one tab file sets, and the file also holds the shared maps and sets and the row types. |
 | `codex/src/tab-host.ts` | Codex adapter. The bridge to Codex: timers, `request` and `callTool`, the message listener, the host's theme, and `dispose`. |
 | `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the animation each row state starts, tab widths, folds, and the draws that end a move. |
+| `codex/src/tab-panel-fade.ts` | Codex adapter. A row's panel fades: through a list of steps, the parts of a closing panel that fade, and a faint turned-back panel's close. |
 | `codex/src/tab-glide.ts` | Codex adapter. The Web Animations each move plays: the spring glide of a height or offset, and fades. |
 | `codex/src/tab-title-motion.ts` | Codex adapter. When a row's title swaps between its full and clamped forms while its line grows or shrinks, so one form shows at a time and the line never cuts a line of the title that shows. |
 | `codex/src/tab-page-variables.ts` | Codex adapter. The shared spacing scale and motion lengths, set as the CSS variables the tab's styles read. |

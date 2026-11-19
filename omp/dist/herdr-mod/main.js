@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T07:50:25.965Z. 302068 characters follow.
+// Built at 2026-11-19T08:01:14.487Z. 303336 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5208,6 +5208,11 @@ function turnBackFades(height, from) {
   const full = { to: 1, ms: ENTER_FADE_MS };
   return dimMs > 0 ? [{ to: TURNED_BACK_CUT_OPACITY, ms: dimMs }, full] : [full];
 }
+var CUT_OPACITY = 0.2;
+function faintCloseFades(opacity) {
+  const out = { to: 0, ms: LEAVE_FADE_MS };
+  return opacity > CUT_OPACITY ? [{ to: CUT_OPACITY, ms: 0 }, out] : [out];
+}
 function titleSwapMs(height, from) {
   return (springFrames(from, height).length - 1) * FRAME_MS;
 }
@@ -5390,13 +5395,42 @@ function aimSpace(last, to, now) {
     return { box: { x: to, v: 0 }, at: now, to };
   return to === last.to ? last : { box: spaceNow(last, now), at: now, to };
 }
-function stepsFrom(now, space, height) {
+function timed(now, from, fades) {
   let at = now;
-  return turnBackFades(height, space ? spaceNow(space, now) : { x: height, v: 0 }).map((step) => {
-    const started = { ...step, at };
-    at += step.ms;
+  let opacity = from;
+  return fades.map((step) => {
+    const started = { ...step, at, from: opacity };
+    at += Math.max(step.ms, NEXT_FRAME_MS);
+    opacity = step.to;
     return started;
   });
+}
+function stepsFrom(now, space, height, opacity) {
+  return timed(now, opacity, turnBackFades(height, space ? spaceNow(space, now) : { x: height, v: 0 }));
+}
+var faintCloseSteps = (now, steps) => {
+  const opacity = opacityAt(steps, now);
+  return timed(now, opacity, faintCloseFades(opacity));
+};
+function easeOut(x) {
+  const at = (t, control) => 3 * (1 - t) * t * t * control + t ** 3;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0;i < 30; i++) {
+    const mid = (lo + hi) / 2;
+    if (at(mid, 0.58) < x)
+      lo = mid;
+    else
+      hi = mid;
+  }
+  return at((lo + hi) / 2, 1);
+}
+function opacityAt(steps, now) {
+  const step = steps.findLast((s) => s.at <= now) ?? steps[0];
+  if (!step)
+    return 0;
+  const share = step.ms > 0 ? Math.min(1, Math.max(0, (now - step.at) / step.ms)) : 1;
+  return step.from + (step.to - step.from) * easeOut(share);
 }
 
 // src/title-motion.ts
@@ -5540,10 +5574,10 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const height = heightOf(panelId(id)) ?? 0;
     if (height <= 0 || t.track.state !== "open" && t.track.state !== "opening")
       return false;
-    const isTurnedBack = t.panelSteps !== null;
-    const fadesAt = isTurnedBack ? t.panelSteps?.at(-1)?.at ?? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height);
-    return t.track.state === "open" || now >= fadesAt;
+    const fadesAt = t.panelSteps ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height);
+    return t.track.state === "open" || now >= fadesAt && !isPanelFaint(t);
   };
+  const isPanelFaint = (t) => t.track.state === "opening" && t.panelSteps !== null && now < (t.panelSteps.at(-1)?.at ?? now);
   const panelFadeWaitMs = (t) => t.track.state === "open" ? NEXT_FRAME_MS : 0;
   const panelHolds = new Map(blocks.flatMap((b) => {
     const old = was.rows.get(b.id);
@@ -5576,7 +5610,9 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const under = stepUnder(last?.under ?? null, block, now, isInput);
     const isTurnedBack = isStart && track.state === "opening" && last?.track.state === "closing";
     const panelHeight = heightOf(panelId(block.id));
-    const panelSteps = track.state !== "opening" ? null : isTurnedBack ? stepsFrom(now, last?.panelSpace ?? null, panelHeight ?? 0) : isStart ? null : last?.panelSteps ?? null;
+    const lastSteps = last?.panelSteps ?? null;
+    const isFaintClose = isStart && track.state === "closing" && last !== undefined && isPanelFaint(last);
+    const panelSteps = track.state !== "opening" && track.state !== "closing" ? null : isTurnedBack ? stepsFrom(now, last?.panelSpace ?? null, panelHeight ?? 0, lastSteps ? opacityAt(lastSteps, now) : 0) : isFaintClose && lastSteps ? faintCloseSteps(now, lastSteps) : isStart ? null : lastSteps;
     const panelStep = panelSteps?.findLast((step) => step.at <= now) ?? null;
     const panelHeldUntil = track.state !== "closing" ? 0 : isStart ? panelHolds.get(block.id) ?? now : last?.panelHeldUntil ?? 0;
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
@@ -5585,7 +5621,6 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil);
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state));
     const holdsPanel = drawsPanel(track) && !isLeftOut;
-    const isHiddenAtOnce = closing !== null && isStart && !isHeld && last?.track.state === "opening";
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
     const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), isHeld) : null;
     rows.set(block.id, {
@@ -5611,7 +5646,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       shutForMs: glide?.shutForMs ?? null,
       panel: panelStep?.to ?? panelOf(track.state, isStart, last?.track.state, closing),
       isPanelWaiting: track.state === "opening",
-      panelFadeMs: panelStep?.ms ?? (isHiddenAtOnce ? 0 : null),
+      panelFadeMs: panelStep?.ms ?? null,
       closing,
       isPanelLeftOut: isLeftOut || wasClosing && block.kind === "row",
       title: titleMotion(title, now),

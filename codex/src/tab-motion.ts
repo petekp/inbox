@@ -8,7 +8,7 @@ import {
   ROW_STATE_MS,
   turnBackFades,
 } from '../../hooks/row-motion'
-import type { FadeStep, RowState } from '../../hooks/row-motion'
+import type { RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
@@ -28,6 +28,7 @@ import {
   stopFadeOut,
   waitLeftMs,
 } from './tab-glide'
+import { fadeFaintPanel, fadeThrough, fadingParts, shownPanel } from './tab-panel-fade'
 
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -143,22 +144,18 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   closeWaitMs = 0
 }
 
-/** A closing row's panel while any of the parts that fade shows. */
-function shownPanel(el: HTMLElement): HTMLElement | null {
-  const part = el.querySelector<HTMLElement>('.closing[inert]')
-  const isShown = part !== null && fadingParts(part).some(p => opacityOf(p) > 0.01)
-
-  return isShown ? part : null
-}
-
-/** How long a row that starts to open in this draw waits for the panels of closing rows to fade out, in ms. */
+/**
+ * How long a row that starts to open in this draw waits for the panels of closing rows to fade out, in ms. A faint
+ * turned-back panel shuts with its space and holds no other row.
+ */
 function closeWaitOf(els: HTMLElement[], changed: ReadonlySet<string>): number {
   const now = Date.now()
   for (const el of els) {
     const key = el.dataset.motion!
     const state = changed.has(key) ? drawnRows.get(key)?.track.state : undefined
     if (state === 'opening') closeHolds.delete(key)
-    if (state === 'closing' && shownPanel(el)) closeHolds.set(key, now + LEAVE_FADE_MS)
+    const isFaint = state === 'closing' && isOpeningShort(el, springOf(el, el.getBoundingClientRect().height))
+    if (state === 'closing' && !isFaint && shownPanel(el)) closeHolds.set(key, now + LEAVE_FADE_MS)
   }
   for (const [key, until] of closeHolds) if (until <= now) closeHolds.delete(key)
 
@@ -277,33 +274,6 @@ function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: 
   }
 }
 
-/**
- * Fades an element from `from` through `steps` after `delay` ms, each step once the one before it ends. A step before
- * the last whose opacity it already shows is skipped. A fade that replaces a step cancels it, which ends the steps
- * after it.
- */
-function fadeThrough(el: HTMLElement, from: number, steps: FadeStep[], delay: number) {
-  const [step, ...rest] = steps
-  if (!step) return
-  if (from >= step.to && rest.length > 0) return fadeThrough(el, from, rest, delay)
-  const anim = fade(el, from, step.to, step.ms, rest.length > 0, false, delay)
-  if (rest.length > 0)
-    anim.finished.then(
-      () => fadeThrough(el, step.to, rest, 0),
-      () => {},
-    )
-}
-
-/** A panel's Holds up line, which the closed line draws in the same place once the row's close ends. */
-const HOLDS_UP = '.branch.holds-up'
-
-/** The parts of a closing row's panel that fade out: all of it but its Holds up line, which stays shown. */
-function fadingParts(el: HTMLElement): HTMLElement[] {
-  if (!el.querySelector(HOLDS_UP)) return [el]
-
-  return [...el.children].flatMap(c => (c.matches(HOLDS_UP) ? [] : fadingParts(c as HTMLElement)))
-}
-
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */
 function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh: boolean, openTop: number | null) {
   switch (state) {
@@ -335,8 +305,9 @@ function isInsideLeaving(el: HTMLElement): boolean {
 /**
  * Shrinks an entry to the height it comes to rest at, over what it drew open and still draws, inert: a closing row's
  * panel or a PR block's body. A closing row's panel fades out first, while the entry holds its height, so the shrinking
- * height never cuts a line of it that shows. A panel that shows nothing yet, as one still waiting to fade in, or one
- * turned back that shows faint while its space is still short of open, hides at once and holds nothing. A settling PR
+ * height never cuts a line of it that shows. A panel that shows nothing yet, as one still waiting to fade in, hides at
+ * once and holds nothing. A turned-back panel that shows faint while its space is still short of open holds nothing
+ * either, and fades out in the steps of `faintCloseFades` while the height shrinks. A settling PR
  * block's dismissed head replaces the line above its body, so the body keeps the top it had at `openTop` while the
  * height shrinks over it. A settling row draws only its settled line.
  */
@@ -362,11 +333,12 @@ function collapse(
   if (part) part.style.display = ''
   row?.classList.add('closing')
   if (part && state === 'settling' && openTop !== null) keepTop(el, part, openTop)
-  const shown = state === 'closing' && !isShort ? shownPanel(el) : null
-  if (shown) for (const p of fadingParts(shown)) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
+  const shown = state === 'closing' ? shownPanel(el) : null
+  if (shown && isShort) fadeFaintPanel(shown)
+  else if (shown) for (const p of fadingParts(shown)) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
   else if (part && state === 'closing') fade(part, 0, 0, 0, true)
   const opacity = opacityOf(el)
-  const shrinksAfter = Math.max(delay, shown ? LEAVE_FADE_MS : 0)
+  const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0)
   glide(el, 'height', from, target, true, false, shrinksAfter)
   if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, shrinksAfter)
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)

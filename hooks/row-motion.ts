@@ -53,6 +53,21 @@ export function turnBackFades(height: number, from: SpringState): FadeStep[] {
   return dimMs > 0 ? [{ to: TURNED_BACK_CUT_OPACITY, ms: dimMs }, full] : [full]
 }
 
+/** The most any other text shows where the edge of a moving space cuts it. */
+export const CUT_OPACITY = 0.2
+
+/**
+ * How a row's panel fades out when the row closes again while its turned-back panel is still faint, its space short of
+ * open, from the `opacity` it shows. The space shuts from where it is, at once, so the panel steps at once to
+ * `CUT_OPACITY` if it shows more, and fades from there to none over `LEAVE_FADE_MS`. Its text stays drawn while its
+ * space shuts, and the shutting edge cuts it only while it is that faint.
+ */
+export function faintCloseFades(opacity: number): FadeStep[] {
+  const out: FadeStep = { to: 0, ms: LEAVE_FADE_MS }
+
+  return opacity > CUT_OPACITY ? [{ to: CUT_OPACITY, ms: 0 }, out] : [out]
+}
+
 /**
  * How long an opening row's title keeps its closed form, in ms: until its space, opening to `height` px from `from`,
  * comes to rest. The open form then takes its place in one frame, which moves nothing and cuts no line. A closing
