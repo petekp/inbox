@@ -8,7 +8,7 @@ import { CLAUDE_CODE } from '../hooks/model-text'
 import { hostStatusSystem, nextGoalRetry } from '../hooks/status-prompt'
 import { screenText } from '../hooks/inbox-text'
 import type { StatusCallInput } from '../hooks/status-prompt'
-import { askStatus, parseStatus } from '../hooks/status'
+import { askStatus } from '../hooks/status'
 import { childEnded, lookEnded, lookStarted } from '../hooks/status-children'
 import { emptySession } from '../hooks/session-files'
 import { appliedStatus, failedStatus } from '../hooks/session-status'
@@ -239,7 +239,7 @@ async function statusCall(
   const input: StatusCallInput = { last: s.ledger.overview, asks: s.ledger.items, tasks, now }
   const prompt = statusCallPrompt(input, read)
   const logs: CallLog[] = []
-  const { last } = await askStatus(
+  const { answer, last } = await askStatus(
     async retry => {
       const kind = { call: 'status', reads: read.kind, isRetry: logs.length > 0 } as const
       const answer = await timed(
@@ -259,7 +259,6 @@ async function statusCall(
     ms: logs.reduce((n, l) => n + l.ms, 0),
     costUsd: logs.some(l => l.costUsd !== null) ? logs.reduce((n, l) => n + (l.costUsd ?? 0), 0) : null,
   }
-  const answer = last.text === null ? null : parseStatus(last.text)
   const turns = s.presence.turnsApplied
   const current = during(s)
   const readSetAt = input.last?.goal?.setAt ?? null

@@ -145,22 +145,36 @@ export function parseStatus(text: string | null): StatusAnswer | null {
 }
 
 /**
+ * The answer to apply after the next-goal retry: every line of `first`, and only the GOAL and SUGGEST lines of
+ * `retry`, so a retry that answers only the goal keeps the subject lines the first answer wrote.
+ */
+export function withNextGoal(first: StatusAnswer, retry: StatusAnswer | null): StatusAnswer {
+  const goalOps = retry?.kind === 'ops' ? retry.ops.filter(o => o.kind === 'goal' || o.kind === 'suggest') : []
+  if (goalOps.length === 0) return first
+
+  return { kind: 'ops', ops: [...(first.kind === 'ops' ? first.ops : []), ...goalOps] }
+}
+
+/**
  * Asks the Status call through `ask`, and once more when the answer holds no operation, as `parseStatus` refuses it.
  * When `retryFor` gives a prompt for an answer that parses, the call is asked once more with that prompt, and the
- * second answer applies when it parses. A call that gives no text is not asked again. Returns the first answer and the
- * one to apply, which are the same when the call was asked once.
+ * GOAL and SUGGEST lines of the second answer are added to the first. A call that gives no text is not asked again.
+ * Returns the answer to apply, null when none parsed, and the last call's result.
  */
 export async function askStatus<T extends { text: string | null }>(
   ask: (prompt: string | null) => Promise<T>,
   retryFor: (answer: StatusAnswer, text: string) => string | null = () => null,
-): Promise<{ first: T; last: T }> {
+): Promise<{ answer: StatusAnswer | null; last: T }> {
   const first = await ask(null)
-  if (first.text === null) return { first, last: first }
+  if (first.text === null) return { answer: null, last: first }
   const answer = parseStatus(first.text)
-  if (answer === null) return { first, last: await ask(null) }
+  if (answer === null) {
+    const again = await ask(null)
+    return { answer: parseStatus(again.text), last: again }
+  }
   const retry = retryFor(answer, first.text)
-  if (retry === null) return { first, last: first }
+  if (retry === null) return { answer, last: first }
   const again = await ask(retry)
 
-  return { first, last: parseStatus(again.text) === null ? first : again }
+  return { answer: withNextGoal(answer, parseStatus(again.text)), last: again }
 }

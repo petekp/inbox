@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { parseStatus } from '../hooks/status'
+import { parseStatus, withNextGoal } from '../hooks/status'
 import type { Op, StatusAnswer } from '../hooks/status'
 import { applyOps, applyStatus } from '../hooks/status-ops'
 import { upgradeStatus } from '../hooks/status-upgrade'
@@ -55,9 +55,21 @@ function withCarriedText(saved: SessionStatus | null, previous: SessionStatus | 
   return { ...saved, milestones }
 }
 
+/**
+ * The answer the recording build applied: the last that parsed, or after the next-goal retry, which the attempt's own
+ * prompt marks, the first answer with the retry's GOAL and SUGGEST lines.
+ */
+function answerOf(record: StatusRecord): StatusAnswer | null {
+  const [first, ...rest] = record.attempts.filter(a => a.answer)
+  const retry = rest.find(a => a.prompt !== undefined)
+  const firstAnswer = parseStatus(first?.answer ?? null)
+  if (retry && firstAnswer) return withNextGoal(firstAnswer, parseStatus(retry.answer))
+
+  return parseStatus(record.attempts.filter(a => a.answer).at(-1)?.answer ?? null)
+}
+
 function replay(session: number, record: StatusRecord, previous: SessionStatus | null): Replayed {
-  const text = record.attempts.filter(a => a.answer).at(-1)?.answer ?? null
-  const answer = text === null ? null : parseStatus(text)
+  const answer = answerOf(record)
   const base = withCarriedText(upgradeStatus(record.before), previous)
   const now = appliedAt(record)
   const askIds = new Set((record.input?.asks ?? []).map(i => i.id))

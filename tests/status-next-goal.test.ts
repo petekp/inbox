@@ -17,7 +17,7 @@ const isAsked = (o: SessionStatus | null) => goalBlocks(o, 30 * MIN).some(b => b
 
 async function asked(last: SessionStatus | null, answers: string[]) {
   const prompts: string[] = []
-  const { last: applied } = await askStatus(
+  const { answer: applied } = await askStatus(
     async retry => {
       prompts.push(retry ?? PROMPT)
       return { text: answers.shift() ?? null }
@@ -25,7 +25,7 @@ async function asked(last: SessionStatus | null, answers: string[]) {
     nextGoalRetry(last, PROMPT),
   )
 
-  return { prompts, applied: parseStatus(applied.text) }
+  return { prompts, applied }
 }
 
 test('the call is asked for the next goal while no goal runs and none is suggested', () => {
@@ -38,15 +38,29 @@ test('the call is asked for the next goal while no goal runs and none is suggest
   ).toBe(false)
 })
 
-test('an answer with no GOAL or SUGGEST line while the next goal is asked is asked once more, with that answer, and the second applies', async () => {
-  const { prompts, applied } = await asked(met(), ['NO CHANGE', 'NO CHANGE\nSUGGEST: Import shipped to the store'])
+test('an answer with no GOAL or SUGGEST line while the next goal is asked is asked once more, with that answer, and only the goal lines of the second are added to the first', async () => {
+  const { prompts, applied } = await asked(met(), [
+    'NEW: working | Store listing | screenshots taken\nDONE: Dark mode | shipped',
+    'NEW: working | Store page | redone\nSUGGEST: Import shipped to the store',
+  ])
 
   expect(prompts).toHaveLength(2)
-  expect(prompts[1]).toContain(`${PROMPT}\n<your-answer>\nNO CHANGE\n</your-answer>`)
-  expect(applied).toEqual({ kind: 'ops', ops: [{ kind: 'suggest', text: 'Import shipped to the store' }] })
+  expect(prompts[1]).toContain(`${PROMPT}\n<your-answer>\nNEW: working | Store listing | screenshots taken`)
+  expect(applied).toEqual({
+    kind: 'ops',
+    ops: [
+      { kind: 'new', status: 'working', name: 'Store listing', text: 'screenshots taken' },
+      { kind: 'done', ref: 'Dark mode', text: 'shipped' },
+      { kind: 'suggest', text: 'Import shipped to the store' },
+    ],
+  })
+  expect((await asked(met(), ['NO CHANGE', 'SUGGEST: Import shipped'])).applied).toEqual({
+    kind: 'ops',
+    ops: [{ kind: 'suggest', text: 'Import shipped' }],
+  })
 })
 
-test('an answer that gives the next goal, or SUGGEST -, is asked once, and a second answer that does not parse leaves the first', async () => {
+test('an answer that gives the next goal, or SUGGEST -, is asked once, and a second answer with no goal line leaves the first', async () => {
   expect((await asked(met(), ['SUGGEST: -'])).prompts).toHaveLength(1)
   expect((await asked(after(met(), 'SUGGEST: Import shipped', 25 * MIN), ['NO CHANGE'])).prompts).toHaveLength(1)
 

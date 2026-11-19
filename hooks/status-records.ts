@@ -60,6 +60,8 @@ type StatusAttempt = {
   answer: string | null
   error: string | null
   ms: number
+  /** The prompt this call read when it was not the record's `prompt`, as the next-goal retry's. Older records lack it. */
+  prompt?: string
 }
 
 /** A reader refuses a record of another version. */
@@ -143,13 +145,14 @@ export async function writeStatusRecord(records: StatusRecords, record: StatusRe
 }
 
 /** A Status call record's account of one call the host heard. */
-function attemptOf({ text, report, thrown, ms }: HeardCall): StatusAttempt {
+function attemptOf({ text, report, thrown, ms }: HeardCall, prompt: string | null): StatusAttempt {
   return {
     model: report?.model ?? null,
     answeredBy: report?.answeredBy ?? null,
     answer: text,
     error: text === null ? (thrown ?? report?.error ?? 'no answer, and the host gave no reason') : null,
     ms,
+    ...(prompt === null ? {} : { prompt }),
   }
 }
 
@@ -185,18 +188,17 @@ export async function askAndWriteStatus<S extends Session>(
   const input = { last: s.ledger.overview, asks: s.ledger.items, tasks, now: readAt }
   const prompt = statusCallPrompt(input, call.exchange)
   const system = hostStatusSystem(host.names)
-  const heards: { kind: CallKind; heard: HeardCall }[] = []
-  const { last } = await askStatus(
+  const heards: { kind: CallKind; heard: HeardCall; retry: string | null }[] = []
+  const { answer, last } = await askStatus(
     async retry => {
       const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
       const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now())
-      heards.push({ kind, heard })
+      heards.push({ kind, heard, retry })
       return heard
     },
     nextGoalRetry(input.last, prompt),
   )
-  const attempts = heards.map(h => attemptOf(h.heard))
-  const answer = last.text === null ? null : parseStatus(last.text)
+  const attempts = heards.map(h => attemptOf(h.heard, h.retry))
   let before: SessionStatus | null = null
   let isWritten = false
   const answeredTurn = (x: S) => (call.exchange.kind === 'reply' ? call.exchange.exchange.turn : x.ledger.turn)
