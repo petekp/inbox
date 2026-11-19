@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T01:29:00.557Z. 298635 characters follow.
+// Built at 2026-11-19T01:50:10.043Z. 298597 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5882,7 +5882,6 @@ var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, ab
 };
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
-var resultLineEl = (text, color, indent = MARK_W) => lineEl(text, color, indent).pt(CONTROL_GAP);
 
 // src/paint-field.ts
 function fieldEl(f, p, indent, isInert = false, opening = null) {
@@ -6269,7 +6268,7 @@ function noteEl(b, t, buttons = []) {
 // src/paint-parted.ts
 import { div as div12 } from "gpui-kit";
 import { h_flex as h_flex7 } from "gpui-base";
-var SEP_W = 3 * SPACE_UNIT;
+var SEP_W = 9.5;
 function partedEl(parts, dotColor) {
   const slot = (n) => h_flex7().flex_none().w(SEP_W).justify_center().text_color(dotColor).when(n > 0, (e) => e.child("·"));
   const items = parts.map((part, n) => h_flex7().items_start().min_w(0).max_w_full().child(slot(n)).child(div12().min_w(0).child(part)));
@@ -6304,12 +6303,11 @@ var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
 // src/paint-blocks.ts
 var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
+var partedTextEl = (text, color, indent, t) => text.includes(DOT) ? div14().pl(indent).pt(INSIDE_GAP).child(partedEl(text.split(DOT).map((part) => statusPartEl(part).text_color(color)), t.muted)) : lineEl(text, color, indent);
 function feedbackEl(f, t) {
   const cut = f.aged?.lead.length ?? f.text.length;
-  if (f.tone === "muted" && f.text.includes(DOT))
-    return div14().pt(CONTROL_GAP).child(partedEl(f.text.split(DOT).map((part) => statusPartEl(part).text_color(t.muted)), t.muted));
   if (f.tone === "muted" || cut >= f.text.length)
-    return resultLineEl(f.text, colorOf(t, f.tone), 0);
+    return partedTextEl(f.text, colorOf(t, f.tone), 0, t).pt(CONTROL_GAP);
   return h_flex9().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), t.muted)]);
 }
 var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
@@ -6321,7 +6319,7 @@ var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = fal
   const armAt = above + LINE_HEIGHT / 2;
   const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = l.lead ? h_flex9().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above);
+  const line = l.lead ? h_flex9().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : partedTextEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
   return line.relative().children(strokes);
 };
 function rowEl(r, p) {

@@ -22,7 +22,7 @@ import {
 } from './paint-theme'
 import { fieldEl } from './paint-field'
 import { emptyEl } from './paint-empty'
-import { buttonEl, buttonsEl, lineEl, markEl, resultLineEl } from './paint-parts'
+import { buttonEl, buttonsEl, lineEl, markEl } from './paint-parts'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import { underId } from './under-line'
@@ -53,21 +53,26 @@ const wordEls = (text: string, color: Color): Element[] =>
     .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
 
 /**
- * A press's result under its buttons, or a muted note such as a fold's. An aged result's age stays muted whatever the
- * result's color, and a note of DOT-joined parts breaks between its parts.
+ * A line of text `indent` in from its row's edge. A line of DOT-joined parts, such as a fold's note or a thread's place
+ * and author, breaks between its parts, so no line starts or ends with a dot.
  */
+const partedTextEl = (text: string, color: Color, indent: number, t: Theme): Element =>
+  text.includes(DOT)
+    ? div()
+        .pl(indent)
+        .pt(INSIDE_GAP)
+        .child(
+          partedEl(
+            text.split(DOT).map(part => statusPartEl(part).text_color(color)),
+            t.muted,
+          ),
+        )
+    : lineEl(text, color, indent)
+
+/** A press's result under its buttons. An aged result's age stays muted whatever the result's color. */
 function feedbackEl(f: { text: string; tone: Tone; aged?: Aged }, t: Theme): Element {
   const cut = f.aged?.lead.length ?? f.text.length
-  if (f.tone === 'muted' && f.text.includes(DOT))
-    return div()
-      .pt(CONTROL_GAP)
-      .child(
-        partedEl(
-          f.text.split(DOT).map(part => statusPartEl(part).text_color(t.muted)),
-          t.muted,
-        ),
-      )
-  if (f.tone === 'muted' || cut >= f.text.length) return resultLineEl(f.text, colorOf(t, f.tone), 0)
+  if (f.tone === 'muted' || cut >= f.text.length) return partedTextEl(f.text, colorOf(t, f.tone), 0, t).pt(CONTROL_GAP)
 
   return h_flex()
     .flex_wrap()
@@ -113,7 +118,7 @@ const bodyLineEl = (
         .pl(MARK_W)
         .pt(above)
         .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
-    : lineEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W).pt(above)
+    : partedTextEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above)
 
   return line.relative().children(strokes)
 }

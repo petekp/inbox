@@ -1,10 +1,12 @@
 import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
-import { SPACE_UNIT } from '../../hooks/layout'
 
-/** The slot a separator's dot is centred in: about the width ` · ` takes in the pane's font. */
-const SEP_W = 3 * SPACE_UNIT
+/**
+ * The slot a separator's dot is centred in: the width DOT takes in a line of the pane's text, measured in a capture, so
+ * a parted line spaces its parts as a text line does and fits where that text would.
+ */
+const SEP_W = 9.5
 
 /**
  * Parts joined by a dot, as items of a wrapping row. A part that does not fit moves whole to the next line. Each part
