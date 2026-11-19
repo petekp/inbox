@@ -206,15 +206,15 @@ test('running work draws with the milestone its subject serves, also when the su
   expect(p.rows.filter(r => r.kind === 'child')).toHaveLength(1)
 })
 
-test('a queued milestone draws as worked on once work that serves it is working, and as waiting once that work waits outside, keeping where it stands only when the answer wrote it', () => {
-  const served = after(withGoal(), 'SERVES: s4 | m3\nWAS: m3 | a slide deck', 30)
+test('a queued milestone draws as worked on once work that serves it is working, and as waiting once that work waits outside, keeping where it stands', () => {
+  const served = after(withGoal(), 'SERVES: s4 | m3\nSET: m3 | queued | after the logo\nWAS: m3 | a slide deck', 30)
   const looked = { ...served, lastLookAt: 35 }
   const demo = (o: SessionStatus) => page(o, 60).goal?.milestones.find(m => m.id === 'm3')
 
   expect(demo(served)).toMatchObject({ mark: SUBJECT_MARKS.queued.mark })
   expect(demo(after(looked, 'SET: s4 | working | logo drawn', 50))).toMatchObject({
     mark: SUBJECT_MARKS.working.mark,
-    text: null,
+    text: 'after the logo',
     was: null,
   })
   expect(demo(after(looked, 'SET: s4 | waits-on-other | with the designer', 50))).toMatchObject({

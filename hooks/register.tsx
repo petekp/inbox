@@ -3195,7 +3195,7 @@ export const register: Register = on => {
       handlers,
     )
 
-    const shownError = footerError(shownTab, view.status, view.statusPage.error)
+    const shownError = footerError(shownTab, view.status, view.statusPage)
 
     const openIds = openRowIds(view)
     const drawnIds = new Set([...openIds.needsYou, ...openIds.findings, ...prRowIds(shownPrs)])

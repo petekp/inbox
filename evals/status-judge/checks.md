@@ -33,7 +33,7 @@ Examples:
 
 - Pass: `Two-factor sign-in` over `Adding SMS and app codes to sign-in`, while the agent fixes a typo on the way.
 - Pass: `Now: Adding recovery codes to sign-in`, under the goal `Two-factor sign-in in 3.0`.
-- Pass: `Now: Showing recovery codes, then the SMS check`, when the focus is two-factor sign-in as a whole.
+- Pass: `Now: Showing recovery codes and the SMS check`, when the focus is two-factor sign-in as a whole and both are under way.
 - Fail: `Now: Two-factor sign-in in 3.0`, which repeats the goal while the session works on recovery codes.
 - Pass: `3.0 release` over `Shipping two-factor sign-in in 3.0`, after 3.0 shipped, when the person asked for nothing more and the focus is still the release.
 - Fail: the same head after the focus moved to a billing bug.

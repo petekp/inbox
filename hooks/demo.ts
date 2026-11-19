@@ -211,6 +211,8 @@ export function demoView(now: number, agent: string): DemoCopy {
         serves: { s1: 'm2', s3: 'm3', s4: 'm1', s5: 'm5', s6: 'm4', s7: 'none', s8: 'none' },
         goalRefused: null,
         suggestedGoal: null,
+        changedAt: null,
+        quietCalls: 0,
       },
       items: [
         {

@@ -226,6 +226,9 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'no-semicolons': { bad: s => (s1Of(s).text = 'engine done; retries left') },
   'head-no-status': { bad: s => (s.after.head = { title: 'Offline sync', description: 'Offline sync ready' }) },
   'head-follows': { bad: s => (s.after.head = { title: 'Lint error', description: 'Fixing the lint error' }) },
+  'head-no-queued': {
+    bad: s => (s.after.head = { title: 'Offline sync', description: 'Making the engine sync, then shipping 2.5' }),
+  },
   'head-title-kept': {
     good: s => {
       s.facts.titleMatch = 'offline sync'
@@ -310,6 +313,17 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     bad: s => {
       withGoal(s)
       s.after.milestones[1]!.name = 'Sync conflicts'
+    },
+  },
+  'milestone-text': {
+    good: s => {
+      withGoal(s)
+      s.after.milestones[0]!.text = ''
+    },
+    bad: s => {
+      withGoal(s)
+      s.after.milestones[0]!.text = ''
+      s.before = { ...s.before, goal: s.after.goal, milestones: s.after.milestones, serves: s.after.serves }
     },
   },
   'milestone-size': {

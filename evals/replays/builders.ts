@@ -86,6 +86,8 @@ export function overview(o: Pick<SessionStatus, 'head' | 'subjects'> & Partial<S
     serves: {},
     goalRefused: null,
     suggestedGoal: null,
+    changedAt: null,
+    quietCalls: 0,
     ...o,
   }
 }

@@ -170,6 +170,10 @@ export type SessionStatus = {
    * the next call, so every finish reaches the call once. Null before the first.
    */
   lastCallReadAt: number | null
+  /** When a Status call last changed what the page says. Null before the first change this build saw. */
+  changedAt: number | null
+  /** The Status calls since `changedAt` that read agent activity and changed nothing on the page. */
+  quietCalls: number
 }
 
 /** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */
