@@ -351,7 +351,7 @@
       {
         "calls": "record",
         "kind": "question",
-        "max": 1,
+        "count": 1,
         "items": true
       },
       {

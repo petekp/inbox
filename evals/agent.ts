@@ -19,6 +19,7 @@ import { OMP } from '../omp/src/texts'
 import { MODEL } from '../codex/src/update'
 import { agentTools } from '../hooks/tools'
 import { probeTools } from './probe-tools'
+import { readsFor } from './agent-reads'
 import { failures } from './agent-checks'
 import type { Agent, Call, Case, Outcome } from './agent-checks'
 import {
@@ -51,14 +52,16 @@ import {
   provenance,
   readBaselines,
   readCases,
+  repoFile,
   report,
   resultsPath,
   runCount,
   runJobs,
   selectCases,
+  stamp,
   writeResults,
 } from './harness'
-import type { Job, Run } from './harness'
+import type { Job, Run, Stamps } from './harness'
 
 const MIN = 0.75
 const OMP_MODEL = 'anthropic/claude-opus-5-5'
@@ -101,6 +104,45 @@ const CODEX_EFFORT = 'medium'
 const CLAUDE_MODEL = values['claude-model']
 const OMP_RUN_MODEL = values['omp-model']
 const OMP_RUN_MODEL_ID = OMP_RUN_MODEL.split('/').at(-1)
+
+const CLAUDE_FLAGS = [
+  '-p',
+  '--no-session-persistence',
+  '--model',
+  CLAUDE_MODEL,
+  '--strict-mcp-config',
+  '--setting-sources',
+  '',
+  '--tools',
+  '',
+  '--allowedTools',
+  PROBE_TOOLS.join(','),
+  '--output-format',
+  'stream-json',
+  '--verbose',
+]
+const CODEX_FLAGS = ['exec', '--ephemeral', '--skip-git-repo-check', '--strict-config', '--json', '-s', 'read-only']
+const CODEX_SETTINGS = [
+  `model = ${tomlString(MODEL)}`,
+  `model_reasoning_effort = ${tomlString(CODEX_EFFORT)}`,
+  CODEX_WEB_SEARCH_CONFIG,
+  ...(isGuided ? [`developer_instructions = ${tomlString(guidance(CODEX))}`] : []),
+]
+const OMP_FLAGS = [
+  '-p',
+  '--mode',
+  'json',
+  '--no-session',
+  '--no-extensions',
+  '--tools=bash',
+  '--approval-mode=yolo',
+  '--no-lsp',
+  '--no-skills',
+  '--no-rules',
+  '--no-title',
+  '--model',
+  OMP_RUN_MODEL,
+]
 
 /**
  * A fresh folder for one run: the stand-in server's state and log, the working folder with the case's files, and the
@@ -172,32 +214,11 @@ async function claudeIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome
   const config = join(s.dir, 'mcp.json')
   writeFileSync(config, JSON.stringify({ mcpServers: { [PROBE]: { command: process.execPath, args: s.serverArgs } } }))
   // stream-json carries every assistant message. --output-format json returns only the text after the last tool call.
-  const r = await exec(
-    [
-      'claude',
-      '-p',
-      '--no-session-persistence',
-      '--model',
-      CLAUDE_MODEL,
-      '--strict-mcp-config',
-      '--setting-sources',
-      '',
-      '--mcp-config',
-      config,
-      '--tools',
-      '',
-      '--allowedTools',
-      PROBE_TOOLS.join(','),
-      '--output-format',
-      'stream-json',
-      '--verbose',
-    ],
-    {
-      cwd: s.work,
-      env: claudeEnv(),
-      input: message(c, CLAUDE_CODE),
-    },
-  )
+  const r = await exec(['claude', ...CLAUDE_FLAGS, '--mcp-config', config], {
+    cwd: s.work,
+    env: claudeEnv(),
+    input: message(c, CLAUDE_CODE),
+  })
   const events = lines(r.stdout)
   const init = events.find(e => e.type === 'system' && e.subtype === 'init')
   if (!init)
@@ -245,10 +266,7 @@ function codexHome(s: ReturnType<typeof sandbox>): string {
   writeFileSync(
     join(home, 'config.toml'),
     [
-      `model = ${tomlString(MODEL)}`,
-      `model_reasoning_effort = ${tomlString(CODEX_EFFORT)}`,
-      CODEX_WEB_SEARCH_CONFIG,
-      ...(isGuided ? [`developer_instructions = ${tomlString(guidance(CODEX))}`] : []),
+      ...CODEX_SETTINGS,
       `[mcp_servers.${PROBE}]`,
       `command = ${tomlString(process.execPath)}`,
       `args = ${JSON.stringify(s.serverArgs)}`,
@@ -272,22 +290,10 @@ async function runCodex(c: Case): Promise<Outcome> {
 
 async function codexIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome> {
   const home = codexHome(s)
-  const r = await exec(
-    [
-      codexCli,
-      'exec',
-      '--ephemeral',
-      '--skip-git-repo-check',
-      '--strict-config',
-      '--json',
-      '-s',
-      'read-only',
-      '-C',
-      s.work,
-      message(c, CODEX),
-    ],
-    { cwd: s.work, env: { ...codexEnv(s.dir, home), PATH: s.path } },
-  )
+  const r = await exec([codexCli, ...CODEX_FLAGS, '-C', s.work, message(c, CODEX)], {
+    cwd: s.work,
+    env: { ...codexEnv(s.dir, home), PATH: s.path },
+  })
   const events = lines(r.stdout)
   assertCodexUsedOnlyProbe(events)
   const reply = events
@@ -315,42 +321,18 @@ async function ompIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome> {
   const home = join(s.dir, 'omp-home')
   mkdirSync(home)
   const toolsFile = join(s.dir, 'tools.json')
-  const r = await exec(
-    [
-      'sandbox-exec',
-      '-p',
-      writesOnlyUnder(s.dir),
-      'omp',
-      '-p',
-      '--mode',
-      'json',
-      '--no-session',
-      '--no-extensions',
-      '-e',
-      ompProbe,
-      '--tools=bash',
-      '--approval-mode=yolo',
-      '--no-lsp',
-      '--no-skills',
-      '--no-rules',
-      '--no-title',
-      '--model',
-      OMP_RUN_MODEL,
-      c.prompt,
-    ],
-    {
-      cwd: s.work,
-      env: {
-        PATH: s.path,
-        HOME: home,
-        ANTHROPIC_OAUTH_TOKEN: signIn.token,
-        INBOX_EVAL_STATE: s.state,
-        INBOX_EVAL_LOG: s.log,
-        INBOX_EVAL_TOOLS: toolsFile,
-        ...(isGuided ? {} : { INBOX_EVAL_NO_GUIDANCE: '1' }),
-      },
+  const r = await exec(['sandbox-exec', '-p', writesOnlyUnder(s.dir), 'omp', ...OMP_FLAGS, '-e', ompProbe, c.prompt], {
+    cwd: s.work,
+    env: {
+      PATH: s.path,
+      HOME: home,
+      ANTHROPIC_OAUTH_TOKEN: signIn.token,
+      INBOX_EVAL_STATE: s.state,
+      INBOX_EVAL_LOG: s.log,
+      INBOX_EVAL_TOOLS: toolsFile,
+      ...(isGuided ? {} : { INBOX_EVAL_NO_GUIDANCE: '1' }),
     },
-  )
+  })
   const events = lines(r.stdout)
   if (!existsSync(toolsFile) && r.code !== 0) {
     const why = r.code === -1 ? `timed out after ${TIMEOUT_MS / 1000}s or was killed` : `exited ${r.code}`
@@ -509,15 +491,18 @@ const { results, stopped } =
     : { results: [] as Result[], stopped: preflight }
 writeResults(path, about, results, stopped)
 const judged = [...firstRuns, ...results]
-const baselines = readBaselines(about.suite)
-const verdicts = agents.map(a => report([a], casesFor(a), judged, runs, MIN, baselines))
-const verdict = verdicts.includes('fail') ? 'fail' : verdicts.includes('not run') ? 'not run' : 'pass'
-finish(
-  about,
-  path,
-  judged,
-  stopped,
-  verdict,
-  values['set-baseline'],
-  cases.map(c => c.name),
+const RUN_SETTINGS: Record<Agent, string[]> = {
+  claude: [...CLAUDE_FLAGS, String(MAX_TOOL_DESCRIPTION)],
+  codex: [...CODEX_FLAGS, ...CODEX_SETTINGS, ...CODEX_ISOLATION_CONFIG],
+  omp: OMP_FLAGS,
+}
+const grading = repoFile('evals/agent-checks.ts')
+const stamps: Stamps = Object.fromEntries(
+  agents.flatMap(a =>
+    casesFor(a).map(c => [`${a} ${c.name}`, stamp(c, readsFor(a, c, isGuided), [grading, ...RUN_SETTINGS[a]])]),
+  ),
 )
+const baselines = readBaselines(about.suite)
+const verdicts = agents.map(a => report([a], casesFor(a), judged, runs, MIN, baselines, stamps))
+const verdict = verdicts.includes('fail') ? 'fail' : verdicts.includes('not run') ? 'not run' : 'pass'
+finish(about, path, judged, stopped, verdict, values['set-baseline'], stamps)
