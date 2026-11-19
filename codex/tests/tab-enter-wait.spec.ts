@@ -54,7 +54,7 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
   const window = new Window()
   const moves: Move[] = []
   const fades: Fade[] = []
-  const lastFades = new WeakMap<Element, Fade>()
+  const lastFades = new WeakMap<object, Fade>()
   const animate = window.HTMLElement.prototype.animate
   window.HTMLElement.prototype.animate = function (this: HTMLElement, ...args: Parameters<typeof animate>) {
     const [frames, timing] = args
@@ -123,8 +123,8 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
     ResizeObserver: window.ResizeObserver,
     sessionStorage: window.sessionStorage,
     matchMedia: () => media,
-    getComputedStyle: (el: Element, pseudo?: string) => {
-      const style = window.getComputedStyle(el, pseudo)
+    getComputedStyle: (el: Parameters<typeof window.getComputedStyle>[0]) => {
+      const style = window.getComputedStyle(el)
       const opacity = opacityNow(lastFades.get(el))
       if (opacity === null) return style
       return new Proxy(style, {
