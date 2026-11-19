@@ -94,6 +94,10 @@
   font-variation-settings: 'wght' 400;
   transition: font-variation-settings var(--fade);
   min-width: 0;
+}
+/* A closed row's title takes two lines at most, cut with an ellipsis. Its status is a part of its own, so the cut never
+   reaches it. */
+.line .text .title-part {
   overflow: clip;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -119,9 +123,9 @@
 .row.closing .line {
   display: block;
 }
-.row.selected .line .text,
-.row.closing .line .text {
-  display: inline;
+.row.selected .line .text:not(.short) .title-part,
+.row.closing .line .text:not(.short) .title-part {
+  display: block;
 }
 /* A moving row's full title draws the open form's weight, and a closing row's keeps it until the row's height rests.
    The clamped title it fades across with draws the closed weight, so it wraps as the closed row does. */
@@ -135,8 +139,7 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  display: -webkit-box;
+  width: calc(100% + var(--sep-w));
   opacity: 0;
   pointer-events: none;
 }
@@ -151,12 +154,10 @@
   font-weight: 400;
   font-variation-settings: 'wght' 400;
 }
+/* A closed row's meta line, such as a review thread's place, is drawn whole, its parts wrapping as `.parted` sets them. */
 .line .meta {
-  display: block;
+  display: flex;
   color: var(--muted);
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .row.collapsed:not(:hover) .line .meta {
   color: var(--age);
@@ -203,7 +204,7 @@
   overflow-wrap: anywhere;
 }
 .body p {
-  margin: 0;
+  margin-block: 0;
 }
 /* A PR row's lines sit a list step apart. */
 .body p + p:not([data-part]) {
@@ -338,11 +339,9 @@ code {
   align-items: center;
   gap: var(--control-gap);
 }
-.keys.follows-answers {
-  margin-left: calc(var(--unit) - var(--button-pad-x));
-}
-.keys.follows-answers > .follow-ups {
-  margin-left: calc(var(--button-pad-x) - var(--unit));
+/* After a question's answers, the first bordered button's label starts at the text edge, where a ghost button's does. */
+.keys.follows-answers > .key:first-child:not(.ghost) {
+  margin-left: calc(-1 * (var(--button-border) + var(--button-pad-x)));
 }
 .follow-ups {
   display: flex;
@@ -389,8 +388,13 @@ code {
   width: 14px;
   height: 14px;
 }
+/* A ghost button keeps its side padding as hit area, and is drawn left by it and its border so its label starts at the
+   text edge. A shift, unlike a negative margin, leaves the line's width alone, so a short label never wraps inside
+   itself. */
 .key.ghost {
   padding: 0 var(--unit);
+  position: relative;
+  left: calc(-1 * (var(--unit) + var(--button-border)));
   border-color: transparent;
   background: none;
   color: var(--muted);

@@ -119,11 +119,8 @@ export function pageRuleCells(width: number, textAt = PAGE_TEXT_AT): number {
   return Math.max(0, width - textAt - 1)
 }
 
-/**
- * A section's heading: its name at `at`, then a solid rule. Other work's starts at the text column, and the goal's at
- * the head's column, where the goal's text starts.
- */
-export function partHeading(text: string, width: number, s: Style, at = PAGE_TEXT_AT, isTitle = false): string {
+/** A section's heading, such as Goal, Later or Other work: its name at `at`, the mark column, then a solid rule. */
+export function partHeading(text: string, width: number, s: Style, at = PAGE_MARK_AT, isTitle = false): string {
   const label = `${text} `
   const rule = '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)))
 
@@ -226,8 +223,8 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   if (row.kind === 'part')
     return [
       '',
-      partHeading(row.text, width, s, PAGE_TEXT_AT, row.isTitle),
-      ...(row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []),
+      partHeading(row.text, width, s, PAGE_MARK_AT, row.isTitle),
+      ...(row.description ? indented(row.description, PAGE_MARK_AT, width, STATUS_TEXT_LINES, s.dim) : []),
     ]
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim)
 }

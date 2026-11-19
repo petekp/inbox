@@ -190,7 +190,7 @@ test('with a goal set, subjects that serve none of its milestones draw under the
   })
   const lines = text(screen, onPage, 60).split('\n')
   const rule = lines.find(l => l.includes('Other work'))!
-  expect(rule).toMatch(/^ {3}Other work ─{4,}$/)
+  expect(rule).toMatch(/^ Other work ─{4,}$/)
   expect(rule.length).toBeLessThanOrEqual(60)
   const counts = screen.view.statusPage.rows.find(r => r.kind === 'counts')
   expect(lines.find(l => l.includes('1 waiting'))).toBe(

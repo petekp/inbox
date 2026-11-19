@@ -101,6 +101,21 @@ export function partRows(above: RowPart, below: Exclude<RowPart, 'title'>, isDoc
   return isDocked ? partGap(above, below).rows : 0
 }
 
+/**
+ * The most lines a collapsed row's title takes in every look before it is cut with an ellipsis. Its status is never
+ * cut: it follows the title when the title and the whole status fit on one line, and otherwise takes lines of its own
+ * under the title.
+ */
+export const COLLAPSED_TITLE_LINES = 2
+
+/**
+ * The blank rows the docked terminal draws between a list's last row and its Closed fold: one in all, as after a
+ * collapsed row. An open row draws a blank row of its own under its text, and that row counts toward the one.
+ */
+export function foldGapRows(isAfterOpenRow: boolean, isDocked: boolean): number {
+  return isDocked && !isAfterOpenRow ? 1 : 0
+}
+
 /** How a row draws its answers: stacked, each with or without its note, or side by side, with or without a reason. */
 export type AnswersForm = { is: 'stacked'; hasNotes: boolean[] } | { is: 'side by side'; hasReason: boolean }
 

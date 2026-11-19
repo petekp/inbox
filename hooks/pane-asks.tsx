@@ -6,7 +6,7 @@ import { emptyTab, type EmptyTab } from './empty-tab'
 import { FINDING_GROUPS } from './help'
 import { READ_FAILED_TEXT } from './mod-sessions'
 import { sessionState } from './mod-state'
-import type { PaneBase, PaneHandlers, Row } from './pane-context'
+import type { Entry, PaneBase, PaneHandlers, Row } from './pane-context'
 import type { PaneFrame } from './pane-frame'
 import { partSpace } from './pane-part-space'
 import { childPos, type PaneRowLines } from './pane-row-lines'
@@ -59,7 +59,6 @@ export function paneAskRows(
       title: rowTitle(r, look),
       titleAfter: asked,
       ...(r.at === null ? {} : { at: r.at }),
-      hasSecondLine: r.replyKind === 'answer',
       body: null,
       optionKeys: () => rowKeyActions(r, optionsShown.includes(r.id)).options,
       answerRow: () => rowKeyActions(r, optionsShown.includes(r.id)).answerRow,
@@ -132,6 +131,7 @@ export function paneAskTabs(
     lists,
     divided,
     listRow,
+    isRowOpen,
     settledRow,
     closedFold,
     section,
@@ -162,7 +162,7 @@ export function paneAskTabs(
     | 'lists'
   > &
     Pick<PaneRowLines, 'divided'> &
-    Pick<PaneRows, 'listRow'> &
+    Pick<PaneRows, 'listRow' | 'isRowOpen'> &
     Pick<
       PaneRowParts,
       'settledRow' | 'closedFold' | 'section' | 'groupTitle' | 'titleGap' | 'groupEmpty' | 'sections'
@@ -214,6 +214,11 @@ export function paneAskTabs(
       </Box>
     )
   }
+  /** Whether a list's last entry is a row that draws open, so the Closed fold under it takes no blank row of its own. */
+  const isLastRowOpen = (entries: Entry[]) => {
+    const last = entries.at(-1)
+    return last !== undefined && 'row' in last && isRowOpen(last.row.id)
+  }
   const needsYouView = () => {
     const groups = needsYouGroups.flatMap(g => {
       const { entries } = g
@@ -227,7 +232,13 @@ export function paneAskTabs(
         g.kind,
         ROW_COLUMNS.tree.handleAt,
       )
-      const tail = closedFold(g.kind, closed, closedTotal(view.needsYou.closed[g.list], settledIn(entries)), isUnfolded)
+      const tail = closedFold(
+        g.kind,
+        closed,
+        closedTotal(view.needsYou.closed[g.list], settledIn(entries)),
+        isUnfolded,
+        isLastRowOpen(entries),
+      )
 
       return [
         section([
@@ -313,6 +324,7 @@ export function paneAskTabs(
           closed,
           closedTotal(closedOf, settled),
           unfolded.includes(g.kind),
+          isLastRowOpen(g.entries),
           ROW_COLUMNS.tree.handleAt,
         ),
       ])

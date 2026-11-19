@@ -131,7 +131,3 @@ export const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null
 
 export const lineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W) =>
   div().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text)
-
-/** A press's result under the buttons that were pressed, a step below them as the buttons are below their text. */
-export const resultLineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W) =>
-  lineEl(text, color, indent).pt(CONTROL_GAP)

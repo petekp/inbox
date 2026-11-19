@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { rowKeyPlan } from '../../hooks/action-plan'
 import { partPairs, partPt, rowParts } from '../../hooks/row-parts'
 import type { AnswersForm } from '../../hooks/row-parts'
+import { DOT } from '../../hooks/rows'
 import type { RowView } from '../../hooks/rows'
 import { caseName, caseRow, rowCases } from '../../tests/row-part-cases'
 import type { RowCase } from '../../tests/row-part-cases'
@@ -82,4 +83,13 @@ test('each part of an open question, task and finding sits partGap under the par
   expect(cases.map(c => ({ name: caseName(c), gaps: drawnGaps(c) }))).toEqual(
     cases.map(c => ({ name: caseName(c), gaps: expectedGaps(c) })),
   )
+})
+
+test('a review thread’s fold note draws each of its parts on its own, so its lines break between parts and never at a dot', () => {
+  const blocks = tabBlocks(demoScreen(), uiOn('prs'))
+  const note = blocks.flatMap(b => (b.kind === 'row' && b.feedback?.text.includes(DOT) ? [b.feedback.text] : []))[0]!
+  const texts = [...layoutAtRest(blocks).placed.keys()].map(n => n.text)
+
+  expect(texts).not.toContain(note)
+  expect(texts).toEqual(expect.arrayContaining(note.split(DOT)))
 })

@@ -8,7 +8,10 @@ export type RowProps = {
   title: string
   /** The title's tint, or null for the theme's own. */
   titleColor: string | null
+  /** The row's status, drawn whole. A line feed starts a new line. */
   after: string
+  /** Whether `after` takes lines of its own under the title, rather than following it on its line. */
+  isAfterUnder: boolean
   /** A muted line under the title and `after`, or empty for none. */
   note: string
   side: string
@@ -76,7 +79,6 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
   const columns = surface.columns || props.fallbackColumns
   const textCells = columns - FRAME_CELLS - props.markCells - props.sideCells
   const perLine = Math.floor(textCells * props.charsPerCell)
-  const after = clipAtSpace(props.after, perLine)
   const note = clipAtSpace(props.note, perLine)
   const background = pressed ? props.colors.pressed : hover ? props.colors.hover : null
   const isRaised = background !== null && background === props.colors.hover
@@ -108,9 +110,12 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
             children: [
               ...(props.before ? [Text({ ...colored(props.colors.muted), children: props.before })] : []),
               props.title,
+              ...(props.after && !props.isAfterUnder ? [Text({ ...colored(ageColor), children: props.after })] : []),
             ],
           }),
-          ...(after ? [Text({ wrap: 'truncate-end', ...colored(ageColor), children: after })] : []),
+          ...(props.after && props.isAfterUnder
+            ? props.after.split('\n').map(line => Text({ wrap: 'wrap', ...colored(ageColor), children: line }))
+            : []),
           ...(note
             ? [
                 Text({

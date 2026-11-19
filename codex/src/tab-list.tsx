@@ -1,7 +1,7 @@
 import { RowActions } from './row-actions'
 import type { RowPart } from '../../hooks/row-parts'
 import { partAttrs } from './tab-part-gap'
-import { closedTitleTone, settledMark, DOT, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
+import { closedTitleTone, DOT, settledMark, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
 import { feedbackText, feedbackTone, hasAge, isStatusUnderActions, type FeedbackTone } from '../../hooks/feedback'
@@ -39,6 +39,7 @@ import {
   UndoPlace,
 } from './tab-parts'
 import { TitleTint } from './tab-title-tint'
+import { Sep } from './tab-parted'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
 
@@ -199,8 +200,8 @@ export function ListRow({
   const afterTone = tone === 'muted' ? undefined : tone
   const after = (form: LineForm, only?: 'open' | 'closed') =>
     form.last ? (
-      <span class={only === 'open' ? 'open-only' : only === 'closed' ? 'closed-only' : undefined}>
-        <span class="muted">{DOT}</span>
+      <span class={only === 'open' ? 'part open-only' : only === 'closed' ? 'part closed-only' : 'part'}>
+        <Sep />
         <span class={afterTone ? `after tone-${afterTone}` : 'after'}>{form.last}</span>
       </span>
     ) : null
@@ -208,14 +209,16 @@ export function ListRow({
   const isTitleMoving = isClosing || (drawsPanel(track) && track.state === 'opening')
   const textParts = () => (
     <>
-      {row.lead ? (
-        <>
-          <span class="lead">{row.lead}</span>{' '}
-        </>
-      ) : null}
-      <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
-        {row.title}
-      </TitleTint>
+      <span class="part title-part">
+        {row.lead ? (
+          <>
+            <span class="lead">{row.lead}</span>{' '}
+          </>
+        ) : null}
+        <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
+          {row.title}
+        </TitleTint>
+      </span>
       {after(drawn, closed ? 'open' : undefined)}
       {closed ? after(closed, 'closed') : null}
     </>
@@ -234,13 +237,22 @@ export function ListRow({
           aria-expanded={isSelected}
           onClick={isSelected ? e => onSelect(e.altKey) : undefined}
         >
-          <span class="text">{textParts()}</span>
+          <span class="text parted">{textParts()}</span>
           {isTitleMoving ? (
-            <span class="text short" aria-hidden="true">
+            <span class="text parted short" aria-hidden="true">
               {textParts()}
             </span>
           ) : null}
-          {row.meta ? <span class="meta">{row.meta}</span> : null}
+          {row.meta ? (
+            <span class="meta parted">
+              {row.meta.split(DOT).map((part, n) => (
+                <span class="part">
+                  {n > 0 ? <Sep /> : null}
+                  {part}
+                </span>
+              ))}
+            </span>
+          ) : null}
           {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>
@@ -265,7 +277,16 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const note = noteOf(row.id)
   const isTyping = !!row.typing && tabState.typing === row.id
   const notes = [
-    row.fold?.note ? <div class="muted">{row.fold.note}</div> : null,
+    row.fold?.note ? (
+      <div class="muted parted">
+        {row.fold.note.split(DOT).map((part, n) => (
+          <span class="part">
+            {n > 0 ? <Sep /> : null}
+            {part}
+          </span>
+        ))}
+      </div>
+    ) : null,
     note ? <div class="muted">{note}</div> : null,
     errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null,
   ].filter(Boolean)
@@ -355,17 +376,19 @@ function SettledView({ settled: r, wasOpen }: { settled: RowView; wasOpen: boole
       <ResultMarkView mark={settledMark(state)} tint={{ row: clock, tone }} />
       <div class="content">
         <div class="settled-head">
-          <div class="settled-line">
-            <span class="what">
+          <div class="settled-line parted">
+            <span class="part what">
               <TitleTint row={clock} tone={tone}>
                 {r.title}
               </TitleTint>
             </span>
-            <span class="muted">{DOT}</span>
-            <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
+            <span class="part settled-result">
+              <Sep />
+              <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
+            </span>
             {error ? (
-              <span class="tone-error">
-                {DOT}
+              <span class="part tone-error">
+                <Sep />
                 {error}
               </span>
             ) : null}

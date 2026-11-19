@@ -2877,7 +2877,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   options: the answers the person can pick, separated by " / ", at most 5 words each, in words the person would say, without links, URL parameters, file paths or names from code; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
-  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "If you agree, I'll update the runbook", "Mark PR #3040 ready for review?"); invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
+  Skip: rhetorical questions; offers to go on with the next step of the task the person already asked for ("Want me to start on the next file?"); FYIs; generic "let me know", though the agent holding an act that changes or publishes something (commit, push, mark a PR ready, edit a shared page) until the person agrees, or leaving to them such an act it could take once they agree, is a "decide" item ("Say when you want those committed", "If you agree, I'll update the runbook", "Mark PR #3040 ready for review?"); a wait on the go, answer or review of another agent the reply names, such as its coordinator, even when it then says "your go" (an "hc send" in <activity>, or <person> starting "<hc from=\u2026>", shows who it reports to), though a question, held act or step the same reply leaves to the person is still a "decide" or "do" item; invitations to look at, try or check finished work ("Open X to see it", "reload to check") unless the agent waits on the person's verdict before going on; optional suggestions; anything the person already has on screen, per <screen>; news of a PR's failing checks, conflicts or review threads, and offers to fix them, since ${host.prsIn} shows each with its own press; questions asking the person to describe what they saw, did or meant, even when the answer would help diagnose a problem ("What happens when you click it?", "Which file did you mean?"). The person answers those by replying.
 UPDATE: <id> | <options> | <rec>
   For a "decide" item in <open> when the reply now offers it different answers, or states a recommendation for it that <open> does not show. options: the answers the person can now pick, as in NEW, or "-" to keep them. rec: as in NEW, or "-" to keep it. Rewording the question is not a change.
 HELP: <item> | <kind> | <value> | <name>
@@ -8424,6 +8424,31 @@ async function rerunRun(host, e) {
 `)[0] || `gh exited with ${r.exitCode}`;
 }
 
+// ../hooks/layout.ts
+var SPACE_UNIT = 4;
+var LINE_PT = 5 * SPACE_UNIT;
+var INSIDE_GAP_PT = 0;
+var LIST_GAP_PT = SPACE_UNIT;
+var ITEM_GAP_PT = 3 * SPACE_UNIT;
+var CHILD_GAP_PT = 2 * SPACE_UNIT;
+var HEAD_GAP_PT = 2 * SPACE_UNIT;
+var CONTROL_GAP_PT = 2 * SPACE_UNIT;
+var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
+var SECTION_GAP_PT = 6 * SPACE_UNIT;
+var EDGE_PT = 4 * SPACE_UNIT;
+var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
+var MARK_PT = 6 * SPACE_UNIT;
+var ROW_PAD_PT = ITEM_GAP_PT / 2;
+
+// ../hooks/row-parts.ts
+var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
+var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
+var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
+var gap = (step, rows = 0) => ({ step, rows });
+var UNDER_TITLE = gap("inside");
+var UNDER_TEXT = gap("control", 1);
+var COLLAPSED_TITLE_LINES = 2;
+
 // src/panel-text.ts
 var ANSI = /\x1b\[[0-9;]*m/g;
 var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
@@ -8454,6 +8479,8 @@ function spread(left, right, width) {
   const gap = width - visibleLength(left) - visibleLength(right);
   return gap >= 2 ? left + " ".repeat(gap) + right : fit(left, width);
 }
+var SEPARATOR = "\xB7";
+var TRAILING_SEPARATOR = / \u00B7$/;
 function wrapText(text, width) {
   const out = [];
   for (const paragraph of text.split(`
@@ -8462,17 +8489,29 @@ function wrapText(text, width) {
     for (const word of paragraph.split(/\s+/).filter(Boolean)) {
       const long = cellWidth(word) > width ? cutToCells(word, width - 1) + "\u2026" : word;
       if (line === "")
-        line = long;
+        line = word === SEPARATOR ? "" : long;
       else if (cellWidth(line) + 1 + cellWidth(long) <= width)
         line += ` ${long}`;
       else {
-        out.push(line);
-        line = long;
+        out.push(line.replace(TRAILING_SEPARATOR, ""));
+        line = word === SEPARATOR ? "" : long;
       }
     }
-    out.push(line);
+    out.push(line.replace(TRAILING_SEPARATOR, ""));
   }
   return out;
+}
+function titleLines(title, first, next, maxLines) {
+  const [head = ""] = wrapText(title, first);
+  const rest = title.trim().split(/\s+/).slice(head.split(" ").length).join(" ");
+  if (!rest)
+    return [head];
+  const after = wrapText(rest, next);
+  if (after.length < maxLines)
+    return [head, ...after];
+  const last = after.slice(maxLines - 2).join(" ");
+  const cut = cellWidth(last) <= next ? last : `${cutForEllipsis(last, (t) => cellWidth(t) <= next)}\u2026`;
+  return [head, ...after.slice(0, maxLines - 2), cut];
 }
 function indented(text, indent, width, maxLines, paint) {
   const room = Math.max(10, width - indent - 1);
@@ -8689,7 +8728,7 @@ function withTree(lines, at, first, rest, s) {
 function pageRuleCells(width, textAt = PAGE_TEXT_AT) {
   return Math.max(0, width - textAt - 1);
 }
-function partHeading(text, width, s, at = PAGE_TEXT_AT, isTitle = false) {
+function partHeading(text, width, s, at = PAGE_MARK_AT, isTitle = false) {
   const label = `${text} `;
   const rule = "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)));
   return `${" ".repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`;
@@ -8760,8 +8799,8 @@ function drawPageRow(row, d, isSelected = false) {
   if (row.kind === "part")
     return [
       "",
-      partHeading(row.text, width, s, PAGE_TEXT_AT, row.isTitle),
-      ...row.description ? indented(row.description, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
+      partHeading(row.text, width, s, PAGE_MARK_AT, row.isTitle),
+      ...row.description ? indented(row.description, PAGE_MARK_AT, width, STATUS_TEXT_LINES, s.dim) : []
     ];
   return pageLine(d, at, feedbackPaint(row.tone, s)(row.mark), row.text, s.dim);
 }
@@ -9989,6 +10028,13 @@ function feedbackPaint(tone, s) {
 function paintMark(m, now, s) {
   return feedbackPaint(m.tone, s)(m.isRunning ? runningMark(now) : textMark(m.mark));
 }
+function wholeStatus(line, mark, indent, room, s) {
+  if (!line.feedback)
+    return [];
+  const markCells = visibleLength(mark);
+  const paint = feedbackPaint(line.feedback.tone, s);
+  return wrapText(line.feedback.text, Math.max(10, room - indent - markCells - 1)).map((l, n) => " ".repeat(indent) + (n === 0 ? mark : " ".repeat(markCells)) + paint(l));
+}
 function drawLine(line, isSelected, d) {
   const { ui, width, now, style: s } = d;
   if (line.isTabButtons) {
@@ -10019,17 +10065,26 @@ function drawLine(line, isSelected, d) {
   const head = isOnTree ? `${cursor}${s.dim(line.tree === "mid" ? "\u251C\u2500" : "\u2514\u2500")} ${lead}` : `${line.tree === "off" ? " " : ""} ${" ".repeat(pad)}${cursor} ${lead}`;
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
-  const shownTitle = line.mark ? cutTitle(line.title, besideAge - visibleLength(head) - visibleLength(status) - visibleLength(after)) : line.title;
-  const ownTitle = line.isDim ? s.dim(shownTitle) : line.titleTone ? s.tone(line.titleTone, s.bold(shownTitle)) : isOpen ? s.bold(shownTitle) : shownTitle;
-  const title = tint ? s.tint(tint.tone, tint.share, ownTitle) : ownTitle;
-  const first = spread(fit(`${head}${title}${status}${after}`, besideAge), `${age} `, width);
+  const paintTitle = (text) => {
+    const own = line.isDim ? s.dim(text) : line.titleTone ? s.tone(line.titleTone, s.bold(text)) : isOpen ? s.bold(text) : text;
+    return tint ? s.tint(tint.tone, tint.share, own) : own;
+  };
   const gutter = line.tree === "mid" ? ` ${s.dim("\u2502")} ` : line.tree === "last" ? "   " : "";
   const room = width - visibleLength(gutter);
-  const lines = (rest) => [first, ...rest.map((l) => gutter + l)];
-  if (line.settled || isShut(line, ui))
-    return [first];
   const leadAt = (isOnTree ? 4 : line.tree === "off" ? 4 + pad : 3 + pad) - visibleLength(gutter);
   const indent = leadAt + (line.lead === null ? 0 : LEAD_CELLS);
+  const titleRoom = besideAge - visibleLength(head);
+  const isRowLine = line.row !== null && line.settled === null && status === "";
+  const wrapped = isRowLine && cellWidth(line.title) + visibleLength(after) > titleRoom ? titleLines(line.title, titleRoom, room - indent - 1, isOpen ? Infinity : COLLAPSED_TITLE_LINES) : null;
+  const shownTitle = line.mark ? cutTitle(line.title, titleRoom - visibleLength(status) - visibleLength(after)) : line.title;
+  const first = wrapped ? spread(`${head}${paintTitle(wrapped[0])}`, `${age} `, width) : spread(fit(`${head}${paintTitle(shownTitle)}${status}${after}`, besideAge), `${age} `, width);
+  const underTitle = wrapped ? [
+    ...wrapped.slice(1).map((t) => " ".repeat(indent) + paintTitle(t)),
+    ...statusUnder ? [] : wholeStatus(line, mark, indent, room, s)
+  ] : [];
+  const lines = (rest) => [first, ...[...underTitle, ...rest].map((l) => gutter + l)];
+  if (line.settled || isShut(line, ui))
+    return lines([]);
   const out = [];
   const holdsUp = line.row?.holdsUpLine;
   const focused = ui.typing === line.id ? -1 : focusOf2(line, ui);

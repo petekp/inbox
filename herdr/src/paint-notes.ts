@@ -8,11 +8,12 @@ import type { Theme } from './paint-theme'
 /** A rule's line, filling the space beside its text. */
 export const ruleLine = (t: Theme): Element => div().flex_1().border_t(1).border_color(t.border)
 
+/** A rule, with its text, such as Later or Other work, at the mark column, where the Goal heading starts. */
 export function ruleEl(b: Extract<Block, { kind: 'rule' }>, t: Theme): Element {
   if (b.text === null) return h_flex().pl(EDGE).pr(EDGE).child(ruleLine(t))
 
   return h_flex()
-    .pl(TEXT_X)
+    .pl(EDGE)
     .pr(EDGE)
     .gap(CONTROL_GAP)
     .items_center()

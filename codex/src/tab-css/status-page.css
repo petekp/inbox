@@ -154,6 +154,10 @@
 .status-page .goal-heading .actions {
   margin: 0;
 }
+/* Edit and Remove sit at the heading's right end around a dot, so they keep their padding on both sides of it. */
+.status-page .goal-heading .key.ghost {
+  left: 0;
+}
 .status-head .actions {
   margin-top: var(--control-gap);
 }
@@ -302,7 +306,7 @@
 .status-page .milestone-fold .icon {
   margin-left: 0;
 }
-/* "Other work" at the text column, then a solid rule to the tab's edge. The head's title takes its place, with its
+/* "Other work" at the mark column, as the Goal heading is, then a solid rule to the tab's edge. The head's title takes its place, with its
    description under it. It sits `section` under the item above and `head` over the row under it, each side counting the
    rows' padding, which the list sets as `--row-above-pad` and `--row-below-pad`. */
 .status-page .row.part-line {
@@ -320,7 +324,7 @@
   display: flex;
   align-items: center;
   gap: var(--control-gap);
-  margin-left: var(--text-x);
+  margin-left: var(--mark-x);
   color: var(--muted);
 }
 .status-page .part-rule.part-title {
@@ -329,7 +333,7 @@
 }
 .status-page .part-description {
   grid-column: 1 / -1;
-  margin-left: var(--text-x);
+  margin-left: var(--mark-x);
   padding-right: var(--edge);
 }
 .status-page .part-rule::after {
