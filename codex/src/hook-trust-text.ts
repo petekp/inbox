@@ -1,0 +1,8 @@
+import type { HooksTrust } from './hook-trust'
+
+export const HOOKS_TRUST_TEXT: Record<HooksTrust, string> = {
+  untrusted:
+    'Codex is not running the inbox’s hooks, so the inbox is not reading Codex’s replies. Click the hook icon beside the approval setting, then Allow all. If the icon isn’t there, open Settings, then Hooks, then Inbox, then Trust all.',
+  modified:
+    'Codex stopped the inbox’s hooks when the inbox updated, so the inbox is not reading Codex’s replies. To trust them again, click the hook icon beside the approval setting, then Allow all. If the icon isn’t there, open Settings, then Hooks, then Inbox, then Trust all.',
+}

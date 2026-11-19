@@ -365,6 +365,10 @@ function repeatsSettled(c, a) {
 // ../hooks/clients-claude-code.ts
 var CLAUDE_CODE = {
   support: {
+    "codex-desktop-companion": {
+      kind: "unsupported",
+      reason: "This connection uses Codex chat storage and its MCP host. This host publishes through Herdr instead."
+    },
     "catch-up": { kind: "full" },
     "failed-update-recovery": { kind: "full" },
     "ledger-behind-state": { kind: "full" },
@@ -467,6 +471,7 @@ var CLAUDE_CODE = {
 // ../hooks/clients-codex.ts
 var CODEX = {
   support: {
+    "codex-desktop-companion": { kind: "full" },
     "catch-up": {
       kind: "different",
       reason: "Codex runs no hook when a chat is opened. A resumed chat catches up when its Inbox tab opens, and at the hook its next message runs if the tab stays closed. A chat whose ledger failed or fell behind, such as an archived chat that runs no hooks, also catches up when its tab opens, once until the ledger or the chat moves on."
@@ -626,6 +631,10 @@ var CODEX = {
 // ../hooks/clients-omp.ts
 var OMP = {
   support: {
+    "codex-desktop-companion": {
+      kind: "unsupported",
+      reason: "This connection uses Codex chat storage and its MCP host. This host publishes through Herdr instead."
+    },
     "catch-up": { kind: "full" },
     "failed-update-recovery": { kind: "full" },
     "ledger-behind-state": { kind: "full" },
@@ -5712,6 +5721,12 @@ function sessionFields(saved, views) {
   };
 }
 
+// ../hooks/session-presentation.ts
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers");
+function presentedSession(session) {
+  return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+}
+
 // ../hooks/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -5931,10 +5946,8 @@ function herdrLabels(tokens) {
   ]));
 }
 var HERDR_FORMAT = 1;
-var UNPUBLISHED_FIELDS = new Set(["remoteCommands", "remoteViewers", "remoteCommandFloor", "lastAnswers"]);
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => !UNPUBLISHED_FIELDS.has(field));
 function herdrEnvelope(source, session, isTrimmed = false) {
-  const shared = Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+  const shared = presentedSession(session);
   const { lastHerdrPress } = session;
   const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source;
   return {
@@ -14216,8 +14229,20 @@ var rejected = (error) => ({
   isRowFailed: false,
   wakesAfterSettle: false
 });
+var REMOTE_ACTIONS = [
+  "type",
+  "answer",
+  "done",
+  "address",
+  "undo",
+  "dismiss",
+  "discuss",
+  "explain",
+  "issue",
+  "discard"
+];
 function supportsRemotePress(p) {
-  return ["type", "answer", "done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"].includes(p.action);
+  return REMOTE_ACTIONS.includes(p.action);
 }
 function isUnresolved(c) {
   return c.state === "accepted" || c.state === "attempting" || c.state === "uncertain" && !c.delivered || c.state === "applied" && !c.delivered && (c.pendingDelivery === true || c.deliveryId !== null);

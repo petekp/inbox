@@ -78,6 +78,7 @@ export const SHARED = [
   'prs',
   'pr-checks',
   'session-files',
+  'session-presentation',
   'earlier-answers',
   'question-history',
   'history-store',

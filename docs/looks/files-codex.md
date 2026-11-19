@@ -83,3 +83,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/history.ts` | Codex host. On the first sight of a session, takes a forked chat's ledger from its parent, or marks a session with earlier turns `behind`. At each later hook, marks it `behind` when the rollout holds turns that ended after `coveredTurn`, the newest turn the inbox covered. |
 | `codex/src/hook-trust.ts` | Codex host. Whether Codex trusts the inbox's hooks, from the hooks Codex lists. |
 | `codex/src/detached-update.ts` | Codex host. Starts the update in a detached process, so a long model call still finishes. |
+| `codex/src/companion-listener.ts` | Codex host. Private socket, explicit chat scope and bounded requests. |
+| `codex/src/companion-protocol.ts` | Codex host. The companion request and presentation types. |
+| `codex/src/server-companion.ts` | Codex host. Companion access through the existing state and effects. |
+| `codex/src/hook-trust-text.ts` | Codex adapter. Shared wording for hook-trust notices. |

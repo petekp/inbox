@@ -1,3 +1,4 @@
+import { HOOKS_TRUST_TEXT } from './hook-trust-text'
 import { ago } from '../../hooks/text'
 import { HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
 import { bannerOf, tabBarBanners } from '../../hooks/banners'
@@ -65,13 +66,6 @@ export function HelpPage({ version }: { version: string }) {
       </section>
     </main>
   )
-}
-
-const HOOKS_TRUST_TEXT: Record<NonNullable<View['hooksTrust']>, string> = {
-  untrusted:
-    'Codex is not running the inbox’s hooks, so the inbox is not reading Codex’s replies. Click the hook icon beside the approval setting, then Allow all. If the icon isn’t there, open Settings, then Hooks, then Inbox, then Trust all.',
-  modified:
-    'Codex stopped the inbox’s hooks when the inbox updated, so the inbox is not reading Codex’s replies. To trust them again, click the hook icon beside the approval setting, then Allow all. If the icon isn’t there, open Settings, then Hooks, then Inbox, then Trust all.',
 }
 
 const LATE_READ_MS = 60_000

@@ -87,3 +87,4 @@ Part of [the look map](../looks.md#files).
 | `hooks/marks.ts` | Shared module. Shapes and glyphs for marks a font draws poorly: desktop draws its toned Svg marks from `markShape`, desktop and Codex draw ✗, ◌ and ⊘ from `mutedMarkShape`, and the terminal and omp draw ✗ as ⊘ from `textMark`. |
 | `hooks/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. Also the banner tints the terminal and omp draw. |
 | `hooks/inline.ts` | Shared module. Inline markdown in the agent's text, as spans each look draws. |
+| `hooks/session-presentation.ts` | Shared module. Selects presentation state, excluding private commands, viewers and model answers. |
