@@ -80,7 +80,6 @@ export const CODEX: Client = {
     'compare-page': { kind: 'full' },
     'running-marks': { kind: 'full' },
     'title-tint': { kind: 'full' },
-    'weight-transitions': { kind: 'full' },
     'pending-answer-mark': { kind: 'full' },
     'tab-symbols': { kind: 'full' },
     'dim-pressed-button': { kind: 'full' },

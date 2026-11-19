@@ -51,7 +51,7 @@ function tabKey(rowId: string, a: PrAction): Key {
     label: a.label,
     emphasis: a.emphasis,
     ...(a.isOut || sending.get(rowId)?.action === a.press.action ? { isOut: true } : {}),
-    run: () => void act(rowId, a.press),
+    run: () => void act(rowId, a.press, undefined, null, a.kind),
   }
 }
 

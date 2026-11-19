@@ -34,7 +34,6 @@ export type FeatureId =
   | 'compare-page'
   | 'running-marks'
   | 'title-tint'
-  | 'weight-transitions'
   | 'pending-answer-mark'
   | 'tab-symbols'
   | 'dim-pressed-button'

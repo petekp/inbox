@@ -411,10 +411,6 @@ var CLAUDE_CODE = {
       kind: "different",
       reason: "The terminal steps the fade in 6 colors. Desktop holds the tint, then drops it."
     },
-    "weight-transitions": {
-      kind: "unsupported",
-      reason: "A terminal cell is bold or not, and the desktop pane has no CSS and no weight between."
-    },
     "pending-answer-mark": { kind: "full" },
     "tab-symbols": { kind: "full" },
     "dim-pressed-button": {
@@ -542,7 +538,6 @@ var CODEX = {
     "compare-page": { kind: "full" },
     "running-marks": { kind: "full" },
     "title-tint": { kind: "full" },
-    "weight-transitions": { kind: "full" },
     "pending-answer-mark": { kind: "full" },
     "tab-symbols": { kind: "full" },
     "dim-pressed-button": { kind: "full" },
@@ -682,7 +677,6 @@ var OMP = {
     "compare-page": { kind: "full" },
     "running-marks": { kind: "full" },
     "title-tint": { kind: "different", reason: "Steps the fade in 6 colors." },
-    "weight-transitions": { kind: "unsupported", reason: "An ANSI line is bold or not." },
     "pending-answer-mark": { kind: "full" },
     "tab-symbols": { kind: "full" },
     "dim-pressed-button": {

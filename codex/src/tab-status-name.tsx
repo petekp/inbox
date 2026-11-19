@@ -1,4 +1,3 @@
-import { atEndWeight } from './weight-ease'
 import { Icon } from './row-actions'
 import type { ParentChevron } from './tab-status-fold'
 import { nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP } from '../../hooks/status-page'
@@ -28,7 +27,7 @@ function fitNameLine(el: HTMLElement | null, name: string) {
   write(
     nameBeforeStall(name, shown => {
       write(shown)
-      return lineCount() <= STATUS_TEXT_LINES && atEndWeight(flowEl, lineCount) <= STATUS_TEXT_LINES
+      return lineCount() <= STATUS_TEXT_LINES
     }),
   )
 }
