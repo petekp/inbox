@@ -1,4 +1,3 @@
-import { atEndWeight } from './weight-ease'
 import { ENTER_FADE_MS, enterDelayMs, FADE_MS, isMoving, LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
 import type { RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../hooks/springs'
@@ -72,11 +71,11 @@ let heightWaitMs = 0
 const closeHolds = new Map<string, number>()
 let closeWaitMs = 0
 
-/** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. Measured at the end weights. */
+/** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. */
 function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
 
-  return atEndWeight(el, () => atEndLines(el, () => el.getBoundingClientRect().height))
+  return atEndLines(el, () => el.getBoundingClientRect().height)
 }
 
 /** Whether a leaving element no longer holds its space: its space has begun to shrink, or it left before its space opened. */
@@ -331,7 +330,7 @@ function collapse(
   if (part) part.style.display = 'none'
   const target = naturalHeight(el)
   const title = line?.querySelector<HTMLElement>(':scope > .text:not(.short)')
-  const lineTo = title ? atEndWeight(title, () => title.getBoundingClientRect().height) : null
+  const lineTo = title ? title.getBoundingClientRect().height : null
   if (part) part.style.display = ''
   row?.classList.add('closing')
   if (part && state === 'settling' && openTop !== null) keepTop(el, part, openTop)
