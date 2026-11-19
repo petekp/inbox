@@ -140,20 +140,3 @@ test('a SET that keeps the status keeps the old text and age only when its conte
   expect(reworded.subjects[0]).toMatchObject({ text: 'sync queue built and tested', changedAt: 100 })
   expect(broken.subjects[0]).toMatchObject({ text: 'sync queue built and broken', changedAt: 200 })
 })
-
-test('a HEAD that keeps the title in the answer that finishes the last working piece takes its new description, unless it names queued work', () => {
-  const one = after(
-    null,
-    'HEAD: Offline sync | Adding offline sync to the notes app\nNEW: working | Sync engine | queue built\nNEW: queued | Export button | not started',
-    100,
-  )
-  const finishedWith = (head: string) =>
-    applyOps(one, opsOf(`DONE: s1 | syncs on reconnect\n${head}`), 200, NO_ASKS).head
-
-  expect(finishedWith('HEAD: Offline sync | Offline sync works in the notes app')).toEqual({
-    title: 'Offline sync',
-    description: 'Offline sync works in the notes app',
-  })
-  expect(finishedWith('HEAD: Offline sync | Adding the export button')).toEqual(one.head)
-  expect(finishedWith('HEAD: Export button | Adding export')).toEqual(one.head)
-})

@@ -4733,14 +4733,14 @@ function answerWork(before, o, now) {
     isWorkUnderWay: o.subjects.some(
       (s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now
     ),
-    namesClosed: (description) => closed.some((s) => namesSubject(description, s)),
-    namesQueued: (description) => o.subjects.some((s) => s.status === "queued" && namesSubject(description, s))
+    namesClosed: (description) => {
+      const said = words(description);
+      return closed.some((s) => {
+        const name = [...words(s.name)];
+        return name.length > 0 && name.every((w) => said.has(w));
+      });
+    }
   };
-}
-function namesSubject(description, s) {
-  const said = words(description);
-  const name = [...words(s.name)];
-  return name.length > 0 && name.every((w) => said.has(w));
 }
 function isDescriptionStale(head, work) {
   return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
@@ -4749,9 +4749,8 @@ function headAfter(last, op, work) {
   const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
   if (last === null || last.description === "") return line;
   const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay;
-  const isTitleKept = hasSameWords(last.title, op.title);
-  if (isQueuedWorkNext && (!isTitleKept || work.namesQueued(line.description))) return last;
-  if (!isTitleKept) return line;
+  if (isQueuedWorkNext) return last;
+  if (!hasSameWords(last.title, op.title)) return line;
   const isSameDescription = line.description === "" || hasSameWords(last.description, line.description);
   return isSameDescription ? last : { title: last.title, description: line.description };
 }
