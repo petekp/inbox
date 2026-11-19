@@ -1,6 +1,6 @@
 import type { Milestone, SessionStatus, StatusHead, Subject } from '../types'
 import type { Op, StatusAnswer } from './status'
-import { isSubjectSeen } from './status-children'
+import { isChildRunning, isSubjectSeen } from './status-children'
 import {
   clipWords,
   DESCRIPTION_KEPT,
@@ -37,14 +37,26 @@ type AnswerWork = {
   isEarlierWorkFinished: boolean
   /** Work is under way after the answer: a subject is working, or the answer set one waiting. */
   isWorkUnderWay: boolean
-  /** No subject is working or waiting after the answer. */
+  /** No subject is working, waiting, held up by an open ask or worked on by a running child after the answer. */
   isNothingUnderWay: boolean
+  /** The answer closed a subject that was open before it. */
+  isOpenWorkClosed: boolean
   /** The answer closed a subject that was working or waiting before it. */
   isUnderWayWorkClosed: boolean
   /** The answer closed a subject it added. */
   isClosedWorkNew: boolean
   /** Whether `description` names a subject the answer closed, by every content word of its name. */
   namesClosed(description: string): boolean
+  /** Whether `description` names any closed subject, by every content word of its name. */
+  namesFinished(description: string): boolean
+}
+
+function namesAny(subjects: readonly Subject[], description: string): boolean {
+  const said = words(description)
+  return subjects.some(s => {
+    const name = [...words(s.name)]
+    return name.length > 0 && name.every(w => said.has(w))
+  })
 }
 
 function answerWork(before: readonly Subject[], o: SessionStatus, now: number): AnswerWork {
@@ -59,7 +71,10 @@ function answerWork(before: readonly Subject[], o: SessionStatus, now: number): 
     return earlier !== undefined && isUnderWay(earlier)
   })
 
-  const isNothingUnderWay = !o.subjects.some(isUnderWay)
+  const asked = new Set(Object.values(o.askSubjects).flat())
+  const isWorkedOn = (s: Subject) => o.children.some(c => c.subjectId === s.id && isChildRunning(c, now))
+  const isHeld = (s: Subject) => isOpen(s) && (asked.has(s.id) || isWorkedOn(s))
+  const isNothingUnderWay = !o.subjects.some(s => isUnderWay(s) || isHeld(s))
 
   return {
     isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
@@ -67,46 +82,48 @@ function answerWork(before: readonly Subject[], o: SessionStatus, now: number): 
       s => s.status === 'working' || (s.status === 'waits-on-other' && s.changedAt === now),
     ),
     isNothingUnderWay,
+    isOpenWorkClosed: closed.some(s => was.has(s.id)),
     isUnderWayWorkClosed,
     isClosedWorkNew,
-    namesClosed: description => {
-      const said = words(description)
-      return closed.some(s => {
-        const name = [...words(s.name)]
-        return name.length > 0 && name.every(w => said.has(w))
-      })
-    },
+    namesClosed: description => namesAny(closed, description),
+    namesFinished: description =>
+      namesAny(
+        o.subjects.filter(s => !isOpen(s)),
+        description,
+      ),
   }
 }
 
 /**
  * Whether a head's description no longer says what the session is doing. While other work goes on, a head that kept
  * its title names work the answer finished, as "Fixing the sync bug, then shipping 2.5" once the sync bug is done and
- * 2.5 is under way. Once no subject is working or waiting, it is stale when the answer finished the work it was about:
- * work that was under way before the answer, work the answer started and finished under a new head, or any work it
- * names. A side fix that started and finished while the head's work waits queued leaves the description.
+ * 2.5 is under way. Once nothing is under way, it is stale when it names any finished work, or when the answer finished
+ * the work it was about: under a kept title, any work that was open before the answer, and under a new title, work that
+ * was under way before it or that it started. A side fix that started and finished while the head's work waits queued
+ * leaves the description.
  */
 function isDescriptionStale(head: StatusHead | null, isTitleKept: boolean, work: AnswerWork): boolean {
   if (head === null || head.description === '') return false
-  const isClosedWorkNamed = work.namesClosed(head.description)
-  if (!work.isNothingUnderWay) return isTitleKept && isClosedWorkNamed
-  const isNewWorkTheHead = work.isClosedWorkNew && !isTitleKept
+  if (!work.isNothingUnderWay) return isTitleKept && work.namesClosed(head.description)
+  const isHeadWorkClosed = isTitleKept ? work.isOpenWorkClosed : work.isUnderWayWorkClosed || work.isClosedWorkNew
 
-  return work.isUnderWayWorkClosed || isNewWorkTheHead || isClosedWorkNamed
+  return isHeadWorkClosed || work.namesFinished(head.description)
 }
 
 /**
- * The head after a HEAD line, read once the answer's subject changes have applied. While no subject is working or
- * waiting, a line that keeps the title changes nothing: with nothing under way, the call describes what comes after the
- * work. Otherwise a head with no description takes the line. A head with a description holds when the answer finished
- * work that was under way before it, started none it finished, and left none under way, since the call reads queued
- * work as the next focus. Otherwise a line that keeps the title keeps the title's wording and takes the line's
- * description, so a corrected description applies, and a line with another title replaces the head.
+ * The head after a HEAD line, read once the answer's subject changes have applied. While nothing is under way, a line
+ * that keeps the title changes nothing when the head has no description or the answer closed work that was open before
+ * it: then the call describes what comes after the work. A head with no description otherwise takes the line. A head
+ * with a description holds when the answer finished work that was under way before it, started none it finished, and
+ * left none under way, since the call reads queued work as the next focus. Otherwise a line that keeps the title keeps
+ * the title's wording and takes the line's description, so a corrected description applies, and a line with another
+ * title replaces the head.
  */
 function headAfter(last: StatusHead | null, op: Extract<Op, { kind: 'head' }>, work: AnswerWork): StatusHead {
   const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
   if (last === null) return line
-  if (work.isNothingUnderWay && hasSameWords(last.title, op.title)) return last
+  const isIdleSameTitle = work.isNothingUnderWay && hasSameWords(last.title, op.title)
+  if (isIdleSameTitle && (last.description === '' || work.isOpenWorkClosed)) return last
   if (last.description === '') return line
   const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay
   if (isQueuedWorkNext) return last

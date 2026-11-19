@@ -4717,6 +4717,13 @@ function applied(s, parsed2, now, promptAt) {
 function isUnderWay(s) {
   return s.status === "working" || s.status === "waits-on-other";
 }
+function namesAny(subjects, description) {
+  const said = words(description);
+  return subjects.some((s) => {
+    const name = [...words(s.name)];
+    return name.length > 0 && name.every((w) => said.has(w));
+  });
+}
 function answerWork(before, o, now) {
   const was = new Map(before.map((s) => [s.id, s]));
   const closed = o.subjects.filter((s) => {
@@ -4728,35 +4735,37 @@ function answerWork(before, o, now) {
     const earlier = was.get(s.id);
     return earlier !== void 0 && isUnderWay(earlier);
   });
-  const isNothingUnderWay = !o.subjects.some(isUnderWay);
+  const asked = new Set(Object.values(o.askSubjects).flat());
+  const isWorkedOn = (s) => o.children.some((c) => c.subjectId === s.id && isChildRunning(c, now));
+  const isHeld = (s) => isOpen(s) && (asked.has(s.id) || isWorkedOn(s));
+  const isNothingUnderWay = !o.subjects.some((s) => isUnderWay(s) || isHeld(s));
   return {
     isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
     isWorkUnderWay: o.subjects.some(
       (s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now
     ),
     isNothingUnderWay,
+    isOpenWorkClosed: closed.some((s) => was.has(s.id)),
     isUnderWayWorkClosed,
     isClosedWorkNew,
-    namesClosed: (description) => {
-      const said = words(description);
-      return closed.some((s) => {
-        const name = [...words(s.name)];
-        return name.length > 0 && name.every((w) => said.has(w));
-      });
-    }
+    namesClosed: (description) => namesAny(closed, description),
+    namesFinished: (description) => namesAny(
+      o.subjects.filter((s) => !isOpen(s)),
+      description
+    )
   };
 }
 function isDescriptionStale(head, isTitleKept, work) {
   if (head === null || head.description === "") return false;
-  const isClosedWorkNamed = work.namesClosed(head.description);
-  if (!work.isNothingUnderWay) return isTitleKept && isClosedWorkNamed;
-  const isNewWorkTheHead = work.isClosedWorkNew && !isTitleKept;
-  return work.isUnderWayWorkClosed || isNewWorkTheHead || isClosedWorkNamed;
+  if (!work.isNothingUnderWay) return isTitleKept && work.namesClosed(head.description);
+  const isHeadWorkClosed = isTitleKept ? work.isOpenWorkClosed : work.isUnderWayWorkClosed || work.isClosedWorkNew;
+  return isHeadWorkClosed || work.namesFinished(head.description);
 }
 function headAfter(last, op, work) {
   const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) };
   if (last === null) return line;
-  if (work.isNothingUnderWay && hasSameWords(last.title, op.title)) return last;
+  const isIdleSameTitle = work.isNothingUnderWay && hasSameWords(last.title, op.title);
+  if (isIdleSameTitle && (last.description === "" || work.isOpenWorkClosed)) return last;
   if (last.description === "") return line;
   const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay;
   if (isQueuedWorkNext) return last;

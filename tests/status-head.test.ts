@@ -105,7 +105,7 @@ test('a head whose description names work that just finished, while other work g
   expect(otherFinished.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
 })
 
-test('once the last working or waiting subject closes, or work the head names starts and finishes, the head keeps its title, loses its description, and takes none under that title until work is under way again', () => {
+test('once the last open work closes, or work the head names starts and finishes, the head keeps its title, loses its description, and takes none under that title until work is under way again', () => {
   const asked = after(
     null,
     [
@@ -159,7 +159,6 @@ test('once the last working or waiting subject closes, or work the head names st
     200,
     NO_ASKS,
   )
-  const idleRewrite = applyOps(queuedLast, opsOf('HEAD: Greet and pad | Watching for feedback'), 200, NO_ASKS)
   const docsWaiting = applyOps(
     after(
       null,
@@ -193,9 +192,72 @@ test('once the last working or waiting subject closes, or work the head names st
   expect(sideFix.head).toBe(searching.head)
   expect(namedFix.head).toEqual({ title: 'Greet CLI', description: '' })
   expect(queuedClosed.head).toEqual({ title: 'Greet and pad', description: '' })
-  expect(idleRewrite.head).toBe(queuedLast.head)
   expect(docsWaiting.head).toEqual({ title: 'Sync fix', description: '' })
   expect(inReview.head).toEqual({ title: '2.5 release', description: 'Getting 2.5 through store review' })
+})
+
+test('while nothing is under way, a HEAD that keeps the title corrects a description the head still has, and a description that names finished work clears', () => {
+  const answered = applyOps(
+    after(
+      null,
+      'HEAD: Greet and pad | Adding a flag\nNEW: working | Repeat flag | added\nDONE: Repeat flag | added',
+      100,
+    ),
+    opsOf('NEW: queued | Help text | not started'),
+    200,
+    NO_ASKS,
+  )
+  const savedEarlier = {
+    ...answered,
+    head: { title: 'Greet and pad', description: 'Adding --repeat, deciding pad() trimming' },
+  }
+  const corrected = applyOps(savedEarlier, opsOf('HEAD: Greet and pad | Ready for the help text'), 300, NO_ASKS)
+  const savedNamed = { ...answered, head: { title: 'Greet and pad', description: 'Adding the repeat flag' } }
+  const unnamed = applyOps(savedNamed, opsOf('NEW: queued | Man page | not started'), 300, NO_ASKS)
+  const paused = applyOps(
+    after(null, 'HEAD: 3.1 search | Rebuilding the search index\nNEW: working | Search index | rebuilding', 100),
+    opsOf('SET: s1 | queued | paused\nHEAD: 3.1 search | Search index rebuild on hold'),
+    200,
+    NO_ASKS,
+  )
+
+  expect(corrected.head).toEqual({ title: 'Greet and pad', description: 'Ready for the help text' })
+  expect(unnamed.head).toEqual({ title: 'Greet and pad', description: '' })
+  expect(paused.head).toEqual({ title: '3.1 search', description: 'Search index rebuild on hold' })
+})
+
+test('a queued subject that an open ask holds up or a running child works on counts as work under way for the head', () => {
+  const asking = [
+    'HEAD: Greet and pad | Adding --repeat, deciding pad() trimming',
+    'NEW: working | Repeat flag | added',
+    'DONE: Repeat flag | added',
+    'NEW: queued | Pad trimming | asked',
+  ].join('\n')
+  const asked = after(null, `${asking}\nLINK: i1 | Pad trimming`, 100, new Set(['i1']))
+  const unasked = after(null, asking, 100)
+  const guide = after(
+    null,
+    'HEAD: Docs site | Writing the setup guide\nNEW: queued | Setup guide | handed off\nNEW: working | Logo fix | found',
+    100,
+  )
+  const child = {
+    id: 'c1',
+    ref: 'task-1',
+    kind: 'subagent' as const,
+    name: 'guide writer',
+    subjectId: 's1',
+    startedAt: 100,
+    endedAt: null,
+    lastActivityAt: null,
+    delegateState: null,
+  }
+  const delegated = applyOps({ ...guide, children: [child] }, opsOf('DONE: s2 | fixed'), 200, NO_ASKS)
+  const notDelegated = applyOps(guide, opsOf('DONE: s2 | fixed'), 200, NO_ASKS)
+
+  expect(asked.head).toEqual({ title: 'Greet and pad', description: 'Adding --repeat, deciding pad() trimming' })
+  expect(unasked.head).toEqual({ title: 'Greet and pad', description: '' })
+  expect(delegated.head).toEqual({ title: 'Docs site', description: 'Writing the setup guide' })
+  expect(notDelegated.head).toEqual({ title: 'Docs site', description: '' })
 })
 
 test('a HEAD that keeps the title corrects a description that names work an earlier answer finished', () => {
