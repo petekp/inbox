@@ -10074,11 +10074,14 @@ function drawLine(line, isSelected, d) {
   const leadAt = (isOnTree ? 4 : line.tree === "off" ? 4 + pad : 3 + pad) - visibleLength(gutter);
   const indent = leadAt + (line.lead === null ? 0 : LEAD_CELLS);
   const titleRoom = besideAge - visibleLength(head);
-  const isRowLine = line.row !== null && !isOpen && line.settled === null && status === "";
-  const wrapped = isRowLine && cellWidth(line.title) + visibleLength(after) > titleRoom ? titleLines(line.title, titleRoom, room - indent - 1, COLLAPSED_TITLE_LINES) : null;
+  const isRowLine = line.row !== null && line.settled === null && status === "";
+  const wrapped = isRowLine && cellWidth(line.title) + visibleLength(after) > titleRoom ? titleLines(line.title, titleRoom, room - indent - 1, isOpen ? Infinity : COLLAPSED_TITLE_LINES) : null;
   const shownTitle = line.mark ? cutTitle(line.title, titleRoom - visibleLength(status) - visibleLength(after)) : line.title;
   const first = wrapped ? spread(`${head}${paintTitle(wrapped[0])}`, `${age} `, width) : spread(fit(`${head}${paintTitle(shownTitle)}${status}${after}`, besideAge), `${age} `, width);
-  const underTitle = wrapped ? [...wrapped.slice(1).map((t) => " ".repeat(indent) + paintTitle(t)), ...wholeStatus(line, mark, indent, room, s)] : [];
+  const underTitle = wrapped ? [
+    ...wrapped.slice(1).map((t) => " ".repeat(indent) + paintTitle(t)),
+    ...statusUnder ? [] : wholeStatus(line, mark, indent, room, s)
+  ] : [];
   const lines = (rest) => [first, ...[...underTitle, ...rest].map((l) => gutter + l)];
   if (line.settled || isShut(line, ui))
     return lines([]);

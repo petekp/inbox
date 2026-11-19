@@ -390,3 +390,20 @@ test('the w key folds every fold of the shown tab, then opens them all, and save
     changes: expect.arrayContaining(ids.map(id => ({ id, isCollapsed: false }))),
   })
 })
+
+test('an open row shows its whole title on as many lines as it takes, and a collapsed row cuts it after two lines', () => {
+  const screen = screenOf()
+  const questions = screen.view.needsYou.questions
+  const row = questions.find(r => r.title.includes('pinch'))!
+  const other = questions.find(r => r.id !== row.id)!
+  const titleOf = (ui: PanelUi) => {
+    const lines = text(screen, ui, 36).split('\n')
+    const at = lines.findIndex(l => l.includes('Dismiss a glance'))
+    return lines.slice(at, at + 3)
+  }
+
+  expect(titleOf({ ...onRow(row), opened: row.id })[2]).toMatch(/the wrist\?/)
+  const collapsed = titleOf(onRow(other))
+  expect(collapsed[1]).toMatch(/flick of…$/)
+  expect(collapsed[2]).not.toMatch(/wrist/)
+})

@@ -136,3 +136,36 @@ test('a Status created while the pane already shows the Status page records a lo
 
   expect((seen as SessionStatus).lastLookAt).not.toBeNull()
 })
+
+const seenUnderHead = async ($: Engine, on: On, description: string, bodyRows: number) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  let seen: unknown = null
+  on('state.set', { plugin: 'inbox', key: 'session' } as const, (_$, e, next) => {
+    seen = (e.value as { ledger: { overview: unknown } }).ledger.overview
+    return next(e)
+  })
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  w.statusReply = [
+    `HEAD: Building it | ${description}`,
+    ...Array.from({ length: 40 }, (_, n) => `NEW: working | Piece ${n + 1} | under way`),
+  ].join('\n')
+  await $.prompt.submit({ text: 'build it', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Started.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 64, scroll: { offset: 0, bodyRows } } })
+  await pane.press({ key: 'tab-key-overview' })
+  await clock.settle()
+  await clock.advance(LOOK_MIN_MS)
+  await pane.press({ key: 'tab-key-needsYou' })
+  await clock.settle()
+  const o = seen as unknown as SessionStatus
+
+  return o.subjects.filter(x => isSubjectSeen(o, x)).map(x => x.id)
+}
+const ONE_LINE_DESCRIPTION = 'Building the command that greets a person by the name they'
+
+test('in the terminal, a Status head description that fills one line from the mark column counts as one line, so the first subject under it counts as seen', async ($, on) => {
+  expect(await seenUnderHead($, on, ONE_LINE_DESCRIPTION, 12)).toEqual(['s1'])
+})

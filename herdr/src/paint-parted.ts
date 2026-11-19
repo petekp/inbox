@@ -8,17 +8,22 @@ const SEP_W = 3 * SPACE_UNIT
 
 /**
  * Parts joined by a dot, as items of a wrapping row. A part that does not fit moves whole to the next line. Each part
- * after the first leads with its dot, and the row reaches `SEP_W` left of its box, which clips that strip, so the dot
- * of a part that starts a line is not drawn and no line starts or ends with one.
+ * leads with a slot `SEP_W` wide, the first an empty one and the rest their dot, and the row reaches `SEP_W` left of its
+ * box, which clips that strip. So the dot of a part that starts a line is not drawn, no line starts or ends with one,
+ * and no part, the first included, reaches past the box's right edge.
  */
 export function partedEl(parts: Element[], dotColor: Color): Element {
-  const [first, ...rest] = parts
-  // An element joins one parent only, so each part gets its own dot.
-  const dot = () => h_flex().flex_none().w(SEP_W).justify_center().text_color(dotColor).child('·')
-  const items = [
-    ...(first ? [div().ml(SEP_W).min_w(0).max_w_full().child(first)] : []),
-    ...rest.map(part => h_flex().items_start().min_w(0).max_w_full().child(dot()).child(div().min_w(0).child(part))),
-  ]
+  // An element joins one parent only, so each part gets its own slot.
+  const slot = (n: number) =>
+    h_flex()
+      .flex_none()
+      .w(SEP_W)
+      .justify_center()
+      .text_color(dotColor)
+      .when(n > 0, e => e.child('·'))
+  const items = parts.map((part, n) =>
+    h_flex().items_start().min_w(0).max_w_full().child(slot(n)).child(div().min_w(0).child(part)),
+  )
 
   return div().overflow_hidden().min_w(0).child(h_flex().flex_wrap().items_start().ml(-SEP_W).children(items))
 }

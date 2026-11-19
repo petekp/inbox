@@ -28,7 +28,7 @@ import {
 } from './pane-sizes'
 import type { RowPart } from './row-parts'
 import { DOT, ROW_COPY } from './rows'
-import { lineCount, SELECTION_BAR, statusAfterTitle, type TreePos } from './terminal-text'
+import { lineCount, partedLines, SELECTION_BAR, statusAfterTitle, type TreePos } from './terminal-text'
 import { cellWidth } from './text'
 
 export function paneRows(
@@ -241,8 +241,11 @@ export function paneRows(
     const f = feedbackLabel(row.id, row)
     const isStatusUnder = f !== null && isStatusUnderActions(f.feedback, isSelected)
     const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
+    const fitsStatusLine = (text: string) =>
+      look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : cellWidth(text) <= textWidth
+    const noteLines = row.fold?.note ? partedLines(row.fold.note.split(DOT), fitsStatusLine) : []
     const status = [
-      ...(row.fold?.note ? [{ text: row.fold.note, color: pal.muted }] : []),
+      ...noteLines.map(text => ({ text, color: pal.muted })),
       ...(f && !f.isAfterTitle ? [{ text: f.text, color: feedbackColor(f.tone) }] : []),
       ...(isTyping && paneState.fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
     ]

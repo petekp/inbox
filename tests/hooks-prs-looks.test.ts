@@ -397,3 +397,19 @@ test('in the desktop look, an open PR block’s title and status lines keep only
   const side = within(settled).find(n => n.type === 'Box' && n.props.minWidth === DESKTOP_SIDE_CELLS)
   expect(within(side).some(n => n.props.key === 'undo-pr:acme/greet#12')).toBe(true)
 })
+
+test('in the terminal, a PR heading’s status that does not fit on one line breaks between its parts, and no line starts or ends with a dot', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'inbox', args: 'demo' } as never)
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 36 } })
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  const lineWith = async (text: RegExp) => (await pane.find({ type: 'Text', text }))?.text.trim()
+
+  expect([await lineWith(/conflicts with main/), await lineWith(/changes requested/)]).toEqual([
+    'Blocked\u2007·\u2007conflicts with main',
+    'changes requested',
+  ])
+})

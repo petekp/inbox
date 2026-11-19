@@ -16,9 +16,8 @@ export function paneStatusPart({
   statusMarkAt,
   statusFrameEdge,
   desktopBlockWidth,
-  statusTextWidth,
 }: Pick<PaneBase, 'look' | 'Box' | 'Text' | 'pal' | 'listColumns'> &
-  Pick<PaneStatusLines, 'statusMarkAt' | 'statusFrameEdge' | 'desktopBlockWidth' | 'statusTextWidth'>) {
+  Pick<PaneStatusLines, 'statusMarkAt' | 'statusFrameEdge' | 'desktopBlockWidth'>) {
   // A Status part's name, such as Later or Other work, starts at the mark column, where the Goal heading starts. In
   // the terminal its rule stops at the end of the list's columns. On desktop it runs to the pane's edge.
   const statusRuleAt = statusMarkAt
@@ -88,7 +87,7 @@ export function paneStatusPart({
     const lines =
       look === 'desktop'
         ? desktopTextLines(text, desktopBlockWidth - desktopStatusRuleLeft * DESKTOP_CELL_PT)
-        : inkLines(text, statusTextWidth(0))
+        : inkLines(text, listColumns - statusRuleAt)
 
     return {
       el: (

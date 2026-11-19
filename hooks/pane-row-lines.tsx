@@ -29,7 +29,7 @@ import {
 import type { RowProps } from './row-client'
 import { COLLAPSED_TITLE_LINES } from './row-parts'
 import { DOT, type ResultMark, rowMark, rowResultMark, type RowView, shortAgo } from './rows'
-import { desktopSpanLines, LEADING_DOT, partedLines, type TreePos, treeText } from './terminal-text'
+import { desktopSpanLines, LEADING_DOT, partedLines, statusAfterTitle, type TreePos, treeText } from './terminal-text'
 import { ago, cellWidth, clipLabel } from './text'
 import { resultGlyph, runningMark } from './timing'
 
@@ -314,6 +314,9 @@ export function paneRowLines({
     const [, ...titleSpans] = desktopSpanLines([{ text: before }, { text }], textColumnPt, COLLAPSED_TITLE_LINES, {
       isCutAtWord: true,
     })
+    const after = status
+      ? statusAfterTitle(`${DOT}${status}`, before + text, s => desktopTextPt(s) <= textColumnPt)
+      : null
 
     return {
       markCells: DESKTOP_MARK_CELLS,
@@ -321,7 +324,8 @@ export function paneRowLines({
       before,
       title: titleSpans.map(s => s.text).join(''),
       titleColor: titleColor ?? null,
-      after: partedLines(status.split(DOT), s => desktopTextPt(s) <= textColumnPt).join('\n'),
+      after: after?.text ?? '',
+      isAfterUnder: after?.isUnder ?? false,
       note: holdsUpLineOf(row.view) ?? '',
       side: sideAge(row),
       padY: DESKTOP_ROW_PAD,

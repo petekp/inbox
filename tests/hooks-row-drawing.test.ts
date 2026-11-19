@@ -346,3 +346,23 @@ test('in the terminal and desktop looks, a recommended answer with a description
     }
   }
 })
+
+test('in the terminal, a collapsed row’s title takes two lines and ends in an ellipsis, and the open row shows it whole', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const ask = (text: string) =>
+    $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: text, options: ['Yes', 'No'] })
+  await ask('Short one?')
+  await ask('Should the glance fade out when you look away from it for more than two seconds, or stay until dismissed?')
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+  await clock.settle()
+  const titleLines = async () => [
+    ...new Set((await pane.findAll({ type: 'Text', text: /glance|away|seconds|dismissed/ })).map(t => t.text)),
+  ]
+
+  expect(await titleLines()).toEqual(['Should the glance fade', 'out when you look away …'])
+  await selectRow(pane, 'i2')
+  expect((await titleLines()).join(' ')).toMatch(/until dismissed\?$/)
+})

@@ -35,6 +35,7 @@ import { markTintOf, titleColorOf } from './paint-title-tint'
 import { titleTextEl } from './paint-title-text'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
+import { DOT } from '../../hooks/rows'
 import { ARM_END, answersEl, armEl, isSideBySide, trunkEl } from './paint-tree'
 
 const NO_BREAK_SPACE = '\u00a0'
@@ -51,9 +52,21 @@ const wordEls = (text: string, color: Color): Element[] =>
     .filter(word => word)
     .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
 
-/** A press's result under its buttons. An aged result's age stays muted whatever the result's color. */
+/**
+ * A press's result under its buttons, or a muted note such as a fold's. An aged result's age stays muted whatever the
+ * result's color, and a note of DOT-joined parts breaks between its parts.
+ */
 function feedbackEl(f: { text: string; tone: Tone; aged?: Aged }, t: Theme): Element {
   const cut = f.aged?.lead.length ?? f.text.length
+  if (f.tone === 'muted' && f.text.includes(DOT))
+    return div()
+      .pt(CONTROL_GAP)
+      .child(
+        partedEl(
+          f.text.split(DOT).map(part => statusPartEl(part).text_color(t.muted)),
+          t.muted,
+        ),
+      )
   if (f.tone === 'muted' || cut >= f.text.length) return resultLineEl(f.text, colorOf(t, f.tone), 0)
 
   return h_flex()

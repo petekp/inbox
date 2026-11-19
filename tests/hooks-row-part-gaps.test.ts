@@ -15,7 +15,7 @@ import { inboxView, perTurnStatus } from '../hooks/view'
 import { caseName, rowCases } from './row-part-cases'
 import type { RowCase, RowKind } from './row-part-cases'
 import { w, world } from './hooks-world'
-import { PANE } from './hooks-helpers'
+import { PANE, selectRow } from './hooks-helpers'
 
 type Node = { type: string; key?: string; props?: Record<string, unknown>; children?: unknown[] }
 type Look = 'desktop' | 'terminal'
@@ -319,3 +319,35 @@ for (const look of ['desktop', 'terminal'] as const)
 
       expect(drawn).toEqual(expected)
     })
+
+test('in the docked terminal, one blank row sits between a list’s last row and its Closed fold, whether that row is open or collapsed', async ($, on) => {
+  type Node = { type: string; key?: string; props?: Record<string, unknown>; children?: unknown[] }
+  const kids = (n: Node) => (n.children ?? []).filter((k): k is Node => typeof k === 'object' && k !== null)
+  const textOf = (n: unknown): string => (typeof n === 'string' ? n : ((n as Node).children ?? []).map(textOf).join(''))
+  const bottomPad = (n: Node) =>
+    Math.max(0, ...kids(n).map(k => Number(k.props?.paddingBottom ?? k.props?.paddingY ?? 0)))
+  const blankRowsAboveFold = (n: Node): number | null => {
+    const list = kids(n).filter(k => k.props?.position !== 'absolute')
+    const at = list.findIndex(k => k.props?.key === 'fold-row-question')
+    if (at < 0) return list.map(blankRowsAboveFold).find(r => r !== null) ?? null
+    let blank = 0
+    let i = at - 1
+    for (; i >= 0 && textOf(list[i]).trim() === ''; i--) blank++
+    return blank + (i >= 0 ? bottomPad(list[i]!) : 0)
+  }
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  for (const ask of ['First one?', 'Second one?', 'Third one?'])
+    await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask, options: ['Yes', 'No'] })
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', reason: 'no longer applies: done' } as never)
+  await clock.advance(60_000)
+  const pane = await $.ui.mount(PANE)
+  await clock.settle()
+
+  await selectRow(pane, 'i3')
+  expect(blankRowsAboveFold((await pane.drawn()) as Node)).toBe(1)
+  await selectRow(pane, 'i2')
+  expect(blankRowsAboveFold((await pane.drawn()) as Node)).toBe(1)
+})

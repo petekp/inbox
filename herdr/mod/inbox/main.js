@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T00:34:25.084Z. 298544 characters follow.
+// Built at 2026-11-19T01:29:00.557Z. 298635 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -6271,12 +6271,8 @@ import { div as div12 } from "gpui-kit";
 import { h_flex as h_flex7 } from "gpui-base";
 var SEP_W = 3 * SPACE_UNIT;
 function partedEl(parts, dotColor) {
-  const [first, ...rest] = parts;
-  const dot = () => h_flex7().flex_none().w(SEP_W).justify_center().text_color(dotColor).child("·");
-  const items = [
-    ...first ? [div12().ml(SEP_W).min_w(0).max_w_full().child(first)] : [],
-    ...rest.map((part) => h_flex7().items_start().min_w(0).max_w_full().child(dot()).child(div12().min_w(0).child(part)))
-  ];
+  const slot = (n) => h_flex7().flex_none().w(SEP_W).justify_center().text_color(dotColor).when(n > 0, (e) => e.child("·"));
+  const items = parts.map((part, n) => h_flex7().items_start().min_w(0).max_w_full().child(slot(n)).child(div12().min_w(0).child(part)));
   return div12().overflow_hidden().min_w(0).child(h_flex7().flex_wrap().items_start().ml(-SEP_W).children(items));
 }
 
@@ -6310,6 +6306,8 @@ var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
 function feedbackEl(f, t) {
   const cut = f.aged?.lead.length ?? f.text.length;
+  if (f.tone === "muted" && f.text.includes(DOT))
+    return div14().pt(CONTROL_GAP).child(partedEl(f.text.split(DOT).map((part) => statusPartEl(part).text_color(t.muted)), t.muted));
   if (f.tone === "muted" || cut >= f.text.length)
     return resultLineEl(f.text, colorOf(t, f.tone), 0);
   return h_flex9().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), t.muted)]);

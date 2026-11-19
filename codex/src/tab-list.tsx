@@ -277,7 +277,16 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const note = noteOf(row.id)
   const isTyping = !!row.typing && tabState.typing === row.id
   const notes = [
-    row.fold?.note ? <div class="muted">{row.fold.note}</div> : null,
+    row.fold?.note ? (
+      <div class="muted parted">
+        {row.fold.note.split(DOT).map((part, n) => (
+          <span class="part">
+            {n > 0 ? <Sep /> : null}
+            {part}
+          </span>
+        ))}
+      </div>
+    ) : null,
     note ? <div class="muted">{note}</div> : null,
     errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null,
   ].filter(Boolean)

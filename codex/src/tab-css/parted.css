@@ -25,12 +25,6 @@
   padding-left: 0;
   text-indent: 0;
 }
-/* A status that follows a title in running text, as a PR heading's verdict and reasons do. It moves whole to the line
-   under the title when it does not fit beside it, and there wraps its own parts. */
-.parted.inline {
-  display: inline-flex;
-  max-width: calc(100% + var(--sep-w));
-}
 .parted .sep {
   display: inline-block;
   width: var(--sep-w);

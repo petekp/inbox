@@ -338,11 +338,9 @@ code {
   align-items: center;
   gap: var(--control-gap);
 }
-.keys.follows-answers {
-  margin-left: calc(var(--unit) - var(--button-pad-x));
-}
-.keys.follows-answers > .follow-ups {
-  margin-left: calc(var(--button-pad-x) - var(--unit));
+/* After a question's answers, the first bordered button's label starts at the text edge, where a ghost button's does. */
+.keys.follows-answers > .key:first-child:not(.ghost) {
+  margin-left: calc(-1 * (var(--button-border) + var(--button-pad-x)));
 }
 .follow-ups {
   display: flex;
@@ -389,12 +387,13 @@ code {
   width: 14px;
   height: 14px;
 }
-/* A ghost button keeps its side padding as hit area, and is drawn left by it so its label starts at the text edge. A
-   shift, unlike a negative margin, leaves the line's width alone, so a short label never wraps inside itself. */
+/* A ghost button keeps its side padding as hit area, and is drawn left by it and its border so its label starts at the
+   text edge. A shift, unlike a negative margin, leaves the line's width alone, so a short label never wraps inside
+   itself. */
 .key.ghost {
   padding: 0 var(--unit);
   position: relative;
-  left: calc(-1 * var(--unit));
+  left: calc(-1 * (var(--unit) + var(--button-border)));
   border-color: transparent;
   background: none;
   color: var(--muted);

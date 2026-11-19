@@ -200,16 +200,21 @@ function PrHead({ v, pr }: DrawnPrBlock & { v: View }) {
 
   return (
     <div class="pr-head">
-      <span class="tone-prs num">#{pr.number}</span> {pr.title}{' '}
-      <span class="parted inline">
-        <span class={tone ? `part pr-verdict tone-${tone}` : 'part pr-verdict muted'}>{head}</span>
+      <div class="parted">
+        <span class="part">
+          <span class="tone-prs num">#{pr.number}</span> {pr.title}
+        </span>
+        <span class={tone ? `part pr-verdict tone-${tone}` : 'part pr-verdict muted'}>
+          <Sep />
+          {head}
+        </span>
         {unlisted.map(r => (
           <span class="part pr-verdict muted">
             <Sep />
             {r}
           </span>
         ))}
-      </span>
+      </div>
     </div>
   )
 }
