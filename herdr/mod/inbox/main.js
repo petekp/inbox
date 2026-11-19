@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T02:04:15.465Z. 300633 characters follow.
+// Built at 2026-11-19T03:17:03.238Z. 300091 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5198,6 +5198,9 @@ function enterDelayMs(height, from = { x: 0, v: 0 }) {
   const at = springFrames(from, height).findLastIndex((x) => height - x > SLIDE_PX / 2) + 1;
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
 }
+function titleSwapMs(height, from) {
+  return (springFrames(from, height).length - 1) * FRAME_MS;
+}
 var drawsPanel = (track) => track.hasOpenForm && track.state !== "settling";
 var ROW_FADE_MS = {
   entering: ENTER_FADE_MS,
@@ -5372,43 +5375,32 @@ var shutTo = (height, ms) => ms === null ? { x: 0, v: 0 } : springStep({ x: heig
 
 // src/title-motion.ts
 var wraps = (height) => height !== undefined && height > LINE_PT + 0.5;
-var isWrapDrawn = (g, now) => g.isWrapped && g.fadesAt !== null && now >= g.fadesAt || now < g.wrapGoneAt;
-function stepTitle(last, wasOpen, isOpen, now, height) {
+function stepTitle(last, wasOpen, isOpen, now, height, heldUntil = 0) {
   const live = last !== null && now < last.endsAt ? last : null;
   if (isOpen && !wasOpen) {
-    const shrunkForMs = live && !live.isWrapped ? Math.max(0, now - live.boxHeldUntil) : null;
-    const wrapGoneAt = live && isWrapDrawn(live, now) ? now + ENTER_FADE_MS : now;
-    const glide = { isWrapped: true, since: now, fadesAt: null, boxHeldUntil: now, shrunkForMs, wrapGoneAt };
-    return { ...glide, endsAt: now + 2 * FRAME_MS + HEIGHT_SETTLE_MS };
+    const shrunkForMs = live && !live.isWrapped ? Math.max(0, now - Math.max(live.since, heldUntil)) : null;
+    return { isWrapped: true, since: now, swapsAt: null, shrunkForMs, endsAt: now + 2 * FRAME_MS + HEIGHT_SETTLE_MS };
   }
   if (!isOpen && wasOpen) {
     if (!wraps(height))
       return null;
-    const wasShown = live === null || isWrapDrawn(live, now);
-    const fadesAt = live ? now : now + FRAME_MS;
-    const boxHeldUntil = wasShown ? fadesAt + LEAVE_FADE_MS : now;
-    const glide = { isWrapped: false, since: now, fadesAt, boxHeldUntil, shrunkForMs: null, wrapGoneAt: boxHeldUntil };
-    return { ...glide, endsAt: boxHeldUntil + HEIGHT_SETTLE_MS + FRAME_MS };
+    return { isWrapped: false, since: now, swapsAt: now, shrunkForMs: null, endsAt: now + HEIGHT_SETTLE_MS + FRAME_MS };
   }
-  if (!live || !live.isWrapped || live.fadesAt !== null || now === live.since)
+  if (!live || !live.isWrapped || live.swapsAt !== null || now === live.since)
     return live;
   if (!wraps(height))
     return null;
   const from = live.shrunkForMs === null ? { x: LINE_PT, v: 0 } : springStep({ x: height, v: 0 }, LINE_PT, live.shrunkForMs);
-  const fadesAt = now + enterDelayMs(height, from);
-  return { ...live, fadesAt, endsAt: Math.max(live.endsAt, fadesAt + ENTER_FADE_MS + FRAME_MS) };
+  const swapsAt = now + titleSwapMs(height, from);
+  return { ...live, swapsAt, endsAt: Math.max(live.endsAt, swapsAt + FRAME_MS) };
 }
 function titleMotion(g, now) {
   if (g === null)
     return null;
-  const hasFaded = g.fadesAt !== null && now >= g.fadesAt;
-  return {
-    isWrapShown: g.isWrapped === hasFaded,
-    isBoxWrapped: g.isWrapped || now < g.boxHeldUntil,
-    fadeMs: g.isWrapped ? ENTER_FADE_MS : LEAVE_FADE_MS
-  };
+  const hasSwapped = g.swapsAt !== null && now >= g.swapsAt;
+  return { isWrapShown: g.isWrapped === hasSwapped, isBoxWrapped: g.isWrapped };
 }
-var titleTimes = (g) => g === null ? [] : [g.fadesAt ?? 0, g.boxHeldUntil, g.endsAt];
+var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
 
 // src/under-line.ts
 var LEAVE_ENDS_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
@@ -5529,7 +5521,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isOpen = block.kind === "row" && isOpenRow(block);
     const wasOpen = last?.block.kind === "row" && isOpenRow(last.block);
     const isOpenFormSwapped = track.hasOpenForm && !drawsPanel(track);
-    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id))) : null;
+    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)), last?.panelHeldUntil) : null;
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const isPressed = block.kind === "field";
@@ -6288,8 +6280,8 @@ function titleTextEl(r, p, color) {
   const text = div10().flex_1().min_w(0).text_color(color).when(isOpen, (e) => e.font_semibold());
   if (m === null)
     return text.when(!isOpen, (e) => e.truncate()).child(r.title);
-  const fade = (id, isShown) => div10().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: m.fadeMs, easing: "ease-out" });
-  return text.relative().child(fade(`wrapped ${r.id}`, m.isWrapShown).child(r.title)).child(div10().absolute().top(0).left(0).w_full().child(fade(`one line ${r.id}`, !m.isWrapShown).truncate().child(r.title)));
+  const form = (id, isShown) => div10().id(id).opacity(isShown ? 1 : 0);
+  return text.relative().child(form(`wrapped ${r.id}`, m.isWrapShown).child(r.title)).child(div10().absolute().top(0).left(0).w_full().child(form(`one line ${r.id}`, !m.isWrapShown).truncate().child(r.title)));
 }
 
 // src/paint-notes.ts

@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { Window } from 'happy-dom'
 import { LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
+import { FRAME_MS } from '../../hooks/springs'
 import TAB_HTML from '../src/tab.html'
 import { NO_HOLDS } from '../../hooks/timing'
 import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
@@ -36,9 +37,9 @@ type Fade = {
   anim: Animation
 }
 
-function opacityNow(f: Fade | undefined): number | null {
+function opacityNow(f: Fade | undefined, at = Date.now()): number | null {
   if (!f || f.anim.playState === 'idle') return null
-  const elapsed = Date.now() - f.startsAt
+  const elapsed = at - f.startsAt
   const holdsFirst = f.fill === 'backwards' || f.fill === 'both'
   const holdsLast = f.fill === 'forwards' || f.fill === 'both'
   if (elapsed < 0) return holdsFirst ? f.from : null
@@ -194,7 +195,7 @@ type Harness = {
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, a moving row’s clamped title draws the closed weight, and a dismissed open row draws only its settled line', async context => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, a moving row’s clamped title draws the closed weight and never shows with its full title, and a dismissed open row draws only its settled line', async context => {
   await inTab(async ({ state, moves, fades, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-read')
@@ -255,7 +256,24 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
       fades
         .filter(f => f.el.closest('.panel') && rowOf(id).contains(f.el))
         .map(({ from, to, delay }) => ({ from, to, delay }))
+    const pressedAt = Date.now()
     await press(pressed.id)
+    const titleForms = (id: string, at: number) =>
+      (['.text.short', '.text:not(.short)'] as const).map(form => {
+        const el = rowOf(id).querySelector<HTMLElement>(`.line > ${form}`)
+        const shown = opacityNow(
+          fades.findLast(f => f.el === el),
+          at,
+        )
+        return shown ?? (form === '.text.short' ? 0 : 1)
+      })
+    for (const id of ['i1', pressed.id])
+      for (let t = 0; t <= ROW_STATE_MS.opening; t += FRAME_MS) {
+        const [short, full] = titleForms(id, pressedAt + t)
+        assert.ok(short! < 0.02 || full! < 0.02, `${id} shows both title forms ${t} ms in: ${short} and ${full}`)
+      }
+    assert.deepEqual(titleForms('i1', pressedAt), [1, 0], 'the closing title does not take its closed form at once')
+    assert.deepEqual(titleForms(pressed.id, pressedAt + ROW_STATE_MS.opening), [0, 1])
     const shrinks = moves.filter(m => m.key.includes('i1'))
     assert.ok(shrinks.length > 0, 'closing i1 started no glide')
     for (const m of shrinks)

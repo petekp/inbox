@@ -339,8 +339,9 @@ function collapse(
   if (shown) for (const p of fadingParts(shown)) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
   else if (part && state === 'closing') fade(part, 0, 0, 0, true)
   const opacity = opacityOf(el)
-  glide(el, 'height', from, target, true, false, Math.max(delay, shown ? LEAVE_FADE_MS : 0))
-  if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, delay)
+  const shrinksAfter = Math.max(delay, shown ? LEAVE_FADE_MS : 0)
+  glide(el, 'height', from, target, true, false, shrinksAfter)
+  if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, shrinksAfter)
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)
 }
 

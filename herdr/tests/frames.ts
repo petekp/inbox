@@ -20,7 +20,7 @@ const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
 type Jump = { at: number; id: string; by: number }
-type TitleForm = { at: number; id: string; wrapped: number; box: number; isBoxResting: boolean }
+type TitleForm = { at: number; id: string; wrapped: number; oneLine: number; box: number; isBoxResting: boolean }
 type ColumnGap = { at: number; id: string; x: number; y: number }
 type Cut = { at: number; box: string; text: string; share: number; opacity: number }
 type Fading = { at: number; id: string; height: number; opacity: number }
@@ -230,7 +230,7 @@ class Fades {
   opacityOf(n: Painted): number {
     let opacity = 1
     for (let up: Painted | null = n; up; up = up.parent)
-      if (fadesOn(up.id)) opacity *= this.states.get(up.id ?? '')?.shown ?? 1
+      if (fadesOn(up.id)) opacity *= this.states.get(up.id ?? '')?.shown ?? up.style.opacity ?? 1
     return opacity
   }
 
@@ -360,9 +360,15 @@ class Frames {
       const text = node.kids.find(isTitleText)
       if (id === undefined || !text) continue
       const box = `fit title ${id}`
-      const layer = this.fades.states.get(`wrapped ${id}`)
-      const wrapped = text.text !== null ? (text.style.isTruncated ? 0 : 1) : (layer?.shown ?? NaN)
-      this.titles.push({ at: now, id, wrapped, box: shown.get(box) ?? NaN, isBoxResting: this.springs.isResting(box) })
+      const formShown = (form: string) => {
+        const layer = text.kids.flatMap(c => [c, ...c.kids]).find(c => c.id === `${form} ${id}`)
+        return this.fades.states.get(`${form} ${id}`)?.shown ?? layer?.style.opacity ?? NaN
+      }
+      const isOneLine = text.style.isTruncated ? 1 : 0
+      const wrapped = text.text !== null ? 1 - isOneLine : formShown('wrapped')
+      const oneLine = text.text !== null ? isOneLine : formShown('one line')
+      const isBoxResting = this.springs.isResting(box)
+      this.titles.push({ at: now, id, wrapped, oneLine, box: shown.get(box) ?? NaN, isBoxResting })
     }
     for (const { node, height } of sized) node.onSize?.({ width: PANE_WIDTH, height }, null)
     this.lastShown = shown
