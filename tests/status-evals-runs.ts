@@ -275,6 +275,17 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'head-description': [
     'SET: s2 | working | syncs on reconnect, merging clashing edits left\nHEAD: Shared lists | Getting edits to sync after time offline\nSET: m2 | working | syncs on reconnect\nSET: m3 | queued | not started',
   ],
+  'head-after-done': [
+    [
+      'HEAD: Greet and pad | Adding --repeat and settling how pad() handles long strings',
+      'NEW: working | Repeat flag | added',
+      'DONE: Repeat flag | added',
+      'NEW: working | Pad trimming | cut or keep long strings',
+      'LINK: i1 | Pad trimming',
+    ].join('\n'),
+    'DONE: s2 | long strings kept whole',
+    'NO CHANGE',
+  ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
   ],

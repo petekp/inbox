@@ -18,14 +18,8 @@ import {
   milestonesAsPiece,
   milestonesOf,
   NUMBERED,
-  STATUS_WORDS,
   TIME_WORDS,
-  WORD,
-  headOffFocus,
-  headWords,
-  isAnswerWritten,
   isPlainLabel,
-  isTitleKept,
   keyWords,
   label,
   modelTexts,
@@ -125,53 +119,6 @@ const FIXED_RULES: Rule[] = [
       const pieces = [...shownOf(o), ...milestonesOf(o)].flatMap(s => [s.name, s.text])
 
       return [...head, ...goals, ...pieces].filter(t => t.includes(';')).map(t => `semicolon: "${t}"`)
-    },
-  },
-  {
-    id: 'head-no-status',
-    reads: 'answer',
-    property: 1,
-    text: 'The head holds no status word.',
-    failures: ({ result }) => {
-      const head = headWords(result.session.ledger.overview)
-      return STATUS_WORDS.test(head) ? [`status word in the head: "${head}"`] : []
-    },
-  },
-  {
-    id: 'head-follows',
-    reads: 'facts',
-    property: 1,
-    text: 'The head names the focus in the facts, and its title no longer names finished work the focus moved on from. It changes where the focus moved, and holds where it did not, unless it was off the focus before.',
-    failures: ({ result, before }) => {
-      const now = result.session.ledger.overview?.head ?? null
-      const earlier = before.overview?.head ?? null
-      const head = headWords(result.session.ledger.overview)
-      const last = headWords(before.overview)
-      const isFocusSame = result.facts.focusMatch === before.facts.focusMatch
-      const isDescriptionFilled = earlier?.description === '' && now?.title === earlier.title
-      const off = headOffFocus(result.session.ledger.overview, result.facts)
-      if (off !== null) return [off]
-      const wasOff = last !== '' && headOffFocus(before.overview, before.facts) !== null
-      return isFocusSame && last !== '' && head !== last && !isDescriptionFilled && !wasOff
-        ? [`the head moved from "${last}" to "${head}"`]
-        : []
-    },
-  },
-  {
-    id: 'head-title-kept',
-    reads: 'facts',
-    property: 1,
-    text: 'A head title that names the whole focus in the facts stays on it while the facts keep that title, so it is never retitled to a piece of the work.',
-    opportunity: ({ result, before }) => isTitleKept(result, before) && isAnswerWritten(result),
-    failures: ({ result, before }) => {
-      const pattern = result.facts.titleMatch
-      if (!pattern || pattern !== before.facts.titleMatch) return []
-      const isWhole = (title: string) => new RegExp(pattern, 'i').test(title)
-      const was = before.overview?.head?.title ?? ''
-      const now = result.session.ledger.overview?.head?.title ?? ''
-      return isWhole(was) && !isWhole(now)
-        ? [`the head's title moved from "${was}" to "${now}", off the whole focus`]
-        : []
     },
   },
   {
@@ -401,26 +348,6 @@ const FIXED_RULES: Rule[] = [
     text: 'While the last Status call wrote nothing, the status line says so.',
     failures: ({ result }) =>
       result.isStatusFailed && result.page.error === null ? ['the call failed, and the page does not say so'] : [],
-  },
-  {
-    id: 'head-title',
-    reads: 'answer',
-    property: 1,
-    text: 'The head is a title of at most 3 words, with no "…" or question mark, and a description that does not repeat it.',
-    failures: ({ result }) => {
-      const head = result.page.head
-      if (head === null) return ['the page has no head']
-      const titleWords = new Set(head.title.toLowerCase().match(WORD) ?? [])
-      const descriptionWords = head.description?.toLowerCase().match(WORD) ?? []
-      const isTitleLong = head.title.trim().split(/\s+/).length > NAME_WORDS
-      return [
-        ...(isTitleLong || /…|\?/.test(head.title) ? [`title: "${head.title}"`] : []),
-        ...(descriptionWords.length === 0 ? ['the head has no description'] : []),
-        ...(descriptionWords.length > 0 && descriptionWords.every(w => titleWords.has(w))
-          ? [`the description repeats the title: "${head.description}"`]
-          : []),
-      ]
-    },
   },
   {
     id: 'finished-named',

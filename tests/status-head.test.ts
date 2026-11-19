@@ -4,7 +4,7 @@ import { test } from './test-with-timeout'
 import { applyOps } from '../hooks/status-ops'
 import { opsOf, NO_ASKS, after } from './status-helpers'
 
-test('a HEAD that keeps the title keeps its wording and takes the new description, and one that comes with work finished from under way and none left keeps the head', () => {
+test('a HEAD that keeps the title keeps its wording and takes the new description, and one that comes with work finished from under way and none left keeps the title and loses the description', () => {
   const one = after(
     null,
     'HEAD: Offline sync | Adding offline sync to the notes app\nNEW: working | Sync engine | queue built',
@@ -62,16 +62,16 @@ test('a HEAD that keeps the title keeps its wording and takes the new descriptio
   expect(restated.head).toBe(one.head)
   expect(blank.head).toBe(one.head)
   expect(moved.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
-  expect(finished.head).toEqual(one.head)
+  expect(finished.head).toEqual({ title: 'Offline sync', description: '' })
   expect(handedOn.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5' })
-  expect(filedAlongside.head).toEqual(one.head)
-  expect(startedAndFinished.head).toEqual({ title: 'README fix', description: 'Fixing the README' })
+  expect(filedAlongside.head).toEqual({ title: 'Offline sync', description: '' })
+  expect(startedAndFinished.head).toEqual({ title: 'README fix', description: '' })
   expect(unknownDone.head).toEqual({ title: 'README fix', description: 'Fixing the README' })
   expect(queuedClosed.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5' })
   expect(described.head).toEqual({ title: 'Ship offline sync', description: 'Adding offline sync to the notes app' })
 })
 
-test('a head whose description names work that just finished, while other work goes on, takes a new one or loses it', () => {
+test('a head whose description names work that just finished, while other work goes on, takes a new one or loses it, and loses it once no work goes on', () => {
   const one = after(
     null,
     [
@@ -101,8 +101,76 @@ test('a head whose description names work that just finished, while other work g
   expect(redescribed.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
   expect(unwritten.head).toEqual({ title: '2.5 release', description: '' })
   expect(rewordedStale.head).toEqual({ title: '2.5 release', description: '' })
-  expect(nothingLeft.head).toEqual(one.head)
+  expect(nothingLeft.head).toEqual({ title: '2.5 release', description: '' })
   expect(otherFinished.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
+})
+
+test('once the last working or waiting subject closes, or work the head names starts and finishes, the head keeps its title, loses its description, and takes none under that title until work is under way again', () => {
+  const asked = after(
+    null,
+    [
+      'HEAD: Greet and pad | Adding --repeat, deciding pad() trimming',
+      'NEW: working | Repeat flag | added',
+      'DONE: Repeat flag | added',
+      'NEW: working | Trim decision | waits on your answer',
+    ].join('\n'),
+    100,
+  )
+  const answered = applyOps(asked, opsOf('DONE: s2 | long strings kept whole'), 200, NO_ASKS)
+  const rewritten = applyOps(
+    asked,
+    opsOf('DONE: s2 | long strings kept whole\nHEAD: Greet and pad | Watching for feedback on the CLI'),
+    200,
+    NO_ASKS,
+  )
+  const describedIdle = applyOps(answered, opsOf('HEAD: Greet and pad | Waiting for the next request'), 300, NO_ASKS)
+  const retitledIdle = applyOps(answered, opsOf('HEAD: Help text | Writing the help text'), 300, NO_ASKS)
+  const resumed = applyOps(
+    answered,
+    opsOf('NEW: working | Short flag | adding -r\nHEAD: Greet and pad | Adding a short flag for --repeat'),
+    300,
+    NO_ASKS,
+  )
+  const searching = after(
+    null,
+    'HEAD: 3.1 search | Getting search under 100 ms\nNEW: working | Search index | slow',
+    100,
+  )
+  const sideFix = applyOps(
+    searching,
+    opsOf('SET: s1 | queued | paused\nNEW: working | Login button | wraps\nDONE: Login button | fixed'),
+    200,
+    NO_ASKS,
+  )
+  const namedFix = applyOps(
+    after(null, 'HEAD: Greet CLI | Adding a repeat flag\nNEW: queued | Help text | not started', 100),
+    opsOf('NEW: working | Repeat flag | started\nDONE: Repeat flag | added'),
+    200,
+    NO_ASKS,
+  )
+  const inReview = applyOps(
+    after(
+      null,
+      [
+        'HEAD: 2.5 release | Getting 2.5 through store review',
+        'NEW: waits-on-other | 2.5 release | in store review',
+        'NEW: working | README fix | typo found',
+      ].join('\n'),
+      100,
+    ),
+    opsOf('DONE: s2 | fixed'),
+    200,
+    NO_ASKS,
+  )
+
+  expect(answered.head).toEqual({ title: 'Greet and pad', description: '' })
+  expect(rewritten.head).toEqual({ title: 'Greet and pad', description: '' })
+  expect(describedIdle.head).toBe(answered.head)
+  expect(retitledIdle.head).toEqual({ title: 'Help text', description: 'Writing the help text' })
+  expect(resumed.head).toEqual({ title: 'Greet and pad', description: 'Adding a short flag for --repeat' })
+  expect(sideFix.head).toBe(searching.head)
+  expect(namedFix.head).toEqual({ title: 'Greet CLI', description: '' })
+  expect(inReview.head).toEqual({ title: '2.5 release', description: 'Getting 2.5 through store review' })
 })
 
 test('a HEAD that keeps the title corrects a description that names work an earlier answer finished', () => {

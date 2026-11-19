@@ -28,7 +28,7 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'goal-met-next': {
     at: 1,
-    answer: GOOD_RUNS['goal-met-next']![1]!.replace(/^HEAD: [^\n]*\n/, ''),
+    answer: GOOD_RUNS['goal-met-next']![1]!.replace(/^HEAD: [^\n]*\n/, 'HEAD: 2.5 release | Shipping the 2.5 update\n'),
     breaks: 'head-follows',
   },
   'goal-wait': {
@@ -159,4 +159,5 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
       'SET: s2 | working | syncs on reconnect, merging clashing edits left\nSET: m2 | working | syncs on reconnect\nSET: m3 | queued | not started',
     breaks: 'head-follows',
   },
+  'head-after-done': { at: 2, answer: 'HEAD: Greet flags | Adding options to greet', breaks: 'head-follows' },
 }
