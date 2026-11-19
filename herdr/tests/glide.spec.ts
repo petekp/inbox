@@ -375,7 +375,7 @@ test('a row the person opens again after its panel faded fades the panel back in
     const panel = frames.fading.filter(f => f.id === 'panel d11' && f.at > backAt)
     const heightAt = new Map(frames.heights.map((h, i) => [i * 16 - 500, h]))
     const emptyNearOpen = panel.slice(1).filter(f => f.opacity < 0.05 && openHeight - (heightAt.get(f.at) ?? 0) < 50)
-    expect({ backAt, shownSecondFrame: (panel[1]?.opacity ?? 0) > 0.05, emptyNearOpen }).toEqual({
+    expect({ backAt, shownSecondFrame: (panel[1]?.opacity ?? 0) > 0.02, emptyNearOpen }).toEqual({
       backAt,
       shownSecondFrame: true,
       emptyNearOpen: [],

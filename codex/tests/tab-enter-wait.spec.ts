@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { Window } from 'happy-dom'
-import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
+import { LEAVE_FADE_MS, ROW_STATE_MS, TURNED_BACK_CUT_OPACITY } from '../../hooks/row-motion'
 import { FRAME_MS } from '../../hooks/springs'
 import TAB_HTML from '../src/tab.html'
 import { NO_HOLDS } from '../../hooks/timing'
@@ -197,7 +197,7 @@ type Harness = {
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, and slowly once its row has begun to shrink, a moving row’s clamped title draws the closed weight and never shows with its full title, and a dismissed open row draws only its settled line', async context => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, held faint while its row regrows from a shrink, a moving row’s clamped title draws the closed weight and never shows with its full title, and a dismissed open row draws only its settled line', async context => {
   await inTab(async ({ state, moves, fades, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-read')
@@ -333,10 +333,17 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     await after(LEAVE_FADE_MS + 40)
     fades.length = 0
     await press(pressed.id)
-    const lateFades = fades.filter(f => f.el.closest('.panel') && rowOf(pressed.id).contains(f.el) && f.to === 1)
+    const lateFades = () =>
+      fades.filter(f => f.el.closest('.panel') && rowOf(pressed.id).contains(f.el) && f.to > 0)
+    const dims = lateFades()
     assert.ok(
-      lateFades.length > 0 && lateFades.every(f => f.delay === 0 && f.duration > ENTER_FADE_MS),
-      `a close turned back once its row began to shrink does not fade its panel in at once and slowly: ${JSON.stringify(lateFades.map(({ delay, duration }) => ({ delay, duration })))}`,
+      dims.length > 0 && dims.every(f => f.delay === 0 && f.to === TURNED_BACK_CUT_OPACITY),
+      `a close turned back once its row began to shrink does not fade its panel at once to a faint opacity: ${JSON.stringify(dims.map(({ to, delay }) => ({ to, delay })))}`,
+    )
+    await after(Math.max(...dims.map(f => f.duration)) + FRAME_MS)
+    assert.ok(
+      lateFades().some(f => f.from === TURNED_BACK_CUT_OPACITY && f.to === 1),
+      'a turned-back panel held faint does not fade on to full once its space is nearly open',
     )
     await after(ROW_STATE_MS.opening + 50)
     fades.length = 0

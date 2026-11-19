@@ -15,7 +15,7 @@ const FRAME_MS = 16
 const PANE_WIDTH = 300
 const WRAP_AT = 40
 const CUT_MAX_OPACITY = 0.2
-const TURNED_BACK_PANEL_CUT_MAX_OPACITY = 0.8
+const TURNED_BACK_PANEL_CUT_MAX_OPACITY = 0.5
 const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 
 type Box = { top: number; height: number }

@@ -3,7 +3,7 @@ import type { Color, Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import { partPt } from '../../hooks/row-parts'
 import type { RowPart } from '../../hooks/row-parts'
-import { ROW_FADE_MS, enterDelayMs, turnBackFadeMs } from '../../hooks/row-motion'
+import { ROW_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
 import { isOpenRow } from './blocks'
 import type { Aged, Block, BodyLine, Button, LineBlock, PrBlock, RowBlock, Tone } from './blocks'
 import {
@@ -30,7 +30,6 @@ import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
 import { PATH_X, lineColor, padOf, restId, sizeEl, titleEl } from './paint-space'
 import { panelId } from './heights'
-import { shutTo } from './block-glide'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
@@ -258,10 +257,9 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   const key = panelId(r.id)
   const opacity = m?.panel ?? null
   const height = p.heights.get(key) ?? 0
-  const isTurnedBack = m?.isPanelWaiting === true && m.panelShutForMs !== null
-  const space = shutTo(height, m?.panelShutForMs ?? null)
-  const delay = m?.isPanelWaiting && !isTurnedBack ? enterDelayMs(height, space) : 0
-  const duration = isTurnedBack ? turnBackFadeMs(height, space) : ROW_FADE_MS[m?.state ?? 'open']
+  const turnBackFadeMs = m?.panelFadeMs ?? null
+  const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0
+  const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? 'open']
   const glide = { duration, delay, easing: 'ease-out' as const }
 
   return [

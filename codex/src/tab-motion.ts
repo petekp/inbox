@@ -1,6 +1,6 @@
 import { atEndWeight } from './weight-ease'
-import { ENTER_FADE_MS, enterDelayMs, FADE_MS, isMoving, LEAVE_FADE_MS, ROW_STATE_MS, turnBackFadeMs } from '../../hooks/row-motion'
-import type { RowState } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, enterDelayMs, FADE_MS, isMoving, LEAVE_FADE_MS, ROW_STATE_MS, turnBackFades } from '../../hooks/row-motion'
+import type { FadeStep, RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
@@ -256,16 +256,32 @@ function moveRow(
 
 /**
  * Fades an opening row's panel in once its space is nearly open, counted from where the space is. A panel the row
- * still drew as it closed turns back at once, from the opacity it shows, over `turnBackFadeMs`, and one that still
- * shows whole stops its fade out.
+ * still drew as it closed turns back at once, from the opacity it shows, in the steps of `turnBackFades`, and one
+ * that still shows whole stops its fade out.
  */
 function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
   if (!wasDrawn) return fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
   for (const el of new Set([part, ...fadingParts(part)])) {
     const opacity = opacityOf(el)
-    if (opacity < 0.99) fade(el, opacity, 1, turnBackFadeMs(target, from), false, false, delay)
+    if (opacity < 0.99) fadeThrough(el, opacity, turnBackFades(target, from), delay)
     else stopFadeOut(el)
   }
+}
+
+/**
+ * Fades an element from `from` through `steps` after `delay` ms, each step once the one before it ends. A step it
+ * already shows is skipped. A fade that replaces a step cancels it, which ends the steps after it.
+ */
+function fadeThrough(el: HTMLElement, from: number, steps: FadeStep[], delay: number) {
+  const [step, ...rest] = steps
+  if (!step) return
+  if (from >= step.to && rest.length > 0) return fadeThrough(el, from, rest, delay)
+  fade(el, from, step.to, step.ms, rest.length > 0, false, delay)
+  if (rest.length > 0)
+    el.getAnimations().at(-1)?.finished.then(
+      () => fadeThrough(el, step.to, rest, 0),
+      () => {},
+    )
 }
 
 /** A panel's Holds up line, which the closed line draws in the same place once the row's close ends. */

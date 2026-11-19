@@ -32,15 +32,25 @@ export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 })
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
 }
 
+/** The most a row's panel shows while it fades back in and the edge of its regrowing space may still cut its lines. */
+export const TURNED_BACK_CUT_OPACITY = 0.5
+
+/** One step of a fade: to `to` opacity over `ms` ms, after the step before it. */
+export type FadeStep = { to: number; ms: number }
+
 /**
- * How long a row's panel takes to fade back in when the row opens again while it closes, in ms. The fade starts at
- * once, from the opacity the panel shows, so the row is never near its open height with an empty panel. Its space,
- * opening to `height` px from `from`, may still be short when the row turns back after the space began to shut. So
- * the fade ends `ENTER_FADE_MS` after the space is nearly open (`enterDelayMs`), where an opening panel's fade ends,
- * and the edge of the space cuts the panel's last lines only while they are faint.
+ * How a row's panel fades back in when the row opens again while it closes: steps that start at once, from the
+ * opacity the panel shows, so the row is never near its open height with an empty panel. While the row's box still
+ * holds the panel's height, the panel fades in over `ENTER_FADE_MS`. Once the box has begun to shrink, the space,
+ * opening to `height` px from `from`, is short, so the panel first fades to `TURNED_BACK_CUT_OPACITY` until the space
+ * is nearly open (`enterDelayMs`), and the edge of the space cuts its lines only while they are that faint. It then
+ * fades to full over `ENTER_FADE_MS`, as an opening panel does.
  */
-export function turnBackFadeMs(height: number, from: SpringState): number {
-  return enterDelayMs(height, from) + ENTER_FADE_MS
+export function turnBackFades(height: number, from: SpringState): FadeStep[] {
+  const dimMs = enterDelayMs(height, from)
+  const full: FadeStep = { to: 1, ms: ENTER_FADE_MS }
+
+  return dimMs > 0 ? [{ to: TURNED_BACK_CUT_OPACITY, ms: dimMs }, full] : [full]
 }
 
 /**

@@ -5,6 +5,8 @@ import type { Block, RowBlock } from './blocks'
 import type { TabCell } from './draw'
 import { MOVED_TO, copyIdOf, panelId, titleId } from './heights'
 import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce } from './block-glide'
+import { stepsFrom } from './panel-steps'
+import type { PanelStep } from './panel-steps'
 import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
 import type { TitleGlide, TitleMotion } from './title-motion'
@@ -18,7 +20,8 @@ import type { UnderLine, UnderMotion } from './under-line'
  * place, which are new so that they start from no height, and is null for a block that never moved. `isInputMove` says
  * the block's move started in a draw that followed the person's input. `under` is the status under a row's buttons as
  * it comes and goes. `panelShutForMs` is how long an opening row's panel space had been shutting when the open turned
- * a close back, null when the open starts from a shut space. `panelHeldUntil` is when a closing row's panel has faded
+ * a close back, null when the open starts from a shut space, and `panelSteps` the steps its panel then fades in, each
+ * with its start. `panelHeldUntil` is when a closing row's panel has faded
  * out, so its box lets go of the panel's height. `panelLeftOutAt` is the draw in which a closing row's box let go, so
  * the space starts shrinking, and null until it has.
  */
@@ -32,6 +35,7 @@ type Tracked = {
   isInputMove: boolean
   under: UnderLine | null
   panelShutForMs: number | null
+  panelSteps: PanelStep[] | null
   panelHeldUntil: number
   panelLeftOutAt: number | null
 }
@@ -55,8 +59,8 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
  * `closing` the open form whose panel a closing row keeps drawn. `isPanelWaiting` says an opening row's panel fades in
  * once its space is nearly open, as an entering block's content does, the person's own move included. A row that turns
- * back from a close fades its panel in at once instead, over `turnBackFadeMs` counted from where its space is:
- * `panelShutForMs` is how long the panel's space had been shutting, and null when the open starts from a shut space. `isPanelLeftOut` says the row's content box moves to
+ * back from a close fades its panel in at once instead, in the steps of `turnBackFades`, and `panelFadeMs` is the
+ * length of the step it is in. `isPanelLeftOut` says the row's content box moves to
  * its measured height less its panel's: through a close once its panel has faded, through all of a close whose panel
  * showed nothing yet, as one that turns an open back before its panel faded in, and in the draw after a close, before
  * the row measures without the panel.
@@ -77,9 +81,9 @@ export type RowMotion = {
   fadeMs: number
   waitsForSpace: boolean
   shutForMs: number | null
-  panel: 0 | 1 | null
+  panel: number | null
   isPanelWaiting: boolean
-  panelShutForMs: number | null
+  panelFadeMs: number | null
   closing: RowBlock | null
   isPanelLeftOut: boolean
   title: TitleMotion | null
@@ -253,6 +257,15 @@ export function moveRows(
           : isStart
             ? null
             : (last?.panelShutForMs ?? null)
+    const panelSteps =
+      track.state !== 'opening'
+        ? null
+        : isTurnedBack
+          ? stepsFrom(now, panelShutForMs ?? 0, heightOf(panelId(block.id)) ?? 0)
+          : isStart
+            ? null
+            : (last?.panelSteps ?? null)
+    const panelStep = panelSteps?.findLast(step => step.at <= now) ?? null
     const panelHeldUntil =
       track.state !== 'closing' ? 0 : isStart ? (panelHolds.get(block.id) ?? now) : (last?.panelHeldUntil ?? 0)
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
@@ -275,6 +288,7 @@ export function moveRows(
       isInputMove,
       under,
       panelShutForMs,
+      panelSteps,
       panelHeldUntil,
       panelLeftOutAt,
     })
@@ -286,9 +300,9 @@ export function moveRows(
       fadeMs: glide?.fadeMs ?? 0,
       waitsForSpace: glide?.waitsForSpace ?? false,
       shutForMs: glide?.shutForMs ?? null,
-      panel: panelOf(track.state, isStart, last?.track.state, closing),
+      panel: panelStep?.to ?? panelOf(track.state, isStart, last?.track.state, closing),
       isPanelWaiting: track.state === 'opening',
-      panelShutForMs: isTurnedBack ? panelShutForMs : null,
+      panelFadeMs: panelStep?.ms ?? null,
       closing,
       isPanelLeftOut: isLeftOut || (wasClosing && block.kind === 'row'),
       title: titleMotion(title, now),
@@ -344,6 +358,7 @@ export function moveRows(
       closeHoldsUntil,
       opensAfterClose,
       t.panelHeldUntil,
+      ...(t.panelSteps ?? []).map(step => step.at),
     ])
     .filter(at => at > now)
 
