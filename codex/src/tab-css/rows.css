@@ -153,12 +153,10 @@
   font-weight: 400;
   font-variation-settings: 'wght' 400;
 }
+/* A closed row's meta line, such as a review thread's place, is drawn whole, its parts wrapping as `.parted` sets them. */
 .line .meta {
-  display: block;
+  display: flex;
   color: var(--muted);
-  overflow: clip;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .row.collapsed:not(:hover) .line .meta {
   color: var(--age);

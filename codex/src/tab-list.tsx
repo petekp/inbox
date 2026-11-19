@@ -1,7 +1,7 @@
 import { RowActions } from './row-actions'
 import type { RowPart } from '../../hooks/row-parts'
 import { partAttrs } from './tab-part-gap'
-import { closedTitleTone, settledMark, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
+import { closedTitleTone, DOT, settledMark, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
 import { isListedTab, isRowTab } from '../../hooks/tabs'
 import { feedbackText, feedbackTone, hasAge, isStatusUnderActions, type FeedbackTone } from '../../hooks/feedback'
@@ -244,7 +244,16 @@ export function ListRow({
               {textParts()}
             </span>
           ) : null}
-          {row.meta ? <span class="meta">{row.meta}</span> : null}
+          {row.meta ? (
+            <span class="meta parted">
+              {row.meta.split(DOT).map((part, n) => (
+                <span class="part">
+                  {n > 0 ? <Sep /> : null}
+                  {part}
+                </span>
+              ))}
+            </span>
+          ) : null}
           {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
       </div>
