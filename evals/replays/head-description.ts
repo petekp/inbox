@@ -37,6 +37,7 @@ export const headDescription: Replay = {
       focus: 'making shared lists work offline',
       focusMatch: 'offline',
       pastMatch: 'checking|real',
+      titleMatch: 'shared lists',
       goal: {
         text: 'Shared lists on web and phone',
         match: 'shared lists',
@@ -88,7 +89,7 @@ export const headDescription: Replay = {
       facts: {
         pieces: [{ id: 'offline', stands: 'syncs on reconnect, merging clashing edits left' }],
       },
-      targets: ['head-follows'],
+      targets: ['head-follows', 'head-title-kept'],
     },
   ],
 }

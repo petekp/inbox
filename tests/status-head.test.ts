@@ -108,8 +108,18 @@ test('a HEAD that keeps the title corrects a description that names work an earl
     ].join('\n'),
     100,
   )
-  const finished = applyOps(one, opsOf('DONE: s1 | edits sync between two phones\nSET: s2 | working | edits saved'), 150, NO_ASKS)
-  const corrected = applyOps(finished, opsOf('HEAD: Shared lists | Getting edits to sync after time offline'), 200, NO_ASKS)
+  const finished = applyOps(
+    one,
+    opsOf('DONE: s1 | edits sync between two phones\nSET: s2 | working | edits saved'),
+    150,
+    NO_ASKS,
+  )
+  const corrected = applyOps(
+    finished,
+    opsOf('HEAD: Shared lists | Getting edits to sync after time offline'),
+    200,
+    NO_ASKS,
+  )
 
   expect(finished.head).toEqual(one.head)
   expect(corrected.head).toEqual({ title: 'Shared lists', description: 'Getting edits to sync after time offline' })
