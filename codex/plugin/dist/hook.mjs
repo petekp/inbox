@@ -456,6 +456,18 @@ function capitalized(text2) {
 var ISSUE_LABEL = "File issue";
 var SHOW_EXPLANATION_LABEL = "Show explanation";
 
+// ../hooks/status-freshness.ts
+var STALE_AFTER_CALLS = 5;
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
+function statusPageLine(s, now) {
+  const o = s.ledger.overview;
+  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
+  return {
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
+  };
+}
+
 // ../hooks/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 
@@ -615,18 +627,6 @@ function subjectSeenAt(o, id) {
 function isSubjectSeen(o, s) {
   const seenAt = subjectSeenAt(o, s.id);
   return seenAt !== null && s.changedAt <= seenAt;
-}
-
-// ../hooks/status-freshness.ts
-var STALE_AFTER_CALLS = 5;
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
-function statusPageLine(s, now) {
-  const o = s.ledger.overview;
-  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
-  return {
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
-  };
 }
 
 // ../hooks/status-page-parts.ts

@@ -1705,6 +1705,7 @@ function noCountsText(view, isReadFailed = false) {
 }
 
 // ../hooks/status-children.ts
+var NOT_SEEN = "not seen yet";
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
@@ -1749,7 +1750,7 @@ function subjectsText(o, now) {
   const subjects = o?.subjects ?? [];
   const serves = (id) => o?.goal ? ` | ${servesText(o, id)}` : "";
   const open = subjects.filter(isOpen).map((s) => `${s.id} | ${s.status} | ${s.name} | ${s.text || "-"} | ${ago(now - s.changedAt)}${serves(s.id)}`);
-  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
+  const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}${o !== null && isSubjectSeen(o, s) ? "" : ` | ${NOT_SEEN}`}`);
   return { open: open.join(NL) || "(none yet)", finished: finished.join(NL) };
 }
 function idleSubjects(o, asks, now) {
@@ -3226,6 +3227,35 @@ function tasksText(tasks) {
   return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL6);
 }
 
+// ../hooks/status-freshness.ts
+var STALE_AFTER_CALLS = 5;
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
+function pageWords(o) {
+  if (o === null)
+    return "";
+  const subjects = o.subjects.map((s) => [s.id, s.status, s.name, s.text]);
+  const milestones = o.milestones.map((m) => [m.id, m.status, m.text]);
+  return JSON.stringify([o.head, subjects, o.goal?.text, o.goal?.metAt, milestones, o.suggestedGoal]);
+}
+function isActiveReply(read) {
+  return read.kind === "reply" && read.exchange.activity.length > 0;
+}
+function withChangeNoted(before, after, isActive, now) {
+  if (after === null)
+    return null;
+  if (pageWords(before) !== pageWords(after))
+    return { ...after, changedAt: now, quietCalls: 0 };
+  return isActive ? { ...after, quietCalls: after.quietCalls + 1 } : after;
+}
+function statusPageLine(s, now) {
+  const o = s.ledger.overview;
+  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
+  return {
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
+  };
+}
+
 // ../hooks/status-goal-gate.ts
 function heldSubjects(o) {
   const open = new Set(o.milestones.filter(isOpen).map((m) => m.id));
@@ -3642,29 +3672,34 @@ function takeSuggestedGoal(o, now) {
 function goalPressed(ledger, p, record, now) {
   const o = ledger.overview ?? EMPTY_SESSION_STATUS;
   const unchanged = { ledger, last: null, effects: [] };
+  const changed = (to) => ({
+    ledger: { ...ledger, overview: withChangeNoted(o, to, false, now) },
+    last: record("mark"),
+    effects: []
+  });
   if (p.action === "remove-goal") {
     if (o.goal === null)
       return { stale: true };
-    return { ledger: { ...ledger, overview: removeGoal(o) }, last: record("mark"), effects: [] };
+    return changed(removeGoal(o));
   }
   if (p.action === "restore-goal") {
     const restored = restoreGoal(o);
     if (restored === o)
       return { stale: true };
-    return { ledger: { ...ledger, overview: restored }, last: record("mark"), effects: [] };
+    return changed(restored);
   }
   if (p.action === "take-goal") {
     const taken = takeSuggestedGoal(o, now);
     if (taken === o)
       return { stale: true };
-    return { ledger: { ...ledger, overview: taken }, last: record("mark"), effects: [] };
+    return changed(taken);
   }
   if (p.action !== "type")
     return { stale: true };
   const typed = setTypedGoal(o, p.text, now);
   if (typed === o)
     return unchanged;
-  return { ledger: { ...ledger, overview: typed }, last: record("mark"), effects: [] };
+  return changed(typed);
 }
 
 // ../hooks/help.ts
@@ -3825,37 +3860,6 @@ function helpKeys(look) {
 var FOLD_CLOSED_CHEVRON = "\u203A";
 var FOLD_OPEN_CHEVRON = "v";
 var foldGlyph = (isOpen) => isOpen ? FOLD_OPEN_CHEVRON : FOLD_CLOSED_CHEVRON;
-
-// ../hooks/status-freshness.ts
-var STALE_AFTER_CALLS = 5;
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
-function pageWords(o) {
-  if (o === null)
-    return "";
-  const subjects = o.subjects.map((s) => [s.id, s.status, s.name, s.text]);
-  const milestones = o.milestones.map((m) => [m.id, m.status, m.text]);
-  return JSON.stringify([o.head, subjects, o.goal?.text, o.goal?.metAt, milestones, o.suggestedGoal]);
-}
-function isActiveExchange(read) {
-  if (read.kind === "reply")
-    return read.exchange.activity.length > 0;
-  return read.kind === "mid-turn" && read.turn.activity.length > 0;
-}
-function withChangeNoted(before, after, isActive, now) {
-  if (after === null)
-    return null;
-  if (pageWords(before) !== pageWords(after))
-    return { ...after, changedAt: now, quietCalls: 0 };
-  return isActive ? { ...after, quietCalls: after.quietCalls + 1 } : after;
-}
-function statusPageLine(s, now) {
-  const o = s.ledger.overview;
-  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
-  return {
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
-  };
-}
 
 // ../hooks/status-page-parts.ts
 var LISTED_NAMES = 2;
@@ -11785,12 +11789,8 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
   };
   const closedUnseen = (name) => {
-    const said = words(clipWords(name, NAME_KEPT));
-    const repeats = (s) => {
-      const own = [...words(s.name)];
-      return nameKey(s.name) === nameKey([...said].join(" ")) || own.length >= 2 && own.every((w) => said.has(w));
-    };
-    return o.subjects.findLast((s) => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && repeats(s)) ?? null;
+    const key = nameKey(clipWords(name, NAME_KEPT));
+    return o.subjects.findLast((s) => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && nameKey(s.name) === key) ?? null;
   };
   const forgetSeenWas = (s) => {
     if (isSubjectSeen(o, s)) {
@@ -12113,18 +12113,26 @@ function parseStatus(text) {
   const ops = afterRetractions(all);
   return ops.length === 0 ? { kind: "unchanged" } : { kind: "ops", ops };
 }
+function withNextGoal(first, retry) {
+  const goalOps = retry?.kind === "ops" ? retry.ops.filter((o) => o.kind === "goal" || o.kind === "suggest") : [];
+  if (goalOps.length === 0)
+    return first;
+  return { kind: "ops", ops: [...first.kind === "ops" ? first.ops : [], ...goalOps] };
+}
 async function askStatus(ask, retryFor = () => null) {
   const first = await ask(null);
   if (first.text === null)
-    return { first, last: first };
+    return { answer: null, last: first };
   const answer = parseStatus(first.text);
-  if (answer === null)
-    return { first, last: await ask(null) };
+  if (answer === null) {
+    const again = await ask(null);
+    return { answer: parseStatus(again.text), last: again };
+  }
   const retry = retryFor(answer, first.text);
   if (retry === null)
-    return { first, last: first };
+    return { answer, last: first };
   const again = await ask(retry);
-  return { first, last: parseStatus(again.text) === null ? first : again };
+  return { answer: withNextGoal(answer, parseStatus(again.text)), last: again };
 }
 
 // ../hooks/status-prompt-goal.ts
@@ -12132,7 +12140,7 @@ var NO_WORK_LINKED = "no work linked";
 var NO_TEXT = "no text";
 var NEXT_MARK = "next";
 var tooBigMark = (count, room) => `too big, ${count} subjects, room for ${room}`;
-var NEXT_GOAL_ASK = `No goal runs and none is suggested. What is the work for next? Write GOAL when the goal is clear. Else, while a subject is open, SUGGEST the outcome the open work most likely leads to, such as what a fix under way delivers. Write SUGGEST: - only when no subject is open.`;
+var NEXT_GOAL_ASK = `No goal runs and none is suggested. What is the work for next? Write GOAL when the goal is clear. Else SUGGEST an outcome the open work clearly leads to, as when a goal is met and a fix under way leads to shipping it. Write SUGGEST: - when no subject is open, when the open work is a few unrelated asks, or when no outcome is clear.`;
 var GOAL_LINES = `GOAL: outcome | status name: where it stands; status name: where it stands
 RETIRE: why the goal no longer fits the work
 SUGGEST: outcome, or - for none
@@ -12150,12 +12158,12 @@ var GOAL_PARTS = {
   "goal-when-clear": `Write GOAL when no goal is set, or when <goal> says met, once the session's work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan for them may lead to it. Check this on every exchange against <subjects> and <asks>, as for the head, so an exchange that is only chat does not hide a goal the open work already shows. The agent saying what outcome the person set for the work, or an ask's reason naming the outcome its work serves, shows it. Never write GOAL from a summary of work that already finished.`,
   "goal-finish-line": `Write GOAL only for an outcome with a finish line, one someone could check as met or not, such as "2.5 in the store" or "the import ready to demo". A direction is not a goal: "make search faster", "every item should earn its place" or "keep the list tidy" get no GOAL.`,
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show a goal. A met goal stays on the page until the next one is set.`,
-  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. After a met goal, it is the next outcome the finished work leads to, such as shipping or releasing what the goal built. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. When <next-goal> is there, always answer it: GOAL when the goal is clear, else SUGGEST with the outcome open work leads to, else SUGGEST: - when no subject is open. Write it even when nothing else changed, after NO CHANGE. Write SUGGEST when <suggested> no longer fits the work and an outcome fits, and SUGGEST: - when it no longer fits and no outcome does. Write no SUGGEST while <suggested> fits. Never make a suggestion up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
+  "goal-suggest": `While no goal is set, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal. The person sees it at once while no goal runs, and sets it with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. After a met goal, it is the next outcome the finished work leads to, such as shipping or releasing what the goal built. Check this on every exchange against <subjects> and <asks>, as for GOAL, so an exchange that is only chat does not hide a suggestion the open work shows. When <next-goal> is there, always answer it: GOAL when the goal is clear, else SUGGEST with an outcome the open work clearly leads to, else SUGGEST: - when the work is a few unrelated asks or no outcome is clear. Write it even when nothing else changed, after NO CHANGE. Write SUGGEST when <suggested> no longer fits the work and an outcome fits, and SUGGEST: - when it no longer fits and no outcome does. Write no SUGGEST while <suggested> fits. Never make a suggestion up from chat. A suggestion never holds back GOAL: when the goal is clear, write GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in the same words or in other words. A goal the person removed stays removed until they type it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
   "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open, unless the person says its outcome changed, as when they cut part of it. Then write GOAL for the new outcome, and name again in the same words each milestone it keeps, so that milestone's work moves with it. Write SERVES to - for the work of each milestone it leaves out. When a milestone is cut and the goal's text still holds, write DROP for that milestone instead. New work or an added outcome is a MILESTONE line, never a new goal.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed or it is marked ${NO_TEXT}: then write SET with where it stands, from the work that serves it. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed or it is marked ${NO_TEXT}: then write SET with where it stands, from the work that serves it. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done unless <finished> marks it ${NOT_SEEN}: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
   "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next. Name a milestone this answer adds by its name, since it has no id yet. Leave it out when the milestone marked ${NEXT_MARK} in <milestones> is right.`,
   "milestone-split": `A milestone marked too big holds more work than the person can read as one outcome: split it by theme. Write MILESTONE for each outcome its open subjects are for, named by theme, such as "Status page polish" or "Herdr drawing fixed", and never more than the room the mark gives: code drops a MILESTONE line past it. Then write SERVES to move each of its open subjects to the new milestone its work is part of, or to - when the goal does not need it. Its done subjects stay with it and get no SERVES line. When the split leaves none of its subjects open, write DONE for it in the same answer, with where it ended, or DROP with why when none of them is done. A split changes milestones only, so it applies to a goal marked (typed) too, and the goal's words stay.`,
   "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
@@ -12258,7 +12266,7 @@ You read the list as it is and one exchange, and answer with the changes the exc
 Input:
 - <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
 - <subjects>: the open subjects, one per line: id | status | name | where it stands | how long ago it last changed
-- <finished>: subjects already done or dropped. Do not add them again.
+- <finished>: subjects already done or dropped, one per line: id | done or dropped | name, then | ${NOT_SEEN} when it closed since the person last looked. Do not add them again.
 - <running>: work apart from the turn, such as a subagent, a background task, a workflow or a delegate session, that runs, or that finished since you last read the list, one per line: id | kind | name | the subject it belongs to, or - when it has none yet | running, blocked at a question or an approval, or finished
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet | why the agent asked it, when it said
 - <idle>: the working subjects that have not changed for a day or more and that no item in <asks> or <running> holds up, one per line: id | name | how long since it changed
@@ -12295,7 +12303,7 @@ Status is one of: working, queued, waits-on-other.
 - waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
-- Change a subject by its id. Write NEW only when no subject in <subjects> covers it: first check each one for the same work under another name, such as the bug a fix is for. When work in <finished> comes back, as a fixed bug that breaks again or a piece found not done, SET its id to reopen it. Never set a done subject working again for any other reason: new work on the same outcome, a follow-up or a release is a NEW subject.
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it: first check each one for the same work under another name, such as the bug a fix is for. When work in <finished> marked ${NOT_SEEN} comes back, as a fixed bug that breaks again or a piece found not done, SET its id to reopen it. Every other finished subject stays finished: work on it that comes back, new work on the same outcome, a follow-up or a release is a NEW subject, never that one set working again.
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason. A subject is finished when all the work its name names is done. Work that goes through PRs is done once its last PR merges, not when its delegate finishes, its review comes back clean or its checks pass. A release is done when it is published. Work its name does not cover, such as a release or another change, is a NEW subject with a name that does not repeat the finished one's.
@@ -12365,7 +12373,7 @@ function nextGoalRetry(last, prompt) {
   return (answer, text) => !isNextGoalAsked(last) || answersNextGoal(answer) ? null : [
     prompt,
     `<your-answer>${NL5}${text}${NL5}</your-answer>`,
-    "Your answer has no GOAL or SUGGEST line, and <next-goal> asks for one. Answer again with every line you meant, and add GOAL, SUGGEST with the outcome open work leads to, or SUGGEST: - when no subject is open."
+    "Your answer has no GOAL or SUGGEST line, and <next-goal> asks for one. Your other lines stand. Answer with only that line: GOAL when the goal is clear, SUGGEST with an outcome the open work clearly leads to, or SUGGEST: - when no outcome is clear."
   ].join(NL5);
 }
 
@@ -12479,13 +12487,14 @@ async function writeStatusRecord(records, record) {
     });
   }
 }
-function attemptOf({ text, report, thrown, ms }) {
+function attemptOf({ text, report, thrown, ms }, prompt) {
   return {
     model: report?.model ?? null,
     answeredBy: report?.answeredBy ?? null,
     answer: text,
     error: text === null ? thrown ?? report?.error ?? "no answer, and the host gave no reason" : null,
-    ms
+    ms,
+    ...prompt === null ? {} : { prompt }
   };
 }
 async function readForStatus(host) {
@@ -12499,14 +12508,13 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
   const prompt = statusCallPrompt(input, call.exchange);
   const system = hostStatusSystem(host.names);
   const heards = [];
-  const { last } = await askStatus(async (retry) => {
+  const { answer, last } = await askStatus(async (retry) => {
     const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
     const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now());
-    heards.push({ kind, heard });
+    heards.push({ kind, heard, retry });
     return heard;
   }, nextGoalRetry(input.last, prompt));
-  const attempts = heards.map((h) => attemptOf(h.heard));
-  const answer = last.text === null ? null : parseStatus(last.text);
+  const attempts = heards.map((h) => attemptOf(h.heard, h.retry));
   let before = null;
   let isWritten = false;
   const answeredTurn = (x) => call.exchange.kind === "reply" ? call.exchange.exchange.turn : x.ledger.turn;
@@ -12530,7 +12538,7 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
     const applied = appliedStatus(x, answer, appliedAfter, now, readSetAt, isCatchUp, input.now);
     if (!isWritten)
       return applied;
-    const overview = withChangeNoted(before, applied.ledger.overview, isActiveExchange(call.exchange), now);
+    const overview = withChangeNoted(before, applied.ledger.overview, isActiveReply(call.exchange), now);
     return { ...applied, ledger: { ...applied.ledger, overview } };
   });
   if (!host.records)

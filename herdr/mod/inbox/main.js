@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T08:01:48.663Z. 301064 characters follow.
+// Built at 2026-11-19T09:03:17.981Z. 301064 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -1168,6 +1168,18 @@ function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
 
+// ../hooks/status-freshness.ts
+var STALE_AFTER_CALLS = 5;
+var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
+function statusPageLine(s, now) {
+  const o = s.ledger.overview;
+  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
+  return {
+    error: s.overviewFailure ? STATUS_FAILED : null,
+    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
+  };
+}
+
 // ../hooks/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 
@@ -1323,18 +1335,6 @@ function helpKeys(look) {
         { keys: "esc", does: "Move focus back to the agent's terminal" }
       ];
   }
-}
-
-// ../hooks/status-freshness.ts
-var STALE_AFTER_CALLS = 5;
-var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
-function statusPageLine(s, now) {
-  const o = s.ledger.overview;
-  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
-  return {
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
-  };
 }
 
 // ../hooks/status-page-parts.ts
