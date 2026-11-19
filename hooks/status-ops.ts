@@ -277,8 +277,8 @@ export function applyOps(
       }
     }
   }
-  const isHeadKept = o.head === (last?.head ?? null)
-  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+  const isTitleKept = !!o.head && !!last?.head && o.head.title === last.head.title
+  if (isTitleKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
   const settled = settleGoal(o, now, readSetAt, named)
