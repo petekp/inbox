@@ -1,6 +1,6 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
-import { SLIDE_PX } from '../../hooks/row-motion'
+import { LEAVE_FADE_MS } from '../../hooks/row-motion'
 import { FRAME_MS } from '../../hooks/springs'
 
 const { framesOf, jumpsOf } = await import('./frames')
@@ -34,14 +34,16 @@ function titleOf(steps: Step[]) {
     wrapsAtFirst: d11[0]?.wrapped,
     wrapsAtEnd: d11.at(-1)?.wrapped,
     boxAtEnd: Math.round(d11.at(-1)?.box ?? NaN),
-    isWrapShownOnlyNearlyOpen: d11.every(t => t.wrapped < 0.02 || t.box >= wrappedHeight - SLIDE_PX / 2),
+    isWrapShownOnlyOpen: d11.every(t => t.wrapped < 0.02 || t.box >= wrappedHeight - 0.5),
+    framesWithBothForms: d11.filter(t => t.wrapped > 0.02 && t.oneLine > 0.02).map(t => t.at),
+    boxShrinksAt: d11.find(t => t.box < wrappedHeight - 0.5)?.at ?? null,
     titleCuts: cuts.filter(c => c.text === TITLE_D11),
   }
 }
 
 const TITLE_D11 = asks(ALL).flatMap(b => (b.kind === 'row' && b.id === 'd11' ? [b.title] : []))[0]
 
-test('a closing row fades its wrapped title to one line before its title box shrinks', () => {
+test('a closing row shows its title on one line at once, never both forms, and its title box shrinks after its panel fades', () => {
   const closes: [string, Step[]][] = [
     [
       'the open row collapses',
@@ -58,19 +60,24 @@ test('a closing row fades its wrapped title to one line before its title box shr
       ],
     ],
   ]
-  for (const [name, steps] of closes)
-    expect({ name, ...titleOf(steps) }).toEqual({
+  for (const [name, steps] of closes) {
+    const title = titleOf(steps)
+    expect({ name, ...title }).toEqual({
       name,
       jumps: [],
-      wrapsAtFirst: 1,
+      boxShrinksAt: title.boxShrinksAt,
+      wrapsAtFirst: 0,
       wrapsAtEnd: 0,
       boxAtEnd: LINE_HEIGHT,
-      isWrapShownOnlyNearlyOpen: true,
+      isWrapShownOnlyOpen: true,
+      framesWithBothForms: [],
       titleCuts: [],
     })
+    expect(title.boxShrinksAt).toBeGreaterThanOrEqual(LEAVE_FADE_MS)
+  }
 })
 
-test('an opening row shows its title on one line at once, and fades in its wrapped lines once the title box is nearly open', () => {
+test('an opening row keeps its title on one line until the title box is open, then shows it wrapped, never both forms', () => {
   const opens: [string, Step[]][] = [
     [
       'the person opens the row',
@@ -102,7 +109,9 @@ test('an opening row shows its title on one line at once, and fades in its wrapp
       wrapsAtFirst: 0,
       wrapsAtEnd: 1,
       boxAtEnd: title.boxAtEnd,
-      isWrapShownOnlyNearlyOpen: true,
+      boxShrinksAt: title.boxShrinksAt,
+      isWrapShownOnlyOpen: true,
+      framesWithBothForms: [],
       titleCuts: [],
     })
     expect(title.boxAtEnd).toBeGreaterThan(LINE_HEIGHT)
@@ -125,15 +134,23 @@ test('a row whose close or open turns back moves its title from where it is and 
       at,
       jumps: [],
       wrapsAtEnd: 1,
-      isWrapShownOnlyNearlyOpen: true,
+      isWrapShownOnlyOpen: true,
+      framesWithBothForms: [],
       titleCuts: [],
     })
-    expect({ at, ...recloses }).toMatchObject({ at, jumps: [], wrapsAtEnd: 0, boxAtEnd: LINE_HEIGHT, titleCuts: [] })
-    expect(recloses.isWrapShownOnlyNearlyOpen).toBe(true)
+    expect({ at, ...recloses }).toMatchObject({
+      at,
+      jumps: [],
+      wrapsAtEnd: 0,
+      boxAtEnd: LINE_HEIGHT,
+      framesWithBothForms: [],
+      titleCuts: [],
+    })
+    expect(recloses.isWrapShownOnlyOpen).toBe(true)
   }
 })
 
-test('a row closed, opened and closed again a frame apart holds its title box until its wrapped lines have faded', () => {
+test('a row closed, opened and closed again a frame apart ends on one line and never cuts its title', () => {
   for (const gap of [FRAME_MS, 2 * FRAME_MS]) {
     const closesTwice = titleOf([
       [0, asks(ALL, 'd11')],
@@ -141,6 +158,12 @@ test('a row closed, opened and closed again a frame apart holds its title box un
       [10 + gap, asks(ALL, 'd11'), 'input'],
       [10 + 2 * gap, asks(ALL, 'd11', null, ['d11']), 'input'],
     ])
-    expect({ gap, ...closesTwice }).toMatchObject({ gap, wrapsAtEnd: 0, boxAtEnd: LINE_HEIGHT, titleCuts: [] })
+    expect({ gap, ...closesTwice }).toMatchObject({
+      gap,
+      wrapsAtEnd: 0,
+      boxAtEnd: LINE_HEIGHT,
+      framesWithBothForms: [],
+      titleCuts: [],
+    })
   }
 })

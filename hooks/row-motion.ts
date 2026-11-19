@@ -32,6 +32,17 @@ export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 })
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
 }
 
+/**
+ * How long an opening row's title keeps its closed form, in ms: until its space, opening to `height` px from `from`,
+ * comes to rest. The open form then takes its place in one frame, which moves nothing and cuts no line. A closing
+ * row's title takes its closed form at once, in the draw that starts the close, while its space still holds the open
+ * form's height. A title never fades across its two forms: they wrap at different places, so a fade would show both
+ * wraps overlaid.
+ */
+export function titleSwapMs(height: number, from: SpringState): number {
+  return (springFrames(from, height).length - 1) * FRAME_MS
+}
+
 /** The vertical offset of content at `opacity`: none when shown, `SLIDE_PX` above its place when faded out. */
 export const slideOffset = (opacity: number): number => -SLIDE_PX * (1 - Math.min(1, Math.max(0, opacity)))
 

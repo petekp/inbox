@@ -225,7 +225,7 @@ export function moveRows(
     const isOpenFormSwapped = track.hasOpenForm && !drawsPanel(track)
     const title =
       block.kind === 'row' && last && !isOpenFormSwapped
-        ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)))
+        ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)), last?.panelHeldUntil)
         : null
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)

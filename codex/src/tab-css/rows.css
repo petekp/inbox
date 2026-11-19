@@ -128,13 +128,13 @@
   display: block;
 }
 /* A moving row's full title draws the open form's weight, and a closing row's keeps it until the row's height rests.
-   The clamped title it fades across with draws the closed weight, so it wraps as the closed row does. */
+   The clamped title it swaps with draws the closed weight, so it wraps as the closed row does. */
 .row.selected .line .text:not(.short),
 .row.closing .line .text:not(.short) {
   font-weight: 600;
   font-variation-settings: 'wght' 600;
 }
-/* A moving row's title in its closed form, which fades across with the full title under it. */
+/* A moving row's title in its closed form, which shows in place of the full title under it. */
 .row .line .text.short {
   position: absolute;
   top: 0;

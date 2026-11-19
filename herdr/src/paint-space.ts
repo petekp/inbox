@@ -176,20 +176,19 @@ export function fitEl(key: string, p: Paint, el: Element, isPaneSized = false): 
 }
 
 /**
- * The height a row's title box moves to: one line unless the row is open, a closing row holds its height, or a closing
- * title's wrapped lines still fade out, else the title's measured height, which is undefined until its first measure.
+ * The height a row's title box moves to: the title's measured height while the row is open or a closing row holds its
+ * height, which is undefined until its first measure, else one line.
  */
 const titleHeightOf = (r: RowBlock, p: Paint): number | undefined => {
-  const m = p.motion.get(r.id)
-  const isWrapped = isOpenRow(r) || m?.isHeightHeld === true || m?.title?.isBoxWrapped === true
+  const isWrapped = isOpenRow(r) || p.motion.get(r.id)?.isHeightHeld === true
 
   return isWrapped ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
 }
 
 /**
- * A row's title in a box whose height springs to `titleHeightOf`. The box clips, and a title's wrapped lines show only
- * once its box is nearly open and until it starts to shrink, so the box never cuts them. An open row's title box takes
- * its content's height in a draw that takes heights at once.
+ * A row's title in a box whose height springs to `titleHeightOf`. The box clips. An opening title swaps to its wrapped
+ * form once its box comes to rest, and a closing title swaps to one line in the draw that starts the close, before its
+ * box shrinks. An open row's title box takes its content's height in a draw that takes heights at once.
  */
 export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
   const key = titleId(r.id)
