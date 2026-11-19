@@ -5,6 +5,7 @@ import {
   clipWords,
   DESCRIPTION_KEPT,
   EMPTY_SESSION_STATUS,
+  IDLE_AFTER_MS,
   isNumberOnly,
   isOpen,
   NAME_KEPT,
@@ -177,8 +178,9 @@ export function applyOps(
     s.into = null
   }
   const set = (s: Subject, status: OpenStatus, text: string) => {
-    const isReworded = s.status === status && hasSameWords(s.text, text)
-    if (isReworded) return
+    const isUnchanged = s.status === status && hasSameWords(s.text, text)
+    const isWorkResumed = status === 'working' && now - s.changedAt >= IDLE_AFTER_MS
+    if (isUnchanged && !isWorkResumed) return
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
     s.closedAt = null

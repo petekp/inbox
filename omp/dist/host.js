@@ -1753,6 +1753,14 @@ function subjectsText(o, now) {
   const finished = subjects.filter((s) => !isOpen(s)).slice(-FINISHED_READ).map((s) => `${s.id} | ${s.status} | ${s.name}`);
   return { open: open.join(NL) || "(none yet)", finished: finished.join(NL) };
 }
+function idleSubjects(o, asks, now) {
+  const held = new Set(asks.flatMap((a) => o?.askSubjects[a.id] ?? []));
+  const isWorkedOn = (s) => (o?.children ?? []).some((c) => c.subjectId === s.id && isChildRunning(c, now));
+  return (o?.subjects ?? []).filter((s) => s.status === "working" && now - s.changedAt >= IDLE_AFTER_MS && !held.has(s.id) && !isWorkedOn(s));
+}
+function idleText(o, asks, now) {
+  return idleSubjects(o, asks, now).map((s) => `${s.id} | ${s.name} | ${duration(now - s.changedAt)}`).join(NL);
+}
 function servesText(o, subjectId) {
   const to = o.serves[subjectId];
   return to === undefined ? "?" : to === "none" ? "-" : to;
@@ -11760,8 +11768,9 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     s.into = null;
   };
   const set = (s, status, text) => {
-    const isReworded = s.status === status && hasSameWords(s.text, text);
-    if (isReworded)
+    const isUnchanged = s.status === status && hasSameWords(s.text, text);
+    const isWorkResumed = status === "working" && now - s.changedAt >= IDLE_AFTER_MS;
+    if (isUnchanged && !isWorkResumed)
       return;
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);
@@ -12201,6 +12210,7 @@ Input:
 - <finished>: subjects already done or dropped. Do not add them again.
 - <running>: work apart from the turn, such as a subagent, a background task, a workflow or a delegate session, that runs, or that finished since you last read the list, one per line: id | kind | name | the subject it belongs to, or - when it has none yet | running, blocked at a question or an approval, or finished
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet | why the agent asked it, when it said
+- <idle>: the working subjects that have not changed for a day or more and that no item in <asks> or <running> holds up, one per line: id | name | how long since it changed
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 ${GOAL_INPUT}
 - <person>: what the person just sent
@@ -12238,7 +12248,7 @@ Rules:
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason. A subject is finished when all the work its name names is done. Work that goes through PRs is done once its last PR merges, not when its delegate finishes, its review comes back clean or its checks pass. A release is done when it is published. Work its name does not cover, such as a release or another change, is a NEW subject with a name that does not repeat the finished one's.
-- Check how long ago each working subject in <subjects> last changed. One that changed a day or more ago, that this exchange does not work on, and that no item in <asks> or <running> holds up, has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on". Never SET it to keep it working. Queued and waits-on-other subjects stay until the work says otherwise.
+- Answer for each subject in <idle>. When this exchange works on it, SET it with where it stands now. Otherwise it has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on".
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
@@ -12264,6 +12274,7 @@ function statusBlocks({ last, asks, tasks, now }) {
   const running = runningText(last, now);
   const held = asksText(last, asks);
   const list = tasksText(tasks);
+  const idle = idleText(last, asks, now);
   return [
     ...goalBlocks(last, now),
     `<head>${NL5}${headText(last)}${NL5}</head>`,
@@ -12271,6 +12282,7 @@ function statusBlocks({ last, asks, tasks, now }) {
     ...finished === "" ? [] : [`<finished>${NL5}${finished}${NL5}</finished>`],
     ...running === "" ? [] : [`<running>${NL5}${running}${NL5}</running>`],
     ...held === "" ? [] : [`<asks>${NL5}${held}${NL5}</asks>`],
+    ...idle === "" ? [] : [`<idle>${NL5}${idle}${NL5}</idle>`],
     ...list === "" ? [] : [`<tasks>${NL5}${list}${NL5}</tasks>`]
   ];
 }

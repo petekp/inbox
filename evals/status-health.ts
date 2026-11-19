@@ -6,8 +6,8 @@ import { parseStatus } from '../hooks/status'
 import type { Op, StatusAnswer } from '../hooks/status'
 import { applyOps, applyStatus } from '../hooks/status-ops'
 import { upgradeStatus } from '../hooks/status-upgrade'
-import { isChildRunning } from '../hooks/status-children'
-import { IDLE_AFTER_MS, isOpen, nameKey, clipWords, NAME_KEPT } from '../hooks/status-limits'
+import { idleSubjects } from '../hooks/status-children'
+import { isOpen, nameKey, clipWords, NAME_KEPT } from '../hooks/status-limits'
 import { hasSameWords } from '../hooks/status-goal-ops'
 import { hasRunningGoal } from '../hooks/status-suggest'
 import { STATUS_RECORD_VERSION } from '../hooks/status-records'
@@ -156,22 +156,17 @@ function blankMilestones(rs: Replayed[]): { all: Rate; linked: Rate } {
 }
 
 /**
- * Working subjects the call read as idle: changed `IDLE_AFTER_MS` or more before the call, with no open ask and no
- * running child holding them. Counts those the answer left untouched, and those it touched by setting them working.
+ * The working subjects the call read as idle, as `idleSubjects` finds them. Counts those the answer left untouched,
+ * and those it touched by setting them working.
  */
-function idleSubjects(rs: Replayed[]): { untouched: Rate; setWorking: Rate } {
+function idleRates(rs: Replayed[]): { untouched: Rate; setWorking: Rate } {
   const untouched = new Rate()
   const setWorking = new Rate()
   for (const r of rs) {
     const last = upgradeStatus(r.record.input?.last ?? null)
     const at = r.record.input?.now ?? r.record.at
     if (!last || r.answer === null) continue
-    const askIds = new Set((r.record.input?.asks ?? []).map(i => i.id))
-    const held = new Set(Object.entries(last.askSubjects).flatMap(([ask, ids]) => (askIds.has(ask) ? ids : [])))
-    const running = new Set(last.children.filter(c => isChildRunning(c, at)).map(c => c.subjectId))
-    const idle = last.subjects.filter(
-      s => s.status === 'working' && at - s.changedAt >= IDLE_AFTER_MS && !held.has(s.id) && !running.has(s.id),
-    )
+    const idle = idleSubjects(last, r.record.input?.asks ?? [], at)
     for (const s of idle) {
       const lines = opsOf(r.answer).filter(
         op => 'ref' in op && op.kind !== 'link' && findSubject(last, op.ref)?.id === s.id,
@@ -239,7 +234,7 @@ const span =
 const day = (at: number) => new Date(at).toISOString().slice(0, 10)
 const head = staleHead(records)
 const blank = blankMilestones(records)
-const idle = idleSubjects(records)
+const idle = idleRates(records)
 const met = suggestions(records, true)
 const none = suggestions(records, false)
 const drops = dropsByKind(records)
