@@ -1,3 +1,4 @@
+import { REMOTE_ACTIONS } from '../../hooks/remote-commands'
 import { remoteViewerReceipts } from '../../hooks/remote-viewers'
 import { remoteReceipts } from '../../hooks/remote-command-state'
 import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
@@ -122,6 +123,7 @@ export function herdrOnWrite(
             receipts: remoteReceipts(s),
             viewers: remoteViewerReceipts(s),
             remoteProtocol: 2,
+            remoteActions: REMOTE_ACTIONS,
             remoteHistoryAfter: s.remoteCommandFloor ?? 0,
             host: 'codex',
             agent: CODEX.agent,

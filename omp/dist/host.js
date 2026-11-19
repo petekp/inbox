@@ -13771,7 +13771,8 @@ function pressFile(text) {
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
   }
   if (file.format === 2 && file.kind === "command") {
-    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && /^[if]\d{1,16}$/.test(file.press.id) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8000 : file.press.action === "answer" ? typeof file.press.option === "string" && file.press.option.length <= 8000 && file.press.option.trim() !== "" : ["done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"].includes(String(file.press.action)));
+    const isGoalPress = isRecord(file.press) && file.press.id === "goal";
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8000 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8000 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "issue", "discard"]).includes(String(file.press.action)));
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
   }
   if (file.format !== HERDR_FORMAT)
@@ -14186,6 +14187,15 @@ function newRevision(host) {
   return id;
 }
 function remoteRowVersion(s, id) {
+  if (id === "goal") {
+    const overview = s.ledger.overview;
+    return JSON.stringify([
+      overview?.goal ?? null,
+      overview?.goalRemoved ?? null,
+      overview?.suggestedGoal ?? null,
+      s.lastActions[id] ?? null
+    ]);
+  }
   const item = s.ledger.items.find((row) => row.id === id);
   const normalized = item && Object.fromEntries(Object.entries(item).filter(([key]) => key !== "dialog"));
   return JSON.stringify([
@@ -14239,7 +14249,10 @@ var REMOTE_ACTIONS = [
   "discuss",
   "explain",
   "issue",
-  "discard"
+  "discard",
+  "remove-goal",
+  "restore-goal",
+  "take-goal"
 ];
 function supportsRemotePress(p) {
   return REMOTE_ACTIONS.includes(p.action);
@@ -15151,6 +15164,7 @@ function sessionCalls(context) {
         receipts: remoteReceipts(s),
         viewers: remoteViewerReceipts(s),
         remoteProtocol: 2,
+        remoteActions: REMOTE_ACTIONS,
         remoteHistoryAfter: s.remoteCommandFloor ?? 0,
         host: "omp",
         agent: OMP2.agent,
