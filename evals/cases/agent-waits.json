@@ -92,7 +92,42 @@
     },
     "checks": [
       {
-        "new": "commit|push|PR|go",
+        "new": "commit|push",
+        "kind": "question"
+      },
+      {
+        "added": 1
+      }
+    ]
+  },
+  {
+    "name": "agent-message-keeps-held-commit",
+    "about": "A reply that sent another agent a note, then holds a commit until the person says so, still asks the person for that commit.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 3,
+      "card": {
+        "goal": "Add retry to the upload client",
+        "done": [],
+        "now": "Waiting to commit",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "add the retry with backoff as you proposed, and keep the coordinator posted",
+      "turn": 6,
+      "activity": [
+        "edited src/upload/client.ts",
+        "edited tests/upload-client.test.ts",
+        "ran: npm test -- upload-client",
+        "ran: hc send t1c \"progress: retry with backoff added to the upload client, focused tests pass\""
+      ],
+      "reply": "The upload client now retries a failed part up to 3 times, with backoff from 200 ms. The focused tests pass. I sent the coordinator a progress note.\n\nEverything is staged. Say when you want those committed."
+    },
+    "checks": [
+      {
+        "new": "commit",
         "kind": "question"
       },
       {
