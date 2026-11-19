@@ -139,7 +139,9 @@ export const GOAL_RULES: Rule[] = [
       const standsFor = (x: Milestone) => facts.filter(m => milestonesFor(m, result.facts, o).some(y => y.id === x.id))
       const isStartedElsewhere = (m: MilestoneFact) =>
         m.state === 'working' &&
-        [...milestonesFor(m, result.facts, o), ...milestonesHolding(m, result.facts, o)].some(y => y.status === 'working')
+        [...milestonesFor(m, result.facts, o), ...milestonesHolding(m, result.facts, o)].some(
+          y => y.status === 'working',
+        )
       const isLaterStep = (x: Milestone) =>
         x.status === 'queued' && standsFor(x).every(m => rightStatuses(m).includes('queued') || isStartedElsewhere(m))
       return facts.flatMap(m => {

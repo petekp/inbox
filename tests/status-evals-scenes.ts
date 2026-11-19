@@ -344,7 +344,10 @@ function oneMilestoneForBoth(s: Scene, survive: 'working' | 'done', status: Subj
 function inSteps(s: Scene, first: SubjectStatus, isOtherKept = true) {
   withGoal(s)
   const [m1, m2] = s.after.milestones
-  const steps = [{ ...m1!, name: 'Survive fix built', status: first }, { ...m1!, id: 'm3', status: 'queued' as const }]
+  const steps = [
+    { ...m1!, name: 'Survive fix built', status: first },
+    { ...m1!, id: 'm3', status: 'queued' as const },
+  ]
   s.after.milestones = isOtherKept ? [...steps, m2!] : steps
 }
 

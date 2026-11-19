@@ -67,6 +67,14 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     answer: `${GOOD_RUNS['typed-goal-kept']![0]!}\nSERVES: Dark theme colors | m1`,
     breaks: 'serves-linked',
   },
+  'goal-names-release': {
+    at: 0,
+    answer: GOOD_RUNS['goal-names-release']![0]!.replace(
+      'MILESTONE: queued | 2.6 published | Awaiting search improvements\nNEXT: 2.6 published',
+      'MILESTONE: queued | Speed target verified | Under 100 ms unverified\nNEXT: Speed target verified',
+    ),
+    breaks: 'milestones-true',
+  },
   'goal-on-busy-page': {
     at: 0,
     answer: GOOD_RUNS['goal-on-busy-page']![0]!.replace('SERVES: s1 | m1', 'SERVES: s1 | -'),

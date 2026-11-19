@@ -10,7 +10,14 @@ const TYPED_GOAL_STEP = coordinatorDay.steps.findIndex(s => s.events?.some(e => 
 /** The step's `until` waits on a folded folder row, which this page does not have. */
 const { until, ...typedGoalStep } = coordinatorDay.steps[TYPED_GOAL_STEP]!
 
-function made(id: string, status: SubjectStatus, name: string, text: string, createdAt: number, changedAt: number): Subject {
+function made(
+  id: string,
+  status: SubjectStatus,
+  name: string,
+  text: string,
+  createdAt: number,
+  changedAt: number,
+): Subject {
   return { ...subject(id, status, name, text, changedAt), createdAt: minutes(createdAt) }
 }
 
@@ -21,7 +28,14 @@ function ended(child: Omit<Child, 'startedAt' | 'endedAt' | 'lastActivityAt'>, t
 }
 
 const delegate = (id: string, name: string, subjectId: string, isWorking: boolean) =>
-  ({ id, ref: `herdr:${name}`, kind: 'delegate', name, subjectId, delegateState: isWorking ? 'working' : null }) as const
+  ({
+    id,
+    ref: `herdr:${name}`,
+    kind: 'delegate',
+    name,
+    subjectId,
+    delegateState: isWorking ? 'working' : null,
+  }) as const
 
 /**
  * `coordinator-day` from the page a recorded Codex run left before the person typed the goal, so each model's runs of
@@ -58,7 +72,14 @@ export const goalNamesRelease: Replay = {
           ended(delegate('c2', 'release-notes', 's2', true), [-50, 40, -5]),
           ended(delegate('c3', 'vn2', 's11', false), [55, 200, 170]),
           ended(
-            { id: 'c4', ref: 'toolu_r1', kind: 'subagent', name: 'Review the archive fix', subjectId: 's11', delegateState: null },
+            {
+              id: 'c4',
+              ref: 'toolu_r1',
+              kind: 'subagent',
+              name: 'Review the archive fix',
+              subjectId: 's11',
+              delegateState: null,
+            },
             [170, 200, 170],
           ),
         ],
@@ -74,7 +95,9 @@ export const goalNamesRelease: Replay = {
         suggestedGoal: 'Export folder fix shipped',
       }),
     },
-    facts: coordinatorDay.steps.slice(0, TYPED_GOAL_STEP).reduce((facts, step) => factsAfter(facts, step.facts), coordinatorDay.start.facts),
+    facts: coordinatorDay.steps
+      .slice(0, TYPED_GOAL_STEP)
+      .reduce((facts, step) => factsAfter(facts, step.facts), coordinatorDay.start.facts),
   },
   steps: [{ ...typedGoalStep, targets: ['milestones-true'] }],
 }
