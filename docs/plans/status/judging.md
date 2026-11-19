@@ -27,6 +27,7 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 | `evals/status-judge.md` | The index of the judge's instructions: what the harness sends and reads back, and the parts |
 | `evals/status-judge/` | The judge's instructions, in parts |
 | `evals/status-run.ts` | The runner and its results file |
+| `evals/status-health.ts` | The health report that `scripts/status-health.sh` prints from a folder of real Status call records: head descriptions code dropped, blank milestone text, idle working subjects left untouched, suggested goals, and the lines code dropped by kind. It makes no model call. |
 | `tests/status-evals.test.ts`, `tests/status-bar.test.ts` | The checks with no model calls |
 | `tests/status-evals-scenes.ts` | The pages and Status call answers those checks grade |
 
