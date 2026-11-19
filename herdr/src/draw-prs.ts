@@ -35,7 +35,7 @@ import { DOT, ROW_COPY, settledLabel, settledMark, shortAgo } from '../../hooks/
 import { SETTLED_MS } from '../../hooks/timing'
 import { clipLabel } from '../../hooks/text'
 import { agedText, button, emptyBlock } from './blocks'
-import type { Block, Button, LineBlock, Mark, RowBlock, Tone } from './blocks'
+import type { Block, Button, Does, LineBlock, Mark, RowBlock, Tone } from './blocks'
 import type { LookScreen } from './draw'
 
 const LOOK = 'herdr'
@@ -53,7 +53,8 @@ const PR_TONE: Record<Exclude<(typeof PR_TONES)[keyof typeof PR_TONES], null>, T
 /** A PR plan's button, which runs its open or refresh first. */
 function prButton(pr: PrView | null, a: PrAction, id: string): Button {
   const effect = pr ? prPressEffect(pr, a.press) : null
-  const b = button(id, a.label, a.emphasis, { is: 'press', press: a.press, effects: effect ? [effect] : [] }, a.hotkey)
+  const does: Does = { is: 'press', press: a.press, effects: effect ? [effect] : [], kind: a.kind }
+  const b = button(id, a.label, a.emphasis, does, a.hotkey)
 
   return { ...b, isOut: a.isOut }
 }
@@ -141,6 +142,7 @@ function settledPr(d: DrawnPr & { state: { is: 'settled' } }): RowBlock {
             is: 'press',
             press: { action: 'pr-undo', ref: pr.ref },
             effects: [],
+            kind: null,
           }),
           runsOutAt: state.at + SETTLED_MS,
         },

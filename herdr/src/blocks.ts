@@ -1,4 +1,4 @@
-import type { FoldKind } from '../../types'
+import type { FoldKind, PressKind } from '../../types'
 import type { BannerView } from '../../hooks/banners'
 import type { Feedback } from '../../hooks/feedback'
 import type { Effect } from '../../hooks/press-reducer'
@@ -45,14 +45,15 @@ export type ViewChange =
 
 /**
  * What a button does. `press` goes to the host in a press file. `effects` are what the press opens, copies or
- * refreshes, which the look shows as under way, and runs itself when each one is an open or a copy. `type` opens the
+ * refreshes, which the look shows as under way, and runs itself when each one is an open or a copy. `kind` is the
+ * kind of the plan action the button draws, or null for a press that no plan action makes. `type` opens the
  * row's field with `text` in it and `hint` as its placeholder, `send` sends the field's words, and `leave` closes the field, dropping its draft
  * when `isDiscard`.
  */
 export type Does =
   | { is: 'view'; change: ViewChange }
   | { is: 'collapse'; id: string; isCollapsed: boolean }
-  | { is: 'press'; press: RowPress | PrPress; effects: Effect[] }
+  | { is: 'press'; press: RowPress | PrPress; effects: Effect[]; kind: PressKind | null }
   | { is: 'type'; rowId: string; text: string; hint: string }
   | { is: 'send'; rowId: string }
   | { is: 'leave'; rowId: string; isDiscard: boolean }

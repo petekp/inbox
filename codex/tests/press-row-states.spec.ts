@@ -91,7 +91,7 @@ test('an entering space’s content waits until the space is within half the sli
   }
 })
 
-test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR row closes with its panel, leaves from its place with its group and title, a block’s press line grows in, a dismissed block settles under its settled line and grows back on Undo, a merged block’s Dismiss settles it and it leaves with its view, Clear merged and closed above the blocks settles the last merged block and leaves with it, and with reduced motion each move ends as it starts', async context => {
+test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR row closes with its panel, leaves from its place with its group and title, a block’s press line grows in, a dismissed block settles under its settled line and grows back on Undo, a merged block’s Dismiss draws its button out and no press line until its reply settles the block, which then leaves with its view, Clear merged and closed above the blocks settles the last merged block and leaves with it, and with reduced motion each move ends as it starts', async context => {
   context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.now() })
   const window = new Window()
   const animate = window.HTMLElement.prototype.animate
@@ -182,6 +182,8 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     Object.defineProperty(globalThis, key, { value, writable: true, configurable: true })
   for (const [key, value] of Object.entries({ setTimeout, clearTimeout }))
     Object.defineProperty(window, key, { value, writable: true, configurable: true })
+  let isReplyHeld = false
+  const heldReplies: (() => void)[] = []
   window.parent.postMessage = message => {
     const request = message as {
       id?: number
@@ -212,9 +214,10 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
       request.method === 'ui/initialize'
         ? {}
         : { structuredContent: press ? { view, copy: null, error: null, note: null } : view }
-    queueMicrotask(() =>
-      window.dispatchEvent(new window.MessageEvent('message', { data: { jsonrpc: '2.0', id: request.id, result } })),
-    )
+    const reply = () =>
+      window.dispatchEvent(new window.MessageEvent('message', { data: { jsonrpc: '2.0', id: request.id, result } }))
+    if (press && isReplyHeld) heldReplies.push(reply)
+    else queueMicrotask(reply)
   }
   const root = document.getElementById('app')!
   const settle = async () => {
@@ -342,7 +345,16 @@ test('in the Codex tab, j and k wrap between a tab’s first and last rows, a PR
     await after(ROW_STATE_MS.leaving + 100)
     await after(HEIGHT_SETTLE_MS + 100)
     assert.ok(!isMoving(block(15)))
+    isReplyHeld = true
     await press(block(13), 'Dismiss')
+    assert.ok(block(13).querySelector('button.key.out'))
+    assert.equal(block(13).querySelector('.pr-last')?.textContent ?? null, null)
+    await after(FRAME_MS * 3)
+    assert.equal(block(13).querySelector('.pr-last')?.textContent ?? null, null)
+    assert.ok(!isSettlingOverBlock(13))
+    isReplyHeld = false
+    heldReplies.splice(0).forEach(reply => reply())
+    await settle()
     assert.ok(isSettlingOverBlock(13))
     await after(ROW_STATE_MS.closing + 100)
     assert.ok(!isSettlingOverBlock(13))

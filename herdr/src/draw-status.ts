@@ -34,7 +34,7 @@ function doesOf(k: StatusKey): Does {
   if (p.action === 'toggle-collapse') return { is: 'nothing' }
   if (p.action === 'type-goal') return { is: 'type', rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder }
 
-  return { is: 'press', press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] }
+  return { is: 'press', press: { action: p.action, id: GOAL_KEYS_ID }, effects: [], kind: k.kind }
 }
 
 /** The buttons of a Status target, in its plan's order. The Status page selects no row, so its keys press nothing. */

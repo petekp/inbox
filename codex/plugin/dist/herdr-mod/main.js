@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T05:17:47.947Z. 300029 characters follow.
+// Built at 2026-11-19T07:07:30.407Z. 300272 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -2392,6 +2392,7 @@ function isStatusUnderActions(f, isOpen) {
   const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
   return isOpen && (isPressOut(f) || isDoneStillWaiting);
 }
+var holdsStatusWhileOut = (kind) => kind === "mark";
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
@@ -3915,7 +3916,8 @@ var PR_TONE = {
 };
 function prButton(pr, a, id) {
   const effect = pr ? prPressEffect(pr, a.press) : null;
-  const b = button(id, a.label, a.emphasis, { is: "press", press: a.press, effects: effect ? [effect] : [] }, a.hotkey);
+  const does = { is: "press", press: a.press, effects: effect ? [effect] : [], kind: a.kind };
+  const b = button(id, a.label, a.emphasis, does, a.hotkey);
   return { ...b, isOut: a.isOut };
 }
 function prFeedback(screen, id) {
@@ -3987,7 +3989,8 @@ function settledPr(d) {
       ...button(`${id} undo`, ROW_COPY.undo, "quiet", {
         is: "press",
         press: { action: "pr-undo", ref: pr.ref },
-        effects: []
+        effects: [],
+        kind: null
       }),
       runsOutAt: state.at + SETTLED_MS
     }
@@ -4207,7 +4210,7 @@ function doesOf(k) {
     return { is: "nothing" };
   if (p.action === "type-goal")
     return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
-  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
+  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [], kind: k.kind };
 }
 function keyButtons(id, keys, from = 0) {
   return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)));
@@ -4479,7 +4482,7 @@ function rowDoes(row, press, kind, agent) {
     return { is: "leave", rowId: row.id, isDiscard: true };
   const step = press.action === "step" ? row.steps[press.step] : undefined;
   const effects = kind === "local" && row.item && step ? stepEffects(row.item, step) : [];
-  return { is: "press", press, effects };
+  return { is: "press", press, effects, kind };
 }
 function rowButtons(row, isAllShown, agent) {
   const { options, keys, more } = rowKeyPlan(row, isAllShown);
@@ -4598,7 +4601,7 @@ function rowBlock(row, ui, selected, screen) {
 }
 function closedBlock(d, now) {
   const action = closedLineAction(d);
-  const closedDoes = action ? { is: "press", press: action.press, effects: [] } : { is: "nothing" };
+  const closedDoes = action ? { is: "press", press: action.press, effects: [], kind: null } : { is: "nothing" };
   return {
     kind: "row",
     id: `closed ${d.id}`,
@@ -6597,7 +6600,7 @@ function drawOuts(blocks, outs, lines, now) {
   const outRows = new Set(byRow.keys());
   const lineOf = (id) => {
     const out = byRow.get(id);
-    if (!out)
+    if (!out || holdsStatusWhileOut(out.kind))
       return lines[id] ?? null;
     const source = out.pending ?? { is: "sending", label: SENDING, at: now };
     if (out.result)
@@ -6661,7 +6664,7 @@ class PressQueue {
   constructor(io) {
     this.io = io;
   }
-  send(target, press, effects, label, reply) {
+  send(target, press, effects, label, kind, reply) {
     const rowId = pressRowId(press);
     const refuse = (reason) => {
       this.lines[rowId] = notSentLine(reason);
@@ -6679,6 +6682,7 @@ class PressQueue {
       rowId,
       path: pressPath(target.appHome, target.sessionId, pressId),
       action: outAction2(press),
+      kind,
       label,
       ...reply !== undefined ? { reply } : {},
       pending,
@@ -7177,11 +7181,12 @@ class Inbox extends View {
       return;
     const isGoal = rowId === GOAL_KEYS_ID;
     const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send;
-    const isSent = this.send({ action: "type", id: rowId, text }, [], label, cx, isGoal ? undefined : text);
+    const typed = { is: "press", press: { action: "type", id: rowId, text }, effects: [], kind: null };
+    const isSent = this.send(typed, label, cx, isGoal ? undefined : text);
     this.ui = afterSend(this.ui, rowId, isSent);
     this.closeStaleField();
   }
-  send(press, effects, label, cx, reply) {
+  send(d, label, cx, reply) {
     const read = this.read?.is === "read" ? this.read : null;
     const target = this.sessionId && read && this.view ? {
       appHome: appHome(),
@@ -7191,7 +7196,7 @@ class Inbox extends View {
       holds: this.holds(Date.now()),
       projectFolder: read.projectFolder
     } : null;
-    const sent = this.queue.send(target, press, effects, label, reply);
+    const sent = this.queue.send(target, d.press, d.effects, label, d.kind, reply);
     cx.notify();
     if (sent.is === "refused")
       return false;
@@ -7218,7 +7223,7 @@ class Inbox extends View {
       this.collapse(d.id, d.isCollapsed, cx);
     else if (d.is === "press") {
       this.ui = afterPress(this.ui, d.press);
-      this.send(d.press, d.effects, b.label, cx);
+      this.send(d, b.label, cx);
     } else if (d.is === "type")
       this.type(d);
     else if (d.is === "send")
