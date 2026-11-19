@@ -404,7 +404,7 @@
     },
     "prompt": "Before the cache, quick one: what does the pagination bug in the orders list look like to you?",
     "checks": [
-      { "reply": "paginat|orders|bug" },
+      { "reply": "paginat|orders?[ -]list" },
       {
         "calls": "close",
         "count": 0
