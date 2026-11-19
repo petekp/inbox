@@ -186,7 +186,7 @@ test('a claimed Status call reads the running turn’s work with no reply and wr
   const prompts: string[] = []
   const { host } = fakeHost(async prompt => {
     prompts.push(prompt)
-    return 'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built'
+    return 'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built\nSUGGEST: -'
   })
   await host.update(s => noteActivity(notePrompt(CLAUDE_CODE, turnStarted(s, 0), 'go', false).state, 'edited sync.ts'))
   await refreshStatus(host)
@@ -389,8 +389,8 @@ test('a failed Status call shows in the status line on the Status tab, in place 
   )
   const v = sessionView(failed, 1000, 1000, NO_HOLDS)
 
-  expect(v.statusPage.error).not.toBeNull()
-  expect(footerError('overview', v.status, v.statusPage.error)).toBe(v.statusPage.error)
-  expect(footerError('needsYou', v.status, v.statusPage.error)).toBe(v.status.error)
-  expect(footerError('prs', v.status, v.statusPage.error)).toBeNull()
+  expect(v.statusPage).not.toBeNull()
+  expect(footerError('overview', v.status, v.statusPage)).toBe(v.statusPage.error)
+  expect(footerError('needsYou', v.status, v.statusPage)).toBe(v.status.error)
+  expect(footerError('prs', v.status, v.statusPage)).toBeNull()
 })

@@ -15,7 +15,13 @@ const longTurn = REPLAYS.find(r => r.name === 'long-turn')!
 async function longTurnRun(agent: Agent, run: number, isPlanted: boolean): Promise<ReplayRun> {
   const answers = [...GOOD_RUNS['long-turn']!]
   if (isPlanted) answers[1] = 'SET: s2 | working | reading the ranking code'
-  const results = await runReplay(longTurn, { agent, ask: async () => ({ text: answers.shift()! }) })
+  let last = ''
+  const ask = async (prompt: string) => {
+    if (prompt.includes('<your-answer>')) return { text: `${last}\nSUGGEST: -` }
+    last = answers.shift()!
+    return { text: last }
+  }
+  const results = await runReplay(longTurn, { agent, ask })
   const steps = gradeReplay(longTurn, results).map((rules, i) => ({
     label: results[i]!.label,
     page: results[i]!.text,

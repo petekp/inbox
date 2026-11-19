@@ -126,7 +126,7 @@ export const milestoneWorkDone: Replay = {
           }),
         ],
       },
-      targets: ['milestones-true', 'serves-linked'],
+      targets: ['milestones-true', 'serves-linked', 'marks-true'],
     },
   ],
 }

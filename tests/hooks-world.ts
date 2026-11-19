@@ -2,6 +2,8 @@ import type { Engine, MockClock } from 'claude-code/testing'
 import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
 import { GH_TIMEOUT_MS } from '../hooks/gh'
 import { STATUS_SYSTEM } from '../hooks/status-prompt'
+import { parseStatus } from '../hooks/status'
+import { answersNextGoal } from '../hooks/status-suggest'
 import { prNodeOf, prsAnswerOf, queriedPrs } from './gh-answers'
 import type { PrAnswer, ThreadsJson, ViewJson } from './gh-answers'
 
@@ -250,6 +252,13 @@ async function holdUntilStored(prompt: { text: string; origin: PromptOrigin }) {
   await new Promise<void>(release => w.held.push({ ...prompt, release }))
 }
 
+const withNextGoal = (text: string, prompt: string) => {
+  const answer = parseStatus(text)
+  const isNextGoalMissing = prompt.includes('<next-goal>') && answer !== null && !answersNextGoal(answer)
+
+  return isNextGoalMissing ? `${text}\nSUGGEST: -` : text
+}
+
 export function world($: Engine, on: On, prompts: string[], vars: Record<string, string> = {}) {
   w.sent = []
   w.submitAnswer = 'enter'
@@ -455,7 +464,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     return {
       value: {
         isAnswered: true,
-        text: isStatusCall ? statusText! : w.ledgerReply,
+        text: isStatusCall ? withNextGoal(statusText!, e.prompt) : w.ledgerReply,
         usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
       },
     }

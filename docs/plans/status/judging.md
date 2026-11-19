@@ -27,6 +27,7 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 | `evals/status-judge.md` | The index of the judge's instructions: what the harness sends and reads back, and the parts |
 | `evals/status-judge/` | The judge's instructions, in parts |
 | `evals/status-run.ts` | The runner and its results file |
+| `evals/status-health.ts` | The health report `scripts/status-health.sh` prints from a folder of real Status call records: dropped head descriptions, blank milestone text, idle working subjects left untouched, suggested goals, and the lines code dropped by kind. It calls no model. |
 | `tests/status-evals.test.ts`, `tests/status-bar.test.ts` | The checks with no model calls |
 | `tests/status-evals-scenes.ts` | The pages and Status call answers those checks grade |
 
@@ -177,4 +178,4 @@ These make no model calls.
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
 | **Total** | **232** | **54** | **82** |
 
-An answer with no operation is asked once more, and a call that fails outside the model is tried again. The table lists the cases the suite started with; [The Status replays](../../status-replays.md) lists every case now. With all of them, one model's run plans 222 Status calls before re-asks and retries. Each model stops a quarter past the planned calls of the replays a run selects, or 10 past them when that is more, 278 for all of them, so one `--agent both` run grades both models. `STATUS_CALLS_MAX` in `evals/status-run.ts` sets it.
+An answer with no operation, or with no GOAL or SUGGEST line while the call reads `<next-goal>`, is asked once more. A call that fails outside the model is tried again. The table lists the cases the suite started with. [The Status replays](../../status-replays.md) lists them all. With all of them, one model's run plans 222 Status calls before re-asks and retries. Each model stops a quarter past the planned calls of the replays a run selects, or 10 past them when that is more, 278 for all of them, so one `--agent both` run grades both models. `STATUS_CALLS_MAX` in `evals/status-run.ts` sets it.

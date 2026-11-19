@@ -5,10 +5,11 @@ import { milestonePath } from '../hooks/status-path'
 import { rightStatuses } from './status-facts'
 import type { MilestoneFact } from './status-facts'
 import { label, milestonesFor, milestonesOf, subjectsFor } from './status-rule-helpers'
-import type { Milestone, SubjectStatus } from '../types'
+import type { Milestone, SessionStatus, SubjectStatus } from '../types'
 import type { Rule, RuleContext } from './status-rules'
 
 const hasCall = ({ step }: RuleContext) => step.call !== undefined
+const isOpenMilestone = (m: Milestone) => m.status === 'working' || m.status === 'queued'
 
 /**
  * The statuses right for one page milestone that stands for several of the facts' milestones: done once all are done,
@@ -161,6 +162,22 @@ export const GOAL_RULES: Rule[] = [
         ...(isCountWrong ? [`${kept.length} milestones for "${o.goal.text}"`] : []),
         ...kept.filter(m => subjects.has(nameKey(m.name))).map(m => `milestone "${m.name}" is named after a subject`),
       ]
+    },
+  },
+  {
+    id: 'milestone-text',
+    reads: 'answer',
+    property: 6,
+    text: 'An open milestone that open work serves, which the call read with no text, says where it stands after it.',
+    failures: ({ result, before }) => {
+      const blankServed = (o: SessionStatus | null) => {
+        const served = new Set(o?.subjects.filter(isOpen).map(s => o.serves[s.id]))
+        return milestonesOf(o).filter(m => isOpenMilestone(m) && served.has(m.id) && m.text.trim() === '')
+      }
+      const read = new Set(blankServed(before.overview).map(m => m.id))
+      return blankServed(result.session.ledger.overview)
+        .filter(m => read.has(m.id))
+        .map(m => `milestone "${m.name}" still has no text while work serves it`)
     },
   },
   {

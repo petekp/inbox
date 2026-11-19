@@ -33,7 +33,7 @@ async function updateWithStatus(answer: string | null) {
 
 test('a reply’s Status comes from the separate Status call, after the ledger update', async () => {
   const { state, systems } = await updateWithStatus(
-    'HEAD: Building the deploy script | Writing a script that deploys the app',
+    'HEAD: Building the deploy script | Writing a script that deploys the app\nSUGGEST: -',
   )
 
   assert.equal(state.ledger.overview?.head?.title, 'Building the deploy script')
@@ -164,10 +164,10 @@ test('Status calls run one after another, and the second reads the first one’s
       if (statusPrompts.length === 1) {
         await held
 
-        return 'HEAD: Deploy script built | Deploying the app with one script'
+        return 'HEAD: Deploy script built | Deploying the app with one script\nSUGGEST: -'
       }
 
-      return 'HEAD: Rollback script built | Rolling back a bad deploy'
+      return 'HEAD: Rollback script built | Rolling back a bad deploy\nSUGGEST: -'
     },
     () => 5,
   )
@@ -209,7 +209,7 @@ test('three Status calls write in the order their updates landed', async () => {
       const mine = statusCalls
       if (mine === 1) await held
 
-      return `HEAD: Script ${mine} built | Writing script ${mine}`
+      return `HEAD: Script ${mine} built | Writing script ${mine}\nSUGGEST: -`
     },
     () => 5,
   )
@@ -243,7 +243,7 @@ test('an update’s Status call waits while another process holds the Status cal
         if (system !== PARTS_STATUS_SYSTEM) return 'NEW: do | - | Roll back | - | -'
         statusPrompts.push(prompt)
 
-        return 'HEAD: Rollback script built | Rolling back a bad deploy'
+        return 'HEAD: Rollback script built | Rolling back a bad deploy\nSUGGEST: -'
       },
       () => 5,
     )

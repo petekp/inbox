@@ -2,10 +2,12 @@ import type { Exchange, HostTask, Item, Session, SessionStatus } from '../types'
 import type { Host } from './model-text'
 import { tasksText } from './host-tasks'
 import { NL, personText } from './ledger-prompt'
-import { asksText, runningText, subjectsText } from './status-children'
+import { asksText, idleText, NOT_SEEN, runningText, subjectsText } from './status-children'
 import { DESCRIPTION_WORDS, NAME_WORDS, OPEN_SUBJECTS, TEXT_WORDS } from './status-limits'
 import { GOAL_INPUT, GOAL_LINES, goalBlocks, goalRules } from './status-prompt-goal'
 import type { GoalPartId } from './status-prompt-goal'
+import { answersNextGoal, isNextGoalAsked } from './status-suggest'
+import type { StatusAnswer } from './status'
 import { clipMiddle, numberBlocks } from './text'
 
 /** The rules that give each part of the work the person would name its own subject, for a host that reads them. */
@@ -27,9 +29,10 @@ You read the list as it is and one exchange, and answer with the changes the exc
 Input:
 - <head>: the top of the page, as title | description: what the session is focused on now. Never write it into a subject.
 - <subjects>: the open subjects, one per line: id | status | name | where it stands | how long ago it last changed
-- <finished>: subjects already done or dropped. Do not add them again.
+- <finished>: subjects already done or dropped, one per line: id | done or dropped | name, then | ${NOT_SEEN} when it closed since the person last looked. Do not add them again.
 - <running>: work apart from the turn, such as a subagent, a background task, a workflow or a delegate session, that runs, or that finished since you last read the list, one per line: id | kind | name | the subject it belongs to, or - when it has none yet | running, blocked at a question or an approval, or finished
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet | why the agent asked it, when it said
+- <idle>: the working subjects that have not changed for a day or more and that no item in <asks> or <running> holds up, one per line: id | name | how long since it changed
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 ${GOAL_INPUT}
 - <person>: what the person just sent
@@ -53,7 +56,7 @@ A subject is one piece of the work that the person would name: a feature, a fix,
 
 The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never a PR or issue number, and never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
 
-The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
+The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug for the 2.5 release". It never adds work queued after the focus, as "then shipping 2.5" does. The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
 
 Write every name, where it stands, the head, the goal and each milestone in plain spoken words, so someone who was not in the session gets it on one read: everyday words, and each thing named by what it is. Write "Phone sign-in | iPhone done, Android next", not "Mobile auth parity | iOS verified; Android pending". Never join two phrases with a semicolon: write a comma.
 
@@ -63,11 +66,11 @@ Status is one of: working, queued, waits-on-other.
 - waits-on-other: it waits on something other than the person, such as a build, a review or another session.
 
 Rules:
-- Change a subject by its id. Write NEW only when no subject in <subjects> covers it: first check each one for the same work under another name, such as the bug a fix is for. When work in <finished> comes back, SET its id to reopen it.
+- Change a subject by its id. Write NEW only when no subject in <subjects> covers it: first check each one for the same work under another name, such as the bug a fix is for. When the same work in <finished> marked ${NOT_SEEN} turns out not done or breaks again, as a fixed bug that breaks again, SET its id to reopen it. A new target or a higher bar for finished work is a NEW subject. Every other finished subject stays finished: work on it that comes back, new work on the same outcome, a follow-up or a release is a NEW subject, never that one set working again.
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason. A subject is finished when all the work its name names is done. Work that goes through PRs is done once its last PR merges, not when its delegate finishes, its review comes back clean or its checks pass. A release is done when it is published. Work its name does not cover, such as a release or another change, is a NEW subject with a name that does not repeat the finished one's.
-- Check how long ago each working subject in <subjects> last changed. One that changed a day or more ago, that this exchange does not work on, and that no item in <asks> or <running> holds up, has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on". Never SET it to keep it working. Queued and waits-on-other subjects stay until the work says otherwise.
+- Answer for each subject in <idle>. When this exchange works on it, SET it with where it stands now. Otherwise it has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on".
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
@@ -104,6 +107,7 @@ function statusBlocks({ last, asks, tasks, now }: StatusCallInput): string[] {
   const running = runningText(last, now)
   const held = asksText(last, asks)
   const list = tasksText(tasks)
+  const idle = idleText(last, asks, now)
 
   return [
     ...goalBlocks(last, now),
@@ -112,6 +116,7 @@ function statusBlocks({ last, asks, tasks, now }: StatusCallInput): string[] {
     ...(finished === '' ? [] : [`<finished>${NL}${finished}${NL}</finished>`]),
     ...(running === '' ? [] : [`<running>${NL}${running}${NL}</running>`]),
     ...(held === '' ? [] : [`<asks>${NL}${held}${NL}</asks>`]),
+    ...(idle === '' ? [] : [`<idle>${NL}${idle}${NL}</idle>`]),
     ...(list === '' ? [] : [`<tasks>${NL}${list}${NL}</tasks>`]),
   ]
 }
@@ -146,4 +151,19 @@ export function statusCatchUpPrompt(input: StatusCallInput, transcript: string):
     ...statusBlocks(input),
     `<conversation>${NL}${numberBlocks(transcript)}${NL}</conversation>`,
   ].join(NL)
+}
+
+/**
+ * The prompt that asks the Status call once more when `last` asked for the next goal and its answer gave none: the
+ * prompt it read, its answer, and what the answer lacks. Null when the call was not asked or the answer gave one.
+ */
+export function nextGoalRetry(last: SessionStatus | null, prompt: string) {
+  return (answer: StatusAnswer, text: string): string | null =>
+    !isNextGoalAsked(last) || answersNextGoal(answer)
+      ? null
+      : [
+          prompt,
+          `<your-answer>${NL}${text}${NL}</your-answer>`,
+          'Your answer has no GOAL or SUGGEST line, and <next-goal> asks for one. Your other lines stand. Answer with only that line: GOAL when the goal is clear, SUGGEST with an outcome the subjects open after this exchange clearly lead to, or SUGGEST: - when none is open, they share no outcome, or no outcome is clear.',
+        ].join(NL)
 }

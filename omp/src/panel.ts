@@ -213,7 +213,7 @@ export function drawPanel(
   const entries = entriesOf(screen, ui, ui.tab, now)
   const selected = resolveSelected(linesOf(entries), ui.selectedId)
   const rule = style.dim('─'.repeat(width))
-  const error = footerError(ui.tab, screen.view.status, screen.view.statusPage.error)
+  const error = footerError(ui.tab, screen.view.status, screen.view.statusPage)
   const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
   const host = screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []
   const banners = tabBarBanners(host, error, isNoticeShown ? ui.notice : null)
