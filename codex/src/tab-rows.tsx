@@ -30,7 +30,7 @@ import { prPressEffect } from '../../hooks/pr-press'
 import type { DrawnPr } from '../../hooks/pr-views'
 import type { PrAction, PrPress } from '../../hooks/pr-press'
 import { commentParts, readableComment, threadWhere } from '../../hooks/prs'
-import type { Finding, PrCheck, PrThread, PrView, Tab } from '../../types'
+import type { Finding, PrCheck, PressKind, PrThread, PrView, Tab } from '../../types'
 import type { TabView as View } from './core'
 import type { PressReply } from './server'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
@@ -80,6 +80,7 @@ export async function act(
   press: RowPress | PrPress,
   onSent?: () => void,
   pending: Feedback | null = null,
+  kind: PressKind | null = null,
 ) {
   if (tabState.isDisposed) return
   const generation = tabState.viewGeneration
@@ -95,6 +96,7 @@ export async function act(
     pending,
     action: press.action === 'type' ? null : actionId(press),
     lastBefore: lastPressKey(tabState.view, rowId),
+    kind,
   })
   errors.delete(rowId)
   notes.delete(rowId)
@@ -229,14 +231,13 @@ function sendReply(id: string, text: string) {
 
 function rowKeys(r: RowView): { options: Key[]; keys: Key[]; more: Key[]; answerRow: AnswerRow | null } {
   const actions = ledgerActions(r, optionsShown.has(r.id), sending.get(r.id)?.action ?? null, {
-    press: p => {
+    press: (p, kind) => {
       const step = p.action === 'step' ? r.steps[p.step] : undefined
-      const action = r.actions.find(a => a.press.action === 'step' && p.action === 'step' && a.press.step === p.step)
       const pending: Feedback | null =
-        action?.kind === 'local' && r.item && step
+        kind === 'local' && r.item && step
           ? { is: 'local', result: pendingResult(stepEffects(r.item, step), Date.now()) }
           : null
-      void act(r.id, p, undefined, pending)
+      void act(r.id, p, undefined, pending, kind)
     },
     reply: () => startTyping(r.id),
     discard: () => discardReply(r.id),
@@ -319,7 +320,7 @@ export function prKey(rowId: string, pr: PrView, a: PrAction): Key {
     ...(a.icon ? { icon: a.icon } : {}),
     ...(a.press.action === 'pr-dismiss' ? { isDismiss: true } : {}),
     ...(a.isOut || sending.get(rowId)?.action === a.press.action ? { isOut: true } : {}),
-    run: () => void act(rowId, a.press, undefined, pending),
+    run: () => void act(rowId, a.press, undefined, pending, a.kind),
   }
 }
 

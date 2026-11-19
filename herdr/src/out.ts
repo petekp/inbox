@@ -6,6 +6,7 @@ import { pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import { deliveryLabel } from '../../hooks/rows'
+import { holdsStatusWhileOut } from '../../hooks/row-motion'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { LocalResult, RowNote } from '../../types'
@@ -165,17 +166,22 @@ export function nextOutCheckAt(outs: readonly Out[], now: number): number | null
 const withOutButtons = (buttons: Button[], outRows: ReadonlySet<string>): Button[] =>
   buttons.map(b => (b.does.is === 'press' && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b))
 
+/** Whether `out`'s button among `buttons` is a Mark press, which draws no status of its own while it is out. */
+const isStatusHeld = (out: Out, buttons: readonly Button[]): boolean =>
+  buttons.some(b => b.does.is === 'press' && outAction(b.does.press) === out.action && holdsStatusWhileOut(b.does.kind))
+
 /**
  * The blocks with the look's presses drawn: every press button on a row with a press out draws out, and the row's
  * line reads the press under way, how the look's own opens went, or why a press ended unreported, in place of the line
- * the publish gave. While the press is out, its line reads as the press under way, wherever a look places that.
+ * the publish gave. While the press is out, its line reads as the press under way, wherever a look places that, unless
+ * it is a Mark press, as `holdsStatusWhileOut` says.
  */
 export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<string, RowLine>, now: number): Block[] {
   const byRow = new Map(outs.map(o => [o.rowId, o]))
   const outRows = new Set(byRow.keys())
-  const lineOf = (id: string): RowLine | null => {
+  const lineOf = (id: string, buttons: readonly Button[]): RowLine | null => {
     const out = byRow.get(id)
-    if (!out) return lines[id] ?? null
+    if (!out || isStatusHeld(out, buttons)) return lines[id] ?? null
     const source: Feedback = out.pending ?? { is: 'sending', label: SENDING, at: now }
     if (out.result) return { ...resultLine(out.result), source }
     return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted', source }
@@ -183,11 +189,11 @@ export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<st
 
   return blocks.map((b): Block => {
     if (b.kind === 'row' || b.kind === 'pr' || b.kind === 'line' || b.kind === 'banner') {
-      const line = lineOf(b.id)
+      const line = lineOf(b.id, b.buttons)
       return { ...b, buttons: withOutButtons(b.buttons, outRows), ...(line ? { feedback: line } : {}) }
     }
     if (b.kind === 'empty' && b.under) {
-      const line = lineOf(b.under.id)
+      const line = lineOf(b.under.id, b.under.buttons)
       const under = {
         ...b.under,
         buttons: withOutButtons(b.under.buttons, outRows),

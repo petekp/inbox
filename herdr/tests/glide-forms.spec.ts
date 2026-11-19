@@ -66,19 +66,13 @@ test('a first draw with the empty Status page’s goal field already open shows 
   })
 })
 
-function sendingOn(open: Block[]): Block[] {
-  const out = {
-    pressId: 'p5',
-    rowId: 'd11',
-    path: '/x',
-    action: 'discuss',
-    label: 'Discuss',
-    pending: null,
-    result: null,
-  }
+function outOn(open: Block[], rowId: string, action: string, label: string): Block[] {
+  const out = { pressId: 'p5', rowId, path: '/x', action, label, pending: null, result: null }
 
   return drawOuts(open, [{ ...out, before: '', isWritten: true, waitingSince: NOW, isTaken: false }], {}, NOW)
 }
+
+const sendingOn = (open: Block[]) => outOn(open, 'd11', 'discuss', 'Discuss')
 
 test('closing the goal field while its buttons fade in never shows them more than if it had stayed open', () => {
   const closed = tabBlocks(demoScreen(), uiOn('overview'))
@@ -187,4 +181,35 @@ test('a dismissed PR’s block glides between its open and dismissed forms in bo
       outside: [],
     })
   }
+})
+
+test('a Dismiss whose reply lands 16, 100 or 300 ms after its press moves the list only toward its new height, on an open row and on a PR’s block', () => {
+  const ref = 'acme/visor#29'
+  const openRow = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
+  const openPr = tabBlocks(demoScreen(), uiOn('prs'))
+  const cases = [
+    [
+      'row',
+      openRow,
+      outOn(openRow, 'd13', 'dismiss', 'Dismiss'),
+      tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd13' })),
+    ],
+    ['pr', openPr, outOn(openPr, `pr:${ref}`, 'pr-dismiss', 'Dismiss'), dismissedPr(ref).blocks],
+  ] as const
+  for (const [name, open, pressed, dismissed] of cases)
+    for (const replyAt of [16, 100, 300]) {
+      const frames = framesOf(
+        [
+          [0, open],
+          [0, pressed, 'input'],
+          [replyAt, dismissed],
+        ],
+        replyAt + 900,
+      )
+      expect({ name, replyAt, outside: heightsPast(frames.heights, replyAt + 900) }).toEqual({
+        name,
+        replyAt,
+        outside: [],
+      })
+    }
 })

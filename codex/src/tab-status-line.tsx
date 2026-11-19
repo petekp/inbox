@@ -48,7 +48,7 @@ function openGoalField(text: string) {
 }
 
 /** A Status key as a tab key. Remove goal draws out while the goal's press is on its way. */
-function statusKey({ press, label, emphasis }: StatusKey): Key {
+function statusKey({ press, label, emphasis, kind }: StatusKey): Key {
   if (press.action === 'show-ask') return { label, emphasis, run: () => showAsk(press.askId) }
   if (press.action === 'toggle-fold') return { label, emphasis, run: () => toggleStatusFold(press.foldId) }
   if (press.action === 'toggle-collapse') return { label, emphasis, run: () => toggleParentFold(press.id) }
@@ -58,7 +58,7 @@ function statusKey({ press, label, emphasis }: StatusKey): Key {
     label,
     emphasis,
     ...(sending.has(GOAL_KEYS_ID) ? { isOut: true } : {}),
-    run: () => void act(GOAL_KEYS_ID, { action: press.action, id: GOAL_KEYS_ID }),
+    run: () => void act(GOAL_KEYS_ID, { action: press.action, id: GOAL_KEYS_ID }, undefined, null, kind),
   }
 }
 

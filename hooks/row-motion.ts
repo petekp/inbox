@@ -1,5 +1,6 @@
 import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames } from './springs'
 import type { SpringState } from './springs'
+import type { PressKind } from '../types'
 
 /** How long a fade lasts when it does not move space, such as a hover or a row's fill, in ms. */
 export const FADE_MS = 200
@@ -42,6 +43,15 @@ export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 })
 export function titleSwapMs(height: number, from: SpringState): number {
   return (springFrames(from, height).length - 1) * FRAME_MS
 }
+
+/**
+ * Whether a press of `kind` draws no status under its row's or PR block's buttons while it is out: a Mark press, such
+ * as Dismiss, whose reply closes its row or block. A status that grew in for it would shrink again with the close, and
+ * would turn back as it grew if the reply landed then. Its button draws out in the press's own draw instead, and the
+ * close shows the press once the reply lands. A status the row drew before the press stays as it was. `kind` is null
+ * for a press that no plan action makes, such as a typed reply, which keeps its status.
+ */
+export const holdsStatusWhileOut = (kind: PressKind | null): boolean => kind === 'mark'
 
 /** The vertical offset of content at `opacity`: none when shown, `SLIDE_PX` above its place when faded out. */
 export const slideOffset = (opacity: number): number => -SLIDE_PX * (1 - Math.min(1, Math.max(0, opacity)))

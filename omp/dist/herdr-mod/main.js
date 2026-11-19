@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T05:17:47.947Z. 300029 characters follow.
+// Built at 2026-11-19T06:12:26.191Z. 300396 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -3915,7 +3915,8 @@ var PR_TONE = {
 };
 function prButton(pr, a, id) {
   const effect = pr ? prPressEffect(pr, a.press) : null;
-  const b = button(id, a.label, a.emphasis, { is: "press", press: a.press, effects: effect ? [effect] : [] }, a.hotkey);
+  const does = { is: "press", press: a.press, effects: effect ? [effect] : [], kind: a.kind };
+  const b = button(id, a.label, a.emphasis, does, a.hotkey);
   return { ...b, isOut: a.isOut };
 }
 function prFeedback(screen, id) {
@@ -3987,7 +3988,8 @@ function settledPr(d) {
       ...button(`${id} undo`, ROW_COPY.undo, "quiet", {
         is: "press",
         press: { action: "pr-undo", ref: pr.ref },
-        effects: []
+        effects: [],
+        kind: null
       }),
       runsOutAt: state.at + SETTLED_MS
     }
@@ -4207,7 +4209,7 @@ function doesOf(k) {
     return { is: "nothing" };
   if (p.action === "type-goal")
     return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
-  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [] };
+  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [], kind: k.kind };
 }
 function keyButtons(id, keys, from = 0) {
   return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)));
@@ -4479,7 +4481,7 @@ function rowDoes(row, press, kind, agent) {
     return { is: "leave", rowId: row.id, isDiscard: true };
   const step = press.action === "step" ? row.steps[press.step] : undefined;
   const effects = kind === "local" && row.item && step ? stepEffects(row.item, step) : [];
-  return { is: "press", press, effects };
+  return { is: "press", press, effects, kind };
 }
 function rowButtons(row, isAllShown, agent) {
   const { options, keys, more } = rowKeyPlan(row, isAllShown);
@@ -4598,7 +4600,7 @@ function rowBlock(row, ui, selected, screen) {
 }
 function closedBlock(d, now) {
   const action = closedLineAction(d);
-  const closedDoes = action ? { is: "press", press: action.press, effects: [] } : { is: "nothing" };
+  const closedDoes = action ? { is: "press", press: action.press, effects: [], kind: null } : { is: "nothing" };
   return {
     kind: "row",
     id: `closed ${d.id}`,
@@ -5202,6 +5204,7 @@ function enterDelayMs(height, from = { x: 0, v: 0 }) {
 function titleSwapMs(height, from) {
   return (springFrames(from, height).length - 1) * FRAME_MS;
 }
+var holdsStatusWhileOut = (kind) => kind === "mark";
 var drawsPanel = (track) => track.hasOpenForm && track.state !== "settling";
 var ROW_FADE_MS = {
   entering: ENTER_FADE_MS,
@@ -6592,12 +6595,13 @@ function nextOutCheckAt(outs, now) {
   return later.length ? Math.min(...later) : null;
 }
 var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
+var isStatusHeld = (out, buttons) => buttons.some((b) => b.does.is === "press" && outAction2(b.does.press) === out.action && holdsStatusWhileOut(b.does.kind));
 function drawOuts(blocks, outs, lines, now) {
   const byRow = new Map(outs.map((o) => [o.rowId, o]));
   const outRows = new Set(byRow.keys());
-  const lineOf = (id) => {
+  const lineOf = (id, buttons) => {
     const out = byRow.get(id);
-    if (!out)
+    if (!out || isStatusHeld(out, buttons))
       return lines[id] ?? null;
     const source = out.pending ?? { is: "sending", label: SENDING, at: now };
     if (out.result)
@@ -6606,11 +6610,11 @@ function drawOuts(blocks, outs, lines, now) {
   };
   return blocks.map((b) => {
     if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
-      const line = lineOf(b.id);
+      const line = lineOf(b.id, b.buttons);
       return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
     }
     if (b.kind === "empty" && b.under) {
-      const line = lineOf(b.under.id);
+      const line = lineOf(b.under.id, b.under.buttons);
       const under = {
         ...b.under,
         buttons: withOutButtons(b.under.buttons, outRows),
