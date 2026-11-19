@@ -58,6 +58,19 @@ export function headWords(o: SessionStatus | null): string {
   return o?.head ? `${o.head.title} ${o.head.description}` : ''
 }
 
+/**
+ * Why the head is off the focus in `facts`: it is not about the focus, or the part the page shows names finished work
+ * the focus moved on from. While a goal is set, the page shows the description. Null when the head is on the focus.
+ */
+export function headOffFocus(o: SessionStatus | null, { focusMatch, pastMatch }: Facts): string | null {
+  const head = headWords(o)
+  if (!new RegExp(focusMatch, 'i').test(head)) return `the head "${head}" is not about /${focusMatch}/`
+  const shown = o?.goal ? o.head?.description || o.head?.title || '' : (o?.head?.title ?? '')
+  const isPastShown = !!pastMatch && !!o?.head && new RegExp(pastMatch, 'i').test(shown)
+
+  return isPastShown ? `the head "${shown}" still names /${pastMatch}/` : null
+}
+
 /** The goal's milestones, once a goal is set and has them. */
 export const milestonesOf = (o: SessionStatus | null): Milestone[] =>
   o?.goal && !o.goal.isAwaitingMilestones ? o.milestones : []

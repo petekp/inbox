@@ -88,7 +88,13 @@ export type Replay = {
 
 export type Agent = 'claude' | 'codex'
 
-export type CallAnswer = { text: string | null; model?: string | null; outputTokens?: number | null }
+/** `costUsd` is what the call cost in US dollars, as the claude CLI reports it. Codex reports none. */
+export type CallAnswer = {
+  text: string | null
+  model?: string | null
+  outputTokens?: number | null
+  costUsd?: number | null
+}
 
 /** One model call with `system` as its system text. `kind` says which of the inbox model's calls it is. */
 export type ModelCall = (prompt: string, system: string, kind: CallKind) => Promise<CallAnswer>
@@ -116,6 +122,8 @@ export type CallLog = {
   model: string | null
   ms: number
   outputTokens: number | null
+  /** What the call cost in US dollars, re-asks included. Null when the model reports no cost, as Codex does. */
+  costUsd: number | null
   /** Why the host would have dropped the answer, when it would. */
   overLimit: string | null
 }
@@ -209,6 +217,7 @@ async function timed(
     model: answer.model ?? null,
     ms,
     outputTokens: tokens,
+    costUsd: answer.costUsd ?? null,
     overLimit,
   }
 
@@ -245,6 +254,7 @@ async function statusCall(
     ...logs[logs.length - 1]!,
     answers: logs.flatMap(l => l.answers),
     ms: logs.reduce((n, l) => n + l.ms, 0),
+    costUsd: logs.some(l => l.costUsd !== null) ? logs.reduce((n, l) => n + (l.costUsd ?? 0), 0) : null,
   }
   const answer = last.text === null ? null : parseStatus(last.text)
   const turns = s.presence.turnsApplied

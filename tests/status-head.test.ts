@@ -4,13 +4,15 @@ import { test } from './test-with-timeout'
 import { applyOps } from '../hooks/status-ops'
 import { opsOf, NO_ASKS, after } from './status-helpers'
 
-test('a HEAD that keeps the title, or that comes with work finished from under way and none left, keeps the head', () => {
+test('a HEAD that keeps the title keeps its wording and takes the new description, and one that comes with work finished from under way and none left keeps the head', () => {
   const one = after(
     null,
     'HEAD: Offline sync | Adding offline sync to the notes app\nNEW: working | Sync engine | queue built',
     100,
   )
-  const retitled = applyOps(one, opsOf('HEAD: offline sync | Wiring the settings toggle'), 200, NO_ASKS)
+  const redescribed = applyOps(one, opsOf('HEAD: offline sync | Wiring the settings toggle'), 200, NO_ASKS)
+  const restated = applyOps(one, opsOf('HEAD: offline sync | Adding offline sync to the notes app'), 200, NO_ASKS)
+  const blank = applyOps(one, opsOf('HEAD: Offline sync'), 200, NO_ASKS)
   const moved = applyOps(one, opsOf('HEAD: 2.5 release | Shipping 2.5 to the stores'), 200, NO_ASKS)
   const finished = applyOps(
     one,
@@ -56,7 +58,9 @@ test('a HEAD that keeps the title, or that comes with work finished from under w
     NO_ASKS,
   )
 
-  expect(retitled.head).toEqual(one.head)
+  expect(redescribed.head).toEqual({ title: 'Offline sync', description: 'Wiring the settings toggle' })
+  expect(restated.head).toBe(one.head)
+  expect(blank.head).toBe(one.head)
   expect(moved.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
   expect(finished.head).toEqual(one.head)
   expect(handedOn.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5' })
@@ -91,7 +95,34 @@ test('a head whose description names work that just finished, while other work g
   expect(redescribed.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
   expect(unwritten.head).toEqual({ title: '2.5 release', description: '' })
   expect(nothingLeft.head).toEqual(one.head)
-  expect(otherFinished.head).toEqual(one.head)
+  expect(otherFinished.head).toEqual({ title: '2.5 release', description: 'Shipping 2.5 to the stores' })
+})
+
+test('a HEAD that keeps the title corrects a description that names work an earlier answer finished', () => {
+  const one = after(
+    null,
+    [
+      'HEAD: Shared lists | Checking the phone app with real shared edits',
+      'NEW: working | Phone testing | two phones installed',
+      'NEW: queued | Offline edits | not started',
+    ].join('\n'),
+    100,
+  )
+  const finished = applyOps(
+    one,
+    opsOf('DONE: s1 | edits sync between two phones\nSET: s2 | working | edits saved'),
+    150,
+    NO_ASKS,
+  )
+  const corrected = applyOps(
+    finished,
+    opsOf('HEAD: Shared lists | Getting edits to sync after time offline'),
+    200,
+    NO_ASKS,
+  )
+
+  expect(finished.head).toEqual(one.head)
+  expect(corrected.head).toEqual({ title: 'Shared lists', description: 'Getting edits to sync after time offline' })
 })
 
 test('a SET that keeps the status keeps the old text and age only when its content words are the same', () => {

@@ -301,6 +301,8 @@ console.log('A target counts a failure on any piece; counting only the pieces it
 for (const u of ungraded) console.log(`not graded: ${u}`)
 const callCounts = agents.map(a => `${a} ${Math.min(statusCalls[a], STATUS_CALLS_MAX)} of ${STATUS_CALLS_MAX}`)
 console.log(`Status calls: ${callCounts.join(', ')}`)
+const callCosts = results.flatMap(r => r.steps.flatMap(s => s.calls.map(c => c.costUsd ?? 0)))
+console.log(`Claude calls cost ${callCosts.reduce((n, c) => n + c, 0).toFixed(2)} US dollars. Codex reports no cost.`)
 if (stopped !== null) console.log(`Stopped: ${stopped}`)
 console.log(`Results: ${path}${about.isDirty ? ' (the tree had uncommitted changes)' : ''}`)
 const isFailed = isBlocked || holds.length > 0
