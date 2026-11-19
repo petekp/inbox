@@ -134,5 +134,34 @@
         "added": 1
       }
     ]
+  },
+  {
+    "name": "wait-on-sender-go-unnamed-not-new",
+    "about": "A reply to another agent's message that waits for its go, saying only \"you\", adds no question for the person when the agent sent that agent the same request.",
+    "ledger": {
+      "turn": 8,
+      "nextId": 3,
+      "card": {
+        "goal": "Add retry to the upload client",
+        "done": [],
+        "now": "Waiting to run the full checks",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "<hc from=\"t1c\">Go for the eval. Then tell me when you're ready for check.sh.</hc>",
+      "turn": 8,
+      "activity": [
+        "ran: ./scripts/eval.sh --case upload-retry",
+        "ran: hc send t1c \"ready for check.sh: the upload retry cases pass 8/8 on both models. Waiting for your go.\""
+      ],
+      "reply": "The eval passed: the upload retry cases are 8 of 8 on both models.\n\nI've sent \"ready for check.sh\". Once you give the go, I'll run check.sh, then push."
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
   }
 ]
