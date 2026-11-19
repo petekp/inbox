@@ -11694,14 +11694,14 @@ function answerWork(before, o, now) {
   return {
     isEarlierWorkFinished: isUnderWayWorkClosed && !isClosedWorkNew,
     isWorkUnderWay: o.subjects.some((s) => s.status === "working" || s.status === "waits-on-other" && s.changedAt === now),
-    namesClosed: (description) => {
-      const said = words(description);
-      return closed.some((s) => {
-        const name = [...words(s.name)];
-        return name.length > 0 && name.every((w) => said.has(w));
-      });
-    }
+    namesClosed: (description) => closed.some((s) => namesSubject(description, s)),
+    namesQueued: (description) => o.subjects.some((s) => s.status === "queued" && namesSubject(description, s))
   };
+}
+function namesSubject(description, s) {
+  const said = words(description);
+  const name = [...words(s.name)];
+  return name.length > 0 && name.every((w) => said.has(w));
 }
 function isDescriptionStale(head, work) {
   return head !== null && head.description !== "" && work.isWorkUnderWay && work.namesClosed(head.description);
@@ -11711,9 +11711,10 @@ function headAfter(last, op, work) {
   if (last === null || last.description === "")
     return line;
   const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay;
-  if (isQueuedWorkNext)
+  const isTitleKept = hasSameWords(last.title, op.title);
+  if (isQueuedWorkNext && (!isTitleKept || work.namesQueued(line.description)))
     return last;
-  if (!hasSameWords(last.title, op.title))
+  if (!isTitleKept)
     return line;
   const isSameDescription = line.description === "" || hasSameWords(last.description, line.description);
   return isSameDescription ? last : { title: last.title, description: line.description };
@@ -12250,7 +12251,7 @@ A subject is one piece of the work that the person would name: a feature, a fix,
 
 The name is a label of at most ${NAME_WORDS} words, the handle the person would use for the work, such as "Offline sync", "Sign-out bug" or "1.4.2 release". It names the work, never a PR or issue number, and never what to do about it or what was found: not a sentence, a question, a task or a finding. Write "Login provider", not "Choose which login provider ships first", and "Sign-out token bug", not "A cached token survives sign-out on the web app". The details go in where it stands. Where it stands is at most ${TEXT_WORDS} words: its state now, not what the agent did. Say what works or is fixed, not the step that got it there: never committed, pushed, rebuilt, restarted or tests passing. Never write a time, a date, or a word such as today, yesterday, ago or now. Code shows how long ago each subject changed.
 
-The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug, then shipping 2.5". The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
+The head says what the session is focused on now: the work the person would name if asked what this session is doing. It may cover several subjects. Its title is a label of at most ${NAME_WORDS} words, like a subject's name, such as "Offline sync" or "2.5 release". Its description is at most ${DESCRIPTION_WORDS} words on what the session is doing about that focus, such as "Adding offline sync to the notes app" or "Fixing the sync bug for the 2.5 release". It says what the session is doing now, never work that comes after it, as "then shipping 2.5" does. The description never repeats the title, and never says where one piece stands, such as "PR ready for review". The head follows the same rules on time words as where it stands.
 
 Write every name, where it stands, the head, the goal and each milestone in plain spoken words, so someone who was not in the session gets it on one read: everyday words, and each thing named by what it is. Write "Phone sign-in | iPhone done, Android next", not "Mobile auth parity | iOS verified; Android pending". Never join two phrases with a semicolon: write a comma.
 
