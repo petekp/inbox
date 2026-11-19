@@ -56,9 +56,10 @@ import {
   runCount,
   runJobs,
   selectCases,
+  stamp,
   writeResults,
 } from './harness'
-import type { Job, Run } from './harness'
+import type { Job, Run, Stamps } from './harness'
 
 const MIN = 0.75
 const OMP_MODEL = 'anthropic/claude-opus-5-5'
@@ -509,15 +510,20 @@ const { results, stopped } =
     : { results: [] as Result[], stopped: preflight }
 writeResults(path, about, results, stopped)
 const judged = [...firstRuns, ...results]
-const baselines = readBaselines(about.suite)
-const verdicts = agents.map(a => report([a], casesFor(a), judged, runs, MIN, baselines))
-const verdict = verdicts.includes('fail') ? 'fail' : verdicts.includes('not run') ? 'not run' : 'pass'
-finish(
-  about,
-  path,
-  judged,
-  stopped,
-  verdict,
-  values['set-baseline'],
-  cases.map(c => c.name),
+const HOSTS = { claude: CLAUDE_CODE, codex: CODEX, omp: OMP }
+const stamps: Stamps = Object.fromEntries(
+  agents.flatMap(a => {
+    const host = HOSTS[a]
+    const shared = [
+      isGuided ? guidanceText(host) : '',
+      JSON.stringify(agentTools(host)),
+      JSON.stringify(probeTools(host, '0.3.0')),
+      readFileSync(a === 'omp' ? ompProbe : probeServer, 'utf8'),
+    ]
+    return casesFor(a).map(c => [`${a} ${c.name}`, stamp(c, [...shared, message(c, host)])])
+  }),
 )
+const baselines = readBaselines(about.suite)
+const verdicts = agents.map(a => report([a], casesFor(a), judged, runs, MIN, baselines, stamps))
+const verdict = verdicts.includes('fail') ? 'fail' : verdicts.includes('not run') ? 'not run' : 'pass'
+finish(about, path, judged, stopped, verdict, values['set-baseline'], stamps)

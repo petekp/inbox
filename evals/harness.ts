@@ -219,8 +219,20 @@ export function writeResults(path: string, about: Provenance, results: unknown[]
   writeFileSync(path, JSON.stringify({ ...about, stopped, results }, null, 1))
 }
 
-/** A case's pass count from a run long enough to judge later runs by, keyed `<agent> <case>`. */
-type Baseline = { passed: number; runs: number; commit: string; date: string; models: string[] }
+/** SHA-256 hashes of a case and of the text its agent's model reads for it. */
+type Stamp = { case: string; read: string }
+/** Keyed `<agent> <case>`. */
+export type Stamps = Record<string, Stamp>
+
+export function stamp(c: object, read: string[]): Stamp {
+  return { case: sha256(JSON.stringify(c)), read: sha256(read.join('\0')) }
+}
+
+/**
+ * A case's pass count from a run long enough to judge later runs by, keyed `<agent> <case>`, with the stamp of the
+ * case and text it was set on. Baselines saved before stamps have none.
+ */
+type Baseline = { passed: number; runs: number; commit: string; date: string; models: string[] } & Partial<Stamp>
 type Baselines = Record<string, Baseline>
 
 const BASELINES = join(ROOT, 'evals', 'baselines.json')
@@ -245,11 +257,11 @@ const BASELINE_RUNS = 20
  * than `BASELINE_RUNS` runs, or with a run that could not be graded, keeps its earlier baseline. Returns why each such
  * case was skipped.
  */
-function writeBaselines(suite: string, about: Provenance, results: Run[], names: string[]): string[] {
+function writeBaselines(suite: string, about: Provenance, results: Run[], stamps: Stamps): string[] {
   const all: Record<string, Baselines> = existsSync(BASELINES) ? JSON.parse(readFileSync(BASELINES, 'utf8')) : {}
   const mine = { ...all[suite] }
   const skipped: string[] = []
-  for (const key of new Set(results.filter(r => names.includes(r.name)).map(r => `${r.agent} ${r.name}`))) {
+  for (const key of new Set(results.map(r => `${r.agent} ${r.name}`).filter(k => stamps[k] !== undefined))) {
     const runs = results.filter(r => `${r.agent} ${r.name}` === key)
     if (runs.some(r => r.error !== null)) {
       skipped.push(`${key}: a run could not be graded`)
@@ -265,6 +277,7 @@ function writeBaselines(suite: string, about: Provenance, results: Run[], names:
       commit: about.commit,
       date: about.date,
       models: [...new Set(runs.map(modelOf))],
+      ...stamps[key]!,
     }
   }
   writeFileSync(BASELINES, `${JSON.stringify({ ...all, [suite]: mine }, null, 2)}\n`)
@@ -296,6 +309,15 @@ function isBelowBaseline(passed: number, runs: number, b: Baseline): boolean {
   return chanceOfAtMost(passed, runs, rate) < BELOW
 }
 
+/** Why a baseline no longer describes what this run tests, or null when it still does. */
+function lapsed(b: Baseline, now: Stamp | undefined): string | null {
+  if (b.case === undefined || b.read === undefined) return 'it has no hash of its case and text'
+  if (b.case !== now?.case) return 'its case changed since it was set'
+  if (b.read !== now.read) return 'the text the model reads changed since it was set'
+
+  return null
+}
+
 type Verdict = 'pass' | 'fail' | 'not run'
 
 /**
@@ -311,6 +333,7 @@ export function report<C extends { name: string; min?: Partial<Record<string, nu
   runs: number,
   min: number,
   baselines: Baselines,
+  stamps: Stamps,
   extra: (agent: string, c: C, mine: Run[]) => string = () => '',
 ): Verdict {
   let isFailing = false
@@ -336,15 +359,18 @@ export function report<C extends { name: string; min?: Partial<Record<string, nu
       }
       const stored = baselines[`${agent} ${c.name}`]
       const isSameModel = stored !== undefined && graded.every(r => stored.models.includes(modelOf(r)))
-      const baseline = isSameModel ? stored : undefined
+      const whyLapsed = stored === undefined ? null : lapsed(stored, stamps[`${agent} ${c.name}`])
+      const baseline = isSameModel && whyLapsed === null ? stored : undefined
       const isBelow = baseline !== undefined && isBelowBaseline(passed, graded.length, baseline)
       const isPass = passed / graded.length >= (c.min?.[agent] ?? min) && !isBelow
       if (!isPass) isFailing = true
       const against = baseline
         ? `, baseline ${baseline.passed} of ${baseline.runs}${isBelow ? ': below it' : ''}`
-        : stored
-          ? `, baseline from ${stored.models.join(', ')} not compared`
-          : ''
+        : stored === undefined
+          ? ''
+          : !isSameModel
+            ? `, baseline from ${stored.models.join(', ')} not compared`
+            : `, baseline ${stored.passed} of ${stored.runs} not compared: ${whyLapsed}`
       const ungraded = unrun.length > 0 ? `, ${unrun.length} more could not be graded` : ''
       console.log(
         `${isPass ? '  ok' : '  x '} ${agent} ${c.name}: ${passed} of ${graded.length}${ungraded} (${models})${against}${note}`,
@@ -366,7 +392,7 @@ export function finish(
   stopped: string | null,
   verdict: Verdict,
   isSettingBaseline: boolean,
-  names: string[],
+  stamps: Stamps,
 ): never {
   if (stopped !== null) console.log(`Stopped: ${stopped}`)
   console.log(`Results: ${path}${about.isDirty ? ' (the tree had uncommitted changes)' : ''}`)
@@ -374,7 +400,7 @@ export function finish(
     const unfit = stopped !== null ? 'the run stopped' : about.isDirty ? 'the tree had uncommitted changes' : null
     if (unfit) console.log(`Saved no baselines: ${unfit}.`)
     else {
-      const skipped = writeBaselines(about.suite, about, results, names)
+      const skipped = writeBaselines(about.suite, about, results, stamps)
       console.log('Saved the baselines of the cases selected.')
       for (const why of skipped) console.log(`  No baseline for ${why}.`)
     }

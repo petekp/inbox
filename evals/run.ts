@@ -29,9 +29,10 @@ import {
   runCount,
   runJobs,
   selectCases,
+  stamp,
   writeResults,
 } from './harness'
-import type { Job, Run } from './harness'
+import type { Job, Run, Stamps } from './harness'
 
 type Agent = 'claude' | 'codex'
 
@@ -222,7 +223,8 @@ function maskedAsks(update: Update, before: Ledger, after: Ledger): string[] {
   return update.added.map(a => a.ask).filter(ask => !made.has(ask))
 }
 
-async function once(agent: Agent, c: Case, n: number): Promise<Result> {
+/** The ledger and exchange a case starts from, and the system text and prompt the model reads. */
+function inputs(agent: Agent, c: Case) {
   const ledger = upgradeLedger({ ...EMPTY, ...c.ledger } as Ledger)
   const ex: Exchange = {
     person: null,
@@ -240,6 +242,14 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
     ...c.exchange,
   }
   const host = agent === 'codex' ? CODEX : CLAUDE_CODE
+  const prompt =
+    c.catchUp === undefined ? buildPrompt(ledger, ex) : transcriptCatchUpPrompt(ledger, ex.screen, c.catchUp)
+
+  return { ledger, ex, prompt, system: systemText(host) }
+}
+
+async function once(agent: Agent, c: Case, n: number): Promise<Result> {
+  const { ledger, ex, prompt, system } = inputs(agent, c)
   const ask = (input: string, system: string): Promise<Answer> =>
     agent === 'codex'
       ? askCodex(input, system, { call: 'ledger', reads: 'reply', isRetry: false }).then(text => ({
@@ -249,10 +259,8 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
         }))
       : claude(input, system)
   const runInfo = { ...job(agent, c, n), attempts: 1, earlier: [], durationMs: 0 }
-  const prompt =
-    c.catchUp === undefined ? buildPrompt(ledger, ex) : transcriptCatchUpPrompt(ledger, ex.screen, c.catchUp)
   const ledgerStarted = Date.now()
-  const ledgerCall = await ask(prompt, systemText(host))
+  const ledgerCall = await ask(prompt, system)
   const ledgerMs = Date.now() - ledgerStarted
   const { text: answer, model, outputTokens } = ledgerCall
   const base = {
@@ -303,7 +311,15 @@ const jobs: Job<Result>[] = agents.flatMap(a =>
 const { results, stopped } = await runJobs(jobs, so => writeResults(path, about, so))
 writeResults(path, about, results, stopped)
 const judged = [...firstRuns, ...results]
-const verdict = report(agents, cases, judged, runs, MIN, readBaselines(about.suite), (_agent, _c, mine) => {
+const stamps: Stamps = Object.fromEntries(
+  agents.flatMap(a =>
+    cases.map(c => {
+      const { prompt, system } = inputs(a, c)
+      return [`${a} ${c.name}`, stamp(c, [system, prompt])]
+    }),
+  ),
+)
+const verdict = report(agents, cases, judged, runs, MIN, readBaselines(about.suite), stamps, (_agent, _c, mine) => {
   const runs = mine as Result[]
   const masked = runs.reduce((sum, r) => sum + r.masked.length, 0)
   const slow = runs.filter(r => (r.ledgerMs ?? r.durationMs) > MOD_TIMEOUT_MS).length
@@ -317,12 +333,4 @@ const verdict = report(agents, cases, judged, runs, MIN, readBaselines(about.sui
   return notes.length > 0 ? `, ${notes.join(', ')}` : ''
 })
 rmSync(codexData, { recursive: true, force: true })
-finish(
-  about,
-  path,
-  judged,
-  stopped,
-  verdict,
-  values['set-baseline'],
-  cases.map(c => c.name),
-)
+finish(about, path, judged, stopped, verdict, values['set-baseline'], stamps)
