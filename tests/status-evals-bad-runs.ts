@@ -153,4 +153,9 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     answer: `${GOOD_RUNS['next-release']![0]!.replace(/^RETIRE: [^\n]*\n/, '')}\nSERVES: Share extension | -`,
     breaks: 'goal-left',
   },
+  'head-description': {
+    at: 0,
+    answer: 'SET: s2 | working | syncs on reconnect, merging clashing edits left',
+    breaks: 'head-follows',
+  },
 }

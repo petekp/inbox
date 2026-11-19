@@ -1,4 +1,4 @@
-import type { LocalResult, RowNote, LastAction, Turns, Finding } from '../types'
+import type { LocalResult, RowNote, LastAction, Turns, Finding, PressKind } from '../types'
 import { isAwaitingReply, isFoldingPress } from './last-actions'
 import { isPrRowId } from './presses'
 import type { RowPress } from './presses'
@@ -276,6 +276,16 @@ export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boole
 
   return isOpen && (isPressOut(f) || isDoneStillWaiting)
 }
+
+/**
+ * Whether a press of `kind` draws no status of its own while it is out, in a look that waits on the host's reply: a Mark
+ * press, such as Dismiss, Done, an answer, or Set goal and Remove on the goal. Its reply changes the row, the PR block
+ * or the goal in one move, often closing it, so a status that grew in for it would shrink again with that change, and
+ * would turn back as it grew if the reply landed then. Its button draws out in the press's own draw instead, and the
+ * reply shows the press. A status the row drew before the press stays as it was. `kind` is null for a press that no
+ * plan action makes, such as a typed reply, which keeps its status.
+ */
+export const holdsStatusWhileOut = (kind: PressKind | null): boolean => kind === 'mark'
 
 /**
  * Whether a row in the terminal and desktop looks draws a press status after its title, unless

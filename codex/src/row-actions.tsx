@@ -1,6 +1,7 @@
 import type { ActionEmphasis, ActionIcon, RowView } from '../../hooks/rows'
 import { actionId } from '../../hooks/press-labels'
 import type { RowPress } from '../../hooks/presses'
+import type { PressKind } from '../../types'
 import { actionLabel, ROW_COPY } from '../../hooks/rows'
 import { rowKeyPlan } from '../../hooks/action-plan'
 import type { AnswerRow } from '../../hooks/action-plan'
@@ -61,7 +62,7 @@ export function ledgerActions(
   allOptions: boolean,
   pressing: string | null,
   on: {
-    press: (press: RowPress) => void
+    press: (press: RowPress, kind: PressKind) => void
     reply: () => void
     discard: () => void
     showOptions: () => void
@@ -72,7 +73,8 @@ export function ledgerActions(
     | (typeof planned.keys)[number]
     | { slot: 'choice'; action: (typeof planned.options)[number]['action']; hotkey?: string }
   const draw = (k: Drawn): LedgerAction => {
-    if (k.slot === 'retry') return { label: k.label, emphasis: k.emphasis, icon: k.icon, run: () => on.press(k.press) }
+    if (k.slot === 'retry')
+      return { label: k.label, emphasis: k.emphasis, icon: k.icon, run: () => on.press(k.press, k.kind) }
     if (k.slot === 'allOptions') return { label: k.label, emphasis: k.emphasis, run: on.showOptions }
     const a = k.action
     return {
@@ -82,7 +84,12 @@ export function ledgerActions(
       ...(a.icon ? { icon: ACTION_ICONS[a.icon] } : {}),
       ...(a.press.action === 'dismiss' ? { isDismiss: true } : {}),
       ...(a.isOut || actionId(a.press) === pressing ? { isOut: true } : {}),
-      run: a.press.action === 'type' ? on.reply : a.press.action === 'discard' ? on.discard : () => on.press(a.press),
+      run:
+        a.press.action === 'type'
+          ? on.reply
+          : a.press.action === 'discard'
+            ? on.discard
+            : () => on.press(a.press, a.kind),
     }
   }
   return {

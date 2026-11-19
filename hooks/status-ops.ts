@@ -76,21 +76,21 @@ function isDescriptionStale(head: StatusHead | null, work: AnswerWork): boolean 
 }
 
 /**
- * The head after a HEAD line, read once the answer's subject changes have applied. A head with a description holds
- * when the line keeps its title, since the call rewrites the description to track the current piece of the focus,
- * unless the description names work the answer finished. It also holds when the answer finished work that was under
- * way before it, started none it finished, and left none under way, since the call reads queued work as the next focus. A head with no description
- * always takes the line.
+ * The head after a HEAD line, read once the answer's subject changes have applied. A head with no description takes
+ * the line. A head with a description holds when the answer finished work that was under way before it, started none
+ * it finished, and left none under way, since the call reads queued work as the next focus. Otherwise a line that
+ * keeps the title keeps the title's wording and takes the line's description, so a corrected description applies, and
+ * a line with another title replaces the head.
  */
 function headAfter(last: StatusHead | null, op: Extract<Op, { kind: 'head' }>, work: AnswerWork): StatusHead {
-  const isComplete = last !== null && last.description !== ''
-  const isSameTitle = last !== null && hasSameWords(last.title, op.title)
-  const isStale = isDescriptionStale(last, work)
-  const isHeld = isComplete && ((isSameTitle && !isStale) || (work.isEarlierWorkFinished && !work.isWorkUnderWay))
+  const line = { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
+  if (last === null || last.description === '') return line
+  const isQueuedWorkNext = work.isEarlierWorkFinished && !work.isWorkUnderWay
+  if (isQueuedWorkNext) return last
+  if (!hasSameWords(last.title, op.title)) return line
+  const isSameDescription = line.description === '' || hasSameWords(last.description, line.description)
 
-  return isHeld
-    ? last!
-    : { title: clipWords(op.title, NAME_KEPT), description: clipWords(op.description, DESCRIPTION_KEPT) }
+  return isSameDescription ? last : { title: last.title, description: line.description }
 }
 
 /**
@@ -277,8 +277,8 @@ export function applyOps(
       }
     }
   }
-  const isHeadKept = o.head === (last?.head ?? null)
-  if (isHeadKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
+  const isTitleKept = !!o.head && !!last?.head && o.head.title === last.head.title
+  if (isTitleKept && o.head && isDescriptionStale(o.head, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
   const settled = settleGoal(o, now, readSetAt, named)

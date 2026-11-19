@@ -2,7 +2,7 @@
 
 The cases that judge the Status tab. [How the Status is judged](plans/status/judging.md) gives the fixed rules, the code holds, the judge and the pass bar.
 
-Three replays and twenty-four short cases run 3 times each on Sonnet and on Codex, and three short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
+Three replays and twenty-six short cases run 3 times each on Sonnet and on Codex, and three short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
 A step with no call, or a step before its call, can press a goal button as the person would: Remove, or a typed goal. It runs through the host's own press.
 
@@ -82,6 +82,7 @@ The person's "speed up search on large libraries" at steps 1 and 2 is a directio
 | `unrelated-ask-reasons` | 3 | No goal. A coordinator reports three unrelated items, each with an ask and its reason. One reason names a library's release, and one a goal picker in the app. | No goal is set. |
 | `children-finished` | 3 | A coordinator. The export delegate finished, and the coordinator runs the checks, then merges. Sync conflicts is built, and cannot merge until the sync engine change another delegate builds lands. Then the engine delegate finishes while the reply talks only about the export merge, and then the person asks what is open. | The export row stays working and names the step left, such as the merge. Sync conflicts' delegate finished too, and the row waits on other work, since its work left is the engine's. At step 2 the engine row says its work is not checked yet, though the reply never mentions it. At step 3 nothing moves. |
 | `fix-through-merge` | 3 | A coordinator. A delegate fixes the share sheet bug. Step 1: a catch-up reads a conversation that calls the work the double send fix and names its PR, while the settings toggle's delegate finished and its check and merge are still owed. Step 2: the fix merges, and the coordinator starts the 2.5 beta build with it. | Step 1: the share sheet work stays one subject, and neither it nor the settings toggle closes before its merge. Step 2: the share sheet subject closes as ✓, and the beta build is a subject of its own. |
+| `head-description` | 3 | A goal with three milestones. An earlier exchange finished the phone testing and started offline edits, and left the head's description on the phone testing. One reply about offline edits. | The head's description moves to offline edits, and its title stays. |
 
 `removed-goal`, `goal-on-busy-page` and `mid-turn-activity` are judged on each model apart. The others are judged with the replays: both models' runs together.
 

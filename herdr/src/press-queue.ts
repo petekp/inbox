@@ -4,7 +4,7 @@ import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session-view'
 import type { Holds } from '../../hooks/timing'
-import type { LocalResult, RowNote } from '../../types'
+import type { LocalResult, PressKind, RowNote } from '../../types'
 import type { LastPress } from './files'
 import {
   isSentConfirmed,
@@ -78,6 +78,7 @@ export class PressQueue {
     press: RowPress | PrPress,
     effects: readonly Effect[],
     label: string,
+    kind: PressKind | null,
     reply?: string,
   ): Sent {
     const rowId = pressRowId(press)
@@ -95,6 +96,7 @@ export class PressQueue {
       rowId,
       path: pressPath(target.appHome, target.sessionId, pressId),
       action: outAction(press),
+      kind,
       label,
       ...(reply !== undefined ? { reply } : {}),
       pending,
