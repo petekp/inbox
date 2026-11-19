@@ -1,5 +1,13 @@
 import { atEndWeight } from './weight-ease'
-import { ENTER_FADE_MS, enterDelayMs, FADE_MS, isMoving, LEAVE_FADE_MS, ROW_STATE_MS, turnBackFades } from '../../hooks/row-motion'
+import {
+  ENTER_FADE_MS,
+  enterDelayMs,
+  FADE_MS,
+  isMoving,
+  LEAVE_FADE_MS,
+  ROW_STATE_MS,
+  turnBackFades,
+} from '../../hooks/row-motion'
 import type { FadeStep, RowState } from '../../hooks/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../hooks/springs'
 import type { SpringState } from '../../hooks/springs'
@@ -278,10 +286,12 @@ function fadeThrough(el: HTMLElement, from: number, steps: FadeStep[], delay: nu
   if (from >= step.to && rest.length > 0) return fadeThrough(el, from, rest, delay)
   fade(el, from, step.to, step.ms, rest.length > 0, false, delay)
   if (rest.length > 0)
-    el.getAnimations().at(-1)?.finished.then(
-      () => fadeThrough(el, step.to, rest, 0),
-      () => {},
-    )
+    el.getAnimations()
+      .at(-1)
+      ?.finished.then(
+        () => fadeThrough(el, step.to, rest, 0),
+        () => {},
+      )
 }
 
 /** A panel's Holds up line, which the closed line draws in the same place once the row's close ends. */

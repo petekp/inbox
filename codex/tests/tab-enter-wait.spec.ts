@@ -333,8 +333,7 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     await after(LEAVE_FADE_MS + 40)
     fades.length = 0
     await press(pressed.id)
-    const lateFades = () =>
-      fades.filter(f => f.el.closest('.panel') && rowOf(pressed.id).contains(f.el) && f.to > 0)
+    const lateFades = () => fades.filter(f => f.el.closest('.panel') && rowOf(pressed.id).contains(f.el) && f.to > 0)
     const dims = lateFades()
     assert.ok(
       dims.length > 0 && dims.every(f => f.delay === 0 && f.to === TURNED_BACK_CUT_OPACITY),
