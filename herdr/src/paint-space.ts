@@ -31,12 +31,17 @@ import type { SpringState } from '../../hooks/springs'
 /** A group's Closed fold, which ends its list. */
 const isClosedFold = (b: Block): boolean => b.kind === 'fold' && 'closedFold' in b.change
 
+/** A PR's head in its dismissed form, which draws its title, its outcome and Undo. */
+const isSettledPr = (b: Block): boolean => b.kind === 'row' && b.settled !== null && b.id.startsWith('pr:')
+
 /**
  * The padding a block keeps inside its own box, above and below. It counts toward the space. A Closed fold pads
- * `LIST_MARGIN`, so its label sits that far under the last row's box while the two boxes meet.
+ * `LIST_MARGIN`, so its label sits that far under the last row's box while the two boxes meet. A dismissed PR pads
+ * nothing, so it is no taller than the open PR it replaces and Undo shows whole while the box moves.
  */
 export function padOf(b: Block): number {
   if (isClosedFold(b)) return LIST_MARGIN
+  if (isSettledPr(b)) return 0
 
   return b.kind === 'row' || b.kind === 'fold' || b.kind === 'more' ? ROW_PAD_PT : 0
 }
@@ -372,7 +377,7 @@ function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): E
 }
 
 /** Where a box `height` tall has sprung to after shutting for `ms`, and how fast, or no height at rest when it opens from shut. */
-const shutTo = (height: number, ms: number | null): SpringState =>
+export const shutTo = (height: number, ms: number | null): SpringState =>
   ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING)
 
 /**

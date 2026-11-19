@@ -38,8 +38,8 @@ export const slideOffset = (opacity: number): number => -SLIDE_PX * (1 - Math.mi
 /**
  * A row's state. The resting states draw one form: `closed` its line, `open` its line and panel, `settled` its
  * settled line, `undoing` that line while an Undo press is out. The moving states animate toward a form, and each
- * keeps what it moves away from drawn: `closing` keeps the panel, `settling` keeps the last open panel under the
- * settled line, and `leaving` keeps the row's last form while it fades and collapses.
+ * keeps what it moves away from drawn: `closing` keeps the panel, and `leaving` keeps the row's last form while it fades
+ * and collapses. `settling` swaps the settled line in for the whole open row at once, and the height shrinks under it.
  */
 export type RowState =
   'entering' | 'closed' | 'opening' | 'open' | 'closing' | 'settling' | 'settled' | 'undoing' | 'leaving'
@@ -48,10 +48,18 @@ export type RowState =
 export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
 
 /**
- * A row's state, when it entered it, and whether it draws the open row's panel: an open row, one growing in open,
- * and a row closing, settling or leaving from a state that drew it. `entersSettled` marks a row growing in settled.
+ * A row's state, when it entered it, and whether its open form is part of its move: `hasOpenForm` holds for an open
+ * row, one opening or growing in open, and a row closing, settling or leaving from the open form. `entersSettled` marks
+ * a row growing in settled.
  */
-export type RowTrack = { state: RowState; since: number; hasPanel: boolean; entersSettled?: true }
+export type RowTrack = { state: RowState; since: number; hasOpenForm: boolean; entersSettled?: true }
+
+/**
+ * Whether a row draws the open row's panel: while its open form is part of its move, except as it settles. A settling
+ * row swaps its settled line and Undo in for its whole open row at once, with no panel and no glide of its title, and
+ * only its height moves. A closing or leaving row keeps the panel drawn while its height shrinks over it.
+ */
+export const drawsPanel = (track: RowTrack): boolean => track.hasOpenForm && track.state !== 'settling'
 
 /** How long each state's fade lasts, in ms. Resting states are 0. */
 export const ROW_FADE_MS: Record<RowState, number> = {
@@ -110,15 +118,15 @@ export function stepRow(
 }
 
 function entering(form: Exclude<Form, 'gone'>, now: number): RowTrack {
-  const track: RowTrack = { state: 'entering', since: now, hasPanel: form === 'open' }
+  const track: RowTrack = { state: 'entering', since: now, hasOpenForm: form === 'open' }
 
   return form === 'settled' ? { ...track, entersSettled: true } : track
 }
 
-function formOf({ state, hasPanel, entersSettled }: RowTrack): Form {
+function formOf({ state, hasOpenForm, entersSettled }: RowTrack): Form {
   switch (state) {
     case 'entering':
-      return entersSettled ? 'settled' : hasPanel ? 'open' : 'closed'
+      return entersSettled ? 'settled' : hasOpenForm ? 'open' : 'closed'
     case 'opening':
     case 'open':
       return 'open'
@@ -137,15 +145,15 @@ function formOf({ state, hasPanel, entersSettled }: RowTrack): Form {
 function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
   switch (form) {
     case 'open':
-      return { state: 'opening', since: now, hasPanel: true }
+      return { state: 'opening', since: now, hasOpenForm: true }
     case 'closed':
       return track.state === 'leaving'
         ? entering('closed', now)
-        : { state: 'closing', since: now, hasPanel: track.hasPanel }
+        : { state: 'closing', since: now, hasOpenForm: track.hasOpenForm }
     case 'settled':
-      return { state: 'settling', since: now, hasPanel: track.hasPanel }
+      return { state: 'settling', since: now, hasOpenForm: track.hasOpenForm }
     case 'gone':
-      return { state: 'leaving', since: now, hasPanel: track.hasPanel }
+      return { state: 'leaving', since: now, hasOpenForm: track.hasOpenForm }
   }
 }
 
@@ -153,5 +161,5 @@ function rest(track: RowTrack | undefined, form: Form, target: RowTarget, now: n
   if (form === 'gone') return null
   const state: RowState = target === 'undoing' ? 'undoing' : form
 
-  return track?.state === state ? track : { state, since: now, hasPanel: state === 'open' }
+  return track?.state === state ? track : { state, since: now, hasOpenForm: state === 'open' }
 }

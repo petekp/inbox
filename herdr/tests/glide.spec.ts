@@ -334,16 +334,16 @@ test('a row the selection leaves keeps closing when another block starts to leav
   expect(rises).toEqual([])
 })
 
-test('the row the person’s selection moves to shows its panel from the next frame', () => {
-  const fading = framesOf(
+test('the row the person’s selection moves to fades its panel in once its space is open, so none of it is cut', () => {
+  const frames = framesOf(
     [
       [0, asks(ALL, 'd11')],
       [0, asks(ALL, 'd12'), 'input'],
     ],
-    300,
-  ).fading.filter(f => f.id === 'panel d12')
-  const start = fading[0]?.at ?? 0
-  expect(fading.find(f => f.opacity > 0.01)?.at ?? Infinity).toBeLessThanOrEqual(start + 2 * 16)
+    600,
+  )
+  expect(frames.fading.filter(f => f.id === 'panel d12').at(-1)?.opacity).toBeCloseTo(1)
+  expect(frames.cuts.filter(c => c.box === 'panel d12')).toEqual([])
 })
 
 test('a block listed again while it fades out fades back in where it is, and nothing below it dips', () => {

@@ -240,8 +240,8 @@ test('work closed since the last look shows as two rows, the rest is named in a 
   expect(shape(page({ ...fresh, lastLookAt: 60 * MIN }, now).rows)).toEqual([
     '✓ Four: done d',
     '✓ Three: done c',
-    '✓ Also done: Five, Two',
-    '✗ Also dropped: Six',
+    '✓ Done: Five, Two',
+    '✗ Dropped: Six',
     '✓ One',
   ])
 })
@@ -260,7 +260,7 @@ test('when every row on the page closed since the last look, the named fold ends
   expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 60 * MIN).rows)).toEqual([
     '✓ Three: done c',
     '✓ Two: done b',
-    '✓ Also done: One',
+    '✓ Done: One',
   ])
 })
 
@@ -276,7 +276,7 @@ test('a look that showed a named fold counts as seen the work it names and the w
   )
   const before = { ...closed, lastLookAt: 15 * MIN }
   const rows = page(before, 60 * MIN).rows
-  expect(shape(rows)).toEqual(['◐ Six: step 5', '✓ Five: e', '✓ Four: d', '✓ Also done: Three, Two, +1 more'])
+  expect(shape(rows)).toEqual(['◐ Six: step 5', '✓ Five: e', '✓ Four: d', '✓ Done: Three, Two, +1 more'])
 
   const shown = Object.fromEntries(rows.flatMap(seenSubjectIds).map(id => [id, 61 * MIN]))
   const looked = lookEnded(lookStarted(before, 60 * MIN), 60 * MIN + LOOK_MIN_MS, shown)!
@@ -291,7 +291,7 @@ test('a named line shows two names, the newest first, and counts the rest as +N 
   expect(shape(page({ ...closed, lastLookAt: 15 * MIN }, 90 * MIN).rows)).toEqual([
     '✓ Seven: done',
     '✓ Six: done',
-    '✓ Also done: Five, Four, +3 more',
+    '✓ Done: Five, Four, +3 more',
   ])
 })
 

@@ -128,14 +128,14 @@ test('under a milestone and under Other work, closed work past two rows that the
     '◆ Error copy: not started · Ask i1?',
     '✓ Sniffer: sniffs',
     '✓ Parser: parses',
-    '✓ Also done: CSV import',
+    '✓ Done: CSV import',
   ])
   expect(shape(p.rows)).toEqual([
     '== Other work',
     '✓ Fonts: fonts ship',
     '✓ Logo refresh: logo ships',
-    '✓ Also done: Dark mode',
-    '✗ Also dropped: Icons',
+    '✓ Done: Dark mode',
+    '✗ Dropped: Icons',
   ])
 })
 

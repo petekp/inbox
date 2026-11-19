@@ -81,7 +81,7 @@ export type StatusRow = {
   | { kind: 'more'; id: string; text: string; branch: 'last' }
   /**
    * Rows folded into one line: open rows into a count, as "○ 2 more", or work that closed since the last look past the
-   * rows drawn for it, named, as "✓ Also done: Sync merge, Search speed".
+   * rows drawn for it, named, as "✓ Done: Sync merge, Search speed".
    */
   | {
       kind: 'fold'

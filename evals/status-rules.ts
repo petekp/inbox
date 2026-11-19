@@ -407,7 +407,7 @@ const FIXED_RULES: Rule[] = [
     id: 'finished-named',
     reads: 'facts',
     property: 10,
-    text: 'Every piece that finished or was dropped since the last look is drawn as a row, named or counted in the "Also done" or "Also dropped" line, or folded under a met goal\'s milestones.',
+    text: 'Every piece that finished or was dropped since the last look is drawn as a row, named or counted in the "Done:" or "Dropped:" line, or folded under a met goal\'s milestones.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       const look = o?.lastLookAt ?? null
