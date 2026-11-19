@@ -1,4 +1,5 @@
-import type { Item, SessionStatus, StatusGoal } from '../types'
+import type { Item, Milestone, SessionStatus, StatusGoal } from '../types'
+import { isOpen as isOpenStatus } from './status-limits'
 import { HELD_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
@@ -124,9 +125,21 @@ export function oldestAsk(
   return oldest ? { id: oldest.id, kind: oldest.kind } : null
 }
 
+/**
+ * Where an open milestone stands when the Status call has not said, while open work serves it: how many of the subjects
+ * that serve it are done, as "1 of 3 done". Null otherwise.
+ */
+function workCountText(m: Milestone, o: SessionStatus): string | null {
+  const work = o.subjects.filter(s => s.status !== 'dropped' && o.serves[s.id] === m.id)
+  const done = work.filter(s => s.status === 'done').length
+  const isUnsaid = isOpenStatus(m) && m.text.trim() === '' && done < work.length
+
+  return isUnsaid ? `${done} of ${work.length} done` : null
+}
+
 function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]): MilestoneRow {
   const m = step.milestone
-  const isOpen = m.status !== 'done' && m.status !== 'dropped'
+  const isOpen = isOpenStatus(m)
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => (to === m.id ? [id] : [])))
   const holds = items.filter(i => {
     const to = o.askSubjects[i.id] ?? []
@@ -149,7 +162,7 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     isMuted: step.place === 'later' || step.place === 'dropped' || step.place === 'done',
     foldId: null,
     foldCount: 0,
-    text: textBeyondName(m.name, m.text),
+    text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
     rows: [],

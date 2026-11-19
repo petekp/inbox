@@ -739,8 +739,7 @@ function withWorkStartedMilestones(o, now) {
       if (status === null) return m;
       const started = { ...m };
       forgetSeenWas(started, o.lastLookAt);
-      const isWrittenNow = m.changedAt === now;
-      return { ...started, status, text: isWrittenNow ? m.text : "", changedAt: now };
+      return { ...started, status, changedAt: now };
     })
   };
 }
@@ -853,7 +852,7 @@ function withRestatedGoalAsMilestones(o, ops, readSetAt) {
   const isReadJustSet = g != null && g.isAwaitingMilestones && readSetAt === g.setAt;
   if (!isReadJustSet) return ops;
   return ops.flatMap(
-    (op) => op.kind === "goal" && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text) ? op.milestones.map((m) => ({ kind: "milestone", status: m.status, name: m.name, text: "" })) : [op]
+    (op) => op.kind === "goal" && restatesGoal(clipWords(op.text, DESCRIPTION_KEPT), g.text) ? op.milestones.map((m) => ({ kind: "milestone", status: m.status, name: m.name, text: m.text })) : [op]
   );
 }
 function inferredGoal(o, text2, named, now) {
@@ -868,7 +867,7 @@ function inferredGoal(o, text2, named, now) {
       id,
       name: m.name,
       status: m.status,
-      text: isSame ? was.text : "",
+      text: m.text || (isSame ? was.text : ""),
       was: null,
       changedAt: now,
       closedAt: isOpen(m) ? null : now
@@ -915,7 +914,7 @@ function goalLineRefusal(o, op, revisedFrom) {
 function applyGoalOp(o, op, now, findSubject, start = o, servesLines = []) {
   if (op.kind === "goal" || op.kind === "retire") {
     const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now);
-    const milestones = op.kind === "goal" ? op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status })) : [];
+    const milestones = op.kind === "goal" ? op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status, text: clipWords(m.text, TEXT_KEPT) })) : [];
     const placed = new Map(
       servesLines.flatMap((l) => {
         const s = findSubject(l.subject);
@@ -1325,9 +1324,15 @@ function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
 }
+function workCountText(m, o) {
+  const work = o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === m.id);
+  const done = work.filter((s) => s.status === "done").length;
+  const isUnsaid = isOpen(m) && m.text.trim() === "" && done < work.length;
+  return isUnsaid ? `${done} of ${work.length} done` : null;
+}
 function milestoneRow(step, o, items) {
   const m = step.milestone;
-  const isOpen2 = m.status !== "done" && m.status !== "dropped";
+  const isOpen2 = isOpen(m);
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
   const holds = items.filter((i) => {
     const to = o.askSubjects[i.id] ?? [];
@@ -1349,7 +1354,7 @@ function milestoneRow(step, o, items) {
     isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
-    text: textBeyondName(m.name, m.text),
+    text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
@@ -5446,9 +5451,9 @@ function anyStatus(s) {
 }
 function goalMilestones(value) {
   return (value ?? "").split(";").flatMap((part) => {
-    const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part);
+    const m = /^\s*(\S+)\s+(.+?)(?::\s*(.*?))?\s*$/.exec(part);
     const status = anyStatus(m?.[1]);
-    return status && m?.[2] ? [{ status, name: m[2] }] : [];
+    return status && m?.[2] ? [{ status, name: m[2], text: m[3] ?? "" }] : [];
   });
 }
 function opOf(key, f) {
@@ -5515,17 +5520,18 @@ async function askStatus(ask) {
 
 // ../hooks/status-prompt-goal.ts
 var NO_WORK_LINKED = "no work linked";
+var NO_TEXT = "no text";
 var NEXT_MARK = "next";
 var tooBigMark = (count, room) => `too big, ${count} subjects, room for ${room}`;
-var GOAL_LINES = `GOAL: outcome | status name; status name
+var GOAL_LINES = `GOAL: outcome | status name: where it stands; status name: where it stands
 RETIRE: why the goal no longer fits the work
 SUGGEST: outcome, or - for none
 MILESTONE: status | name | where it stands
 NEXT: milestone id or name
 SERVES: subject id or name | milestone id or name, or - when the goal does not need it
-GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, then its name: GOAL: 2.5 in the store | done Bug fixed; working Release built; queued Store review. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
+GOAL sets the goal, with ${MILESTONES_MIN} to ${MILESTONES_MAX} milestones, in order, each written as its status, its name, then where it stands: GOAL: 2.5 in the store | done Bug fixed: crash gone; working Release built: build signed; queued Store review: after the build. It holds no date or time. RETIRE clears the goal and sets none. SET, DONE, DROP, WAS and LINK take a milestone's id as they take a subject's.`;
 var GOAL_INPUT = `- <goal>: the outcome the session's work is for, when one is set. It says (typed) when the person typed it, (met) when every milestone is done, (just set) when the person just typed it or took the suggested goal, so its milestones still belong to the goal before it, and (no work for 2h), with the time, once none of its linked work is open and nothing has moved it for that long: the work has left it. A second line, when code did not apply the last answer's GOAL or RETIRE line, says which line and why. Fix the cause in this answer before writing that line again.
-- <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it, and with | ${tooBigMark(9, 2)} when more than ${MILESTONE_SUBJECTS} subjects serve it, open or done, two or more of them are open, and the goal has room for more milestones. Room for 2 means the goal can take 2 more.
+- <milestones>: the outcomes the goal needs, in the plan's order, one per line: id | status | name | where it stands. The queued milestone the work takes up next ends with | ${NEXT_MARK}. A line ends with | ${NO_WORK_LINKED} when no subject serves it, with | ${NO_TEXT} when open work serves it and it says nothing on where it stands, and with | ${tooBigMark(9, 2)} when more than ${MILESTONE_SUBJECTS} subjects serve it, open or done, two or more of them are open, and the goal has room for more milestones. Room for 2 means the goal can take 2 more.
 - <removed>: goals the person removed, as their key words, one per line
 - <suggested>: the goal offered to the person, while no goal is set or the goal is met
 - While a goal is set, each line in <subjects> ends with the milestone the subject serves, - when the goal does not need it, or ? when it is not linked yet.`;
@@ -5538,7 +5544,7 @@ var GOAL_PARTS = {
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
   "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open, unless the person says its outcome changed, as when they cut part of it. Then write GOAL for the new outcome, and name again in the same words each milestone it keeps, so that milestone's work moves with it. Write SERVES to - for the work of each milestone it leaves out. When a milestone is cut and the goal's text still holds, write DROP for that milestone instead. New work or an added outcome is a MILESTONE line, never a new goal.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed or it is marked ${NO_TEXT}: then write SET with where it stands, from the work that serves it. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
   "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next. Name a milestone this answer adds by its name, since it has no id yet. Leave it out when the milestone marked ${NEXT_MARK} in <milestones> is right.`,
   "milestone-split": `A milestone marked too big holds more work than the person can read as one outcome: split it by theme. Write MILESTONE for each outcome its open subjects are for, named by theme, such as "Status page polish" or "Herdr drawing fixed", and never more than the room the mark gives: code drops a MILESTONE line past it. Then write SERVES to move each of its open subjects to the new milestone its work is part of, or to - when the goal does not need it. Its done subjects stay with it and get no SERVES line. When the split leaves none of its subjects open, write DONE for it in the same answer, with where it ended, or DROP with why when none of them is done. A split changes milestones only, so it applies to a goal marked (typed) too, and the goal's words stay.`,
   "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
@@ -5599,15 +5605,18 @@ function goalBlocks(o, now) {
   ] : [];
   const state = marks.length > 0 ? ` (${marks.join(", ")})` : "";
   const served = new Set(Object.values(o.serves));
+  const servedOpen = new Set(o.subjects.filter(isOpen).map((s) => o.serves[s.id]));
   const next = g?.isAwaitingMilestones ? void 0 : o.milestones.find((m) => m.status === "queued");
   const tooBig = tooBigMilestones(o);
   const room = MILESTONES_MAX - o.milestones.filter((m) => m.status !== "dropped").length;
   const milestones = o.milestones.filter((m) => m.status !== "dropped").map((m) => {
     const isUnserved = m.status !== "done" && !served.has(m.id);
+    const isUnsaid = isOpen(m) && m.text.trim() === "" && servedOpen.has(m.id);
     const serving = tooBig.get(m.id);
     const marks2 = [
       ...m === next ? [NEXT_MARK] : [],
       ...isUnserved ? [NO_WORK_LINKED] : [],
+      ...isUnsaid ? [NO_TEXT] : [],
       ...serving === void 0 ? [] : [tooBigMark(serving, room)]
     ];
     return [`${m.id} | ${m.status} | ${m.name} | ${m.text || "-"}`, ...marks2].join(" | ");

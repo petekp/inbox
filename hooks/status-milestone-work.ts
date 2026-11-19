@@ -31,8 +31,7 @@ export function withWorkDoneMilestones(o: SessionStatus, now: number): SessionSt
 
 /**
  * Starts each queued milestone whose linked work is under way: working while some of it is working, else waiting on
- * something outside the session. Where it stood was written while nothing had started on it, so it goes, and the next
- * call writes it again, unless this answer wrote it.
+ * something outside the session. It keeps where it stands, so the page never shows it blank until a call writes again.
  */
 export function withWorkStartedMilestones(o: SessionStatus, now: number): SessionStatus {
   const startedAs = (m: Milestone): 'working' | 'waits-on-other' | null => {
@@ -50,9 +49,8 @@ export function withWorkStartedMilestones(o: SessionStatus, now: number): Sessio
       if (status === null) return m
       const started = { ...m }
       forgetSeenWas(started, o.lastLookAt)
-      const isWrittenNow = m.changedAt === now
 
-      return { ...started, status, text: isWrittenNow ? m.text : '', changedAt: now }
+      return { ...started, status, changedAt: now }
     }),
   }
 }

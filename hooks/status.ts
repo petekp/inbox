@@ -14,7 +14,7 @@ export type Op =
   /** `ref` is a running child's id or an open ask's id. `subject` may name a milestone. */
   | { kind: 'link'; ref: string; subject: string }
   /** A goal the call sets from the session's work, with the milestones it needs. Code applies it only when it may. */
-  | { kind: 'goal'; text: string; milestones: { status: SubjectStatus; name: string }[] }
+  | { kind: 'goal'; text: string; milestones: GoalMilestone[] }
   /** Clears an inferred goal the session's work has left, when no next goal is clear. */
   | { kind: 'retire'; why: string }
   | { kind: 'milestone'; status: SubjectStatus; name: string; text: string }
@@ -24,6 +24,9 @@ export type Op =
   | { kind: 'next'; ref: string }
   /** The goal offered to the person while none runs, or null for none. */
   | { kind: 'suggest'; text: string | null }
+
+/** A milestone as a GOAL line writes it: its status, its name, and where it stands, which is empty when the line gives none. */
+export type GoalMilestone = { status: SubjectStatus; name: string; text: string }
 
 /** What the Status call answered: nothing to change, or the changes to make. */
 export type StatusAnswer = { kind: 'unchanged' } | { kind: 'ops'; ops: Op[] }
@@ -50,12 +53,15 @@ function anyStatus(s: string | undefined): SubjectStatus | null {
   return STATUSES.find(o => o === statusWord(s)) ?? null
 }
 
-/** A GOAL line's milestones, as `status name; status name`. A milestone with no known status is left out. */
-function goalMilestones(value: string | undefined): { status: SubjectStatus; name: string }[] {
+/**
+ * A GOAL line's milestones, as `status name: where it stands; status name`, where it stands being optional. A milestone
+ * with no known status is left out.
+ */
+function goalMilestones(value: string | undefined): GoalMilestone[] {
   return (value ?? '').split(';').flatMap(part => {
-    const m = /^\s*(\S+)\s+(.+?)\s*$/.exec(part)
+    const m = /^\s*(\S+)\s+(.+?)(?::\s*(.*?))?\s*$/.exec(part)
     const status = anyStatus(m?.[1])
-    return status && m?.[2] ? [{ status, name: m[2] }] : []
+    return status && m?.[2] ? [{ status, name: m[2], text: m[3] ?? '' }] : []
   })
 }
 

@@ -40,10 +40,25 @@ type Replayed = {
 /** The time the answer applied: the call's start plus the time its attempts took. */
 const appliedAt = (r: StatusRecord) => r.at + r.attempts.reduce((sum, a) => sum + (a.ms ?? 0), 0)
 
-function replay(session: number, record: StatusRecord): Replayed {
+/**
+ * The recorded Status before a call, with each milestone's text as the replay of the session's previous call left it,
+ * for a milestone of the same id and name. Records hold the text the recording build left, so without this a change
+ * to what code does with a milestone's text would show only in the call that made it.
+ */
+function withCarriedText(saved: SessionStatus | null, previous: SessionStatus | null): SessionStatus | null {
+  if (!saved || !previous) return saved
+  const kept = new Map(previous.milestones.map(m => [m.id, m]))
+  const milestones = saved.milestones.map(m => {
+    const was = kept.get(m.id)
+    return was && was.name === m.name ? { ...m, text: was.text } : m
+  })
+  return { ...saved, milestones }
+}
+
+function replay(session: number, record: StatusRecord, previous: SessionStatus | null): Replayed {
   const text = record.attempts.filter(a => a.answer).at(-1)?.answer ?? null
   const answer = text === null ? null : parseStatus(text)
-  const base = upgradeStatus(record.before)
+  const base = withCarriedText(upgradeStatus(record.before), previous)
   const now = appliedAt(record)
   const askIds = new Set((record.input?.asks ?? []).map(i => i.id))
   const readSetAt = record.input?.last?.goal?.setAt ?? null
@@ -57,19 +72,24 @@ function readRecords(folder: string): Replayed[] {
   const sessions = readdirSync(folder)
     .filter(n => statSync(join(folder, n)).isDirectory())
     .sort()
-  return sessions.flatMap((name, session) =>
-    readdirSync(join(folder, name))
+  return sessions.flatMap((name, session) => {
+    let previous: SessionStatus | null = null
+    return readdirSync(join(folder, name))
       .filter(n => n.endsWith('.jsonl'))
       .sort()
       .flatMap(file => {
+        let record: StatusRecord
         try {
-          const record = JSON.parse(readFileSync(join(folder, name, file), 'utf8').split('\n')[0]!) as StatusRecord
-          return record.version === STATUS_RECORD_VERSION ? [replay(session, record)] : []
+          record = JSON.parse(readFileSync(join(folder, name, file), 'utf8').split('\n')[0]!) as StatusRecord
         } catch {
           return []
         }
-      }),
-  )
+        if (record.version !== STATUS_RECORD_VERSION) return []
+        const r = replay(session, record, previous)
+        if (record.isWritten) previous = r.after
+        return [r]
+      })
+  })
 }
 
 /** A count over sessions: each session's hits and chances, pooled and as the median of the sessions' shares. */

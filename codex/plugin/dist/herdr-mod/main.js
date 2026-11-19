@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T05:17:47.947Z. 300029 characters follow.
+// Built at 2026-11-19T06:54:24.904Z. 300344 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -1537,15 +1537,21 @@ function oldestAsk(items, links, id) {
   const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return oldest ? { id: oldest.id, kind: oldest.kind } : null;
 }
+function workCountText(m, o) {
+  const work = o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === m.id);
+  const done = work.filter((s) => s.status === "done").length;
+  const isUnsaid = isOpen(m) && m.text.trim() === "" && done < work.length;
+  return isUnsaid ? `${done} of ${work.length} done` : null;
+}
 function milestoneRow(step, o, items) {
   const m = step.milestone;
-  const isOpen = m.status !== "done" && m.status !== "dropped";
+  const isOpen2 = isOpen(m);
   const servingIds = new Set(Object.entries(o.serves).flatMap(([id, to]) => to === m.id ? [id] : []));
   const holds = items.filter((i) => {
     const to = o.askSubjects[i.id] ?? [];
     return to.some((id) => id === m.id || servingIds.has(id));
   });
-  const isHeld = isOpen && holds.length > 0;
+  const isHeld = isOpen2 && holds.length > 0;
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
   const direct = oldestAsk(items, o.askSubjects, m.id);
@@ -1557,11 +1563,11 @@ function milestoneRow(step, o, items) {
     place: step.place,
     line: step.line,
     startsLater: step.startsLater,
-    isBold: isOpen,
+    isBold: isOpen2,
     isMuted: step.place === "later" || step.place === "dropped" || step.place === "done",
     foldId: null,
     foldCount: 0,
-    text: textBeyondName(m.name, m.text),
+    text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
     rows: []
