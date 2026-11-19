@@ -17,14 +17,20 @@ const STEP_MS = 1
 /** A spring's position and velocity, in px and px per ms. */
 export type SpringState = { x: number; v: number }
 
+const isAtRest = (s: SpringState, target: number, spring: Spring): boolean =>
+  Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon
+
 /**
  * Moves a spring `ms` toward `target`, as a damped harmonic oscillator whose undamped period is `response`. That is
- * how SwiftUI reads the same two numbers. gpui-kit does not say how it reads them.
+ * how SwiftUI reads the same two numbers. gpui-kit does not say how it reads them. A spring at rest at a frame, as
+ * `springFrames` checks it, stays at `target`, so a spring last aimed hours ago costs no more than one that just
+ * settled. Between frames a spring can pass under `epsilon` and drift out again, so only frames count.
  */
 export function springStep(s: SpringState, target: number, ms: number, spring: Spring = HEIGHT_SPRING): SpringState {
   const w = (2 * Math.PI) / spring.response
   let { x, v } = s
   for (let t = 0; t < ms; t += STEP_MS) {
+    if (t % FRAME_MS === 0 && isAtRest({ x, v }, target, spring)) return { x: target, v: 0 }
     const dt = Math.min(STEP_MS, ms - t)
     v += (-w * w * (x - target) - 2 * spring.damping * w * v) * dt
     x += v * dt
@@ -32,9 +38,6 @@ export function springStep(s: SpringState, target: number, ms: number, spring: S
 
   return { x, v }
 }
-
-const isAtRest = (s: SpringState, target: number, spring: Spring): boolean =>
-  Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon
 
 /**
  * The positions a spring passes through, one a frame, from `from` until it rests at `target`. The first is where it
