@@ -220,6 +220,19 @@ export const GOOD_RUNS: Record<string, string[]> = {
     ].join('\n'),
   ],
   'goal-on-busy-page': [['SET: s2 | working | open the notebook as a viewer', ...servesLines].join('\n')],
+  'goal-names-release': [
+    [
+      'DONE: s13 | Folder survives Windows updates',
+      'SET: s5 | working | Rebuilds on every keystroke',
+      'HEAD: Search speed | Reducing delays in large note libraries',
+      'MILESTONE: working | Searches under 100ms | Repeated rebuilds identified',
+      'MILESTONE: queued | 2.6 published | Awaiting search improvements',
+      'NEXT: 2.6 published',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
+      'SERVES: s5 | Searches under 100ms',
+    ].join('\n'),
+  ],
   'mid-turn-activity': ['DONE: s1 | fast on large libraries\nSET: s2 | working | ranks by match, recency not in yet'],
   'milestone-dropped': [
     [
