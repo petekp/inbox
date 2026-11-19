@@ -349,6 +349,20 @@ test('the row the person’s selection moves to fades its panel in once its spac
   }
 })
 
+test('a row whose close the person turns back stops holding the list for its panel, so a block that enters next opens at once', () => {
+  const kept = ['d11', 'd12']
+  const enters: Step = [80, asks([...kept, 'd13'], 'd11')]
+  const opensAt = (steps: Step[]) => framesOf(steps, 500).fading.find(f => f.id === 'box d13' && f.height > 0.5)?.at
+  const turnedBack = opensAt([
+    [0, asks(kept, 'd11')],
+    [0, asks(kept, 'd12'), 'input'],
+    [50, asks(kept, 'd11'), 'input'],
+    enters,
+  ])
+  expect(turnedBack).toBeDefined()
+  expect(turnedBack).toBe(opensAt([[0, asks(kept, 'd11')], enters]))
+})
+
 test('a block listed again while it fades out fades back in where it is, and nothing below it dips', () => {
   const all = asks(['d11', 'd12', 'd13'])
   const frames = framesOf(

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T00:47:52.797Z. 300047 characters follow.
+// Built at 2026-11-19T02:00:06.780Z. 300185 characters follow.
 
 // src/main.ts
 import { View, div as div14 } from "gpui-kit";
@@ -5440,7 +5440,7 @@ var underTimes = (u) => !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.sinc
 var underId = (id) => `status ${id}`;
 
 // src/motion.ts
-var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, closeHoldsUntil: 0, drawnAt: 0 };
+var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
 function panelOf(state, isStart, was, closing) {
@@ -5512,7 +5512,11 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isClosing = b.kind === "row" && !moved.has(b.id) && targetOf(b) === "closed";
     return old && isClosing && isPanelShown(old, b.id) ? [[b.id, now + panelFadeWaitMs(old) + LEAVE_FADE_MS]] : [];
   }));
-  const closeHoldsUntil = Math.max(was.closeHoldsUntil, ...panelHolds.values());
+  const closeHoldsUntil = Math.max(0, ...blocks.map((b) => {
+    const old = was.rows.get(b.id);
+    const isStillClosing = old !== undefined && targetOf(b) === "closed";
+    return panelHolds.get(b.id) ?? (isStillClosing ? old.panelHeldUntil : 0);
+  }));
   const opensAfterClose = closeHoldsUntil - NEXT_FRAME_MS;
   const opensRow = blocks.some((b) => {
     const old = was.rows.get(b.id);
@@ -5614,7 +5618,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
   ]).filter((at) => at > now);
   return {
     blocks: drawn,
-    tracks: { rows, order: shown.map((b) => b.id), holdsUntil, closeHoldsUntil, drawnAt: now },
+    tracks: { rows, order: shown.map((b) => b.id), holdsUntil, drawnAt: now },
     motion,
     nextAt: ends.length ? Math.min(...ends) : null
   };

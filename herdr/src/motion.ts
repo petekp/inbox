@@ -37,17 +37,15 @@ type Tracked = {
 /**
  * Each block's track and the block as last drawn, the ids of every block the last draw showed, in order, until when
  * a block that leaves holds its space while its content fades, so nothing grows until that space starts to close,
- * until when a closing row holds its panel's height while the panel fades (`closeHoldsUntil`), and when the last draw
- * was.
+ * and when the last draw was.
  */
 export type Tracks = {
   rows: ReadonlyMap<string, Tracked>
   order: readonly string[]
   holdsUntil: number
-  closeHoldsUntil: number
   drawnAt: number
 }
-export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, closeHoldsUntil: 0, drawnAt: 0 }
+export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, drawnAt: 0 }
 
 /**
  * How a block moves in this draw. `isStart` marks the draw a move began. A block that enters or leaves draws in a box
@@ -153,13 +151,15 @@ function movedOf(blocks: Block[], was: Tracks): Set<string> {
  * together, as the leaving block's space starts to close. A closing row whose panel shows keeps its height while the
  * panel fades, and until then a block that enters waits to open and a row that opens keeps its closed form, drawn
  * selected, the person's own moves included. That row opens a draw before the hold ends, since its first draw only
- * measures its open form, so the two rows start together. The person's own moves do not wait for a leave: in a draw
- * that follows their input (`isInput`), the row the selection opens and the row it closes start to move at once, and a
- * field a press brings in shows at once. The opened row's panel still fades in once its space is nearly open. When their input opens a row, a row whose close a publish began lets go of its height, so both move
- * together. A block that leaves in the draw a press's field enters, or comes back as it leaves, is what the field
- * replaces: it hides at once and shuts without holding anything. `isFirst` forgets the tracks and draws every block at
- * rest, as a newly shown tab does. `heightOf` gives the height measured under a key, as the
- * look measures it. `nextAt` is when a move ends, a box opens or shuts, or a box's glide comes to rest, so the look draws again then.
+ * measures its open form, so the two rows start together. A row whose close is turned back drops its hold and opens at
+ * once. The person's own moves do not wait for a leave. In a draw that follows their input (`isInput`), a row the
+ * selection opens waits only for the panel of the row it closes to fade, and a field a press brings in shows at once.
+ * The opened row's panel still fades in once its space is nearly open. When their input opens a row, a row whose close
+ * a publish began lets go of its height, so both move together. A block that leaves in the draw a press's field enters,
+ * or comes back as it leaves, is what the field replaces: it hides at once and shuts without holding anything.
+ * `isFirst` forgets the tracks and draws every block at rest, as a newly shown tab does. `heightOf` gives the height
+ * measured under a key, as the look measures it. `nextAt` is when a move ends, a box opens or shuts, or a box's glide
+ * comes to rest, so the look draws again then.
  */
 export function moveRows(
   blocks: Block[],
@@ -203,7 +203,14 @@ export function moveRows(
       return old && isClosing && isPanelShown(old, b.id) ? [[b.id, now + panelFadeWaitMs(old) + LEAVE_FADE_MS]] : []
     }),
   )
-  const closeHoldsUntil = Math.max(was.closeHoldsUntil, ...panelHolds.values())
+  const closeHoldsUntil = Math.max(
+    0,
+    ...blocks.map(b => {
+      const old = was.rows.get(b.id)
+      const isStillClosing = old !== undefined && targetOf(b) === 'closed'
+      return panelHolds.get(b.id) ?? (isStillClosing ? old.panelHeldUntil : 0)
+    }),
+  )
   const opensAfterClose = closeHoldsUntil - NEXT_FRAME_MS
   const opensRow = blocks.some(b => {
     const old = was.rows.get(b.id)
@@ -337,7 +344,7 @@ export function moveRows(
 
   return {
     blocks: drawn,
-    tracks: { rows, order: shown.map(b => b.id), holdsUntil, closeHoldsUntil, drawnAt: now },
+    tracks: { rows, order: shown.map(b => b.id), holdsUntil, drawnAt: now },
     motion,
     nextAt: ends.length ? Math.min(...ends) : null,
   }

@@ -56,19 +56,19 @@ export function measure(): Drawing {
  * How long a height move that starts in this draw waits, in ms: while a block that leaves holds its space as its
  * content fades, nothing a read brings in grows before that space starts to close: a block that enters, a row a read
  * selects and the row it closes, and a group's end growing to hold its empty note. In a draw that is not a read, the
- * selection's rows move at once. A leave turned back waits only once it no longer holds its space, as a block that
+ * selection's rows do not wait for a leave. A leave turned back waits only once it no longer holds its space, as a block that
  * enters does. A block that a later draw restarts while it still waits keeps what is left of its wait. A glide under
  * way and a block's own change of height never wait.
  */
 let heightWaitMs = 0
 
 /**
- * When the panel of the last row that closed while its panel showed has faded out, so that row's height starts to
- * shrink, and how long a row or block that starts to open or enter in this draw waits for it, in ms. A row the
- * selection opens grows only then, so the two heights start together and the list never grows before it shrinks. Its
- * selection shows at once.
+ * When the panel of each row that closed while its panel showed has faded out, by row, so that row's height starts to
+ * shrink. A row that opens again drops its own, since its panel no longer fades. `closeWaitMs` is how long a row or
+ * block that starts to open or enter in this draw waits for the last of them, the person's own moves included, so a
+ * row the selection opens grows as the row it closes shrinks. Its selection shows at once.
  */
-let closeHoldsUntil = 0
+const closeHolds = new Map<string, number>()
 let closeWaitMs = 0
 
 /** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. Measured at the end weights. */
@@ -133,23 +133,26 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   closeWaitMs = 0
 }
 
-/** A closing row's panel while any of it shows. */
+/** A closing row's panel while any of the parts that fade shows. */
 function shownPanel(el: HTMLElement): HTMLElement | null {
   const part = el.querySelector<HTMLElement>('.closing[inert]')
+  const isShown = part !== null && fadingParts(part).some(p => opacityOf(p) > 0.01)
 
-  return part && opacityOf(part) > 0.01 ? part : null
+  return isShown ? part : null
 }
 
 /** How long a row that starts to open in this draw waits for the panels of closing rows to fade out, in ms. */
 function closeWaitOf(els: HTMLElement[], changed: ReadonlySet<string>): number {
   const now = Date.now()
-  const startsClose = els.some(
-    el =>
-      changed.has(el.dataset.motion!) && drawnRows.get(el.dataset.motion!)?.track.state === 'closing' && shownPanel(el),
-  )
-  if (startsClose) closeHoldsUntil = now + LEAVE_FADE_MS
+  for (const el of els) {
+    const key = el.dataset.motion!
+    const state = changed.has(key) ? drawnRows.get(key)?.track.state : undefined
+    if (state === 'opening') closeHolds.delete(key)
+    if (state === 'closing' && shownPanel(el)) closeHolds.set(key, now + LEAVE_FADE_MS)
+  }
+  for (const [key, until] of closeHolds) if (until <= now) closeHolds.delete(key)
 
-  return Math.max(0, closeHoldsUntil - now)
+  return Math.max(0, ...[...closeHolds.values()].map(until => until - now))
 }
 
 /** A group's empty note this draw brings in. */
