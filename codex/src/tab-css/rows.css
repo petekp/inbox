@@ -127,9 +127,9 @@
 .row.closing .line .text:not(.short) .title-part {
   display: block;
 }
-/* A closing row's title keeps the open form's weight until the row's height rests, and the weight then eases. */
+/* A closing row's full title keeps the open form's weight until the row's height rests. The clamped title it fades to draws the closed weight. */
 .row.selected .line .text,
-.row.closing .line .text {
+.row.closing .line .text:not(.short) {
   font-weight: 600;
   font-variation-settings: 'wght' 600;
 }
