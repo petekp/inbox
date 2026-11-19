@@ -19,6 +19,7 @@ import { typedGoalKept } from './replays/typed-goal-kept'
 import { goalTypedWhileRunning } from './replays/goal-typed-while-running'
 import { goalAwaitingMilestones } from './replays/goal-awaiting-milestones'
 import { goalOnBusyPage } from './replays/goal-on-busy-page'
+import { goalNamesRelease } from './replays/goal-names-release'
 import { longTurn } from './replays/long-turn'
 import { midTurnActivity } from './replays/mid-turn-activity'
 import { milestoneDropped } from './replays/milestone-dropped'
@@ -38,6 +39,7 @@ export const REPLAYS: Replay[] = [
   catchUpFromEmpty,
   removedGoal,
   goalOnBusyPage,
+  goalNamesRelease,
   midTurnActivity,
   milestoneDropped,
   milestoneSplit,
