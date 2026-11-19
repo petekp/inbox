@@ -24,6 +24,7 @@ The page fails when it reads as a log, when it copies Asks or Finds, or when it 
 - [The page](status/page.md): What the page draws, and how it updates.
 - [What a good Status is](status/good-status.md): The properties a Status is checked against.
 - [How the Status is judged](status/judging.md): The eval suite, its rules, the judge and the pass bar.
+- [The Status rules](status/rules.md): The fixed rules, the goal's rules and the code holds that run after every replay step.
 
 ## Terms
 
