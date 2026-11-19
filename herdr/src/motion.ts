@@ -19,7 +19,8 @@ import type { UnderLine, UnderMotion } from './under-line'
  * the block's move started in a draw that followed the person's input. `under` is the status under a row's buttons as
  * it comes and goes. `panelShutForMs` is how long an opening row's panel space had been shutting when the open turned
  * a close back, null when the open starts from a shut space. `panelHeldUntil` is when a closing row's panel has faded
- * out, so its box lets go of the panel's height.
+ * out, so its box lets go of the panel's height. `panelLeftOutAt` is the draw in which a closing row's box let go, so
+ * the space starts shrinking, and null until it has.
  */
 type Tracked = {
   track: RowTrack
@@ -32,6 +33,7 @@ type Tracked = {
   under: UnderLine | null
   panelShutForMs: number | null
   panelHeldUntil: number
+  panelLeftOutAt: number | null
 }
 
 /**
@@ -223,10 +225,6 @@ export function moveRows(
     const isOpen = block.kind === 'row' && isOpenRow(block)
     const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
     const isOpenFormSwapped = track.hasOpenForm && !drawsPanel(track)
-    const title =
-      block.kind === 'row' && last && !isOpenFormSwapped
-        ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)), last?.panelHeldUntil)
-        : null
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const isPressed = block.kind === 'field'
@@ -244,17 +242,29 @@ export function moveRows(
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
     const under = stepUnder(last?.under ?? null, block, now, isInput)
     const isTurnedBack = isStart && track.state === 'opening' && last?.track.state === 'closing'
-    const shutFrom = last ? Math.max(last.track.since, last.panelHeldUntil) : now
+    const leftOutAt = last?.panelLeftOutAt ?? null
     const panelShutForMs =
       track.state !== 'opening'
         ? null
         : isTurnedBack
-          ? Math.max(0, now - shutFrom)
+          ? leftOutAt === null
+            ? 0
+            : now - leftOutAt
           : isStart
             ? null
             : (last?.panelShutForMs ?? null)
     const panelHeldUntil =
       track.state !== 'closing' ? 0 : isStart ? (panelHolds.get(block.id) ?? now) : (last?.panelHeldUntil ?? 0)
+    const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
+    const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
+    const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove
+    const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil)
+    const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))
+    const panelLeftOutAt = track.state !== 'closing' ? null : ((isStart ? null : leftOutAt) ?? (isLeftOut ? now : null))
+    const title =
+      block.kind === 'row' && last && !isOpenFormSwapped
+        ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), isHeld)
+        : null
     rows.set(block.id, {
       track,
       block,
@@ -266,11 +276,8 @@ export function moveRows(
       under,
       panelShutForMs,
       panelHeldUntil,
+      panelLeftOutAt,
     })
-    const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
-    const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
-    const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove
-    const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil)
     motion.set(block.id, {
       state: track.state,
       isStart,
@@ -283,9 +290,7 @@ export function moveRows(
       isPanelWaiting: track.state === 'opening',
       panelShutForMs: isTurnedBack ? panelShutForMs : null,
       closing,
-      isPanelLeftOut:
-        (closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))) ||
-        (wasClosing && block.kind === 'row'),
+      isPanelLeftOut: isLeftOut || (wasClosing && block.kind === 'row'),
       title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T05:17:47.947Z. 300029 characters follow.
+// Built at 2026-11-19T05:32:52.997Z. 300660 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5376,24 +5376,44 @@ var shutTo = (height, ms) => ms === null ? { x: 0, v: 0 } : springStep({ x: heig
 
 // src/title-motion.ts
 var wraps = (height) => height !== undefined && height > LINE_PT + 0.5;
-function stepTitle(last, wasOpen, isOpen, now, height, heldUntil = 0) {
+var boxNow = (g, now) => springStep(g.box, g.boxTo, now - g.boxAt);
+function aimed(g, to, now) {
+  if (to === g.boxTo && (g.swapsAt !== null || !g.isWrapped))
+    return g;
+  const box = boxNow(g, now);
+  const restsAt = now + titleSwapMs(to, box);
+  const swapsAt = !g.isWrapped ? g.swapsAt : wraps(to) ? restsAt : null;
+  return { ...g, box, boxAt: now, boxTo: to, swapsAt, endsAt: Math.max(g.endsAt, restsAt + FRAME_MS) };
+}
+function stepTitle(last, wasOpen, isOpen, now, height, isHeld = false) {
   const live = last !== null && now < last.endsAt ? last : null;
+  const to = (isOpen || isHeld) && wraps(height) ? height : LINE_PT;
   if (isOpen && !wasOpen) {
-    const shrunkForMs = live && !live.isWrapped ? Math.max(0, now - Math.max(live.since, heldUntil)) : null;
-    return { isWrapped: true, since: now, swapsAt: null, shrunkForMs, endsAt: now + 2 * FRAME_MS + HEIGHT_SETTLE_MS };
+    const box = live ? boxNow(live, now) : { x: LINE_PT, v: 0 };
+    const endsAt = now + 2 * FRAME_MS + HEIGHT_SETTLE_MS;
+    const opening = {
+      isWrapped: true,
+      since: now,
+      swapsAt: null,
+      box,
+      boxAt: now,
+      boxTo: live?.boxTo ?? LINE_PT,
+      endsAt
+    };
+    return aimed(opening, to, now);
   }
   if (!isOpen && wasOpen) {
     if (!wraps(height))
       return null;
-    return { isWrapped: false, since: now, swapsAt: now, shrunkForMs: null, endsAt: now + HEIGHT_SETTLE_MS + FRAME_MS };
+    const box = live ? boxNow(live, now) : { x: height, v: 0 };
+    const endsAt = now + HEIGHT_SETTLE_MS + FRAME_MS;
+    return aimed({ isWrapped: false, since: now, swapsAt: now, box, boxAt: now, boxTo: live?.boxTo ?? height, endsAt }, to, now);
   }
-  if (!live || !live.isWrapped || live.swapsAt !== null || now === live.since)
-    return live;
-  if (!wraps(height))
+  if (!live)
     return null;
-  const from = live.shrunkForMs === null ? { x: LINE_PT, v: 0 } : springStep({ x: height, v: 0 }, LINE_PT, live.shrunkForMs);
-  const swapsAt = now + titleSwapMs(height, from);
-  return { ...live, swapsAt, endsAt: Math.max(live.endsAt, swapsAt + FRAME_MS) };
+  if (live.isWrapped && live.swapsAt === null && now !== live.since && !wraps(height))
+    return null;
+  return aimed(live, to, now);
 }
 function titleMotion(g, now) {
   if (g === null)
@@ -5522,7 +5542,6 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isOpen = block.kind === "row" && isOpenRow(block);
     const wasOpen = last?.block.kind === "row" && isOpenRow(last.block);
     const isOpenFormSwapped = track.hasOpenForm && !drawsPanel(track);
-    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last?.title ?? null, wasOpen, isOpen, now, heightOf(titleId(block.id)), last?.panelHeldUntil) : null;
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const isPressed = block.kind === "field";
@@ -5531,9 +5550,16 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
     const under = stepUnder(last?.under ?? null, block, now, isInput);
     const isTurnedBack = isStart && track.state === "opening" && last?.track.state === "closing";
-    const shutFrom = last ? Math.max(last.track.since, last.panelHeldUntil) : now;
-    const panelShutForMs = track.state !== "opening" ? null : isTurnedBack ? Math.max(0, now - shutFrom) : isStart ? null : last?.panelShutForMs ?? null;
+    const leftOutAt = last?.panelLeftOutAt ?? null;
+    const panelShutForMs = track.state !== "opening" ? null : isTurnedBack ? leftOutAt === null ? 0 : now - leftOutAt : isStart ? null : last?.panelShutForMs ?? null;
     const panelHeldUntil = track.state !== "closing" ? 0 : isStart ? panelHolds.get(block.id) ?? now : last?.panelHeldUntil ?? 0;
+    const closing = track.state === "closing" && block.kind === "row" ? opened : null;
+    const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
+    const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
+    const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil);
+    const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state));
+    const panelLeftOutAt = track.state !== "closing" ? null : (isStart ? null : leftOutAt) ?? (isLeftOut ? now : null);
+    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), isHeld) : null;
     rows.set(block.id, {
       track,
       block,
@@ -5544,12 +5570,9 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       isInputMove,
       under,
       panelShutForMs,
-      panelHeldUntil
+      panelHeldUntil,
+      panelLeftOutAt
     });
-    const closing = track.state === "closing" && block.kind === "row" ? opened : null;
-    const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
-    const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
-    const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil);
     motion.set(block.id, {
       state: track.state,
       isStart,
@@ -5562,7 +5585,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
       isPanelWaiting: track.state === "opening",
       panelShutForMs: isTurnedBack ? panelShutForMs : null,
       closing,
-      isPanelLeftOut: closing !== null && !isHeld && (!isStart || isFolding(last?.track.state)) || wasClosing && block.kind === "row",
+      isPanelLeftOut: isLeftOut || wasClosing && block.kind === "row",
       title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,

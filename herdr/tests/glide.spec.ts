@@ -363,6 +363,24 @@ test('a row whose close the person turns back stops holding the list for its pan
   expect(turnedBack).toBe(opensAt([[0, asks(kept, 'd11')], enters]))
 })
 
+test('a row the person opens again after its panel faded fades the panel back in at once while the row holds its height, and once the row has begun to shrink waits for its space without cutting the panel', () => {
+  const open = asks(ALL, 'd11')
+  const closes: Step[] = [
+    [0, open],
+    [0, asks(ALL, 'd11', null, ['d11']), 'input'],
+  ]
+  for (const backAt of [130, 150]) {
+    const frames = framesOf([...closes, [backAt, open, 'input']], 900)
+    const panel = frames.fading.filter(f => f.id === 'panel d11' && f.at > backAt)
+    expect(Math.min(...frames.heights)).toBeGreaterThan((frames.heights[0] ?? 0) - 0.5)
+    expect({ backAt, shownSecondFrame: (panel[1]?.opacity ?? 0) > 0.1 }).toEqual({ backAt, shownSecondFrame: true })
+    expect(panel.every((f, i) => i === 0 || f.opacity >= (panel[i - 1]?.opacity ?? 0))).toBe(true)
+  }
+  const late = framesOf([...closes, [200, open, 'input']], 1200)
+  expect(late.cuts.filter(c => c.box === 'panel d11')).toEqual([])
+  expect(late.fading.filter(f => f.id === 'panel d11').at(-1)?.opacity).toBeCloseTo(1)
+})
+
 test('a block listed again while it fades out fades back in where it is, and nothing below it dips', () => {
   const all = asks(['d11', 'd12', 'd13'])
   const frames = framesOf(
