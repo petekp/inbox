@@ -2,11 +2,7 @@ import type { Session, SessionStatus } from '../types'
 import type { StatusExchange } from './status-records'
 import { duration } from './text'
 
-/**
- * How many Status calls after exchanges with agent activity may change nothing on the page before it says it is
- * stale. In the saved call records, 0.7% of calls reached 5, in 2% of sessions, and the change that ended such a run
- * was no larger than after a short one, so the page was behind rather than waiting for a big change.
- */
+/** How many Status calls after replies with agent activity may change nothing on the page before it says it is stale. */
 const STALE_AFTER_CALLS = 5
 
 const STATUS_FAILED =
@@ -21,15 +17,17 @@ function pageWords(o: SessionStatus | null): string {
   return JSON.stringify([o.head, subjects, o.goal?.text, o.goal?.metAt, milestones, o.suggestedGoal])
 }
 
-/** Whether the agent did anything in the exchange the call read. A catch-up reads a whole conversation, not one exchange. */
-export function isActiveExchange(read: StatusExchange): boolean {
-  if (read.kind === 'reply') return read.exchange.activity.length > 0
-  return read.kind === 'mid-turn' && read.turn.activity.length > 0
+/**
+ * Whether the call read a reply after which the agent had done something. A call during a turn reads work that has not
+ * finished, so a page that holds still then is not behind. A catch-up reads a whole conversation, not one exchange.
+ */
+export function isActiveReply(read: StatusExchange): boolean {
+  return read.kind === 'reply' && read.exchange.activity.length > 0
 }
 
 /**
- * `after`, the Status a call wrote over `before`, with when the page last changed and how many calls since then read
- * agent activity and changed nothing.
+ * `after`, the Status a call or a press wrote over `before`, with when the page last changed and how many calls since
+ * then read an active reply and changed nothing.
  */
 export function withChangeNoted(
   before: SessionStatus | null,

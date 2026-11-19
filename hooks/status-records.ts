@@ -13,7 +13,7 @@ import type { CallKind, Exchange, Session, SessionStatus, HostTask } from '../ty
 import type { Ask, UpdateHost } from './session-host'
 import { heardCall, withAnswer, withCall } from './call-record'
 import type { HeardCall } from './call-record'
-import { isActiveExchange, withChangeNoted } from './status-freshness'
+import { isActiveReply, withChangeNoted } from './status-freshness'
 
 /**
  * What a Status call reads as its exchange: a reply's exchange, the running turn's work so far, or a whole
@@ -222,7 +222,7 @@ export async function askAndWriteStatus<S extends Session>(
     const isCatchUp = call.exchange.kind === 'catch-up' || call.isCatchUpImpossible === true
     const applied = appliedStatus(x, answer, appliedAfter, now, readSetAt, isCatchUp, input.now)
     if (!isWritten) return applied
-    const overview = withChangeNoted(before, applied.ledger.overview, isActiveExchange(call.exchange), now)
+    const overview = withChangeNoted(before, applied.ledger.overview, isActiveReply(call.exchange), now)
 
     return { ...applied, ledger: { ...applied.ledger, overview } }
   })

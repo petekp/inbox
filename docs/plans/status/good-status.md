@@ -196,7 +196,7 @@ When the session drops one approach for another, the person sees both until they
 
 #### 13. The page is current, and says when it is not
 
-The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. When five Status calls in a row read agent work and changed nothing, it says how long it has gone without a change. The only time a subject row shows is how long an open subject has been idle, past a day. The goal's current milestone shows how long it has been under way, past an hour, as `now · 3h`. Code writes both, so neither goes stale. The milestone's time replaces the rule that only an idle row shows a time. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
+The page covers the work up to the last reply, or up to about 10 minutes ago during a turn. When an update fails, the page says so. When five Status calls in a row read a reply with agent work and changed nothing, it says how long it has gone without a change. The only time a subject row shows is how long an open subject has been idle, past a day. The goal's current milestone shows how long it has been under way, past an hour, as `now · 3h`. Code writes both, so neither goes stale. The milestone's time replaces the rule that only an idle row shows a time. A row's place follows its status and when its work last changed, so on a current page a row that did not change stays where it was.
 
 - **Good:** three hours into a turn, `● Sync conflicts: cause unknown` stays where it was, because the last update found nothing new.
 - **Good:** `◌ 2.4 release: in store review`, while the build waits for review.
