@@ -139,7 +139,7 @@ export function contextOf(scene: Scene): RuleContext {
 }
 
 function statusCall(answer: string): CallLog {
-  return { kind: 'status', answers: [answer], model: null, ms: 0, outputTokens: null, overLimit: null }
+  return { kind: 'status', answers: [answer], model: null, ms: 0, outputTokens: null, costUsd: null, overLimit: null }
 }
 
 function withGoal(s: Scene) {
