@@ -33,7 +33,15 @@ fi
 status=0
 log=$(mktemp)
 herdr_scratch=
-trap 'rm -f "$log"; [ -z "$herdr_scratch" ] || rm -rf "$herdr_scratch"' EXIT
+# The builds below write the bundles into the working tree. When they matched HEAD before, put them back on exit, so a
+# commit after check.sh cannot pick them up. Bundles you built yourself stay.
+restore_bundles=no
+# shellcheck disable=SC2046
+if git -C "$DIR" diff --quiet HEAD -- $("$DIR/scripts/bundles.sh" dirs); then
+    restore_bundles=yes
+fi
+trap 'rm -f "$log"; [ -z "$herdr_scratch" ] || rm -rf "$herdr_scratch"
+[ "$restore_bundles" = no ] || "$DIR/scripts/bundles.sh" restore' EXIT
 
 # Runs one check and prints the check's output only when it fails. A log that
 # lists every test, as the root tests step's does, prints each failed test's

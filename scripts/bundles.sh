@@ -3,10 +3,12 @@
 # (omp/build.ts) and herdr/mod/inbox (herdr/build.ts, which also writes codex/plugin/dist/herdr-mod and
 # omp/dist/herdr-mod). An install runs no build, so next and main commit them. A pull request carries source only: after
 # each push to next, .github/workflows/bundles.yml rebuilds them and commits any change, with scripts/bundle-bot.sh.
+# A commit whose message holds [skip ci] starts no workflow, so its bundles wait for the next push.
 #
 # Usage:
 #   ./scripts/bundles.sh build                 rebuilds every bundle in the working tree
-#   ./scripts/bundles.sh check                 exits 1 when a committed bundle does not match its sources
+#   ./scripts/bundles.sh check                 exits 1 when a committed bundle does not match its sources, and when
+#                                              the working tree's bundles differ from HEAD's
 #   ./scripts/bundles.sh source-only [<base>]  exits 1 when the commits since <base> change a bundle. <base> defaults to
 #                                              origin/next, and the commits are those since its merge base with HEAD.
 #   ./scripts/bundles.sh restore               puts every bundle back to HEAD's copy, in the index and working tree
@@ -28,6 +30,13 @@ build)
     npm --prefix "$DIR/herdr" run --silent build
     ;;
 check)
+    # The builds' --check compares the bundle files on disk, so a local build would hide a stale committed bundle.
+    # shellcheck disable=SC2086
+    if ! git diff --quiet HEAD -- $BUNDLE_DIRS; then
+        echo "bundles: the working tree's bundles differ from HEAD's, so this cannot check the committed ones." >&2
+        echo "Put them back first: ./scripts/bundles.sh restore" >&2
+        exit 1
+    fi
     status=0
     npm --prefix "$DIR/codex" run --silent check || status=1
     npm --prefix "$DIR/omp" run --silent check || status=1

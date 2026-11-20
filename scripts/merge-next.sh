@@ -5,7 +5,8 @@
 #
 # - First it puts the bundles back to the branch's committed copies, since a local build changes them. A build
 #   makes them again.
-# - Nothing to merge: says so and exits 0, without checking.
+# - Nothing to merge: sets every bundle to next's copy, as a clean merge does. When that changes nothing, says so and
+#   exits 0, without checking.
 # - A clean merge: sets every bundle to next's copy, and commits that as its own commit when it differs, as on a
 #   branch whose earlier commits changed a bundle.
 # - Only bundles conflict: takes next's copies and finishes the merge commit.
@@ -161,8 +162,12 @@ else
         echo "Only bundles conflict."
     fi
     if ! is_merging && [ "$(git rev-parse HEAD)" = "$before" ]; then
-        echo "Nothing merged from $from, so nothing to check."
-        exit 0
+        take_bundles
+        if git diff --cached --quiet; then
+            echo "Nothing merged from $from, and the bundles match it, so nothing to check."
+            exit 0
+        fi
+        echo "Nothing merged from $from, but this branch's commits changed its bundles."
     fi
 fi
 

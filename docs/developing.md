@@ -67,7 +67,7 @@ those once:
 npm ci --ignore-scripts
 ```
 
-Every pull request and push to `next` or `main` runs the checks in
+Every pull request and push to `next` or `main`, except the bot's pushes, runs the checks in
 `.github/workflows/checks.yml` on GitHub. They are the checks in `check.sh` that need no sign-in
 and no Herdr app. CI leaves out the root type check, since only a signed-in session writes the
 engine types, and the Herdr look's type check and `herdr-app check`, which need the Herdr app.
