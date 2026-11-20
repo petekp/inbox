@@ -170,10 +170,9 @@ export function pressSettled(
   if (outcome.isDemoSent)
     next = { ...next, demoReplies: [...next.demoReplies, { pressId, dueAt: now + DEMO_REPLY_MS }] }
   const isReplyBack = out.isReply && (outcome.error !== null || outcome.note === 'stale')
-  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, out) || !isRowTab(out.tab))
-    return withCommands(next, ...restored.commands)
-  const index = tabWaits(next, view, out.tab).findIndex(r => r.id === row)
-  const back = withCursor(next, out.tab, { id: row, index, guard: null })
+  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, out)) return withCommands(next, ...restored.commands)
+  const index = isRowTab(out.tab) ? tabWaits(next, view, out.tab).findIndex(r => r.id === row) : -1
+  const back = isRowTab(out.tab) ? withCursor(next, out.tab, { id: row, index, guard: null }) : next
 
   return isReplyBack
     ? withCommands({ ...back, typing: row }, ...restored.commands, { kind: 'focus-field', id: row })

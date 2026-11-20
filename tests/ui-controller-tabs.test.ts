@@ -130,6 +130,16 @@ test('a row recorded while the page is hidden gets no new-row tint', () => {
   expect(shownRun.ui.newRows.f2?.shownAt).toBe(T0 + 20)
 })
 
+test('a row recorded while Help shows starts its new-row tint when Help closes', () => {
+  const s = sessionWith({ findings: [finding('f1')] })
+  const arrived = withFindings(s, [finding('f1'), finding('f2')])
+  const help = send(openOn(s, T0, 'findings').ui, s, { type: 'show-help', isShown: true }, T0 + 10)
+  const run = read(help.ui, arrived, T0 + 20)
+  expect(run.ui.newRows.f2?.shownAt).toBeNull()
+  const closedHelp = send(run.ui, arrived, { type: 'show-help', isShown: false }, T0 + 5000)
+  expect(closedHelp.ui.newRows.f2?.shownAt).toBe(T0 + 5000)
+})
+
 test('the person switching tabs keeps that tab’s cursor and closes Help', () => {
   const s = sessionWith({ items: [question('i1'), question('i2')], findings: [finding('f1')] })
   const start = openOn(s)

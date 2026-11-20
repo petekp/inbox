@@ -20,39 +20,39 @@ import {
   writeTextFile,
 } from 'herdr'
 import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
-import { ROW_COPY } from '../../hooks/rows'
-import { sessionView } from '../../hooks/session-view'
 import type { SessionView } from '../../hooks/session-view'
-import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
-import { SETTLED_MS, heldReplies, keptDiscards, withListInput } from '../../hooks/timing'
-import type { Holds, ListInput } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
-import type { Draft } from '../../types'
-import type { Block, Button, Does, ViewChange } from './blocks'
-import { freshUi } from './draw'
-import type { LookUi, TabCell } from './draw'
+import { notesOf } from '../../hooks/ui-controller'
+import { readWakeAt } from '../../hooks/ui-controller-clock'
+import { holdsOf } from '../../hooks/ui-controller-reply'
+import { collapsedOf } from '../../hooks/ui-controller-selection'
+import { closed, newRowsOf, opened } from '../../hooks/ui-controller-tabs'
+import { freshUi } from '../../hooks/ui-controller-types'
+import type { UiCommand, UiEvent, UiState } from '../../hooks/ui-controller-types'
+import type { Block, Button } from './blocks'
+import {
+  HERDR_LOOK,
+  applyEvents,
+  buttonEvents,
+  buttonOf,
+  fieldHints,
+  hostFactsOf,
+  isAnswerDraw,
+  isLookMove,
+  keptLeft,
+  lookUiOf,
+  pressSending,
+  titleClickEvents,
+} from './controller'
+import type { LastDraw, LeftSession } from './controller'
+import type { TabCell } from './draw'
 import { isSessionChange, readSessionFile } from './files'
 import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
 import { helpBlocks } from './draw-help'
-import {
-  afterPress,
-  afterSend,
-  isFieldDrawn,
-  keyMove,
-  tabUndo,
-  withChange,
-  withDrawnRows,
-  withCollapsed,
-  withSelected,
-  withTab,
-  withoutConfirmed,
-} from './keys'
-import type { LastWaits } from './keys'
-import { withCollapses, writeCollapse } from './collapse'
-import { foldAllIn, foldClick, foldClickOpens } from './fold-all'
-import type { Collapses } from './collapse'
+import { isFieldDrawn, keyMove } from './keys'
+import { writeCollapse } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
 import type { LinesAbove } from './held-line'
 import { NO_TRACKS, heldTabs, moveRows } from './motion'
@@ -61,25 +61,26 @@ import type { Tracks } from './motion'
 import { Heights, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
-import type { SentText } from './out'
 import type { TimeLeft } from './time-left'
 import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
 import { fitEl, spacedEls } from './paint-space'
 import { EDGE, END_SPACE, LINE, onSize, paneFit, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PressQueue } from './press-queue'
-import type { PressTarget } from './press-queue'
 import { herdrIo } from './io'
 import { runHere } from './run-here'
-import { screenOf } from './screen'
+import { readView, screenOf } from './screen'
 import { LookReports } from './look-reports'
 import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, statusDrawn } from './status-look'
-
-type SessionPresses = { drafts: Record<string, Draft>; confirmed: SentText[]; queue: PressQueue }
 
 const { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home })
 
 type Timer = { cancel(): void }
+
+/** How often a pointer moving or scrolling over the list counts as list use, so a move does not run the controller per frame. */
+const LIST_INPUT_STEP_MS = 250
+
+type Read = Extract<ReadSession, { is: 'read' }>
 
 export default class Inbox extends View {
   tab: string | null = null
@@ -87,36 +88,34 @@ export default class Inbox extends View {
   followed: Followed = { is: 'no-terminal' }
   sessionId: string | null = null
   read: ReadSession | null = null
-  view: SessionView | null = null
-  ui: LookUi = freshUi('needsYou')
-  shownSince = Date.now()
-  isHelpShown = false
+  /** The shared controller's state for the session shown. */
+  ui: UiState = freshUi(HERDR_LOOK)
+  /** When the look began showing the session, and whether its first read opened it. */
+  shownAt = Date.now()
+  isOpened = false
   paneWidth = Infinity
   listHeight: number | null = null
-  drafts: Record<string, Draft> = {}
-  /** The typed replies and presses of the sessions the panel left, by session id, for when it follows them again. */
-  left: Record<string, SessionPresses> = {}
-  /** Sent texts the host confirmed whose drafts wait for their open field to close. */
-  confirmed: SentText[] = []
+  /** The controller states of the sessions the look left, by session id, and their presses still out. */
+  left: Record<string, LeftSession> = {}
+  queues: Record<string, PressQueue> = {}
   input: { rowId: string; state: InputState } | null = null
-  discarded: Record<string, number> = {}
-  listInput: ListInput | null = null
   queue = new PressQueue(queueIo)
-  collapses: Collapses = {}
-  /** When a click opened a row, so a double click does not collapse it. */
-  clickedOpenAt = 0
   tracks: Tracks = NO_TRACKS
   drawnTabs: TabCell[] = []
   heights = new Heights()
   tracksOf = ''
-  /** The tab's rows at the last draw, so a publish that closes the selected row can move the selection on. */
-  lastWaits: LastWaits = { tab: 'needsYou', rows: null, pressed: [] }
+  /** The blocks of the last draw, whose buttons give a key's press its label and effects. */
+  blocks: Block[] = []
+  lastDraw: LastDraw = { tab: 'needsYou', rows: null, pressed: [] }
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
-  /** The next read for the presses still out, and the next draw for a fold or a move. */
+  /** When the person last pressed a key or clicked in the look, which lets the rows it moves grow at once. */
+  movedAt = 0
+  /** The next read for the presses still out, the next draw for a move, and the controller's next wake. */
   outTimer: Timer | null = null
   drawTimer: Timer | null = null
+  wake: { at: number; isRead: boolean; timer: Timer } | null = null
   look = new LookReports()
 
   init(_props: unknown, cx: Context): void {
@@ -133,16 +132,97 @@ export default class Inbox extends View {
     cx.timer.every(LOOK_TICK_MS, cx => cx.spawn(() => this.checkLook()))
   }
 
-  holds(now: number): Holds {
-    this.discarded = keptDiscards(this.discarded, this.shownSince)
+  get readSession(): Read | null {
+    return this.read?.is === 'read' ? this.read : null
+  }
 
-    return {
-      replies: heldReplies(this.ui.typing, this.drafts),
-      discarded: this.discarded,
-      shownSince: this.shownSince,
-      listInput: this.listInput && withListInput(this.listInput, now),
-      undoOut: this.queue.outs.filter(o => o.action === 'undo' || o.action === 'pr-undo').map(o => o.rowId),
-    }
+  /** The session's view at `now`, with the rows and notes the controller holds, or null before a read. */
+  viewAt(now: number): SessionView | null {
+    const read = this.readSession
+
+    return read && readView(read, now, holdsOf(this.ui, now), notesOf(this.ui))
+  }
+
+  /**
+   * Runs `events` through the shared controller, then its commands, then the answers of presses that ended, and draws.
+   * List use and typing change nothing drawn, so they draw only when their commands do.
+   */
+  apply(events: UiEvent[], cx: Context, from: Button | null = null): void {
+    const now = Date.now()
+    const view = this.viewAt(now)
+    if (view === null) return
+    const applied = applyEvents(this.ui, view, events, now)
+    this.ui = applied.ui
+    const isMove = events.some(isLookMove)
+    if (isMove) this.movedAt = now
+    this.syncInput(isMove)
+    for (const c of applied.commands) this.run(c, from, cx)
+    this.schedule(applied.nextWakeAt, view, cx)
+    if (!this.endPresses(cx) && !events.every(e => e.type === 'list-input' || e.type === 'edit-draft')) cx.notify()
+  }
+
+  /** Gives the controller how the presses that ended since the last call went. Returns whether any had. */
+  endPresses(cx: Context): boolean {
+    const ended = this.queue.takeEnded()
+    if (ended.length > 0)
+      this.apply(
+        ended.map(e => ({ type: 'press-settled', pressId: e.uiPressId, outcome: e.outcome })),
+        cx,
+      )
+
+    return ended.length > 0
+  }
+
+  run(c: UiCommand, from: Button | null, cx: Context): void {
+    const sessionId = this.sessionId
+    const read = this.readSession
+    if (c.kind === 'press') this.send(c, from, cx)
+    else if (c.kind === 'save-collapse' && sessionId && read) {
+      const to = { appHome: appHome(), sessionId }
+      const collapse = { isCollapsed: c.isCollapsed, at: Date.now() }
+      cx.spawn(() => writeCollapse(queueIo, to, read, c.id, collapse))
+    } else if (c.kind === 'read' && sessionId) this.load(sessionId, cx)
+  }
+
+  /**
+   * Holds the open field to the controller's: lets go of one it closed, giving the keys to the look, and opens the one
+   * it opened, with its draft. The new field takes the keys on the person's own move, or when the look holds them.
+   */
+  syncInput(isMove: boolean): void {
+    const typing = this.ui.typing
+    if (this.input !== null && this.input.rowId === typing) return
+    const hadField = this.input !== null
+    this.releaseField()
+    if (typing === null) return void (hadField && this.focus?.focus())
+    const state = InputState.new({ placeholder: this.hints[typing] ?? '', value: this.ui.drafts[typing]?.text ?? '' })
+    state.on('change', (_e, cx) => this.apply([{ type: 'edit-draft', id: typing, text: state.value() }], cx))
+    state.on('submit', (_e, cx) => this.apply(buttonEvents({ is: 'send', rowId: typing }, this.ui, 'key'), cx))
+    this.input = { rowId: typing, state }
+    if (isMove || this.focus?.is_focused()) state.focus()
+  }
+
+  /** Lets go of the open field without moving the keys, so it can run while the look draws. */
+  releaseField(): void {
+    this.input?.state.release()
+    this.input = null
+  }
+
+  /** The placeholder of each field the last draw offered, by row. */
+  hints: Record<string, string> = {}
+
+  schedule(at: number | null, view: SessionView, cx: Context): void {
+    const readAt = at === null ? null : readWakeAt(this.ui, view, Date.now())
+    const isRead = readAt !== null && at !== null && readAt <= at
+    if (this.wake !== null && this.wake.at === at && this.wake.isRead === isRead) return
+    this.wake?.timer.cancel()
+    this.wake = null
+    if (at === null) return
+    const timer = cx.timer.after(Math.max(0, at - Date.now()), cx => {
+      this.wake = null
+      if (isRead && this.sessionId) this.load(this.sessionId, cx)
+      else this.apply([{ type: 'tick' }], cx)
+    })
+    this.wake = { at, isRead, timer }
   }
 
   load(sessionId: string, cx: Context): void {
@@ -150,8 +230,11 @@ export default class Inbox extends View {
       const read = await readSessionFile(readTextFile, publishedSessionPath(appHome(), sessionId), ms => cx.sleep(ms))
       if (this.sessionId !== sessionId) return
       this.read = read
-      await this.settle(cx)
-      cx.notify()
+      if (read.is !== 'read') return void cx.notify()
+      if (!this.isOpened) this.ui = opened(this.ui, this.shownAt)
+      this.isOpened = true
+      this.apply([{ type: 'read', host: hostFactsOf(read) }], cx)
+      await this.settle(read, cx)
     })
   }
 
@@ -166,18 +249,15 @@ export default class Inbox extends View {
     return this.checkLook(true)
   }
 
-  /**
-   * Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. A
-   * sent reply's draft goes once the host confirms its press.
-   */
-  async settle(cx: Context): Promise<void> {
-    if (this.read?.is !== 'read' || !this.queue.isAwaiting()) return
-    const now = Date.now()
-    const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.queue.notes)
+  /** Ends the presses this read answers: a row that changed, the host's last press, or one with no answer in time. */
+  async settle(read: Read, cx: Context): Promise<void> {
     const queue = this.queue
-    const confirmed = await queue.settle(view, this.read.lastPress, this.read.envelope.agent)
-    if (queue === this.queue) this.dropConfirmed([...this.confirmed, ...confirmed])
-    this.checkOutsAt(this.queue.nextCheckAt(), cx)
+    const view = this.viewAt(Date.now())
+    if (view === null || !queue.isAwaiting()) return
+    await queue.settle(view, read.lastPress, read.envelope.agent)
+    if (queue !== this.queue) return
+    if (!this.endPresses(cx)) cx.notify()
+    this.checkOutsAt(queue.nextCheckAt(), cx)
   }
 
   checkOutsAt(at: number | null, cx: Context): void {
@@ -199,112 +279,39 @@ export default class Inbox extends View {
     if (this.followed.is !== 'no-terminal') this.last = this.followed.terminal
     const sessionId = this.followed.is === 'session' ? this.followed.sessionId : null
     if (sessionId === this.sessionId) return
-    if (this.sessionId)
-      this.left[this.sessionId] = { drafts: this.drafts, confirmed: this.confirmed, queue: this.queue }
+    const now = Date.now()
+    if (this.sessionId) {
+      this.left[this.sessionId] = { ui: closed(this.ui), shownAt: now }
+      this.queues[this.sessionId] = this.queue
+    }
+    const kept = (sessionId && this.left[sessionId]) || null
+    const queue = (sessionId && this.queues[sessionId]) || null
+    if (sessionId) delete this.left[sessionId]
+    if (sessionId) delete this.queues[sessionId]
+    this.queues = Object.fromEntries(Object.entries(this.queues).filter(([, q]) => q.holdsPresses()))
+    this.left = keptLeft(this.left, id => this.queues[id] !== undefined)
     this.sessionId = sessionId
     this.read = null
-    this.view = null
-    this.ui = freshUi(this.ui.tab)
-    this.shownSince = Date.now()
-    const kept = (sessionId && this.left[sessionId]) || null
-    if (sessionId) delete this.left[sessionId]
-    this.drafts = kept?.drafts ?? {}
-    this.confirmed = kept?.confirmed ?? []
-    this.input?.state.release()
-    this.input = null
-    this.discarded = {}
-    this.collapses = {}
+    this.ui = kept?.ui ?? freshUi(HERDR_LOOK, this.ui.tab)
+    this.shownAt = now
+    this.isOpened = false
+    this.queue = queue ?? new PressQueue(queueIo)
+    this.wake?.timer.cancel()
+    this.wake = null
+    this.releaseField()
     this.heights.clear()
-    this.queue = kept?.queue ?? new PressQueue(queueIo)
     if (sessionId) this.load(sessionId, cx)
   }
 
-  change(c: ViewChange): void {
-    if ('toggleHelp' in c) this.isHelpShown = !this.isHelpShown
-    else this.ui = withChange(this.ui, c)
-    if ('showAsk' in c) this.isHelpShown = false
-    this.closeStaleField()
-  }
-
-  /** Shows `tab` and closes Help, which draws the same page over any tab. */
-  showTab(tab: ShownTab): void {
-    this.ui = withTab(this.ui, tab)
-    this.isHelpShown = false
-    this.closeStaleField()
-  }
-
-  /** Lets go of the text field after a move closed it, and gives the keys back to the look. */
-  closeStaleField(): void {
-    if (this.input === null || this.ui.typing === this.input.rowId) return
-    this.input.state.release()
-    this.input = null
-    this.focus?.focus()
-    this.dropConfirmed(this.confirmed)
-  }
-
-  dropConfirmed(confirmed: SentText[]): void {
-    const next = withoutConfirmed(this.drafts, confirmed, this.ui.typing, this.queue.sentTexts)
-    this.drafts = next.drafts
-    this.confirmed = next.waiting
-  }
-
-  /** Opens a row's field, or the goal's, keeping its draft. */
-  type(does: Extract<Does, { is: 'type' }>): void {
-    const draft = (this.drafts[does.rowId] ??= { text: does.text, since: Date.now() })
-    const state = InputState.new({ placeholder: does.hint, value: draft.text })
-    state.on('change', () => (draft.text = state.value()))
-    state.on('submit', (_e, cx) => this.submit(does.rowId, cx))
-    this.input?.state.release()
-    this.input = { rowId: does.rowId, state }
-    this.ui.typing = does.rowId
-    state.focus()
-  }
-
-  leave(rowId: string, isDiscard: boolean, cx: Context): void {
-    if (isDiscard) {
-      this.discarded = { ...this.discarded, [rowId]: Date.now() }
-      delete this.drafts[rowId]
-    }
-    this.input?.state.release()
-    this.input = null
-    this.ui.typing = null
-    this.focus?.focus()
-    this.dropConfirmed(this.confirmed)
-    if (isDiscard && this.sessionId) this.load(this.sessionId, cx)
-  }
-
-  /** Sends a field's text. A refused send keeps the field open, and its row says why. Either keeps the draft. */
-  submit(rowId: string, cx: Context): void {
-    const text = this.input?.state.value().trim() ?? ''
-    if (text === '') return
-    const isGoal = rowId === GOAL_KEYS_ID
-    const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send
-    const typed: Does = { is: 'press', press: { action: 'type', id: rowId, text }, effects: [], kind: null }
-    const isSent = this.send(typed, label, cx, isGoal ? undefined : text)
-    this.ui = afterSend(this.ui, rowId, isSent)
-    this.closeStaleField()
-  }
-
   /**
-   * Sends a press through the queue: the look runs its opens and copies, with the task's clipboard, then writes the
-   * press file and wakes the host on the terminal the session file names. Returns whether the press went.
+   * Sends a press the controller made through the queue: the look runs its opens and copies, with the task's
+   * clipboard, then writes the press file and wakes the host on the terminal the session file names.
    */
-  send(d: Extract<Does, { is: 'press' }>, label: string, cx: Context, reply?: string): boolean {
-    const read = this.read?.is === 'read' ? this.read : null
-    const target: PressTarget | null =
-      this.sessionId && read && this.view
-        ? {
-            appHome: appHome(),
-            sessionId: this.sessionId,
-            terminal: read.envelope.terminal,
-            view: this.view,
-            holds: this.holds(Date.now()),
-            projectFolder: read.projectFolder,
-          }
-        : null
-    const sent = this.queue.send(target, d.press, d.effects, label, d.kind, reply)
-    cx.notify()
-    if (sent.is === 'refused') return false
+  send(c: Extract<UiCommand, { kind: 'press' }>, from: Button | null, cx: Context): void {
+    const at = { appHome: appHome(), sessionId: this.sessionId, read: this.readSession }
+    const { target, options } = pressSending(c, from ?? buttonOf(this.blocks, c.press), at, this.viewAt(Date.now()))
+    const sent = this.queue.send(target, c.press, options)
+    if (sent.is === 'refused') return
     const queue = this.queue
     const projectFolder = target?.projectFolder ?? null
     cx.spawn(async cx => {
@@ -312,108 +319,58 @@ export default class Inbox extends View {
         (effects, pending) => runHere(effects, pending, hereIo(projectFolder, cx)),
         () => cx.notify(),
       )
-      cx.notify()
-      if (queue === this.queue) this.checkOutsAt(queue.nextCheckAt(), cx)
+      if (queue !== this.queue) return
+      if (!this.endPresses(cx)) cx.notify()
+      this.checkOutsAt(queue.nextCheckAt(), cx)
     })
-
-    return true
-  }
-
-  press(b: Button, cx: Context, isAll = false): void {
-    const now = Date.now()
-    this.listInput = withListInput(this.listInput, now)
-    const d = b.does
-    const opening = isAll ? foldClickOpens(d, this.ui) : null
-    if (opening !== null) foldAllIn(this, opening, cx)
-    else if (d.is === 'view') this.change(d.change)
-    else if (d.is === 'collapse') this.collapse(d.id, d.isCollapsed, cx)
-    else if (d.is === 'press') {
-      this.ui = afterPress(this.ui, d.press)
-      this.send(d, b.label, cx)
-    } else if (d.is === 'type') this.type(d)
-    else if (d.is === 'send') this.submit(d.rowId, cx)
-    else if (d.is === 'leave') this.leave(d.rowId, d.isDiscard, cx)
-    cx.notify()
-  }
-
-  /** Collapses or expands row `id`. The look draws it at once, and a host that saves collapses saves it. */
-  collapse(id: string, isCollapsed: boolean, cx: Context, isSelecting = true): void {
-    const read = this.read?.is === 'read' ? this.read : null
-    if (this.sessionId === null || read === null) return
-    const c = { isCollapsed, at: Date.now() }
-    this.collapses = { ...this.collapses, [id]: c }
-    if (isSelecting) this.ui = withCollapsed(this.ui, id, isCollapsed)
-    this.listInput = withListInput(this.listInput, c.at)
-    this.closeStaleField()
-    const to = { appHome: appHome(), sessionId: this.sessionId }
-    cx.spawn(() => writeCollapse(queueIo, to, read, id, c))
-    cx.notify()
   }
 
   onKey(key: string, tabs: TabCell[], blocks: Block[], cx: Context): void {
-    const undo = this.view ? tabUndo(this.view, this.ui.tab, this.shownSince) : null
-    const move = keyMove(key, tabs, blocks, this.ui.typing, undo)
+    const move = keyMove(key, tabs, blocks, this.ui.typing, this.ui.isHelpShown)
     if (move === null) return
-    if (move.is === 'close') this.leave(this.ui.typing ?? '', false, cx)
-    else if (move.is === 'tab') this.showTab(move.tab)
-    else if (move.is === 'select') this.ui = withSelected(this.ui, move.id)
-    else if (move.is === 'collapse') this.collapse(move.id, move.isCollapsed, cx)
-    else if (move.is === 'fold-all') foldAllIn(this, null, cx)
-    else if (move.is === 'press') return this.press(move.button, cx)
-    else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
-    this.listInput = withListInput(this.listInput, Date.now())
     cx.stop_propagation()
-    cx.notify()
+    if (move.is === 'event') this.apply([move.event], cx)
+    else if (move.is === 'press') this.apply(buttonEvents(move.button.does, this.ui, 'key'), cx, move.button)
+    else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
   }
 
   render(cx: Context): Element {
     this.track(cx)
     const t = theme() as Theme
     const now = Date.now()
-    const drawn = withCollapses(this.read, this.collapses, now)
-    this.collapses = drawn.collapses
-    const screenFor = (ui: LookUi) =>
-      screenOf(this.followed, drawn.read, ui, {
-        now,
-        holds: this.holds(now),
-        queue: this.queue,
-      })
-    let screen = screenFor(this.ui)
-    const inbox = screen.is === 'inbox' ? screen : null
-    const drew = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, this.queue.outs)
-    if (drew.ui !== this.ui) screen = screenFor((this.ui = drew.ui))
-    this.lastWaits = drew.last
-    this.view = inbox?.view ?? null
+    const ui = this.ui
+    const presses = {
+      now,
+      holds: holdsOf(ui, now),
+      notes: notesOf(ui),
+      collapsed: (view: SessionView) => collapsedOf(ui, view),
+      queue: this.queue,
+    }
+    const raw = this.viewAt(now)
+    const lookUi = lookUiOf(ui, raw && { ...raw, collapsed: collapsedOf(ui, raw) })
+    const screen = screenOf(this.followed, this.read, lookUi, presses)
     this.drawTimer?.cancel()
     this.drawTimer = null
-    const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`
+    const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`
     const isFirst = tracksOf !== this.tracksOf
     const resized = this.heights.takeResized()
     const paint: Paint = {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
-      press: (b, cx, isAll) => this.press(b, cx, isAll),
-      collapse: (id, isCollapsed, cx, isAll) => foldClick(this, id, isCollapsed, cx, isAll),
-      select: (id, cx) => {
-        this.clickedOpenAt = Date.now()
-        this.ui = withSelected(this.ui, id)
-        this.closeStaleField()
-        this.listInput = withListInput(this.listInput, Date.now())
-        cx.notify()
-      },
-      pick: (tab: ShownTab, cx) => {
-        this.showTab(tab)
-        cx.notify()
-      },
+      press: (b, cx, isAll) => this.apply(buttonEvents(b.does, this.ui, 'click', isAll), cx, b),
+      collapse: (id, isCollapsed, cx, isAll) =>
+        this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
+      select: (id, cx) => this.apply(titleClickEvents(this.ui, id, false, false), cx),
+      pick: (tab: ShownTab, cx) => this.apply([{ type: 'show-tab', tab }], cx),
       motion: new Map(),
       heights: this.heights,
       isAtOnce: key => isFirst || resized.has(key),
       measure: (key, size, cx, isWidthDrawn) =>
         this.heights.measure(key, size, zoomOf(settings()), isWidthDrawn) && cx.notify(),
       now,
-      newRows: this.ui.newRows,
-      closedSeen: this.ui.closedSeen,
-      tab: this.ui.tab,
+      newRows: newRowsOf(ui),
+      closedSeen: new Map(Object.entries(ui.closedSeen)),
+      tab: ui.tab,
       timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
       ...paneFit(this, zoomOf(settings())),
@@ -430,31 +387,41 @@ export default class Inbox extends View {
     if (screen.is === 'message') {
       this.timeLeft = new Map()
       this.tracksOf = ''
+      this.blocks = []
+      this.lastDraw = { tab: ui.tab, rows: null, pressed: [] }
       this.look.status.drew(null, now)
       return root.child(messageEl(screen.message, t))
     }
-    const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
+    const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
+    this.blocks = shown
+    this.hints = fieldHints(shown)
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const isInput = drew.isAnswer || (this.listInput?.last ?? 0) > this.tracks.drawnAt
+    const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits)
+    this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map(o => o.rowId) }
+    const isInput = isAnswer || this.movedAt > this.tracks.drawnAt
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
     this.drawnTabs = heldTabs(screen.tabs, this.drawnTabs, moved.motion)
-    const read = drawn.read?.is === 'read' && this.ui.tab === 'overview' && !this.isHelpShown ? drawn.read : null
+    const read = this.readSession && ui.tab === 'overview' && !ui.isHelpShown ? this.readSession : null
     const room = moved.nextAt === null ? paint.listRoom : null
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
-    const wakeAt = nextDrawAt(now, this.ui, screen, moved)
+    const wakeAt = nextDrawAt(now, moved)
     if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
     const focus = this.focus
+    const listInput = (cx: Context) => {
+      const isNew = Date.now() - (this.ui.listInput?.last ?? 0) >= LIST_INPUT_STEP_MS
+      if (isNew) this.apply([{ type: 'list-input' }], cx)
+    }
 
     return root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(fitEl('tabs', paint, tabsEl(this.drawnTabs, this.isHelpShown, paint)))
+      .child(fitEl('tabs', paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint)))
       .child(
         fitEl(
           'chrome',
@@ -478,8 +445,10 @@ export default class Inbox extends View {
               .pt(EDGE)
               .pb(END_SPACE)
               .on_size_change(onSize(this, 'listHeight', s => s.height))
+              .on_scroll_wheel((_e, cx) => listInput(cx))
+              .on_mouse_move((_e, cx) => listInput(cx))
               .on_click((_e, _cx) => {
-                const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null
+                const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null
                 if (field) field.state.focus()
                 else this.focus?.focus()
               })

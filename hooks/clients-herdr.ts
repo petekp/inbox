@@ -14,11 +14,7 @@ export const HERDR: LookTable = {
     'dialog-descriptions': { kind: 'host' },
     'tool-output-urls': { kind: 'host' },
     'pr-link-from-output': { kind: 'host' },
-    'pr-arrivals': {
-      kind: 'different',
-      reason:
-        'The look records a new PR as a new row, but stays on an empty tab when one arrives. No reason is recorded: issue #675.',
-    },
+    'pr-arrivals': { kind: 'full' },
     'prs-empty-hint': { kind: 'full' },
     'gh-signed-out-notice': { kind: 'full' },
     'link-open-rule': { kind: 'full' },
@@ -31,11 +27,7 @@ export const HERDR: LookTable = {
     'exchange-trigger': { kind: 'host' },
     'settle-window': { kind: 'full' },
     'fold-on-typed-message': { kind: 'full' },
-    'fold-waits-for-list-use': {
-      kind: 'different',
-      reason:
-        'A press, a key or a selection holds a due fold, but a scroll or a pointer on the list does not. No reason is recorded: issue #673.',
-    },
+    'fold-waits-for-list-use': { kind: 'full' },
     'version-label': { kind: 'full' },
     'status-tab': { kind: 'full' },
     'turn-working': { kind: 'host' },
@@ -53,8 +45,7 @@ export const HERDR: LookTable = {
     },
     'title-tint': {
       kind: 'different',
-      reason:
-        'Steps the fade in `NEW_STEPS` opaque colors, since GPUI glides no text color, and finds new rows only in the tab it shows.',
+      reason: 'Steps the fade in `NEW_STEPS` opaque colors, since GPUI glides no text color.',
     },
     'pending-answer-mark': { kind: 'full' },
     'tab-symbols': {

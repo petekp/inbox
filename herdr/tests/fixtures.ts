@@ -4,7 +4,7 @@ import { sessionView } from '../../hooks/session-view'
 import { SETTLED_MS } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
 import { applyPrPress } from '../../hooks/pr-tab'
-import { freshUi, tabBlocks } from '../src/draw'
+import { tabBlocks } from '../src/draw'
 import type { LookScreen, LookUi } from '../src/draw'
 import type { Block } from '../src/blocks'
 
@@ -27,7 +27,16 @@ export function demoScreen(): LookScreen {
   return { view, agent: AGENT, now: NOW, shownSince: NOW, isGhMissing: false, isFetchingPrs: false }
 }
 
-export const uiOn = (tab: ShownTab, changes: Partial<LookUi> = {}): LookUi => ({ ...freshUi(tab), ...changes })
+export const uiOn = (tab: ShownTab, changes: Partial<LookUi> = {}): LookUi => ({
+  tab,
+  selected: null,
+  unfolded: [],
+  closedAll: [],
+  optionsShown: [],
+  statusUnfolded: [],
+  typing: null,
+  ...changes,
+})
 
 export function finishedScreen(states: Record<string, 'MERGED' | 'CLOSED'>): LookScreen {
   const s = demoSession(NOW, AGENT)

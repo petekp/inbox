@@ -19,6 +19,8 @@ import { NO_LINES_ABOVE, holdLinesAbove } from '../src/held-line'
 import { keyMove } from '../src/keys'
 import { screenOf } from '../src/screen'
 import type { Followed } from '../src/follow'
+import { freshUi } from '../../hooks/ui-controller-types'
+import { HERDR_LOOK, lookUiOf } from '../src/controller'
 import { AGENT, NOW, demoEnvelopeText, demoScreen, finishedScreen, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
@@ -49,8 +51,9 @@ test('a selected row draws its buttons in the shared key plan order', () => {
     }
 })
 
-test('only the selected row shows buttons, and with no selection the first waiting row opens', () => {
-  const rows = rowsOf(tabBlocks(demoScreen(), uiOn('needsYou')))
+test('only the selected row shows buttons, and with no row picked the first waiting row opens', () => {
+  const screen = demoScreen()
+  const rows = rowsOf(tabBlocks(screen, lookUiOf(freshUi(HERDR_LOOK), screen.view)))
   const opened = rows.filter(r => r.isSelected)
   expect(opened.map(r => r.id)).toEqual([rows.find(r => r.isSelectable)!.id])
   expect(rows.filter(r => !r.isSelected && r.depth === 0).every(r => r.buttons.length === 0)).toBe(true)
@@ -221,7 +224,8 @@ test('each case of the followed terminal draws its own message, and a read sessi
   const o = {
     now: NOW,
     holds: { ...NO_HOLDS, shownSince: NOW },
-    queue: { outs: [], notes: {}, lines: {} },
+    notes: {},
+    queue: { outs: [], lines: {} },
   }
   const cases: [Followed, Parameters<typeof screenOf>[1]][] = [
     [{ is: 'no-terminal' }, null],
@@ -406,7 +410,7 @@ test('a subject an open ask holds up draws what it waits on in its own line, and
 })
 
 test('Help names the build the host published, with the next-build mark, and names none for a file without one', () => {
-  const o = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW }, queue: { outs: [], notes: {}, lines: {} } }
+  const o = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW }, notes: {}, queue: { outs: [], lines: {} } }
   const followed: Followed = { is: 'session', terminal: 't1', sessionId: 's1' }
   const helpVersionOf = (overrides: Record<string, unknown>) => {
     const screen = screenOf(followed, readSession(demoEnvelopeText(overrides)), uiOn('needsYou'), o)

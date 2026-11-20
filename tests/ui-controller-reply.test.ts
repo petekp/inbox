@@ -143,6 +143,23 @@ test('a refused reply reopens its field on its row when only the controller move
   expect(refused.ui.drafts.i1?.text).toBe('Use Node')
 })
 
+test('a refused goal reopens its field on the Status page when the person has not moved, with no cursor to set', () => {
+  const empty = sessionWith({})
+  const goal = (text: string) => ({ action: 'type', id: 'goal', text }) as const
+  const { ui } = openOn(empty, T0, 'overview')
+  const typing = send(ui, empty, { type: 'open-field', id: 'goal' }, T0 + 10)
+  const drafted = send(typing.ui, empty, { type: 'edit-draft', id: 'goal', text: 'Ship it' }, T0 + 20)
+  const run = send(drafted.ui, empty, { type: 'press', press: goal('Ship it'), by: 'key' }, T0 + 30)
+  expect(run.ui.typing).toBe(null)
+  const refused = send(run.ui, empty, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 40)
+  expect(refused.ui.typing).toBe('goal')
+  expect(refused.ui.drafts.goal?.text).toBe('Ship it')
+  expect(refused.ui.selection).toEqual(run.ui.selection)
+  expect(refused.commands).toEqual([{ kind: 'focus-field', id: 'goal' }])
+  const moved = send(run.ui, empty, { type: 'show-tab', tab: 'needsYou' }, T0 + 35)
+  expect(send(moved.ui, empty, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 40).ui.typing).toBe(null)
+})
+
 test('a press whose row is gone reports its error or stale note under the tabs instead of on the row', () => {
   const { ui } = openOn(S)
   const pressed = send(ui, S, { type: 'press', press: { action: 'explain', id: 'i2' }, by: 'key' }, T0 + 10)
