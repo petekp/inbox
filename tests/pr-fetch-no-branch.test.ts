@@ -11,6 +11,7 @@ import { emptySession } from '../hooks/session-files'
 import { NO_HOLDS } from '../hooks/timing'
 import type { Session } from '../types'
 import type { SessionHost } from '../hooks/session-host'
+import { prNodeOf, prsAnswerOf } from './gh-answers'
 
 const NOW = 1_000_000
 
@@ -24,11 +25,24 @@ const NO_BRANCH_ANSWERS = {
   'a branch with no PR': 'no pull requests found for branch "main"',
 }
 
-function hostOf(prLookup: { exitCode: number; stderr: string }) {
-  let state: Session = emptySession()
+function hostOf(prLookup: { exitCode: number; stderr: string }, start: Session = emptySession()) {
+  let state = start
   const run = async (args: string[]) => {
     if (args[0] === 'pr' && args[1] === 'view')
       return { exitCode: prLookup.exitCode, stdout: '', stderr: prLookup.stderr }
+    if (args[1] === 'graphql') {
+      const query = args[3]?.slice('query='.length) ?? ''
+      const node = (number: string, repo: string) => ({
+        node: prNodeOf({
+          number: Number(number),
+          title: 'Work',
+          url: `https://github.com/${repo}/pull/${number}`,
+          state: 'OPEN',
+        }),
+      })
+
+      return { exitCode: 0, stdout: prsAnswerOf(query, node, 'me'), stderr: '' }
+    }
 
     return { exitCode: 1, stdout: '', stderr: `unexpected gh run: ${args.join(' ')}` }
   }
@@ -94,3 +108,18 @@ test('a failed branch lookup that is a real failure still shows its notice and f
   await press(pressHost, { action: 'pr-refresh' }, false, NO_HOLDS)
   expect(refreshFeedback()).toBe('Could not refresh PRs: HTTP 502: Bad gateway')
 })
+
+const BRANCH_PR = 'acme/app#7'
+
+for (const [place, stderr] of Object.entries(NO_BRANCH_ANSWERS)) {
+  const hasNoPr = place === 'a branch with no PR'
+  test(`a session in ${place} ${hasNoPr ? 'drops' : 'keeps'} its known branch PR and shows no notice`, async () => {
+    const base = emptySession()
+    const start: Session = { ...base, prViews: { ...base.prViews, branchRef: BRANCH_PR } }
+    const { host, state } = hostOf({ exitCode: 1, stderr }, start)
+    await fetchPrs(host, true)
+    expect(state().prViews.branchRef).toBe(hasNoPr ? null : BRANCH_PR)
+    expect(state().prViews.failure ?? null).toBeNull()
+    expect(ghNoticeOf(gh(state()))).toBeNull()
+  })
+}
