@@ -242,9 +242,23 @@ function withSeen(view: Omit<PrView, 'wasSeenOpen'>, previous: PrView | undefine
   return { ...view, wasSeenOpen: view.state === 'OPEN' || previous?.wasSeenOpen === true }
 }
 
+/** What `gh pr view` prints when the branch has no PR: "no pull requests found for branch ...". */
+const BRANCH_HAS_NO_PR = /no pull requests found/i
+
+/**
+ * What `gh pr view` prints when the folder gives it no branch to look up, which is normal and no failure:
+ * "could not determine current branch: failed to run git: not on any branch" on a detached HEAD, as a stopped rebase
+ * leaves, "failed to run git: fatal: not a git repository ..." outside a repository, "no git remotes found" in a
+ * repository with no remote, as a new one has, and "none of the git remotes configured for this repository point to a
+ * known GitHub host" in one whose remotes are not on GitHub.
+ */
+const NO_BRANCH_TO_LOOK_UP =
+  /not on any branch|not a git repository|no git remotes found|none of the git remotes configured for this repository point to a known github host/i
+
 /**
  * The ref of the branch's PR, from gh. `known` is the branch's PR as of the last fetch: it stays the branch's PR when
- * the lookup fails for any reason but "no pull requests found", and `onFailure` hears why.
+ * the lookup fails for any reason but `BRANCH_HAS_NO_PR`, so a stopped rebase does not drop it. `onFailure` hears why,
+ * except when the folder has no branch to look up, which is no failure.
  */
 async function branchPrRef(
   gh: GhRun,
@@ -254,7 +268,8 @@ async function branchPrRef(
 ): Promise<string | null> {
   const r = await gh(['pr', 'view', '--json', 'url'])
   if (r.exitCode === 0) return urlRef(r.stdout) ?? known
-  if (/no pull requests found/i.test(r.stderr)) return null
+  if (BRANCH_HAS_NO_PR.test(r.stderr)) return null
+  if (NO_BRANCH_TO_LOOK_UP.test(r.stderr)) return known
   const why = asksForSignIn(r) ? null : runFailureOf(r, TIMED_OUT_CODE, at)
   if (why) onFailure(why)
 
