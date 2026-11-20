@@ -6,6 +6,7 @@ export const SHARED = [
   'clients',
   'clients-claude-code',
   'clients-codex',
+  'clients-herdr',
   'clients-omp',
   'client-features',
   'collapse',

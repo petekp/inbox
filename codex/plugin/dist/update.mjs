@@ -5033,9 +5033,9 @@ function bandCounts(view) {
 }
 
 // ../hooks/children.ts
-var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+var HERDR2 = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
 function delegateSteps(command) {
-  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+  return [...command.matchAll(HERDR2)].map(([, verb, name, args]) => ({
     name,
     isPrompt: verb === "prompt",
     isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")

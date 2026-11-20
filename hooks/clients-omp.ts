@@ -110,5 +110,6 @@ export const OMP: Client = {
       kind: 'unsupported',
       reason: "omp's conversation is the terminal's own scrollback, which no extension can scroll.",
     },
+    'done-press-age': { kind: 'full' },
   },
 }
