@@ -53,6 +53,8 @@ test('the built tab starts without randomUUID and reloads without losing its hos
   const requestIds: number[] = []
   let initialized = 0
   let polls = 0
+  const pollTimes: number[] = []
+  let pollsAnswered = 0
   let acknowledgements = 0
   let holdPresses = false
   const heldPresses: (() => void)[] = []
@@ -68,11 +70,15 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     }
     if (typeof request.id !== 'number') return
     requestIds.push(request.id)
-    if (request.params?.name === 'inbox_view') polls++
+    if (request.params?.name === 'inbox_view') {
+      polls++
+      pollTimes.push(performance.now())
+    }
     const response =
       request.method === 'ui/initialize'
         ? Promise.resolve({ jsonrpc: '2.0', id: request.id, result: {} })
         : handle({ ...request, params: { ...request.params, _meta: { thread_id: 'renderer' } } })
+    if (request.params?.name === 'inbox_view') void response.then(() => pollsAnswered++)
     const deliver = () =>
       void response.then(data => queueMicrotask(() => host.dispatchEvent(new host.MessageEvent('message', { data }))))
     if (holdPresses && request.params?.name === 'inbox_press') heldPresses.push(deliver)
@@ -122,8 +128,11 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     )
     assert.equal(acknowledgements, 1)
     const beforePoll = polls
-    await pause(POLL_MS + 100)
-    assert.equal(polls - beforePoll, 1)
+    for (const nth of [1, 2, 3]) await until(() => polls >= beforePoll + nth && pollsAnswered === polls)
+    assert.ok(
+      pollTimes[beforePoll + 2]! - pollTimes[beforePoll]! >= 1.5 * POLL_MS,
+      'the reloaded tab polls more often than once each POLL_MS',
+    )
     assert.ok(requestIds.every(Number.isSafeInteger))
     assert.equal(new Set(requestIds).size, requestIds.length)
     assert.ok(requestIds.every((id, n) => n === 0 || id > requestIds[n - 1]!))
