@@ -25,7 +25,7 @@ const event = (e: UiEvent): KeyMove => ({ is: 'event', event: e })
  * expands the selected row, w folds or opens every fold, u presses the Undo of the row that closed last, a selected
  * row's hotkeys press its buttons, the tab's own keys such as g press its line's buttons, and escape leaves the look.
  * While a text field is open, `typing` names its row: the keys type into it, and escape closes it. Under Help, only
- * ← → and escape do anything, as in omp's panel.
+ * ← → and escape do anything.
  */
 export function keyMove(
   key: string,
