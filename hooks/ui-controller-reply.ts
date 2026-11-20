@@ -73,8 +73,8 @@ const isUndoPress = (p: RowPress | PrPress) => p.action === 'undo' || p.action =
 
 /**
  * Sends a press, unless it repeats an action still out on its row, falls in the guard of the input that opened the
- * row, or is a reply with no words. A reply repeats only when its words match the reply still out. A reply's field
- * closes and its draft stays, holding its row, until the reply arrives.
+ * row, or is a reply with no words. A reply repeats only when a reply is out on its row and its words match the
+ * row's latest sent reply. A reply's field closes and its draft stays, holding its row, until the reply arrives.
  */
 export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by: InputKind, now: number): UiStep {
   const rowId = pressRowId(p)
