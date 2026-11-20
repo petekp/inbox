@@ -47,6 +47,21 @@ test('opening on the Status page or with Help shown makes no move', () => {
   expect(read(opened.ui, s, T0).ui.tab).toBe('findings')
 })
 
+test('a look that opens on its Status page with no tab of its own moves to Asks only while a question waits there', () => {
+  const asked = sessionWith({ items: [question('i1')], findings: [finding('f1')] })
+  const first = (s: typeof asked) => {
+    const opened = send(freshUi(LOOK, 'overview'), s, { type: 'opened', isFirst: true }, T0)
+    return read(opened.ui, s, T0)
+  }
+  expect(first(asked).ui.tab).toBe('needsYou')
+  expect(first(asked).commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou' })
+  expect(first(sessionWith({ findings: [finding('f1')] })).ui.tab).toBe('overview')
+  expect(first(asked).ui.isFirstOpen).toBe(false)
+  const again = send(first(sessionWith({})).ui, asked, { type: 'visible', isVisible: false }, T0 + 10)
+  const shown = send(again.ui, asked, { type: 'visible', isVisible: true }, T0 + 20)
+  expect(read(shown.ui, asked, T0 + 20).ui.tab).toBe('overview')
+})
+
 test('a row that arrives on another tab is followed only when it arrives while the shown tab draws nothing, settled rows included', () => {
   const s = sessionWith({ findings: [finding('f1')] })
   const start = openOn(s, T0, 'findings')

@@ -1,6 +1,7 @@
 import { drawnLists, latestUndo, tabUndos } from './action-plan'
 import { prRowIds } from './arrivals'
 import { pressRowId, isPrPress, type PrPress } from './pr-press'
+import { prMarkId } from './pr-rows'
 import { actionId } from './press-labels'
 import { isPressConfirmed, noteText } from './press-reducer'
 import type { RowPress } from './presses'
@@ -85,7 +86,15 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
   const holds = holdsOf(ui, now)
   const pressId = ui.nextPressId
   const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now }
-  let next: UiState = { ...ui, nextPressId: pressId + 1, pressesOut: { ...ui.pressesOut, [pressId]: out } }
+  const { [rowId]: _error, ...errors } = ui.errors
+  const { [rowId]: _note, ...notes } = ui.notes
+  let next: UiState = {
+    ...ui,
+    nextPressId: pressId + 1,
+    pressesOut: { ...ui.pressesOut, [pressId]: out },
+    errors,
+    notes,
+  }
   if (isReply) {
     const text = p.text.trim()
     const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false }
@@ -106,6 +115,22 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
   return withCommands(next, { kind: 'press', pressId, press: p, holds })
 }
 
+/** When row or PR `id` closed, by the session's clock, or null when the view draws it unsettled or not at all. */
+function settledAt(view: SessionView, id: string): number | null {
+  const row = allRows(view).find(r => r.id === id)?.state
+  const pr = view.prs.drawn.find(d => prMarkId(d.pr.ref) === id)?.state
+  const state = row ?? pr
+
+  return state?.is === 'settled' ? state.at : null
+}
+
+/** Whether settled row `id` still offers its Undo, by the look's Undo clock. */
+function isUndoShown(ui: UiState, view: SessionView, id: string, now: number): boolean {
+  const at = ui.config.undoClock === 'first-read' ? (ui.undoSeen[id] ?? null) : settledAt(view, id)
+
+  return at !== null && now < at + SETTLED_MS
+}
+
 /** The undo key: the shown tab's Undo whose row closed last. */
 export function undoKey(ui: UiState, view: SessionView, now: number): UiStep {
   if (!isRowTab(ui.tab)) return withCommands(ui)
@@ -114,8 +139,7 @@ export function undoKey(ui: UiState, view: SessionView, now: number): UiStep {
     () => true,
     r => r,
   )
-  const isStillShown = (id: string) =>
-    ui.config.undoClock === 'session' || (ui.undoSeen[id] !== undefined && ui.undoSeen[id] + SETTLED_MS > now)
+  const isStillShown = (id: string) => ui.config.undoClock === 'session' || isUndoShown(ui, view, id, now)
   const undos = tabUndos(ui.tab, lists, view.prs.drawn).filter(u => isStillShown(pressRowId(u.press)))
   const latest = latestUndo(undos)
 
@@ -148,7 +172,9 @@ export function pressSettled(
   const { [pressId]: _out, ...pressesOut } = ui.pressesOut
   let next: UiState = { ...ui, pressesOut }
   const row = out.rowId
-  const isRowListed = isListed(view, row)
+  const isUndo = out.action === 'undo' || out.action === 'pr-undo'
+  const hasUndoTimeEnded = isUndo && !isUndoShown(ui, view, row, now)
+  const isRowListed = isListed(view, row) && !hasUndoTimeEnded
   if (outcome.note === 'stale')
     next = isRowListed
       ? { ...next, notes: { ...next.notes, [row]: { note: 'stale', at: now } } }

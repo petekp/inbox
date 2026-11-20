@@ -78,6 +78,7 @@ export function readWakeAt(ui: UiState, view: SessionView, now: number): number 
   const isFirstRead = ui.config.undoClock === 'first-read'
   const cursor = isRowTab(ui.tab) ? ui.selection[ui.tab] : null
   const isHolding = hasHeldArrivals(ui) || Object.keys(ui.heldClose).length > 0
+  const folding = settled.map(({ id, state }) => (isFirstRead ? { ...state, at: ui.undoSeen[id] ?? now } : state))
   const times: (number | null)[] = [
     ...lasts.flatMap(l => (l.delivery?.state === 'queued' ? [queuedSentAt(l) + QUEUED_AFTER_MS] : [])),
     ...lasts.flatMap(l =>
@@ -90,10 +91,12 @@ export function readWakeAt(ui: UiState, view: SessionView, now: number): number 
     ...settled.flatMap(({ state }) =>
       state.offersUndo && isSendOnItsWay(state.delivery) ? [undoPlaceEndsAt(state)] : [],
     ),
-    nextFoldAt(
-      settled.map(s => s.state),
-      { lastTypedMessageAt: ui.host.lastTypedMessageAt, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS },
-    ),
+    nextFoldAt(folding, {
+      lastTypedMessageAt: ui.host.lastTypedMessageAt,
+      listInput: ui.listInput,
+      now,
+      settleWindowMs: SETTLED_MS,
+    }),
     timedChangeAt(view.lastActions, now),
     isHolding && ui.listInput !== null ? ui.listInput.last + FOLD_QUIET_MS : null,
     cursor?.guard ? cursor.guard.at + PRESS_GUARD_MS : null,
