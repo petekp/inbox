@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-20T06:16:05.376Z. 304333 characters follow.
+// Built at 2026-11-20T20:36:32.275Z. 334593 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -1860,9 +1860,6 @@ function pendingDeliveryAt(last, now) {
     return null;
   return isQueuedAt(last, now) ? "queued" : "sending";
 }
-function isGuarded(openedAt, now) {
-  return openedAt > 0 && now - openedAt < PRESS_GUARD_MS;
-}
 var FOLD_QUIET_MS = 1000;
 function withListInput(input, at) {
   const isSameRun = input !== null && at - input.last < FOLD_QUIET_MS;
@@ -1929,6 +1926,9 @@ function canUndoClose(closed, at, now, settleWindowMs) {
 }
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
+function hasRunningMark(page) {
+  return statusListRows(page).some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
+}
 
 // ../hooks/rows.ts
 var OPTIONS_FOLD_AT = 5;
@@ -2047,6 +2047,12 @@ function rowMark(row) {
 }
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
+}
+function allRows(v) {
+  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
+}
+function settledRowIds(rows) {
+  return rows.filter((r) => r.state.is === "settled").map((r) => r.id);
 }
 function closedShown(closed, drawnSettled, isAllShown = false) {
   const listed = closed.filter((d) => !drawnSettled.has(d.id));
@@ -2230,6 +2236,9 @@ function threadSentIn(lastActions) {
     const last = lastActions[prThreadId(pr, t)];
     return last?.kind === "handoff" && last.delivery?.state !== "failed" && last.at > ((t.reply ?? t).at ?? 0);
   };
+}
+function isPrTabRunning(prs, lastActions) {
+  return prs.some((pr) => waitingThreads(pr).some((t) => threadRowText(pr, t, lastActions).mark.isRunning));
 }
 function prRowWaits(prs, lastActions, collapsed = []) {
   const isSent = threadSentIn(lastActions);
@@ -2438,7 +2447,64 @@ function pressFolder(appHome, sessionId) {
 }
 
 // ../hooks/arrivals.ts
+function recordRows(seen, listed) {
+  const next = { ...seen };
+  const added = {};
+  for (const tab of Object.keys(listed)) {
+    const ids = listed[tab];
+    const before = seen[tab];
+    added[tab] = ids && before ? ids.filter((id) => !before.has(id)) : [];
+    if (ids)
+      next[tab] = new Set(ids);
+  }
+  return { seen: next, added };
+}
 var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+function listedRowIds(v) {
+  return {
+    needsYou: [...v.needsYou.questions, ...v.needsYou.tasks].map((r) => r.id),
+    findings: v.findings.rows.map((r) => r.id)
+  };
+}
+function openRowIds(v) {
+  const open = (rows) => rows.filter((r) => r.state.is !== "settled").map((r) => r.id);
+  return { needsYou: open([...v.needsYou.questions, ...v.needsYou.tasks]), findings: open(v.findings.rows) };
+}
+function closedGroups(v, tab, isUnfolded) {
+  return tab === "findings" ? Object.keys(FINDING_GROUPS).map((kind) => ({
+    isUnfolded: isUnfolded(kind),
+    rows: v.findings.closed.filter((f) => f.kind === kind)
+  })) : NEEDS_YOU_GROUPS.map((g) => ({ isUnfolded: isUnfolded(g.kind), rows: v.needsYou.closed[g.list] }));
+}
+function isRowTabRunning(v, tab, isUnfolded) {
+  const rows = tab === "needsYou" ? [...v.needsYou.questions, ...v.needsYou.tasks] : v.findings.rows;
+  const settled = new Set(settledRowIds(rows));
+  const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedShown(g.rows, settled) : []);
+  return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => d.mark.isRunning);
+}
+function isTabEmpty({
+  rows,
+  settled,
+  closed,
+  hasBlocker
+}) {
+  return !hasBlocker && !rows.some((r) => r.state.is !== "settled" || settled.has(r.id)) && !closed.some((g) => g.isUnfolded && g.rows.some((r) => !settled.has(r.id)));
+}
+function followTo(tabs, shown, isShownEmpty, rows) {
+  return isShownEmpty ? tabs.find((t) => t !== shown && rows[t].length > 0) ?? null : null;
+}
+function prRowIds(drawn) {
+  return drawn.flatMap(({ pr, state }) => [
+    prMarkId(pr.ref),
+    ...state.is === "settled" ? [] : [
+      ...waitingThreads(pr).map((t) => prThreadId(pr, t)),
+      ...[...failingChecks(pr), ...cancelledChecks(pr)].map((c) => prCheckId(pr, c))
+    ]
+  ]);
+}
+function isPrsTabEmpty(drawnCount, isFetching) {
+  return drawnCount === 0 && !isFetching;
+}
 var NEW_HOLD_MS = 1500;
 var NEW_FADE_MS = 3000;
 var NEW_STEPS = 6;
@@ -2497,6 +2563,19 @@ function closedTitleClock(seen, id, closedAt, now) {
 }
 function steppedTitleTint(clock, now) {
   return steppedShare(clock, now) * TITLE_TINT;
+}
+function titleTintEndsAt(rows, v, seen, now) {
+  const total = NEW_HOLD_MS + NEW_FADE_MS;
+  const ends = [...rows.values()].flatMap((r) => r.shownAt === null ? [] : [r.shownAt + total]);
+  for (const r of [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]) {
+    if (r.state.is !== "settled" || closedTitleTone(r.state) === "muted")
+      continue;
+    const shownAt = seen.get(`${r.id}:${r.state.at}`) ?? (now - r.state.at < total ? now : undefined);
+    if (shownAt !== undefined)
+      ends.push(shownAt + total);
+  }
+  const next = Math.min(...ends.filter((at) => at > now), Infinity);
+  return next === Infinity ? null : next;
 }
 
 // ../hooks/pr-views.ts
@@ -3267,12 +3346,6 @@ function steppedIndex(at, step, count) {
 function keptOpen(rows, added) {
   return firstWaiting(rows.filter((r) => !added.includes(r.id)));
 }
-function rowAfterClose(rows, closedId) {
-  const at = rows.findIndex((r) => r.id === closedId);
-  if (at < 0)
-    return null;
-  return (rows.slice(at + 1).find(opensFor) ?? rows.slice(0, at).reverse().find(opensFor))?.id ?? null;
-}
 function rowsIn(entries) {
   return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
@@ -3607,18 +3680,6 @@ function collapsedRows(s) {
   const news = newsByRow(s);
   return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
 }
-function withCollapse(s, row, isCollapsed, at) {
-  const news = newsByRow(s);
-  const kept = Object.fromEntries(Object.entries(s.collapsed ?? {}).filter(([id]) => id !== row && news.has(id)));
-  const untimedUrl = news.get(row)?.untimedUrl ?? null;
-  const waiting = news.get(row)?.waiting ?? [];
-  const collapse = {
-    at,
-    ...untimedUrl !== null && { untimedUrl },
-    ...waiting.length > 0 && { waiting }
-  };
-  return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
-}
 
 // ../hooks/status-page.ts
 var OTHER_WORK = "Other work";
@@ -3843,6 +3904,15 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     statusPage: statusPage(s, now)
   };
 }
+function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
+  if (isHelpShown)
+    return MARK_LEGEND.some((m) => m.isRunning);
+  if (!isRowTab(shown))
+    return hasRunningMark(v.statusPage);
+  if (shown === "prs")
+    return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions);
+  return isRowTabRunning(v, shown, isUnfolded);
+}
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
   const pressOutSince = earliestOf(Object.entries(lastActions).map(([id, last]) => isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, undefined, s.presence, now)) : null));
   const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
@@ -3870,900 +3940,910 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
   };
 }
 
-// ../hooks/empty-tab.ts
-var EMPTY_TITLES = {
-  needsYou: NOTHING_NEEDED_TEXT,
-  findings: "No findings yet",
-  prs: "No PRs",
-  prsFetching: "Checking for PRs…"
-};
-var EMPTY_STATUS_TEXT = {
-  title: screenTabOf("overview").label,
-  hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
-};
-function prsEmptyHint(place) {
-  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
-}
-function emptyTab(view, look) {
-  if (look.tab === "overview") {
-    const page = view.statusPage;
-    if (!page.isEmpty)
-      return null;
-    return {
-      ...EMPTY_STATUS_TEXT,
-      under: {
-        is: "set-goal",
-        keys: goalKeyGroups(page).heading,
-        offerKeys: goalKeyGroups(page).offer,
-        isFieldOpen: look.isGoalFieldOpen,
-        suggestion: page.suggestedGoal
-      }
-    };
-  }
-  if (look.tab === "prs") {
-    if (look.drawn > 0)
-      return null;
-    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure };
-    const { refresh } = view.prs;
-    return {
-      title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
-      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
-      under: refresh ? { is: "pr-refresh", refresh } : null
-    };
-  }
-  if (look.drawn > 0 || look.hasBlocker)
-    return null;
-  if (look.tab === "needsYou" && look.hostText)
-    return { ...look.hostText, under: null };
-  const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
-  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab];
-  return { title, hint, under: null };
-}
-
-// src/blocks.ts
-var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
-var isOpenRow = (r) => r.isSelected && !r.isCollapsed;
-var agedText = (a, now) => `${a.lead}${DOT}${shortAgo(now - a.at)}`;
-function emptyBlock(tab, empty, parts = null) {
-  return { kind: "empty", id: `empty ${tab}`, empty: { title: empty.title, hint: empty.hint }, under: parts };
-}
-
-// src/draw-prs.ts
-var LOOK = "herdr";
-var PLACE = "session";
-var PR_TONE = {
-  needsYou: "needsYou",
-  success: "success",
-  findings: "findings",
-  error: "error"
-};
-function prButton(pr, a, id) {
-  const effect = pr ? prPressEffect(pr, a.press) : null;
-  const does = { is: "press", press: a.press, effects: effect ? [effect] : [], kind: a.kind };
-  const b = button(id, a.label, a.emphasis, does, a.hotkey);
-  return { ...b, isOut: a.isOut };
-}
-function prFeedback(screen, id) {
-  const { view, now } = screen;
-  const f = feedbackOf(id, view.lastActions[id], undefined, view.turns, now);
-  if (!f)
-    return null;
-  const tone = feedbackTone(f);
-  if (!hasAge(f))
-    return { text: feedbackText(f, LOOK), tone, source: f };
-  const aged = { lead: markedFeedbackText(f, false, LOOK), at: f.at };
-  return { text: agedText(aged, now), tone, source: f, aged };
-}
-var markOf = (m) => ({
-  text: m.text,
-  tone: m.tone,
-  isRunning: m.isRunning
-});
-function threadRow(screen, pr, t, presses) {
-  const id = prThreadId(pr, t);
-  const text = threadRowText(pr, t, screen.view.lastActions);
-  const { rest } = commentParts(t.body);
-  const { keys, more } = splitFollowUps(threadActions(pr, t, presses));
-  const reply = t.reply ? `@${t.reply.author}: ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}` : null;
-  return {
-    kind: "row",
-    id,
-    depth: 0,
-    mark: markOf(text.mark),
-    title: text.title,
-    age: t.at === null ? null : shortAgo(screen.now - t.at),
-    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: "muted", source: null } : null),
-    settled: null,
-    isDim: text.mark.isDone,
-    isSelectable: text.fold === null,
-    body: [
-      ...rest ? [{ part: "detail", text: clipLabel(rest, PR_QUOTE_CHARS), tone: null }] : [],
-      { part: "detail", text: `${threadWhere(t)}${DOT}@${t.author}`, tone: "muted" },
-      ...reply ? [{ part: "detail", text: reply, tone: null }] : []
-    ],
-    buttons: [...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
-    field: null
-  };
-}
-function checkRow(screen, pr, c, presses) {
-  const id = prCheckId(pr, c);
-  const text = checkRowText(pr, c);
-  return {
-    kind: "row",
-    id,
-    depth: 0,
-    mark: markOf(text.mark),
-    title: text.lead ? `${text.lead} / ${text.title}` : text.title,
-    age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
-    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: "muted", source: null } : null),
-    settled: null,
-    isDim: false,
-    isSelectable: text.fold === null,
-    body: [{ part: "detail", text: text.meta, tone: "muted" }],
-    buttons: checkActions(pr, c, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
-    field: null
-  };
-}
-function settledPr(d) {
-  const { pr, state } = d;
-  const id = prMarkId(pr.ref);
-  const undo = state.canUndo ? [
-    {
-      ...button(`${id} undo`, ROW_COPY.undo, "quiet", {
-        is: "press",
-        press: { action: "pr-undo", ref: pr.ref },
-        effects: [],
-        kind: null
-      }),
-      runsOutAt: state.at + SETTLED_MS
-    }
-  ] : [];
-  const mark = settledMark(state);
-  return {
-    kind: "row",
-    id,
-    depth: 0,
-    mark: { text: mark.text, tone: mark.tone ?? "muted", isRunning: mark.isRunning },
-    title: pr.title,
-    age: `#${pr.number}`,
-    feedback: null,
-    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted", tint: null, at: state.at },
-    isDim: true,
-    isSelectable: false,
-    isSelected: false,
-    body: [],
-    buttons: undo,
-    field: null
-  };
-}
-function prBlocks(screen, d, presses, selected) {
-  if (d.state.is === "settled")
-    return [settledPr({ ...d, state: d.state })];
-  const { pr } = d;
-  const { lastActions } = screen.view;
-  const isSent = threadSentIn(lastActions);
-  const { status, head, unlisted } = readiness(pr, isSent, screen.agent);
-  const tone = PR_TONES[status];
-  const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions);
-  const groups = prBlockRows(pr, false, {
-    thread: (t) => threadRow(screen, pr, t, presses),
-    check: (c) => checkRow(screen, pr, c, presses)
-  });
-  const rowsOf = (title, rows, key) => rows.length === 0 ? [] : [
-    {
-      kind: "heading",
-      id: `${pr.ref} ${key}`,
-      text: title,
-      count: rows.length,
-      mark: null,
-      buttons: [],
-      isLabel: false
-    },
-    ...rows.map((r) => {
-      const isSelected = r.isSelectable && r.id === selected;
-      const isCollapsed = screen.view.collapsed.includes(r.id);
-      const isOpen = isSelected && !isCollapsed;
-      return {
-        ...r,
-        isSelected,
-        ...isCollapsed && { isCollapsed },
-        body: isOpen ? r.body : [],
-        buttons: isOpen ? r.buttons : []
-      };
-    })
-  ];
-  return [
-    {
-      kind: "pr",
-      id: prMarkId(pr.ref),
-      number: `#${pr.number}`,
-      title: pr.title,
-      status: { text: head, tone: tone ? PR_TONE[tone] : "muted" },
-      unlisted,
-      error: pr.error ? prRefreshFailedText(pr.error) : null,
-      buttons: prBlockActions(pr, isSent, screen.view.prs.branchRef, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${n}`)),
-      feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null
-    },
-    ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, "threads"),
-    ...rowsOf(PR_GROUP_TITLES.checks, groups.checks, "checks"),
-    ...rowsOf(PR_GROUP_TITLES.cancelled, groups.cancelled, "cancelled")
-  ];
-}
-var note = (id, text, tone) => ({
-  kind: "note",
-  id,
-  text,
-  tone,
-  isHead: true,
-  isAtEdge: false,
-  isStrong: false,
-  depth: 0
-});
-function refreshParts(screen, refresh = screen.view.prs.refresh) {
-  if (!refresh)
-    return null;
-  const buttons = refresh.actions.map((a, n) => prButton(null, a, `refresh ${n}`));
-  const feedback = refresh.showsPress ? prFeedback(screen, PR_REFRESH_ID) : null;
-  return { text: refresh.text, buttons, feedback };
-}
-var refreshLine = (screen) => {
-  const refresh = refreshParts(screen);
-  return refresh ? [{ kind: "line", id: PR_REFRESH_ID, under: null, ...refresh }] : [];
-};
-function noticeBlocks(screen, notice) {
-  if (!notice)
-    return refreshLine(screen);
-  const banner = bannerOf(notice.kind, notice.text);
-  const refresh = refreshParts(screen);
-  if (!refresh || refresh.text !== null)
-    return [{ kind: "banner", id: "gh notice", banner, buttons: [], feedback: null }, ...refreshLine(screen)];
-  return [{ kind: "banner", id: PR_REFRESH_ID, banner, buttons: refresh.buttons, feedback: refresh.feedback }];
-}
-function orderLines(screen) {
-  const order = screen.view.prs.order;
-  if (!order)
-    return [];
-  const changed = order.changed;
-  const lines = [
-    { kind: "line", id: "pr order", text: order.title, under: order.why, buttons: [], feedback: null }
-  ];
-  if (!changed)
-    return lines;
-  const buttons = changed.actions.map((a, n) => prButton(null, a, `order ${n}`));
-  const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null;
-  return [...lines, { kind: "line", id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }];
-}
-function clearLine(screen) {
-  const buttons = screen.view.prs.clear.map((a, n) => prButton(null, a, `clear ${n}`));
-  return buttons.length === 0 ? [] : [{ kind: "line", id: CLEAR_FINISHED_ID, text: null, under: null, buttons, feedback: null }];
-}
-var ruleBetween = (ref) => ({ kind: "rule", id: `rule ${ref}`, text: null });
-function firstSelectable(blocks) {
-  return blocks.find((b) => b.kind === "row" && b.isSelectable && !b.isCollapsed)?.id ?? null;
-}
-function prTabBlocks(screen, selected) {
-  const { view } = screen;
-  const prs = view.prs;
-  const gh = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure };
-  const empty = emptyTab(view, {
-    tab: "prs",
-    place: PLACE,
-    drawn: prs.drawn.length,
-    isFetchingPrs: screen.isFetchingPrs,
-    isGhMissing: screen.isGhMissing
-  });
-  if (empty) {
-    const refresh = empty.under?.is === "pr-refresh" ? refreshParts(screen, empty.under.refresh) : null;
-    return [emptyBlock("prs", empty, refresh && { id: PR_REFRESH_ID, ...refresh, field: null })];
-  }
-  const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
-  const notice = ghNoticeOf(gh);
-  const othersStart = otherPrsStart(prs.drawn);
-  const caption = { kind: "caption", id: "other prs", text: OTHER_PRS_TEXT };
-  const above = (d, n) => [
-    ...n > 0 ? [ruleBetween(d.pr.ref)] : [],
-    ...d === othersStart ? [caption] : []
-  ];
-  const draw = (open) => [
-    ...noticeBlocks(screen, notice),
-    ...clearLine(screen),
-    ...orderLines(screen),
-    ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, open)]),
-    ...prs.olderText ? [ruleBetween("older prs"), note("older prs", prs.olderText, "muted")] : []
-  ];
-  const blocks = draw(selected);
-  const isShown = blocks.some((b) => b.kind === "row" && b.isSelected);
-  return isShown ? blocks : draw(firstSelectable(blocks));
-}
-
-// ../hooks/layout.ts
-var SPACE_UNIT = 4;
-var LINE_PT = 5 * SPACE_UNIT;
-var INSIDE_GAP_PT = 0;
-var LIST_GAP_PT = SPACE_UNIT;
-var ITEM_GAP_PT = 3 * SPACE_UNIT;
-var CHILD_GAP_PT = 2 * SPACE_UNIT;
-var HEAD_GAP_PT = 2 * SPACE_UNIT;
-var LIST_MARGIN_PT = SPACE_UNIT;
-var CONTROL_GAP_PT = 2 * SPACE_UNIT;
-var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
-var BUTTON_BORDER_PT = 1;
-var SECTION_GAP_PT = 6 * SPACE_UNIT;
-var EDGE_PT = 4 * SPACE_UNIT;
-var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
-var MARK_PT = 6 * SPACE_UNIT;
-var ROW_PAD_PT = ITEM_GAP_PT / 2;
-var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
-
-// ../hooks/status-gaps.ts
-function isOneLineStatusRow(r) {
-  if (r.kind !== "subject")
-    return true;
-  return !r.waitsOn && !r.text && !r.merged && !r.was && statusKeyPlan(r).length === 0;
-}
-function statusGaps(rows) {
-  return rows.map((r, n) => {
-    const prev = rows[n - 1];
-    if (prev === undefined || prev.kind === "part" || r.kind === "part")
-      return null;
-    const isPairOneLine = isOneLineStatusRow(prev) && isOneLineStatusRow(r);
-    if (r.depth > 0)
-      return isPairOneLine ? LIST_GAP_PT : CHILD_GAP_PT;
-    const itemStart = rows.findLastIndex((p, k) => k < n && p.depth === 0);
-    return isPairOneLine && itemStart === n - 1 ? LIST_GAP_PT : ITEM_GAP_PT;
-  });
-}
-var LATER_PAD_PT = LIST_GAP_PT / 2;
-
-// src/draw-status.ts
-var MERGED_CELLS = 150;
-var toneOf = (t) => t;
-var markOf2 = (mark, tone, isRunning) => ({
-  text: mark,
-  tone: toneOf(tone),
-  isRunning
-});
-function doesOf(k) {
-  const p = k.press;
-  if (p.action === "show-ask")
-    return { is: "view", change: { showAsk: p.askId } };
-  if (p.action === "toggle-fold")
-    return { is: "view", change: { toggleFold: p.foldId } };
-  if (p.action === "toggle-collapse")
-    return { is: "nothing" };
-  if (p.action === "type-goal")
-    return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
-  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [], kind: k.kind };
-}
-function keyButtons(id, keys, from = 0) {
-  return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)));
-}
-function foldOf(p, isCollapsed) {
-  if (p.foldCount === 0)
-    return {};
-  const isFolded = isParentCollapsed(p, isCollapsed);
-  const toggle = button(`${p.id} fold`, isFolded ? "Unfold" : "Fold", "quiet", {
-    is: "collapse",
-    id: p.id,
-    isCollapsed: !isFolded
-  });
-  return { fold: { isFolded, count: p.foldCount, toggle } };
-}
-function rowBlocks(row, isUnfolded, isCollapsed) {
-  if (row.kind === "subject") {
-    const under = [
-      row.text,
-      row.merged ? mergedLine(row.merged, (t) => cellWidth(t) <= MERGED_CELLS) : null,
-      row.was ? `${WAS_PREFIX}${row.was}` : null
-    ].filter((l) => l !== null);
-    return [
-      {
-        kind: "status",
-        id: row.id,
-        depth: row.depth,
-        mark: markOf2(row.mark, row.tone, row.isRunning),
-        name: row.name,
-        isBold: false,
-        isMuted: false,
-        stall: row.stall,
-        ...row.waitsOn ? { waitsOn: row.waitsOn } : {},
-        under,
-        buttons: keyButtons(row.id, statusKeyPlan(row)),
-        ...foldOf(row, isCollapsed),
-        ...row.hasChildren && !isCollapsed(row.id) ? { tree: [{ depth: row.depth, is: "down" }] } : {}
-      }
-    ];
-  }
-  if (row.kind === "child")
-    return [
-      {
-        kind: "status",
-        id: row.id,
-        depth: row.depth,
-        mark: markOf2(row.mark, row.tone, row.isRunning),
-        name: row.name,
-        isBold: false,
-        isMuted: true,
-        stall: null,
-        under: row.text ? [row.text] : [],
-        buttons: [],
-        ...row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}
-      }
-    ];
-  if (row.kind === "more")
-    return [{ ...note2(row.id, row.text, "muted"), depth: row.depth, tree: [{ depth: row.depth - 1, is: row.branch }] }];
-  if (row.kind === "part")
-    return [
-      { kind: "gap", id: `gap ${row.id}` },
-      { kind: "rule", id: row.id, text: row.text, ...row.isTitle ? { isTitle: true } : {} },
-      ...row.description ? [{ ...note2(`${row.id} description`, row.description, "muted"), isAtEdge: true }] : []
-    ];
-  if (row.kind === "done-fold" || row.kind === "counts")
-    return [
-      {
-        kind: "fold",
-        id: row.id,
-        depth: row.depth,
-        text: row.kind === "counts" ? countsText(row.counts) : row.text,
-        ...row.kind === "counts" ? {
-          counts: {
-            label: COUNTS_LABEL,
-            items: row.counts.map((c) => ({ mark: markOf2(c.mark, c.tone, false), text: c.text }))
-          }
-        } : {},
-        isOpen: isUnfolded(row.id),
-        change: { toggleFold: row.id }
-      }
-    ];
-  return [
-    {
-      kind: "status",
-      id: row.id,
-      depth: row.depth,
-      mark: markOf2(row.mark, row.tone, false),
-      name: row.text,
-      isBold: false,
-      isMuted: true,
-      stall: null,
-      under: [],
-      buttons: []
-    }
-  ];
-}
-var withGap = (b, gap) => gap != null && (b.kind === "status" || b.kind === "note" || b.kind === "fold") ? { ...b, gapAbove: gap } : b;
-function listBlocks(rows, isUnfolded, isCollapsed) {
-  const gaps = statusGaps(rows);
-  return rows.map((r, n) => rowBlocks(r, isUnfolded, isCollapsed).map((b, k) => k === 0 ? withGap(b, gaps[n]) : b));
-}
-function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
-  const mark = markOf2(m.mark, m.tone, false);
-  const path = { is: "milestone", above: lineAbove, below: m.line };
-  const tree = hasWork && m.line === null ? { tree: [{ depth: 0, is: "down" }] } : {};
-  if (m.foldId !== null)
-    return {
-      kind: "fold",
-      id: m.id,
-      depth: 0,
-      text: m.name,
-      isOpen: isUnfolded(m.foldId),
-      change: { toggleFold: m.foldId },
-      mark,
-      path,
-      ...tree
-    };
-  return {
-    kind: "status",
-    id: m.id,
-    depth: 0,
-    mark,
-    name: m.name,
-    isBold: m.isBold,
-    isMuted: m.isMuted,
-    stall: null,
-    under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
-    buttons: keyButtons(m.id, milestoneKeyPlan(m)),
-    ...foldOf(m, isCollapsed),
-    path,
-    ...tree
-  };
-}
-function jointStroke({ arm, beside }) {
-  if (arm === "elbow")
-    return { depth: 0, is: "last" };
-  if (beside === "connector")
-    return { depth: 0, is: arm === "tee" ? "mid" : "past" };
-  return arm === null ? null : { depth: 0, is: "arm" };
-}
-function besidePath(b, line, joint) {
-  if (b.kind !== "status" && b.kind !== "fold" && b.kind !== "note")
-    return b;
-  const stroke = joint ? jointStroke(joint) : null;
-  return {
-    ...b,
-    ...line === null ? {} : { path: { is: "work", line } },
-    ...stroke ? { tree: [stroke, ...b.tree ?? []] } : {}
-  };
-}
-var note2 = (id, text, tone) => ({
-  kind: "note",
-  id,
-  text,
-  tone,
-  isHead: false,
-  isAtEdge: false,
-  isStrong: false,
-  depth: 0
-});
-var headNote = (id, text, tone) => ({
-  ...note2(id, text, tone),
-  isHead: true,
-  isAtEdge: true
-});
-var headTitle = (id, text) => ({
-  ...note2(id, text, null),
-  isHead: true,
-  isAtEdge: true,
-  isStrong: true
-});
-function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
-  const g = page.goal;
-  const groups = goalKeyGroups(page);
-  const isSuggested = goalField === null && page.suggestedGoal !== null;
-  const heading = {
-    kind: "heading",
-    id: "goal heading",
-    text: g?.label ?? GOAL_HEADING,
-    count: null,
-    mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
-    buttons: keyButtons(GOAL_KEYS_ID, groups.heading),
-    isLabel: true
-  };
-  const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
-  const suggestion = [
-    {
-      ...headTitle("goal text", suggestedGoalOffer(page.suggestedGoal ?? "")),
-      buttons: keyButtons(GOAL_KEYS_ID, groups.offer, groups.heading.length)
-    }
-  ];
-  if (g === null) {
-    const empty = isSuggested ? suggestion : [headNote("goal text", NO_GOAL_TEXT, "muted")];
-    return [heading, ...goalField ? field : empty];
-  }
-  const atText = (b) => g.mark && b.kind === "note" ? { ...b, isAtEdge: false } : b;
-  const lines = goalField ? field : (isSuggested ? suggestion : [
-    headTitle("goal text", g.text),
-    ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
-    ...g.now ? [headNote("goal now", g.now, "muted")] : [],
-    ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
-  ]).map(atText);
-  const fold = g.milestonesFold;
-  const foldLine = fold ? [
-    {
-      kind: "fold",
-      id: fold.id,
-      depth: 0,
-      text: fold.text,
-      isOpen: isUnfolded(fold.id),
-      change: { toggleFold: fold.id }
-    }
-  ] : [];
-  const shown = shownMilestones(g, isUnfolded);
-  const milestones = shown.flatMap((m, n) => {
-    const rows = milestoneRows(m, isUnfolded, isCollapsed);
-    const joints = workJoints(rows, m.line);
-    return [
-      ...isSpacedAbove(shown, n, isUnfolded, isCollapsed) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
-      ...m.startsLater ? [{ kind: "rule", id: "goal later", text: LATER_TEXT }] : [],
-      milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded, isCollapsed),
-      ...listBlocks(rows, isUnfolded, isCollapsed).map((bs, k) => bs.map((b) => besidePath(b, m.line, joints[k]))).flat()
-    ];
-  });
-  return [heading, ...lines, ...foldLine, ...milestones];
-}
-function statusBlocks(view, ui) {
+// ../hooks/fold-all.ts
+var statusFoldsOf = (view) => {
   const page = view.statusPage;
-  const { isUnfolded, isCollapsed } = ui;
-  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: ui.goalField !== null });
-  if (empty) {
-    const setGoal = empty.under?.is === "set-goal" ? empty.under : null;
-    const parts = setGoal && {
-      id: GOAL_KEYS_ID,
-      text: setGoal.suggestion === null ? null : suggestedGoalOffer(setGoal.suggestion),
-      buttons: setGoal.isFieldOpen ? [] : [
-        ...keyButtons(GOAL_KEYS_ID, setGoal.keys),
-        ...keyButtons(GOAL_KEYS_ID, setGoal.offerKeys, setGoal.keys.length)
-      ],
-      feedback: null,
-      field: setGoal.isFieldOpen ? ui.goalField : null
-    };
-    return [emptyBlock("overview", empty, parts)];
-  }
-  const top = goalBlocks(page, ui);
-  const rows = listBlocks(unfoldedRows(page.rows, isUnfolded, isCollapsed), isUnfolded, isCollapsed).flat();
-  const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== "part";
-  return isGapNeeded ? [...top, { kind: "gap", id: "gap rows" }, ...rows] : [...top, ...rows];
+  const milestones = page.goal?.milestones ?? [];
+  const rows = [...milestones.flatMap((m) => m.rows), ...page.rows];
+  const listed = rows.flatMap((r) => r.kind === "done-fold" || r.kind === "counts" ? [r, ...r.rows] : [r]);
+  const foldIds = [
+    ...page.goal?.milestonesFold ? [page.goal.milestonesFold.id] : [],
+    ...milestones.flatMap((m) => m.foldId === null ? [] : [m.foldId]),
+    ...listed.filter((r) => r.kind === "done-fold" || r.kind === "counts").map((r) => r.id)
+  ];
+  const parentIds = [
+    ...milestones.filter((m) => m.foldCount > 0).map((m) => m.id),
+    ...listed.filter((r) => r.kind === "subject" && r.foldCount > 0).map((r) => r.id)
+  ];
+  return { statusFolds: [...new Set(foldIds)], parents: [...new Set(parentIds)] };
+};
+function tabFolds(view, tab) {
+  const none = { closed: [], statusFolds: [], parents: [], rows: [] };
+  if (tab === "overview")
+    return { ...none, ...statusFoldsOf(view) };
+  if (tab === "prs")
+    return { ...none, rows: prRowWaits(openPrViews(view.prs.drawn), view.lastActions).map((r) => r.id) };
+  const live = new Set((tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows).filter((r) => r.state.is !== "settled").map((r) => r.id));
+  const closed = tab === "needsYou" ? NEEDS_YOU_GROUPS.filter((g) => view.needsYou.closed[g.list].length > 0).map((g) => g.kind) : Object.keys(FINDING_GROUPS).filter((kind) => view.findings.closed.some((f) => f.kind === kind));
+  return {
+    ...none,
+    closed,
+    rows: listWaits(view)[tab].flatMap((r) => live.has(r.id) ? [r.id] : [])
+  };
+}
+function isAnyFoldOpen(folds, state) {
+  const isOpen = (id) => !state.collapsed.includes(id);
+  return folds.closed.some((k) => state.unfolded.includes(k)) || folds.statusFolds.some((id) => state.statusUnfolded.includes(id)) || folds.parents.some(isOpen) || folds.rows.some(isOpen);
+}
+function foldAll(folds, state, isOpening) {
+  const set = (list, these) => isOpening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
+  const collapsible = [...folds.parents, ...folds.rows];
+  return {
+    unfolded: set(state.unfolded, folds.closed),
+    statusUnfolded: set(state.statusUnfolded, folds.statusFolds),
+    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === isOpening ? [{ id, isCollapsed: !isOpening }] : [])
+  };
+}
+function foldAllOn(view, tab, open, isOpening) {
+  const folds = tabFolds(view, tab);
+  const state = { ...open, collapsed: view.collapsed };
+  return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
 }
 
-// src/draw.ts
-var LOOK2 = "herdr";
-var freshUi = (tab) => ({
-  tab,
-  selected: null,
-  unfolded: [],
-  closedAll: [],
-  optionsShown: [],
-  statusUnfolded: [],
-  typing: null,
-  newRows: new Map,
-  closedSeen: new Map
-});
-var markOf3 = (m) => m ? { text: m.text, tone: m.tone ?? "muted", isRunning: m.isRunning } : null;
-function rowDoes(row, press, kind, agent) {
-  if (press.action === "type")
-    return { is: "type", rowId: row.id, text: "", hint: replyHint(row, agent) };
-  if (press.action === "discard")
-    return { is: "leave", rowId: row.id, isDiscard: true };
-  const step = press.action === "step" ? row.steps[press.step] : undefined;
-  const effects = kind === "local" && row.item && step ? stepEffects(row.item, step) : [];
-  return { is: "press", press, effects, kind };
-}
-function rowButtons(row, isAllShown, agent) {
-  const { options, keys, more } = rowKeyPlan(row, isAllShown);
-  const answers = options.map((o, n) => ({
-    ...button(`${row.id} ${n}`, actionLabel(o.action), o.action.emphasis, rowDoes(row, o.action.press, o.action.kind, agent), o.hotkey ?? null),
-    isOut: o.action.isOut,
-    isOption: true
-  }));
-  return [
-    ...answers,
-    ...[...keys, ...more].map((k, n) => {
-      const id = `${row.id} ${options.length + n}`;
-      if (k.slot === "allOptions")
-        return button(id, k.label, k.emphasis, { is: "view", change: { showOptions: row.id } });
-      if (k.slot === "retry")
-        return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent));
-      const { action } = k;
-      const does = rowDoes(row, action.press, action.kind, agent);
-      return {
-        ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null),
-        isOut: action.isOut,
-        ...action.isFollowUp ? { isFollowUp: true } : {}
-      };
-    })
-  ];
-}
-var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
-function undoButtons(row, agent, now) {
-  if (row.state.is !== "settled")
-    return [];
-  const id = `${row.id} undo`;
-  const runsOutAt = row.state.at + SETTLED_MS;
-  const undo = row.actions.find((a) => a.press.action === "undo");
-  if (undo)
-    return [
-      {
-        ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
-        isOut: undo.isOut,
-        runsOutAt
-      }
-    ];
-  const isWaitingForAgent = row.state.delivery === "queued" && now >= undoPlaceEndsAt(row.state);
-  return row.state.offersUndo && !isWaitingForAgent ? [{ ...button(id, ROW_COPY.undo, "quiet"), isHidden: true, runsOutAt }] : [];
-}
-function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
-  const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
+// ../hooks/ui-controller-types.ts
+var DEMO_REPLY_MS = SETTLED_MS;
+var COLLAPSE_WAIT_MS = 30000;
+var MAX_KEPT_UI = 20;
+var ROW_TAB_IDS = ["needsYou", "findings", "prs"];
+var NO_UI_CURSOR = { id: null, index: -1, guard: null };
+var NO_FACTS = { isFetchingPrs: false, hasAsksBlocker: false, lastTypedMessageAt: null };
+function freshUi(config, tab = "needsYou") {
   return {
-    rowId,
-    buttons: [
-      button(`${rowId} send`, send, "primary", { is: "send", rowId }),
-      button(`${rowId} leave`, leave, "quiet", { is: "leave", rowId, isDiscard })
-    ]
-  };
-}
-function rowBody(row, isAllShown) {
-  const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
-    { part: "answer", optionId: `${row.id} ${n}`, text: "", tone: "muted" },
-    ...o.note ? [{ part: "note", text: o.note, tone: "muted", isOptionNote: true }] : []
-  ]);
-  const holdsUp = row.holdsUpLine ? [[{ part: "holdsUp", text: row.holdsUpLine, tone: "muted" }]] : [];
-  const branches = [...holdsUp, ...options];
-  const lastBranch = branches.length - 1;
-  const isTrunkAfterHoldsUp = options.length > 0;
-  const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
-  const branchLines = (branch) => (branches[branch] ?? []).map((l, line) => {
-    const placed = tree(branch, line);
-    return placed ? { ...l, tree: placed } : l;
-  });
-  const contextTree = isTrunkAfterHoldsUp ? { tree: "trunk" } : {};
-  const lines = [
-    ...holdsUp.flatMap((_, branch) => branchLines(branch)),
-    { part: "context", text: row.contextLine ?? "", tone: "muted", ...contextTree },
-    { part: "earlier", text: row.earlierLine ? earlierLineText(row.earlierLine) : "", tone: "muted", ...contextTree },
-    { part: "detail", text: row.detail ?? "", tone: null },
-    { part: "file", text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
-    ...options.flatMap((_, n) => branchLines(holdsUp.length + n))
-  ];
-  return lines.filter((l) => l.text || l.lead || l.optionId);
-}
-function sideBySideOf(row, isAllShown) {
-  const { options, answerRow } = rowKeyPlan(row, isAllShown);
-  return answerRow ? { sideBySide: { optionIds: options.map((_, n) => `${row.id} ${n}`), recLine: answerRow.recLine } } : {};
-}
-function rowBlock(row, ui, selected, screen) {
-  const { state, feedback: f } = row;
-  const isSettled = state.is === "settled";
-  const isAllShown = ui.optionsShown.includes(row.id);
-  const text = rowFeedbackText(row, LOOK2);
-  const isSelected = !isSettled && row.id === selected;
-  const isCollapsed = screen.view.collapsed.includes(row.id);
-  const isOpen = isSelected && !isCollapsed;
-  const isTyping = ui.typing === row.id;
-  return {
-    kind: "row",
-    id: row.id,
-    depth: 0,
-    mark: markOf3(rowMark(row)),
-    title: rowTitle(row, LOOK2),
-    age: row.at === null ? null : shortAgo(screen.now - row.at),
-    feedback: text && f ? { text, tone: feedbackTone(f), source: f } : null,
-    settled: isSettled ? {
-      label: settledLabel(state.label, state.delivery, state.reply),
-      tone: settledTone(state),
-      tint: closedTitleTone(state) === "muted" ? null : closedTitleTone(state),
-      at: state.at
-    } : null,
-    isDim: isSettled,
-    isSelectable: !isSettled,
-    isSelected,
-    ...isCollapsed && { isCollapsed },
-    body: isOpen ? rowBody(row, isAllShown) : [],
-    ...isOpen ? sideBySideOf(row, isAllShown) : {},
-    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isOpen ? rowButtons(row, isAllShown, screen.agent).filter((b) => !isTyping || b.isOption) : [],
-    field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
-  };
-}
-function closedBlock(d, now) {
-  const action = closedLineAction(d);
-  const closedDoes = action ? { is: "press", press: action.press, effects: [], kind: null } : { is: "nothing" };
-  return {
-    kind: "row",
-    id: `closed ${d.id}`,
-    depth: 1,
-    mark: markOf3(d.mark),
-    title: d.title,
-    age: shortAgo(now - d.at),
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: "muted", source: null },
-    settled: null,
-    isDim: true,
-    isSelectable: false,
-    isSelected: false,
-    body: [],
-    buttons: action ? [button(`closed ${d.id} 0`, action.label, "quiet", closedDoes)] : [],
-    field: null
-  };
-}
-function groupBlocks(g, ui, selected, screen) {
-  const settled = new Set(g.rows.filter((r) => r.state.is === "settled").map((r) => r.id));
-  const total = closedTotal(g.closed, settled);
-  const count = waitingCount(g.rows);
-  const out = [
-    {
-      kind: "heading",
-      id: `group ${g.kind}`,
-      text: g.title,
-      count: count > 0 ? count : null,
-      mark: g.mark,
-      buttons: [],
-      isLabel: false
-    },
-    ...g.rows.map((r) => rowBlock(r, ui, selected, screen))
-  ];
-  if (g.rows.length === 0)
-    out.push({
-      kind: "note",
-      id: `empty ${g.kind}`,
-      text: groupEmptyText(g.title),
-      tone: "muted",
-      isHead: false,
-      isAtEdge: false,
-      isStrong: false,
-      depth: 0
-    });
-  if (total === 0)
-    return out;
-  const isOpen = ui.unfolded.includes(g.kind);
-  out.push({
-    kind: "fold",
-    id: `fold ${g.kind}`,
-    depth: 0,
-    text: foldLabel(total),
-    isOpen,
-    change: { closedFold: g.kind }
-  });
-  if (!isOpen)
-    return out;
-  const shown = closedShown(g.closed, settled, ui.closedAll.includes(g.kind));
-  out.push(...shown.map((d) => closedBlock(d, screen.now)));
-  const earlier = earlierLabel(total, shown.length);
-  if (earlier)
-    out.push({ kind: "more", id: `earlier ${g.kind}`, depth: 1, text: earlier, change: { earlier: g.kind } });
-  return out;
-}
-function groupsOf(view, tab, shownSince) {
-  if (tab === "needsYou")
-    return NEEDS_YOU_GROUPS.map((g) => ({
-      kind: g.kind,
-      title: g.title,
-      mark: { text: g.mark.mark, tone: g.mark.tone, isRunning: false },
-      rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, shownSince)),
-      closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
-    }));
-  return Object.keys(FINDING_GROUPS).map((kind) => ({
-    kind,
-    title: FINDING_GROUPS[kind].title,
-    mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone, isRunning: false },
-    rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, shownSince)),
-    closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
-  }));
-}
-var waitsOf = (groups, collapsed) => groups.flatMap((g) => g.rows).map((r) => ({ id: r.id, isWaiting: isWaitingRow(r), isCollapsed: collapsed.includes(r.id) }));
-function rowWaits({ view, shownSince }, tab) {
-  if (tab === "prs")
-    return prRowWaits(openPrViews(view.prs.drawn), view.lastActions, view.collapsed);
-  return tab === "overview" ? [] : waitsOf(groupsOf(view, tab, shownSince), view.collapsed);
-}
-function selectedOf(groups, selected, collapsed) {
-  const isSettled = (id) => groups.some((g) => g.rows.some((r) => r.id === id && r.state.is === "settled"));
-  const waits = waitsOf(groups, collapsed);
-  if (selected === null || !waits.some((r) => r.id === selected))
-    return firstWaiting(waits);
-  if (!isSettled(selected))
-    return selected;
-  return rowAfterClose(waits, selected) ?? firstWaiting(waits);
-}
-function rowTabBlocks(screen, ui, tab) {
-  const groups = groupsOf(screen.view, tab, screen.shownSince);
-  const empty = emptyTab(screen.view, {
+    config,
+    host: NO_FACTS,
     tab,
-    agent: screen.agent,
-    drawn: groups.filter((g) => g.rows.length > 0 || g.closed.length > 0).length,
-    hasBlocker: false,
-    isReadFailed: false
-  });
-  if (empty)
-    return [emptyBlock(tab, empty)];
-  const selected = selectedOf(groups, ui.selected, screen.view.collapsed);
-  return groups.flatMap((g, n) => [
-    ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null }] : [],
-    ...groupBlocks(g, ui, selected, screen)
-  ]);
+    isHelpShown: false,
+    shownSince: null,
+    isVisible: true,
+    isOpening: false,
+    opensOnAsks: false,
+    rowsSeen: {},
+    heldArrivals: {},
+    newRows: {},
+    closedSeen: {},
+    selection: { needsYou: NO_UI_CURSOR, findings: NO_UI_CURSOR, prs: NO_UI_CURSOR },
+    statusSelection: null,
+    waitingSeen: {},
+    heldClose: {},
+    restoring: null,
+    collapses: {},
+    unfolded: [],
+    closedAll: [],
+    statusUnfolded: [],
+    optionsShown: [],
+    typing: null,
+    drafts: {},
+    discarded: {},
+    pressesOut: {},
+    nextPressId: 1,
+    sentReplies: {},
+    notes: {},
+    errors: {},
+    notice: null,
+    listInput: null,
+    undoSeen: {},
+    demoReplies: []
+  };
 }
-function tabCells(screen, tab) {
-  const { view } = screen;
-  const counts = { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count };
-  return shownTabs().map((t) => ({
-    id: t.id,
-    label: t.label,
-    badge: tabBadge(t.id, counts),
-    isSelected: t.id === tab
-  }));
+var withCommands = (ui, ...commands) => ({ ui, commands });
+function chain(start, ...steps) {
+  return steps.reduce((acc, step) => {
+    const next = step(acc.ui);
+    return { ui: next.ui, commands: [...acc.commands, ...next.commands] };
+  }, start);
 }
-function chrome(screen, tab) {
-  const error = footerError(tab, screen.view.status, screen.view.statusPage);
-  return { banners: tabBarBanners([], error, null) };
-}
-function tabBlocks(screen, ui) {
-  if (ui.tab === "overview") {
-    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, goalSubmitLabel(screen.view.statusPage)) : null;
-    return statusBlocks(screen.view, {
-      isUnfolded: (id) => ui.statusUnfolded.includes(id),
-      isCollapsed: (id) => screen.view.collapsed.includes(id),
-      goalField
-    });
+
+// ../hooks/ui-controller-selection.ts
+var opensFor2 = (r) => r.isWaiting && !r.isCollapsed;
+function collapsedOf(ui, view) {
+  const collapsed = new Set(view.collapsed);
+  for (const [id, c] of Object.entries(ui.collapses)) {
+    if (c.isCollapsed)
+      collapsed.add(id);
+    else
+      collapsed.delete(id);
   }
-  if (ui.tab === "prs")
-    return prTabBlocks(screen, ui.selected);
-  return rowTabBlocks(screen, ui, ui.tab);
+  return [...collapsed];
+}
+function tabWaits(ui, view, tab) {
+  const collapsed = collapsedOf(ui, view);
+  if (tab === "prs")
+    return prRowWaits(openPrViews(view.prs.drawn), view.lastActions, collapsed);
+  return listWaits({ ...view, collapsed })[tab];
+}
+function isListInUse(ui, now) {
+  return ui.listInput !== null && now - ui.listInput.last < FOLD_QUIET_MS;
+}
+function selectedOf(ui, view, tab) {
+  if (!isRowTab(tab))
+    return ui.statusSelection;
+  const cursor = ui.selection[tab];
+  return cursor.id ?? tabWaits(ui, view, tab).find(opensFor2)?.id ?? null;
+}
+function isGuardedPress(ui, tab, id, by, now) {
+  if (!isRowTab(tab))
+    return false;
+  const { id: cursorId, guard } = ui.selection[tab];
+  return cursorId === id && guard !== null && guard.by === by && now < guard.at + PRESS_GUARD_MS;
+}
+var withCursor = (ui, tab, cursor) => ({
+  ...ui,
+  selection: { ...ui.selection, [tab]: cursor }
+});
+function waitingFrom(waits, index) {
+  const opening = waits.flatMap((r, i) => opensFor2(r) ? [{ id: r.id, index: i }] : []);
+  return opening.find((r) => r.index >= index) ?? opening.filter((r) => r.index < index).pop() ?? { id: null, index: -1 };
+}
+function isClosedByPerson(ui, view, id, now) {
+  const lastAt = view.lastActions[id]?.at;
+  return Object.values(ui.pressesOut).some((p) => p.rowId === id) || lastAt !== undefined && lastAt >= now - SETTLED_MS;
+}
+function movedOff(ui, waits, tab, closedId, index) {
+  const next = waitingFrom(waits, index);
+  const moved = withCursor(ui, tab, { id: next.id, index: next.index, guard: null });
+  const isShown = ui.tab === tab && next.id !== null;
+  return withCommands(moved, ...isShown ? [{ kind: "reveal", tab, id: next.id, closedId }] : []);
+}
+function readCursors(ui, view, added, now) {
+  let step = settleHeldClose(ui, view, now);
+  for (const tab of ROW_TAB_IDS) {
+    const waits = tabWaits(step.ui, view, tab);
+    const cursor = step.ui.selection[tab];
+    const index = cursor.id === null ? -1 : waits.findIndex((r) => r.id === cursor.id);
+    const wasOnRow = cursor.index >= 0;
+    const isGone = cursor.id !== null && wasOnRow && index < 0;
+    const wasWaiting = cursor.id !== null && (step.ui.waitingSeen[tab] ?? []).includes(cursor.id);
+    const hasStopped = !isGone && wasWaiting && waits[index]?.isWaiting === false;
+    const isFieldOpen = cursor.id !== null && step.ui.typing === cursor.id;
+    let next = step.ui;
+    let commands = step.commands;
+    if ((isGone || hasStopped) && !isFieldOpen && cursor.id !== null) {
+      const isHeld = hasStopped && !isClosedByPerson(next, view, cursor.id, now) && isListInUse(next, now);
+      if (isHeld)
+        next = { ...next, heldClose: { ...next.heldClose, [tab]: cursor.id } };
+      else {
+        const moved = movedOff(next, waits, tab, cursor.id, isGone ? cursor.index : index);
+        next = moved.ui;
+        commands = [...commands, ...moved.commands];
+      }
+    } else if (index >= 0 && index !== cursor.index)
+      next = withCursor(next, tab, { ...cursor, index });
+    const arrived = openOnArrival(waits, next.selection[tab].id, added[tab] ?? []);
+    if (arrived !== null)
+      next = withCursor(next, tab, { id: arrived, index: waits.findIndex((r) => r.id === arrived), guard: null });
+    next = { ...next, waitingSeen: { ...next.waitingSeen, [tab]: waits.filter((r) => r.isWaiting).map((r) => r.id) } };
+    step = { ui: next, commands };
+  }
+  return step;
+}
+var without = (byKey, key) => {
+  const { [key]: _gone, ...rest } = byKey;
+  return rest;
+};
+function settleHeldClose(ui, view, now) {
+  let step = withCommands(ui);
+  for (const tab of ROW_TAB_IDS) {
+    const id = step.ui.heldClose[tab];
+    if (id === undefined)
+      continue;
+    const cleared = { ...step.ui, heldClose: without(step.ui.heldClose, tab) };
+    const cursor = step.ui.selection[tab];
+    const waits = tabWaits(step.ui, view, tab);
+    const index = waits.findIndex((r) => r.id === id);
+    const isStillWaiting = waits[index]?.isWaiting === true;
+    if (cursor.id !== id || isStillWaiting)
+      step = { ui: cleared, commands: step.commands };
+    else if (index < 0 || !isListInUse(step.ui, now)) {
+      const moved = movedOff(cleared, waits, tab, id, index >= 0 ? index : cursor.index);
+      step = { ui: moved.ui, commands: [...step.commands, ...moved.commands] };
+    }
+  }
+  return step;
+}
+function selectRow(ui, view, tab, id, by, now) {
+  if (!isRowTab(tab))
+    return { ...ui, statusSelection: id };
+  const index = id === null ? -1 : tabWaits(ui, view, tab).findIndex((r) => r.id === id);
+  const guard = by === "click" ? { by, at: now } : null;
+  const typing = ui.typing !== null && ui.typing !== id ? null : ui.typing;
+  const heldClose = without(ui.heldClose, tab);
+  return { ...withCursor(ui, tab, { id, index, guard }), typing, heldClose };
+}
+function stepSelection(ui, view, by, ids, now) {
+  const at = ids.indexOf(selectedOf(ui, view, ui.tab) ?? "");
+  const next = steppedIndex(at, by, ids.length);
+  const id = ids[next];
+  return id === undefined ? ui : selectRow(ui, view, ui.tab, id, "key", now);
+}
+function collapseRow(ui, view, id, isCollapsed, now) {
+  let next = { ...ui, collapses: { ...ui.collapses, [id]: { isCollapsed, at: now } } };
+  if (isCollapsed && next.typing === id)
+    next = { ...next, typing: null };
+  const tab = ui.tab;
+  if (isCollapsed && isRowTab(tab) && ui.selection[tab].id === null && selectedOf(ui, view, tab) === id)
+    next = withCursor(next, tab, { id, index: tabWaits(ui, view, tab).findIndex((r) => r.id === id), guard: null });
+  return withCommands(next, { kind: "save-collapse", id, isCollapsed });
+}
+function titlePress(ui, view, id, by, now) {
+  const tab = ui.tab;
+  if (!isRowTab(tab))
+    return withCommands(ui);
+  if (collapsedOf(ui, view).includes(id)) {
+    const expanded = collapseRow(ui, view, id, false, now);
+    return { ...expanded, ui: selectRow(expanded.ui, view, tab, id, by, now) };
+  }
+  if (selectedOf(ui, view, tab) !== id)
+    return withCommands(selectRow(ui, view, tab, id, by, now));
+  return isGuardedPress(ui, tab, id, by, now) ? withCommands(ui) : collapseRow(ui, view, id, true, now);
+}
+var withOnly = (list, x, isIn) => isIn ? list.includes(x) ? [...list] : [...list, x] : list.filter((y) => y !== x);
+function setFold(ui, fold, isOpen) {
+  return {
+    ...ui,
+    unfolded: withOnly(ui.unfolded, fold, isOpen),
+    closedAll: isOpen ? ui.closedAll : withOnly(ui.closedAll, fold, false)
+  };
+}
+function foldAll2(ui, view, isOpening, now) {
+  const change = foldAllOn(view, ui.tab, { unfolded: ui.unfolded, statusUnfolded: ui.statusUnfolded }, isOpening);
+  const start = {
+    ...ui,
+    unfolded: change.unfolded,
+    statusUnfolded: change.statusUnfolded,
+    closedAll: ui.closedAll.filter((k) => change.unfolded.includes(k))
+  };
+  return change.collapses.reduce((acc, c) => {
+    const next = collapseRow(acc.ui, view, c.id, c.isCollapsed, now);
+    return { ui: next.ui, commands: [...acc.commands, ...next.commands] };
+  }, withCommands(start));
+}
+function selectRestored(ui, view) {
+  const restoring = ui.restoring;
+  if (restoring === null)
+    return withCommands(ui);
+  const tab = ROW_TAB_IDS.find((t) => tabWaits(ui, view, t).some((r) => r.id === restoring.id && r.isWaiting));
+  if (tab === undefined)
+    return withCommands(ui);
+  const cleared = { ...ui, restoring: null };
+  if (ui.typing !== null && ui.typing !== restoring.id)
+    return withCommands(cleared);
+  const index = tabWaits(ui, view, tab).findIndex((r) => r.id === restoring.id);
+  const moved = withCursor(cleared, tab, { id: restoring.id, index, guard: null });
+  return withCommands(moved, ...ui.tab === tab ? [{ kind: "reveal", tab, id: restoring.id, closedId: null }] : []);
+}
+
+// ../hooks/ui-controller-reply.ts
+function holdsOf(ui, now) {
+  const undoOut = Object.values(ui.pressesOut).flatMap((p) => p.action === "undo" || p.action === "pr-undo" ? [p.rowId] : []);
+  const undoShown = ui.config.undoClock === "first-read" ? Object.entries(ui.undoSeen).flatMap(([id, at]) => at + SETTLED_MS > now ? [id] : []) : undefined;
+  return {
+    replies: heldReplies(ui.typing, ui.drafts),
+    discarded: keptDiscards(ui.discarded, ui.shownSince),
+    shownSince: ui.shownSince,
+    listInput: ui.listInput,
+    ...undoShown === undefined ? {} : { undoShown },
+    undoOut
+  };
+}
+var isListed = (view, id) => allRows(view).some((r) => r.id === id) || prRowIds(view.prs.drawn).includes(id);
+function openField(ui, view, id, seed, now) {
+  const draft = seed !== undefined ? { text: seed, since: now } : ui.drafts[id] ?? { text: "", since: now };
+  let next = { ...ui, typing: id, drafts: { ...ui.drafts, [id]: draft } };
+  const tab = ui.tab;
+  if (isRowTab(tab) && ui.selection[tab].id === null && selectedOf(ui, view, tab) === id)
+    next = withCursor(next, tab, { id, index: tabWaits(ui, view, tab).findIndex((r) => r.id === id), guard: null });
+  return withCommands(next, { kind: "focus-field", id });
+}
+function editDraft(ui, id, text, now) {
+  return { ...ui, drafts: { ...ui.drafts, [id]: { text, since: ui.drafts[id]?.since ?? now } } };
+}
+function closeField(ui, view, id, isDiscard, now) {
+  const typing = ui.typing === id ? null : ui.typing;
+  if (!isDiscard)
+    return withCommands(releasedDrafts({ ...ui, typing }, view));
+  const { [id]: _draft, ...drafts } = ui.drafts;
+  const { [id]: _sent, ...sentReplies } = ui.sentReplies;
+  const discarded = { ...keptDiscards(ui.discarded, ui.shownSince), [id]: now };
+  return withCommands({ ...ui, typing, drafts, sentReplies, discarded });
+}
+var isUndoPress = (p) => p.action === "undo" || p.action === "pr-undo";
+function press(ui, view, p, by, now) {
+  const rowId = pressRowId(p);
+  const action = actionId(p);
+  const isRepeat = Object.values(ui.pressesOut).some((o) => o.rowId === rowId && o.action === action);
+  const isReply = p.action === "type";
+  const isBlank = isReply && p.text.trim() === "";
+  if (isRepeat || isBlank || isGuardedPress(ui, ui.tab, rowId, by, now))
+    return withCommands(ui);
+  const holds = holdsOf(ui, now);
+  const pressId = ui.nextPressId;
+  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now };
+  let next = { ...ui, nextPressId: pressId + 1, pressesOut: { ...ui.pressesOut, [pressId]: out } };
+  if (isReply) {
+    const text = p.text.trim();
+    const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false };
+    next = {
+      ...next,
+      typing: next.typing === rowId ? null : next.typing,
+      drafts: { ...next.drafts, [rowId]: { text: p.text, since: next.drafts[rowId]?.since ?? now } },
+      sentReplies: { ...next.sentReplies, [rowId]: sent }
+    };
+  }
+  const tab = ui.tab;
+  const isPinning = !isUndoPress(p) && !isPrPress(p);
+  if (isPinning && isRowTab(tab) && ui.selection[tab].id === null) {
+    const index = tabWaits(ui, view, tab).findIndex((r) => r.id === rowId);
+    if (index >= 0)
+      next = withCursor(next, tab, { id: rowId, index, guard: null });
+  }
+  return withCommands(next, { kind: "press", pressId, press: p, holds });
+}
+function undoKey(ui, view, now) {
+  if (!isRowTab(ui.tab))
+    return withCommands(ui);
+  const lists = drawnLists(view, () => true, (r) => r);
+  const isStillShown = (id) => ui.config.undoClock === "session" || ui.undoSeen[id] !== undefined && ui.undoSeen[id] + SETTLED_MS > now;
+  const undos = tabUndos(ui.tab, lists, view.prs.drawn).filter((u) => isStillShown(pressRowId(u.press)));
+  const latest = latestUndo(undos);
+  return latest === null ? withCommands(ui) : press(ui, view, latest.press, "key", now);
+}
+function hasNotMoved(ui, out) {
+  const isQuiet = ui.listInput === null || ui.listInput.last <= out.at;
+  return ui.tab === out.tab && ui.typing === null && isQuiet;
+}
+var isNotSentShown = (view, id) => allRows(view).find((r) => r.id === id)?.feedback?.is === "notSent";
+function pressSettled(ui, view, pressId, outcome, now) {
+  const out = ui.pressesOut[pressId];
+  if (out === undefined)
+    return withCommands(ui);
+  const { [pressId]: _out, ...pressesOut } = ui.pressesOut;
+  let next = { ...ui, pressesOut };
+  const row = out.rowId;
+  const isRowListed = isListed(view, row);
+  if (outcome.note === "stale")
+    next = isRowListed ? { ...next, notes: { ...next.notes, [row]: { note: "stale", at: now } } } : { ...next, notice: { text: noteText(), at: now, isError: false } };
+  if (outcome.error !== null && !isNotSentShown(view, row))
+    next = isRowListed ? { ...next, errors: { ...next.errors, [row]: { text: outcome.error, at: now } } } : { ...next, notice: { text: outcome.error, at: now, isError: true } };
+  const isConfirmed = isPressConfirmed(outcome);
+  const sent = next.sentReplies[row];
+  if (sent?.pressId === pressId) {
+    const isRefused = outcome.error !== null || outcome.note !== null;
+    const { [row]: _sent, ...rest } = next.sentReplies;
+    next = { ...next, sentReplies: isRefused ? rest : { ...rest, [row]: { ...sent, isConfirmed } } };
+  }
+  if (out.action === "undo" && isConfirmed)
+    next = { ...next, restoring: { id: row, at: now } };
+  const restored = selectRestored(next, view);
+  next = restored.ui;
+  if (outcome.isDemoSent)
+    next = { ...next, demoReplies: [...next.demoReplies, { pressId, dueAt: now + DEMO_REPLY_MS }] };
+  const isReplyBack = out.isReply && (outcome.error !== null || outcome.note === "stale");
+  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, out))
+    return withCommands(next, ...restored.commands);
+  const index = isRowTab(out.tab) ? tabWaits(next, view, out.tab).findIndex((r) => r.id === row) : -1;
+  const back = isRowTab(out.tab) ? withCursor(next, out.tab, { id: row, index, guard: null }) : next;
+  return isReplyBack ? withCommands({ ...back, typing: row }, ...restored.commands, { kind: "focus-field", id: row }) : withCommands(back, ...restored.commands);
+}
+function isWaitingOnDelivery(view, out) {
+  const state = view.lastActions[out.rowId]?.delivery?.state;
+  return state === "held" || state === "queued";
+}
+function pressEndsAt(ui, view) {
+  return Object.values(ui.pressesOut).flatMap((o) => isWaitingOnDelivery(view, o) ? [] : [o.at + PRESS_TIMEOUT_MS]);
+}
+function expirePresses(ui, view, now) {
+  const isEnded = (o) => now >= o.at + PRESS_TIMEOUT_MS && !isWaitingOnDelivery(view, o);
+  const ended = Object.values(ui.pressesOut).filter(isEnded);
+  if (ended.length === 0)
+    return ui;
+  const pressesOut = Object.fromEntries(Object.entries(ui.pressesOut).filter(([, o]) => !isEnded(o)));
+  return { ...ui, pressesOut };
+}
+function sentFate(ui, view, row) {
+  const sent = ui.sentReplies[row];
+  if (sent === undefined)
+    return "keep";
+  const last = view.lastActions[row];
+  const isOut = Object.values(ui.pressesOut).some((o) => o.pressId === sent.pressId);
+  if (last === undefined)
+    return sent.atBefore === null && isOut ? "wait" : sent.isConfirmed ? "release" : "keep";
+  if (last.at === sent.atBefore)
+    return isOut ? "wait" : "keep";
+  if (last.reply?.trim() !== sent.text)
+    return "keep";
+  const state = last.delivery?.state;
+  if (state === "held" || state === "queued")
+    return "wait";
+  return state === "failed" || state === "unconfirmed" ? "keep" : "release";
+}
+function releasedDrafts(ui, view) {
+  let next = ui;
+  for (const row of Object.keys(ui.sentReplies)) {
+    const fate = sentFate(next, view, row);
+    if (fate === "wait" || fate === "release" && next.typing === row)
+      continue;
+    const isSentDraft = fate === "release" && next.drafts[row]?.text.trim() === next.sentReplies[row]?.text;
+    const { [row]: _sent, ...sentReplies } = next.sentReplies;
+    const { [row]: _draft, ...without } = next.drafts;
+    next = { ...next, sentReplies, drafts: isSentDraft ? without : next.drafts };
+  }
+  return next;
+}
+
+// ../hooks/ui-controller-tabs.ts
+var newRowsOf = (ui) => new Map(Object.entries(ui.newRows));
+var asRecord = (rows) => Object.fromEntries(rows);
+function isShownEmpty(ui, view, tab) {
+  if (tab === "prs")
+    return isPrsTabEmpty(view.prs.drawn.length, ui.host.isFetchingPrs);
+  const rows = tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows;
+  return isTabEmpty({
+    rows,
+    settled: new Set(settledRowIds(rows)),
+    closed: closedGroups(view, tab, (kind) => ui.unfolded.includes(kind)),
+    hasBlocker: tab === "needsYou" && ui.host.hasAsksBlocker
+  });
+}
+function moveTo(ui, tab, now) {
+  const selection = isRowTab(tab) ? { ...ui.selection, [tab]: NO_UI_CURSOR } : ui.selection;
+  return withCommands(shownTab({ ...ui, selection }, tab, now), { kind: "tab-shown", tab });
+}
+function shownTab(ui, tab, now) {
+  const isChanged = tab !== ui.tab;
+  const newRows = ui.isVisible && isRowTab(tab) ? asRecord(showNewRows(newRowsOf(ui), tab, now)) : ui.newRows;
+  return {
+    ...ui,
+    tab,
+    isHelpShown: false,
+    shownSince: isChanged && ui.shownSince !== null ? now : ui.shownSince,
+    typing: isChanged ? null : ui.typing,
+    heldArrivals: {},
+    heldClose: isChanged ? {} : ui.heldClose,
+    newRows
+  };
+}
+function opened(ui, now) {
+  return {
+    ...ui,
+    shownSince: now,
+    isOpening: true,
+    opensOnAsks: true,
+    rowsSeen: {},
+    newRows: {},
+    closedSeen: {},
+    heldArrivals: {}
+  };
+}
+function closed(ui) {
+  return {
+    ...ui,
+    shownSince: null,
+    typing: null,
+    isHelpShown: false,
+    isOpening: false,
+    opensOnAsks: false,
+    heldArrivals: {},
+    heldClose: {}
+  };
+}
+function helpShown(ui, isShown, now) {
+  const isTabShown = !isShown && ui.isVisible && ui.shownSince !== null && isRowTab(ui.tab);
+  const newRows = isTabShown ? asRecord(showNewRows(newRowsOf(ui), ui.tab, now)) : ui.newRows;
+  return { ...ui, isHelpShown: isShown, newRows };
+}
+function visible(ui, isVisible) {
+  return { ...ui, isVisible, opensOnAsks: ui.opensOnAsks || isVisible && !ui.isVisible };
+}
+var TINT_MS = NEW_HOLD_MS + NEW_FADE_MS;
+function seenClosed(ui, view, now) {
+  const seen = {};
+  for (const r of allRows(view)) {
+    if (r.state.is !== "settled")
+      continue;
+    const key = `${r.id}:${r.state.at}`;
+    const at = ui.closedSeen[key] ?? (ui.isVisible && now - r.state.at < TINT_MS ? now : undefined);
+    if (at !== undefined && now - at < TINT_MS)
+      seen[key] = at;
+  }
+  return seen;
+}
+function recordTabs(ui, view, host, now) {
+  const listed = { ...listedRowIds(view), prs: host.isFetchingPrs ? null : prRowIds(view.prs.drawn) };
+  const seen = Object.fromEntries(Object.entries(ui.rowsSeen).map(([t, ids]) => [t, new Set(ids)]));
+  const recorded = recordRows(seen, listed);
+  const isTinting = ui.isVisible && ui.shownSince !== null;
+  const added = addNewRows(newRowsOf(ui), isTinting ? recorded.added : {});
+  const newRows = isTinting && isRowTab(ui.tab) && !ui.isHelpShown ? showNewRows(added, ui.tab, now) : added;
+  const rowsSeen = Object.fromEntries(Object.entries(recorded.seen).map(([t, ids]) => [t, [...ids ?? []]]));
+  return {
+    ui: { ...ui, host, rowsSeen, newRows: asRecord(newRows), closedSeen: seenClosed(ui, view, now) },
+    added: recorded.added
+  };
+}
+var hasAsksWaiting = (view) => view.needsYou.count > 0;
+function openingMove(ui, view, now) {
+  const settled = { ...ui, isOpening: false, opensOnAsks: false };
+  const isOnRowTab = isRowTab(ui.tab) && !ui.isHelpShown && ui.typing === null;
+  if (!isOnRowTab)
+    return withCommands(settled);
+  if (ui.opensOnAsks && ui.tab !== "needsYou" && hasAsksWaiting(view))
+    return moveTo(settled, "needsYou", now);
+  if (!ui.isOpening || !isShownEmpty(ui, view, ui.tab))
+    return withCommands(settled);
+  const to = followTo(ARRIVAL_TABS, ui.tab, true, { ...openRowIds(view), prs: [] });
+  return to === null ? withCommands(settled) : moveTo(settled, to, now);
+}
+var merged = (a, b) => Object.fromEntries(ROW_TAB_IDS.map((t) => [t, [...new Set([...a[t] ?? [], ...b[t] ?? []])]]));
+function follow(ui, view, added, now) {
+  const tab = ui.tab;
+  const isFollowing = isRowTab(tab) && ui.shownSince !== null && !ui.isHelpShown;
+  if (!isFollowing || !isShownEmpty(ui, view, tab))
+    return withCommands({ ...ui, heldArrivals: {} });
+  const all = merged(ui.heldArrivals, added);
+  const arrivals = Object.fromEntries(ROW_TAB_IDS.map((t) => [t, all[t].filter((id) => tabWaits(ui, view, t).some((r) => r.id === id && r.isWaiting))]));
+  if (isListInUse(ui, now))
+    return withCommands({ ...ui, heldArrivals: arrivals });
+  const to = followTo(ARRIVAL_TABS, tab, true, arrivals);
+  const cleared = { ...ui, heldArrivals: {} };
+  return to === null ? withCommands(cleared) : moveTo(cleared, to, now);
+}
+function readTabs(ui, view, added, now) {
+  if (!ui.isOpening && !ui.opensOnAsks)
+    return follow(ui, view, added, now);
+  const opening = openingMove(ui, view, now);
+  return opening.commands.length > 0 ? opening : follow(opening.ui, view, added, now);
+}
+var hasHeldArrivals = (ui) => Object.values(ui.heldArrivals).some((ids) => (ids ?? []).length > 0);
+
+// ../hooks/ui-controller-clock.ts
+var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
+function settledStates(view) {
+  const rows = allRows(view).flatMap((r) => r.state.is === "settled" ? [{ id: r.id, state: r.state }] : []);
+  const prs = view.prs.drawn.flatMap((d) => d.state.is === "settled" ? [{ id: prMarkId(d.pr.ref), state: d.state }] : []);
+  return [...rows, ...prs];
+}
+function seenSettled(ui, view, now) {
+  if (ui.config.undoClock !== "first-read")
+    return {};
+  return Object.fromEntries(settledStates(view).map(({ id }) => [id, ui.undoSeen[id] ?? now]));
+}
+var nextBoundary = (now, step) => (Math.floor(now / step) + 1) * step;
+function tintWakeAt(ui, view, now) {
+  if (ui.config.titleTint === "self")
+    return null;
+  const seen = new Map(Object.entries(ui.closedSeen));
+  const endsAt = titleTintEndsAt(newRowsOf(ui), view, seen, now);
+  if (ui.config.titleTint === "end" || endsAt === null)
+    return endsAt;
+  const step = NEW_FADE_MS / NEW_STEPS;
+  const starts = [...Object.values(ui.newRows).flatMap((r) => r.shownAt === null ? [] : [r.shownAt]), ...seen.values()];
+  const steps = starts.flatMap((at) => Array.from({ length: NEW_STEPS + 1 }, (_, k) => at + NEW_HOLD_MS + k * step).filter((t) => t > now));
+  return earliestOf([...steps, endsAt]);
+}
+function frameWakeAt(ui, view, now) {
+  if (ui.config.runningMarks !== "frames" || ui.shownSince === null)
+    return null;
+  const isRunning = showsRunningMark(view, ui.tab, ui.isHelpShown, (kind) => ui.unfolded.includes(kind));
+  return isRunning ? nextBoundary(now, RUNNING_FRAME_MS) : null;
+}
+function readWakeAt(ui, view, now) {
+  const lasts = Object.values(view.lastActions);
+  const settled = settledStates(view);
+  const isFirstRead = ui.config.undoClock === "first-read";
+  const cursor = isRowTab(ui.tab) ? ui.selection[ui.tab] : null;
+  const isHolding = hasHeldArrivals(ui) || Object.keys(ui.heldClose).length > 0;
+  const times = [
+    ...lasts.flatMap((l) => l.delivery?.state === "queued" ? [queuedSentAt(l) + QUEUED_AFTER_MS] : []),
+    ...lasts.flatMap((l) => l.result === undefined ? [] : [l.result.at + (l.result.state === "pending" ? PRESS_TIMEOUT_MS : SETTLED_MS)]),
+    ...pressEndsAt(ui, view),
+    ...settled.flatMap(({ id, state }) => state.canUndo ? [isFirstRead ? (ui.undoSeen[id] ?? now) + SETTLED_MS : state.at + SETTLED_MS] : []),
+    ...settled.flatMap(({ state }) => state.offersUndo && isSendOnItsWay(state.delivery) ? [undoPlaceEndsAt(state)] : []),
+    nextFoldAt(settled.map((s) => s.state), { lastTypedMessageAt: ui.host.lastTypedMessageAt, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS }),
+    timedChangeAt(view.lastActions, now),
+    isHolding && ui.listInput !== null ? ui.listInput.last + FOLD_QUIET_MS : null,
+    cursor?.guard ? cursor.guard.at + PRESS_GUARD_MS : null,
+    ...Object.values(ui.notes).map((n) => n.at + SETTLED_MS),
+    ...Object.values(ui.errors).map((e) => e.at + SETTLED_MS),
+    ui.notice === null ? null : ui.notice.at + SETTLED_MS,
+    ui.restoring === null ? null : ui.restoring.at + SETTLED_MS,
+    ...Object.values(ui.collapses).map((c) => c.at + COLLAPSE_WAIT_MS),
+    ...ui.demoReplies.map((d) => d.dueAt)
+  ];
+  return earliestOf(times.filter((t) => t !== null && t > now));
+}
+function nextWakeAt(ui, view, now) {
+  const times = [
+    readWakeAt(ui, view, now),
+    frameWakeAt(ui, view, now),
+    ui.shownSince === null ? null : tintWakeAt(ui, view, now)
+  ];
+  return earliestOf(times.filter((t) => t !== null && t > now));
+}
+var alive = (byId, ms, now) => Object.fromEntries(Object.entries(byId).filter(([, x]) => now < x.at + ms));
+function expired(ui, view, now) {
+  const collapses = Object.fromEntries(Object.entries(ui.collapses).filter(([id, c]) => now < c.at + COLLAPSE_WAIT_MS && view.collapsed.includes(id) !== c.isCollapsed));
+  return {
+    ...ui,
+    notes: alive(ui.notes, SETTLED_MS, now),
+    errors: alive(ui.errors, SETTLED_MS, now),
+    notice: ui.notice !== null && now < ui.notice.at + SETTLED_MS ? ui.notice : null,
+    restoring: ui.restoring !== null && now < ui.restoring.at + SETTLED_MS ? ui.restoring : null,
+    collapses
+  };
+}
+function dueDemoReplies(ui, now) {
+  const due = ui.demoReplies.filter((d) => d.dueAt <= now);
+  const commands = due.map((d) => ({ kind: "demo-reply", pressId: d.pressId }));
+  return withCommands({ ...ui, demoReplies: ui.demoReplies.filter((d) => d.dueAt > now) }, ...commands);
+}
+
+// ../hooks/ui-controller.ts
+var PERSON_EVENTS = new Set([
+  "show-tab",
+  "show-help",
+  "show-ask",
+  "select",
+  "step",
+  "title-press",
+  "collapse",
+  "fold",
+  "status-fold",
+  "earlier",
+  "show-options",
+  "fold-all",
+  "open-field",
+  "edit-draft",
+  "close-field",
+  "press",
+  "undo-key",
+  "list-input"
+]);
+var addOnce = (list, x) => list.includes(x) ? [...list] : [...list, x];
+function resetUi(ui, now) {
+  const fresh = freshUi(ui.config, ui.tab);
+  return {
+    ...fresh,
+    host: ui.host,
+    isVisible: ui.isVisible,
+    shownSince: ui.shownSince === null ? null : now,
+    isOpening: ui.shownSince !== null,
+    nextPressId: ui.nextPressId,
+    drafts: ui.drafts,
+    discarded: ui.discarded,
+    unfolded: ui.unfolded,
+    closedAll: ui.closedAll,
+    statusUnfolded: ui.statusUnfolded,
+    optionsShown: ui.optionsShown
+  };
+}
+function read(ui, view, host, now) {
+  const recorded = recordTabs(ui, view, host, now);
+  const settled = expired(releasedDrafts(expirePresses(recorded.ui, view, now), view), view, now);
+  const start = { ...settled, undoSeen: seenSettled(settled, view, now) };
+  return chain(withCommands(start), (next) => readCursors(next, view, recorded.added, now), (next) => readTabs(next, view, recorded.added, now), (next) => selectRestored(next, view));
+}
+function due(step, view, now) {
+  return chain({ ...step, ui: expired(expirePresses(step.ui, view, now), view, now) }, (next) => settleHeldClose(next, view, now), (next) => hasHeldArrivals(next) ? follow(next, view, {}, now) : withCommands(next), (next) => dueDemoReplies(next, now));
+}
+var heldKeys = (ui, now) => {
+  const holds = holdsOf(ui, now);
+  return JSON.stringify([Object.keys(holds.replies).sort(), Object.keys(holds.discarded).sort()]);
+};
+function withHoldsRead(before, step, now) {
+  const isChanged = heldKeys(before, now) !== heldKeys(step.ui, now);
+  const hasRead = step.commands.some((c) => c.kind === "read");
+  return isChanged && !hasRead ? { ...step, commands: [...step.commands, { kind: "read" }] } : step;
+}
+function showAsk(ui, view, id, by, now) {
+  const shown = shownTab(ui, "needsYou", now);
+  const index = tabWaits(shown, view, "needsYou").findIndex((r) => r.id === id);
+  const selected = withCursor(shown, "needsYou", { id, index, guard: { by, at: now } });
+  const commands = [
+    { kind: "tab-shown", tab: "needsYou" },
+    { kind: "reveal", tab: "needsYou", id, closedId: null }
+  ];
+  return withCommands(selected, ...commands);
+}
+function step(ui, view, by, ids, now) {
+  const next = stepSelection(ui, view, by, ids, now);
+  const id = selectedOf(next, view, next.tab);
+  const tab = next.tab;
+  return isRowTab(tab) && id !== null ? withCommands(next, { kind: "reveal", tab, id, closedId: null }) : withCommands(next);
+}
+function handle(ui, view, e, now) {
+  switch (e.type) {
+    case "opened":
+      return withCommands(opened(ui, now));
+    case "closed":
+      return withCommands(closed(ui));
+    case "reset":
+      return withCommands(resetUi(ui, now));
+    case "read":
+      return read(ui, view, e.host, now);
+    case "visible":
+      return withCommands(visible(ui, e.isVisible));
+    case "show-tab":
+      return withCommands(shownTab(ui, e.tab, now), { kind: "tab-shown", tab: e.tab });
+    case "show-help":
+      return withCommands(helpShown(ui, e.isShown, now));
+    case "show-ask":
+      return showAsk(ui, view, e.id, e.by, now);
+    case "select":
+      return withCommands(selectRow(ui, view, e.tab, e.id, e.by, now));
+    case "step":
+      return step(ui, view, e.by, e.ids, now);
+    case "title-press":
+      return titlePress(ui, view, e.id, e.by, now);
+    case "collapse":
+      return collapseRow(ui, view, e.id, e.isCollapsed, now);
+    case "fold":
+      return withCommands(setFold(ui, e.fold, e.isOpen));
+    case "status-fold":
+      return withCommands({
+        ...ui,
+        statusUnfolded: e.isOpen ? addOnce(ui.statusUnfolded, e.id) : ui.statusUnfolded.filter((id) => id !== e.id)
+      });
+    case "earlier":
+      return withCommands({ ...ui, closedAll: addOnce(ui.closedAll, e.fold) });
+    case "show-options":
+      return withCommands({ ...ui, optionsShown: addOnce(ui.optionsShown, e.id) });
+    case "fold-all":
+      return foldAll2(ui, view, e.isOpening, now);
+    case "open-field":
+      return openField(ui, view, e.id, e.seed, now);
+    case "edit-draft":
+      return withCommands(editDraft(ui, e.id, e.text, now));
+    case "close-field":
+      return closeField(ui, view, e.id, e.isDiscard, now);
+    case "press":
+      return press(ui, view, e.press, e.by, now);
+    case "undo-key":
+      return undoKey(ui, view, now);
+    case "press-settled":
+      return pressSettled(ui, view, e.pressId, e.outcome, now);
+    case "list-input":
+      return withCommands(ui);
+    case "tick":
+      return withCommands(ui);
+  }
+}
+function reduceUi(ui, view, event, now) {
+  const noted = PERSON_EVENTS.has(event.type) ? { ...ui, listInput: withListInput(ui.listInput, now) } : ui;
+  const result = withHoldsRead(ui, due(handle(noted, view, event, now), view, now), now);
+  return { ...result, nextWakeAt: nextWakeAt(result.ui, view, now) };
+}
+var notesOf = (ui) => ui.notes;
+var isUiWorthKeeping = (ui) => Object.values(ui.drafts).some((d) => d.text.trim() !== "") || Object.keys(ui.sentReplies).length > 0;
+function keptUiStates(states, shownId) {
+  const others = Object.entries(states).filter(([id, s]) => id !== shownId && isUiWorthKeeping(s.ui)).sort(([, a], [, b]) => b.shownAt - a.shownAt).slice(0, MAX_KEPT_UI);
+  const shown = shownId !== null && states[shownId] ? [[shownId, states[shownId]]] : [];
+  return Object.fromEntries([...shown, ...others]);
+}
+
+// src/fold-all.ts
+function foldClickOpens(does, ui) {
+  if (does.is === "collapse")
+    return !does.isCollapsed;
+  if (does.is !== "view")
+    return null;
+  if ("closedFold" in does.change)
+    return !ui.unfolded.includes(does.change.closedFold);
+  if ("toggleFold" in does.change)
+    return !ui.statusUnfolded.includes(does.change.toggleFold);
+  return null;
+}
+
+// src/controller.ts
+var HERDR_LOOK = { runningMarks: "pulse", titleTint: "steps", undoClock: "session" };
+function applyEvents(ui, view, events, now) {
+  let applied = { ui, commands: [], nextWakeAt: null };
+  for (const event of events) {
+    const step = reduceUi(applied.ui, view, event, now);
+    applied = { ui: step.ui, commands: [...applied.commands, ...step.commands], nextWakeAt: step.nextWakeAt };
+  }
+  return applied;
+}
+var hostFactsOf = (read) => ({
+  isFetchingPrs: read.isFetchingPrs,
+  hasAsksBlocker: false,
+  lastTypedMessageAt: read.session.presence.lastTypedMessageAt
+});
+var lookUiOf = (ui, view) => ({
+  tab: ui.tab,
+  selected: view !== null && isRowTab(ui.tab) ? selectedOf(ui, view, ui.tab) : null,
+  unfolded: ui.unfolded,
+  closedAll: ui.closedAll,
+  optionsShown: ui.optionsShown,
+  statusUnfolded: ui.statusUnfolded,
+  typing: ui.typing
+});
+function changeEvents(c, ui, by) {
+  if ("showOptions" in c)
+    return [{ type: "show-options", id: c.showOptions }];
+  if ("closedFold" in c)
+    return [{ type: "fold", fold: c.closedFold, isOpen: !ui.unfolded.includes(c.closedFold) }];
+  if ("earlier" in c)
+    return [{ type: "earlier", fold: c.earlier }];
+  if ("toggleFold" in c)
+    return [{ type: "status-fold", id: c.toggleFold, isOpen: !ui.statusUnfolded.includes(c.toggleFold) }];
+  if ("showAsk" in c)
+    return [{ type: "show-ask", id: c.showAsk, by }];
+  return [{ type: "show-help", isShown: !ui.isHelpShown }];
+}
+function buttonEvents(d, ui, by, isAll = false) {
+  const opening = isAll ? foldClickOpens(d, ui) : null;
+  if (opening !== null)
+    return [{ type: "fold-all", isOpening: opening }];
+  if (d.is === "view")
+    return changeEvents(d.change, ui, by);
+  if (d.is === "collapse")
+    return [{ type: "collapse", id: d.id, isCollapsed: d.isCollapsed }];
+  if (d.is === "press")
+    return [{ type: "press", press: d.press, by }];
+  if (d.is === "type") {
+    const isSeeded = ui.drafts[d.rowId] === undefined && d.text !== "";
+    return [{ type: "open-field", id: d.rowId, ...isSeeded ? { seed: d.text } : {} }];
+  }
+  if (d.is === "send") {
+    const text = ui.drafts[d.rowId]?.text ?? "";
+    return [{ type: "press", press: { action: "type", id: d.rowId, text }, by }];
+  }
+  if (d.is === "leave")
+    return [{ type: "close-field", id: d.rowId, isDiscard: d.isDiscard }];
+  return [];
+}
+function titleClickEvents(ui, id, isCollapsed, isAll) {
+  if (isAll)
+    return [{ type: "fold-all", isOpening: !isCollapsed }];
+  if (isRowTab(ui.tab))
+    return [{ type: "title-press", id, by: "click" }];
+  return [{ type: "collapse", id, isCollapsed }];
+}
+var isSamePress = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+var buttonsIn = (blocks) => blocks.flatMap((b) => ("buttons" in b) ? b.buttons ?? [] : b.kind === "empty" ? b.under?.buttons ?? [] : []);
+function buttonOf(blocks, press) {
+  return buttonsIn(blocks).find((b) => b.does.is === "press" && isSamePress(b.does.press, press)) ?? null;
+}
+function pressSending(c, b, at, view) {
+  const { sessionId, read } = at;
+  const target = sessionId && read && view ? {
+    appHome: at.appHome,
+    sessionId,
+    terminal: read.envelope.terminal,
+    view,
+    holds: c.holds,
+    projectFolder: read.projectFolder
+  } : null;
+  const p = c.press;
+  const d = b?.does.is === "press" ? b.does : null;
+  const isGoal = p.action === "type" && p.id === GOAL_KEYS_ID;
+  const label = p.action !== "type" ? b?.label ?? "" : isGoal && view ? goalSubmitLabel(view.statusPage) : ROW_COPY.send;
+  const reply = p.action === "type" && !isGoal ? p.text.trim() : undefined;
+  const options = { effects: d?.effects ?? [], label, kind: d?.kind ?? null, uiPressId: c.pressId };
+  return { target, options: reply === undefined ? options : { ...options, reply } };
+}
+var isLookMove = (e) => PERSON_EVENTS.has(e.type) && e.type !== "list-input" && e.type !== "edit-draft";
+var fieldHints = (blocks) => Object.fromEntries(buttonsIn(blocks).flatMap((b) => b.does.is === "type" ? [[b.does.rowId, b.does.hint]] : []));
+function keptLeft(left, hasPressOut) {
+  const out = Object.entries(left).filter(([id]) => hasPressOut(id));
+  return { ...keptUiStates(left, null), ...Object.fromEntries(out) };
+}
+var waitsIn = (rows, id) => rows.some((r) => r.id === id && r.isWaiting);
+function isAnswerDraw(last, tab, rows) {
+  const lastRows = last.tab === tab ? last.rows : null;
+  if (rows === null || lastRows === null)
+    return false;
+  return last.pressed.some((id) => waitsIn(lastRows, id) && !waitsIn(rows, id));
 }
 
 // src/files.ts
@@ -4835,7 +4915,7 @@ function shownOf(where, address) {
     return { is: "no-inbox", terminal: address, program: t?.program?.name ?? null };
   return t?.program?.shell ? { is: "ended", terminal: address } : { is: "session", terminal: address, sessionId };
 }
-function follow(where, tab, last) {
+function follow2(where, tab, last) {
   const inTab = where.panes.flatMap((p) => p.tab === tab && p.terminal ? [p.terminal] : []);
   const focused = where.focused?.tab === tab ? where.focused.terminal : null;
   const isLabeled = (address) => Boolean(where.terminals.find((x) => x.address === address)?.labels?.[SESSION_LABEL]);
@@ -4890,119 +4970,38 @@ function helpBlocks(version) {
 
 // src/keys.ts
 var isSelectable = (b) => b.kind === "row" && b.isSelectable;
-function stepRow(blocks, by) {
-  const rows = blocks.filter(isSelectable);
-  const next = steppedIndex(rows.findIndex((r) => r.isSelected), by, rows.length);
-  return rows[next]?.id ?? null;
-}
-function tabUndo(view, tab, shownSince) {
-  if (tab === "overview")
-    return null;
-  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
-  const drawn = new Set(rows.filter((r) => isDrawnInPlace(r, shownSince)).map((r) => r.id));
-  const lists = drawnLists(view, (id) => drawn.has(id), (r) => r);
-  return latestUndo(tabUndos(tab, lists, view.prs.drawn))?.press ?? null;
-}
-var isSamePress = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-function undoButton(blocks, undo) {
-  const drawn = blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).find((b) => b.does.is === "press" && isSamePress(b.does.press, undo));
-  return drawn && !drawn.isOut ? drawn : null;
-}
 function stepTab(tabs, by) {
   const at = tabs.findIndex((t) => t.isSelected);
   return tabs[(at + by + tabs.length) % tabs.length]?.id ?? null;
 }
-function keyMove(key, tabs, blocks, typing, undo = null) {
+var event = (e) => ({ is: "event", event: e });
+function keyMove(key, tabs, blocks, typing, isHelpShown = false) {
   if (typing !== null)
-    return key === "escape" ? { is: "close" } : null;
+    return key === "escape" ? event({ type: "close-field", id: typing, isDiscard: false }) : null;
   if (key === "escape")
     return { is: "leave" };
   if (key === "left" || key === "right") {
     const tab = stepTab(tabs, key === "right" ? 1 : -1);
-    return tab ? { is: "tab", tab } : null;
+    return tab ? event({ type: "show-tab", tab }) : null;
   }
+  if (isHelpShown)
+    return null;
   if (key === "j" || key === "k") {
-    const id = stepRow(blocks, key === "j" ? 1 : -1);
-    return id ? { is: "select", id } : null;
+    const ids = blocks.filter(isSelectable).map((r) => r.id);
+    return ids.length > 0 ? event({ type: "step", by: key === "j" ? 1 : -1, ids }) : null;
   }
   if (key === FOLD_ALL_KEY)
-    return { is: "fold-all" };
-  if (key === UNDO_KEY) {
-    const button = undo ? undoButton(blocks, undo) : null;
-    return button ? { is: "press", button } : null;
-  }
+    return event({ type: "fold-all", isOpening: null });
+  if (key === UNDO_KEY)
+    return event({ type: "undo-key" });
   const selected = blocks.find((b) => b.kind === "row" && b.isSelected);
   if (key === COLLAPSE_KEY && selected?.isSelectable)
-    return { is: "collapse", id: selected.id, isCollapsed: !selected.isCollapsed };
+    return event({ type: "collapse", id: selected.id, isCollapsed: !selected.isCollapsed });
   const lines = blocks.flatMap((b) => b.kind === "line" || b.kind === "banner" ? b.buttons : b.kind === "empty" ? b.under?.buttons ?? [] : []);
   const pressed = [...selected?.buttons ?? [], ...lines].find((b) => b.hotkey === key && !b.isOut);
   return pressed ? { is: "press", button: pressed } : null;
 }
-var withSelected = (ui, id) => ({
-  ...ui,
-  selected: id,
-  typing: ui.typing === id ? id : null
-});
-var withCollapsed = (ui, id, isCollapsed) => ({
-  ...ui.tab === "overview" ? ui : withSelected(ui, id),
-  ...isCollapsed && { typing: null }
-});
-function withClosedSelection(ui, last, now) {
-  const id = ui.selected;
-  const wasWaiting = last.some((r) => r.id === id && r.isWaiting);
-  const isWaiting = now.some((r) => r.id === id && r.isWaiting);
-  if (id === null || !wasWaiting || isWaiting)
-    return ui;
-  const next = rowAfterClose(now, id);
-  return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next);
-}
-function withArrivals(ui, last, now) {
-  const added = now.filter((r) => !last.some((l) => l.id === r.id)).map((r) => r.id);
-  const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added);
-  const recorded = added.length === 0 ? ui : { ...ui, newRows: addNewRows(ui.newRows, { [ui.tab]: added }) };
-  return id === null ? recorded : withSelected(recorded, id);
-}
-function withShownNewRows(ui, at) {
-  const newRows = showNewRows(ui.newRows, ui.tab, at);
-  const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row);
-  return isSame ? ui : { ...ui, newRows };
-}
-var waitsIn = (rows, id) => rows.some((r) => r.id === id && r.isWaiting);
-function withDrawnRows(ui, last, rows, at, isTabShown, outs) {
-  const lastRows = last.tab === ui.tab ? last.rows : null;
-  const isCompared = rows !== null && lastRows !== null;
-  const arrived = isCompared ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui;
-  const isAnswer = isCompared && last.pressed.some((id) => waitsIn(lastRows, id) && !waitsIn(rows, id));
-  const drawn = isTabShown ? withShownNewRows(arrived, at) : arrived;
-  return { ui: drawn, last: { tab: drawn.tab, rows, pressed: outs.map((o) => o.rowId) }, isAnswer };
-}
-var isFieldDrawn = (ui, isHelpShown) => ui.typing !== null && !isHelpShown;
-var withTab = (ui, tab) => ({ ...ui, tab, selected: null, typing: null });
-function afterPress(ui, press) {
-  return "id" in press && press.action === "undo" ? withSelected(ui, press.id) : ui;
-}
-var afterSend = (ui, rowId, isSent) => isSent && ui.typing === rowId ? { ...ui, typing: null } : ui;
-function withoutConfirmed(drafts, confirmed, typing, pending) {
-  const current = confirmed.filter((c) => !pending.some((p) => p.rowId === c.rowId && p.pressId > c.pressId));
-  const done = current.filter((c) => c.rowId !== typing);
-  const isSentDraft = (id, d) => done.some((c) => c.rowId === id && c.text === d.text.trim());
-  return {
-    drafts: Object.fromEntries(Object.entries(drafts).filter(([id, d]) => !isSentDraft(id, d))),
-    waiting: current.filter((c) => c.rowId === typing)
-  };
-}
-var toggled = (list, x) => list.includes(x) ? list.filter((y) => y !== x) : [...list, x];
-function withChange(ui, c) {
-  if ("showOptions" in c)
-    return { ...ui, optionsShown: toggled(ui.optionsShown, c.showOptions) };
-  if ("closedFold" in c)
-    return { ...ui, unfolded: toggled(ui.unfolded, c.closedFold) };
-  if ("earlier" in c)
-    return { ...ui, closedAll: [...ui.closedAll, c.earlier] };
-  if ("toggleFold" in c)
-    return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) };
-  return withSelected({ ...ui, tab: "needsYou" }, c.showAsk);
-}
+var isFieldDrawn = (typing, isHelpShown) => typing !== null && !isHelpShown;
 
 // src/press-file.ts
 var pressPath = (appHome, sessionId, pressId) => `${pressFolder(appHome, sessionId)}/${pressId}.json`;
@@ -5020,16 +5019,6 @@ function pressFileText(id, pressedAt, press, holds, result = null) {
 }
 
 // src/collapse.ts
-var COLLAPSE_WAIT_MS = 30000;
-var isShown = (s, row, c) => c.isCollapsed ? s.collapsed[row]?.at === c.at : s.collapsed[row] === undefined;
-function withCollapses(read, collapses, now) {
-  if (read?.is !== "read")
-    return { read, collapses };
-  const isWaiting = (row, c) => now - c.at < COLLAPSE_WAIT_MS && !isShown(read.session, row, c);
-  const waiting = read.savesCollapses ? Object.fromEntries(Object.entries(collapses).filter(([row, c]) => isWaiting(row, c))) : collapses;
-  const session = Object.entries(waiting).reduce((s, [row, c]) => withCollapse(s, row, c.isCollapsed, c.at), read.session);
-  return { read: { ...read, session }, collapses: waiting };
-}
 async function writeCollapse(io, to, read, row, c) {
   if (!read.savesCollapses)
     return;
@@ -5039,92 +5028,12 @@ async function writeCollapse(io, to, read, row, c) {
     await io.wake(read.envelope.terminal, id);
 }
 
-// ../hooks/fold-all.ts
-var statusFoldsOf = (view) => {
-  const page = view.statusPage;
-  const milestones = page.goal?.milestones ?? [];
-  const rows = [...milestones.flatMap((m) => m.rows), ...page.rows];
-  const listed = rows.flatMap((r) => r.kind === "done-fold" || r.kind === "counts" ? [r, ...r.rows] : [r]);
-  const foldIds = [
-    ...page.goal?.milestonesFold ? [page.goal.milestonesFold.id] : [],
-    ...milestones.flatMap((m) => m.foldId === null ? [] : [m.foldId]),
-    ...listed.filter((r) => r.kind === "done-fold" || r.kind === "counts").map((r) => r.id)
-  ];
-  const parentIds = [
-    ...milestones.filter((m) => m.foldCount > 0).map((m) => m.id),
-    ...listed.filter((r) => r.kind === "subject" && r.foldCount > 0).map((r) => r.id)
-  ];
-  return { statusFolds: [...new Set(foldIds)], parents: [...new Set(parentIds)] };
-};
-function tabFolds(view, tab) {
-  const none = { closed: [], statusFolds: [], parents: [], rows: [] };
-  if (tab === "overview")
-    return { ...none, ...statusFoldsOf(view) };
-  if (tab === "prs")
-    return { ...none, rows: prRowWaits(openPrViews(view.prs.drawn), view.lastActions).map((r) => r.id) };
-  const live = new Set((tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows).filter((r) => r.state.is !== "settled").map((r) => r.id));
-  const closed = tab === "needsYou" ? NEEDS_YOU_GROUPS.filter((g) => view.needsYou.closed[g.list].length > 0).map((g) => g.kind) : Object.keys(FINDING_GROUPS).filter((kind) => view.findings.closed.some((f) => f.kind === kind));
-  return {
-    ...none,
-    closed,
-    rows: listWaits(view)[tab].flatMap((r) => live.has(r.id) ? [r.id] : [])
-  };
-}
-function isAnyFoldOpen(folds, state) {
-  const isOpen = (id) => !state.collapsed.includes(id);
-  return folds.closed.some((k) => state.unfolded.includes(k)) || folds.statusFolds.some((id) => state.statusUnfolded.includes(id)) || folds.parents.some(isOpen) || folds.rows.some(isOpen);
-}
-function foldAll(folds, state, isOpening) {
-  const set = (list, these) => isOpening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
-  const collapsible = [...folds.parents, ...folds.rows];
-  return {
-    unfolded: set(state.unfolded, folds.closed),
-    statusUnfolded: set(state.statusUnfolded, folds.statusFolds),
-    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === isOpening ? [{ id, isCollapsed: !isOpening }] : [])
-  };
-}
-function foldAllOn(view, tab, open, isOpening) {
-  const folds = tabFolds(view, tab);
-  const state = { ...open, collapsed: view.collapsed };
-  return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
-}
-
-// src/fold-all.ts
-function foldClickOpens(does, ui) {
-  if (does.is === "collapse")
-    return !does.isCollapsed;
-  if (does.is !== "view")
-    return null;
-  if ("closedFold" in does.change)
-    return !ui.unfolded.includes(does.change.closedFold);
-  if ("toggleFold" in does.change)
-    return !ui.statusUnfolded.includes(does.change.toggleFold);
-  return null;
-}
-function foldAllIn(look, isOpening, cx) {
-  if (look.view === null)
-    return;
-  const change = foldAllOn(look.view, look.ui.tab, look.ui, isOpening);
-  const isTypingFolded = change.collapses.some((c) => c.isCollapsed && c.id === look.ui.typing);
-  look.ui = {
-    ...look.ui,
-    unfolded: change.unfolded,
-    statusUnfolded: change.statusUnfolded,
-    closedAll: look.ui.closedAll.filter((k) => change.unfolded.includes(k)),
-    ...isTypingFolded && { typing: null }
-  };
-  for (const c of change.collapses)
-    look.collapse(c.id, c.isCollapsed, cx, false);
-  cx.notify();
-}
-function foldClick(look, id, isCollapsed, cx, isAll = false) {
-  if (isAll)
-    return foldAllIn(look, !isCollapsed, cx);
-  if (isCollapsed && isGuarded(look.clickedOpenAt, Date.now()))
-    return;
-  if (!isCollapsed)
-    look.clickedOpenAt = Date.now();
-  look.collapse(id, isCollapsed, cx, true);
+// src/blocks.ts
+var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
+var isOpenRow = (r) => r.isSelected && !r.isCollapsed;
+var agedText = (a, now) => `${a.lead}${DOT}${shortAgo(now - a.at)}`;
+function emptyBlock(tab, empty, parts = null) {
+  return { kind: "empty", id: `empty ${tab}`, empty: { title: empty.title, hint: empty.hint }, under: parts };
 }
 
 // src/held-line.ts
@@ -5260,7 +5169,7 @@ var ROW_STATE_MS = Object.fromEntries(Object.entries(ROW_FADE_MS).map(([state, f
 function isMoving(state) {
   return ROW_STATE_MS[state] > 0;
 }
-function stepRow2(track, target, now, isNew = false, isReduced = false) {
+function stepRow(track, target, now, isNew = false, isReduced = false) {
   const form = target === "undoing" ? "settled" : target;
   if (!track) {
     if (isNew && !isReduced && form !== "gone")
@@ -5457,6 +5366,25 @@ function opacityAt(steps, now) {
   const share = step.ms > 0 ? Math.min(1, Math.max(0, (now - step.at) / step.ms)) : 1;
   return step.from + (step.to - step.from) * easeOut(share);
 }
+
+// ../hooks/layout.ts
+var SPACE_UNIT = 4;
+var LINE_PT = 5 * SPACE_UNIT;
+var INSIDE_GAP_PT = 0;
+var LIST_GAP_PT = SPACE_UNIT;
+var ITEM_GAP_PT = 3 * SPACE_UNIT;
+var CHILD_GAP_PT = 2 * SPACE_UNIT;
+var HEAD_GAP_PT = 2 * SPACE_UNIT;
+var LIST_MARGIN_PT = SPACE_UNIT;
+var CONTROL_GAP_PT = 2 * SPACE_UNIT;
+var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
+var BUTTON_BORDER_PT = 1;
+var SECTION_GAP_PT = 6 * SPACE_UNIT;
+var EDGE_PT = 4 * SPACE_UNIT;
+var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
+var MARK_PT = 6 * SPACE_UNIT;
+var ROW_PAD_PT = ITEM_GAP_PT / 2;
+var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
 
 // src/title-motion.ts
 var wraps = (height) => height !== undefined && height > LINE_PT + 0.5;
@@ -5690,7 +5618,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const drawn = waitsForLeave ? old.block : waitsForClose ? { ...old.block, isSelected: true, isCollapsed: true } : b;
     if (waitsForLeave || waitsForClose)
       waiting.set(b.id, drawn);
-    const track = stepRow2(old?.track, targetOf(drawn), now, isMoved || !isFirst && !wasDrawn.has(b.id));
+    const track = stepRow(old?.track, targetOf(drawn), now, isMoved || !isFirst && !wasDrawn.has(b.id));
     if (track)
       add(drawn, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : old?.springId ?? null);
   }
@@ -5701,7 +5629,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     if (!old || copyId === undefined && (isDrawn.has(id) || rows.has(id)))
       return;
     const isGliding = old.glide !== null && now < old.glide.endsAt;
-    const track = stepRow2(old.track, "gone", now) ?? (isGliding ? old.track : null);
+    const track = stepRow(old.track, "gone", now) ?? (isGliding ? old.track : null);
     if (!track)
       return;
     const block = copyId === undefined ? old.block : { ...old.block, id: copyId };
@@ -5749,6 +5677,74 @@ function placeAfter(shown, above) {
       return at + 1;
   }
   return 0;
+}
+
+// src/time-left.ts
+function timeLeftShare(runsOutAt, now) {
+  return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
+}
+var TIME_LEFT_STEP_MS = 250;
+function timeLeftOf(b, drawn, now) {
+  if (b.runsOutAt === undefined || b.isHidden)
+    return null;
+  const was = drawn.get(b.id);
+  if (b.isOut)
+    return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
+  return b.runsOutAt > now ? { is: "emptying" } : null;
+}
+var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined && !b.isHidden);
+function timeLeftDraws(blocks, drawn, now) {
+  return new Map(timedButtons(blocks).flatMap((b) => {
+    const left = timeLeftOf(b, drawn, now);
+    return left ? [[b.id, left]] : [];
+  }));
+}
+function timeLeftNextAt(blocks, now) {
+  const ends = timedButtons(blocks).filter((b) => !b.isOut && (b.runsOutAt ?? 0) > now).map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS));
+  return ends.length > 0 ? Math.min(...ends) : null;
+}
+
+// src/wake.ts
+function nextDrawAt(now, moved) {
+  const isStarting = [...moved.motion.values()].some((m) => m.isStart);
+  const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, timeLeftNextAt(moved.blocks, now)].filter((at) => at !== null);
+  return wakeAt.length === 0 ? null : Math.min(...wakeAt);
+}
+
+// src/paint-blocks.ts
+import { div as div14 } from "gpui-kit";
+import { h_flex as h_flex9, v_flex as v_flex6 } from "gpui-base";
+
+// ../hooks/row-parts.ts
+var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
+var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
+var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
+var TITLE_PARTS = ["title", "titleStatus"];
+var gap = (step, rows = 0) => ({ step, rows });
+var UNDER_TITLE = gap("inside");
+var UNDER_TEXT = gap("control", 1);
+var GAP_ABOVE = {
+  titleStatus: () => UNDER_TITLE,
+  holdsUp: () => UNDER_TITLE,
+  context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
+  earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
+  detail: () => UNDER_TITLE,
+  file: (above) => above === "detail" ? gap("list") : UNDER_TITLE,
+  answer: (above) => TITLE_PARTS.includes(above) ? gap("control") : above === "answer" || above === "note" ? gap("item") : gap("child"),
+  note: () => gap("list"),
+  answers: (above) => TITLE_PARTS.includes(above) ? gap("control") : gap("child"),
+  reason: () => gap("list"),
+  status: () => UNDER_TEXT,
+  buttons: (above) => above === "status" ? gap("list") : UNDER_TEXT,
+  field: (above) => above === "status" ? gap("list") : UNDER_TEXT,
+  result: () => gap("list"),
+  copy: () => gap("control")
+};
+function partGap(above, below) {
+  return GAP_ABOVE[below](above);
+}
+function partPt(above, below) {
+  return STEP_PT[partGap(above, below).step];
 }
 
 // ../hooks/tones.ts
@@ -5856,123 +5852,6 @@ var onSize = (view, key, read) => (size, cx) => {
   view[key] = value;
   cx.notify();
 };
-
-// src/paint-title-tint.ts
-var FADE_STEP_MS = NEW_FADE_MS / NEW_STEPS;
-function nextStepAt(row, now) {
-  if (row.shownAt === null)
-    return null;
-  const fadeAt = row.shownAt + NEW_HOLD_MS;
-  const endAt = fadeAt + NEW_FADE_MS;
-  if (now >= endAt)
-    return null;
-  if (now < fadeAt)
-    return fadeAt;
-  return Math.min(endAt, fadeAt + (Math.floor((now - fadeAt) / FADE_STEP_MS) + 1) * FADE_STEP_MS);
-}
-function titleTintNextAt(rows, blocks, seen, now) {
-  const closed = blocks.flatMap((b) => b.kind === "row" && b.settled?.tint ? [closedTitleClock(seen, b.id, b.settled.at, now)] : []);
-  const at = [...rows.values(), ...closed].flatMap((r) => r ? [nextStepAt(r, now)] : []).filter((a) => a !== null);
-  return at.length > 0 ? Math.min(...at) : null;
-}
-function tintOf(r, p) {
-  const { t } = p;
-  const clock = r.settled ? closedTitleClock(p.closedSeen, r.id, r.settled.at, p.now) : newRowIn(p.newRows, r.id, p.tab);
-  const tone = r.settled ? r.settled.tint ? colorOf(t, r.settled.tint) : null : t.ansi4;
-  const share = steppedTitleTint(clock, p.now);
-  return tone && share > 0 ? { tone, share } : null;
-}
-function titleColorOf(r, p) {
-  const own = r.isDim ? p.t.muted : p.t.foreground;
-  const tint = tintOf(r, p);
-  return tint ? mixInto(tint.tone, own, tint.share) : own;
-}
-function markTintOf(r, p) {
-  const tint = tintOf(r, p);
-  if (!tint)
-    return null;
-  const own = r.mark === null || r.mark.tone === null ? p.t.muted : colorOf(p.t, r.mark.tone);
-  return mixInto(tint.tone, own, tint.share);
-}
-
-// src/time-left.ts
-function timeLeftShare(runsOutAt, now) {
-  return Math.min(1, Math.max(0, (runsOutAt - now) / SETTLED_MS));
-}
-var TIME_LEFT_STEP_MS = 250;
-function timeLeftOf(b, drawn, now) {
-  if (b.runsOutAt === undefined || b.isHidden)
-    return null;
-  const was = drawn.get(b.id);
-  if (b.isOut)
-    return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
-  return b.runsOutAt > now ? { is: "emptying" } : null;
-}
-var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined && !b.isHidden);
-function timeLeftDraws(blocks, drawn, now) {
-  return new Map(timedButtons(blocks).flatMap((b) => {
-    const left = timeLeftOf(b, drawn, now);
-    return left ? [[b.id, left]] : [];
-  }));
-}
-function timeLeftNextAt(blocks, now) {
-  const ends = timedButtons(blocks).filter((b) => !b.isOut && (b.runsOutAt ?? 0) > now).map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS));
-  return ends.length > 0 ? Math.min(...ends) : null;
-}
-
-// src/wake.ts
-function nextDrawAt(now, ui, screen, moved) {
-  const isStarting = [...moved.motion.values()].some((m) => m.isStart);
-  const timed = earliestOf([
-    timeLeftNextAt(moved.blocks, now),
-    titleTintNextAt(ui.newRows, moved.blocks, ui.closedSeen, now)
-  ]);
-  const wakeAt = [
-    isStarting ? now + NEXT_FRAME_MS : null,
-    moved.nextAt,
-    screen.foldAt,
-    screen.undoPlaceEndsAt,
-    screen.timedChangeAt,
-    timed
-  ].filter((at) => at !== null);
-  return wakeAt.length === 0 ? null : Math.min(...wakeAt);
-}
-
-// src/paint-blocks.ts
-import { div as div14 } from "gpui-kit";
-import { h_flex as h_flex9, v_flex as v_flex6 } from "gpui-base";
-
-// ../hooks/row-parts.ts
-var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
-var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
-var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
-var TITLE_PARTS = ["title", "titleStatus"];
-var gap = (step, rows = 0) => ({ step, rows });
-var UNDER_TITLE = gap("inside");
-var UNDER_TEXT = gap("control", 1);
-var GAP_ABOVE = {
-  titleStatus: () => UNDER_TITLE,
-  holdsUp: () => UNDER_TITLE,
-  context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
-  earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
-  detail: () => UNDER_TITLE,
-  file: (above) => above === "detail" ? gap("list") : UNDER_TITLE,
-  answer: (above) => TITLE_PARTS.includes(above) ? gap("control") : above === "answer" || above === "note" ? gap("item") : gap("child"),
-  note: () => gap("list"),
-  answers: (above) => TITLE_PARTS.includes(above) ? gap("control") : gap("child"),
-  reason: () => gap("list"),
-  status: () => UNDER_TEXT,
-  buttons: (above) => above === "status" ? gap("list") : UNDER_TEXT,
-  field: (above) => above === "status" ? gap("list") : UNDER_TEXT,
-  result: () => gap("list"),
-  copy: () => gap("control")
-};
-function partGap(above, below) {
-  return GAP_ABOVE[below](above);
-}
-function partPt(above, below) {
-  return STEP_PT[partGap(above, below).step];
-}
 
 // src/paint-field.ts
 import { div as div4 } from "gpui-kit";
@@ -6384,6 +6263,27 @@ function scrollFadeEl(t, edge) {
   return window.paint_path(FILL, fade).absolute().left(0).right(0).when(isTop, (e) => e.top(0).h(EDGE)).when(!isTop, (e) => e.bottom(0).h(END_SPACE));
 }
 
+// src/paint-title-tint.ts
+function tintOf(r, p) {
+  const { t } = p;
+  const clock = r.settled ? closedTitleClock(p.closedSeen, r.id, r.settled.at, p.now) : newRowIn(p.newRows, r.id, p.tab);
+  const tone = r.settled ? r.settled.tint ? colorOf(t, r.settled.tint) : null : t.ansi4;
+  const share = steppedTitleTint(clock, p.now);
+  return tone && share > 0 ? { tone, share } : null;
+}
+function titleColorOf(r, p) {
+  const own = r.isDim ? p.t.muted : p.t.foreground;
+  const tint = tintOf(r, p);
+  return tint ? mixInto(tint.tone, own, tint.share) : own;
+}
+function markTintOf(r, p) {
+  const tint = tintOf(r, p);
+  if (!tint)
+    return null;
+  const own = r.mark === null || r.mark.tone === null ? p.t.muted : colorOf(p.t, r.mark.tone);
+  return mixInto(tint.tone, own, tint.share);
+}
+
 // src/paint-title-text.ts
 import { div as div10 } from "gpui-kit";
 function titleTextEl(r, p, color) {
@@ -6664,44 +6564,39 @@ var notAppliedText = (why) => ({
   tone: "error",
   source: { is: "notSent", reason: why, retry: null }
 });
+var UNCONFIRMED = { error: null, note: null, isUnconfirmed: true };
+var STALE = { error: null, note: "stale", isUnconfirmed: false };
+function appliedOutcome(view, rowId) {
+  const delivery = view.lastActions[rowId]?.delivery;
+  return {
+    error: delivery?.state === "failed" ? delivery.reason : null,
+    note: null,
+    isUnconfirmed: delivery?.state === "unconfirmed"
+  };
+}
 function settleOuts(outs, view, lastPress, now) {
-  const settled = { outs: [], notes: {}, lines: {}, toClaim: [] };
+  const settled = { outs: [], lines: {}, ended: [], toClaim: [] };
+  const end = (out, outcome) => settled.ended.push({ uiPressId: out.uiPressId, outcome });
   for (const out of outs) {
     if (lastPress?.id === out.pressId) {
-      if (lastPress.outcome === "stale")
-        settled.notes[out.rowId] = { note: "stale", at: now };
+      end(out, lastPress.outcome === "stale" ? STALE : appliedOutcome(view, out.rowId));
       continue;
     }
-    if (rowSignature(view, out.rowId) !== out.before)
+    if (rowSignature(view, out.rowId) !== out.before) {
+      end(out, appliedOutcome(view, out.rowId));
       continue;
+    }
     const isPassed = lastPress !== null && lastPress.id > out.pressId;
-    if (out.isWritten && out.isTaken && isPassed)
+    const isGivenUp = out.waitingSince !== null && now - out.waitingSince >= GIVE_UP_MS;
+    if (out.isWritten && out.isTaken && (isPassed || isGivenUp)) {
       settled.lines[out.rowId] = unconfirmedLine(out, now);
-    else if (!out.isWritten || out.waitingSince === null || now - out.waitingSince < GIVE_UP_MS)
+      end(out, UNCONFIRMED);
+    } else if (!out.isWritten || !isGivenUp)
       settled.outs.push(out);
-    else if (out.isTaken)
-      settled.lines[out.rowId] = unconfirmedLine(out, now);
     else
       settled.toClaim.push(out);
   }
   return settled;
-}
-var lastActionKey = (view, rowId) => JSON.stringify(view.lastActions[rowId] ?? null);
-function isSentConfirmed(sent, view, lastPress) {
-  const isNamed = lastPress?.id === sent.pressId;
-  const isPassed = lastPress !== null && lastPress.id > sent.pressId;
-  if (!isNamed && !isPassed)
-    return null;
-  const delivery = view.lastActions[sent.rowId]?.delivery;
-  const isChanged = lastActionKey(view, sent.rowId) !== sent.lastBefore;
-  const isStale = isNamed && lastPress?.outcome === "stale";
-  if (isChanged && !isStale && delivery?.state === "queued")
-    return null;
-  return isChanged && isPressConfirmed({
-    error: delivery?.state === "failed" ? delivery.reason : null,
-    note: isStale ? "stale" : null,
-    isUnconfirmed: delivery?.state === "unconfirmed"
-  });
 }
 function nextOutCheckAt(outs, now) {
   const times = outs.flatMap((out) => out.waitingSince === null ? [] : [out.waitingSince + REREAD_AFTER_MS, out.waitingSince + GIVE_UP_MS]);
@@ -6772,17 +6667,18 @@ var claimedPath = (path) => `${path}.withdrawn`;
 class PressQueue {
   io;
   outs = [];
-  notes = {};
   lines = {};
-  sentTexts = [];
+  ended = [];
   constructor(io) {
     this.io = io;
   }
-  send(target, press, effects, label, kind, reply) {
+  send(target, press, o) {
+    const { effects, label, kind, reply, uiPressId } = o;
     const rowId = pressRowId(press);
     const refuse = (reason) => {
       this.lines[rowId] = notSentLine(reason);
-      return { is: "refused", reason };
+      this.ended.push({ uiPressId, outcome: { error: reason, note: null, isUnconfirmed: false } });
+      return { is: "refused" };
     };
     if (target === null)
       return refuse("this terminal has no inbox to send to.");
@@ -6793,6 +6689,7 @@ class PressQueue {
     const pending = pendingOf(effects, now);
     const out = {
       pressId,
+      uiPressId,
       rowId,
       path: pressPath(target.appHome, target.sessionId, pressId),
       action: outAction2(press),
@@ -6807,13 +6704,7 @@ class PressQueue {
       isTaken: false
     };
     this.outs = [...this.outs, out];
-    if ("id" in press && press.action === "type")
-      this.sentTexts = [
-        ...this.sentTexts,
-        { pressId, rowId, text: press.text, lastBefore: lastActionKey(target.view, rowId) }
-      ];
     delete this.lines[rowId];
-    delete this.notes[rowId];
     return { is: "sent", finish: (runHere, ran) => this.finish(out, now, target, press, effects, runHere, ran) };
   }
   async finish(out, pressedAt, target, press, effects, runHere, ran) {
@@ -6827,50 +6718,45 @@ class PressQueue {
     const failed = await this.io.write(out.path, text);
     if (failed !== null) {
       this.outs = this.outs.filter((o) => o !== out);
-      this.forget(out);
-      this.lines[out.rowId] = notAppliedText(failed);
+      this.endRefused(out, notAppliedText(failed));
       return;
     }
     out.isWritten = true;
     out.waitingSince = this.io.now();
     await this.io.wake(target.terminal, out.pressId);
   }
-  forget(out) {
-    this.sentTexts = this.sentTexts.filter((s) => s.pressId !== out.pressId);
+  endRefused(out, line) {
+    this.lines[out.rowId] = line;
+    const error = line.source.is === "notSent" ? line.source.reason : line.text;
+    this.ended.push({ uiPressId: out.uiPressId, outcome: { error, note: null, isUnconfirmed: false } });
   }
   isAwaiting() {
-    return this.outs.length > 0 || this.sentTexts.length > 0;
+    return this.outs.length > 0;
   }
-  answerSentTexts(view, lastPress) {
-    const isUntaken = (s) => this.outs.some((o) => o.pressId === s.pressId && !o.isTaken);
-    const answers = this.sentTexts.map((sent) => ({
-      sent,
-      isConfirmed: isUntaken(sent) ? null : isSentConfirmed(sent, view, lastPress)
-    }));
-    this.sentTexts = answers.flatMap((a) => a.isConfirmed === null ? [a.sent] : []);
-    return answers.flatMap((a) => a.isConfirmed ? [a.sent] : []);
+  holdsPresses() {
+    return this.outs.length > 0 || this.ended.length > 0;
+  }
+  takeEnded() {
+    return this.ended.splice(0);
   }
   async settle(view, lastPress, agent) {
     for (const out of this.outs)
       if (out.isWritten)
         out.isTaken = await this.io.isGone(out.path);
-    const confirmed = this.answerSentTexts(view, lastPress);
     const now = this.io.now();
     const settled = settleOuts(this.outs, view, lastPress, now);
     this.outs = settled.outs;
-    this.notes = { ...this.notes, ...settled.notes };
     this.lines = { ...this.lines, ...settled.lines };
+    this.ended.push(...settled.ended);
     for (const out of settled.toClaim) {
       if (await this.io.claim(out.path)) {
-        this.forget(out);
-        this.lines[out.rowId] = notAppliedLine(out, agent);
+        this.endRefused(out, notAppliedLine(out, agent));
         continue;
       }
       out.isTaken = true;
       out.waitingSince = this.io.now();
       this.outs = [...this.outs, out];
     }
-    return confirmed;
   }
   nextCheckAt() {
     return nextOutCheckAt(this.outs, this.io.now());
@@ -6920,6 +6806,847 @@ function herdrIo({ exec, hc, readTextFile, writeTextFile, home }) {
   return { queueIo, hereIo };
 }
 
+// ../hooks/empty-tab.ts
+var EMPTY_TITLES = {
+  needsYou: NOTHING_NEEDED_TEXT,
+  findings: "No findings yet",
+  prs: "No PRs",
+  prsFetching: "Checking for PRs…"
+};
+var EMPTY_STATUS_TEXT = {
+  title: screenTabOf("overview").label,
+  hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
+};
+function prsEmptyHint(place) {
+  return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
+}
+function emptyTab(view, look) {
+  if (look.tab === "overview") {
+    const page = view.statusPage;
+    if (!page.isEmpty)
+      return null;
+    return {
+      ...EMPTY_STATUS_TEXT,
+      under: {
+        is: "set-goal",
+        keys: goalKeyGroups(page).heading,
+        offerKeys: goalKeyGroups(page).offer,
+        isFieldOpen: look.isGoalFieldOpen,
+        suggestion: page.suggestedGoal
+      }
+    };
+  }
+  if (look.tab === "prs") {
+    if (look.drawn > 0)
+      return null;
+    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure };
+    const { refresh } = view.prs;
+    return {
+      title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
+      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
+      under: refresh ? { is: "pr-refresh", refresh } : null
+    };
+  }
+  if (look.drawn > 0 || look.hasBlocker)
+    return null;
+  if (look.tab === "needsYou" && look.hostText)
+    return { ...look.hostText, under: null };
+  const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
+  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab];
+  return { title, hint, under: null };
+}
+
+// src/draw-prs.ts
+var LOOK = "herdr";
+var PLACE = "session";
+var PR_TONE = {
+  needsYou: "needsYou",
+  success: "success",
+  findings: "findings",
+  error: "error"
+};
+function prButton(pr, a, id) {
+  const effect = pr ? prPressEffect(pr, a.press) : null;
+  const does = { is: "press", press: a.press, effects: effect ? [effect] : [], kind: a.kind };
+  const b = button(id, a.label, a.emphasis, does, a.hotkey);
+  return { ...b, isOut: a.isOut };
+}
+function prFeedback(screen, id) {
+  const { view, now } = screen;
+  const f = feedbackOf(id, view.lastActions[id], undefined, view.turns, now);
+  if (!f)
+    return null;
+  const tone = feedbackTone(f);
+  if (!hasAge(f))
+    return { text: feedbackText(f, LOOK), tone, source: f };
+  const aged = { lead: markedFeedbackText(f, false, LOOK), at: f.at };
+  return { text: agedText(aged, now), tone, source: f, aged };
+}
+var markOf = (m) => ({
+  text: m.text,
+  tone: m.tone,
+  isRunning: m.isRunning
+});
+function threadRow(screen, pr, t, presses) {
+  const id = prThreadId(pr, t);
+  const text = threadRowText(pr, t, screen.view.lastActions);
+  const { rest } = commentParts(t.body);
+  const { keys, more } = splitFollowUps(threadActions(pr, t, presses));
+  const reply = t.reply ? `@${t.reply.author}: ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}` : null;
+  return {
+    kind: "row",
+    id,
+    depth: 0,
+    mark: markOf(text.mark),
+    title: text.title,
+    age: t.at === null ? null : shortAgo(screen.now - t.at),
+    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: "muted", source: null } : null),
+    settled: null,
+    isDim: text.mark.isDone,
+    isSelectable: text.fold === null,
+    body: [
+      ...rest ? [{ part: "detail", text: clipLabel(rest, PR_QUOTE_CHARS), tone: null }] : [],
+      { part: "detail", text: `${threadWhere(t)}${DOT}@${t.author}`, tone: "muted" },
+      ...reply ? [{ part: "detail", text: reply, tone: null }] : []
+    ],
+    buttons: [...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
+    field: null
+  };
+}
+function checkRow(screen, pr, c, presses) {
+  const id = prCheckId(pr, c);
+  const text = checkRowText(pr, c);
+  return {
+    kind: "row",
+    id,
+    depth: 0,
+    mark: markOf(text.mark),
+    title: text.lead ? `${text.lead} / ${text.title}` : text.title,
+    age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
+    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: "muted", source: null } : null),
+    settled: null,
+    isDim: false,
+    isSelectable: text.fold === null,
+    body: [{ part: "detail", text: text.meta, tone: "muted" }],
+    buttons: checkActions(pr, c, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
+    field: null
+  };
+}
+function settledPr(d) {
+  const { pr, state } = d;
+  const id = prMarkId(pr.ref);
+  const undo = state.canUndo ? [
+    {
+      ...button(`${id} undo`, ROW_COPY.undo, "quiet", {
+        is: "press",
+        press: { action: "pr-undo", ref: pr.ref },
+        effects: [],
+        kind: null
+      }),
+      runsOutAt: state.at + SETTLED_MS
+    }
+  ] : [];
+  const mark = settledMark(state);
+  return {
+    kind: "row",
+    id,
+    depth: 0,
+    mark: { text: mark.text, tone: mark.tone ?? "muted", isRunning: mark.isRunning },
+    title: pr.title,
+    age: `#${pr.number}`,
+    feedback: null,
+    settled: { label: settledLabel(state.label, state.delivery, state.reply), tone: "muted", tint: null, at: state.at },
+    isDim: true,
+    isSelectable: false,
+    isSelected: false,
+    body: [],
+    buttons: undo,
+    field: null
+  };
+}
+function prBlocks(screen, d, presses, selected) {
+  if (d.state.is === "settled")
+    return [settledPr({ ...d, state: d.state })];
+  const { pr } = d;
+  const { lastActions } = screen.view;
+  const isSent = threadSentIn(lastActions);
+  const { status, head, unlisted } = readiness(pr, isSent, screen.agent);
+  const tone = PR_TONES[status];
+  const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions);
+  const groups = prBlockRows(pr, false, {
+    thread: (t) => threadRow(screen, pr, t, presses),
+    check: (c) => checkRow(screen, pr, c, presses)
+  });
+  const rowsOf = (title, rows, key) => rows.length === 0 ? [] : [
+    {
+      kind: "heading",
+      id: `${pr.ref} ${key}`,
+      text: title,
+      count: rows.length,
+      mark: null,
+      buttons: [],
+      isLabel: false
+    },
+    ...rows.map((r) => {
+      const isSelected = r.isSelectable && r.id === selected;
+      const isCollapsed = screen.view.collapsed.includes(r.id);
+      const isOpen = isSelected && !isCollapsed;
+      return {
+        ...r,
+        isSelected,
+        ...isCollapsed && { isCollapsed },
+        body: isOpen ? r.body : [],
+        buttons: isOpen ? r.buttons : []
+      };
+    })
+  ];
+  return [
+    {
+      kind: "pr",
+      id: prMarkId(pr.ref),
+      number: `#${pr.number}`,
+      title: pr.title,
+      status: { text: head, tone: tone ? PR_TONE[tone] : "muted" },
+      unlisted,
+      error: pr.error ? prRefreshFailedText(pr.error) : null,
+      buttons: prBlockActions(pr, isSent, screen.view.prs.branchRef, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${n}`)),
+      feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null
+    },
+    ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, "threads"),
+    ...rowsOf(PR_GROUP_TITLES.checks, groups.checks, "checks"),
+    ...rowsOf(PR_GROUP_TITLES.cancelled, groups.cancelled, "cancelled")
+  ];
+}
+var note = (id, text, tone) => ({
+  kind: "note",
+  id,
+  text,
+  tone,
+  isHead: true,
+  isAtEdge: false,
+  isStrong: false,
+  depth: 0
+});
+function refreshParts(screen, refresh = screen.view.prs.refresh) {
+  if (!refresh)
+    return null;
+  const buttons = refresh.actions.map((a, n) => prButton(null, a, `refresh ${n}`));
+  const feedback = refresh.showsPress ? prFeedback(screen, PR_REFRESH_ID) : null;
+  return { text: refresh.text, buttons, feedback };
+}
+var refreshLine = (screen) => {
+  const refresh = refreshParts(screen);
+  return refresh ? [{ kind: "line", id: PR_REFRESH_ID, under: null, ...refresh }] : [];
+};
+function noticeBlocks(screen, notice) {
+  if (!notice)
+    return refreshLine(screen);
+  const banner = bannerOf(notice.kind, notice.text);
+  const refresh = refreshParts(screen);
+  if (!refresh || refresh.text !== null)
+    return [{ kind: "banner", id: "gh notice", banner, buttons: [], feedback: null }, ...refreshLine(screen)];
+  return [{ kind: "banner", id: PR_REFRESH_ID, banner, buttons: refresh.buttons, feedback: refresh.feedback }];
+}
+function orderLines(screen) {
+  const order = screen.view.prs.order;
+  if (!order)
+    return [];
+  const changed = order.changed;
+  const lines = [
+    { kind: "line", id: "pr order", text: order.title, under: order.why, buttons: [], feedback: null }
+  ];
+  if (!changed)
+    return lines;
+  const buttons = changed.actions.map((a, n) => prButton(null, a, `order ${n}`));
+  const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null;
+  return [...lines, { kind: "line", id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }];
+}
+function clearLine(screen) {
+  const buttons = screen.view.prs.clear.map((a, n) => prButton(null, a, `clear ${n}`));
+  return buttons.length === 0 ? [] : [{ kind: "line", id: CLEAR_FINISHED_ID, text: null, under: null, buttons, feedback: null }];
+}
+var ruleBetween = (ref) => ({ kind: "rule", id: `rule ${ref}`, text: null });
+function prTabBlocks(screen, selected) {
+  const { view } = screen;
+  const prs = view.prs;
+  const gh = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure };
+  const empty = emptyTab(view, {
+    tab: "prs",
+    place: PLACE,
+    drawn: prs.drawn.length,
+    isFetchingPrs: screen.isFetchingPrs,
+    isGhMissing: screen.isGhMissing
+  });
+  if (empty) {
+    const refresh = empty.under?.is === "pr-refresh" ? refreshParts(screen, empty.under.refresh) : null;
+    return [emptyBlock("prs", empty, refresh && { id: PR_REFRESH_ID, ...refresh, field: null })];
+  }
+  const presses = { lastActions: view.lastActions, turns: view.turns, now: screen.now };
+  const notice = ghNoticeOf(gh);
+  const othersStart = otherPrsStart(prs.drawn);
+  const caption = { kind: "caption", id: "other prs", text: OTHER_PRS_TEXT };
+  const above = (d, n) => [
+    ...n > 0 ? [ruleBetween(d.pr.ref)] : [],
+    ...d === othersStart ? [caption] : []
+  ];
+  return [
+    ...noticeBlocks(screen, notice),
+    ...clearLine(screen),
+    ...orderLines(screen),
+    ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, selected)]),
+    ...prs.olderText ? [ruleBetween("older prs"), note("older prs", prs.olderText, "muted")] : []
+  ];
+}
+
+// ../hooks/status-gaps.ts
+function isOneLineStatusRow(r) {
+  if (r.kind !== "subject")
+    return true;
+  return !r.waitsOn && !r.text && !r.merged && !r.was && statusKeyPlan(r).length === 0;
+}
+function statusGaps(rows) {
+  return rows.map((r, n) => {
+    const prev = rows[n - 1];
+    if (prev === undefined || prev.kind === "part" || r.kind === "part")
+      return null;
+    const isPairOneLine = isOneLineStatusRow(prev) && isOneLineStatusRow(r);
+    if (r.depth > 0)
+      return isPairOneLine ? LIST_GAP_PT : CHILD_GAP_PT;
+    const itemStart = rows.findLastIndex((p, k) => k < n && p.depth === 0);
+    return isPairOneLine && itemStart === n - 1 ? LIST_GAP_PT : ITEM_GAP_PT;
+  });
+}
+var LATER_PAD_PT = LIST_GAP_PT / 2;
+
+// src/draw-status.ts
+var MERGED_CELLS = 150;
+var toneOf = (t) => t;
+var markOf2 = (mark, tone, isRunning) => ({
+  text: mark,
+  tone: toneOf(tone),
+  isRunning
+});
+function doesOf(k) {
+  const p = k.press;
+  if (p.action === "show-ask")
+    return { is: "view", change: { showAsk: p.askId } };
+  if (p.action === "toggle-fold")
+    return { is: "view", change: { toggleFold: p.foldId } };
+  if (p.action === "toggle-collapse")
+    return { is: "nothing" };
+  if (p.action === "type-goal")
+    return { is: "type", rowId: GOAL_KEYS_ID, text: p.text, hint: GOAL_FIELD.placeholder };
+  return { is: "press", press: { action: p.action, id: GOAL_KEYS_ID }, effects: [], kind: k.kind };
+}
+function keyButtons(id, keys, from = 0) {
+  return keys.map((k, n) => button(`${id} ${from + n}`, k.label, k.emphasis, doesOf(k)));
+}
+function foldOf(p, isCollapsed) {
+  if (p.foldCount === 0)
+    return {};
+  const isFolded = isParentCollapsed(p, isCollapsed);
+  const toggle = button(`${p.id} fold`, isFolded ? "Unfold" : "Fold", "quiet", {
+    is: "collapse",
+    id: p.id,
+    isCollapsed: !isFolded
+  });
+  return { fold: { isFolded, count: p.foldCount, toggle } };
+}
+function rowBlocks(row, isUnfolded, isCollapsed) {
+  if (row.kind === "subject") {
+    const under = [
+      row.text,
+      row.merged ? mergedLine(row.merged, (t) => cellWidth(t) <= MERGED_CELLS) : null,
+      row.was ? `${WAS_PREFIX}${row.was}` : null
+    ].filter((l) => l !== null);
+    return [
+      {
+        kind: "status",
+        id: row.id,
+        depth: row.depth,
+        mark: markOf2(row.mark, row.tone, row.isRunning),
+        name: row.name,
+        isBold: false,
+        isMuted: false,
+        stall: row.stall,
+        ...row.waitsOn ? { waitsOn: row.waitsOn } : {},
+        under,
+        buttons: keyButtons(row.id, statusKeyPlan(row)),
+        ...foldOf(row, isCollapsed),
+        ...row.hasChildren && !isCollapsed(row.id) ? { tree: [{ depth: row.depth, is: "down" }] } : {}
+      }
+    ];
+  }
+  if (row.kind === "child")
+    return [
+      {
+        kind: "status",
+        id: row.id,
+        depth: row.depth,
+        mark: markOf2(row.mark, row.tone, row.isRunning),
+        name: row.name,
+        isBold: false,
+        isMuted: true,
+        stall: null,
+        under: row.text ? [row.text] : [],
+        buttons: [],
+        ...row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}
+      }
+    ];
+  if (row.kind === "more")
+    return [{ ...note2(row.id, row.text, "muted"), depth: row.depth, tree: [{ depth: row.depth - 1, is: row.branch }] }];
+  if (row.kind === "part")
+    return [
+      { kind: "gap", id: `gap ${row.id}` },
+      { kind: "rule", id: row.id, text: row.text, ...row.isTitle ? { isTitle: true } : {} },
+      ...row.description ? [{ ...note2(`${row.id} description`, row.description, "muted"), isAtEdge: true }] : []
+    ];
+  if (row.kind === "done-fold" || row.kind === "counts")
+    return [
+      {
+        kind: "fold",
+        id: row.id,
+        depth: row.depth,
+        text: row.kind === "counts" ? countsText(row.counts) : row.text,
+        ...row.kind === "counts" ? {
+          counts: {
+            label: COUNTS_LABEL,
+            items: row.counts.map((c) => ({ mark: markOf2(c.mark, c.tone, false), text: c.text }))
+          }
+        } : {},
+        isOpen: isUnfolded(row.id),
+        change: { toggleFold: row.id }
+      }
+    ];
+  return [
+    {
+      kind: "status",
+      id: row.id,
+      depth: row.depth,
+      mark: markOf2(row.mark, row.tone, false),
+      name: row.text,
+      isBold: false,
+      isMuted: true,
+      stall: null,
+      under: [],
+      buttons: []
+    }
+  ];
+}
+var withGap = (b, gap) => gap != null && (b.kind === "status" || b.kind === "note" || b.kind === "fold") ? { ...b, gapAbove: gap } : b;
+function listBlocks(rows, isUnfolded, isCollapsed) {
+  const gaps = statusGaps(rows);
+  return rows.map((r, n) => rowBlocks(r, isUnfolded, isCollapsed).map((b, k) => k === 0 ? withGap(b, gaps[n]) : b));
+}
+function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
+  const mark = markOf2(m.mark, m.tone, false);
+  const path = { is: "milestone", above: lineAbove, below: m.line };
+  const tree = hasWork && m.line === null ? { tree: [{ depth: 0, is: "down" }] } : {};
+  if (m.foldId !== null)
+    return {
+      kind: "fold",
+      id: m.id,
+      depth: 0,
+      text: m.name,
+      isOpen: isUnfolded(m.foldId),
+      change: { toggleFold: m.foldId },
+      mark,
+      path,
+      ...tree
+    };
+  return {
+    kind: "status",
+    id: m.id,
+    depth: 0,
+    mark,
+    name: m.name,
+    isBold: m.isBold,
+    isMuted: m.isMuted,
+    stall: null,
+    under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
+    buttons: keyButtons(m.id, milestoneKeyPlan(m)),
+    ...foldOf(m, isCollapsed),
+    path,
+    ...tree
+  };
+}
+function jointStroke({ arm, beside }) {
+  if (arm === "elbow")
+    return { depth: 0, is: "last" };
+  if (beside === "connector")
+    return { depth: 0, is: arm === "tee" ? "mid" : "past" };
+  return arm === null ? null : { depth: 0, is: "arm" };
+}
+function besidePath(b, line, joint) {
+  if (b.kind !== "status" && b.kind !== "fold" && b.kind !== "note")
+    return b;
+  const stroke = joint ? jointStroke(joint) : null;
+  return {
+    ...b,
+    ...line === null ? {} : { path: { is: "work", line } },
+    ...stroke ? { tree: [stroke, ...b.tree ?? []] } : {}
+  };
+}
+var note2 = (id, text, tone) => ({
+  kind: "note",
+  id,
+  text,
+  tone,
+  isHead: false,
+  isAtEdge: false,
+  isStrong: false,
+  depth: 0
+});
+var headNote = (id, text, tone) => ({
+  ...note2(id, text, tone),
+  isHead: true,
+  isAtEdge: true
+});
+var headTitle = (id, text) => ({
+  ...note2(id, text, null),
+  isHead: true,
+  isAtEdge: true,
+  isStrong: true
+});
+function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
+  const g = page.goal;
+  const groups = goalKeyGroups(page);
+  const isSuggested = goalField === null && page.suggestedGoal !== null;
+  const heading = {
+    kind: "heading",
+    id: "goal heading",
+    text: g?.label ?? GOAL_HEADING,
+    count: null,
+    mark: g?.mark ? { text: g.mark.mark, tone: "success", isRunning: false } : null,
+    buttons: keyButtons(GOAL_KEYS_ID, groups.heading),
+    isLabel: true
+  };
+  const field = goalField ? [{ kind: "field", id: "goal field", field: goalField, isAtEdge: g?.mark == null }] : [];
+  const suggestion = [
+    {
+      ...headTitle("goal text", suggestedGoalOffer(page.suggestedGoal ?? "")),
+      buttons: keyButtons(GOAL_KEYS_ID, groups.offer, groups.heading.length)
+    }
+  ];
+  if (g === null) {
+    const empty = isSuggested ? suggestion : [headNote("goal text", NO_GOAL_TEXT, "muted")];
+    return [heading, ...goalField ? field : empty];
+  }
+  const atText = (b) => g.mark && b.kind === "note" ? { ...b, isAtEdge: false } : b;
+  const lines = goalField ? field : (isSuggested ? suggestion : [
+    headTitle("goal text", g.text),
+    ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
+    ...g.now ? [headNote("goal now", g.now, "muted")] : [],
+    ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
+  ]).map(atText);
+  const fold = g.milestonesFold;
+  const foldLine = fold ? [
+    {
+      kind: "fold",
+      id: fold.id,
+      depth: 0,
+      text: fold.text,
+      isOpen: isUnfolded(fold.id),
+      change: { toggleFold: fold.id }
+    }
+  ] : [];
+  const shown = shownMilestones(g, isUnfolded);
+  const milestones = shown.flatMap((m, n) => {
+    const rows = milestoneRows(m, isUnfolded, isCollapsed);
+    const joints = workJoints(rows, m.line);
+    return [
+      ...isSpacedAbove(shown, n, isUnfolded, isCollapsed) ? [{ kind: "gap", id: `gap ${m.id}`, ...n > 0 ? { isMilestoneStep: true } : {} }] : [],
+      ...m.startsLater ? [{ kind: "rule", id: "goal later", text: LATER_TEXT }] : [],
+      milestoneBlock(m, shown[n - 1]?.line ?? null, rows.length > 0, isUnfolded, isCollapsed),
+      ...listBlocks(rows, isUnfolded, isCollapsed).map((bs, k) => bs.map((b) => besidePath(b, m.line, joints[k]))).flat()
+    ];
+  });
+  return [heading, ...lines, ...foldLine, ...milestones];
+}
+function statusBlocks(view, ui) {
+  const page = view.statusPage;
+  const { isUnfolded, isCollapsed } = ui;
+  const empty = emptyTab(view, { tab: "overview", isGoalFieldOpen: ui.goalField !== null });
+  if (empty) {
+    const setGoal = empty.under?.is === "set-goal" ? empty.under : null;
+    const parts = setGoal && {
+      id: GOAL_KEYS_ID,
+      text: setGoal.suggestion === null ? null : suggestedGoalOffer(setGoal.suggestion),
+      buttons: setGoal.isFieldOpen ? [] : [
+        ...keyButtons(GOAL_KEYS_ID, setGoal.keys),
+        ...keyButtons(GOAL_KEYS_ID, setGoal.offerKeys, setGoal.keys.length)
+      ],
+      feedback: null,
+      field: setGoal.isFieldOpen ? ui.goalField : null
+    };
+    return [emptyBlock("overview", empty, parts)];
+  }
+  const top = goalBlocks(page, ui);
+  const rows = listBlocks(unfoldedRows(page.rows, isUnfolded, isCollapsed), isUnfolded, isCollapsed).flat();
+  const isGapNeeded = rows.length > 0 && page.rows[0]?.kind !== "part";
+  return isGapNeeded ? [...top, { kind: "gap", id: "gap rows" }, ...rows] : [...top, ...rows];
+}
+
+// src/draw.ts
+var LOOK2 = "herdr";
+var markOf3 = (m) => m ? { text: m.text, tone: m.tone ?? "muted", isRunning: m.isRunning } : null;
+function rowDoes(row, press, kind, agent) {
+  if (press.action === "type")
+    return { is: "type", rowId: row.id, text: "", hint: replyHint(row, agent) };
+  if (press.action === "discard")
+    return { is: "leave", rowId: row.id, isDiscard: true };
+  const step = press.action === "step" ? row.steps[press.step] : undefined;
+  const effects = kind === "local" && row.item && step ? stepEffects(row.item, step) : [];
+  return { is: "press", press, effects, kind };
+}
+function rowButtons(row, isAllShown, agent) {
+  const { options, keys, more } = rowKeyPlan(row, isAllShown);
+  const answers = options.map((o, n) => ({
+    ...button(`${row.id} ${n}`, actionLabel(o.action), o.action.emphasis, rowDoes(row, o.action.press, o.action.kind, agent), o.hotkey ?? null),
+    isOut: o.action.isOut,
+    isOption: true
+  }));
+  return [
+    ...answers,
+    ...[...keys, ...more].map((k, n) => {
+      const id = `${row.id} ${options.length + n}`;
+      if (k.slot === "allOptions")
+        return button(id, k.label, k.emphasis, { is: "view", change: { showOptions: row.id } });
+      if (k.slot === "retry")
+        return button(id, k.label, k.emphasis, rowDoes(row, k.press, k.kind, agent));
+      const { action } = k;
+      const does = rowDoes(row, action.press, action.kind, agent);
+      return {
+        ...button(id, actionLabel(action), action.emphasis, does, k.hotkey ?? null),
+        isOut: action.isOut,
+        ...action.isFollowUp ? { isFollowUp: true } : {}
+      };
+    })
+  ];
+}
+function undoButtons(row, agent, now) {
+  if (row.state.is !== "settled")
+    return [];
+  const id = `${row.id} undo`;
+  const runsOutAt = row.state.at + SETTLED_MS;
+  const undo = row.actions.find((a) => a.press.action === "undo");
+  if (undo)
+    return [
+      {
+        ...button(id, actionLabel(undo), undo.emphasis, rowDoes(row, undo.press, undo.kind, agent)),
+        isOut: undo.isOut,
+        runsOutAt
+      }
+    ];
+  const isWaitingForAgent = row.state.delivery === "queued" && now >= undoPlaceEndsAt(row.state);
+  return row.state.offersUndo && !isWaitingForAgent ? [{ ...button(id, ROW_COPY.undo, "quiet"), isHidden: true, runsOutAt }] : [];
+}
+function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
+  const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
+  return {
+    rowId,
+    buttons: [
+      button(`${rowId} send`, send, "primary", { is: "send", rowId }),
+      button(`${rowId} leave`, leave, "quiet", { is: "leave", rowId, isDiscard })
+    ]
+  };
+}
+function rowBody(row, isAllShown) {
+  const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
+    { part: "answer", optionId: `${row.id} ${n}`, text: "", tone: "muted" },
+    ...o.note ? [{ part: "note", text: o.note, tone: "muted", isOptionNote: true }] : []
+  ]);
+  const holdsUp = row.holdsUpLine ? [[{ part: "holdsUp", text: row.holdsUpLine, tone: "muted" }]] : [];
+  const branches = [...holdsUp, ...options];
+  const lastBranch = branches.length - 1;
+  const isTrunkAfterHoldsUp = options.length > 0;
+  const tree = (branch, line) => line > 0 ? branch === lastBranch ? undefined : "trunk" : branch === lastBranch ? "last" : "tee";
+  const branchLines = (branch) => (branches[branch] ?? []).map((l, line) => {
+    const placed = tree(branch, line);
+    return placed ? { ...l, tree: placed } : l;
+  });
+  const contextTree = isTrunkAfterHoldsUp ? { tree: "trunk" } : {};
+  const lines = [
+    ...holdsUp.flatMap((_, branch) => branchLines(branch)),
+    { part: "context", text: row.contextLine ?? "", tone: "muted", ...contextTree },
+    { part: "earlier", text: row.earlierLine ? earlierLineText(row.earlierLine) : "", tone: "muted", ...contextTree },
+    { part: "detail", text: row.detail ?? "", tone: null },
+    { part: "file", text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : "", tone: "muted" },
+    ...options.flatMap((_, n) => branchLines(holdsUp.length + n))
+  ];
+  return lines.filter((l) => l.text || l.lead || l.optionId);
+}
+function sideBySideOf(row, isAllShown) {
+  const { options, answerRow } = rowKeyPlan(row, isAllShown);
+  return answerRow ? { sideBySide: { optionIds: options.map((_, n) => `${row.id} ${n}`), recLine: answerRow.recLine } } : {};
+}
+function rowBlock(row, ui, selected, screen) {
+  const { state, feedback: f } = row;
+  const isSettled = state.is === "settled";
+  const isAllShown = ui.optionsShown.includes(row.id);
+  const text = rowFeedbackText(row, LOOK2);
+  const isSelected = !isSettled && row.id === selected;
+  const isCollapsed = screen.view.collapsed.includes(row.id);
+  const isOpen = isSelected && !isCollapsed;
+  const isTyping = ui.typing === row.id;
+  return {
+    kind: "row",
+    id: row.id,
+    depth: 0,
+    mark: markOf3(rowMark(row)),
+    title: rowTitle(row, LOOK2),
+    age: row.at === null ? null : shortAgo(screen.now - row.at),
+    feedback: text && f ? { text, tone: feedbackTone(f), source: f } : null,
+    settled: isSettled ? {
+      label: settledLabel(state.label, state.delivery, state.reply),
+      tone: settledTone(state),
+      tint: closedTitleTone(state) === "muted" ? null : closedTitleTone(state),
+      at: state.at
+    } : null,
+    isDim: isSettled,
+    isSelectable: !isSettled,
+    isSelected,
+    ...isCollapsed && { isCollapsed },
+    body: isOpen ? rowBody(row, isAllShown) : [],
+    ...isOpen ? sideBySideOf(row, isAllShown) : {},
+    buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isOpen ? rowButtons(row, isAllShown, screen.agent).filter((b) => !isTyping || b.isOption) : [],
+    field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
+  };
+}
+function closedBlock(d, now) {
+  const action = closedLineAction(d);
+  const closedDoes = action ? { is: "press", press: action.press, effects: [], kind: null } : { is: "nothing" };
+  return {
+    kind: "row",
+    id: `closed ${d.id}`,
+    depth: 1,
+    mark: markOf3(d.mark),
+    title: d.title,
+    age: shortAgo(now - d.at),
+    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: "muted", source: null },
+    settled: null,
+    isDim: true,
+    isSelectable: false,
+    isSelected: false,
+    body: [],
+    buttons: action ? [button(`closed ${d.id} 0`, action.label, "quiet", closedDoes)] : [],
+    field: null
+  };
+}
+function groupBlocks(g, ui, selected, screen) {
+  const settled = new Set(g.rows.filter((r) => r.state.is === "settled").map((r) => r.id));
+  const total = closedTotal(g.closed, settled);
+  const count = waitingCount(g.rows);
+  const out = [
+    {
+      kind: "heading",
+      id: `group ${g.kind}`,
+      text: g.title,
+      count: count > 0 ? count : null,
+      mark: g.mark,
+      buttons: [],
+      isLabel: false
+    },
+    ...g.rows.map((r) => rowBlock(r, ui, selected, screen))
+  ];
+  if (g.rows.length === 0)
+    out.push({
+      kind: "note",
+      id: `empty ${g.kind}`,
+      text: groupEmptyText(g.title),
+      tone: "muted",
+      isHead: false,
+      isAtEdge: false,
+      isStrong: false,
+      depth: 0
+    });
+  if (total === 0)
+    return out;
+  const isOpen = ui.unfolded.includes(g.kind);
+  out.push({
+    kind: "fold",
+    id: `fold ${g.kind}`,
+    depth: 0,
+    text: foldLabel(total),
+    isOpen,
+    change: { closedFold: g.kind }
+  });
+  if (!isOpen)
+    return out;
+  const shown = closedShown(g.closed, settled, ui.closedAll.includes(g.kind));
+  out.push(...shown.map((d) => closedBlock(d, screen.now)));
+  const earlier = earlierLabel(total, shown.length);
+  if (earlier)
+    out.push({ kind: "more", id: `earlier ${g.kind}`, depth: 1, text: earlier, change: { earlier: g.kind } });
+  return out;
+}
+function groupsOf(view, tab, shownSince) {
+  if (tab === "needsYou")
+    return NEEDS_YOU_GROUPS.map((g) => ({
+      kind: g.kind,
+      title: g.title,
+      mark: { text: g.mark.mark, tone: g.mark.tone, isRunning: false },
+      rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, shownSince)),
+      closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
+    }));
+  return Object.keys(FINDING_GROUPS).map((kind) => ({
+    kind,
+    title: FINDING_GROUPS[kind].title,
+    mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone, isRunning: false },
+    rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, shownSince)),
+    closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
+  }));
+}
+var waitsOf = (groups, collapsed) => groups.flatMap((g) => g.rows).map((r) => ({ id: r.id, isWaiting: isWaitingRow(r), isCollapsed: collapsed.includes(r.id) }));
+function rowWaits({ view, shownSince }, tab) {
+  if (tab === "prs")
+    return prRowWaits(openPrViews(view.prs.drawn), view.lastActions, view.collapsed);
+  return tab === "overview" ? [] : waitsOf(groupsOf(view, tab, shownSince), view.collapsed);
+}
+function rowTabBlocks(screen, ui, tab) {
+  const groups = groupsOf(screen.view, tab, screen.shownSince);
+  const empty = emptyTab(screen.view, {
+    tab,
+    agent: screen.agent,
+    drawn: groups.filter((g) => g.rows.length > 0 || g.closed.length > 0).length,
+    hasBlocker: false,
+    isReadFailed: false
+  });
+  if (empty)
+    return [emptyBlock(tab, empty)];
+  return groups.flatMap((g, n) => [
+    ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null }] : [],
+    ...groupBlocks(g, ui, ui.selected, screen)
+  ]);
+}
+function tabCells(screen, tab) {
+  const { view } = screen;
+  const counts = { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count };
+  return shownTabs().map((t) => ({
+    id: t.id,
+    label: t.label,
+    badge: tabBadge(t.id, counts),
+    isSelected: t.id === tab
+  }));
+}
+function chrome(screen, tab) {
+  const error = footerError(tab, screen.view.status, screen.view.statusPage);
+  return { banners: tabBarBanners([], error, null) };
+}
+function tabBlocks(screen, ui) {
+  if (ui.tab === "overview") {
+    const goalField = ui.typing === GOAL_KEYS_ID ? fieldOf(GOAL_KEYS_ID, false, goalSubmitLabel(screen.view.statusPage)) : null;
+    return statusBlocks(screen.view, {
+      isUnfolded: (id) => ui.statusUnfolded.includes(id),
+      isCollapsed: (id) => screen.view.collapsed.includes(id),
+      goalField
+    });
+  }
+  if (ui.tab === "prs")
+    return prTabBlocks(screen, ui.selected);
+  return rowTabBlocks(screen, ui, ui.tab);
+}
+
 // src/screen.ts
 var TRIMMED_NOTE = "This session is too large to show in full, so its older closed items are left out.";
 var message = (title, hint, isError = false) => ({
@@ -6945,12 +7672,14 @@ function messageOf(followed, read) {
     return message("Can't read this inbox", `Its file has ${read.reason}.`, true);
   return null;
 }
+var readView = (read, now, holds, notes) => sessionView(read.session, now, SETTLED_MS, holds, notes);
 function screenOf(followed, read, ui, o) {
   const shown = messageOf(followed, read);
   if (shown !== null || read?.is !== "read")
     return shown ?? message(READING_TEXT, null);
   const { holds } = o;
-  const view = sessionView(read.session, o.now, SETTLED_MS, holds, o.queue.notes);
+  const raw = readView(read, o.now, holds, o.notes);
+  const view = o.collapsed ? { ...raw, collapsed: o.collapsed(raw) } : raw;
   const screen = {
     view,
     agent: read.envelope.agent,
@@ -6958,14 +7687,6 @@ function screenOf(followed, read, ui, o) {
     shownSince: holds.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs
-  };
-  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
-  const settled = rows.flatMap((r) => r.state.is === "settled" ? [r.state] : []);
-  const placing = {
-    lastTypedMessageAt: read.session.presence.lastTypedMessageAt,
-    listInput: holds.listInput,
-    now: o.now,
-    settleWindowMs: SETTLED_MS
   };
   return {
     is: "inbox",
@@ -6975,15 +7696,8 @@ function screenOf(followed, read, ui, o) {
     trimmedNote: read.isTrimmed ? TRIMMED_NOTE : null,
     helpVersion: read.envelope.version ? helpVersionText(read.envelope.version, read.envelope.isNextBuild === true) : null,
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
-    waits: rowWaits(screen, ui.tab),
-    foldAt: nextFoldAt(settled, placing),
-    undoPlaceEndsAt: nextUndoPlaceEnd(settled, o.now),
-    timedChangeAt: timedChangeAt(view.lastActions, o.now)
+    waits: rowWaits(screen, ui.tab)
   };
-}
-function nextUndoPlaceEnd(settled, now) {
-  const ends = settled.filter((s) => s.offersUndo && s.delivery === "queued").map(undoPlaceEndsAt).filter((at) => at > now);
-  return ends.length > 0 ? Math.min(...ends) : null;
 }
 
 // src/status-look.ts
@@ -7114,6 +7828,7 @@ class LookReports {
 
 // src/main.ts
 var { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home });
+var LIST_INPUT_STEP_MS = 250;
 
 class Inbox extends View {
   tab = null;
@@ -7121,31 +7836,28 @@ class Inbox extends View {
   followed = { is: "no-terminal" };
   sessionId = null;
   read = null;
-  view = null;
-  ui = freshUi("needsYou");
-  shownSince = Date.now();
-  isHelpShown = false;
+  ui = freshUi(HERDR_LOOK);
+  shownAt = Date.now();
+  isOpened = false;
   paneWidth = Infinity;
   listHeight = null;
-  drafts = {};
   left = {};
-  confirmed = [];
+  queues = {};
   input = null;
-  discarded = {};
-  listInput = null;
   queue = new PressQueue(queueIo);
-  collapses = {};
-  clickedOpenAt = 0;
   tracks = NO_TRACKS;
   drawnTabs = [];
   heights = new Heights;
   tracksOf = "";
-  lastWaits = { tab: "needsYou", rows: null, pressed: [] };
+  blocks = [];
+  lastDraw = { tab: "needsYou", rows: null, pressed: [] };
   timeLeft = new Map;
   linesAbove = NO_LINES_ABOVE;
   focus = null;
+  movedAt = 0;
   outTimer = null;
   drawTimer = null;
+  wake = null;
   look = new LookReports;
   init(_props, cx) {
     this.focus = cx.focus_handle();
@@ -7162,15 +7874,85 @@ class Inbox extends View {
     cx.timer.every(AGE_TICK_MS, (cx) => cx.notify());
     cx.timer.every(LOOK_TICK_MS, (cx) => cx.spawn(() => this.checkLook()));
   }
-  holds(now) {
-    this.discarded = keptDiscards(this.discarded, this.shownSince);
-    return {
-      replies: heldReplies(this.ui.typing, this.drafts),
-      discarded: this.discarded,
-      shownSince: this.shownSince,
-      listInput: this.listInput && withListInput(this.listInput, now),
-      undoOut: this.queue.outs.filter((o) => o.action === "undo" || o.action === "pr-undo").map((o) => o.rowId)
-    };
+  get readSession() {
+    return this.read?.is === "read" ? this.read : null;
+  }
+  viewAt(now) {
+    const read = this.readSession;
+    return read && readView(read, now, holdsOf(this.ui, now), notesOf(this.ui));
+  }
+  apply(events, cx, from = null) {
+    const now = Date.now();
+    const view = this.viewAt(now);
+    if (view === null)
+      return;
+    const applied = applyEvents(this.ui, view, events, now);
+    this.ui = applied.ui;
+    const isMove = events.some(isLookMove);
+    if (isMove)
+      this.movedAt = now;
+    this.syncInput(isMove);
+    for (const c of applied.commands)
+      this.run(c, from, cx);
+    this.schedule(applied.nextWakeAt, view, cx);
+    if (!this.endPresses(cx) && !events.every((e) => e.type === "list-input" || e.type === "edit-draft"))
+      cx.notify();
+  }
+  endPresses(cx) {
+    const ended = this.queue.takeEnded();
+    if (ended.length > 0)
+      this.apply(ended.map((e) => ({ type: "press-settled", pressId: e.uiPressId, outcome: e.outcome })), cx);
+    return ended.length > 0;
+  }
+  run(c, from, cx) {
+    const sessionId = this.sessionId;
+    const read = this.readSession;
+    if (c.kind === "press")
+      this.send(c, from, cx);
+    else if (c.kind === "save-collapse" && sessionId && read) {
+      const to = { appHome: appHome(), sessionId };
+      const collapse = { isCollapsed: c.isCollapsed, at: Date.now() };
+      cx.spawn(() => writeCollapse(queueIo, to, read, c.id, collapse));
+    } else if (c.kind === "read" && sessionId)
+      this.load(sessionId, cx);
+  }
+  syncInput(isMove) {
+    const typing = this.ui.typing;
+    if (this.input !== null && this.input.rowId === typing)
+      return;
+    const hadField = this.input !== null;
+    this.releaseField();
+    if (typing === null)
+      return void (hadField && this.focus?.focus());
+    const state = InputState.new({ placeholder: this.hints[typing] ?? "", value: this.ui.drafts[typing]?.text ?? "" });
+    state.on("change", (_e, cx) => this.apply([{ type: "edit-draft", id: typing, text: state.value() }], cx));
+    state.on("submit", (_e, cx) => this.apply(buttonEvents({ is: "send", rowId: typing }, this.ui, "key"), cx));
+    this.input = { rowId: typing, state };
+    if (isMove || this.focus?.is_focused())
+      state.focus();
+  }
+  releaseField() {
+    this.input?.state.release();
+    this.input = null;
+  }
+  hints = {};
+  schedule(at, view, cx) {
+    const readAt = at === null ? null : readWakeAt(this.ui, view, Date.now());
+    const isRead = readAt !== null && at !== null && readAt <= at;
+    if (this.wake !== null && this.wake.at === at && this.wake.isRead === isRead)
+      return;
+    this.wake?.timer.cancel();
+    this.wake = null;
+    if (at === null)
+      return;
+    const timer = cx.timer.after(Math.max(0, at - Date.now()), (cx) => {
+      this.wake = null;
+      if (isRead && this.sessionId)
+        this.load(this.sessionId, cx);
+      else
+        this.apply([{ type: "tick" }], cx);
+    });
+    this.wake = { at, isRead, timer };
   }
   load(sessionId, cx) {
     cx.spawn(async (cx) => {
@@ -7178,8 +7960,13 @@ class Inbox extends View {
       if (this.sessionId !== sessionId)
         return;
       this.read = read;
-      await this.settle(cx);
-      cx.notify();
+      if (read.is !== "read")
+        return void cx.notify();
+      if (!this.isOpened)
+        this.ui = opened(this.ui, this.shownAt);
+      this.isOpened = true;
+      this.apply([{ type: "read", host: hostFactsOf(read) }], cx);
+      await this.settle(read, cx);
     });
   }
   async checkLook(isClosing = false) {
@@ -7190,16 +7977,17 @@ class Inbox extends View {
   close() {
     return this.checkLook(true);
   }
-  async settle(cx) {
-    if (this.read?.is !== "read" || !this.queue.isAwaiting())
-      return;
-    const now = Date.now();
-    const view = sessionView(this.read.session, now, SETTLED_MS, this.holds(now), this.queue.notes);
+  async settle(read, cx) {
     const queue = this.queue;
-    const confirmed = await queue.settle(view, this.read.lastPress, this.read.envelope.agent);
-    if (queue === this.queue)
-      this.dropConfirmed([...this.confirmed, ...confirmed]);
-    this.checkOutsAt(this.queue.nextCheckAt(), cx);
+    const view = this.viewAt(Date.now());
+    if (view === null || !queue.isAwaiting())
+      return;
+    await queue.settle(view, read.lastPress, read.envelope.agent);
+    if (queue !== this.queue)
+      return;
+    if (!this.endPresses(cx))
+      cx.notify();
+    this.checkOutsAt(queue.nextCheckAt(), cx);
   }
   checkOutsAt(at, cx) {
     this.outTimer?.cancel();
@@ -7212,224 +8000,102 @@ class Inbox extends View {
     if (this.tab === null)
       return;
     const terminalRecords = terminals().map(({ address, labels, program }) => ({ address, labels, program }));
-    this.followed = follow({ focused: focused(), panes: panes(), terminals: terminalRecords }, this.tab, this.last);
+    this.followed = follow2({ focused: focused(), panes: panes(), terminals: terminalRecords }, this.tab, this.last);
     if (this.followed.is !== "no-terminal")
       this.last = this.followed.terminal;
     const sessionId = this.followed.is === "session" ? this.followed.sessionId : null;
     if (sessionId === this.sessionId)
       return;
-    if (this.sessionId)
-      this.left[this.sessionId] = { drafts: this.drafts, confirmed: this.confirmed, queue: this.queue };
-    this.sessionId = sessionId;
-    this.read = null;
-    this.view = null;
-    this.ui = freshUi(this.ui.tab);
-    this.shownSince = Date.now();
+    const now = Date.now();
+    if (this.sessionId) {
+      this.left[this.sessionId] = { ui: closed(this.ui), shownAt: now };
+      this.queues[this.sessionId] = this.queue;
+    }
     const kept = sessionId && this.left[sessionId] || null;
+    const queue = sessionId && this.queues[sessionId] || null;
     if (sessionId)
       delete this.left[sessionId];
-    this.drafts = kept?.drafts ?? {};
-    this.confirmed = kept?.confirmed ?? [];
-    this.input?.state.release();
-    this.input = null;
-    this.discarded = {};
-    this.collapses = {};
+    if (sessionId)
+      delete this.queues[sessionId];
+    this.queues = Object.fromEntries(Object.entries(this.queues).filter(([, q]) => q.holdsPresses()));
+    this.left = keptLeft(this.left, (id) => this.queues[id] !== undefined);
+    this.sessionId = sessionId;
+    this.read = null;
+    this.ui = kept?.ui ?? freshUi(HERDR_LOOK, this.ui.tab);
+    this.shownAt = now;
+    this.isOpened = false;
+    this.queue = queue ?? new PressQueue(queueIo);
+    this.wake?.timer.cancel();
+    this.wake = null;
+    this.releaseField();
     this.heights.clear();
-    this.queue = kept?.queue ?? new PressQueue(queueIo);
     if (sessionId)
       this.load(sessionId, cx);
   }
-  change(c) {
-    if ("toggleHelp" in c)
-      this.isHelpShown = !this.isHelpShown;
-    else
-      this.ui = withChange(this.ui, c);
-    if ("showAsk" in c)
-      this.isHelpShown = false;
-    this.closeStaleField();
-  }
-  showTab(tab) {
-    this.ui = withTab(this.ui, tab);
-    this.isHelpShown = false;
-    this.closeStaleField();
-  }
-  closeStaleField() {
-    if (this.input === null || this.ui.typing === this.input.rowId)
-      return;
-    this.input.state.release();
-    this.input = null;
-    this.focus?.focus();
-    this.dropConfirmed(this.confirmed);
-  }
-  dropConfirmed(confirmed) {
-    const next = withoutConfirmed(this.drafts, confirmed, this.ui.typing, this.queue.sentTexts);
-    this.drafts = next.drafts;
-    this.confirmed = next.waiting;
-  }
-  type(does) {
-    const draft = this.drafts[does.rowId] ??= { text: does.text, since: Date.now() };
-    const state = InputState.new({ placeholder: does.hint, value: draft.text });
-    state.on("change", () => draft.text = state.value());
-    state.on("submit", (_e, cx) => this.submit(does.rowId, cx));
-    this.input?.state.release();
-    this.input = { rowId: does.rowId, state };
-    this.ui.typing = does.rowId;
-    state.focus();
-  }
-  leave(rowId, isDiscard, cx) {
-    if (isDiscard) {
-      this.discarded = { ...this.discarded, [rowId]: Date.now() };
-      delete this.drafts[rowId];
-    }
-    this.input?.state.release();
-    this.input = null;
-    this.ui.typing = null;
-    this.focus?.focus();
-    this.dropConfirmed(this.confirmed);
-    if (isDiscard && this.sessionId)
-      this.load(this.sessionId, cx);
-  }
-  submit(rowId, cx) {
-    const text = this.input?.state.value().trim() ?? "";
-    if (text === "")
-      return;
-    const isGoal = rowId === GOAL_KEYS_ID;
-    const label = isGoal && this.view ? goalSubmitLabel(this.view.statusPage) : ROW_COPY.send;
-    const typed = { is: "press", press: { action: "type", id: rowId, text }, effects: [], kind: null };
-    const isSent = this.send(typed, label, cx, isGoal ? undefined : text);
-    this.ui = afterSend(this.ui, rowId, isSent);
-    this.closeStaleField();
-  }
-  send(d, label, cx, reply) {
-    const read = this.read?.is === "read" ? this.read : null;
-    const target = this.sessionId && read && this.view ? {
-      appHome: appHome(),
-      sessionId: this.sessionId,
-      terminal: read.envelope.terminal,
-      view: this.view,
-      holds: this.holds(Date.now()),
-      projectFolder: read.projectFolder
-    } : null;
-    const sent = this.queue.send(target, d.press, d.effects, label, d.kind, reply);
-    cx.notify();
+  send(c, from, cx) {
+    const at = { appHome: appHome(), sessionId: this.sessionId, read: this.readSession };
+    const { target, options } = pressSending(c, from ?? buttonOf(this.blocks, c.press), at, this.viewAt(Date.now()));
+    const sent = this.queue.send(target, c.press, options);
     if (sent.is === "refused")
-      return false;
+      return;
     const queue = this.queue;
     const projectFolder = target?.projectFolder ?? null;
     cx.spawn(async (cx) => {
       await sent.finish((effects, pending) => runHere(effects, pending, hereIo(projectFolder, cx)), () => cx.notify());
-      cx.notify();
-      if (queue === this.queue)
-        this.checkOutsAt(queue.nextCheckAt(), cx);
+      if (queue !== this.queue)
+        return;
+      if (!this.endPresses(cx))
+        cx.notify();
+      this.checkOutsAt(queue.nextCheckAt(), cx);
     });
-    return true;
-  }
-  press(b, cx, isAll = false) {
-    const now = Date.now();
-    this.listInput = withListInput(this.listInput, now);
-    const d = b.does;
-    const opening = isAll ? foldClickOpens(d, this.ui) : null;
-    if (opening !== null)
-      foldAllIn(this, opening, cx);
-    else if (d.is === "view")
-      this.change(d.change);
-    else if (d.is === "collapse")
-      this.collapse(d.id, d.isCollapsed, cx);
-    else if (d.is === "press") {
-      this.ui = afterPress(this.ui, d.press);
-      this.send(d, b.label, cx);
-    } else if (d.is === "type")
-      this.type(d);
-    else if (d.is === "send")
-      this.submit(d.rowId, cx);
-    else if (d.is === "leave")
-      this.leave(d.rowId, d.isDiscard, cx);
-    cx.notify();
-  }
-  collapse(id, isCollapsed, cx, isSelecting = true) {
-    const read = this.read?.is === "read" ? this.read : null;
-    if (this.sessionId === null || read === null)
-      return;
-    const c = { isCollapsed, at: Date.now() };
-    this.collapses = { ...this.collapses, [id]: c };
-    if (isSelecting)
-      this.ui = withCollapsed(this.ui, id, isCollapsed);
-    this.listInput = withListInput(this.listInput, c.at);
-    this.closeStaleField();
-    const to = { appHome: appHome(), sessionId: this.sessionId };
-    cx.spawn(() => writeCollapse(queueIo, to, read, id, c));
-    cx.notify();
   }
   onKey(key, tabs, blocks, cx) {
-    const undo = this.view ? tabUndo(this.view, this.ui.tab, this.shownSince) : null;
-    const move = keyMove(key, tabs, blocks, this.ui.typing, undo);
+    const move = keyMove(key, tabs, blocks, this.ui.typing, this.ui.isHelpShown);
     if (move === null)
       return;
-    if (move.is === "close")
-      this.leave(this.ui.typing ?? "", false, cx);
-    else if (move.is === "tab")
-      this.showTab(move.tab);
-    else if (move.is === "select")
-      this.ui = withSelected(this.ui, move.id);
-    else if (move.is === "collapse")
-      this.collapse(move.id, move.isCollapsed, cx);
-    else if (move.is === "fold-all")
-      foldAllIn(this, null, cx);
+    cx.stop_propagation();
+    if (move.is === "event")
+      this.apply([move.event], cx);
     else if (move.is === "press")
-      return this.press(move.button, cx);
+      this.apply(buttonEvents(move.button.does, this.ui, "key"), cx, move.button);
     else if (this.followed.is !== "no-terminal")
       run("pane.focus", { terminal: this.followed.terminal });
-    this.listInput = withListInput(this.listInput, Date.now());
-    cx.stop_propagation();
-    cx.notify();
   }
   render(cx) {
     this.track(cx);
     const t = theme();
     const now = Date.now();
-    const drawn = withCollapses(this.read, this.collapses, now);
-    this.collapses = drawn.collapses;
-    const screenFor = (ui) => screenOf(this.followed, drawn.read, ui, {
+    const ui = this.ui;
+    const presses = {
       now,
-      holds: this.holds(now),
+      holds: holdsOf(ui, now),
+      notes: notesOf(ui),
+      collapsed: (view) => collapsedOf(ui, view),
       queue: this.queue
-    });
-    let screen = screenFor(this.ui);
-    const inbox = screen.is === "inbox" ? screen : null;
-    const drew = withDrawnRows(this.ui, this.lastWaits, inbox?.waits ?? null, now, !this.isHelpShown, this.queue.outs);
-    if (drew.ui !== this.ui)
-      screen = screenFor(this.ui = drew.ui);
-    this.lastWaits = drew.last;
-    this.view = inbox?.view ?? null;
+    };
+    const raw = this.viewAt(now);
+    const lookUi = lookUiOf(ui, raw && { ...raw, collapsed: collapsedOf(ui, raw) });
+    const screen = screenOf(this.followed, this.read, lookUi, presses);
     this.drawTimer?.cancel();
     this.drawTimer = null;
-    const tracksOf = `${this.sessionId} ${this.ui.tab} ${this.isHelpShown}`;
+    const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`;
     const isFirst = tracksOf !== this.tracksOf;
     const resized = this.heights.takeResized();
     const paint = {
       t,
       mono: theme().typography?.mono ?? "Menlo",
-      press: (b, cx, isAll) => this.press(b, cx, isAll),
-      collapse: (id, isCollapsed, cx, isAll) => foldClick(this, id, isCollapsed, cx, isAll),
-      select: (id, cx) => {
-        this.clickedOpenAt = Date.now();
-        this.ui = withSelected(this.ui, id);
-        this.closeStaleField();
-        this.listInput = withListInput(this.listInput, Date.now());
-        cx.notify();
-      },
-      pick: (tab, cx) => {
-        this.showTab(tab);
-        cx.notify();
-      },
+      press: (b, cx, isAll) => this.apply(buttonEvents(b.does, this.ui, "click", isAll), cx, b),
+      collapse: (id, isCollapsed, cx, isAll) => this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
+      select: (id, cx) => this.apply(titleClickEvents(this.ui, id, false, false), cx),
+      pick: (tab, cx) => this.apply([{ type: "show-tab", tab }], cx),
       motion: new Map,
       heights: this.heights,
       isAtOnce: (key) => isFirst || resized.has(key),
       measure: (key, size, cx, isWidthDrawn) => this.heights.measure(key, size, zoomOf(settings()), isWidthDrawn) && cx.notify(),
       now,
-      newRows: this.ui.newRows,
-      closedSeen: this.ui.closedSeen,
-      tab: this.ui.tab,
+      newRows: newRowsOf(ui),
+      closedSeen: new Map(Object.entries(ui.closedSeen)),
+      tab: ui.tab,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
       ...paneFit(this, zoomOf(settings()))
@@ -7438,29 +8104,40 @@ class Inbox extends View {
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
+      this.blocks = [];
+      this.lastDraw = { tab: ui.tab, rows: null, pressed: [] };
       this.look.status.drew(null, now);
       return root.child(messageEl(screen.message, t));
     }
-    const shown = this.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
+    const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
+    this.blocks = shown;
+    this.hints = fieldHints(shown);
     const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now);
     this.linesAbove = held.held;
-    const isInput = drew.isAnswer || (this.listInput?.last ?? 0) > this.tracks.drawnAt;
+    const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits);
+    this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map((o) => o.rowId) };
+    const isInput = isAnswer || this.movedAt > this.tracks.drawnAt;
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, (key) => this.heights.get(key));
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
     this.drawnTabs = heldTabs(screen.tabs, this.drawnTabs, moved.motion);
-    const read = drawn.read?.is === "read" && this.ui.tab === "overview" && !this.isHelpShown ? drawn.read : null;
+    const read = this.readSession && ui.tab === "overview" && !ui.isHelpShown ? this.readSession : null;
     const room = moved.nextAt === null ? paint.listRoom : null;
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
-    const wakeAt = nextDrawAt(now, this.ui, screen, moved);
+    const wakeAt = nextDrawAt(now, moved);
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, this.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div15().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_click((_e, _cx) => {
-      const field = isFieldDrawn(this.ui, this.isHelpShown) ? this.input : null;
+    const listInput = (cx) => {
+      const isNew = Date.now() - (this.ui.listInput?.last ?? 0) >= LIST_INPUT_STEP_MS;
+      if (isNew)
+        this.apply([{ type: "list-input" }], cx);
+    };
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div15().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
+      const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
       else

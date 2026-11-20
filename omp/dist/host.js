@@ -8882,10 +8882,10 @@ function pressSettled(ui, view, pressId, outcome, now) {
   if (outcome.isDemoSent)
     next = { ...next, demoReplies: [...next.demoReplies, { pressId, dueAt: now + DEMO_REPLY_MS }] };
   const isReplyBack = out.isReply && (outcome.error !== null || outcome.note === "stale");
-  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, out) || !isRowTab(out.tab))
+  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, out))
     return withCommands(next, ...restored.commands);
-  const index = tabWaits(next, view, out.tab).findIndex((r) => r.id === row);
-  const back = withCursor(next, out.tab, { id: row, index, guard: null });
+  const index = isRowTab(out.tab) ? tabWaits(next, view, out.tab).findIndex((r) => r.id === row) : -1;
+  const back = isRowTab(out.tab) ? withCursor(next, out.tab, { id: row, index, guard: null }) : next;
   return isReplyBack ? withCommands({ ...back, typing: row }, ...restored.commands, { kind: "focus-field", id: row }) : withCommands(back, ...restored.commands);
 }
 function isWaitingOnDelivery(view, out) {
@@ -8990,6 +8990,11 @@ function closed(ui) {
     heldClose: {}
   };
 }
+function helpShown(ui, isShown, now) {
+  const isTabShown = !isShown && ui.isVisible && ui.shownSince !== null && isRowTab(ui.tab);
+  const newRows = isTabShown ? asRecord(showNewRows(newRowsOf(ui), ui.tab, now)) : ui.newRows;
+  return { ...ui, isHelpShown: isShown, newRows };
+}
 function visible(ui, isVisible) {
   return { ...ui, isVisible, opensOnAsks: ui.opensOnAsks || isVisible && !ui.isVisible };
 }
@@ -9012,7 +9017,7 @@ function recordTabs(ui, view, host, now) {
   const recorded = recordRows(seen, listed);
   const isTinting = ui.isVisible && ui.shownSince !== null;
   const added = addNewRows(newRowsOf(ui), isTinting ? recorded.added : {});
-  const newRows = isTinting && isRowTab(ui.tab) ? showNewRows(added, ui.tab, now) : added;
+  const newRows = isTinting && isRowTab(ui.tab) && !ui.isHelpShown ? showNewRows(added, ui.tab, now) : added;
   const rowsSeen = Object.fromEntries(Object.entries(recorded.seen).map(([t, ids]) => [t, [...ids ?? []]]));
   return {
     ui: { ...ui, host, rowsSeen, newRows: asRecord(newRows), closedSeen: seenClosed(ui, view, now) },
@@ -9055,6 +9060,7 @@ function readTabs(ui, view, added, now) {
 var hasHeldArrivals = (ui) => Object.values(ui.heldArrivals).some((ids) => (ids ?? []).length > 0);
 
 // ../hooks/ui-controller-clock.ts
+var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
 function settledStates(view) {
   const rows = allRows(view).flatMap((r) => r.state.is === "settled" ? [{ id: r.id, state: r.state }] : []);
   const prs = view.prs.drawn.flatMap((d) => d.state.is === "settled" ? [{ id: prMarkId(d.pr.ref), state: d.state }] : []);
@@ -9095,7 +9101,7 @@ function readWakeAt(ui, view, now) {
     ...lasts.flatMap((l) => l.result === undefined ? [] : [l.result.at + (l.result.state === "pending" ? PRESS_TIMEOUT_MS : SETTLED_MS)]),
     ...pressEndsAt(ui, view),
     ...settled.flatMap(({ id, state }) => state.canUndo ? [isFirstRead ? (ui.undoSeen[id] ?? now) + SETTLED_MS : state.at + SETTLED_MS] : []),
-    ...settled.flatMap(({ state }) => state.canUndo && isSendOnItsWay(state.delivery) ? [state.at + SETTLED_MS + QUEUED_AFTER_MS] : []),
+    ...settled.flatMap(({ state }) => state.offersUndo && isSendOnItsWay(state.delivery) ? [undoPlaceEndsAt(state)] : []),
     nextFoldAt(settled.map((s) => s.state), { lastTypedMessageAt: ui.host.lastTypedMessageAt, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS }),
     timedChangeAt(view.lastActions, now),
     isHolding && ui.listInput !== null ? ui.listInput.last + FOLD_QUIET_MS : null,
@@ -9234,7 +9240,7 @@ function handle(ui, view, e, now) {
     case "show-tab":
       return withCommands(shownTab(ui, e.tab, now), { kind: "tab-shown", tab: e.tab });
     case "show-help":
-      return withCommands({ ...ui, isHelpShown: e.isShown });
+      return withCommands(helpShown(ui, e.isShown, now));
     case "show-ask":
       return showAsk(ui, view, e.id, e.by, now);
     case "select":
