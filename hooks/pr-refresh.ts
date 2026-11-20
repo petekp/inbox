@@ -1,33 +1,16 @@
-import type { PrFetchFailure, PrViews } from '../types'
+import type { PrViews } from '../types'
 import { pressFeedbackIn } from './feedback'
 import type { PressState } from './feedback'
-import { fetchFailureWords, GH_TIMED_OUT_TEXT, splitLinked } from './pr-fetch'
+import { fetchFailureWords, splitLinked } from './pr-fetch'
 import type { PrLinks } from './pr-fetch'
 import { lastPressOf, withOut } from './pr-press'
 import type { LastPress, PrAction } from './pr-press'
 import { PR_REFRESH_ID } from './pr-rows'
 import { parseRef } from './prs'
-import { clockTime } from './text'
 import { isShownSince } from './timing'
 
 /** The button at the top of the PRs tab while a PR could not be read. It is not "Try again", since a failed send draws that. */
 export const PR_REFRESH_LABEL = 'Refresh PRs'
-
-/** The notice at the top of the PRs tab for a cause that stopped the whole fetch. Its first sentence is the lead. */
-export function fetchFailureNotice(f: PrFetchFailure): string {
-  switch (f.kind) {
-    case 'limit':
-      return f.resetsAt === null
-        ? "GitHub's limit is used up. The PRs refresh once it resets."
-        : `GitHub's limit is used up. The PRs refresh after it resets at ${clockTime(f.resetsAt)}.`
-    case 'unreachable':
-      return 'Could not reach GitHub. The PRs show as last read.'
-    case 'timed-out':
-      return `${GH_TIMED_OUT_TEXT}. The PRs show as last read.`
-    case 'error':
-      return `Could not read the PRs: ${f.text}. They show as last read.`
-  }
-}
 
 /** The state the top of the PRs tab reads: the mod keeps `isGhMissing` in its views, Codex and omp in their hosts. */
 type PrReadState = Pick<PrViews, 'views' | 'branchRef' | 'failure' | 'unread' | 'isGhSignedOut'> & {

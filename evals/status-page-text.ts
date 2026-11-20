@@ -1,6 +1,7 @@
 import { EMPTY_STATUS_TEXT } from '../hooks/empty-tab'
 import { countsText } from '../hooks/status-folds'
-import { mergedLine, STALL_GAP, WAS_PREFIX } from '../hooks/status-page'
+import { mergedLine, WAS_PREFIX } from '../hooks/status-page'
+import { STALL_GAP } from '../hooks/status-page-parts'
 import type { StatusPage, StatusRow, StatusStall } from '../hooks/status-page'
 import type { MilestoneRow } from '../hooks/status-goal-page'
 import { milestoneRows } from '../hooks/status-folds'

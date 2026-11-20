@@ -137,8 +137,6 @@ const OTHER_WORK = 'Other work'
 /** What a line starts with before the text it replaced: a subject's plan, a milestone's text, the goal before. */
 export const WAS_PREFIX = 'Prev: '
 const MERGED_PREFIX = 'merged in: '
-/** What separates a row's name from its stall word. */
-export const STALL_GAP = ' · '
 
 /** The most lines each text on a Status row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const STATUS_TEXT_LINES = 3

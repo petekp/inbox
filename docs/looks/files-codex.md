@@ -12,7 +12,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-glide.ts` | Codex adapter. The Web Animations each move plays: the spring glide of a height or offset, and fades. |
 | `codex/src/tab-title-motion.ts` | Codex adapter. When a row's title swaps between its full and clamped forms while its line grows or shrinks, so one form shows at a time and the line never cuts a line of the title that shows. |
 | `codex/src/tab-page-variables.ts` | Codex adapter. The shared spacing scale and motion lengths, set as the CSS variables the tab's styles read. |
-| `codex/src/tab-fold-all.ts` | Codex adapter. `foldAllHere` applies a fold-all to the tab's folds through each fold's own toggle, so each animates and saves as a single click would, and `clickFold` turns an Option-click on a fold into a fold-all. |
+| `codex/src/tab-fold-all.ts` | Codex adapter. `toggleStatusFold` opens or shuts a Status fold, with `foldMotion`, its list's motion key. `foldAllHere` applies a fold-all to the tab's folds through each fold's own toggle, so each animates and saves as a single click would, and `clickFold` turns an Option-click on a fold into a fold-all. |
 | `codex/src/tab-title-tint.tsx` | Codex adapter. A row's title in a span whose tint a Web Animation fades from the clock's point, so a row drawn again mid-fade does not start over. |
 | `codex/src/tab-line-steps.ts` | Codex adapter. Steps lines that come and go, such as banners and a press's status, through the row states, so a line enters and leaves from its place. |
 | `codex/src/tab-status-steps.ts` | Codex adapter. Steps the Status page's lines, the goal's milestones and the lines under the goal's text with `stepLines`. |
@@ -31,7 +31,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR block, PR row, PR group, press line and the tab's own buttons on the PRs tab, through the row states. |
 | `codex/src/tab-pr-lines.ts` | Codex adapter. The press status under a PR block's buttons and under the order's changed line. |
 | `codex/src/tab-status.tsx` | Codex adapter. The Status tab: the goal and its milestones, a met goal's folded milestones, and the goal's text field. |
-| `codex/src/tab-status-line.tsx` | Codex adapter. A Status row with its keys and presses, the done folds' toggle, and the fitting of merged lines to the width. |
+| `codex/src/tab-status-line.tsx` | Codex adapter. A Status row with its keys and presses, and the fitting of merged lines to the width. |
 | `codex/src/tab-shown.ts` | Codex adapter. The Status subject rows the tab had on screen since its last view request, which the request sends. |
 | `codex/src/tab-status-fold.tsx` | Codex adapter. A Status parent's name line as its fold: the chevron after it, the click and keyboard press, and the collapse it sends. |
 | `codex/src/tab-status-name.tsx` | Codex adapter. A Status row's name line, cut so that it and its stall word fit the lines it may take. |

@@ -24,6 +24,7 @@ import type { AnswerRow } from '../../hooks/action-plan'
 import type { BannerView } from '../../hooks/banners'
 import type { ClosedDelivery, RowView, ResultMark } from '../../hooks/rows'
 import type { Feedback } from '../../hooks/feedback'
+import type { StatusKeyTarget } from '../../hooks/status-keys'
 import type { StatusRow } from '../../hooks/status-page'
 import type { WorkJoint } from '../../hooks/status-path'
 import type { HelpKey, LegendEntry } from '../../hooks/help'
@@ -387,3 +388,16 @@ export const waitsOf = (lines: Line[]) =>
 export const isSelectable = (line: Line) => line.settled === null && !line.isStatic
 /** A folded line the person has not opened: it draws one line and takes only Enter. */
 export const isShut = (line: Line, ui: Pick<PanelUi, 'opened'>) => line.isFolded && ui.opened !== line.id
+
+function defaultFocus(line: Line): number {
+  return Math.max(
+    0,
+    line.buttons.findIndex(b => b.isRecommended),
+  )
+}
+
+export const focusOf = (line: Line, ui: PanelUi): number =>
+  ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line)
+
+export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>
+  ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0

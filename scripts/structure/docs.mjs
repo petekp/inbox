@@ -97,16 +97,22 @@ export function checkLookMap(root, errors) {
         if (isMapped(path) && !rows.has(path)) errors.push(`${LOOK_PARTS}/files-*.md has no Files row for ${path}.`)
       }
   }
-  const refs = [LOOK_MAP, ...lookParts(root, '')]
-    .flatMap(map =>
-      [...read(root, map).matchAll(/`([\w./-]+\.[cm]?[jt]sx?):([\w.]+)`/g)].map(([, path, symbol]) => ({
+  const maps = [LOOK_MAP, ...lookParts(root, '')].map(map => ({ map, text: read(root, map) }))
+  const refs = maps
+    .flatMap(({ map, text }) =>
+      [...text.matchAll(/`([\w./-]+\.[cm]?[jt]sx?):([\w.]+)`/g)].map(([, path, symbol]) => ({ map, path, symbol })),
+    )
+    .filter(ref => exists(root, ref.path))
+  const handlerRefs = maps
+    .flatMap(({ map, text }) =>
+      [...text.matchAll(/`([\w./-]+\.[cm]?[jt]sx?):on\('([^']+)'\)`/g)].map(([, path, event]) => ({
         map,
         path,
-        symbol,
+        event,
       })),
     )
     .filter(ref => exists(root, ref.path))
-  const paths = [...new Set(refs.map(ref => ref.path))]
+  const paths = [...new Set([...refs, ...handlerRefs].map(ref => ref.path))]
   const api = new API({ cwd: root })
   try {
     const snapshot = api.updateSnapshot({ openFiles: paths.map(path => join(root, path)) })
@@ -129,6 +135,9 @@ export function checkLookMap(root, errors) {
           : `${map} names ${path}:${symbol}, and ${path} declares no ${symbol}.`,
       )
     }
+    for (const { map, path, event } of handlerRefs)
+      if (!names.get(path).events.has(event))
+        errors.push(`${map} names ${path}:on('${event}'), and ${path} subscribes to no '${event}' event.`)
   } finally {
     api.close()
   }
@@ -146,9 +155,16 @@ const DECLARATIONS = new Set(
   ].map(kind => ts.SyntaxKind[kind]),
 )
 
+/** Whether `node` calls `on`, or a method named `on`, as `on('ui.render', …)` or `pi.on('agent_end', …)` subscribe. */
+const isOnCall = node =>
+  ts.isCallExpression(node) &&
+  ((ts.isIdentifier(node.expression) && node.expression.text === 'on') ||
+    (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'on'))
+
 function namesIn(source) {
   const declared = new Set()
   const importedFrom = new Map()
+  const events = new Set()
   const visit = node => {
     const name = node.name ? nameOf(node.name) : null
     if (DECLARATIONS.has(node.kind) && name !== null) {
@@ -161,9 +177,10 @@ function namesIn(source) {
       while (!ts.isImportDeclaration(declaration)) declaration = declaration.parent
       importedFrom.set(node.name.text, declaration.moduleSpecifier.text)
     }
+    if (isOnCall(node) && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) events.add(node.arguments[0].text)
     node.forEachChild(visit)
   }
   visit(source)
 
-  return { declared, importedFrom }
+  return { declared, importedFrom, events }
 }

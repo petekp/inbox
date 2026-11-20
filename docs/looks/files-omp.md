@@ -24,13 +24,13 @@ Part of [the look map](../looks.md#files).
 | `omp/src/theme.ts` | omp host. Maps the panel's styles onto omp's theme. |
 | `omp/src/texts.ts` | omp host. The `OMP` host names the shared guidance uses. |
 | `omp/src/panel.ts` | omp adapter. The panel's ui state, the screen it draws, and the calls the controller makes: `render`, `drawPanel`, the band, and whether the view animates. It and the `panel-*.ts` files import no omp package. |
-| `omp/src/panel-lines.ts` | omp adapter. The `Line` and `Entry` types, and the lines for rows, buttons and Closed groups. |
+| `omp/src/panel-lines.ts` | omp adapter. The `Line` and `Entry` types, the lines for rows, buttons and Closed groups, and which button of a line or a Status target has focus. |
 | `omp/src/panel-entries.ts` | omp adapter. Each tab's entries: the Asks and Finds groups, the stop line, the PRs tab, the Status page and Help. |
-| `omp/src/panel-keys.ts` | omp adapter. Selection, button focus and `handleKey`, which maps each key to a ui change or a press. |
+| `omp/src/panel-keys.ts` | omp adapter. Selection, moving button focus, and `handleKey`, which maps each key to a ui change or a press. |
 | `omp/src/panel-text.ts` | omp adapter. Measures, cuts and wraps text that holds ANSI styles. |
 | `omp/src/panel-ask-tree.ts` | omp adapter. An open row's Holds up line, context and option lines as ├─, └─ and │ lines. |
 | `omp/src/panel-draw.ts` | omp adapter. Draws a line with its marks and buttons, and a banner in its box. |
-| `omp/src/panel-page.ts` | omp adapter. Draws the Status page's rows: the tree, stall words, rules and buttons. |
+| `omp/src/panel-page.ts` | omp adapter. Draws the Status page's rows: the columns they sit at, the tree, stall words, rules and buttons. |
 | `omp/src/panel-goal.ts` | omp adapter. Draws the Status page's goal section: its heading, the goal or the line that says none is set, its buttons, its text field, the Now line and the milestones. |
 | `omp/src/panel-tabs.ts` | omp adapter. The tab bar, the footer, scrolling, and the tab the panel moves to as rows arrive. |
 | `omp/src/controller.ts` | omp adapter. The open panel: the cached screen, the person's ui state, the work a key starts, and the redraw timer. |

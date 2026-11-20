@@ -36,6 +36,7 @@ import { isRowTab } from '../../hooks/tabs'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
 import type { SessionView } from '../../hooks/session-view'
 import { goalSection, setGoal } from './panel-goal'
+import { PAGE_TEXT_AT } from './panel-page'
 import { collapsedIn } from './panel-text'
 import { unfoldedRows } from '../../hooks/status-folds'
 import type { ShownTab } from '../../hooks/tabs'
@@ -349,12 +350,6 @@ function orderEntries(screen: PanelScreen, order: PrOrderView, now: number): Ent
 
   return out
 }
-
-/** Where a Status row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
-export const PAGE_MARK_AT = 1
-export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
-/** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
-export const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
 function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
   const isCollapsed = collapsedIn(view)

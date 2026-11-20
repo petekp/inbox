@@ -80,6 +80,9 @@ export function countsByMark(folded: Subject[]): StatusCount[] {
   })
 }
 
+/** What separates a row's name from its stall word. */
+export const STALL_GAP = ' · '
+
 const DAY_MS = 24 * 60 * 60_000
 
 /**
