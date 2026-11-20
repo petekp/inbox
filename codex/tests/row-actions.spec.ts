@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { applyPress } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
-import { FOLD_QUIET_MS, PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/timing'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
 import { recordClose, recordItem } from '../../hooks/tools'
 import { CODEX } from '../src/texts'
@@ -173,7 +173,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       lastActions: {},
       turnStartedAt: null,
     }).ledger
-    await pause(POLL_MS + 100)
+    await eventually(() => /Closed by Codex: the build passed/.test(root.textContent ?? ''))
     assert.ok(root.querySelector('input') === held, 'the reply field was replaced')
     assert.equal(held.value, 'Still blocked')
     assert.ok(document.activeElement === held, 'the reply field has focus')
@@ -212,7 +212,11 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     root.querySelector('.list')!.dispatchEvent(new window.Event('pointerover', { bubbles: true }) as unknown as Event)
     Date.now = () => realNow() + SETTLED_MS
     try {
-      await pause(POLL_MS + 100)
+      await eventually(
+        () =>
+          /Tag the release/.test(root.querySelector('.row.settled')?.textContent ?? '') &&
+          root.querySelector('.key.undo:not(.spent)') === null,
+      )
       assert.match(
         root.querySelector('.row.settled')?.textContent ?? '',
         /Tag the release/,
@@ -220,7 +224,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       )
       assert.ok(root.querySelector('.key.undo:not(.spent)') === null, 'Undo is still offered')
       document.documentElement.dispatchEvent(new window.Event('pointerleave') as unknown as Event)
-      await pause(FOLD_QUIET_MS + 400)
+      await eventually(() => root.querySelector('.row.settled') === null && /2 closed/.test(root.textContent ?? ''))
       assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
       assert.match(root.textContent ?? '', /2 closed/)
       const closedFold = root.querySelector('button.fold')!
