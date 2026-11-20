@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { join, relative } from 'node:path'
 
-import { localTarget } from './imports.mjs'
+import { importTarget } from './imports.mjs'
 import { API, ts } from './ts.mjs'
 
 const DIRS = ['hooks', 'codex/src', 'omp/src', 'herdr/src']
@@ -49,7 +49,7 @@ function valueImportsOf(source) {
     }
   }
 
-  return found.filter(node => ts.isStringLiteral(node)).map(node => node.text)
+  return found.filter(node => ts.isStringLiteral(node)).map(node => ({ from: node.text, node }))
 }
 
 /** Tarjan's strongly connected components, each with more than one module or a module that imports itself. */
@@ -121,11 +121,11 @@ export function checkCycles(root, errors) {
     const snapshot = api.updateSnapshot({ openFiles: files.map(path => join(rootDir, path)) })
     for (const path of files) {
       const absolute = join(rootDir, path)
-      const source = snapshot.getDefaultProjectForFile(absolute)?.program.getSourceFile(absolute)
+      const project = snapshot.getDefaultProjectForFile(absolute)
+      const source = project?.program.getSourceFile(absolute)
       if (!source) throw new Error(`Cannot parse ${path}.`)
-      for (const from of valueImportsOf(source)) {
-        if (!from.startsWith('.')) continue
-        const target = localTarget(resolve(dirname(absolute), from))
+      for (const dependency of valueImportsOf(source)) {
+        const target = importTarget(rootDir, project, path, dependency)
         const targetPath = target && relative(rootDir, target)
         if (graph.has(targetPath)) graph.get(path).add(targetPath)
       }
@@ -137,6 +137,6 @@ export function checkCycles(root, errors) {
     errors.push(
       `Value imports form a cycle: ${loopThrough(graph, component).join(' -> ')}` +
         (component.length > 2 ? `, among ${component.join(', ')}` : '') +
-        '. Move the shared piece into the module that owns it, as docs/looks.md names, so the imports run one way.',
+        '. If an import brings only types, write it as `import type`. Otherwise move the shared piece into the module that owns it, as docs/looks.md names, so the imports run one way.',
     )
 }

@@ -1,96 +1,7 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
-import type { TestContext } from 'node:test'
-import { fileURLToPath } from 'node:url'
 
-import { tempDir } from './helpers'
-
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-
-type Entry = [client: string, feature: string, support: string]
-
-function clientsSource(features = ['catch-up', 'link-open-rule'], entries: Entry[] = []) {
-  const supportOf = (client: string, feature: string) =>
-    entries.find(e => e[0] === client && e[1] === feature)?.[2] ?? "{ kind: 'full' }"
-  const clients = ['claude-code', 'codex', 'omp'].map(
-    client => `'${client}': { support: { ${features.map(f => `'${f}': ${supportOf(client, f)}`).join(', ')} } },`,
-  )
-
-  return `export type FeatureId = ${features.map(f => `'${f}'`).join(' | ')}
-export const CLIENTS = { ${clients.join('\n')} }
-`
-}
-
-function differencesSource(column: string, ids: string[]) {
-  return `| Topic | ${column} | Why |
-| --- | --- | --- |
-| Keys | a | b |
-${ids.map(id => `| Topic (\`${id}\`) | a | b |`).join('\n')}
-`
-}
-
-const unsupported = "{ kind: 'unsupported', reason: 'Not built yet.' }"
-
-function fixture(t: TestContext) {
-  const root = tempDir()
-  t.after(() => rmSync(root, { recursive: true, force: true }))
-  const write = (path: string, text: string) => {
-    mkdirSync(dirname(join(root, path)), { recursive: true })
-    writeFileSync(join(root, path), text)
-  }
-  cpSync(join(ROOT, 'scripts'), join(root, 'scripts'), { recursive: true })
-  for (const file of readdirSync(join(ROOT, 'hooks')).filter(f => f.endsWith('.ts')))
-    write(`hooks/${file}`, 'export const value = 1\n')
-  write(
-    'hooks/empty-tab.ts',
-    'const EMPTY_TITLES = {}\nexport const emptyTab = () => EMPTY_TITLES, emptyState = () => null\n',
-  )
-  write('codex/src/tab-parts.ts', 'export const EmptyState = () => null\n')
-  write('hooks/register.tsx', 'export const value = 1\n')
-  write('hooks/row-client.tsx', 'export const value = 1\n')
-  write('types/index.d.ts', 'export interface Value {}\n')
-  write('codex/src/host.ts', 'export const value = 1\n')
-  write('codex/tests/.keep', '')
-  write('codex/package.json', '{"type":"module"}\n')
-  symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')
-  write('hooks/clients.ts', clientsSource())
-  write('docs/looks.md', '# Looks\n')
-  const looks = (main: string[] = [], omp: string[] = []) => {
-    write('docs/looks/differences-main.md', differencesSource('Terminal', main))
-    write('docs/looks/differences-omp.md', differencesSource('omp', omp))
-  }
-  looks()
-  write(
-    'tsconfig.json',
-    JSON.stringify({
-      compilerOptions: { module: 'esnext', moduleResolution: 'bundler', paths: { '@hooks/*': ['./hooks/*'] } },
-      include: ['hooks', 'types', 'codex/src', 'codex/tests'],
-    }),
-  )
-
-  const withFileRows = (unmapped: string[]) => {
-    const files = ['hooks', 'codex/src', 'omp/src']
-      .filter(dir => existsSync(join(root, dir)))
-      .flatMap(dir => readdirSync(join(root, dir)).map(entry => `${dir}/${entry}`))
-      .filter(path => /\.(?:ts|tsx|html)$/.test(path) && !path.endsWith('.d.ts') && !unmapped.includes(path))
-    write(
-      'docs/looks/files-all.md',
-      `| File | Role |\n| --- | --- |\n${files.map(path => `| \`${path}\` | a |`).join('\n')}\n`,
-    )
-  }
-
-  return {
-    write,
-    looks,
-    check: ({ unmapped = [] }: { unmapped?: string[] } = {}) => {
-      withFileRows(unmapped)
-      return spawnSync(process.execPath, [join(root, 'scripts/check-structure.mjs')], { cwd: root, encoding: 'utf8' })
-    },
-  }
-}
+import { clientsSource, fixture, type Fixture, unsupported } from './structure-fixtures'
 
 test('the structure gate accepts shared imports by their resolved target, including renamed bindings, aliases and types', t => {
   const f = fixture(t)
@@ -265,49 +176,6 @@ test('the structure gate rejects a source file that has no Files row in docs/loo
   assert.ok(result.stdout.includes('no Files row for codex/src/consumer.ts'), result.stdout + result.stderr)
 })
 
-test('the structure gate rejects value imports that form a cycle', t => {
-  const f = fixture(t)
-  f.write('codex/src/cycle-b.ts', "export { a as b } from '../../hooks/cycle-a'\n")
-  f.write('hooks/cycle-a.ts', "import { b } from '../codex/src/cycle-b'\nexport const a = () => b\n")
-  const result = f.check()
-  assert.equal(result.status, 1, result.stdout + result.stderr)
-  assert.ok(
-    result.stdout.includes(
-      'Value imports form a cycle: codex/src/cycle-b.ts -> hooks/cycle-a.ts -> codex/src/cycle-b.ts',
-    ),
-    result.stdout + result.stderr,
-  )
-})
-
-test('the structure gate accepts a cycle closed only by type imports or import() calls', t => {
-  const f = fixture(t)
-  f.write('hooks/cycle-a.ts', "import { b } from './cycle-b'\nexport type A = number\nexport const a = () => b\n")
-  f.write(
-    'hooks/cycle-b.ts',
-    `import type { A } from './cycle-a'
-import { type A as Same } from './cycle-a'
-export type { A as Again } from './cycle-a'
-const later = import('./cycle-a')
-export const b = (value: A, same: Same) => [value, same, later]
-`,
-  )
-  const result = f.check()
-  assert.equal(result.status, 0, result.stdout + result.stderr)
-})
-
-test('the structure gate rejects a look-map event the named file does not subscribe to', t => {
-  const f = fixture(t)
-  f.write('hooks/view.ts', "export const wire = (on: (event: string) => void) => on('turn.end')\n")
-  f.write('docs/looks/owners-events.md', "`hooks/view.ts:on('turn.end')` and `hooks/view.ts:on('turn.start')`\n")
-  const result = f.check()
-  assert.equal(result.status, 1, result.stdout + result.stderr)
-  assert.ok(
-    result.stdout.includes("hooks/view.ts:on('turn.start'), and hooks/view.ts subscribes to no 'turn.start' event"),
-    result.stdout + result.stderr,
-  )
-  assert.ok(!result.stdout.includes("'turn.end' event"), result.stdout + result.stderr)
-})
-
 test('the structure gate accepts a feature that is not full when each table that covers the host names it', t => {
   const f = fixture(t)
   f.write(
@@ -379,7 +247,7 @@ ${body}
 `
 }
 
-function writeHooksModule(f: ReturnType<typeof fixture>, text: string) {
+function writeHooksModule(f: Fixture, text: string) {
   f.write('hooks/hooks.json', '{ "modules": ["./register.tsx"] }\n')
   f.write('hooks/register.tsx', text)
 }
