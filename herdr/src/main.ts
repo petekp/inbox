@@ -184,14 +184,19 @@ export default class Inbox extends View {
   syncInput(): void {
     const typing = this.ui.typing
     if (this.input !== null && this.input.rowId === typing) return
-    this.input?.state.release()
-    this.input = null
+    this.releaseField()
     if (typing === null) return void this.focus?.focus()
     const state = InputState.new({ placeholder: this.hints[typing] ?? '', value: this.ui.drafts[typing]?.text ?? '' })
     state.on('change', (_e, cx) => this.apply([{ type: 'edit-draft', id: typing, text: state.value() }], cx))
     state.on('submit', (_e, cx) => this.apply(buttonEvents({ is: 'send', rowId: typing }, this.ui, 'key'), cx))
     this.input = { rowId: typing, state }
     state.focus()
+  }
+
+  /** Lets go of the open field without moving the keys, so it can run while the look draws. */
+  releaseField(): void {
+    this.input?.state.release()
+    this.input = null
   }
 
   /** The placeholder of each field the last draw offered, by row. */
@@ -285,7 +290,7 @@ export default class Inbox extends View {
     this.queue = queue ?? new PressQueue(queueIo)
     this.wake?.timer.cancel()
     this.wake = null
-    this.syncInput()
+    this.releaseField()
     this.heights.clear()
     if (sessionId) this.load(sessionId, cx)
   }

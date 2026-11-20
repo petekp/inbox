@@ -46,6 +46,19 @@ const SIDES: Record<string, Side[]> = {
   my: ['mt', 'mb'],
 }
 
+let isRendering = false
+const refuseWhileRendering = () => {
+  if (isRendering) throw new Error('FocusHandle.focus() cannot run during render or layout')
+}
+const rendered = <T>(draw: () => T): T => {
+  isRendering = true
+  try {
+    return draw()
+  } finally {
+    isRendering = false
+  }
+}
+
 class StandInField {
   text: string
   handlers = new Map<string, (event: unknown, cx: unknown) => void>()
@@ -57,6 +70,7 @@ class StandInField {
     this.handlers.get('change')?.(undefined, standInContext())
   }
   focus() {
+    refuseWhileRendering()
     keys = this
   }
   release() {
@@ -103,6 +117,7 @@ function standInContext() {
     },
     focus_handle: () => ({
       focus() {
+        refuseWhileRendering()
         keys = 'panel'
       },
     }),
@@ -263,9 +278,9 @@ export async function openPanel(built?: InboxClass) {
   const panel = new Inbox()
   const cx = standInContext()
   panel.init(undefined, cx as never)
-  panel.render(cx as never)
+  rendered(() => panel.render(cx as never))
   await settle()
-  const paint = () => nodeOf(panel.render(cx as never)) as Painted
+  const paint = () => nodeOf(rendered(() => panel.render(cx as never))) as Painted
   const PLAIN_CLICK = {
     click_count: 1,
     modifiers: { shift: false, control: false, alt: false, platform: false, function: false },
