@@ -23,7 +23,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 
 ## Checks
 
-- `scripts/check.sh` runs Prettier pinned to `prettier@3.9.9`, then `claude plugin validate`, then `node scripts/check-structure.mjs`, then `tsc --noEmit` when `.claude-plugin/types/tsconfig.json` exists, then `claude plugin test`. When `codex/node_modules` exists, it then checks the Codex bundles, the Codex types and the Codex tests. It fails when it cannot check the types or the Codex plugin.
+- `scripts/check.sh` lists its checks in its header comment. It fails when a check cannot run, such as the type check before a session has written `.claude-plugin/types`.
 - The type check runs against whichever engine last wrote the gitignored types. On 2026-10-08 the header read 2.1.293, 2.1.294 and 2.1.295 at different times. The local types can lag the newest release, and can lead the desktop app's engine. Inference: an API added after the desktop app's engine passes `check.sh` and fails in Code mode.
 - `claude plugin update --help` says "(restart required to apply)". `README.md:22-23` and the mods overview say to run `/reload-plugins`. [O#install-or-update-a-mod]
 

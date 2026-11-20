@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import {
   lstat,
   mkdir,
@@ -304,8 +305,16 @@ function processIdentity(pid: number): string | null {
       stdio: 'pipe' as const,
       timeout: 1_000,
     }
-    const boot = bootSession ?? execFileSync('/usr/sbin/sysctl', ['-n', 'kern.bootsessionuuid'], options).trim()
-    const started = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'lstart='], options).trim()
+    const isLinux = process.platform === 'linux'
+    const boot =
+      bootSession ??
+      (isLinux
+        ? readFileSync('/proc/sys/kernel/random/boot_id', 'utf8')
+        : execFileSync('/usr/sbin/sysctl', ['-n', 'kern.bootsessionuuid'], options)
+      ).trim()
+    const started = isLinux
+      ? linuxStartTime(pid)
+      : execFileSync('/bin/ps', ['-p', String(pid), '-o', 'lstart='], options).trim()
     if (!boot || !started) return null
     bootSession = boot
     const identity = createHash('sha256').update(boot).update('\0').update(started).digest('hex').slice(0, 32)
@@ -314,6 +323,13 @@ function processIdentity(pid: number): string | null {
   } catch {
     return null
   }
+}
+
+// Field 22 of /proc/<pid>/stat is the start time in clock ticks since boot. Field 2, the command name, is in parentheses
+// and can hold spaces and parentheses, so the fields are counted from the last ')'.
+function linuxStartTime(pid: number): string {
+  const stat = readFileSync(`/proc/${pid}/stat`, 'utf8')
+  return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19] ?? ''
 }
 
 function isLive(owner: LockOwner, generation: string, observedLiveAt: Map<string, number>): boolean {

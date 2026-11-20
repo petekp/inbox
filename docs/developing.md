@@ -43,4 +43,16 @@ settings or inbox: `env HOME=/path/to/empty/folder omp -e omp/src/host.ts`.
 `./scripts/check.sh` runs Prettier, a file-size check, `claude plugin validate`, a type check and
 the tests, and checks the Codex bundles and the omp bundle are current. The type check needs the
 types Claude Code writes to `.claude-plugin/types/` the first time it loads
-the mod.
+the mod. It takes Prettier, TypeScript and esbuild from the root `package.json`, so install
+those once:
+
+```sh
+npm ci --ignore-scripts
+```
+
+Every pull request to `next` or `main`, and every push to `next`, runs the checks in
+`.github/workflows/checks.yml` on GitHub. They are the checks in `check.sh` that need no sign-in
+and no Herdr app. CI leaves out the root type check, since only a signed-in session writes the
+engine types, and the Herdr look's type check and `herdr-app check`, which need the Herdr app.
+`check.sh` is still the full check, so run it before you ask for a merge. A new check that
+needs neither goes in both.

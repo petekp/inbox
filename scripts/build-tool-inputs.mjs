@@ -6,15 +6,15 @@
 // Usage: node scripts/build-tool-inputs.mjs [--check]
 //
 // With --check, writes nothing and exits 1 when the part differs from what the schemas build. Needs the esbuild that
-// codex/ pins, to load hooks/tools.ts.
+// the root package.json pins, to load hooks/tools.ts.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PART = join(ROOT, 'types', 'parts', 'tool-inputs.d.ts')
-const { build } = await import(pathToFileURL(join(ROOT, 'codex', 'node_modules', 'esbuild', 'lib', 'main.js')).href)
+const { build } = await import('esbuild')
 
 const bundle = await build({
   stdin: {

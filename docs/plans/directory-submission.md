@@ -57,7 +57,7 @@ Each of these is a policy hold. The README's "What it runs, sends and changes" s
 ## Leave as is
 
 - **`types` in plugin.json** flagged as unknown. It's a documented manifest field for mods, and `claude plugin validate` reads it. The directory's scan lags here.
-- **CLAUDE.md at the plugin root**, **the oversized `docs/reference/claude-code-mods.md`**, and **`npx -y` in `scripts/check.sh`** (the download-and-run findings). These exist because the plugin is the whole repo (`"source": "./"`). Each is a warning or a hold. Pete chose to keep shipping the whole repo.
+- **CLAUDE.md at the plugin root** and **the oversized `docs/reference/claude-code-mods.md`**. These exist because the plugin is the whole repo (`"source": "./"`). Each is a warning or a hold. Pete chose to keep shipping the whole repo.
 - **Mod adds tools, commands or agents**: a note.
 
 ## Decisions
