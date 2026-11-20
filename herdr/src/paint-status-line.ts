@@ -1,7 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
-import { STALL_GAP } from '../../hooks/status-page'
+import { STALL_GAP } from '../../hooks/status-page-parts'
 import type { StatusLine } from './blocks'
 import { EDGE, HELP_COLUMN, HELP_INDENT, LIST_GAP, MARK_W, NEST, colorOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'

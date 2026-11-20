@@ -68,7 +68,7 @@ export function localTarget(path) {
   return target ? realpathSync(target) : null
 }
 
-function importTarget(root, project, path, dependency) {
+export function importTarget(root, project, path, dependency) {
   if (dependency.from === null) return null
   if (dependency.from.startsWith('.')) {
     const target = localTarget(resolve(dirname(join(root, path)), dependency.from))

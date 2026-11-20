@@ -71,6 +71,17 @@ var EMPTY = {
 // ../hooks/inbox-text.ts
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
+// ../hooks/gh.ts
+var GH_TIMEOUT_MS = 2e4;
+var UNSTARTABLE_CODE = -1;
+var TIMED_OUT_CODE = -2;
+
+// ../hooks/pr-fetch.ts
+var MAX_ORDERED_PRS = 30;
+var CLOSED_PR_REFRESH_MS = 60 * 6e4;
+var LIMIT_RETRY_MS = 5 * 6e4;
+var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
+
 // ../hooks/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
@@ -174,10 +185,8 @@ var MARK_LEGEND = [
 
 // ../hooks/status-page-parts.ts
 var CHILD_MARK = SUBJECT_MARKS.working;
-var DAY_MS = 24 * 60 * 6e4;
-
-// ../hooks/status-page.ts
 var STALL_GAP = " \xB7 ";
+var DAY_MS = 24 * 60 * 6e4;
 
 // ../hooks/status-folds.ts
 var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
@@ -200,31 +209,6 @@ var NEEDS_YOU_GROUPS = [
   { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
 var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
-
-// ../hooks/gh.ts
-var GH_TIMEOUT_MS = 2e4;
-var UNSTARTABLE_CODE = -1;
-var TIMED_OUT_CODE = -2;
-
-// ../hooks/pr-fetch.ts
-var MAX_ORDERED_PRS = 30;
-var CLOSED_PR_REFRESH_MS = 60 * 6e4;
-var LIMIT_RETRY_MS = 5 * 6e4;
-var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
-
-// ../hooks/pr-press.ts
-var RERUN_LABEL = "Re-run";
-var PR_FIX_LABELS = {
-  "pr-conflicts": "Resolve conflicts",
-  "check-fix": "Fix"
-};
-var PR_READ_FIRST_LABELS = {
-  ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL,
-  "pr-address-all": "Address all",
-  "pr-merge": "Merge",
-  "thread-address": "Address"
-};
 
 // ../hooks/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
@@ -599,6 +583,20 @@ function detachedUpdate(dir2, env, script) {
     child.unref();
   };
 }
+
+// ../hooks/pr-press.ts
+var RERUN_LABEL = "Re-run";
+var PR_FIX_LABELS = {
+  "pr-conflicts": "Resolve conflicts",
+  "check-fix": "Fix"
+};
+var PR_READ_FIRST_LABELS = {
+  ...PR_FIX_LABELS,
+  "check-rerun": RERUN_LABEL,
+  "pr-address-all": "Address all",
+  "pr-merge": "Merge",
+  "thread-address": "Address"
+};
 
 // ../hooks/tool-schemas.ts
 var RECORD_SCHEMA = {

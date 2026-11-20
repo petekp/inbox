@@ -1,8 +1,8 @@
 import type { Delivery, LastAction, PrCheck, PrFetchFailure, PrStatus, PrThread, PrView } from '../types'
-import { fetchFailureNotice } from './pr-refresh'
+import { GH_TIMED_OUT_TEXT } from './pr-fetch'
 import { baseName } from './open-targets'
 import { isFoldingPress } from './last-actions'
-import { clipLabel } from './text'
+import { clipLabel, clockTime } from './text'
 import { blockingChecks, cancelledChecks, failedSibling, failingChecks } from './pr-checks'
 import { commentLine, commentParts, THREAD_TITLE_CHARS, threadWhere, took, waitingThreads, checkKey } from './prs'
 import type { IsThreadSent } from './prs'
@@ -49,6 +49,22 @@ export function isBlockPressShown(pr: PrView, lastActions: Record<string, LastAc
 export const GH_MISSING_TEXT = 'The inbox could not find gh. It needs gh to read your PRs.'
 
 export const GH_SIGNED_OUT_TEXT = 'gh is not signed in to GitHub. Run gh auth login so the inbox can read your PRs.'
+
+/** The notice at the top of the PRs tab for a cause that stopped the whole fetch. Its first sentence is the lead. */
+export function fetchFailureNotice(f: PrFetchFailure): string {
+  switch (f.kind) {
+    case 'limit':
+      return f.resetsAt === null
+        ? "GitHub's limit is used up. The PRs refresh once it resets."
+        : `GitHub's limit is used up. The PRs refresh after it resets at ${clockTime(f.resetsAt)}.`
+    case 'unreachable':
+      return 'Could not reach GitHub. The PRs show as last read.'
+    case 'timed-out':
+      return `${GH_TIMED_OUT_TEXT}. The PRs show as last read.`
+    case 'error':
+      return `Could not read the PRs: ${f.text}. They show as last read.`
+  }
+}
 
 /**
  * Why the PRs cannot be read, as the PRs tab says it once at the top, or null when nothing stops it. A missing gh

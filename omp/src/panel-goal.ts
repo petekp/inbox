@@ -18,9 +18,16 @@ import type { PathLine, WorkJoint } from '../../hooks/status-path'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import type { ButtonFace, Entry } from './panel-lines'
-import { PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
-import { pageFocus } from './panel-keys'
-import { foldChevron, pageButtonLines, pageLine, pageRuleCells, partHeading } from './panel-page'
+import { pageFocus } from './panel-lines'
+import {
+  foldChevron,
+  PAGE_MARK_AT,
+  PAGE_TEXT_AT,
+  pageButtonLines,
+  pageLine,
+  pageRuleCells,
+  partHeading,
+} from './panel-page'
 import { collapsedIn, indented, visibleLength, wrapText } from './panel-text'
 import type { Style } from './panel'
 import { cellWidth } from '../../hooks/text'
