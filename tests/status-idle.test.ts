@@ -116,7 +116,20 @@ test('a waiting subject kept with the same words leaves the idle block for a day
 })
 
 test('a line counts for an idle subject only when it applies to that subject', () => {
-  const input = { last: stalled(), asks: [askItem('i1')], tasks: [], now: 3 * DAY }
+  const finishedChild = {
+    ref: 't2',
+    kind: 'subagent' as const,
+    name: 'icon export',
+    startedAt: 30,
+    endedAt: 40,
+    lastActivityAt: 40,
+  }
+  const input = {
+    last: withChild(stalled(), finishedChild, 3 * DAY),
+    asks: [askItem('i1')],
+    tasks: [],
+    now: 3 * DAY,
+  }
   const unanswered = (text: string) => {
     const answer = parseStatus(`${text}\nSET: s1 | working | queue built\nSUGGEST: -`)
     const retry = answer && statusRetry(input, 'prompt')(answer, text)
@@ -126,6 +139,8 @@ test('a line counts for an idle subject only when it applies to that subject', (
   expect(unanswered('WAS: s6 | was waiting on the old vendor')).toBeNull()
   expect(unanswered('LINK: i1 | s6')).toBeNull()
   expect(unanswered('LINK: i9 | s6')).toContain('s6 Font license')
+  expect(unanswered('LINK: c1 | s6')).toBeNull()
+  expect(unanswered('LINK: c2 | s6')).toContain('s6 Font license')
   expect(unanswered('SET: S6 | waits-on-other | waits on the vendor')).toContain('s6 Font license')
 })
 

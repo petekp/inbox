@@ -104,3 +104,8 @@ test('after SUGGEST: -, an answer with no goal line is asked once more only when
   expect((await asked(declined, ['NO CHANGE'])).prompts).toHaveLength(1)
   expect((await asked(moved, ['NO CHANGE', 'SUGGEST: -'])).prompts).toHaveLength(2)
 })
+
+test('while the Status holds nothing, an answer that adds no subject is not asked for the next goal, and one that adds a subject is', async () => {
+  expect((await asked(null, ['NO CHANGE', 'SUGGEST: -'])).prompts).toHaveLength(1)
+  expect((await asked(null, ['NEW: working | Search | started', 'SUGGEST: -'])).prompts).toHaveLength(2)
+})
