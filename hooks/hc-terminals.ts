@@ -42,6 +42,47 @@ export async function delegatesInHc(
   return null
 }
 
+/**
+ * A delegate session: one that another session started to do part of its work, whose questions and tasks go to that
+ * session rather than to the person. `parent` is the Herdr terminal that started it, when Herdr names one.
+ */
+export type DelegateSession = { parent: string | null }
+
+/**
+ * The delegate session the Herdr app terminal `target` runs, from its `hc get` labels and parent. A terminal is a
+ * delegate's when it has a parent, or carries a `fleet.domain` label, unless its `fleet.role` label is `coordinator`.
+ * A coordinator's own asks are the person's to answer even when another session started it. Null outside an app
+ * terminal, and when no `hc` starts or its answer cannot be read.
+ */
+export async function delegateSession(target: HerdrTarget | null, run: Run): Promise<DelegateSession | null> {
+  if (target?.kind !== 'terminal') return null
+  for (const hc of target.hc) {
+    const r = await run([hc, 'get', target.terminal, '--json'], { cwd: '/', timeoutMs: HC_TIMEOUT_MS })
+    if (r.code === UNSTARTABLE_CODE) continue
+    if (r.code !== 0) return null
+    try {
+      const t: { parent?: unknown; labels?: Record<string, unknown> } = JSON.parse(r.stdout)
+      const parent = typeof t?.parent === 'string' && t.parent.trim() ? t.parent.trim() : null
+      const domain = t?.labels?.['fleet.domain']
+      const hasDomain = typeof domain === 'string' && domain.trim() !== ''
+      const isCoordinator = t?.labels?.['fleet.role'] === 'coordinator'
+
+      return !isCoordinator && (parent !== null || hasDomain) ? { parent } : null
+    } catch {
+      return null
+    }
+  }
+
+  return null
+}
+
+/** `delegateSession` read once, at the first call. A terminal's labels and parent are set as Herdr starts it. */
+export function delegateReader(target: HerdrTarget | null, run: Run): () => Promise<DelegateSession | null> {
+  let read: Promise<DelegateSession | null> | null = null
+
+  return () => (read ??= delegateSession(target, run).catch(() => null))
+}
+
 /** What `hc get` says about a terminal beyond its status: the focus its inbox published and its last note. */
 async function described(hc: string, address: string, run: Run): Promise<Pick<HerdrAgent, 'focus' | 'note'>> {
   const r = await run([hc, 'get', address, '--json'], { cwd: '/', timeoutMs: HC_TIMEOUT_MS })

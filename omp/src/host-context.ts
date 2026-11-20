@@ -2,6 +2,7 @@ import type { herdrReporter } from '../../hooks/herdr'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 import type { PrShared } from '../../hooks/pr-fetch'
 import type { Run } from '../../hooks/gh'
+import type { DelegateSession } from '../../hooks/hc-terminals'
 import type { SessionHost } from '../../hooks/session-host'
 import type { prFetchTracker } from '../../hooks/host-prs'
 import type { ShownTab } from '../../hooks/tabs'
@@ -50,6 +51,8 @@ export type HostContext = {
   /** Follows the presses the Herdr look writes for the session omp shows. */
   presses: OmpPresses
   run: Run
+  /** The delegate session omp runs as, as `hooks/hc-terminals.ts:delegateSession` reads it, or null. */
+  delegate(): Promise<DelegateSession | null>
   memory: Memory
   sendToAgent(ctx: OmpContext, text: string): Promise<string | null>
   askFor(ctx: OmpContext, id: string): SessionHost<OmpState>['ask']

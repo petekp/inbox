@@ -75,7 +75,7 @@ test('a dialog question links to the question the agent recorded for it or the u
     writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n'))
   }
   const applyAnswer = (answer: string) =>
-    updateState(dir, 's1', s => applied(s, parsedReply(s.pending[0]!.ex, answer), 2000, 2000))
+    updateState(dir, 's1', s => applied(s, parsedReply(s.pending[0]!.ex, answer), 2000, 2000, false))
   const links = async () => (await readState(dir, 's1')).ledger.items.map(i => [i.ask, i.dialog ?? null])
   const linkedQuestions = async () => (await readState(dir, 's1')).dialogQuestions.map(q => q.itemId !== null)
   const record = (ask: string, options: string[]) =>
@@ -110,9 +110,9 @@ test('a dialog question links to the question the agent recorded for it or the u
     deps,
   )
   assert.deepEqual(await linkedQuestions(), [false])
-  await applyAnswer('NEW: decide | - | Deploy now? | Deploy / Wait | -')
+  await applyAnswer('NEW: decide | - | Deploy the API now? | Deploy / Wait | -')
   assert.deepEqual((await links()).slice(1), [
-    ['Deploy now?', { callId: 'call_b', index: 0, question: 'Deploy to production now?' }],
+    ['Deploy the API now?', { callId: 'call_b', index: 0, question: 'Deploy to production now?' }],
   ])
   await handleHook(input('UserPromptSubmit', { prompt: 'Clean up', turn_id: 't3' }), deps)
   write(

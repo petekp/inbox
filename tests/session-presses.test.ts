@@ -27,7 +27,7 @@ async function pressedCompare() {
   const call = async (tool: 'record' | 'close', args: Record<string, unknown>) => {
     let result = ''
     await host.update(async s => {
-      const r = recorded(CLAUDE_CODE, s, tool, args, await host.now(), TOOL_FIELDS)
+      const r = recorded(CLAUDE_CODE, s, tool, args, await host.now(), TOOL_FIELDS, null)
       result = r.result
       return r.state
     })
@@ -80,7 +80,7 @@ test('Compare reads Comparing… after its reply until the agent records the que
   const record = async (args: Record<string, unknown>) => {
     let result = ''
     await host.update(async s => {
-      const r = recorded(CLAUDE_CODE, s, 'record', args, await host.now(), TOOL_FIELDS)
+      const r = recorded(CLAUDE_CODE, s, 'record', args, await host.now(), TOOL_FIELDS, null)
       result = r.result
       return r.state
     })
@@ -140,7 +140,7 @@ test('Compare reads Comparing… after its reply until the agent records the que
 test('while a press is out, its button stays out and a second press sends nothing, even when a newer note shows on the row', async () => {
   const { host } = fakeHost(async () => null)
   const question = { kind: 'question', ask: 'Ship it?', options: ['Yes', 'No'] }
-  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, 1, TOOL_FIELDS).state)
+  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, 1, TOOL_FIELDS, null).state)
   const id = (await host.read()).ledger.items[0]!.id
   await press(host, { action: 'explain', id }, false, NO_HOLDS)
   const s = await host.read()

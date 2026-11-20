@@ -179,5 +179,6 @@ export const CODEX: Client = {
       reason: 'Codex gives a plugin no call that scrolls its conversation.',
     },
     'done-press-age': { kind: 'full' },
+    'delegate-asks': { kind: 'full' },
   },
 }

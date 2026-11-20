@@ -10,6 +10,8 @@ import { readState, useQuestionHistory } from './state'
 import { questionHistoryPlace } from './question-history'
 import { run } from './run'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
+import { delegateReader } from '../../hooks/hc-terminals'
+import { herdrTarget } from '../../hooks/herdr'
 import { codexAsk, statusRecords, refreshStatus, runUpdates } from './update'
 import { STATUS_REFRESH } from './detached-update'
 
@@ -26,7 +28,7 @@ async function main() {
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now)
   const records = existsSync(join(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : undefined
   if (isStatusRefresh) await refreshStatus(dir, sessionId, ask, Date.now, onWrite, records)
-  else await runUpdates(dir, sessionId, ask, Date.now, onWrite, records)
+  else await runUpdates(dir, sessionId, ask, Date.now, onWrite, records, delegateReader(herdrTarget(process.env), run))
 }
 
 main().catch(() => process.exit(0))

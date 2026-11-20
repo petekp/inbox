@@ -57,13 +57,13 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   expect(await pane.find({ text: /^ 5$/ })).toBeDefined()
   expect(sidebarTokens()).toMatchObject({ ...NO_COUNTS, 'inbox-needs-you': '5' })
 
-  w.ledgerReply = ['NEW: do | - | Water the plants | - | -', 'NEW: decide | 1 | Ship it? | yes / no | yes'].join('\n')
+  w.ledgerReply = ['NEW: do | - | Water the plants | - | -', 'NEW: decide | 1 | Ship v12? | yes / no | yes'].join('\n')
   await reply('ship it', 't3')
   expect(await handle('i8')).toBe('1)')
-  expect(sidebarLines().at(-1)).toBe('8 · Ship it?')
+  expect(sidebarLines().at(-1)).toBe('8 · Ship v12?')
   w.ledgerReply = 'NEW: do | - | Feed the cat | - | -'
   await reply('one more task', 't4')
-  expect(sidebarLines().at(-1)).toBe('9 · Ship it?')
+  expect(sidebarLines().at(-1)).toBe('9 · Ship v12?')
   await $.tool.call({
     tool: 'mcp__inbox__record',
     kind: 'finding',
@@ -74,7 +74,7 @@ test('a question’s handle is the number a typed answer reaches, and the band c
   await clock.settle()
   expect(sidebarTokens()).toEqual({
     ...NO_COUNTS,
-    inbox: '9 · Ship it?',
+    inbox: '9 · Ship v12?',
     'inbox-needs-you': '9',
     'inbox-findings': '1',
   })

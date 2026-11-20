@@ -5,6 +5,7 @@ import type { Host } from './model-text'
 import type { GhRun, PrShared } from './pr-fetch'
 import type { Effect } from './press-reducer'
 import type { AnswerMessage } from './press-messages'
+import type { DelegateSession } from './hc-terminals'
 import { parsedReply, applied } from './session-turns'
 import { needsCatchUp, appliedCatchUp } from './session-status'
 import type { SendOutcome } from './session-presses'
@@ -157,6 +158,8 @@ export type CatchUpReply =
 export type UpdateHost<S extends Session> = Pick<SessionHost<S>, 'now' | 'read' | 'update' | 'exclusive' | 'ask'> & {
   /** The host's names, which the ledger call's system text uses. */
   names: Host
+  /** The delegate session this is, as `hooks/hc-terminals.ts:delegateSession` reads it, or null when it is none. */
+  delegate(): Promise<DelegateSession | null>
   /**
    * Has the inbox model read the whole conversation, and returns its answer for `runUpdates` to apply. Absent when
    * the host cannot read the conversation.
@@ -260,6 +263,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
     if (host.background) host.background(settled)
     else writing.push(settled)
   }
+  const isDelegate = (await host.delegate().catch(() => null)) !== null
   try {
     while (hasWork(await host.read())) {
       const held = await host.exclusive(async () => {
@@ -287,7 +291,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
                       x.ledger.turn,
                     )
                   : x
-              const after = await host.update(x => appliedCatchUp(noted(x), s, parsed, at))
+              const after = await host.update(x => appliedCatchUp(noted(x), s, parsed, at, isDelegate))
               if (!parsed) return 'stop' as const
               if (reply.kind === 'reply' && reply.statusCall)
                 followUp(writeStatus(after, reply.statusCall, s.hostTasks))
@@ -314,7 +318,7 @@ export async function runUpdates<S extends Session>(host: UpdateHost<S>): Promis
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x
               isApplied = parsed !== null
 
-              return applied(x, parsed, at, promptAt)
+              return applied(x, parsed, at, promptAt, isDelegate)
             })
             if (isApplied)
               followUp(

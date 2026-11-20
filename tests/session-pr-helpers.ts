@@ -37,5 +37,5 @@ const NO_UPDATE = { closed: [], added: [], helped: [], updated: [], asked: [], t
 export function repliedTo(s: Session, text: string, now: number): Session {
   const ended = endTurn(CLAUDE_CODE, notePrompt(CLAUDE_CODE, s, text, false).state, 'Done.', false)
 
-  return applied(turnEnded(ended, now), NO_UPDATE, now, now)
+  return applied(turnEnded(ended, now), NO_UPDATE, now, now, false)
 }

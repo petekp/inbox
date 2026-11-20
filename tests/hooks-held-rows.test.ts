@@ -67,7 +67,7 @@ test('a held row and the rows that closed while the tab shows stay in place, and
     'Water the plants',
     'Feed the cat',
     'Rotate the signing key',
-    'Approve the deploy',
+    'Approve the v12 deploy',
     'Pin the Node version',
     'Update the README',
     'Tag the release',

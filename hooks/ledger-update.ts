@@ -11,6 +11,7 @@ import {
   restates,
   sameAsk,
 } from './ask-match'
+import { namesSubject } from './ask-subject'
 import { asksAbout, closedRecord, closeFinding, OVERTAKEN_OUTCOMES, reopenAskedFindings } from './ledger-close'
 import { todoAsk, withHelp } from './reply-parse'
 import type { Update } from './reply-parse'
@@ -73,6 +74,14 @@ export function applyExchangeUpdate(
   )
 }
 
+/**
+ * `u` without the questions and tasks it would add, for a delegate session, whose asks go to the session that started
+ * it. Its other lines still apply.
+ */
+export function withoutNewAsks(u: Update): Update {
+  return { ...u, added: [], todos: [] }
+}
+
 /** The CLOSED outcome forms that are not the person's answer: systemText's "done:" and "no longer applies:", and the words closedState reads as overtaken. */
 const NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, 'i')
 
@@ -85,7 +94,8 @@ function isPersonsAnswer(outcome: string): boolean {
  * item closed since then is dropped: the person answered it while the model ran.
  * The agent closes the items it recorded with its close tool, so a CLOSED line
  * closes one of those only with the person's answer. A question back is not an
- * answer, so it closes no question.
+ * answer, so it closes no question. A NEW or TODO line whose ask names no subject,
+ * as `namesSubject` says, adds nothing.
  */
 export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number, promptAt = now): Ledger {
   const stillAsked = new Set(u.updated.filter(c => c.options || c.rec).map(c => c.id))
@@ -134,7 +144,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
       addedIds.push(restated.id)
       continue
     }
-    if (recordedThisTurn.has(a.kind)) {
+    if (recordedThisTurn.has(a.kind) || !namesSubject(a.ask)) {
       addedIds.push(null)
       continue
     }
@@ -156,7 +166,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
       items.some(i => restates(i.ask, work)) ||
       ledger.findings.some(f => restates(f.title, work)) ||
       repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt)
-    if (isKnown) continue
+    if (isKnown || !namesSubject(work)) continue
     items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: 'update' })
     nextId += 1
     added += 1

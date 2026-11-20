@@ -34,6 +34,7 @@ export const SHARED = [
   'marks',
   'ledger',
   'ask-match',
+  'ask-subject',
   'ledger-close',
   'ledger-update',
   'reply-parse',
