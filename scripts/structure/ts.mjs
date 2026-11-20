@@ -1,7 +1,7 @@
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 
-const require = createRequire(new URL('../../codex/package.json', import.meta.url))
+const require = createRequire(new URL('../../package.json', import.meta.url))
 export const { API } = await import(pathToFileURL(require.resolve('typescript/unstable/sync')).href)
 export const ts = await import(pathToFileURL(require.resolve('typescript/unstable/ast')).href)
 

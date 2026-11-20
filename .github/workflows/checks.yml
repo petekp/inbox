@@ -1,0 +1,143 @@
+# The checks in scripts/check.sh that need no Herdr app and no sign-in, run on every pull request to next or main and
+# on every push to next. scripts/check.sh stays the full check. It also runs the root type check, against the engine
+# types only a signed-in session writes, the Herdr look's type check, against the Herdr app's own type files, and
+# `herdr-app check`.
+
+name: checks
+
+on:
+  pull_request:
+    branches: [next, main]
+  push:
+    branches: [next]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '26'
+  # The Bun that omp/package.json and herdr/package.json pin, which their bundle builds require.
+  BUN_VERSION: '1.4.4'
+  CLAUDE_CODE_VERSION: '2.1.329'
+
+jobs:
+  mod:
+    name: mod
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: install tools
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: install Claude Code
+        run: npm install --global --no-audit --no-fund "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+      - name: prettier
+        run: node_modules/.bin/prettier --check .
+      - name: file sizes
+        run: node scripts/check-sizes.mjs
+      - name: plugin validate
+        run: claude plugin validate .
+      - name: structure
+        run: node scripts/check-structure.mjs
+      - name: exports
+        run: node scripts/check-exports.mjs
+      - name: versions
+        run: node scripts/check-versions.mjs
+      - name: compare page
+        run: node scripts/build-compare-page.mjs --check
+      - name: types parts
+        run: node scripts/build-types.mjs --check
+      - name: tool inputs
+        run: node scripts/build-tool-inputs.mjs --check
+      - name: tests
+        run: claude plugin test .
+      - name: eval cases
+        run: |
+          node_modules/.bin/esbuild evals/check-cases.ts --bundle --platform=node --format=esm \
+            --outfile="$RUNNER_TEMP/check-cases.mjs" --log-level=warning
+          node "$RUNNER_TEMP/check-cases.mjs" "$GITHUB_WORKSPACE"
+
+  codex:
+    name: codex
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: codex/package-lock.json
+      - name: install tools
+        run: npm --prefix codex ci --ignore-scripts --no-audit --no-fund
+      - name: codex bundles
+        run: npm --prefix codex run --silent check
+      - name: codex types
+        run: npm --prefix codex run --silent types
+      - name: codex tests
+        run: npm --prefix codex test --silent
+
+  omp:
+    name: omp
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-omp-${{ hashFiles('omp/bun.lock') }}
+      - name: install tools
+        run: bun install --cwd omp --frozen-lockfile --ignore-scripts
+      - name: omp bundle
+        run: npm --prefix omp run --silent check
+      - name: omp types
+        run: npm --prefix omp run --silent types
+      - name: omp tests
+        run: bun test --cwd omp tests
+
+  herdr:
+    name: herdr
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-herdr-${{ hashFiles('herdr/bun.lock') }}
+      - name: install tools
+        run: bun install --cwd herdr --frozen-lockfile --ignore-scripts
+      - name: herdr mod
+        run: npm --prefix herdr run --silent check
+      - name: herdr tests
+        run: bun test --cwd herdr tests

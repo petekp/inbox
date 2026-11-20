@@ -14,17 +14,20 @@
 # load of the built Herdr mod in the app's own runtime with `herdr-app check`.
 # Exits 1 on any failure, and when a check cannot run.
 #
-# Needs npx, bun, the claude CLI and the Herdr app, whose type files the
-# Herdr look's types check against.
+# Needs node, bun, the claude CLI and the Herdr app, whose type files the
+# Herdr look's types check against. Prettier, TypeScript and esbuild come from
+# the root package.json, at the versions the pull request checks run.
 #
 # Usage: ./scripts/check.sh
 
 set -eu
 
 DIR=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
-# Prettier changes its output between minor versions, so a pinned version
-# keeps the check from failing on files nobody changed.
-PRETTIER=prettier@3.9.9
+TOOLS="$DIR/node_modules/.bin"
+if [ ! -x "$TOOLS/prettier" ] || [ ! -x "$TOOLS/tsc" ] || [ ! -x "$TOOLS/esbuild" ]; then
+    echo "  x not checked. Install the root tools once: npm --prefix $DIR ci"
+    exit 1
+fi
 status=0
 log=$(mktemp)
 herdr_scratch=
@@ -54,8 +57,8 @@ check() {
 # Prettier reads .prettierignore and .gitignore from the folder it runs in.
 cd "$DIR"
 before=$status
-check "prettier" npx -y "$PRETTIER" --check .
-[ "$status" = "$before" ] || echo "      Fix: npx -y $PRETTIER --write ."
+check "prettier" "$TOOLS/prettier" --check .
+[ "$status" = "$before" ] || echo "      Fix: node_modules/.bin/prettier --write ."
 
 check "file sizes" node "$DIR/scripts/check-sizes.mjs"
 
@@ -65,6 +68,9 @@ check "exports" node "$DIR/scripts/check-exports.mjs"
 check "versions" node "$DIR/scripts/check-versions.mjs"
 check "compare page" node "$DIR/scripts/build-compare-page.mjs" --check
 check "types parts" node "$DIR/scripts/build-types.mjs" --check
+# The inbox tools' inputs come from their schemas, not from the MCP tools of
+# the session that last wrote the engine types, which tsconfig.json leaves out.
+check "tool inputs" node "$DIR/scripts/build-tool-inputs.mjs" --check
 # Claude Code writes these types into this folder when a session loads the mod
 # from it, through --plugin-dir or CLAUDE_CODE_PLUGIN_DIRS, with or without -p.
 # A session that only starts here writes none. The types name no paths, so a
@@ -76,17 +82,19 @@ if [ ! -e "$types" ] && [ -n "$main" ] && [ -f "$main/.claude-plugin/types/tscon
     echo "  - types: copied from $main"
 fi
 if [ -f "$types/tsconfig.json" ]; then
-    # The inbox tools' inputs come from their schemas, not from the MCP tools of
-    # the session that last wrote the types, which tsconfig.json leaves out.
-    check "tool inputs" node "$DIR/scripts/build-tool-inputs.mjs" --check
-    # The TypeScript that codex/ pins, which the structure check also loads. An
-    # unpinned tsc changes with each TypeScript release.
-    check "types" "$DIR/codex/node_modules/.bin/tsc" --noEmit -p "$DIR"
+    check "types" "$TOOLS/tsc" --noEmit -p "$DIR"
 else
     echo "  x types: not checked. Start one interactive session to write them: claude --plugin-dir $DIR"
     status=1
 fi
 check "tests" claude plugin test "$DIR"
+
+# The eval case files, with no model calls: every saved ledger loads, and every Compare case gives its press and
+# checks that no close of the agent's takes effect. The check is TypeScript, so esbuild bundles it first.
+cases=$(mktemp -d)
+check "eval cases" sh -c '"$1/node_modules/.bin/esbuild" "$1/evals/check-cases.ts" --bundle --platform=node \
+    --format=esm --outfile="$2/check-cases.mjs" --log-level=warning && node "$2/check-cases.mjs" "$1"' _ "$DIR" "$cases"
+rm -rf "$cases"
 
 # The Codex plugin in codex/: its committed bundles match its sources, its
 # types, and its tests. Its tools come from its own package.json.
@@ -94,12 +102,6 @@ if [ -d "$DIR/codex/node_modules" ]; then
     check "codex bundles" npm --prefix "$DIR/codex" run --silent check
     check "codex types" npm --prefix "$DIR/codex" run --silent types
     check "codex tests" npm --prefix "$DIR/codex" test --silent
-    # The eval case files, with no model calls: every saved ledger loads, and every Compare case gives its press and
-    # checks that no close of the agent's takes effect. The check is TypeScript, so Codex's esbuild bundles it first.
-    cases=$(mktemp -d)
-    check "eval cases" sh -c '"$1/codex/node_modules/.bin/esbuild" "$1/evals/check-cases.ts" --bundle --platform=node \
-        --format=esm --outfile="$2/check-cases.mjs" --log-level=warning && node "$2/check-cases.mjs" "$1"' _ "$DIR" "$cases"
-    rm -rf "$cases"
 else
     echo "  x codex: not checked. Install its tools once: npm --prefix $DIR/codex ci"
     status=1
