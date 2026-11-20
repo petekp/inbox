@@ -80,7 +80,6 @@ export function send(ui: UiState, s: Session, event: UiEvent, now: number): Run 
   return reduceUi(ui, viewOf(s, ui, now), event, now)
 }
 
-/** Opens a fresh look on `s` and reads it, as a host does when its pane opens. */
 export function openOn(s: Session, now = T0, tab: UiState['tab'] = 'needsYou', config = LOOK): Run {
   const opened = send(freshUi(config, tab), s, { type: 'opened' }, now)
   const read = send(opened.ui, s, { type: 'read', host: FACTS }, now)

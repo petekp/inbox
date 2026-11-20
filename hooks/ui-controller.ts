@@ -6,6 +6,7 @@ import {
   closeField,
   editDraft,
   expirePresses,
+  holdsOf,
   openField,
   press,
   pressSettled,
@@ -89,7 +90,7 @@ export function restoredUi(ui: UiState): UiState {
     pressesOut: {},
     demoReplies: [],
     heldArrivals: {},
-    heldClose: null,
+    heldClose: {},
     isOpening: false,
     opensOnAsks: false,
   }
@@ -108,15 +109,27 @@ function read(ui: UiState, view: SessionView, host: UiState['host'], now: number
   )
 }
 
-function tick(ui: UiState, view: SessionView, now: number): UiStep {
-  const start = expired(expirePresses(ui, view, now), view, now)
-
+/** The work that comes due on the clock. It runs after every event, so a due time an event passes is not lost. */
+function due(step: UiStep, view: SessionView, now: number): UiStep {
   return chain(
-    withCommands(start),
+    { ...step, ui: expired(expirePresses(step.ui, view, now), view, now) },
     next => settleHeldClose(next, view, now),
     next => (hasHeldArrivals(next) ? follow(next, view, {}, now) : withCommands(next)),
     next => dueDemoReplies(next, now),
   )
+}
+
+const heldKeys = (ui: UiState, now: number) => {
+  const holds = holdsOf(ui, now)
+  return JSON.stringify([Object.keys(holds.replies).sort(), Object.keys(holds.discarded).sort()])
+}
+
+/** Asks for a read when the event changed which rows the look holds, so the view drops or keeps them. */
+function withHoldsRead(before: UiState, step: UiStep, now: number): UiStep {
+  const isChanged = heldKeys(before, now) !== heldKeys(step.ui, now)
+  const hasRead = step.commands.some(c => c.kind === 'read')
+
+  return isChanged && !hasRead ? { ...step, commands: [...step.commands, { kind: 'read' }] } : step
 }
 
 function showAsk(ui: UiState, view: SessionView, id: string, by: 'click' | 'key', now: number): UiStep {
@@ -195,7 +208,7 @@ function handle(ui: UiState, view: SessionView, e: UiEvent, now: number): UiStep
     case 'list-input':
       return withCommands(ui)
     case 'tick':
-      return tick(ui, view, now)
+      return withCommands(ui)
   }
 }
 
@@ -210,7 +223,7 @@ export function reduceUi(
   now: number,
 ): UiStep & { nextWakeAt: number | null } {
   const noted = PERSON_EVENTS.has(event.type) ? { ...ui, listInput: withListInput(ui.listInput, now) } : ui
-  const result = handle(noted, view, event, now)
+  const result = withHoldsRead(ui, due(handle(noted, view, event, now), view, now), now)
 
   return { ...result, nextWakeAt: nextWakeAt(result.ui, view, now) }
 }
@@ -237,7 +250,8 @@ export function keptUiStates(
   states: Record<string, { ui: UiState; shownAt: number }>,
   shownId: string | null,
 ): Record<string, { ui: UiState; shownAt: number }> {
-  const isWorthKeeping = (ui: UiState) => Object.keys(ui.drafts).length > 0 || Object.keys(ui.sentReplies).length > 0
+  const isWorthKeeping = (ui: UiState) =>
+    Object.values(ui.drafts).some(d => d.text.trim() !== '') || Object.keys(ui.sentReplies).length > 0
   const others = Object.entries(states)
     .filter(([id, s]) => id !== shownId && isWorthKeeping(s.ui))
     .sort(([, a], [, b]) => b.shownAt - a.shownAt)

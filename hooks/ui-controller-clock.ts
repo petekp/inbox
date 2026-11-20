@@ -67,7 +67,7 @@ export function nextWakeAt(ui: UiState, view: SessionView, now: number): number 
   const settled = settledStates(view)
   const isFirstRead = ui.config.undoClock === 'first-read'
   const cursor = isRowTab(ui.tab) ? ui.selection[ui.tab] : null
-  const isHolding = hasHeldArrivals(ui) || ui.heldClose !== null
+  const isHolding = hasHeldArrivals(ui) || Object.keys(ui.heldClose).length > 0
   const times: (number | null)[] = [
     ...lasts.flatMap(l => (l.delivery?.state === 'queued' ? [queuedSentAt(l) + QUEUED_AFTER_MS] : [])),
     ...lasts.flatMap(l =>

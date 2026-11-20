@@ -19,7 +19,7 @@ import type { FoldKind, Tab } from '../types'
 const opensFor = (r: RowWait) => r.isWaiting && !r.isCollapsed
 
 /** The view's collapses with the ones the person made that the view does not show yet. */
-function collapsedOf(ui: UiState, view: SessionView): string[] {
+export function collapsedOf(ui: UiState, view: SessionView): string[] {
   const collapsed = new Set(view.collapsed)
   for (const [id, c] of Object.entries(ui.collapses)) {
     if (c.isCollapsed) collapsed.add(id)
@@ -120,7 +120,7 @@ export function readCursors(
     let commands = step.commands
     if ((isGone || hasStopped) && !isFieldOpen && cursor.id !== null) {
       const isHeld = hasStopped && !isClosedByPerson(next, view, cursor.id, now) && isListInUse(next, now)
-      if (isHeld) next = { ...next, heldClose: { tab, id: cursor.id } }
+      if (isHeld) next = { ...next, heldClose: { ...next.heldClose, [tab]: cursor.id } }
       else {
         const moved = movedOff(next, waits, tab, cursor.id, isGone ? cursor.index : index)
         next = moved.ui
@@ -137,19 +137,30 @@ export function readCursors(
   return step
 }
 
-/** Applies a close by the agent that waited, once the list is quiet or the row is gone. */
-export function settleHeldClose(ui: UiState, view: SessionView, now: number): UiStep {
-  const held = ui.heldClose
-  if (held === null) return withCommands(ui)
-  const cleared = { ...ui, heldClose: null }
-  const cursor = ui.selection[held.tab]
-  if (cursor.id !== held.id) return withCommands(cleared)
-  const waits = tabWaits(ui, view, held.tab)
-  const index = waits.findIndex(r => r.id === held.id)
-  if (waits[index]?.isWaiting) return withCommands(cleared)
-  if (index >= 0 && isListInUse(ui, now)) return withCommands(ui)
+const without = <K extends string, V>(byKey: Partial<Record<K, V>>, key: K): Partial<Record<K, V>> => {
+  const { [key]: _gone, ...rest } = byKey
+  return rest as Partial<Record<K, V>>
+}
 
-  return movedOff(cleared, waits, held.tab, held.id, index >= 0 ? index : cursor.index)
+/** Applies each close by the agent that waited, once the list is quiet or the row is gone. */
+export function settleHeldClose(ui: UiState, view: SessionView, now: number): UiStep {
+  let step = withCommands(ui)
+  for (const tab of ROW_TAB_IDS) {
+    const id = step.ui.heldClose[tab]
+    if (id === undefined) continue
+    const cleared = { ...step.ui, heldClose: without(step.ui.heldClose, tab) }
+    const cursor = step.ui.selection[tab]
+    const waits = tabWaits(step.ui, view, tab)
+    const index = waits.findIndex(r => r.id === id)
+    const isStillWaiting = waits[index]?.isWaiting === true
+    if (cursor.id !== id || isStillWaiting) step = { ui: cleared, commands: step.commands }
+    else if (index < 0 || !isListInUse(step.ui, now)) {
+      const moved = movedOff(cleared, waits, tab, id, index >= 0 ? index : cursor.index)
+      step = { ui: moved.ui, commands: [...step.commands, ...moved.commands] }
+    }
+  }
+
+  return step
 }
 
 /** Selects row `id` on `tab`. A click starts the guard. Selecting another row closes an open field; the draft stays. */
@@ -165,7 +176,7 @@ export function selectRow(
   const index = id === null ? -1 : tabWaits(ui, view, tab).findIndex(r => r.id === id)
   const guard = by === 'click' ? { by, at: now } : null
   const typing = ui.typing !== null && ui.typing !== id ? null : ui.typing
-  const heldClose = ui.heldClose?.tab === tab ? null : ui.heldClose
+  const heldClose = without(ui.heldClose, tab)
 
   return { ...withCursor(ui, tab, { id, index, guard }), typing, heldClose }
 }

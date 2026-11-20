@@ -67,7 +67,7 @@ export function shownTab(ui: UiState, tab: ShownTab, now: number): UiState {
     shownSince: isChanged && ui.shownSince !== null ? now : ui.shownSince,
     typing: isChanged ? null : ui.typing,
     heldArrivals: {},
-    heldClose: isChanged ? null : ui.heldClose,
+    heldClose: isChanged ? {} : ui.heldClose,
     newRows,
   }
 }
@@ -93,7 +93,7 @@ export function closed(ui: UiState): UiState {
     isOpening: false,
     opensOnAsks: false,
     heldArrivals: {},
-    heldClose: null,
+    heldClose: {},
   }
 }
 

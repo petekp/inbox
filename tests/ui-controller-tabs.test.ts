@@ -68,13 +68,22 @@ test('an arrival waits while the list is in use and is followed once the list ha
   const arrived = sessionWith({ items: [question('i1')] })
   const held = read(used.ui, arrived, T0 + 200)
   expect(held.ui.tab).toBe('findings')
-  expect(held.ui.heldArrivals.needsYou).toEqual(['i1'])
   expect(held.nextWakeAt).toBe(T0 + 100 + FOLD_QUIET_MS)
   const early = send(held.ui, arrived, { type: 'tick' }, T0 + 100 + FOLD_QUIET_MS - 1)
   expect(early.ui.tab).toBe('findings')
   const due = send(early.ui, arrived, { type: 'tick' }, T0 + 100 + FOLD_QUIET_MS)
   expect(due.ui.tab).toBe('needsYou')
-  expect(due.ui.heldArrivals).toEqual({})
+})
+
+test('a held arrival is followed on the first event after the list goes quiet, not only on a tick', () => {
+  const empty = sessionWith({})
+  const start = openOn(empty, T0, 'needsYou')
+  const used = send(start.ui, empty, { type: 'list-input' }, T0 + 100)
+  const arrived = sessionWith({ findings: [finding('f1')] })
+  const held = read(used.ui, arrived, T0 + 200)
+  expect(held.ui.tab).toBe('needsYou')
+  const late = send(held.ui, arrived, { type: 'visible', isVisible: true }, T0 + 500 + FOLD_QUIET_MS)
+  expect(late.ui.tab).toBe('findings')
 })
 
 test('a held arrival that stopped waiting before the list went quiet is not followed', () => {
@@ -86,7 +95,7 @@ test('a held arrival that stopped waiting before the list went quiet is not foll
   const gone = closedByAgent(arrived, 'i1', T0 + 300)
   const due = send(held.ui, gone, { type: 'tick' }, T0 + 100 + FOLD_QUIET_MS)
   expect(due.ui.tab).toBe('findings')
-  expect(due.ui.heldArrivals).toEqual({})
+  expect(read(due.ui, withItems(gone, [question('i2')]), T0 + 200 + FOLD_QUIET_MS).ui.tab).toBe('needsYou')
 })
 
 test('an arrival is not followed while the shown tab still lists an open row', () => {

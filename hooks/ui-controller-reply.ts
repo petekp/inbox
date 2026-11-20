@@ -45,14 +45,13 @@ const isListed = (view: SessionView, id: string) =>
 
 /** Opens row `id`'s field with its draft, or a seed, and holds the row. */
 export function openField(ui: UiState, view: SessionView, id: string, seed: string | undefined, now: number): UiStep {
-  const wasHeld = id in heldReplies(ui.typing, ui.drafts)
   const draft = seed !== undefined ? { text: seed, since: now } : (ui.drafts[id] ?? { text: '', since: now })
   let next: UiState = { ...ui, typing: id, drafts: { ...ui.drafts, [id]: draft } }
   const tab = ui.tab
   if (isRowTab(tab) && ui.selection[tab].id === null && selectedOf(ui, view, tab) === id)
     next = withCursor(next, tab, { id, index: ui.selection[tab].index, guard: null })
 
-  return withCommands(next, { kind: 'focus-field', id }, ...(wasHeld ? [] : [{ kind: 'read' } as const]))
+  return withCommands(next, { kind: 'focus-field', id })
 }
 
 export function editDraft(ui: UiState, id: string, text: string, now: number): UiState {
@@ -66,7 +65,7 @@ export function closeField(ui: UiState, view: SessionView, id: string, isDiscard
   const { [id]: _sent, ...sentReplies } = ui.sentReplies
   const discarded = { ...keptDiscards(ui.discarded, ui.shownSince), [id]: now }
 
-  return withCommands({ ...ui, typing, drafts, sentReplies, discarded }, { kind: 'read' })
+  return withCommands({ ...ui, typing, drafts, sentReplies, discarded })
 }
 
 const isUndoPress = (p: RowPress | PrPress) => p.action === 'undo' || p.action === 'pr-undo'

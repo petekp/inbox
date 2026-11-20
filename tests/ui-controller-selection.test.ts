@@ -3,10 +3,11 @@ import { test } from './test-with-timeout'
 
 import { withCollapse } from '../hooks/collapse'
 import { FOLD_QUIET_MS, PRESS_GUARD_MS } from '../hooks/timing'
-import { openRowOf, selectedOf } from '../hooks/ui-controller-selection'
+import { collapsedOf, openRowOf, selectedOf } from '../hooks/ui-controller-selection'
 import { COLLAPSE_WAIT_MS } from '../hooks/ui-controller-types'
 import {
   closedByAgent,
+  finding,
   kinds,
   openOn,
   question,
@@ -15,6 +16,7 @@ import {
   sessionWith,
   T0,
   viewOf,
+  withFindings,
   withItems,
 } from './ui-controller-helpers'
 
@@ -62,11 +64,36 @@ test('the agent’s close of the picked row waits while the list is in use, then
   const closed = closedByAgent(THREE, 'i2', T0 + 20)
   const held = read(picked.ui, closed, T0 + 20)
   expect(held.ui.selection.needsYou.id).toBe('i2')
-  expect(held.ui.heldClose).toEqual({ tab: 'needsYou', id: 'i2' })
   expect(held.nextWakeAt).toBe(T0 + 10 + FOLD_QUIET_MS)
-  const due = send(held.ui, closed, { type: 'tick' }, T0 + 10 + FOLD_QUIET_MS)
+  const early = send(held.ui, closed, { type: 'tick' }, T0 + 9 + FOLD_QUIET_MS)
+  expect(early.ui.selection.needsYou.id).toBe('i2')
+  const due = send(early.ui, closed, { type: 'tick' }, T0 + 10 + FOLD_QUIET_MS)
   expect(due.ui.selection.needsYou.id).toBe('i3')
-  expect(due.ui.heldClose).toBe(null)
+  expect(due.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i3', closedId: 'i2' })
+})
+
+test('a held close moves the cursor on the first event after the list goes quiet, not only on a tick', () => {
+  const { ui } = openOn(THREE)
+  const picked = send(ui, THREE, { type: 'select', tab: 'needsYou', id: 'i2', by: 'key' }, T0 + 10)
+  const closed = closedByAgent(THREE, 'i2', T0 + 20)
+  const held = read(picked.ui, closed, T0 + 20)
+  const late = send(held.ui, closed, { type: 'visible', isVisible: true }, T0 + 500 + FOLD_QUIET_MS)
+  expect(late.ui.selection.needsYou.id).toBe('i3')
+})
+
+test('closes the agent made on two tabs in one read each move their own tab’s cursor once the list is quiet', () => {
+  const both = withFindings(THREE, [finding('f1'), finding('f2'), finding('f3')])
+  const { ui } = openOn(both)
+  const asks = send(ui, both, { type: 'select', tab: 'needsYou', id: 'i2', by: 'key' }, T0 + 10)
+  const finds = send(asks.ui, both, { type: 'show-tab', tab: 'findings' }, T0 + 11)
+  const picked = send(finds.ui, both, { type: 'select', tab: 'findings', id: 'f2', by: 'key' }, T0 + 12)
+  const closed = closedByAgent(closedByAgent(both, 'i2', T0 + 20), 'f2', T0 + 20)
+  const held = read(picked.ui, closed, T0 + 20)
+  expect(held.ui.selection.needsYou.id).toBe('i2')
+  expect(held.ui.selection.findings.id).toBe('f2')
+  const due = send(held.ui, closed, { type: 'tick' }, T0 + 12 + FOLD_QUIET_MS)
+  expect(due.ui.selection.needsYou.id).toBe('i3')
+  expect(due.ui.selection.findings.id).toBe('f1')
 })
 
 test('a row the person’s own press closed moves the cursor at once, even while the list is in use', () => {
@@ -75,7 +102,6 @@ test('a row the person’s own press closed moves the cursor at once, even while
   const pressed = send(picked.ui, THREE, { type: 'press', press: answer('i2'), by: 'key' }, T0 + 20)
   const run = read(pressed.ui, closedByAgent(THREE, 'i2', T0 + 30), T0 + 30)
   expect(run.ui.selection.needsYou.id).toBe('i3')
-  expect(run.ui.heldClose).toBe(null)
 })
 
 test('a row with its field open keeps the cursor when the agent closes it', () => {
@@ -163,4 +189,12 @@ test('closing a fold also takes its kind out of the folds whose earlier rows sho
   const shut = send(earlier.ui, THREE, { type: 'fold', fold: 'question', isOpen: false }, T0 + 30)
   expect(shut.ui.unfolded).toEqual([])
   expect(shut.ui.closedAll).toEqual([])
+})
+
+test('a collapse the person made shows at once, before the view lists it', () => {
+  const { ui } = openOn(THREE)
+  const run = send(ui, THREE, { type: 'collapse', id: 'i2', isCollapsed: true }, T0 + 10)
+  const view = viewOf(THREE, run.ui, T0 + 10)
+  expect(view.collapsed).not.toContain('i2')
+  expect(collapsedOf(run.ui, view)).toContain('i2')
 })

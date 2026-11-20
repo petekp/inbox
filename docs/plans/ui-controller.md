@@ -11,7 +11,7 @@ Each look decides for itself which tab it shows, where its cursor goes, when a d
 1. Before every event, the host builds the view: `sessionView(session, now, SETTLED_MS, holdsOf(ui, now), notesOf(ui))`.
 2. It calls `reduceUi(ui, view, event, now)` and keeps the `ui` that comes back.
 3. It runs each command: send a press, save a collapse, read the session, focus a field, scroll a row into view, record the shown tab, or send the demo's reply.
-4. It sets one timer for `nextWakeAt` and sends `tick` when it fires.
+4. It sets one timer for `nextWakeAt` and sends `tick` when it fires. Work that comes due also runs on any other event, so a late or dropped timer loses nothing.
 
 The events are the person's input, the look opening, closing or showing again, a read of the session, a press's answer, and `tick`. Pointer moves count as list input. So a resting pointer holds back a move only until `FOLD_QUIET_MS` has passed since it last moved.
 

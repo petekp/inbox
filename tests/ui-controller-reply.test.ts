@@ -4,6 +4,7 @@ import { test } from './test-with-timeout'
 import { closeItem } from '../hooks/ledger-close'
 import { PRESS_TIMEOUT_MS } from '../hooks/session-view'
 import { noticeOf, rowErrorOf } from '../hooks/ui-controller'
+import { holdsOf } from '../hooks/ui-controller-reply'
 import { DEMO_REPLY_MS, type SettledOutcome } from '../hooks/ui-controller-types'
 import type { Session } from '../types'
 import {
@@ -29,7 +30,7 @@ function sent(text = 'Use Node') {
   const typing = send(ui, S, { type: 'open-field', id: 'i1' }, T0 + 10)
   const drafted = send(typing.ui, S, { type: 'edit-draft', id: 'i1', text }, T0 + 20)
 
-  return send(drafted.ui, S, { type: 'press', press: reply(text), by: 'key' }, T0 + 30)
+  return { ...send(drafted.ui, S, { type: 'press', press: reply(text), by: 'key' }, T0 + 30), before: drafted.ui }
 }
 
 const dismissedByPerson = (s: Session, id: string, at: number): Session => ({
@@ -55,7 +56,20 @@ test('a reply closes its field, keeps its draft and sends the press with the hol
   expect(run.ui.sentReplies.i1).toEqual({ pressId: 1, text: 'Use Node', atBefore: null, isConfirmed: false })
   const command = run.commands[0]
   expect(command?.kind).toBe('press')
-  expect(command?.kind === 'press' && 'i1' in command.holds.replies).toBe(true)
+  expect(command?.kind === 'press' && command.holds.replies).toEqual(holdsOf(run.before, T0 + 30).replies)
+})
+
+test('closing a blank field without discarding, or picking another row, releases the row and asks for a read', () => {
+  const { ui } = openOn(S)
+  const typing = send(ui, S, { type: 'open-field', id: 'i1' }, T0 + 10)
+  expect(send(typing.ui, S, { type: 'close-field', id: 'i1', isDiscard: false }, T0 + 20).commands).toEqual([
+    { kind: 'read' },
+  ])
+  expect(
+    kinds(send(typing.ui, S, { type: 'select', tab: 'needsYou', id: 'i2', by: 'key' }, T0 + 20).commands),
+  ).toContain('read')
+  const drafted = send(typing.ui, S, { type: 'edit-draft', id: 'i1', text: 'Maybe' }, T0 + 15)
+  expect(send(drafted.ui, S, { type: 'close-field', id: 'i1', isDiscard: false }, T0 + 20).commands).toEqual([])
 })
 
 test('a reply with no words, or a repeat of an action still out on its row, sends nothing', () => {
@@ -78,6 +92,9 @@ test('a sent reply’s draft stays while the message is held or queued, and afte
   const run = sent()
   const at = (delivery: Parameters<typeof replyAction>[2]) =>
     read(run.ui, withLastAction(S, 'i1', replyAction('Use Node', T0 + 35, delivery)), T0 + 40).ui
+  const held = at({ state: 'held', message: 'Use Node', until: T0 + 60, by: null })
+  expect(held.drafts.i1?.text).toBe('Use Node')
+  expect(held.sentReplies.i1?.pressId).toBe(1)
   const queued = at({ state: 'queued', message: 'Use Node' })
   expect(queued.drafts.i1?.text).toBe('Use Node')
   expect(queued.sentReplies.i1?.pressId).toBe(1)
@@ -135,6 +152,11 @@ test('a press with no answer gives up after PRESS_TIMEOUT_MS unless its message 
     action: 'explain',
   })
   expect(Object.keys(read(pressed.ui, queued, T0 + 10 + PRESS_TIMEOUT_MS).ui.pressesOut)).toEqual(['1'])
+  const held = withLastAction(S, 'i2', {
+    ...replyAction('', T0 + 12, { state: 'held', message: 'x', until: T0 + 2 * PRESS_TIMEOUT_MS, by: null }),
+    action: 'explain',
+  })
+  expect(Object.keys(read(pressed.ui, held, T0 + 10 + PRESS_TIMEOUT_MS).ui.pressesOut)).toEqual(['1'])
 })
 
 test('discarding a field deletes the draft and its sent reply, and keeps the row closed until the next open', () => {
@@ -151,6 +173,7 @@ test('a confirmed Undo selects the row it brought back once a tab lists it', () 
   const closed = dismissedByPerson(S, 'i2', T0 + 5)
   const { ui } = openOn(closed)
   const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by: 'key' }, T0 + 10)
+  expect(pressed.commands[0]).toMatchObject({ kind: 'press', holds: { undoOut: [] } })
   const settled = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: OK }, T0 + 20)
   expect(settled.ui.restoring).toEqual({ id: 'i2', at: T0 + 20 })
   const back = read(settled.ui, S, T0 + 30)
@@ -182,4 +205,6 @@ test('the demo’s reply is sent DEMO_REPLY_MS after its press settles', () => {
   const due = send(settled.ui, S, { type: 'tick' }, T0 + 20 + DEMO_REPLY_MS)
   expect(due.commands).toEqual([{ kind: 'demo-reply', pressId: 1 }])
   expect(due.ui.demoReplies).toEqual([])
+  const lateRead = read(settled.ui, S, T0 + 500 + DEMO_REPLY_MS)
+  expect(lateRead.commands).toContainEqual({ kind: 'demo-reply', pressId: 1 })
 })

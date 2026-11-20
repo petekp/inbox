@@ -8,7 +8,19 @@ import { keptUiStates, noticeOf, restoredUi, rowErrorOf } from '../hooks/ui-cont
 import { holdsOf } from '../hooks/ui-controller-reply'
 import { freshUi, MAX_KEPT_UI, type UiState } from '../hooks/ui-controller-types'
 import type { Session } from '../types'
-import { finding, LOOK, openOn, question, read, send, sessionWith, T0, withFindings } from './ui-controller-helpers'
+import { FOLD_QUIET_MS } from '../hooks/timing'
+import {
+  closedByAgent,
+  finding,
+  LOOK,
+  openOn,
+  question,
+  read,
+  send,
+  sessionWith,
+  T0,
+  withFindings,
+} from './ui-controller-helpers'
 
 const S = sessionWith({ items: [question('i1'), question('i2')], findings: [finding('f1')] })
 const REFUSED = { error: 'Not sent.', note: null, isUnconfirmed: false }
@@ -96,16 +108,44 @@ test('a restored look keeps drafts, folds and cursors, and drops presses, timers
   expect(restored.nextPressId).toBe(3)
 })
 
+test('a restored look keeps its cursors and folds, and drops the closes and arrivals it held while the list was in use', () => {
+  const { ui } = openOn(S)
+  const picked = send(ui, S, { type: 'select', tab: 'needsYou', id: 'i2', by: 'key' }, T0 + 10)
+  const folded = send(picked.ui, S, { type: 'fold', fold: 'question', isOpen: true }, T0 + 11)
+  const closed = closedByAgent(S, 'i2', T0 + 20)
+  const restored = restoredUi(read(folded.ui, closed, T0 + 20).ui)
+  expect(restored.selection.needsYou.id).toBe('i2')
+  expect(restored.unfolded).toEqual(folded.ui.unfolded)
+  const quiet = T0 + 11 + FOLD_QUIET_MS
+  expect(send(restored, closed, { type: 'tick' }, quiet).ui.selection.needsYou.id).toBe('i2')
+  const empty = sessionWith({})
+  const start = openOn(empty, T0, 'findings')
+  const used = send(start.ui, empty, { type: 'list-input' }, T0 + 10)
+  const arrived = sessionWith({ items: [question('i1')] })
+  const held = restoredUi(read(used.ui, arrived, T0 + 20).ui)
+  expect(send(held, arrived, { type: 'tick' }, T0 + 10 + FOLD_QUIET_MS).ui.tab).toBe('findings')
+})
+
 test('a host keeps the shown session’s state and the most recently shown others that hold a draft or a sent reply', () => {
   const plain = freshUi(LOOK)
   const drafted = { ...plain, drafts: { i1: { text: 'x', since: 1 } } }
+  const blank = { ...plain, drafts: { i1: { text: '  ', since: 1 } } }
   const states = Object.fromEntries(
     Array.from({ length: MAX_KEPT_UI + 2 }, (_, k) => [`s${k}`, { ui: drafted, shownAt: k }]),
   )
-  const kept = keptUiStates({ ...states, shown: { ui: plain, shownAt: 0 }, idle: { ui: plain, shownAt: 99 } }, 'shown')
+  const kept = keptUiStates(
+    {
+      ...states,
+      shown: { ui: plain, shownAt: 0 },
+      idle: { ui: plain, shownAt: 99 },
+      blank: { ui: blank, shownAt: 98 },
+    },
+    'shown',
+  )
   expect(Object.keys(kept)).toHaveLength(MAX_KEPT_UI + 1)
   expect(kept.shown?.ui).toBe(plain)
   expect(kept.idle).toBe(undefined)
+  expect(kept.blank).toBe(undefined)
   expect(kept.s0).toBe(undefined)
   expect(kept[`s${MAX_KEPT_UI + 1}`]?.shownAt).toBe(MAX_KEPT_UI + 1)
 })

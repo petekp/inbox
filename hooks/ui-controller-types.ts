@@ -79,7 +79,7 @@ export type UiState = {
   selection: Record<Tab, UiCursor>
   statusSelection: string | null
   waitingSeen: Partial<Record<Tab, string[]>>
-  heldClose: { tab: Tab; id: string } | null
+  heldClose: Partial<Record<Tab, string>>
   restoring: { id: string; at: number } | null
   collapses: Record<string, { isCollapsed: boolean; at: number }>
   unfolded: FoldKind[]
@@ -171,7 +171,7 @@ export function freshUi(config: LookConfig, tab: ShownTab = 'needsYou'): UiState
     selection: { needsYou: NO_UI_CURSOR, findings: NO_UI_CURSOR, prs: NO_UI_CURSOR },
     statusSelection: null,
     waitingSeen: {},
-    heldClose: null,
+    heldClose: {},
     restoring: null,
     collapses: {},
     unfolded: [],
