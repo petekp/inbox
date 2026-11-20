@@ -3018,7 +3018,8 @@ function goalFields(o, subjects) {
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
     goalRefused: goalRefusedOf(o.goalRefused),
-    suggestedGoal: nonEmpty(o.suggestedGoal)
+    suggestedGoal: nonEmpty(o.suggestedGoal),
+    ...typeof o.noGoalFor === "string" ? { noGoalFor: o.noGoalFor } : {}
   };
 }
 
@@ -3042,6 +3043,7 @@ function subjectOf(saved) {
   const s = saved;
   const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
   const changedAt = time2(s?.changedAt);
+  const keptAt = time2(s?.keptAt);
   if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null) return null;
   return {
     id: s.id,
@@ -3052,6 +3054,7 @@ function subjectOf(saved) {
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
     closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
+    ...keptAt === null ? {} : { keptAt },
     into: typeof s.into === "string" ? s.into : null
   };
 }
