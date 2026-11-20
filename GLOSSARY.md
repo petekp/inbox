@@ -370,10 +370,10 @@ adds "next" on one, and only a next build keeps Status call records.
 `hooks/banners.ts:versionLabel`, `hooks/status-records.ts`.
 
 **Parity record**:
-`hooks/clients.ts`. It lists, for each host, whether each feature is `full`,
-`different` or `unsupported`, with a reason for the last two. Each such entry
-needs a row in "Differences on purpose" in `docs/looks.md`, and
-`scripts/check-structure.mjs` fails when one is missing.
+`hooks/clients.ts`. It lists, for each host and published look, whether each
+feature is `full`, `host`, `different` or `unsupported`, with a reason for the
+last two. Each such entry needs a row in "Differences on purpose" in
+`docs/looks.md`, and `scripts/check-structure.mjs` fails when one is missing.
 
 **Tool fields**:
 The input fields each inbox tool has for the agent of one conversation

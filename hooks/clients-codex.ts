@@ -178,5 +178,6 @@ export const CODEX: Client = {
       kind: 'unsupported',
       reason: 'Codex gives a plugin no call that scrolls its conversation.',
     },
+    'done-press-age': { kind: 'full' },
   },
 }

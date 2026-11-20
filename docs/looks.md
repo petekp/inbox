@@ -37,7 +37,11 @@ Change a rule in its owner. Do not change it in a reader.
 
 A difference is on purpose when a look cannot do something or the product decided it. Anything not listed here is drift.
 
-A row that covers a host difference names its feature id in backticks in the first column. `hooks/clients.ts` is the parity record: it classifies every feature as `full`, `different` or `unsupported` for each host (`claude-code` for the terminal and desktop looks, `codex`, `omp`). `scripts/check-structure.mjs` fails when a feature that is not `full` has no row in the table that covers its host, and when a row names an id the record lacks. The main table covers `claude-code` and `codex`. The omp table covers `omp`.
+A row that covers a host difference names its feature id in backticks in the first column. `hooks/clients.ts` is the parity record. `CLIENTS` classifies every feature as `full`, `different` or `unsupported` for each host (`claude-code` for the terminal and desktop looks, `codex`, `omp`). `PUBLISHED_LOOKS` does the same for each look that draws a session a host publishes, today only `herdr`. A published look's entry can also be `host`: the publishing host does all of the feature, so the host's own entry says what the person gets. `scripts/check-structure.mjs` fails when a feature that is not `full` or `host` has no row in the table that covers its host or look, and when a row names an id the record lacks. The main table covers `claude-code` and `codex`. The omp table covers `omp`. Each published look has its own table, in the parts named `differences-<look id>`.
+
+A published look gets its own list, apart from `CLIENTS`, because a `ClientId` names the host that publishes a session: the Herdr publish code, the Status call's hosts and the press messages all read it that way. Exact's web and iOS clients will join `PUBLISHED_LOOKS` as `exact-web` and `exact-ios`, each with its own `hooks/clients-<id>.ts` and `differences-<id>` parts.
+
+Each look's contract test also fails when the look leaves out a field of the shared row or Status page. `tests/view-contract.ts` gives every field's rule, and a new `RowView` or `StatusPage` field fails the type check until it has one. A field a look leaves out on purpose goes in `LOOK_GAPS` in `tests/view-contract.ts`, with a feature that is not `full` or `host` for that look.
 
 The parts below hold the main table, split by subject. The omp table is in the parts under omp, whose file names start with `differences-omp`. The structure check tells the two tables apart by that name.
 
@@ -65,6 +69,7 @@ The Herdr look is a Herdr app mod that draws the session a host publishes. This 
 - [The Herdr look's motion](looks/differences-herdr-motion.md)
 - [The Herdr look's questions](looks/differences-herdr-questions.md)
 - [The Herdr look's row buttons](looks/differences-herdr-buttons.md)
+- [The Herdr look's open gaps](looks/differences-herdr-gaps.md)
 
 ## Adding a host
 
