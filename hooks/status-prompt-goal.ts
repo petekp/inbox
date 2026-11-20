@@ -22,7 +22,7 @@ export function nextGoalAsk(o: SessionStatus | null): string {
   if (o?.goal?.metAt == null)
     return `No goal runs and none is suggested. What is the work for next? Write GOAL when the goal is clear. Else judge only the subjects open after this exchange, and SUGGEST an outcome they clearly lead to: one open fix leads to shipping it. Write SUGGEST: - when no subject is open, when the open subjects are unrelated pieces with no shared outcome, or when no outcome is clear.`
 
-  return `The goal is met, and no next goal is suggested. What is the work for next? Write GOAL when the next goal is clear. Else SUGGEST the next outcome with a finish line: shipping or releasing what the met goal built, when that is still to come, or the outcome the subjects open after this exchange, or the next step an item in <asks> offers, clearly lead to. Write SUGGEST: - when no such outcome is clear.`
+  return `The goal is met, and no next goal is suggested. What is the work for next? Write GOAL when the next goal is clear. Else SUGGEST the next outcome with a finish line: shipping or releasing what the met goal built, when that is still to come, or the outcome the subjects open after this exchange, or the next step an item in <asks> offers, clearly lead to: one open fix leads to shipping it. Write SUGGEST: - when no such outcome is clear.`
 }
 
 /** The lines the Status call writes for the goal, after the lines it writes for subjects. */
