@@ -27,7 +27,7 @@ Shared modules decide the inbox's behavior and content. Each adapter maps that d
 
 Each entry names what is written more than once or differs between looks, and the owner it belongs in.
 
-- **Clock-driven redraws.** The mod arms a timer per press kind, omp restates the Queued and settled thresholds in `isAnimating`, and Codex checks `SETTLED_MS` inline on each poll. A shared `nextChangeAt(view, now)` in `hooks/view.ts` would give the mod and omp one timer. Until then a new timed state in the view redraws in omp and not in the mod.
+- **Clock-driven redraws.** The mod arms a timer per press kind, and Codex checks `SETTLED_MS` inline on each poll. omp wakes at the shared controller's `nextWakeAt` (`hooks/ui-controller-clock.ts`), which the other looks take as they move onto the controller. Until then a new timed state in the view redraws in omp and not in the mod.
 - **Done wake delay.** After a Done press the mod waits exactly the settle window, omp 250 ms more, and Codex two polls more. Codex also does not wake at turn end. One delay helper in `hooks/session-host.ts`, with Codex's longer window recorded as a host limit, would stop the mod's timer from landing on the window's edge and skipping a wake.
 - **The path probe for `openTarget`.** Codex and omp each write the same Node probe, in `codex/src/server.ts` and `omp/src/commands.ts`.
 - **The mod's PR fetching.** The mod skips the 15-second rule for a new PR and asks for the branch's PR only while the PRs tab shows. Codex and omp share one fetch path. Routing the mod through `isPrFetchDue` with the person's away state as an input would make the PRs tab fill the same way everywhere.

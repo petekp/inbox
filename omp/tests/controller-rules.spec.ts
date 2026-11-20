@@ -122,7 +122,7 @@ test('a refused reply leaves its field shut when the person moved meanwhile, and
   expect(field()).toBe('oh')
 })
 
-test('a reply’s draft stays while its press is out, and leaves once the reply arrives', async () => {
+test('a reply’s draft stays while its press is out, and leaves once the session saves the reply as sent', async () => {
   const { kept, overrides } = sharingUi()
   let release = async () => {}
   let clock = () => 0
@@ -157,4 +157,46 @@ test('a row the person dismisses keeps its Undo in place, and the cursor moves t
   const lines = panel.render(200)
   expect(lines.find(l => l.includes('Dismiss a glance with a pinch'))).toContain('Undo')
   expect(lines.find(l => l.includes('❯'))).toContain('Bring a dismissed glance back')
+})
+
+test('a panel closed while Help shows opens again on its tab, not on Help', async () => {
+  const { overrides } = sharingUi()
+  const first = open(overrides)
+  await first.panel.start()
+  first.panel.handleInput('?')
+  expect(first.panel.render(80).join('\n')).toContain('help')
+  first.panel.dispose()
+  const second = open(overrides)
+  await second.panel.start()
+  expect(second.panel.render(80).join('\n')).toContain('Questions')
+})
+
+test('a read that fails at a wake is tried again, so the panel still redraws when a later row’s error goes', async () => {
+  let isFailing = false
+  let clock = () => 0
+  const demo = demoOf(() => clock())
+  const harness = open({
+    screen: async (holds, notes) => {
+      if (isFailing) throw new Error('unreadable')
+      return demo.screen(holds, notes)
+    },
+    press: async () => NOT_SENT,
+  })
+  clock = harness.now
+  const { panel, runFor, calls } = harness
+  await panel.start()
+  panel.handleInput('b')
+  await flush()
+  await flush()
+  await runFor(2000)
+  panel.handleInput('down')
+  panel.handleInput('b')
+  await flush()
+  await flush()
+  isFailing = true
+  await runFor(SETTLED_MS - 1000)
+  isFailing = false
+  const rendersBefore = calls.renders
+  await runFor(2 * SETTLED_MS)
+  expect(calls.renders).toBeGreaterThan(rendersBefore)
 })

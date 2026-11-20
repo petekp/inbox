@@ -69,6 +69,15 @@ export type Inbox = {
   collapse(ctx: OmpContext, row: string, isCollapsed: boolean): Promise<void>
 }
 
+/**
+ * What a session saves of its panel's state: the rows its drafts hold, and the state itself when it holds a draft or a
+ * reply on its way.
+ */
+export function keptUi(kept: UiState | null): { heldRows: string[]; ui: UiState | null } {
+  const heldRows = Object.keys(heldReplies(null, kept?.drafts ?? {}))
+  return { heldRows, ui: kept !== null && isUiWorthKeeping(kept) ? kept : null }
+}
+
 export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAsk: OmpHerdrAsk) {
   const { deps, dir, openPanels, uiStates, prFetches, listeners, memory, sendToAgent, modelNameOf } = context
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions
@@ -128,10 +137,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
       const id = sessionIdOf(ctx)
       openPanels.delete(id)
       const shown = takeShownRows(id)
-      const kept = uiStates.get(id) ?? null
-      const heldRows = Object.keys(heldReplies(null, kept?.drafts ?? {}))
-      const ui = kept !== null && isUiWorthKeeping(kept) ? kept : null
-      deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now(), shown), heldRows, shownSince: null, ui })))
+      const kept = keptUi(uiStates.get(id) ?? null)
+      deps.background(change(id, s => ({ ...lookEndedOn(s, deps.now(), shown), ...kept, shownSince: null })))
     },
     savedUi: async ctx => {
       const id = sessionIdOf(ctx)

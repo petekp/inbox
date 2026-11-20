@@ -405,3 +405,17 @@ test('a reply draft survives closing and reopening /inbox, and its row stays hel
   second.panel.handleInput('\x1b')
   await closePanel(second.opened, second.panel)
 })
+
+test('a reply draft in a panel still open when the session shuts down is saved for the next omp', async () => {
+  createInbox(pi(), deps())
+  const { ctx, components } = tuiCtx()
+  await record({ kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] }, ctx)
+  const { panel } = await openInboxPanel(ctx, components)
+  panel.handleInput('t')
+  for (const ch of 'draft kept') panel.handleInput(ch)
+  await call('session_shutdown', { type: 'session_shutdown' }, ctx)
+  panel.dispose()
+  await settle()
+  expect(Object.values(state().ui.drafts).map((d: any) => d.text)).toEqual(['draft kept'])
+  expect(state().heldRows).toEqual(state().ledger.items.map((i: { id: string }) => i.id))
+})

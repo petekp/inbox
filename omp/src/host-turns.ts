@@ -12,6 +12,7 @@ import { readState } from './state'
 import { OMP } from './texts'
 import { isDismissedAsk } from './tool-calls'
 import { isUnattended, sessionIdOf } from './host-context'
+import { keptUi } from './host-panel'
 import type { HostContext, OmpContext } from './host-context'
 import type { SessionCalls } from './host-sessions'
 import { lastAssistant, stopOf, textOfBlocks, userText } from './omp-messages'
@@ -100,7 +101,9 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
   const onSessionShutdown = async (_event: unknown, ctx: OmpContext) => {
     const id = sessionIdOf(ctx)
     openPanels.delete(id)
+    const kept = context.uiStates.get(id)
     context.uiStates.delete(id)
+    if (kept !== undefined) await change(id, s => ({ ...s, ...keptUi(kept) })).catch(() => undefined)
     prepared.delete(id)
     if (noted?.id === id) noted = null
     if (agentTexts?.id === id) agentTexts = null

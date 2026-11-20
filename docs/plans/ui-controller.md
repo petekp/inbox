@@ -35,7 +35,7 @@ Each PR deletes the look's own copy of the rules, listed in [Owners: rules writt
 
 The panel runs on the controller. It keeps its line layout, button focus and page scroll. Its per-session drafts become a map of the controller's state, saved through `OmpState` and converted in `upgraded` in `omp/src/state.ts`. Its `LookConfig`: running marks as frames, the title tint in steps, Undo from the session's close. What changes for the person:
 
-- It opens on Asks only when a row waits there, and otherwise keeps the Status page.
+- It opens on the tab it was last on. A row tab gives way to Asks when a row waits there. The Status page stays even then.
 - It does not follow rows that arrive while Help shows or while keys came within `FOLD_QUIET_MS`.
 - Each tab keeps its own cursor, so switching back returns to the same row.
 - A cursor whose row left lands on the first waiting row from its place, not from the top.

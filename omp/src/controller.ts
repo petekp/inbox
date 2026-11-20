@@ -92,6 +92,9 @@ const isKeptChanged = (before: UiState, ui: UiState) =>
  * panel when the controller says something changes on the clock: it reads the session again only when the view
  * changes, and otherwise redraws a running mark's frame or a title's tint step.
  */
+/** How long a failed read waits before the panel reads again. */
+const READ_RETRY_MS = 1000
+
 export function createPanel(deps: PanelDeps): Panel {
   const { source, style, timers } = deps
   let ui: PanelUi = { ...INITIAL_UI, shownSince: deps.openedAt }
@@ -134,6 +137,18 @@ export function createPanel(deps: PanelDeps): Panel {
     }
   }
 
+  /** Reads again after `READ_RETRY_MS`, or at the wake already due sooner, so the clock goes on after a failed read. */
+  function retryRead(): void {
+    if (isDisposed || screen === null) return
+    const at = deps.now() + READ_RETRY_MS
+    if (wake !== null && wake.at <= at) {
+      wake.isRead = true
+      return
+    }
+    if (wake !== null) timers.stop(wake.timer)
+    wake = { at, isRead: true, timer: timers.after(onWake, READ_RETRY_MS) }
+  }
+
   /** Takes a step's state, keeps what the session holds for it, and runs its commands. */
   function settle(result: KeyResult): void {
     const before = ui
@@ -174,6 +189,7 @@ export function createPanel(deps: PanelDeps): Panel {
         screen = { ...screen, isReadFailed: true }
         deps.requestRender()
       }
+      retryRead()
       return
     }
     const isFirst = screen === null
