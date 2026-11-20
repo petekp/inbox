@@ -242,6 +242,10 @@ export function noticeOf(ui: UiState, now: number): UiState['notice'] {
   return ui.notice !== null && now < ui.notice.at + SETTLED_MS ? ui.notice : null
 }
 
+/** Whether a state holds what the person would lose with it: a draft with words, or a reply still on its way. */
+export const isUiWorthKeeping = (ui: UiState): boolean =>
+  Object.values(ui.drafts).some(d => d.text.trim() !== '') || Object.keys(ui.sentReplies).length > 0
+
 /**
  * The other sessions' states a host keeps: those holding a draft or a sent reply, the most recently shown first, at
  * most `MAX_KEPT_UI`. The session shown is always kept.
@@ -250,10 +254,8 @@ export function keptUiStates(
   states: Record<string, { ui: UiState; shownAt: number }>,
   shownId: string | null,
 ): Record<string, { ui: UiState; shownAt: number }> {
-  const isWorthKeeping = (ui: UiState) =>
-    Object.values(ui.drafts).some(d => d.text.trim() !== '') || Object.keys(ui.sentReplies).length > 0
   const others = Object.entries(states)
-    .filter(([id, s]) => id !== shownId && isWorthKeeping(s.ui))
+    .filter(([id, s]) => id !== shownId && isUiWorthKeeping(s.ui))
     .sort(([, a], [, b]) => b.shownAt - a.shownAt)
     .slice(0, MAX_KEPT_UI)
   const shown = shownId !== null && states[shownId] ? [[shownId, states[shownId]] as const] : []

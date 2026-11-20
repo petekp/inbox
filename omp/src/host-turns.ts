@@ -100,7 +100,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
   const onSessionShutdown = async (_event: unknown, ctx: OmpContext) => {
     const id = sessionIdOf(ctx)
     openPanels.delete(id)
-    context.drafts.delete(id)
+    context.uiStates.delete(id)
     prepared.delete(id)
     if (noted?.id === id) noted = null
     if (agentTexts?.id === id) agentTexts = null

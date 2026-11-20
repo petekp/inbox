@@ -9,7 +9,7 @@ import type { SessionView } from './session-view'
 import { PRESS_TIMEOUT_MS } from './session-view'
 import { isRowTab } from './tabs'
 import { heldReplies, keptDiscards, SETTLED_MS, type Holds } from './timing'
-import { isGuardedPress, selectedOf, tabWaits, withCursor } from './ui-controller-selection'
+import { isGuardedPress, selectedOf, selectRestored, tabWaits, withCursor } from './ui-controller-selection'
 import {
   DEMO_REPLY_MS,
   type InputKind,
@@ -49,7 +49,7 @@ export function openField(ui: UiState, view: SessionView, id: string, seed: stri
   let next: UiState = { ...ui, typing: id, drafts: { ...ui.drafts, [id]: draft } }
   const tab = ui.tab
   if (isRowTab(tab) && ui.selection[tab].id === null && selectedOf(ui, view, tab) === id)
-    next = withCursor(next, tab, { id, index: ui.selection[tab].index, guard: null })
+    next = withCursor(next, tab, { id, index: tabWaits(ui, view, tab).findIndex(r => r.id === id), guard: null })
 
   return withCommands(next, { kind: 'focus-field', id })
 }
@@ -97,9 +97,11 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
     }
   }
   const tab = ui.tab
-  const isPinned = !isUndoPress(p) && !isPrPress(p) && isRowTab(tab) && ui.selection[tab].id === null
-  if (isPinned && tabWaits(ui, view, tab).some(r => r.id === rowId))
-    next = withCursor(next, tab, { id: rowId, index: ui.selection[tab].index, guard: null })
+  const isPinning = !isUndoPress(p) && !isPrPress(p)
+  if (isPinning && isRowTab(tab) && ui.selection[tab].id === null) {
+    const index = tabWaits(ui, view, tab).findIndex(r => r.id === rowId)
+    if (index >= 0) next = withCursor(next, tab, { id: rowId, index, guard: null })
+  }
 
   return withCommands(next, { kind: 'press', pressId, press: p, holds })
 }
@@ -121,14 +123,13 @@ export function undoKey(ui: UiState, view: SessionView, now: number): UiStep {
 }
 
 /**
- * Whether the person has not moved since `out`: the same tab shows, its cursor is still on the pressed row, no field
- * is open, and no list input came after the press.
+ * Whether the person has not moved since `out`: the same tab shows, no field is open, and no input of theirs came after
+ * the press. A cursor the controller moved meanwhile, as when the host saved the reply's row as answered, does not count.
  */
-function hasNotMoved(ui: UiState, view: SessionView, out: PressOut): boolean {
-  const isSameRow = !isRowTab(ui.tab) || selectedOf(ui, view, ui.tab) === out.rowId
+function hasNotMoved(ui: UiState, out: PressOut): boolean {
   const isQuiet = ui.listInput === null || ui.listInput.last <= out.at
 
-  return ui.tab === out.tab && isSameRow && ui.typing === null && isQuiet
+  return ui.tab === out.tab && ui.typing === null && isQuiet
 }
 
 const isNotSentShown = (view: SessionView, id: string) =>
@@ -164,15 +165,19 @@ export function pressSettled(
     next = { ...next, sentReplies: isRefused ? rest : { ...rest, [row]: { ...sent, isConfirmed } } }
   }
   if (out.action === 'undo' && isConfirmed) next = { ...next, restoring: { id: row, at: now } }
+  const restored = selectRestored(next, view)
+  next = restored.ui
   if (outcome.isDemoSent)
     next = { ...next, demoReplies: [...next.demoReplies, { pressId, dueAt: now + DEMO_REPLY_MS }] }
   const isReplyBack = out.isReply && (outcome.error !== null || outcome.note === 'stale')
-  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, view, out) || !isRowTab(out.tab))
-    return withCommands(next)
+  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, out) || !isRowTab(out.tab))
+    return withCommands(next, ...restored.commands)
   const index = tabWaits(next, view, out.tab).findIndex(r => r.id === row)
   const back = withCursor(next, out.tab, { id: row, index, guard: null })
 
-  return isReplyBack ? withCommands({ ...back, typing: row }, { kind: 'focus-field', id: row }) : withCommands(back)
+  return isReplyBack
+    ? withCommands({ ...back, typing: row }, ...restored.commands, { kind: 'focus-field', id: row })
+    : withCommands(back, ...restored.commands)
 }
 
 /** Whether press `out` still waits on its row's message, which a host holds or queues until the agent takes it. */

@@ -112,7 +112,9 @@ export function readCursors(
     const waits = tabWaits(step.ui, view, tab)
     const cursor = step.ui.selection[tab]
     const index = cursor.id === null ? -1 : waits.findIndex(r => r.id === cursor.id)
-    const isGone = cursor.id !== null && index < 0
+    // A cursor whose id was never among the tab's rows rests on a line only the look draws, such as omp's fold lines.
+    const wasOnRow = cursor.index >= 0
+    const isGone = cursor.id !== null && wasOnRow && index < 0
     const wasWaiting = cursor.id !== null && (step.ui.waitingSeen[tab] ?? []).includes(cursor.id)
     const hasStopped = !isGone && wasWaiting && waits[index]?.isWaiting === false
     const isFieldOpen = cursor.id !== null && step.ui.typing === cursor.id
@@ -242,11 +244,11 @@ export function foldAll(ui: UiState, view: SessionView, isOpening: boolean | nul
   }, withCommands(start))
 }
 
-/** Selects the row a confirmed Undo brought back, once a row tab lists it, unless a field is open on another row. */
+/** Selects the row a confirmed Undo brought back, once a row tab lists it open again, unless a field is open on another row. */
 export function selectRestored(ui: UiState, view: SessionView): UiStep {
   const restoring = ui.restoring
   if (restoring === null) return withCommands(ui)
-  const tab = ROW_TAB_IDS.find(t => tabWaits(ui, view, t).some(r => r.id === restoring.id))
+  const tab = ROW_TAB_IDS.find(t => tabWaits(ui, view, t).some(r => r.id === restoring.id && r.isWaiting))
   if (tab === undefined) return withCommands(ui)
   const cleared = { ...ui, restoring: null }
   if (ui.typing !== null && ui.typing !== restoring.id) return withCommands(cleared)

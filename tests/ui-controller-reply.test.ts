@@ -132,6 +132,17 @@ test('a refused reply shows its error on the row and reopens its field when the 
   expect(late.commands).toEqual([])
 })
 
+test('a refused reply reopens its field on its row when only the controller moved the cursor, as when the host saved the row as answered first', () => {
+  const run = sent()
+  const answered = dismissedByPerson(S, 'i1', T0 + 31)
+  const movedOn = read(run.ui, answered, T0 + 35).ui
+  expect(movedOn.selection.needsYou.id).toBe('i2')
+  const refused = send(movedOn, S, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 40)
+  expect(refused.ui.typing).toBe('i1')
+  expect(refused.ui.selection.needsYou.id).toBe('i1')
+  expect(refused.ui.drafts.i1?.text).toBe('Use Node')
+})
+
 test('a press whose row is gone reports its error or stale note under the tabs instead of on the row', () => {
   const { ui } = openOn(S)
   const pressed = send(ui, S, { type: 'press', press: { action: 'explain', id: 'i2' }, by: 'key' }, T0 + 10)
@@ -180,6 +191,25 @@ test('a confirmed Undo selects the row it brought back once a tab lists it', () 
   expect(back.ui.selection.needsYou.id).toBe('i2')
   expect(back.ui.restoring).toBe(null)
   expect(back.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i2', closedId: null })
+})
+
+test('a confirmed Undo whose answer lands after the read that lists its row selects the row at once', () => {
+  const closed = dismissedByPerson(S, 'i2', T0 + 5)
+  const { ui } = openOn(closed)
+  const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by: 'key' }, T0 + 10)
+  const listed = read(pressed.ui, S, T0 + 15)
+  const settled = send(listed.ui, S, { type: 'press-settled', pressId: 1, outcome: OK }, T0 + 20)
+  expect(settled.ui.selection.needsYou.id).toBe('i2')
+  expect(settled.ui.restoring).toBe(null)
+  expect(settled.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i2', closedId: null })
+})
+
+test('a close the person pressed moves the cursor at once when the read that shows it comes while the press is out', () => {
+  const { ui } = openOn(S)
+  const pressed = send(ui, S, { type: 'press', press: { action: 'dismiss', id: 'i1' }, by: 'key' }, T0 + 10)
+  const shown = read(pressed.ui, dismissedByPerson(S, 'i1', T0 + 11), T0 + 12)
+  expect(shown.ui.selection.needsYou.id).toBe('i2')
+  expect(shown.ui.heldClose).toEqual({})
 })
 
 test('the undo key presses Undo on the shown tab’s row that closed last', () => {

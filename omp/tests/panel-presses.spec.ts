@@ -5,34 +5,23 @@ import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { sessionView } from '../../hooks/session-view'
 import { demoSource, demoState } from '../src/demo'
-import { INITIAL_UI, holdsOf } from '../src/panel'
-import { afterHandOff, handleKey } from '../src/panel-keys'
-import {
-  drawn,
-  ESC,
-  firstQuestion,
-  keys,
-  NOW,
-  onRow,
-  plannedLabels,
-  screenOf,
-  strip,
-  text,
-  waiting,
-} from './panel-harness'
+import { holdsOf } from '../../hooks/ui-controller-reply'
+import { INITIAL_UI } from '../src/panel'
+import { applyEvents } from '../src/panel-keys'
+import { cursorOf, drawn, ESC, firstQuestion, keyed, keys, NOW, onRow, plannedLabels, screenOf, strip, text, waiting } from './panel-harness'
 
 test('t opens a reply field in place of the buttons, and Enter sends the typed words as a type press', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  let ui = handleKey(screen, onRow(row), 't', NOW).ui
+  let ui = keyed(screen, onRow(row), 't', NOW).ui
   expect(ui.typing).toBe(row.id)
-  for (const ch of 'hi!') ui = handleKey(screen, ui, ch, NOW, ch).ui
-  ui = handleKey(screen, ui, 'backspace', NOW).ui
-  ui = handleKey(screen, ui, 'space', NOW, ' ').ui
-  ui = handleKey(screen, ui, 'a', NOW, 'a').ui
+  for (const ch of 'hi!') ui = keyed(screen, ui, ch, NOW, ch).ui
+  ui = keyed(screen, ui, 'backspace', NOW).ui
+  ui = keyed(screen, ui, 'space', NOW, ' ').ui
+  ui = keyed(screen, ui, 'a', NOW, 'a').ui
   expect(text(screen, ui)).toContain('hi a')
   expect(text(screen, ui)).not.toContain(`↵ ${row.item!.rec}`)
-  const sent = handleKey(screen, ui, 'enter', NOW)
+  const sent = keyed(screen, ui, 'enter', NOW)
   expect(sent.press).toEqual({ action: 'type', id: row.id, text: 'hi a' })
   expect(sent.ui.typing).toBeNull()
   expect(sent.ui.drafts[row.id]?.text).toBe('hi a')
@@ -40,8 +29,8 @@ test('t opens a reply field in place of the buttons, and Enter sends the typed w
 
 test('Enter in an empty reply field sends nothing', () => {
   const screen = screenOf()
-  const ui = handleKey(screen, onRow(firstQuestion(screen)), 't', NOW).ui
-  const result = handleKey(screen, ui, 'enter', NOW)
+  const ui = keyed(screen, onRow(firstQuestion(screen)), 't', NOW).ui
+  const result = keyed(screen, ui, 'enter', NOW)
   expect(result.press).toBeUndefined()
   expect(result.ui.typing).not.toBeNull()
 })
@@ -49,24 +38,24 @@ test('Enter in an empty reply field sends nothing', () => {
 test('Esc in the reply field closes the field and keeps the draft held', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  let ui = handleKey(screen, onRow(row), 't', NOW).ui
-  ui = handleKey(screen, ui, 'o', NOW, 'o').ui
-  const cancelled = handleKey(screen, ui, 'escape', NOW)
+  let ui = keyed(screen, onRow(row), 't', NOW).ui
+  ui = keyed(screen, ui, 'o', NOW, 'o').ui
+  const cancelled = keyed(screen, ui, 'escape', NOW)
   expect(cancelled.close).toBeUndefined()
   expect(cancelled.ui.typing).toBeNull()
   expect(cancelled.ui.drafts[row.id]?.text).toBe('o')
-  expect(Object.keys(holdsOf(cancelled.ui).replies)).toEqual([row.id])
-  expect(handleKey(screen, cancelled.ui, 'escape', NOW).close).toBe(true)
+  expect(Object.keys(holdsOf(cancelled.ui, NOW).replies)).toEqual([row.id])
+  expect(keyed(screen, cancelled.ui, 'escape', NOW).close).toBe(true)
 })
 
 test('keys in the reply field never switch tabs or move the selection', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  const ui = handleKey(screen, onRow(row), 't', NOW).ui
-  const typed = handleKey(screen, ui, '2', NOW, '2').ui
+  const ui = keyed(screen, onRow(row), 't', NOW).ui
+  const typed = keyed(screen, ui, '2', NOW, '2').ui
   expect(typed.tab).toBe('needsYou')
   expect(typed.drafts[row.id]?.text).toBe('2')
-  expect(handleKey(screen, typed, 'down', NOW).ui.selectedId).toBe(row.id)
+  expect(cursorOf(keyed(screen, typed, 'down', NOW).ui)).toBe(row.id)
 })
 
 test('Discard on a held row drops the draft and records the discard', () => {
@@ -77,7 +66,7 @@ test('Discard on a held row drops the draft and records the discard', () => {
   const heldRow = waiting(held, 'd11')
   expect(heldRow.state.is).toBe('held')
   expect(plannedLabels(heldRow)).toEqual(['Reply', 'Discard'])
-  const result = handleKey(held, onRow(heldRow), 'x', NOW)
+  const result = keyed(held, onRow(heldRow), 'x', NOW)
   expect(result.press).toBeUndefined()
   expect(result.ui.discarded.d11).toBe(NOW)
 })
@@ -93,24 +82,22 @@ test('a held row’s close label has no ✓, so it draws muted, not in the done 
 
 async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>['press']>[0][]) {
   let now = NOW
-  const later: (() => void)[] = []
   const source = demoSource({
     modelName: 'Claude Sonnet 5.5',
     now: () => now,
-    after: fn => later.push(fn),
     settleWindowMs: SETTLED_MS,
     version: '1.2.3',
     comparePage: '/omp/dist/compare-page.html',
   })
   const holds = { ...NO_HOLDS, shownSince: NOW }
-  for (const p of presses) await source.press(p, holds)
-  const screen = async () => ({ ...(await source.screen(holds)), modelName: null })
+  for (const [i, p] of presses.entries()) await source.press(p, holds, i + 1)
+  const screen = async () => ({ ...(await source.screen(holds, {})), modelName: null })
 
   return {
     screen,
     advance: async () => {
       now += SETTLED_MS + 1
-      later.forEach(fn => fn())
+      presses.forEach((_p, i) => source.demoReply?.(i + 1))
       return screen()
     },
     source,
@@ -140,7 +127,7 @@ test('a row closed with Done shows its label and Undo, u returns the undo press,
   expect(out).toContain('1 closed')
   for (const width of [30, 46])
     expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the .*… {2}✓ Do/)
-  expect(handleKey(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
+  expect(keyed(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
   const later = text(await demo.advance(), INITIAL_UI)
   expect(later).not.toContain('Put on the glasses')
   expect(later).toContain('2 closed')
@@ -151,7 +138,7 @@ test('a settled row is skipped when moving and the selection leaves it', async (
   const screen = await demo.screen()
   const ui = onRow(waiting(screen, 'd14'))
   const next = keys(screen, ui, 'down')
-  expect(next.selectedId).not.toBe('d14')
+  expect(cursorOf(next)).not.toBe('d14')
   expect(
     drawn(screen, ui)
       .filter(l => strip(l).includes('❯'))
@@ -201,14 +188,16 @@ test('a reply folds its row to one line with its mark and label, and the selecti
   expect(lines[at]).toMatch(/❯[├└]─ .*✓ Replied: go with B/)
   expect(lines[at + 1]).not.toContain('↵')
 
-  const moved = afterHandOff(screen, onRow(row), row.id, NOW)
-  expect(moved.selectedId).not.toBe(row.id)
-  expect(waiting(screen, moved.selectedId!).state.is).toBe('open')
+  const read = { type: 'read', host: { isFetchingPrs: false, hasAsksBlocker: false, lastTypedMessageAt: null } } as const
+  const before = applyEvents(screenOf(), onRow(row), [read], NOW).ui
+  const moved = applyEvents(screen, before, [read], NOW).ui
+  expect(cursorOf(moved)).not.toBe(row.id)
+  expect(waiting(screen, cursorOf(moved)!).state.is).toBe('open')
 })
 
 test('Enter opens a folded row again, and moving off it folds it', async () => {
   const { row, screen } = await afterReply()
-  expect(handleKey(screen, onRow(row), 'b', NOW).press).toBeUndefined()
+  expect(keyed(screen, onRow(row), 'b', NOW).press).toBeUndefined()
   const opened = keys(screen, onRow(row), 'enter')
   expect(text(screen, opened)).toContain('t Reply')
   expect(keys(screen, opened, 'down', 'up').opened).toBeNull()
@@ -221,7 +210,7 @@ test('a dismissed PR shows its label dim, as a dismissed row does, with Undo, an
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   expect(text(screen, ui)).toMatch(/#29 Show the battery level as a glance\s+✕ Dismissed\s+u Undo/)
   expect(drawn(screen, ui).join('\n')).toContain(`${ESC}2mDismissed${ESC}22m`)
-  expect(handleKey(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
+  expect(keyed(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
 })
 
 test('a failed send shows why and offers Try again first', () => {

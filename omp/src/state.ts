@@ -17,26 +17,33 @@ import type { Session } from '../../types'
 import type { SavedSession } from '../../hooks/session-files'
 import { exclusiveKeys } from '../../hooks/session-host'
 import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
+import { freshUi } from '../../hooks/ui-controller-types'
+import type { UiState } from '../../hooks/ui-controller-types'
+import { OMP_LOOK } from './panel'
 
 export type OmpState = Session & {
   version: typeof SESSION_VERSION
   sessionId: string
+  /** The panel's state from the shared controller, which a later panel starts from: its drafts, cursors and folds. */
+  ui: UiState | null
 }
 
 export function emptyState(sessionId: string): OmpState {
-  return { version: SESSION_VERSION, sessionId, ...emptySession() }
+  return { version: SESSION_VERSION, sessionId, ...emptySession(), ui: null }
 }
 
 export function statePath(dir: string, sessionId: string): string {
   return join(dir, 'sessions', sessionFile(sessionId))
 }
 
-type Saved = SavedSession & Partial<Pick<OmpState, 'version' | 'sessionId'>>
+type Saved = SavedSession & Partial<Pick<OmpState, 'version' | 'sessionId'>> & { ui?: Partial<UiState> | null }
 
-/** State saved by an earlier build, with any field it lacks filled in. */
+/** State saved by an earlier build, with any field it lacks filled in. A build before the shared controller saved no `ui`. */
 function upgraded(saved: Saved, sessionId: string): OmpState {
   checkVersion(saved)
-  return { version: SESSION_VERSION, sessionId, ...upgradeSession(saved) }
+  const ui = saved.ui ? { ...freshUi(OMP_LOOK), ...saved.ui, config: OMP_LOOK } : null
+
+  return { version: SESSION_VERSION, sessionId, ...upgradeSession(saved), ui }
 }
 
 async function readSaved(dir: string, sessionId: string): Promise<{ state: OmpState; isSaved: boolean }> {

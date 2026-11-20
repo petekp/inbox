@@ -1,25 +1,23 @@
-import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
-import type { Draft, FoldKind, Stop } from '../../types'
+import type { Stop } from '../../types'
 import type { PrPress } from '../../hooks/pr-press'
-import { noteText } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session-view'
 import type { BannerTone, ToneName } from '../../hooks/tones'
 import { ago } from '../../hooks/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../hooks/banners'
-import { QUEUED_AFTER_MS, SETTLED_MS, heldReplies, nextFoldAt, queuedSentAt } from '../../hooks/timing'
-import type { ListInput } from '../../hooks/timing'
 import { shownTabs, isRowTab } from '../../hooks/tabs'
 import { bandCounts, noCountsText } from '../../hooks/band'
 import { footerError } from '../../hooks/view'
 import { statusSelected } from '../../hooks/status-keys'
 import { seenSubjectIds } from '../../hooks/status-page'
-import type { Holds } from '../../hooks/timing'
-import type { ShownTab } from '../../hooks/tabs'
+import { noticeOf } from '../../hooks/ui-controller'
+import { shownTab } from '../../hooks/ui-controller-tabs'
+import { freshUi } from '../../hooks/ui-controller-types'
+import type { LookConfig, UiState } from '../../hooks/ui-controller-types'
 import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { entriesOf } from './panel-entries'
-import { resolveSelected, withTab } from './panel-keys'
+import { selectedLine, withCollapses, withShared } from './panel-keys'
 import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../hooks/herdr-ask'
 import { drawGoalPart, goalPartId, workRowLines } from './panel-goal'
@@ -27,17 +25,15 @@ import { drawPageRow } from './panel-page'
 import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { collapsedIn, fit, indented, spread } from './panel-text'
 
+/** Sends the message that resumes a stopped turn. The panel runs it, so the controller never sees it. */
 type ResumePress = { action: 'resume' }
 /** An answer to the question before omp installs the inbox's Herdr mod. */
 type HerdrAskPress = { action: 'herdr-ask'; isYes: boolean }
-/** Shows every option of a question whose options fold. The panel handles it, so no host sees it. */
+/** Shows every option of a question whose options fold. */
 type OptionsPress = { action: 'all-options'; id: string }
-/** Collapses a row, or expands it once collapsed. The panel draws it at once, and the host saves it. */
-type CollapsePress = { action: 'collapse'; id: string; isCollapsed: boolean }
-/** Collapses or expands each of several rows, as one fold-all key does. */
-type CollapseAllPress = { action: 'collapse-all'; changes: { id: string; isCollapsed: boolean }[] }
-export type PanelPress =
-  RowPress | PrPress | ResumePress | OptionsPress | HerdrAskPress | CollapsePress | CollapseAllPress
+/** A press the panel runs itself, outside the shared controller. */
+export type LocalPress = ResumePress | HerdrAskPress
+export type PanelPress = RowPress | PrPress | LocalPress | OptionsPress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {
@@ -78,110 +74,36 @@ export type Style = {
   tint(tone: 'key' | 'done' | 'muted' | 'error', share: number, s: string, rest?: Tone | 'dim' | null): string
 }
 
-export type PanelUi = {
-  tab: ShownTab
-  selectedId: string | null
+/** How omp draws what the shared controller times. Each value is a difference on purpose in docs/looks.md. */
+export const OMP_LOOK: LookConfig = { runningMarks: 'frames', titleTint: 'steps', undoClock: 'session' }
+
+/** What the panel keeps besides the shared controller's state. */
+type PanelLocal = {
   /** The focused button of one row. Another row's focus starts at its recommended option. */
   focus: { rowId: string; index: number } | null
-  /** The row whose reply field is open. */
-  typing: string | null
-  /** Replies begun and not sent, by row id. Cancelling the field keeps its draft, and so does a send that is not confirmed. */
-  drafts: Record<string, Draft>
-  /** Rows whose draft the person discarded, and when. */
-  discarded: Record<string, number>
-  /** A line about the last press that the row itself cannot show, until `at` + SETTLED_MS. */
-  notice: { text: string; at: number; isError: boolean } | null
-  /** The groups whose closed rows show. Each starts folded. */
-  unfolded: FoldKind[]
-  /** The groups whose earlier Closed lines the person opened. Folding the group closes them again. */
-  closedAll: FoldKind[]
-  /** The questions whose folded options the person opened. */
-  optionsShown: string[]
-  /** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
-  statusUnfolded: string[]
   /** A Resume press for the stop that began at `stopAt`. */
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
-  /** A handed-off row the person opened again with Enter. Moving the selection off it folds it again. */
+  /** A handed-off row the person opened again with Enter. Moving the cursor off it folds it again. */
   opened: string | null
   /** How many lines of the Status page are scrolled above the panel. Drawing clamps it to the page's end. */
   pageTop: number
   /** The Status row the next draw scrolls into view, after j or k selects it. `true` is the selected row, as when the page shows. */
   pageReveal: string | true | null
-  /**
-   * When a Status press selected the shown row, as View does. The row's buttons ignore keys until
-   * `PRESS_GUARD_MS` has passed, so a second Enter does not press the row it opened.
-   */
-  openedAt: number
-  /** When the panel opened or last switched tab. A row that closes since then stays in place until the next of either. */
-  shownSince: number
-  /** Whether Help shows in place of the tab's lines. It scrolls with `pageTop`, and switching tabs closes it. */
-  isHelpShown: boolean
-  /** The person's latest run of keys, which keeps a row due to fold in place until they stop. */
-  listInput: ListInput | null
-  /** The rows that arrived since the panel opened, whose title is tinted until it fades. */
-  newRows: NewRows
-  /** When the panel first drew each closed row, which starts its title's tint. */
-  closedSeen: ClosedSeen
 }
 
-export const INITIAL_UI: PanelUi = {
-  tab: 'needsYou',
-  selectedId: null,
-  focus: null,
-  typing: null,
-  drafts: {},
-  discarded: {},
-  notice: null,
-  unfolded: [],
-  closedAll: [],
-  optionsShown: [],
-  statusUnfolded: [],
-  resuming: null,
-  opened: null,
-  pageTop: 0,
-  pageReveal: null,
-  openedAt: 0,
-  shownSince: 0,
-  isHelpShown: false,
-  listInput: null,
-  newRows: new Map(),
-  closedSeen: new Map(),
-}
+/** The shared controller's state, from `reduceUi`, and what only the panel keeps. */
+export type PanelUi = UiState & PanelLocal
 
-export function holdsOf(ui: Pick<PanelUi, 'typing' | 'drafts' | 'discarded' | 'shownSince' | 'listInput'>): Holds {
-  return {
-    replies: heldReplies(ui.typing, ui.drafts),
-    discarded: ui.discarded,
-    shownSince: ui.shownSince,
-    listInput: ui.listInput,
-  }
-}
+export const NO_LOCAL: PanelLocal = { focus: null, resuming: null, opened: null, pageTop: 0, pageReveal: null }
 
-/**
- * True while the view changes with the clock alone: a settled row's Undo counting down or its fold coming due, a local press's result
- * showing, a send waiting to read as queued, or a notice. Changes the host saves arrive as events instead.
- */
-export function isAnimating(screen: PanelScreen, ui: PanelUi, now: number): boolean {
-  const { view } = screen
-  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows]
-  const isPressMoving = Object.values(view.lastActions).some(
-    l =>
-      (l.result !== undefined && (l.result.state === 'pending' || now - l.result.at < SETTLED_MS)) ||
-      (l.delivery?.state === 'queued' && now - queuedSentAt(l) < QUEUED_AFTER_MS),
-  )
-  const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
-  const settled = [...rows, ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
-  const placing = { lastTypedMessageAt: null, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS }
-  const isFoldComing = nextFoldAt(settled, placing) !== null
+/** A panel open since 0, as tests draw it. A live panel starts from its session's saved state. */
+export const INITIAL_UI: PanelUi = { ...freshUi(OMP_LOOK), shownSince: 0, ...NO_LOCAL }
 
-  return isFoldComing || isPressMoving || isNoticeShown
-}
+/** The controller's part of `ui`, which the host saves. */
+export function sharedOf(ui: PanelUi): UiState {
+  const { focus: _f, resuming: _r, opened: _o, pageTop: _t, pageReveal: _p, ...shared } = ui
 
-/** The notice for a press the row cannot show: a failed send, or a press whose row had changed. */
-export function noticeFor(outcome: { error: string | null; note: 'stale' | null }, now: number): PanelUi['notice'] {
-  const text = outcome.error ?? (outcome.note ? noteText() : null)
-
-  return text === null ? null : { text, at: now, isError: outcome.error !== null }
+  return shared
 }
 
 /** The panel's lines for `width`. With `height`, the rows scroll inside it and keep the selected row in view. */
@@ -209,14 +131,14 @@ export function drawPanel(
   height?: number,
   minHeight = 0,
 ): { lines: string[]; pageTop: number; isRevealed: boolean; shownSubjects: string[] } {
+  screen = withCollapses(screen, ui)
   const d: Draw = { screen, ui, width, now, style }
   const entries = entriesOf(screen, ui, ui.tab, now)
-  const selected = resolveSelected(linesOf(entries), ui.selectedId)
+  const selected = selectedLine(linesOf(entries), ui)
   const rule = style.dim('─'.repeat(width))
   const error = footerError(ui.tab, screen.view.status, screen.view.statusPage)
-  const isNoticeShown = ui.notice !== null && now - ui.notice.at < SETTLED_MS
   const host = screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []
-  const banners = tabBarBanners(host, error, isNoticeShown ? ui.notice : null)
+  const banners = tabBarBanners(host, error, noticeOf(ui, now))
   const head = [
     ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
     rule,
@@ -231,7 +153,7 @@ export function drawPanel(
       ? null
       : statusSelected(
           screen.view.statusPage,
-          ui.selectedId,
+          ui.statusSelection,
           id => ui.statusUnfolded.includes(id),
           collapsedIn(screen.view),
         )
@@ -335,7 +257,9 @@ export function tallestTabHeight(
   height?: number,
 ): number {
   const heights = shownTabs().map(
-    t => drawPanel(screen, t.id === ui.tab ? ui : withTab(ui, t.id, now), width, now, style, height).lines.length,
+    t =>
+      drawPanel(screen, t.id === ui.tab ? ui : withShared(ui, shownTab(ui, t.id, now)), width, now, style, height).lines
+        .length,
   )
 
   return Math.max(...heights)

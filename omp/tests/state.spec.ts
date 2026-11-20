@@ -7,6 +7,8 @@ import { KEPT_SESSIONS } from '../../hooks/ledger'
 import { SESSION_VERSION } from '../../hooks/session-version'
 import { exclusiveRun, pruneSessions, readState, statePath, updateState } from '../src/state'
 import type { OmpState } from '../src/state'
+import { freshUi } from '../../hooks/ui-controller-types'
+import { OMP_LOOK } from '../src/panel'
 
 const dirs: string[] = []
 const tempDir = () => {
@@ -141,4 +143,29 @@ test('pruning removes the oldest sessions beyond the kept count and never the cu
   expect(await present('s1')).toBe(false)
   expect(await present('s2')).toBe(false)
   expect(await present(`s${total - 1}`)).toBe(true)
+})
+
+test('a session 0.6.0 saved loads with its ledger and held rows, and with no kept panel state', async () => {
+  const dir = tempDir()
+  mkdirSync(join(dir, 'sessions'))
+  const saved = readFileSync(join(import.meta.dir, 'fixtures', 'state-0.6.0.json'), 'utf8')
+  writeFileSync(statePath(dir, 'omp-060'), saved)
+  const state = await readState(dir, 'omp-060')
+  const old = JSON.parse(saved)
+  expect(state.ui).toBeNull()
+  expect(state.ledger.items.map(i => i.id)).toEqual(old.ledger.items.map((i: { id: string }) => i.id))
+  expect(state.heldRows).toEqual(old.heldRows)
+  expect(state.lastActions).toEqual(old.lastActions)
+})
+
+test('a kept draft survives a save and a read, and a missing newer field reads with its default', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, ui: { ...freshUi(OMP_LOOK), drafts: { d1: { text: 'go with B', since: 5 } } } }))
+  const file = JSON.parse(readFileSync(statePath(dir, 's1'), 'utf8'))
+  delete file.ui.sentReplies
+  writeFileSync(statePath(dir, 's1'), JSON.stringify(file))
+  const state = await readState(dir, 's1')
+  expect(state.ui?.drafts).toEqual({ d1: { text: 'go with B', since: 5 } })
+  expect(state.ui?.sentReplies).toEqual({})
+  expect(state.ui?.config).toEqual(OMP_LOOK)
 })

@@ -7,7 +7,7 @@ import { drawnGaps, missingTexts, rowTexts, statusFoldIds, statusTexts } from '.
 import type { Expected } from '../../tests/view-contract'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelScreen, PanelUi } from '../src/panel'
-import { NOW, text } from './panel-harness'
+import { NOW, text, withCursorOn } from './panel-harness'
 
 const DAY = 86_400_000
 const WIDE = 200
@@ -42,7 +42,7 @@ for (const { name, session } of contractSessions(NOW, 'Claude')) {
     ] as const
     for (const [tab, rows] of tabs)
       for (const row of rows) {
-        const ui: PanelUi = { ...INITIAL_UI, tab, selectedId: row.id }
+        const ui: PanelUi = withCursorOn({ ...INITIAL_UI, tab }, row.id)
         const drawn = text(screen, ui, WIDE)
         expect({ row: row.id, ...failures(rowTexts(row, { look: 'omp', now: NOW }), drawn) }).toEqual({
           row: row.id,

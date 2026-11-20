@@ -1,67 +1,10 @@
 import { expect, test } from 'bun:test'
 
-import { prFetchTracker } from '../../hooks/host-prs'
+import { HERDR_CHECK_MS } from '../../hooks/herdr'
+import { PR_POLL_MS, prFetchTracker } from '../../hooks/host-prs'
 import { emptySession } from '../../hooks/session-files'
-import { COMPARE_LIMIT_MS, NO_HOLDS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/timing'
-import { createPanel } from '../src/controller'
-import type { PanelSource } from '../src/controller'
-import { demoSource } from '../src/demo'
-import type { PanelPress, Style } from '../src/panel'
-
-const style: Style = {
-  bold: s => s,
-  dim: s => s,
-  inverse: s => s,
-  underline: s => s,
-  tone: (_n, s) => s,
-  banner: (_t, _p, s) => s,
-  tint: (_tone, _share, s) => s,
-}
-const flush = () => new Promise(resolve => setTimeout(resolve, 0))
-
-function open(overrides: Partial<PanelSource> = {}) {
-  let now = 1_700_000_000_000
-  const timers: { fn: () => void; ms: number; stopped: boolean }[] = []
-  const pressed: PanelPress[] = []
-  const calls = { renders: 0, closes: 0, fetches: 0 }
-  const replies: (() => void)[] = []
-  const demo = demoSource({
-    modelName: 'Claude Sonnet 5.5',
-    now: () => now,
-    after: fn => void replies.push(fn),
-    settleWindowMs: SETTLED_MS,
-    version: '1.2.3',
-    comparePage: '/omp/dist/compare-page.html',
-  })
-  const source: PanelSource = {
-    ...demo,
-    press: async (p, holds) => {
-      pressed.push(p)
-
-      return demo.press(p, holds)
-    },
-    fetchPrsWhenDue: () => void calls.fetches++,
-    ...overrides,
-  }
-  const panel = createPanel({
-    source,
-    style,
-    now: () => now,
-    openedAt: now,
-    requestRender: () => void calls.renders++,
-    close: () => void calls.closes++,
-    timers: {
-      every: (fn, ms) => timers.push({ fn, ms, stopped: false }) - 1,
-      stop: handle => void (timers[handle as number]!.stopped = true),
-    },
-    height: () => undefined,
-  })
-
-  return { panel, timers, pressed, calls, replies, source, advance: (ms: number) => void (now += ms) }
-}
-
-const live = (timers: { fn: () => void; ms: number; stopped: boolean }[], ms: number) =>
-  timers.filter(t => t.ms === ms && !t.stopped)
+import { COMPARE_LIMIT_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/timing'
+import { demoOf, flush, open, sharingUi } from './controller-harness'
 
 test('the panel shows a loading line until the first screen arrives', async () => {
   const { panel } = open()
@@ -108,23 +51,8 @@ test('a type press whose send cannot be confirmed keeps the draft in the field',
   expect(await replyThenReopen(panel, 'oh')).toBe('oh')
 })
 
-function sharingDrafts() {
-  const kept: { drafts: Record<string, { text: string; since: number }>; saves: string[][] } = { drafts: {}, saves: [] }
-
-  return {
-    kept,
-    overrides: {
-      drafts: () => kept.drafts,
-      keepDrafts: (drafts: typeof kept.drafts) => {
-        kept.drafts = drafts
-        kept.saves.push(Object.values(drafts).map(d => d.text))
-      },
-    },
-  }
-}
-
 test('a reply draft is in the field of a panel opened after the one that began it', async () => {
-  const { kept, overrides } = sharingDrafts()
+  const { kept, overrides } = sharingUi()
   const first = open(overrides)
   await first.panel.start()
   for (const [key, text] of [['t'], ['h', 'h'], ['i', 'i'], ['escape']] as [string, string?][]) {
@@ -143,7 +71,7 @@ test('a reply draft is in the field of a panel opened after the one that began i
 })
 
 test('a reply that was sent leaves no draft for the next panel', async () => {
-  const { kept, overrides } = sharingDrafts()
+  const { kept, overrides } = sharingUi()
   const { panel } = open(overrides)
   await panel.start()
   await replyThenReopen(panel, 'hi')
@@ -151,12 +79,17 @@ test('a reply that was sent leaves no draft for the next panel', async () => {
   expect(Object.values(kept.drafts).map(d => d.text)).toEqual([''])
 })
 
-test('a failed send shows its reason below the rows', async () => {
+test('a failed send shows its reason on its row, below the row’s title, and not under the tabs', async () => {
   const { panel } = open({ press: async () => ({ error: 'Not sent: omp is busy', note: null, isUnconfirmed: false }) })
   await panel.start()
   panel.handleInput('b')
   await flush()
-  expect(panel.render(80).join('\n')).toContain('Not sent: omp is busy')
+  const lines = panel.render(80)
+  const title = lines.findIndex(l => l.includes('Dismiss a glance with a pinch'))
+  const error = lines.findIndex(l => l.includes('Not sent: omp is busy'))
+  expect(error).toBeGreaterThan(title)
+  expect(lines.slice(title + 1, error).some(l => /[├└]─/.test(l))).toBe(false)
+  expect(lines.filter(l => l.includes('Not sent: omp is busy'))).toHaveLength(1)
 })
 
 test('after Address on a PR thread, the selection moves to the next PR row that waits', async () => {
@@ -178,25 +111,27 @@ test('Esc closes the panel', async () => {
   expect(calls.closes).toBe(1)
 })
 
-test('the redraw timer runs only while something on the screen moves, as a settled row before it folds', async () => {
-  const { panel, timers, advance, source } = open()
+test('the panel polls nothing: it reads the session when the view changes on the clock, and draws a running mark’s frames without a read', async () => {
+  const { panel, timers, calls, wakes, runFor } = open()
   await panel.start()
-  expect(live(timers, 200)).toHaveLength(1)
-  advance(SETTLED_MS + 1000)
-  live(timers, 200)[0]!.fn()
+  panel.handleInput('1')
   await flush()
-  expect(live(timers, 200)).toHaveLength(0)
-  await source.press({ action: 'done', id: 'd14' }, NO_HOLDS)
-  await flush()
-  expect(live(timers, 200)).toHaveLength(1)
-  advance(SETTLED_MS + 1000)
-  live(timers, 200)[0]!.fn()
-  await flush()
-  expect(live(timers, 200)).toHaveLength(0)
+  const intervals = timers.filter(t => !t.isOnce && !t.stopped).map(t => t.ms)
+  expect(intervals.sort()).toEqual([PR_POLL_MS, HERDR_CHECK_MS].sort())
+  expect(wakes()).toHaveLength(1)
+  const [rendersBefore, readsBefore] = [calls.renders, calls.reads]
+  await runFor(SETTLED_MS + 1000)
+  const frames = calls.renders - rendersBefore
+  const reads = calls.reads - readsBefore
+  expect(frames).toBeGreaterThanOrEqual(Math.floor(SETTLED_MS / RUNNING_FRAME_MS))
+  expect(reads).toBeGreaterThan(0)
+  expect(reads).toBeLessThan(frames / 4)
+  panel.dispose()
+  expect(timers.every(t => t.stopped)).toBe(true)
 })
 
 test('the open panel keeps its line count through tab switches, presses and a closed row leaving, and never shrinks after it grows', async () => {
-  const { panel, timers, advance } = open()
+  const { panel, runFor } = open()
   await panel.start()
   const height = panel.render(100).length
   for (const key of ['tab', 'tab', 'tab', '2', 'enter', '1', 'enter']) {
@@ -211,66 +146,20 @@ test('the open panel keeps its line count through tab switches, presses and a cl
   panel.handleInput('escape')
   await flush()
   expect(panel.render(100)).toHaveLength(withField)
-  advance(SETTLED_MS + 1000)
-  live(timers, 200)[0]!.fn()
-  await flush()
+  await runFor(SETTLED_MS + 1000)
   expect(panel.render(100)).toHaveLength(withField)
 })
 
-test('the frame timer runs while the Status shows a running mark, re-renders without reading the session, and stops on another tab and on dispose', async () => {
-  const demo = demoSource({
-    modelName: 'Claude Sonnet 5.5',
-    now: () => 0,
-    after: () => undefined,
-    settleWindowMs: SETTLED_MS,
-    version: '1.2.3',
-    isNextBuild: true,
-    comparePage: '/omp/dist/compare-page.html',
-  })
-  let reads = 0
-  const { panel, timers, calls } = open({
-    screen: async holds => {
-      reads++
-
-      return demo.screen(holds)
-    },
-  })
-  await panel.start()
-  expect(live(timers, RUNNING_FRAME_MS)).toHaveLength(0)
-  panel.handleInput('1')
-  await flush()
-  const frames = live(timers, RUNNING_FRAME_MS)
-  expect(frames).toHaveLength(1)
-  const [rendersBefore, readsBefore] = [calls.renders, reads]
-  frames[0]!.fn()
-  expect(calls.renders).toBe(rendersBefore + 1)
-  expect(reads).toBe(readsBefore)
-  panel.handleInput('2')
-  await flush()
-  expect(frames[0]!.stopped).toBe(true)
-  panel.handleInput('1')
-  await flush()
-  expect(live(timers, RUNNING_FRAME_MS)).toHaveLength(1)
-  panel.dispose()
-  expect(live(timers, RUNNING_FRAME_MS)).toHaveLength(0)
-})
-
 test('a Compare press with no report redraws the panel at its limit, reading No comparison came back', async () => {
-  const { panel, timers, pressed, replies, advance } = open()
+  const { panel, pressed, runFor } = open()
   await panel.start()
   panel.handleInput('p')
   await flush()
   expect(pressed[0]).toMatchObject({ action: 'compare' })
-  for (const reply of replies.splice(0)) reply()
-  await flush()
+  await runFor(SETTLED_MS + 1)
   expect(panel.render(80).join('\n')).toContain('Comparing…')
-  const limit = timers.filter(t => t.ms >= COMPARE_LIMIT_MS && !t.stopped)
-  expect(limit).toHaveLength(1)
-  advance(limit[0]!.ms)
-  limit[0]!.fn()
-  await flush()
+  await runFor(COMPARE_LIMIT_MS)
   expect(panel.render(120).join('\n')).toContain('No comparison came back')
-  expect(limit[0]!.stopped).toBe(true)
 })
 
 test('for a session that tracks no PR, while the PRs tab is hidden, the panel fetches 10 to 10.5 minutes apart though each fetch takes 3 seconds, until it is disposed', async () => {
@@ -295,7 +184,7 @@ test('for a session that tracks no PR, while the PRs tab is hidden, the panel fe
       fetch.end()
     }
     await flush()
-    for (const timer of timers.filter(t => !t.stopped && elapsed % t.ms === 0)) timer.fn()
+    for (const timer of timers.filter(t => !t.stopped && !t.isOnce && elapsed % t.ms === 0)) timer.fn()
   }
   const gaps = startedAt.slice(1).map((at, n) => at - startedAt[n]!)
   expect(gaps.length).toBeGreaterThanOrEqual(3)
@@ -324,17 +213,10 @@ test('a change in the saved state redraws the panel', async () => {
 })
 
 test('a refused Resume shows why on the stop row', async () => {
-  const demo = demoSource({
-    modelName: 'Claude Sonnet 5.5',
-    now: () => 0,
-    after: () => {},
-    settleWindowMs: SETTLED_MS,
-    version: '1.2.3',
-    comparePage: '/omp/dist/compare-page.html',
-  })
+  const demo = demoOf(() => 0)
   const stop = { kind: 'api-error' as const, detail: 'overloaded', resets: null, at: 1_700_000_000_000 }
   const { panel } = open({
-    screen: async holds => ({ ...(await demo.screen(holds)), stop }),
+    screen: async (holds, notes) => ({ ...(await demo.screen(holds, notes)), stop }),
     resume: async () => 'no session to send to',
   })
   await panel.start()
