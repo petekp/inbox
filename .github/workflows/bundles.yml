@@ -1,0 +1,56 @@
+# After each push to next, rebuilds the bundles from next's tip and commits them to next when they differ, with
+# scripts/bundle-bot.sh. Pull requests carry source only, and checks.yml fails one that changes a bundle.
+#
+# The bot pushes with the workflow's GITHUB_TOKEN, and GitHub starts no workflow run for a push made with it, so the
+# bot's commit starts neither this workflow nor checks.yml:
+# https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow
+#
+# One run at a time. A run that waits is replaced by a newer one, and each run builds next's tip when it starts, so the
+# newest run covers every push before it. A push that lands during a build makes bundle-bot.sh build again from the new
+# tip.
+
+name: bundles
+
+on:
+  push:
+    branches: [next]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bundles-next
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '26'
+  # The Bun that omp/package.json and herdr/package.json pin, which their bundle builds require.
+  BUN_VERSION: '1.4.4'
+
+jobs:
+  rebuild:
+    name: rebuild
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: next
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: install tools
+        run: |
+          npm --prefix codex ci --ignore-scripts --no-audit --no-fund
+          bun install --cwd omp --frozen-lockfile --ignore-scripts
+          bun install --cwd herdr --frozen-lockfile --ignore-scripts
+      - name: rebuild and push
+        env:
+          BUNDLE_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/bundle-bot.sh

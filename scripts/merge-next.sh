@@ -1,22 +1,24 @@
 #!/bin/sh
-# Merges origin/next into the current branch and rebuilds the committed bundles from the merged sources, so nobody
-# resolves a bundle by hand. The bundles are the files Git tracks in the folders the builds write: codex/plugin/dist
-# (codex/build.mjs), omp/dist (omp/build.ts) and herdr/mod/inbox (herdr/build.ts). The Codex tab page is one long line of
-# codex/plugin/dist/server-handler.mjs, so two branches that change what the tab draws conflict on that line.
+# Merges origin/next into the current branch and takes next's built bundles, so the branch carries source only and
+# nobody resolves a bundle by hand. scripts/bundles.sh lists the bundles. A bot commits them to next after each merge,
+# so next's copies are built from next's sources.
 #
-# - Nothing to merge: says so and exits 0, without rebuilding or checking.
-# - A clean merge: rebuilds anyway, since a text merge of two bundles can be wrong without conflicting, and commits
-#   any bundle the rebuild changed as its own commit.
-# - Only bundles conflict: rebuilds them and finishes the merge commit.
+# - First it puts the bundles back to the branch's committed copies, since a local build changes them. A build
+#   makes them again.
+# - Nothing to merge: says so and exits 0, without checking.
+# - A clean merge: sets every bundle to next's copy, and commits that as its own commit when it differs, as on a
+#   branch whose earlier commits changed a bundle.
+# - Only bundles conflict: takes next's copies and finishes the merge commit.
 # - A source file conflicts: stops with the merge in progress and lists the files. Resolve each, stage it with
-#   git add, and run the script again with --continue, which rebuilds the bundles and finishes the merge.
+#   git add, and run the script again with --continue, which takes next's bundles and finishes the merge.
 #
-# Then it runs ./scripts/check.sh, writes its output to .scratch/merge-next-check.log, and exits with its status. With
-# --no-check it skips check.sh and exits 0 after the rebuild, for a round of merges that runs check.sh once at the end.
-# It exits 1 when it stops before that. It never pushes.
+# Then it runs ./scripts/check.sh, which builds the bundles into the working tree, writes its output to
+# .scratch/merge-next-check.log, and exits with its status. With --no-check it skips check.sh and exits 0 after the
+# merge, for a round of merges that runs check.sh once at the end. It exits 1 when it stops before that. It never
+# pushes.
 #
 # Installs a look's tools, with the commands check.sh names, when they are missing or the merge changed the look's
-# lockfile, since a rebuild with older tools writes bundles that differ from next's. Needs git, npm and bun.
+# lockfile, so check.sh builds with next's tools. Needs git, npm and bun.
 #
 # Usage: ./scripts/merge-next.sh [--from <ref>] [--no-check]
 #        ./scripts/merge-next.sh --continue [--no-check]
@@ -25,7 +27,7 @@
 set -eu
 
 DIR=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
-BUNDLE_DIRS='codex/plugin/dist omp/dist herdr/mod/inbox'
+BUNDLE_DIRS=$("$DIR/scripts/bundles.sh" dirs)
 SCRIPT=./scripts/merge-next.sh
 from=origin/next
 resume=0
@@ -80,7 +82,7 @@ install_reason() {
     fi
 }
 
-rebuild() {
+install_tools() {
     reason=$(install_reason . package-lock.json)
     if [ -n "$reason" ]; then
         echo "Installing the root tools: $reason"
@@ -101,10 +103,14 @@ rebuild() {
         echo "Installing the Herdr look's tools: $reason"
         bun install --cwd "$DIR/herdr" --frozen-lockfile --ignore-scripts || return 1
     fi
-    echo "Rebuilding the bundles"
-    npm --prefix "$DIR/codex" run --silent build || return 1
-    npm --prefix "$DIR/omp" run --silent build || return 1
-    npm --prefix "$DIR/herdr" run --silent build || return 1
+}
+
+# Sets every bundle, in the index and the working tree, to the merged commit's copy: MERGE_HEAD while the merge is in
+# progress, else $from. It resolves a bundle in conflict, and removes a bundle file the merged commit does not have.
+take_bundles() {
+    merged=$(git rev-parse -q --verify MERGE_HEAD || git rev-parse --verify "$from^{commit}")
+    # shellcheck disable=SC2086
+    git restore --source="$merged" --staged --worktree -- $BUNDLE_DIRS
 }
 
 branch=$(git symbolic-ref -q --short HEAD) || fail "HEAD is not on a branch. Check out the PR branch first."
@@ -119,7 +125,7 @@ command -v bun >/dev/null 2>&1 || fail "Bun is not installed: https://bun.sh"
 
 if [ "$resume" = 1 ]; then
     is_merging || fail "No merge is in progress. To merge again, run $SCRIPT without --continue."
-    # The bundles are built from the working tree and committed from the index, so every source must be staged.
+    # The merge commits the index, so every source must be staged.
     unresolved=$({
         git diff --name-only
         git ls-files --others --exclude-standard
@@ -133,6 +139,8 @@ else
     if is_merging; then
         fail "A merge is already in progress. Finish it with $SCRIPT --continue, or stop it with git merge --abort."
     fi
+    # shellcheck disable=SC2086
+    git restore --source=HEAD --staged --worktree -- $BUNDLE_DIRS
     changes=$(git status --porcelain)
     if [ -n "$changes" ]; then
         echo "merge-next: The tree has changes:" >&2
@@ -147,32 +155,26 @@ else
         if [ -n "$conflicts" ]; then
             echo "merge-next: These source files conflict:" >&2
             echo "$conflicts" | sed 's/^/  /' >&2
-            echo "merge-next: The merge is still in progress. Leave the bundles: --continue rebuilds them." >&2
+            echo "merge-next: The merge is still in progress. Leave the bundles: --continue takes next's." >&2
             fail "Resolve each source file, stage it with git add, then run $resume_with."
         fi
         echo "Only bundles conflict."
     fi
     if ! is_merging && [ "$(git rev-parse HEAD)" = "$before" ]; then
-        echo "Nothing merged from $from, so nothing to rebuild or check."
+        echo "Nothing merged from $from, so nothing to check."
         exit 0
     fi
 fi
 
-if is_merging; then
-    rebuild ||
-        fail "The build failed, and the merge is still in progress. Fix the sources, stage them with git add, then run $resume_with."
-else
-    rebuild || fail "The build failed after the merge. Fix the sources, commit them, then run $SCRIPT again."
-fi
-# git add -u stages a bundle in conflict as rebuilt, which resolves it.
-git add -u -- $BUNDLE_DIRS
+take_bundles
 if is_merging; then
     git commit --no-edit --cleanup=strip
 elif git diff --cached --quiet; then
-    echo "The rebuild changed no bundle."
+    echo "The bundles already match $from."
 else
-    git commit -m "Rebuild the bundles after merging $from"
+    git commit -m "Take the bundles from $from"
 fi
+install_tools || fail "Installing the tools failed. The merge is committed. Install them with the commands check.sh names."
 
 if [ "$check" = 0 ]; then
     echo "Skipped ./scripts/check.sh (--no-check)."
