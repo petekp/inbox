@@ -463,7 +463,8 @@ var CLAUDE_CODE = {
     "show-explanation": {
       kind: "different",
       reason: "Only the fullscreen terminal lets a plugin scroll the conversation, so the classic terminal and the Claude app draw no Show explanation."
-    }
+    },
+    "done-press-age": { kind: "full" }
   }
 };
 
@@ -623,7 +624,8 @@ var CODEX = {
     "show-explanation": {
       kind: "unsupported",
       reason: "Codex gives a plugin no call that scrolls its conversation."
-    }
+    },
+    "done-press-age": { kind: "full" }
   }
 };
 
@@ -732,7 +734,8 @@ var OMP = {
     "show-explanation": {
       kind: "unsupported",
       reason: "omp's conversation is the terminal's own scrollback, which no extension can scroll."
-    }
+    },
+    "done-press-age": { kind: "full" }
   }
 };
 
@@ -1844,9 +1847,9 @@ function childrenEnded(o, isEnded, at) {
   return { ...o, children: o.children.map((c) => isEnding(c) ? { ...c, endedAt: at } : c) };
 }
 var ENDED = new Set(["completed", "failed", "killed", "stopped"]);
-var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+var HERDR2 = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
 function delegateSteps(command) {
-  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+  return [...command.matchAll(HERDR2)].map(([, verb, name, args]) => ({
     name,
     isPrompt: verb === "prompt",
     isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
