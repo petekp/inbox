@@ -73,13 +73,20 @@ test('an answer that gives the next goal, or SUGGEST -, is asked once, and a sec
 })
 
 test('an answer that meets the goal with no GOAL or SUGGEST line is asked once more for the next goal', async () => {
-  const running = after(null, `${WORK}\nGOAL: Import ready to demo | working Import works; queued Error messages`, 20 * MIN)
+  const running = after(
+    null,
+    `${WORK}\nGOAL: Import ready to demo | working Import works; queued Error messages`,
+    20 * MIN,
+  )
   const meets = 'DONE: Import works | shipped\nDONE: Error messages | clear'
   const { prompts, applied } = await asked(running, [meets, 'SUGGEST: Import shipped to the store'])
 
   expect(prompts).toHaveLength(2)
   expect(prompts[1]).toContain('The goal is met, and no next goal is suggested.')
-  expect(applied?.kind === 'ops' && applied.ops.at(-1)).toEqual({ kind: 'suggest', text: 'Import shipped to the store' })
+  expect(applied?.kind === 'ops' && applied.ops.at(-1)).toEqual({
+    kind: 'suggest',
+    text: 'Import shipped to the store',
+  })
   expect((await asked(running, ['DONE: Import works | shipped'])).prompts).toHaveLength(1)
 })
 

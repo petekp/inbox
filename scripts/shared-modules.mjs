@@ -43,6 +43,7 @@ export const SHARED = [
   'status-freshness',
   'status-limits',
   'status-ops',
+  'status-retry',
   'status-goal-ops',
   'status-suggest',
   'status-milestone-work',

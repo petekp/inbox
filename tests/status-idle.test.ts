@@ -72,10 +72,13 @@ test('an answer with no line for an idle subject is asked once more for those su
     'DONE: Font license | license signed\nSUGGEST: -',
     'DONE: s1 | queue works offline\nNEW: working | Search | started',
   ]
-  const { answer } = await askStatus(async retry => {
-    prompts.push(retry ?? 'prompt')
-    return { text: answers.shift() ?? null }
-  }, statusRetry(input, 'prompt'))
+  const { answer } = await askStatus(
+    async retry => {
+      prompts.push(retry ?? 'prompt')
+      return { text: answers.shift() ?? null }
+    },
+    statusRetry(input, 'prompt'),
+  )
 
   expect(prompts).toHaveLength(2)
   expect(prompts[1]).toContain('no line for these subjects in <idle>: s1 Offline sync.')

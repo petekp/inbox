@@ -68,7 +68,8 @@ function answerOf(record: StatusRecord): StatusAnswer | null {
   const [first, ...rest] = record.attempts.filter(a => a.answer)
   const retry = rest.find(a => a.prompt !== undefined)
   const firstAnswer = parseStatus(first?.answer ?? null)
-  if (!retry || !firstAnswer || !first?.answer) return parseStatus(record.attempts.filter(a => a.answer).at(-1)?.answer ?? null)
+  if (!retry || !firstAnswer || !first?.answer)
+    return parseStatus(record.attempts.filter(a => a.answer).at(-1)?.answer ?? null)
   const asked = record.input ? statusRetry(record.input, record.prompt)(firstAnswer, first.answer) : null
 
   return withRetryLines(firstAnswer, parseStatus(retry.answer), asked?.keeps ?? isGoalLine)

@@ -13,7 +13,7 @@ const DAY = 24 * 60
 export const finishedPass: Replay = {
   name: 'finished-pass',
   about:
-    'A typed cleanup goal: its fixes milestone is done, its review milestone still reads working with no work linked, and a scroll fix still says it waits on the person\'s check, with no ask. Step 1: the agent pushes main and says nothing waits on the person. Step 2: the person asks whether the pass is done, the reply says it is, lists what is left unapproved, and recommends the next pass.',
+    "A typed cleanup goal: its fixes milestone is done, its review milestone still reads working with no work linked, and a scroll fix still says it waits on the person's check, with no ask. Step 1: the agent pushes main and says nothing waits on the person. Step 2: the person asks whether the pass is done, the reply says it is, lists what is left unapproved, and recommends the next pass.",
   hasLedgerCalls: false,
   start: {
     ledger: {
