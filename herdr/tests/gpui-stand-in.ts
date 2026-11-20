@@ -120,6 +120,7 @@ function standInContext() {
         refuseWhileRendering()
         keys = 'panel'
       },
+      is_focused: () => keys === 'panel',
     }),
     spawn(run: (cx: unknown) => Promise<void>) {
       void run(cx)

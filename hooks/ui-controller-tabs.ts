@@ -98,6 +98,14 @@ export function closed(ui: UiState): UiState {
   }
 }
 
+/** Help shown or closed. Closing it starts the title tint of the new rows its tab shows. */
+export function helpShown(ui: UiState, isShown: boolean, now: number): UiState {
+  const isTabShown = !isShown && ui.isVisible && ui.shownSince !== null && isRowTab(ui.tab)
+  const newRows = isTabShown ? asRecord(showNewRows(newRowsOf(ui), ui.tab, now)) : ui.newRows
+
+  return { ...ui, isHelpShown: isShown, newRows }
+}
+
 /** A page that shows again only reconsiders Asks: its clocks and records go on. */
 export function visible(ui: UiState, isVisible: boolean): UiState {
   return { ...ui, isVisible, opensOnAsks: ui.opensOnAsks || (isVisible && !ui.isVisible) }
@@ -125,7 +133,7 @@ export function recordTabs(ui: UiState, view: SessionView, host: HostFacts, now:
   const recorded = recordRows<Tab>(seen, listed)
   const isTinting = ui.isVisible && ui.shownSince !== null
   const added = addNewRows(newRowsOf(ui), isTinting ? recorded.added : {})
-  const newRows = isTinting && isRowTab(ui.tab) ? showNewRows(added, ui.tab, now) : added
+  const newRows = isTinting && isRowTab(ui.tab) && !ui.isHelpShown ? showNewRows(added, ui.tab, now) : added
   const rowsSeen = Object.fromEntries(Object.entries(recorded.seen).map(([t, ids]) => [t, [...(ids ?? [])]]))
 
   return {

@@ -230,6 +230,7 @@ test('u presses the Undo of the row dismissed last, whose fill empties', () => {
   expect(newer?.does).toMatchObject({ is: 'press', press: { action: 'undo', id: 'd7' } })
   expect(newer?.runsOutAt).toBe(NOW - 500 + SETTLED_MS)
   expect(keyMove('u', ASKS, blocks, null)).toEqual({ is: 'event', event: { type: 'undo-key' } })
+  expect(keyMove('u', ASKS, blocks, null, true)).toBeNull()
   expect(pressOfKey(view).press).toEqual({ action: 'undo', id: 'd7' })
   expect(timeLeftDraws(blocks, new Map(), NOW).get('d7 undo')).toEqual({ is: 'emptying' })
 })

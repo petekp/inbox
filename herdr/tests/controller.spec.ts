@@ -11,7 +11,7 @@ import type { Block } from '../src/blocks'
 import { HERDR_LOOK, applyEvents, lookUiOf } from '../src/controller'
 import { rowWaits, tabBlocks } from '../src/draw'
 import { AGENT, NOW, demoScreen, withDismissedAsk } from './fixtures'
-import { allOf, focusTerminal, openPanel, typeIn } from './gpui-stand-in'
+import { allOf, focusTerminal, giveKeysElsewhere, keysHolder, openPanel, typeIn } from './gpui-stand-in'
 
 let clock = NOW
 const later = (ms: number) => setSystemTime(new Date((clock += ms)))
@@ -153,6 +153,15 @@ test('a pointer moving over the list holds a row the agent closed past its fold,
   }
   expect(await run(true)).toEqual([true, false])
   expect(await run(false)).toEqual([false, false])
+})
+
+test('a read, a tick or a pointer over the list leaves the keys where the person put them', async () => {
+  const panel = await opened()
+  giveKeysElsewhere()
+  panel.publish(demo())
+  panel.run([{ type: 'tick' }])
+  useList(panel, 'pointer')
+  expect(keysHolder()).toBeNull()
 })
 
 test('a reply the queue refuses opens its field again with its words', async () => {

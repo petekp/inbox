@@ -56,7 +56,10 @@ The look runs on the controller. It keeps its press queue and per-row refusal, i
 - A click that opens a row guards that row's buttons from a second click for `PRESS_GUARD_MS`.
 - A close by the agent waits while the list was used within `FOLD_QUIET_MS`.
 - A pointer moving or a wheel scrolling over the list counts as list use, so it holds a due fold, an arrival and an agent's close ([#673](https://github.com/petekp/inbox/issues/673)).
-- A refused or stale reply reopens its field only when the person has not moved. A refused goal reopens its field on the Status page too, in every look.
+- A refused or stale reply reopens its field only when the person has not moved. A refused goal reopens its field on the Status page too, in the looks that run on the controller, omp and Herdr.
+- While Help shows, a row's keys do nothing, as the shared Help rule says, so `u` no longer sends Undo there. A row that arrives under Help starts its title tint when Help closes.
+- A session the look left keeps its press queue while a press is out or an ended press has not reached the controller, so a second switch loses no press's end.
+- A key press, a click or an answer to a press lets the rows it moves glide at once. A read, a tick, a pointer move or typing leaves the keys where the person put them.
 - A reply's draft stays until the reply arrives, by the shared rule.
 - New rows get their title tint in every tab, not only the tab the look shows.
 - A host older than 0.5.0 saves no collapses, so a collapse there lasts `COLLAPSE_WAIT_MS`.

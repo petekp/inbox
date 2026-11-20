@@ -1,16 +1,19 @@
 import type { RowWait } from '../../hooks/action-plan'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
+import { ROW_COPY } from '../../hooks/rows'
+import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
 import type { SessionView } from '../../hooks/session-view'
 import { isRowTab } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
-import { keptUiStates, reduceUi } from '../../hooks/ui-controller'
+import { PERSON_EVENTS, keptUiStates, reduceUi } from '../../hooks/ui-controller'
 import { selectedOf } from '../../hooks/ui-controller-selection'
 import type { HostFacts, InputKind, LookConfig, UiCommand, UiEvent, UiState } from '../../hooks/ui-controller-types'
 import type { Block, Button, Does, ViewChange } from './blocks'
 import type { LookUi } from './draw'
 import type { ReadSession } from './files'
 import { foldClickOpens } from './fold-all'
+import type { PressTarget } from './press-queue'
 
 /** The Herdr look pulses running marks on the GPU, steps title tints, and times Undo from the session's close. */
 export const HERDR_LOOK: LookConfig = { runningMarks: 'pulse', titleTint: 'steps', undoClock: 'session' }
@@ -103,6 +106,46 @@ const buttonsIn = (blocks: readonly Block[]): Button[] =>
 export function buttonOf(blocks: readonly Block[], press: RowPress | PrPress): Button | null {
   return buttonsIn(blocks).find(b => b.does.is === 'press' && isSamePress(b.does.press, press)) ?? null
 }
+
+/**
+ * What a press command sends through the queue: where to, and its label, kind and effects from the drawn button. A
+ * reply's label is Send, or the goal's own. With no session, read or view there is no target, and the queue refuses it.
+ */
+export function pressSending(
+  c: Extract<UiCommand, { kind: 'press' }>,
+  b: Button | null,
+  at: { appHome: string; sessionId: string | null; read: Extract<ReadSession, { is: 'read' }> | null },
+  view: SessionView | null,
+) {
+  const { sessionId, read } = at
+  const target: PressTarget | null =
+    sessionId && read && view
+      ? {
+          appHome: at.appHome,
+          sessionId,
+          terminal: read.envelope.terminal,
+          view,
+          holds: c.holds,
+          projectFolder: read.projectFolder,
+        }
+      : null
+  const p = c.press
+  const d = b?.does.is === 'press' ? b.does : null
+  const isGoal = p.action === 'type' && p.id === GOAL_KEYS_ID
+  const label =
+    p.action !== 'type' ? (b?.label ?? '') : isGoal && view ? goalSubmitLabel(view.statusPage) : ROW_COPY.send
+  const reply = p.action === 'type' && !isGoal ? p.text.trim() : undefined
+  const options = { effects: d?.effects ?? [], label, kind: d?.kind ?? null, uiPressId: c.pressId }
+
+  return { target, options: reply === undefined ? options : { ...options, reply } }
+}
+
+/**
+ * Whether `e` is the person's own key or click in the look, which may give the keys to a field it opens. A pointer
+ * moving over the list and typing are the person's too, but move nothing.
+ */
+export const isLookMove = (e: UiEvent): boolean =>
+  PERSON_EVENTS.has(e.type) && e.type !== 'list-input' && e.type !== 'edit-draft'
 
 /** The placeholder of each field the drawn buttons open, by row. */
 export const fieldHints = (blocks: readonly Block[]): Record<string, string> =>

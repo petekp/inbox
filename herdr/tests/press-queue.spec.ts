@@ -201,8 +201,9 @@ test('a reply whose file no host took waits, even once the host answers a later 
 test('a reply whose file could not be written ends refused, with the reason on its row', async () => {
   const unwritten = new PressQueue(fakeIo({ write: async () => 'the disk is full' }).io)
   await sendReply(unwritten, 3)
-  expect(unwritten.isAwaiting()).toBe(false)
+  expect([unwritten.isAwaiting(), unwritten.holdsPresses()]).toEqual([false, true])
   const [ended] = unwritten.takeEnded()
+  expect(unwritten.holdsPresses()).toBe(false)
   expect({ id: ended?.uiPressId, isError: ended?.outcome.error !== null, line: unwritten.lines[rowId]?.tone }).toEqual({
     id: 3,
     isError: true,

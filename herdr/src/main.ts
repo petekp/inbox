@@ -20,9 +20,7 @@ import {
   writeTextFile,
 } from 'herdr'
 import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
-import { ROW_COPY } from '../../hooks/rows'
 import type { SessionView } from '../../hooks/session-view'
-import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
 import { notesOf } from '../../hooks/ui-controller'
 import { readWakeAt } from '../../hooks/ui-controller-clock'
@@ -40,8 +38,10 @@ import {
   fieldHints,
   hostFactsOf,
   isAnswerDraw,
+  isLookMove,
   keptLeft,
   lookUiOf,
+  pressSending,
   titleClickEvents,
 } from './controller'
 import type { LastDraw, LeftSession } from './controller'
@@ -110,6 +110,8 @@ export default class Inbox extends View {
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
+  /** When the person last pressed a key or clicked in the look, which lets the rows it moves grow at once. */
+  movedAt = 0
   /** The next read for the presses still out, the next draw for a move, and the controller's next wake. */
   outTimer: Timer | null = null
   drawTimer: Timer | null = null
@@ -151,7 +153,9 @@ export default class Inbox extends View {
     if (view === null) return
     const applied = applyEvents(this.ui, view, events, now)
     this.ui = applied.ui
-    this.syncInput()
+    const isMove = events.some(isLookMove)
+    if (isMove) this.movedAt = now
+    this.syncInput(isMove)
     for (const c of applied.commands) this.run(c, from, cx)
     this.schedule(applied.nextWakeAt, view, cx)
     if (!this.endPresses(cx) && !events.every(e => e.type === 'list-input' || e.type === 'edit-draft')) cx.notify()
@@ -180,17 +184,21 @@ export default class Inbox extends View {
     } else if (c.kind === 'read' && sessionId) this.load(sessionId, cx)
   }
 
-  /** Holds the open field to the controller's: lets go of one it closed, and opens the one it opened, with its draft. */
-  syncInput(): void {
+  /**
+   * Holds the open field to the controller's: lets go of one it closed, giving the keys to the look, and opens the one
+   * it opened, with its draft. The new field takes the keys on the person's own move, or when the look holds them.
+   */
+  syncInput(isMove: boolean): void {
     const typing = this.ui.typing
     if (this.input !== null && this.input.rowId === typing) return
+    const hadField = this.input !== null
     this.releaseField()
-    if (typing === null) return void this.focus?.focus()
+    if (typing === null) return void (hadField && this.focus?.focus())
     const state = InputState.new({ placeholder: this.hints[typing] ?? '', value: this.ui.drafts[typing]?.text ?? '' })
     state.on('change', (_e, cx) => this.apply([{ type: 'edit-draft', id: typing, text: state.value() }], cx))
     state.on('submit', (_e, cx) => this.apply(buttonEvents({ is: 'send', rowId: typing }, this.ui, 'key'), cx))
     this.input = { rowId: typing, state }
-    state.focus()
+    if (isMove || this.focus?.is_focused()) state.focus()
   }
 
   /** Lets go of the open field without moving the keys, so it can run while the look draws. */
@@ -280,7 +288,7 @@ export default class Inbox extends View {
     const queue = (sessionId && this.queues[sessionId]) || null
     if (sessionId) delete this.left[sessionId]
     if (sessionId) delete this.queues[sessionId]
-    this.queues = Object.fromEntries(Object.entries(this.queues).filter(([, q]) => q.isAwaiting()))
+    this.queues = Object.fromEntries(Object.entries(this.queues).filter(([, q]) => q.holdsPresses()))
     this.left = keptLeft(this.left, id => this.queues[id] !== undefined)
     this.sessionId = sessionId
     this.read = null
@@ -297,32 +305,12 @@ export default class Inbox extends View {
 
   /**
    * Sends a press the controller made through the queue: the look runs its opens and copies, with the task's
-   * clipboard, then writes the press file and wakes the host on the terminal the session file names. The drawn button
-   * gives its label, kind and effects. A reply's label is Send, or the goal's own.
+   * clipboard, then writes the press file and wakes the host on the terminal the session file names.
    */
   send(c: Extract<UiCommand, { kind: 'press' }>, from: Button | null, cx: Context): void {
-    const read = this.readSession
-    const view = this.viewAt(Date.now())
-    const target =
-      this.sessionId && read && view
-        ? {
-            appHome: appHome(),
-            sessionId: this.sessionId,
-            terminal: read.envelope.terminal,
-            view,
-            holds: c.holds,
-            projectFolder: read.projectFolder,
-          }
-        : null
-    const p = c.press
-    const b = from ?? buttonOf(this.blocks, p)
-    const d = b?.does.is === 'press' ? b.does : null
-    const isGoal = p.action === 'type' && p.id === GOAL_KEYS_ID
-    const label =
-      p.action !== 'type' ? (b?.label ?? '') : isGoal && view ? goalSubmitLabel(view.statusPage) : ROW_COPY.send
-    const reply = p.action === 'type' && !isGoal ? p.text.trim() : undefined
-    const options = { effects: d?.effects ?? [], label, kind: d?.kind ?? null, uiPressId: c.pressId }
-    const sent = this.queue.send(target, p, reply === undefined ? options : { ...options, reply })
+    const at = { appHome: appHome(), sessionId: this.sessionId, read: this.readSession }
+    const { target, options } = pressSending(c, from ?? buttonOf(this.blocks, c.press), at, this.viewAt(Date.now()))
+    const sent = this.queue.send(target, c.press, options)
     if (sent.is === 'refused') return
     const queue = this.queue
     const projectFolder = target?.projectFolder ?? null
@@ -338,7 +326,7 @@ export default class Inbox extends View {
   }
 
   onKey(key: string, tabs: TabCell[], blocks: Block[], cx: Context): void {
-    const move = keyMove(key, tabs, blocks, this.ui.typing)
+    const move = keyMove(key, tabs, blocks, this.ui.typing, this.ui.isHelpShown)
     if (move === null) return
     cx.stop_propagation()
     if (move.is === 'event') this.apply([move.event], cx)
@@ -411,7 +399,7 @@ export default class Inbox extends View {
     this.linesAbove = held.held
     const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits)
     this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map(o => o.rowId) }
-    const isInput = isAnswer || (ui.listInput?.last ?? 0) > this.tracks.drawnAt
+    const isInput = isAnswer || this.movedAt > this.tracks.drawnAt
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
     this.tracks = moved.tracks
     this.tracksOf = tracksOf

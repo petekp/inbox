@@ -147,6 +147,11 @@ export class PressQueue {
     return this.outs.length > 0
   }
 
+  /** Whether a press is still out, or one ended that the controller has not heard of: a left session keeps its queue. */
+  holdsPresses(): boolean {
+    return this.outs.length > 0 || this.ended.length > 0
+  }
+
   /** How the presses ended since the last call, oldest first. */
   takeEnded(): Ended[] {
     return this.ended.splice(0)

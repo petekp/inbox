@@ -24,15 +24,23 @@ const event = (e: UiEvent): KeyMove => ({ is: 'event', event: e })
  * The move a key makes, as the Herdr look's Help lists: ← → switch tabs, j k move between rows, z collapses or
  * expands the selected row, w folds or opens every fold, u presses the Undo of the row that closed last, a selected
  * row's hotkeys press its buttons, the tab's own keys such as g press its line's buttons, and escape leaves the look.
- * While a text field is open, `typing` names its row: the keys type into it, and escape closes it.
+ * While a text field is open, `typing` names its row: the keys type into it, and escape closes it. Under Help, only
+ * ← → and escape do anything, as in omp's panel.
  */
-export function keyMove(key: string, tabs: TabCell[], blocks: Block[], typing: string | null): KeyMove {
+export function keyMove(
+  key: string,
+  tabs: TabCell[],
+  blocks: Block[],
+  typing: string | null,
+  isHelpShown = false,
+): KeyMove {
   if (typing !== null) return key === 'escape' ? event({ type: 'close-field', id: typing, isDiscard: false }) : null
   if (key === 'escape') return { is: 'leave' }
   if (key === 'left' || key === 'right') {
     const tab = stepTab(tabs, key === 'right' ? 1 : -1)
     return tab ? event({ type: 'show-tab', tab }) : null
   }
+  if (isHelpShown) return null
   if (key === 'j' || key === 'k') {
     const ids = blocks.filter(isSelectable).map(r => r.id)
     return ids.length > 0 ? event({ type: 'step', by: key === 'j' ? 1 : -1, ids }) : null
