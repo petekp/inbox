@@ -37,9 +37,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            codex/package-lock.json
+      # The structure and exports checks load TypeScript and esbuild from codex/node_modules.
       - name: install tools
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm --prefix codex ci --ignore-scripts --no-audit --no-fund
       - name: install Claude Code
         run: npm install --global --no-audit --no-fund "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
       - name: prettier
