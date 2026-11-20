@@ -1504,12 +1504,16 @@ function fetchFailureWords(f) {
 function withSeen(view, previous) {
   return { ...view, wasSeenOpen: view.state === "OPEN" || previous?.wasSeenOpen === true };
 }
+var BRANCH_HAS_NO_PR = /no pull requests found/i;
+var NO_BRANCH_TO_LOOK_UP = /not on any branch|not a git repository|no git remotes found|none of the git remotes configured for this repository point to a known github host/i;
 async function branchPrRef(gh, known, at, onFailure) {
   const r = await gh(["pr", "view", "--json", "url"]);
   if (r.exitCode === 0)
     return urlRef(r.stdout) ?? known;
-  if (/no pull requests found/i.test(r.stderr))
+  if (BRANCH_HAS_NO_PR.test(r.stderr))
     return null;
+  if (NO_BRANCH_TO_LOOK_UP.test(r.stderr))
+    return known;
   const why = asksForSignIn(r) ? null : runFailureOf(r, TIMED_OUT_CODE, at);
   if (why)
     onFailure(why);
