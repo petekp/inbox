@@ -9,7 +9,19 @@ import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { drawPanel } from '../src/panel'
 import type { PanelUi } from '../src/panel'
-import { cursorOf, keyed, keys, labelOf, NOW, onPage, screenOf, strip, style, text, withCursorOn } from './panel-harness'
+import {
+  cursorOf,
+  keyed,
+  keys,
+  labelOf,
+  NOW,
+  onPage,
+  screenOf,
+  strip,
+  style,
+  text,
+  withCursorOn,
+} from './panel-harness'
 
 const goallessScreen = () => {
   const s = demoState(NOW)

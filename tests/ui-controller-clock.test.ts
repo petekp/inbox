@@ -50,7 +50,12 @@ test('a running-mark frame wakes the look without a read, and work that needs th
   const helped = send(frames.ui, S, { type: 'show-help', isShown: true }, T0 + 1)
   expect(helped.nextWakeAt).not.toBe(null)
   expect(readWakeAt(helped.ui, viewOf(S, helped.ui, T0 + 1), T0 + 1)).toBe(null)
-  const refused = send(openOn(S).ui, S, { type: 'press', press: { action: 'answer', id: 'i1', option: 'Yes' }, by: 'key' }, T0)
+  const refused = send(
+    openOn(S).ui,
+    S,
+    { type: 'press', press: { action: 'answer', id: 'i1', option: 'Yes' }, by: 'key' },
+    T0,
+  )
   const settled = send(refused.ui, S, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 5)
   expect(readWakeAt(settled.ui, viewOf(S, settled.ui, T0 + 5), T0 + 5)).toBe(T0 + 5 + SETTLED_MS)
 })

@@ -14,7 +14,23 @@ import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelUi } from '../src/panel'
 import { HERDR_ASK_ID } from '../src/panel-lines'
-import { buttonLine, buttonLines, cursorOf, drawn, ESC, firstQuestion, keyed, keys, NOW, onRow, plannedLabels, screenOf, strip, text, withCursorOn } from './panel-harness'
+import {
+  buttonLine,
+  buttonLines,
+  cursorOf,
+  drawn,
+  ESC,
+  firstQuestion,
+  keyed,
+  keys,
+  NOW,
+  onRow,
+  plannedLabels,
+  screenOf,
+  strip,
+  text,
+  withCursorOn,
+} from './panel-harness'
 
 test('a selected row draws its buttons in the shared key plan order', () => {
   const screen = screenOf()

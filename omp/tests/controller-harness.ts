@@ -76,7 +76,17 @@ export function open(overrides: Partial<PanelSource> = {}) {
     now = end
   }
 
-  return { panel, timers, pressed, calls, source, wakes, runFor, now: () => now, advance: (ms: number) => void (now += ms) }
+  return {
+    panel,
+    timers,
+    pressed,
+    calls,
+    source,
+    wakes,
+    runFor,
+    now: () => now,
+    advance: (ms: number) => void (now += ms),
+  }
 }
 
 export function sharingUi() {
@@ -96,4 +106,3 @@ export function sharingUi() {
 
   return { kept, overrides }
 }
-

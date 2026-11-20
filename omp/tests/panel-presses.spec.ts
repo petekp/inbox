@@ -8,7 +8,21 @@ import { demoSource, demoState } from '../src/demo'
 import { holdsOf } from '../../hooks/ui-controller-reply'
 import { INITIAL_UI } from '../src/panel'
 import { applyEvents } from '../src/panel-keys'
-import { cursorOf, drawn, ESC, firstQuestion, keyed, keys, NOW, onRow, plannedLabels, screenOf, strip, text, waiting } from './panel-harness'
+import {
+  cursorOf,
+  drawn,
+  ESC,
+  firstQuestion,
+  keyed,
+  keys,
+  NOW,
+  onRow,
+  plannedLabels,
+  screenOf,
+  strip,
+  text,
+  waiting,
+} from './panel-harness'
 
 test('t opens a reply field in place of the buttons, and Enter sends the typed words as a type press', () => {
   const screen = screenOf()
@@ -188,7 +202,10 @@ test('a reply folds its row to one line with its mark and label, and the selecti
   expect(lines[at]).toMatch(/❯[├└]─ .*✓ Replied: go with B/)
   expect(lines[at + 1]).not.toContain('↵')
 
-  const read = { type: 'read', host: { isFetchingPrs: false, hasAsksBlocker: false, lastTypedMessageAt: null } } as const
+  const read = {
+    type: 'read',
+    host: { isFetchingPrs: false, hasAsksBlocker: false, lastTypedMessageAt: null },
+  } as const
   const before = applyEvents(screenOf(), onRow(row), [read], NOW).ui
   const moved = applyEvents(screen, before, [read], NOW).ui
   expect(cursorOf(moved)).not.toBe(row.id)

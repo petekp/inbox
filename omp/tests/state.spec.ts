@@ -160,7 +160,10 @@ test('a session 0.6.0 saved loads with its ledger and held rows, and with no kep
 
 test('a kept draft survives a save and a read, and a missing newer field reads with its default', async () => {
   const dir = tempDir()
-  await updateState(dir, 's1', s => ({ ...s, ui: { ...freshUi(OMP_LOOK), drafts: { d1: { text: 'go with B', since: 5 } } } }))
+  await updateState(dir, 's1', s => ({
+    ...s,
+    ui: { ...freshUi(OMP_LOOK), drafts: { d1: { text: 'go with B', since: 5 } } },
+  }))
   const file = JSON.parse(readFileSync(statePath(dir, 's1'), 'utf8'))
   delete file.ui.sentReplies
   writeFileSync(statePath(dir, 's1'), JSON.stringify(file))

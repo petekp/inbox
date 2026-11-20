@@ -137,7 +137,8 @@ function rowTabKey(screen: PanelScreen, ui: PanelUi, lines: Line[], selected: Li
   if (selected.isCollapsed) return {}
   if (selected.fold && key === 'enter')
     return { events: [{ type: 'fold', fold: selected.fold, isOpen: !ui.unfolded.includes(selected.fold) } as UiEvent] }
-  if (selected.earlierOf && key === 'enter') return { events: [{ type: 'earlier', fold: selected.earlierOf } as UiEvent] }
+  if (selected.earlierOf && key === 'enter')
+    return { events: [{ type: 'earlier', fold: selected.earlierOf } as UiEvent] }
   if (isShut(selected, ui)) return key === 'enter' ? { patch: { opened: selected.id } } : {}
   if (selected.buttons.length === 0) return {}
   if (key === 'left' || key === 'right') {
@@ -154,7 +155,10 @@ function planKey(screen: PanelScreen, ui: PanelUi, lines: Line[], selected: Line
   const shown = shownTabs()
   const isTabKey = key === 'tab' || key === 'shift+tab' || shown.some(t => t.hotkey === key)
   if (key === '?' || (ui.isHelpShown && key === 'escape'))
-    return { events: [{ type: 'show-help', isShown: key === '?' && !ui.isHelpShown } as UiEvent], patch: { pageTop: 0 } }
+    return {
+      events: [{ type: 'show-help', isShown: key === '?' && !ui.isHelpShown } as UiEvent],
+      patch: { pageTop: 0 },
+    }
   if (key === 'escape') return { close: true } as KeyPlan
   const isPage = !isRowTab(ui.tab)
   if (isPage && !ui.isHelpShown) {
@@ -192,7 +196,9 @@ export function handleKey(screen: PanelScreen, ui: PanelUi, key: string, now: nu
   const shown = withCollapses(screen, ui)
   const lines = linesOf(entriesOf(shown, ui, ui.tab, now))
   const plan: KeyPlan =
-    ui.typing !== null ? typingKey(ui, ui.typing, key, text) : planKey(shown, ui, lines, selectedLine(lines, ui), key, now)
+    ui.typing !== null
+      ? typingKey(ui, ui.typing, key, text)
+      : planKey(shown, ui, lines, selectedLine(lines, ui), key, now)
   const events = plan.events && plan.events.length > 0 ? plan.events : [{ type: 'list-input' } as UiEvent]
   const result = applyEvents(shown, ui, events, now)
   const local = plan.patch ?? {}

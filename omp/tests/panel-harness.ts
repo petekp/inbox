@@ -40,7 +40,11 @@ type Collapse = { action: 'collapse'; id: string; isCollapsed: boolean }
 export function keyed(screen: PanelScreen, ui: PanelUi, key: string, now = NOW, text?: string) {
   const result = handleKey(screen, ui, key, now, text)
   const sent = result.commands.flatMap((c): (PanelPress | Collapse)[] =>
-    c.kind === 'press' ? [c.press] : c.kind === 'save-collapse' ? [{ action: 'collapse', id: c.id, isCollapsed: c.isCollapsed }] : [],
+    c.kind === 'press'
+      ? [c.press]
+      : c.kind === 'save-collapse'
+        ? [{ action: 'collapse', id: c.id, isCollapsed: c.isCollapsed }]
+        : [],
   )
 
   return { ...result, press: result.press ?? sent[0], sent }
