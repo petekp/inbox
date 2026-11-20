@@ -168,9 +168,9 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     breaks: 'head-follows',
   },
   'finished-pass': {
-    at: 0,
-    answer: 'DONE: s2 | fix merged and pushed\nSET: s1 | waits-on-other | Page text done, screenshots needed',
-    breaks: 'milestones-true',
+    at: 1,
+    answer: 'SET: s1 | waits-on-other | Page text done, screenshots needed\nSUGGEST: Website notes page live',
+    breaks: 'goal-suggested',
   },
   'head-after-done': { at: 2, answer: 'HEAD: Greet flags | Adding options to greet', breaks: 'head-follows' },
 }

@@ -6,8 +6,9 @@ const DAY = 24 * 60
 
 /**
  * A typed goal whose work has all landed, while its review milestone still reads working with no work linked, and a
- * fix still waits on a check the agent never asked for. Two replies say the work is finished, merged and pushed. The
- * Status call answered both with NO CHANGE in a real session, which left the milestone, the fix and the head behind.
+ * fix still waits on a check the agent never asked for. Two replies say the work is finished, merged and pushed, and
+ * the second says the review is done. The Status call answered both with NO CHANGE in a real session, which left the
+ * milestone, the fix and the head behind.
  */
 export const finishedPass: Replay = {
   name: 'finished-pass',
@@ -88,9 +89,9 @@ export const finishedPass: Replay = {
       },
       facts: {
         pieces: [{ id: 'scroll', state: 'done', stands: 'fix merged and pushed', alsoRight: [] }],
-        milestones: [{ id: 'ms-review', state: 'done', alsoRight: [] }],
+        milestones: [{ id: 'ms-review', state: 'done', alsoRight: ['working'] }],
       },
-      targets: ['marks-true', 'milestones-true', 'open-pieces-kept'],
+      targets: ['marks-true', 'open-pieces-kept'],
     },
     {
       label: 'The person asks whether the pass is done, and the reply says it is and recommends the next pass',
@@ -128,6 +129,7 @@ export const finishedPass: Replay = {
           { match: 'settings', text: 'Show a notice in Settings?', holdsUp: [] },
           { match: 'focus', text: 'Start the next pass, on editor focus?', holdsUp: [] },
         ],
+        milestones: [{ id: 'ms-review', state: 'done', alsoRight: [] }],
         goalSuggested: { text: 'Editor focus pass done', match: 'focus|keyboard' },
       },
       targets: ['marks-true', 'milestones-true', 'goal-suggested'],
