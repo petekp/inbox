@@ -1,9 +1,19 @@
 import { foldAllOn } from '../../hooks/fold-all'
+import { isMilestonesFold } from '../../hooks/status-goal-page'
 import { toggleFold } from './tab-motion'
 import { pressCollapse } from './tab-rows'
 import { drawnTab } from './tab-selection'
-import { toggleStatusFold } from './tab-status-line'
 import { closedAll, statusUnfolded, tabState, unfolded } from './tab-state'
+
+/** The motion key of a done fold's list, apart from the Asks groups' Closed lists. */
+export const foldMotion = (id: string) => `status-${id}`
+
+/** Opens or shuts a Status fold. A met goal's milestones grow in and leave as stepped lines, so that fold just draws. */
+export function toggleStatusFold(id: string) {
+  if (!isMilestonesFold(id)) return toggleFold(id, statusUnfolded, foldMotion(id))
+  if (!statusUnfolded.delete(id)) statusUnfolded.add(id)
+  tabState.draw()
+}
 
 /** A click on a fold that is open or not: with Option held it folds every fold of the tab, or opens them all. */
 export const clickFold = (e: MouseEvent, isOpen: boolean, toggle: () => void) =>

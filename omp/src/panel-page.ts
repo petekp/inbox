@@ -1,17 +1,23 @@
 import { cellWidth, cutForEllipsis } from '../../hooks/text'
 import { statusKeyPlan } from '../../hooks/status-keys'
 import type { StatusKeyTarget } from '../../hooks/status-keys'
-import { mergedLine, nameBeforeStall, STATUS_TEXT_LINES, STALL_GAP, WAS_PREFIX } from '../../hooks/status-page'
+import { mergedLine, nameBeforeStall, STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
+import { STALL_GAP } from '../../hooks/status-page-parts'
 import type { StatusBranch, StatusRow, StatusStall } from '../../hooks/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
-import { PAGE_CHILD_AT, PAGE_MARK_AT, PAGE_TEXT_AT } from './panel-entries'
-import { pageFocus } from './panel-keys'
+import { pageFocus } from './panel-lines'
 import type { ButtonFace } from './panel-lines'
 import { collapsedIn, indented, wrapText } from './panel-text'
 import { foldGlyph } from '../../hooks/fold-chevron'
 import { COUNTS_LABEL, isParentCollapsed, parentChevron } from '../../hooks/status-folds'
 import type { Style } from './panel'
+
+/** Where a Status row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
+export const PAGE_MARK_AT = 1
+export const PAGE_TEXT_AT = PAGE_MARK_AT + 2
+/** Where the mark of a child under a subject sits: after the tree's arm, which starts under the subject's mark. */
+const PAGE_CHILD_AT = PAGE_MARK_AT + 3
 
 const TREE_ARMS: Record<StatusBranch, { first: string; rest: string }> = {
   mid: { first: '├─', rest: '│' },

@@ -9,7 +9,7 @@ import { GOAL_KEYS_ID, statusKeyRows, statusSelected } from '../../hooks/status-
 import type { StatusKey, StatusKeyTarget } from '../../hooks/status-keys'
 import type { ShownTab } from '../../hooks/tabs'
 import { entriesOf } from './panel-entries'
-import { isSelectable, isShut, linesOf, waitsOf } from './panel-lines'
+import { focusOf, isSelectable, isShut, linesOf, pageFocus, waitsOf } from './panel-lines'
 import type { Button, Line } from './panel-lines'
 import { collapsedIn } from './panel-text'
 import type { PanelPress, PanelScreen, PanelUi } from './panel'
@@ -23,16 +23,6 @@ export function resolveSelected(lines: Line[], selectedId: string | null): Line 
 
   return lines.find(l => l.id === nextId) ?? selectable.find(l => l.id !== CLEAR_FINISHED_ID) ?? null
 }
-
-function defaultFocus(line: Line): number {
-  return Math.max(
-    0,
-    line.buttons.findIndex(b => b.isRecommended),
-  )
-}
-
-export const focusOf = (line: Line, ui: PanelUi): number =>
-  ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line)
 
 type KeyResult = { ui: PanelUi; press?: PanelPress; close?: true }
 
@@ -263,6 +253,3 @@ function pageKey(screen: PanelScreen, ui: PanelUi, key: string, now: number): Ke
 /** A Status target's keys that draw as buttons: its fold is the parent's name line, not a button. */
 export const drawnKeys = (target: StatusKeyTarget): StatusKey[] =>
   target.keys.filter(k => k.press.action !== 'toggle-collapse')
-
-export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>
-  ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0

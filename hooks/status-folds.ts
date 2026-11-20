@@ -1,7 +1,7 @@
 import type { Ledger } from '../types'
 import { foldGlyph } from './fold-chevron'
 import type { MilestoneRow } from './status-goal-page'
-import { STALL_GAP } from './status-page'
+import { STALL_GAP } from './status-page-parts'
 import type { StatusCount, StatusPage, StatusRow } from './status-page'
 
 /**

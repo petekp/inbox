@@ -3,7 +3,6 @@ import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, WAS_PREFIX } from '../..
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../hooks/status-keys'
 import { COUNTS_GAP, COUNTS_LABEL, countWords, unfoldedRows } from '../../hooks/status-folds'
 import { statusRowPads } from '../../hooks/status-gaps'
-import { isMilestonesFold } from '../../hooks/status-goal-page'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusRow } from '../../hooks/status-page'
 import { closingFolds, drafts, sending, statusUnfolded, tabState } from './tab-state'
@@ -12,8 +11,8 @@ import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName, toggleParentFold } from './tab-status-fold'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
-import { clickFold } from './tab-fold-all'
-import { revealSelected, toggleFold } from './tab-motion'
+import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
+import { revealSelected } from './tab-motion'
 import { switchTab, open } from './tab-selection'
 import { tabRows } from './tab-rows'
 import { pulseInStep, markClassOf, MarkGlyph } from './tab-parts'
@@ -60,16 +59,6 @@ function statusKey({ press, label, emphasis, kind }: StatusKey): Key {
     ...(sending.has(GOAL_KEYS_ID) ? { isOut: true } : {}),
     run: () => void act(GOAL_KEYS_ID, { action: press.action, id: GOAL_KEYS_ID }, undefined, null, kind),
   }
-}
-
-/** The motion key of a done fold's list, apart from the Asks groups' Closed lists. */
-export const foldMotion = (id: string) => `status-${id}`
-
-/** Opens or shuts a Status fold. A met goal's milestones grow in and leave as stepped lines, so that fold just draws. */
-export function toggleStatusFold(id: string) {
-  if (!isMilestonesFold(id)) return toggleFold(id, statusUnfolded, foldMotion(id))
-  if (!statusUnfolded.delete(id)) statusUnfolded.add(id)
-  tabState.draw()
 }
 
 /** A row's depth, which the Status CSS reads to step the row in and to place its tree line. */
