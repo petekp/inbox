@@ -1,6 +1,6 @@
 import type { ComponentChildren, ComponentProps } from 'preact'
 import { TitleTint } from './tab-title-tint'
-import { ActionButton, Icon } from './row-actions'
+import { ActionButton, Icon, inputOf } from './row-actions'
 import { NEEDS_YOU_MARKS } from '../../hooks/help'
 import { markShape, mutedMarkShape } from '../../hooks/marks'
 import { DOT, rowMark } from '../../hooks/rows'
@@ -11,8 +11,11 @@ import type { EmptyTab } from '../../hooks/empty-tab'
 import type { ToneName } from '../../hooks/tones'
 import type { ResultMark, RowView } from '../../hooks/rows'
 import { parseInline } from '../../hooks/inline'
+import { noteText } from '../../hooks/press-reducer'
+import type { InputKind } from '../../hooks/ui-controller-types'
 import { isUndoLeft } from './settle'
-import { errors, notes } from './tab-state'
+import { tabState } from './tab-state'
+import { errorOf } from './tab-ui'
 import type { Tone, Key, Row } from './tab-state'
 
 /** A tab's empty state from `emptyTab`, centred in the page, with its drawn `under` as children. */
@@ -47,13 +50,13 @@ export function feedbackLabel(row: Row): string | null {
 }
 
 export function noteOf(id: string): string | null {
-  const n = notes.get(id)
+  const n = tabState.ui.notes[id]
 
-  return n && Date.now() - n.at < SETTLED_MS ? n.text : null
+  return n && Date.now() - n.at < SETTLED_MS ? noteText() : null
 }
 
 export function isFeedbackShown(row: Row): boolean {
-  return !errors.has(row.id) && noteOf(row.id) === null
+  return errorOf(row.id) === null && noteOf(row.id) === null
 }
 
 /** Starts every running mark's pulse at the page's time origin, so a mark drawn at a later poll moves in step. */
@@ -200,7 +203,7 @@ export function UndoPlace({
   isUndoing: boolean
   canUndo: boolean
   offersUndo: boolean
-  onUndo: () => void
+  onUndo: (by: InputKind) => void
 }) {
   const isShown = isUndoing || (canUndo && isUndoLeft(start, Date.now()))
   if (!isShown)
@@ -212,7 +215,12 @@ export function UndoPlace({
     ) : null
 
   return (
-    <button type="button" class={isUndoing ? 'key undo undoing' : 'key undo'} disabled={isUndoing} onClick={onUndo}>
+    <button
+      type="button"
+      class={isUndoing ? 'key undo undoing' : 'key undo'}
+      disabled={isUndoing}
+      onClick={e => onUndo(inputOf(e))}
+    >
       {/* The delay is set once, when it is drawn: the animation keeps its own time after that. */}
       <span
         key={start}

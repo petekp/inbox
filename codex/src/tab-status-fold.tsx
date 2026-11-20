@@ -1,13 +1,13 @@
 import type { ComponentChildren } from 'preact'
 import { clickFold } from './tab-fold-all'
-import { pressCollapse } from './tab-rows'
 import { tabState } from './tab-state'
+import { dispatch } from './tab-ui'
 
 /** Whether the person folded the Status parent `id` by its name, as the drawn view says. */
 export const isParentFolded = (id: string) => tabState.view?.collapsed.includes(id) ?? false
 
 /** Folds the Status parent `id`, or opens it once folded. The tab's selection stays where it was. */
-export const toggleParentFold = (id: string) => pressCollapse(id, !isParentFolded(id))
+export const toggleParentFold = (id: string) => dispatch([{ type: 'collapse', id, isCollapsed: !isParentFolded(id) }])
 
 /** What follows a parent's name: whether its rows are folded, and how many the fold hides. Null for a row that is no parent. */
 export type ParentChevron = { isFolded: boolean; count: number }

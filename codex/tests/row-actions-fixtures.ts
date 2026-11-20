@@ -12,6 +12,7 @@ after(() => window.happyDOM.close())
 export function task() {
   const ledger: Ledger = {
     ...EMPTY,
+    nextId: 2,
     items: [
       {
         id: 'i1',

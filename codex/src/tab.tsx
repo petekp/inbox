@@ -3,7 +3,6 @@ import type { ComponentChildren } from 'preact'
 import { COLLAPSE_KEY, FOLD_ALL_KEY, helpVersionText, UNDO_KEY } from '../../hooks/help'
 import { DEMO_NOTICE, bannerOf, READING_TEXT } from '../../hooks/banners'
 import { isRowTab, shownTabs } from '../../hooks/tabs'
-import { steppedIndex } from '../../hooks/action-plan'
 import { tabState, handoff, root, instanceAbort } from './tab-state'
 import { noteShownRows, rowsInView, SUBJECTS_ATTRIBUTE } from './tab-shown'
 import type { Kept, Lists } from './tab-state'
@@ -11,20 +10,19 @@ import type { DrawnPrs } from './tab-pr-steps'
 import type { DrawnStatus } from './tab-status-steps'
 import { later, dispose, request, applyHost, READ_TIMEOUT_MS } from './tab-host'
 import type { HostContext } from './tab-host'
-import { measure, animateDraw, revealSelected, wakeForMoves } from './tab-motion'
+import { measure, animateDraw, wakeForMoves } from './tab-motion'
 import { applyPageVariables } from './tab-page-variables'
-import { switchTab, drawnTab, selectedIndex, select, rowActions } from './tab-selection'
+import './list-input'
+import { afterDraw, dispatch, drawnTab, openFresh, poll, read, selectedId } from './tab-ui'
 import { restoreState } from './tab-swap'
-import { read, poll } from './tab-read'
 import { foldAllHere } from './tab-fold-all'
 import { pressCollapseKey, tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
-import { stepLists } from './tab-list'
+import { rowActions, stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
 import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
 import { StatusTab } from './tab-status'
 import { settleAnswers, watchAnswerWidths } from './tab-ask-tree'
-import { pressUndoKey } from './undo-key'
 import { HelpPage, Status, TabBar, toggleDemo } from './tab-chrome'
 
 let isLoadingShown = false
@@ -65,7 +63,7 @@ function App({
         </div>
       ) : null}
       <TabBar v={v} />
-      {tabState.isHelpShown ? (
+      {tabState.ui.isHelpShown ? (
         <HelpPage version={helpVersionText(VERSION, v.isNextBuild === true)} />
       ) : shown === 'needsYou' ? (
         <NeedsYou v={v} lists={lists} now={now} />
@@ -97,7 +95,7 @@ let drawnPage: string | null = null
 
 function draw() {
   if (tabState.isDisposed || !tabState.isActive) return
-  const page = `${drawnTab()}${tabState.isHelpShown ? ' help' : ''}`
+  const page = `${drawnTab()}${tabState.ui.isHelpShown ? ' help' : ''}`
   const isPageSwitch = drawnPage !== null && page !== drawnPage
   if (isPageSwitch) document.documentElement.classList.add('page-switched', 'page-switching')
   drawnPage = page
@@ -115,12 +113,13 @@ function draw() {
   animateDraw(before, step?.changed ?? new Set())
   if (isPageSwitch) endPageSwitch()
   noteStatusInView()
-  const fieldToFocus =
-    tabState.focusTyping && tabState.typing ? document.getElementById(`type-${tabState.typing}`) : null
+  const focusField = tabState.focusField
+  const fieldToFocus = focusField !== null ? document.getElementById(`type-${focusField}`) : null
   if (fieldToFocus) {
-    tabState.focusTyping = false
+    tabState.focusField = null
     fieldToFocus.focus()
   }
+  afterDraw()
 }
 
 tabState.draw = draw
@@ -137,7 +136,7 @@ const watchAnswers = watchAnswerWidths(root, draw, instanceAbort.signal)
 
 /** Notes the Status subject rows on screen now, while the tab shows the real Status, for the look under way. The demo's ids name sample rows. */
 function noteStatusInView() {
-  if (!tabState.isActive || tabState.isDemo || tabState.tab !== 'overview' || tabState.isHelpShown) return
+  if (!tabState.isActive || tabState.isDemo || tabState.ui.tab !== 'overview' || tabState.ui.isHelpShown) return
   const rows = Array.from(root.querySelectorAll(`[${SUBJECTS_ATTRIBUTE}]`), el => ({
     subjects: el.getAttribute(SUBJECTS_ATTRIBUTE) ?? '',
     top: el.getBoundingClientRect().top,
@@ -176,65 +175,64 @@ document.addEventListener(
     if (e.metaKey || e.ctrlKey || e.altKey || !tabState.view) return
     const target = e.target as HTMLElement | null
     if (target?.closest('input, textarea')) {
-      if (e.key === 'Escape' && target.tagName === 'INPUT') {
-        tabState.typing = null
-        draw()
-      }
+      const id = tabState.ui.typing
+      if (e.key === 'Escape' && target.tagName === 'INPUT' && id !== null)
+        dispatch([{ type: 'close-field', id, isDiscard: false }])
       return
     }
-    if (e.key === '?' || (e.key === 'Escape' && tabState.isHelpShown)) {
+    const isHelpShown = tabState.ui.isHelpShown
+    if (e.key === '?' || (e.key === 'Escape' && isHelpShown)) {
       e.preventDefault()
-      tabState.isHelpShown = e.key === '?' && !tabState.isHelpShown
-      draw()
+      dispatch([{ type: 'show-help', isShown: e.key === '?' && !isHelpShown }])
       return
     }
     const switched = shownTabs().find(t => t.hotkey === e.key)
     if (switched) {
-      switchTab(switched.id)
-      draw()
+      dispatch([{ type: 'show-tab', tab: switched.id }])
       return
     }
-    if (e.key === FOLD_ALL_KEY && !tabState.isHelpShown) {
+    if (e.key === FOLD_ALL_KEY && !isHelpShown) {
       e.preventDefault()
       foldAllHere(null)
       return
     }
     const t = drawnTab()
-    if (tabState.isHelpShown || !isRowTab(t)) return
+    if (isHelpShown || !isRowTab(t)) return
     const tabKey =
       t === 'prs'
         ? [...prOrderKeys(tabState.view), ...prClearKeys(tabState.view)].find(x => x.hotkey === e.key)
         : undefined
     if (tabKey) {
       e.preventDefault()
-      if (!tabKey.isOut) tabKey.run()
+      if (!tabKey.isOut) tabKey.run('key')
       return
     }
     const rows = tabRows(tabState.view, t)
-    const at = selectedIndex(rows, t, tabState.view)
     const move = e.key === 'j' || e.key === 'ArrowDown' ? 1 : e.key === 'k' || e.key === 'ArrowUp' ? -1 : 0
     if (move !== 0) {
       e.preventDefault()
-      select(t, rows, steppedIndex(at, move, rows.length))
-      revealSelected()
+      dispatch([{ type: 'step', by: move, ids: rows.map(r => r.id) }])
       return
     }
     if (e.key === UNDO_KEY) {
-      if (pressUndoKey(tabState.view, t)) e.preventDefault()
+      const before = tabState.ui.nextPressId
+      dispatch([{ type: 'undo-key' }])
+      if (tabState.ui.nextPressId !== before) e.preventDefault()
       return
     }
+    const id = selectedId(t)
     if (e.key === COLLAPSE_KEY) {
       e.preventDefault()
-      pressCollapseKey(t, rows, at)
+      pressCollapseKey(id)
       return
     }
-    const row = rows[at]
+    const row = rows.find(r => r.id === id)
     if (!row || tabState.view.collapsed.includes(row.id)) return
     const { options, keys, more } = rowActions(row)
     const k = [...options, ...keys, ...more].find(x => x.hotkey === e.key)
     if (k) {
       e.preventDefault()
-      if (!k.isOut) k.run()
+      if (!k.isOut) k.run('key')
     }
   },
   { signal: instanceAbort.signal },
@@ -303,7 +301,7 @@ function activatePage(kept: Kept) {
 if (handoff) handoff.ready({ initialize, activate: activatePage, start: startPage, dispose })
 else {
   applyPageVariables()
-  restoreState()
+  if (!restoreState()) openFresh()
   void initialize()
   startPage()
 }

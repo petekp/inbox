@@ -1,22 +1,48 @@
-import { allRows } from '../../hooks/rows'
-import { feedbackOf } from '../../hooks/feedback'
+import { earliestOf } from '../../hooks/timing'
+import type { PressOut } from '../../hooks/ui-controller-types'
 import type { TabView as View } from './core'
 import type { Feedback } from '../../hooks/feedback'
-import { tabState, drafts, copies, sending } from './tab-state'
-import { keepPressedOpen } from './tab-selection'
-import { read, replies } from './tab-read'
-
-export function isNotSent(v: View, id: string): boolean {
-  return (
-    allRows(v).some(r => r.id === id && r.feedback?.is === 'notSent') ||
-    feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at)?.is === 'notSent'
-  )
-}
+import type { PressKind } from '../../types'
+import { localOuts, tabState } from './tab-state'
 
 /** A row's saved last press, so the tab can tell when a view shows a press it has out. */
 export function lastPressKey(v: View | null, id: string): string {
   return JSON.stringify(v?.lastActions[id] ?? null)
 }
+
+const pressesOut = (): PressOut[] => Object.values(tabState.ui.pressesOut)
+
+/**
+ * The latest press out on row `id`, or null: its action, so its button draws as out before the view says so, which is
+ * null for a reply, since a reply is never out, and what the tab keeps of it in `localOuts`.
+ */
+export function outOn(
+  id: string,
+): { action: string | null; pending: Feedback | null; kind: PressKind | null; lastBefore: string } | null {
+  const out = pressesOut()
+    .filter(p => p.rowId === id)
+    .pop()
+  if (!out) return null
+  const local = localOuts.get(out.pressId)
+
+  return {
+    action: out.isReply ? null : out.action,
+    pending: local?.pending ?? null,
+    kind: local?.kind ?? null,
+    lastBefore: local?.lastBefore ?? '',
+  }
+}
+
+/** Whether an Undo on row or PR `id` is out. */
+export const isUndoing = (id: string): boolean =>
+  pressesOut().some(p => p.rowId === id && (p.action === 'undo' || p.action === 'pr-undo'))
+
+/** The rows and PRs whose Undo is out. */
+export const undoingIds = (): Set<string> =>
+  new Set(pressesOut().flatMap(p => (p.action === 'undo' || p.action === 'pr-undo' ? [p.rowId] : [])))
+
+/** When the oldest press out began, or null while none is out. */
+export const sendingSince = (): number | null => earliestOf(pressesOut().map(p => p.at))
 
 /**
  * The status the tab draws for its Local press while the press is out: the press's pending result, until a view shows
@@ -24,35 +50,8 @@ export function lastPressKey(v: View | null, id: string): string {
  * "Refreshing PR #12…". Null for a message, and once a view shows the press.
  */
 export function outPending(v: View | null, id: string): Feedback | null {
-  const out = sending.get(id)
+  const out = outOn(id)
   if (!out?.pending) return null
 
   return lastPressKey(v, id) === out.lastBefore ? out.pending : null
-}
-
-/** Shows the text of a copy the server could not run, in a box to copy by hand. */
-export function showCopyFallback(rowId: string, c: { text: string; name: string }, isLatest: () => boolean) {
-  if (!isLatest()) return
-  copies.set(rowId, c)
-}
-
-export function startTyping(id: string) {
-  keepPressedOpen(id)
-  const wasHeld = id in replies()
-  if (!drafts.has(id)) drafts.set(id, { text: '', since: tabState.view?.at ?? Date.now() })
-  tabState.typing = id
-  tabState.focusTyping = true
-  tabState.draw()
-  if (wasHeld) return
-  // A view requested before this did not carry this row's reply, so it would draw the row's close as final.
-  tabState.shown = ++tabState.requested
-  void read()
-}
-
-export function discardReply(id: string) {
-  tabState.discarded = { ...tabState.discarded, [id]: Date.now() }
-  drafts.delete(id)
-  if (tabState.typing === id) tabState.typing = null
-  tabState.draw()
-  void read()
 }

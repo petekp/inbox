@@ -12,9 +12,10 @@ import { unfoldedRows } from '../../hooks/status-folds'
 import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
 import type { WorkJoint } from '../../hooks/status-path'
 import type { TabView as View } from './core'
-import { closingFolds, drafts, errors, sending, statusUnfolded, tabState } from './tab-state'
+import { closingFolds, tabState } from './tab-state'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
-import { act } from './tab-rows'
+import { dispatch, errorOf, pressRow } from './tab-ui'
+import { outOn } from './tab-press'
 import { NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
@@ -31,10 +32,10 @@ import {
   milestoneSpacePt,
 } from '../../hooks/status-gaps'
 
-/** The goal's text field, with its submit button and Cancel. It stays open, its buttons out, until the server confirms the goal. */
+/** The goal's text field, with its submit button and Cancel. Its draft stays until the goal arrives. */
 function GoalField({ page }: { page: StatusPage }) {
-  const draft = () => drafts.get(GOAL_KEYS_ID)?.text ?? ''
-  const isOut = sending.has(GOAL_KEYS_ID)
+  const draft = () => tabState.ui.drafts[GOAL_KEYS_ID]?.text ?? ''
+  const isOut = outOn(GOAL_KEYS_ID) !== null
 
   return (
     <div class="actions">
@@ -43,12 +44,7 @@ function GoalField({ page }: { page: StatusPage }) {
         onSubmit={e => {
           e.preventDefault()
           const text = draft().trim()
-          if (!text || isOut) return
-          const sent = drafts.get(GOAL_KEYS_ID)
-          void act(GOAL_KEYS_ID, { action: 'type', id: GOAL_KEYS_ID, text }, () => {
-            if (tabState.typing === GOAL_KEYS_ID) tabState.typing = null
-            if (drafts.get(GOAL_KEYS_ID) === sent) drafts.delete(GOAL_KEYS_ID)
-          })
+          if (text && !isOut) pressRow({ action: 'type', id: GOAL_KEYS_ID, text }, 'key')
         }}
       >
         <input
@@ -57,10 +53,7 @@ function GoalField({ page }: { page: StatusPage }) {
           placeholder={GOAL_FIELD.placeholder}
           aria-label={GOAL_FIELD.placeholder}
           onInput={e =>
-            drafts.set(GOAL_KEYS_ID, {
-              text: e.currentTarget.value,
-              since: drafts.get(GOAL_KEYS_ID)?.since ?? tabState.view?.at ?? Date.now(),
-            })
+            dispatch([{ type: 'edit-draft', id: GOAL_KEYS_ID, text: e.currentTarget.value }], { isDrawn: false })
           }
         />
         <span class="field-keys">
@@ -71,10 +64,7 @@ function GoalField({ page }: { page: StatusPage }) {
             type="button"
             class={isOut ? 'key ghost out' : 'key ghost'}
             disabled={isOut}
-            onClick={() => {
-              tabState.typing = null
-              tabState.draw()
-            }}
+            onClick={() => dispatch([{ type: 'close-field', id: GOAL_KEYS_ID, isDiscard: false }])}
           >
             {ROW_COPY.cancel}
           </button>
@@ -126,10 +116,10 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
             type="button"
             class="fold milestone-fold"
             data-fold={foldMotion(fold)}
-            onClick={e => clickFold(e, statusUnfolded.has(fold), () => toggleStatusFold(fold))}
+            onClick={e => clickFold(e, tabState.ui.statusUnfolded.includes(fold), () => toggleStatusFold(fold))}
           >
             {m.name}
-            <Icon name={statusUnfolded.has(fold) ? 'down' : 'right'} />
+            <Icon name={tabState.ui.statusUnfolded.includes(fold) ? 'down' : 'right'} />
           </button>
         )}
         {m.text ? (
@@ -199,7 +189,7 @@ function milestoneGroups(lines: DrawnStatus['goal']): MilestoneGroupLines[] {
 
 /** How the connector under a done milestone moves while its fold shuts, as its list fades with it. */
 function foldConnectorMotion(fold: string | null, motion: string): 'leaving' | null {
-  if (fold === null || statusUnfolded.has(fold)) return null
+  if (fold === null || tabState.ui.statusUnfolded.includes(fold)) return null
 
   return closingFolds.has(motion) ? 'leaving' : null
 }
@@ -213,7 +203,8 @@ function foldConnectorMotion(fold: string | null, motion: string): 'leaving' | n
 function shownRows({ m, rows }: MilestoneGroupLines) {
   const fold = m.foldId
   const motion = fold === null ? null : foldMotion(fold)
-  const isFoldShown = motion !== null && fold !== null && (statusUnfolded.has(fold) || closingFolds.has(motion))
+  const isFoldShown =
+    motion !== null && fold !== null && (tabState.ui.statusUnfolded.includes(fold) || closingFolds.has(motion))
   const shown = motion === null ? rows : isFoldShown ? unfoldedRows(m.rows, () => false, isParentFolded) : []
 
   return { fold, motion, isFoldShown, shown }
@@ -296,7 +287,7 @@ function laterStyle(above: MilestoneGroupLines | undefined, m: MilestoneRow) {
 }
 
 function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
-  const isUnfolded = (id: string) => statusUnfolded.has(id)
+  const isUnfolded = (id: string) => tabState.ui.statusUnfolded.includes(id)
   const groups = milestoneGroups(lines)
   const milestones = groups.map(g => g.m)
   const spaces = groups.map((g, n) => {
@@ -338,10 +329,10 @@ function MilestonesFold({ line: { id, fold } }: { line: DrawnStatus['fold'][numb
       <button
         type="button"
         class="fold milestone-fold"
-        onClick={e => clickFold(e, statusUnfolded.has(fold.id), () => toggleStatusFold(fold.id))}
+        onClick={e => clickFold(e, tabState.ui.statusUnfolded.includes(fold.id), () => toggleStatusFold(fold.id))}
       >
         {fold.text}
-        <Icon name={statusUnfolded.has(fold.id) ? 'down' : 'right'} />
+        <Icon name={tabState.ui.statusUnfolded.includes(fold.id) ? 'down' : 'right'} />
       </button>
     </div>
   )
@@ -367,7 +358,7 @@ function GoalSection({
   lines: DrawnStatus['goal']
 }) {
   const g = page.goal
-  const isTyping = tabState.typing === GOAL_KEYS_ID
+  const isTyping = tabState.ui.typing === GOAL_KEYS_ID
   const groups = goalKeyGroups(page)
   const text =
     page.suggestedGoal !== null ? (
@@ -453,7 +444,7 @@ function SetGoal({
 
 /** Why the last goal press failed, drawn in the goal's section, or under New on the empty page. */
 function GoalError() {
-  const error = errors.get(GOAL_KEYS_ID)
+  const error = errorOf(GOAL_KEYS_ID)
 
   return error ? <p class="tone-error">{error}</p> : null
 }
@@ -472,7 +463,7 @@ function rowsUnder(rows: StatusRow[], n: number, motion: (id: string) => string)
 
 export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
   const page = v.statusPage
-  const empty = emptyTab(v, { tab: 'overview', isGoalFieldOpen: tabState.typing === GOAL_KEYS_ID })
+  const empty = emptyTab(v, { tab: 'overview', isGoalFieldOpen: tabState.ui.typing === GOAL_KEYS_ID })
   if (empty)
     return (
       <EmptyState empty={empty}>

@@ -21,10 +21,11 @@ import type { PrAction } from '../../hooks/pr-press'
 import { readiness } from '../../hooks/prs'
 import type { PrView } from '../../types'
 import type { TabView as View } from './core'
-import { tabState, sending, errors, undoing, drawnRows } from './tab-state'
+import { tabState, drawnRows } from './tab-state'
+import { errorOf, pressRow } from './tab-ui'
+import { isUndoing, outOn } from './tab-press'
 import type { Key, Row } from './tab-state'
-import { foldAllHere } from './tab-fold-all'
-import { act, pendingLocal, pressesOf, prKey, pressTitle } from './tab-rows'
+import { pendingLocal, pressesOf, prKey, pressTitle } from './tab-rows'
 import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner, EmptyState } from './tab-parts'
 import { PR_REFRESH } from '../../hooks/pr-press'
 import type { PrRefreshView } from '../../hooks/pr-refresh'
@@ -50,15 +51,15 @@ function tabKey(rowId: string, a: PrAction): Key {
     ...(a.hotkey ? { hotkey: a.hotkey } : {}),
     label: a.label,
     emphasis: a.emphasis,
-    ...(a.isOut || sending.get(rowId)?.action === a.press.action ? { isOut: true } : {}),
-    run: () => void act(rowId, a.press, undefined, null, a.kind),
+    ...(a.isOut || outOn(rowId)?.action === a.press.action ? { isOut: true } : {}),
+    run: by => pressRow(a.press, by, { pending: null, kind: a.kind }),
   }
 }
 
 function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
   const id = prMarkId(pr.ref)
-  const start = tabState.seen.get(id) ?? Date.now()
-  const error = errors.get(id)
+  const start = tabState.ui.undoSeen[id] ?? Date.now()
+  const error = errorOf(id)
 
   return (
     <div class="row settled">
@@ -82,26 +83,15 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
           </div>
           <UndoPlace
             start={start}
-            isUndoing={undoing.has(id)}
+            isUndoing={isUndoing(id)}
             canUndo={state.canUndo}
             offersUndo={state.offersUndo}
-            onUndo={() => void undoPr(id, pr.ref)}
+            onUndo={by => pressRow({ action: 'pr-undo', ref: pr.ref }, by)}
           />
         </div>
       </div>
     </div>
   )
-}
-
-export async function undoPr(id: string, ref: string) {
-  if (undoing.has(id)) return
-  undoing.add(id)
-  try {
-    await act(id, { action: 'pr-undo', ref })
-  } finally {
-    undoing.delete(id)
-    tabState.draw()
-  }
 }
 
 /** The order's title, the agent's reason under it, and the changed line with Rank again and its press status. */
@@ -134,7 +124,7 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
 function refreshKeys(refresh: PrRefreshView): Key[] {
   return refresh.actions.map(a => ({
     ...tabKey(PR_REFRESH_ID, a),
-    run: () => void act(PR_REFRESH_ID, a.press, undefined, pendingLocal(PR_REFRESH)),
+    run: by => pressRow(a.press, by, { pending: pendingLocal(PR_REFRESH), kind: null }),
   }))
 }
 
@@ -304,7 +294,7 @@ function PrRows({
               row={row}
               track={tracks?.get(row.id) ?? drawnRows.get(row.id)!.track}
               now={now}
-              onSelect={isAll => pressTitle('prs', prs.rows, prs.rows.indexOf(row), isAll ? foldAllHere : undefined)}
+              onSelect={(isAll, by) => pressTitle(row.id, isAll, by)}
             />
           </div>
         ))}
