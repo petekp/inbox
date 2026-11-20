@@ -1,6 +1,9 @@
 import { mock } from 'bun:test'
 
 import { SESSION_LABEL } from '../../hooks/herdr-labels'
+import type { UiEvent } from '../../hooks/ui-controller-types'
+import type { Session } from '../../types'
+import { hostFactsOf } from '../src/controller'
 import { demoEnvelopeText } from './fixtures'
 
 type Handler = (event: unknown, cx: StandInContext) => void
@@ -12,6 +15,9 @@ export type Painted = {
   hasHover: boolean
   click: Handler | null
   keyDown: Handler | null
+  /** What a pointer moving or a wheel scrolling over the node runs. */
+  pointer: Handler | null
+  wheel: Handler | null
   field: StandInField | null
   parent: Painted | null
   kids: Painted[]
@@ -42,13 +48,13 @@ const SIDES: Record<string, Side[]> = {
 
 class StandInField {
   text: string
-  handlers = new Map<string, () => void>()
+  handlers = new Map<string, (event: unknown, cx: unknown) => void>()
   constructor(options?: { value?: string }) {
     this.text = options?.value ?? ''
   }
   typeIn(text: string) {
     this.text = text
-    this.handlers.get('change')?.()
+    this.handlers.get('change')?.(undefined, standInContext())
   }
   focus() {
     keys = this
@@ -60,7 +66,10 @@ class StandInField {
   value() {
     return this.text
   }
-  on(event: string, handler: () => void) {
+  submit() {
+    this.handlers.get('submit')?.(undefined, standInContext())
+  }
+  on(event: string, handler: (event: unknown, cx: unknown) => void) {
     this.handlers.set(event, handler)
     return true
   }
@@ -118,6 +127,8 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
     hasHover: false,
     click: null,
     keyDown: null,
+    pointer: null,
+    wheel: null,
     field,
     parent: null,
     kids: [],
@@ -155,6 +166,8 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
           if (key === 'hover') node.hasHover = true
           if (key === 'on_click') node.click = first as Handler
           if (key === 'on_key_down') node.keyDown = first as Handler
+          if (key === 'on_mouse_move') node.pointer = first as Handler
+          if (key === 'on_scroll_wheel') node.wheel = first as Handler
           for (const side of SIDES[key] ?? []) node.style[side] = first as number
           if (key === 'h' || key === 'w' || key === 'gap' || key === 'top' || key === 'bottom' || key === 'left')
             node.style[key] = first as number
@@ -276,5 +289,14 @@ export async function openPanel(built?: InboxClass) {
     for (const node of allOf(root)) node.onSize?.(size(node), cx)
   }
 
-  return { panel, paint, click, press, settle, measure }
+  const publish = (session: Session) => {
+    const read = panel.read
+    if (read?.is !== 'read') throw new Error('the panel read no session')
+    panel.read = { ...read, session }
+    panel.apply([{ type: 'read', host: hostFactsOf(panel.read) }], cx as never)
+  }
+
+  const run = (events: UiEvent[]) => panel.apply(events, cx as never)
+
+  return { panel, paint, click, press, settle, measure, publish, run, cx }
 }

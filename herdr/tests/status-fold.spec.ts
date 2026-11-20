@@ -3,7 +3,6 @@ import { expect, test } from 'bun:test'
 import { statusListRows } from '../../hooks/status-folds'
 import type { Block } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
-import { withCollapsed } from '../src/keys'
 import { demoScreen, uiOn } from './fixtures'
 
 test('a Status parent draws a chevron after its name that folds its rows away and opens them, the fold hides the rows under it and its connector, and the press saves the collapse', () => {
@@ -54,12 +53,4 @@ test('the press on a parent’s chevron saves its collapse and opens it again', 
 
   expect(toggleOf([])).toEqual({ is: 'collapse', id: 's1', isCollapsed: true })
   expect(toggleOf(['s1'])).toEqual({ is: 'collapse', id: 's1', isCollapsed: false })
-})
-
-test('a collapse on the Status tab leaves the selected row, and one on a row tab selects its row', () => {
-  const onStatus = withCollapsed(uiOn('overview', { selected: 'q1' }), 's1', true)
-  const onRows = withCollapsed(uiOn('needsYou', { selected: 'q1' }), 'q2', true)
-
-  expect(onStatus.selected).toBe('q1')
-  expect(onRows.selected).toBe('q2')
 })

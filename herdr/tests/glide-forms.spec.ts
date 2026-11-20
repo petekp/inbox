@@ -69,7 +69,7 @@ test('a first draw with the empty Status page’s goal field already open shows 
 })
 
 function outOn(open: Block[], rowId: string, action: string, label: string, kind: PressKind): Block[] {
-  const out = { pressId: 'p5', rowId, path: '/x', action, kind, label, pending: null, result: null }
+  const out = { pressId: 'p5', uiPressId: 5, rowId, path: '/x', action, kind, label, pending: null, result: null }
 
   return drawOuts(open, [{ ...out, before: '', isWritten: true, waitingSince: NOW, isTaken: false }], {}, NOW)
 }
@@ -219,9 +219,13 @@ test('a Dismiss whose reply lands 16, 100 or 300 ms after its press moves the li
 test('a Dismiss out on a row the cursor leaves with j before its reply grows no status on the row it closes', () => {
   const pressedOn = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
   const move = keyMove('j', [], pressedOn, null)
-  const left = tabBlocks(demoScreen(), uiOn('needsYou', { selected: move?.is === 'select' ? move.id : null }))
+  const next = move?.is === 'event' && move.event.type === 'step' ? move.event.ids[move.event.ids.indexOf('d13') + 1] : null
+  const left = tabBlocks(demoScreen(), uiOn('needsYou', { selected: next ?? null }))
   const pressedThenLeft = outOn(left, 'd13', 'dismiss', 'Dismiss', 'mark')
   const statusOf = (blocks: Block[]) =>
     blocks.find((b): b is Extract<Block, { kind: 'row' }> => b.kind === 'row' && b.id === 'd13')?.feedback
-  expect({ move: move?.is, status: statusOf(pressedThenLeft) }).toEqual({ move: 'select', status: statusOf(left) })
+  expect({ isMoved: next !== undefined && next !== null, status: statusOf(pressedThenLeft) }).toEqual({
+    isMoved: true,
+    status: statusOf(left),
+  })
 })

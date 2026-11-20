@@ -14,7 +14,11 @@ import type { ListInput } from '../../hooks/timing'
 import { button } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
-import { afterSend, keyMove, tabUndo, withSelected, withTab } from '../src/keys'
+import { keyMove } from '../src/keys'
+import { HERDR_LOOK, applyEvents } from '../src/controller'
+import { readWakeAt } from '../../hooks/ui-controller-clock'
+import { freshUi } from '../../hooks/ui-controller-types'
+import type { SessionView } from '../../hooks/session-view'
 import { GIVE_UP_MS, SENDING, drawOuts, notAppliedText, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
@@ -45,6 +49,7 @@ function outOn(rowId: string, overrides: Partial<Out> = {}): Out {
   const { view } = demoScreen()
   return {
     pressId: 'p5',
+    uiPressId: 5,
     rowId,
     path: '/x',
     action: 'discuss',
@@ -69,7 +74,7 @@ test('a press waits until its file is written, and by the give-up time reads not
   expect(settleOuts([outOn(rowId, { isTaken: true })], view, null, NOW + 100).outs.length).toBe(1)
   const taken = settleOuts([outOn(rowId, { isTaken: true })], view, null, NOW + GIVE_UP_MS)
   expect(taken.lines[rowId]?.text).toBe('Not confirmed: Discuss')
-  expect(taken.notes).toEqual({})
+  expect(taken.ended).toEqual([{ uiPressId: 5, outcome: { error: null, note: null, isUnconfirmed: true } }])
   const lost = settleOuts([outOn(rowId)], view, null, NOW + GIVE_UP_MS)
   expect(lost.outs).toEqual([])
   expect(lost.toClaim.map(o => o.rowId)).toEqual([rowId])
@@ -80,9 +85,14 @@ test('the host’s last press ends the press it names, and a taken press older t
   const rowId = view.needsYou.questions[0]!.id
   const out = outOn(rowId)
   const applied = settleOuts([out], view, { id: out.pressId, outcome: 'applied' }, NOW + 100)
-  expect(applied).toEqual({ outs: [], notes: {}, lines: {}, toClaim: [] })
+  expect(applied).toEqual({
+    outs: [],
+    lines: {},
+    ended: [{ uiPressId: 5, outcome: { error: null, note: null, isUnconfirmed: false } }],
+    toClaim: [],
+  })
   const stale = settleOuts([out], view, { id: out.pressId, outcome: 'stale' }, NOW + 100)
-  expect(stale.notes[rowId]?.note).toBe('stale')
+  expect(stale.ended.map(e => e.outcome.note)).toEqual(['stale'])
   expect(settleOuts([out], view, { id: 'p6', outcome: 'applied' }, NOW + 100).outs).toEqual([out])
   const taken = outOn(rowId, { isTaken: true, reply: 'Call it hello' })
   expect(settleOuts([taken], view, { id: 'p4', outcome: 'applied' }, NOW + 100).outs).toEqual([taken])
@@ -166,19 +176,19 @@ test('keys switch tabs, step rows, press a selected row’s hotkey, and leave th
     { id: 'findings' as const, label: 'Finds', badge: null, isSelected: false },
   ]
   const blocks = tabBlocks(screen, uiOn('needsYou'))
-  const rows = rowsOf(blocks).filter(r => r.isSelectable)
-  const selected = rows.find(r => r.isSelected)!
-  expect(keyMove('right', tabs, blocks, null)).toEqual({ is: 'tab', tab: 'findings' })
-  expect(keyMove('left', tabs, blocks, null)).toEqual({ is: 'tab', tab: 'findings' })
-  expect(keyMove('j', tabs, blocks, null)).toEqual({ is: 'select', id: rows[rows.indexOf(selected) + 1]!.id })
-  const hotkeyed = selected.buttons.find(b => b.hotkey !== null)!
-  expect(keyMove(hotkeyed.hotkey!, tabs, blocks, null)).toEqual({ is: 'press', button: hotkeyed })
+  const ids = rowsOf(blocks)
+    .filter(r => r.isSelectable)
+    .map(r => r.id)
+  expect(keyMove('right', tabs, blocks, null)).toEqual({ is: 'event', event: { type: 'show-tab', tab: 'findings' } })
+  expect(keyMove('left', tabs, blocks, null)).toEqual({ is: 'event', event: { type: 'show-tab', tab: 'findings' } })
+  expect(keyMove('j', tabs, blocks, null)).toEqual({ is: 'event', event: { type: 'step', by: 1, ids } })
+  expect(keyMove('k', tabs, blocks, null)).toEqual({ is: 'event', event: { type: 'step', by: -1, ids } })
+  const picked = tabBlocks(screen, uiOn('needsYou', { selected: ids[0]! }))
+  const hotkeyed = rowsOf(picked)
+    .find(r => r.isSelected)!
+    .buttons.find(b => b.hotkey !== null)!
+  expect(keyMove(hotkeyed.hotkey!, tabs, picked, null)).toEqual({ is: 'press', button: hotkeyed })
   expect(keyMove('escape', tabs, blocks, null)).toEqual({ is: 'leave' })
-  const [first, last] = [rows[0]!, rows.at(-1)!]
-  const onLast = tabBlocks(screen, withSelected(uiOn('needsYou'), last.id))
-  expect(keyMove('j', tabs, onLast, null)).toEqual({ is: 'select', id: first.id })
-  const onFirst = tabBlocks(screen, withSelected(uiOn('needsYou'), first.id))
-  expect(keyMove('k', tabs, onFirst, null)).toEqual({ is: 'select', id: last.id })
 })
 
 const ASKS = [{ id: 'needsYou' as const, label: 'Asks', badge: null, isSelected: true }]
@@ -201,6 +211,13 @@ function dismissedRows(
   return { view, blocks: tabBlocks({ ...demoScreen(), view, shownSince }, uiOn('needsYou')) }
 }
 
+const pressOfKey = (view: SessionView, ui = freshUi(HERDR_LOOK)) => {
+  const applied = applyEvents(ui, view, [{ type: 'undo-key' }], NOW)
+  const c = applied.commands.find(c => c.kind === 'press')
+
+  return { ui: applied.ui, press: c?.kind === 'press' ? c.press : null }
+}
+
 const undoOf = (blocks: Block[], id: string) =>
   rowsOf(blocks)
     .find(r => r.id === id)
@@ -212,8 +229,8 @@ test('u presses the Undo of the row dismissed last, whose fill empties', () => {
   expect([older?.isOut, newer?.isOut]).toEqual([false, false])
   expect(newer?.does).toMatchObject({ is: 'press', press: { action: 'undo', id: 'd7' } })
   expect(newer?.runsOutAt).toBe(NOW - 500 + SETTLED_MS)
-  const move = keyMove('u', ASKS, blocks, null, tabUndo(view, 'needsYou', NOW - 1000))
-  expect(move?.is === 'press' && move.button).toBe(newer!)
+  expect(keyMove('u', ASKS, blocks, null)).toEqual({ is: 'event', event: { type: 'undo-key' } })
+  expect(pressOfKey(view).press).toEqual({ action: 'undo', id: 'd7' })
   expect(timeLeftDraws(blocks, new Map(), NOW).get('d7 undo')).toEqual({ is: 'emptying' })
 })
 
@@ -221,7 +238,8 @@ test('while the last Undo’s press is out, u does nothing and that Undo’s fil
   const { view, blocks } = dismissedRows({ d8: NOW - 900, d7: NOW - 500 }, NOW - 1000)
   const out = drawOuts(blocks, [outOn('d7', { action: 'undo', label: 'Undo' })], {}, NOW)
   expect([undoOf(out, 'd8')?.isOut, undoOf(out, 'd7')?.isOut]).toEqual([false, true])
-  expect(keyMove('u', ASKS, out, null, tabUndo(view, 'needsYou', NOW - 1000))).toBeNull()
+  const pressed = pressOfKey(view)
+  expect(pressOfKey(view, pressed.ui).press).toBeNull()
   const running = timeLeftDraws(blocks, new Map(), NOW)
   const paused = timeLeftDraws(out, running, NOW + 1000)
   const share = timeLeftShare(NOW - 500 + SETTLED_MS, NOW + 1000)
@@ -234,8 +252,7 @@ test('once Undo ends, a row the list holds keeps a hidden Undo that u skips, and
   const held = dismissedRows({ d8: at }, at - 1000, { since: at, last: NOW - 100 })
   const spent = undoOf(held.blocks, 'd8')
   expect(spent).toMatchObject({ label: 'Undo', isHidden: true, does: { is: 'nothing' } })
-  expect(tabUndo(held.view, 'needsYou', at - 1000)).toBeNull()
-  expect(keyMove('u', ASKS, held.blocks, null, null)).toBeNull()
+  expect(pressOfKey(held.view).press).toBeNull()
   expect(timeLeftDraws(held.blocks, new Map(), NOW).size).toBe(0)
   const folded = dismissedRows({ d8: at }, at - 1000)
   expect(rowsOf(folded.blocks).find(r => r.id === 'd8')).toBeUndefined()
@@ -273,10 +290,11 @@ test('a settled answer keeps its spent Undo’s place until its message has wait
     const source = { host: 'claude-code' as const, agent: AGENT, sessionId: 's1', terminal: 't1', writtenAt: now }
     const read = readSession(JSON.stringify(herdrEnvelope(source, session)))
     const holds = { ...NO_HOLDS, shownSince: at - 1000 }
-    const queue = { outs: [], notes: {}, lines: {} }
+    const queue = { outs: [], lines: {} }
     return screenOf({ is: 'session', terminal: 't1', sessionId: 's1' }, read, uiOn('needsYou'), {
       now,
       holds,
+      notes: {},
       queue,
     })
   }
@@ -294,10 +312,8 @@ test('a settled answer keeps its spent Undo’s place until its message has wait
     ['Queued: Pinch', ['hidden Undo']],
     ['Queued: Pinch', []],
   ])
-  expect([
-    released.is === 'inbox' && released.undoPlaceEndsAt,
-    waiting.is === 'inbox' && waiting.undoPlaceEndsAt,
-  ]).toEqual([placeEndsAt, null])
+  const ui = freshUi(HERDR_LOOK)
+  expect(released.is === 'inbox' && readWakeAt(ui, released.view, placeEndsAt - 1)).toBe(placeEndsAt)
 })
 
 test('u presses a dismissed PR’s Undo, which runs out with the settle window', () => {
@@ -306,8 +322,8 @@ test('u presses a dismissed PR’s Undo, which runs out with the settle window',
   const undo = undoOf(blocks, prMarkId(ref))
   expect(undo?.runsOutAt).toBe(NOW - 500 + SETTLED_MS)
   const prs = [{ id: 'prs' as const, label: 'PRs', badge: null, isSelected: true }]
-  const move = keyMove('u', prs, blocks, null, tabUndo(view, 'prs', NOW - 1000))
-  expect(move?.is === 'press' && move.button.does).toMatchObject({ is: 'press', press: { action: 'pr-undo', ref } })
+  expect(keyMove('u', prs, blocks, null)).toEqual({ is: 'event', event: { type: 'undo-key' } })
+  expect(pressOfKey(view, freshUi(HERDR_LOOK, 'prs')).press).toEqual({ action: 'pr-undo', ref })
 })
 
 test('a dismissed PR’s Undo whose press is still out when its time ends stays drawn out until the press ends', () => {
@@ -332,26 +348,22 @@ test('an Undo’s fill shows the whole of its time at the start, half in the mid
   ).toBe(0)
 })
 
-test('while a field is open, keys type into it and escape closes it, and moving to another row or tab closes it', () => {
-  const blocks = tabBlocks(demoScreen(), uiOn('needsYou'))
-  const [first, second] = rowsOf(blocks).filter(r => r.isSelectable)
+test('while a field is open, keys type into it and escape closes it, keeping its draft', () => {
+  const [firstId] = rowsOf(tabBlocks(demoScreen(), uiOn('needsYou')))
+    .filter(r => r.isSelectable)
+    .map(r => r.id)
+  const blocks = tabBlocks(demoScreen(), uiOn('needsYou', { selected: firstId! }))
+  const first = rowsOf(blocks).find(r => r.id === firstId)
   const tabs = [{ id: 'needsYou' as const, label: 'Asks', badge: null, isSelected: true }]
   expect(['j', 'right', first!.buttons[0]!.hotkey ?? 'x'].map(k => keyMove(k, tabs, blocks, first!.id))).toEqual([
     null,
     null,
     null,
   ])
-  expect(keyMove('escape', tabs, blocks, first!.id)).toEqual({ is: 'close' })
-  const typing = uiOn('needsYou', { selected: first!.id, typing: first!.id })
-  expect(withSelected(typing, first!.id).typing).toBe(first!.id)
-  expect(withSelected(typing, second!.id).typing).toBeNull()
-  expect(withTab(typing, 'findings').typing).toBeNull()
-})
-
-test('a sent field closes and a refused one stays open', () => {
-  const ui = uiOn('needsYou', { typing: 'q1' })
-  expect(afterSend(ui, 'q1', false)).toBe(ui)
-  expect(afterSend(ui, 'q1', true)).toEqual({ ...ui, typing: null })
+  expect(keyMove('escape', tabs, blocks, first!.id)).toEqual({
+    is: 'event',
+    event: { type: 'close-field', id: first!.id, isDiscard: false },
+  })
 })
 
 test('a relative open runs in the look against the session’s project folder, and goes to the host without one', async () => {

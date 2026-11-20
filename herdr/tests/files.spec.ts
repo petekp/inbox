@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test'
 
 import { HERDR_FORMAT } from '../../hooks/herdr'
-import { collapsedRows } from '../../hooks/collapse'
-import { withCollapses, writeCollapse } from '../src/collapse'
+import { writeCollapse } from '../src/collapse'
 import { isSessionChange, readSession } from '../src/files'
 import { AGENT, demoEnvelopeText } from './fixtures'
 
@@ -16,37 +15,26 @@ test('a published session reads back with its source and its rows', () => {
   expect(read.projectFolder).toBeNull()
 })
 
-test('a session from a host that saves no collapsed rows reads with none collapsed, and a collapse made in the look stays drawn past the wait with no file written', async () => {
+test('a session from a host that saves no collapsed rows reads with none collapsed, and the look writes no collapse file for it', async () => {
   const { session, ...envelope } = JSON.parse(demoEnvelopeText())
   const { collapsed: _collapsed, ...older } = session
   const read = readSession(JSON.stringify({ ...envelope, session: older }))
   if (read.is !== 'read') throw new Error(`read as ${read.is}`)
   expect(read.session.collapsed).toEqual({})
   const row = read.session.ledger.items[0]!.id
-  const collapse = { isCollapsed: true, at: 1_000 }
-
-  const later = withCollapses(read, { [row]: collapse }, collapse.at + 60 * 60_000)
-  expect(later.collapses).toEqual({ [row]: collapse })
-  expect(later.read?.is === 'read' && collapsedRows(later.read.session)).toEqual([row])
   const written: string[] = []
   const io = { random: () => 0.5, write: async (path: string) => (written.push(path), null), wake: async () => {} }
-  await writeCollapse(io, { appHome: '/app', sessionId: 's1' }, read, row, collapse)
+  await writeCollapse(io, { appHome: '/app', sessionId: 's1' }, read, row, { isCollapsed: true, at: 1_000 })
   expect(written).toEqual([])
 })
 
-test('a collapse made in the look for a host that saves collapses is written, and stops being drawn once the wait passes unpublished', async () => {
+test('a collapse made in the look for a host that saves collapses is written', async () => {
   const read = readSession(demoEnvelopeText())
   if (read.is !== 'read') throw new Error(`read as ${read.is}`)
   const row = read.session.ledger.items[0]!.id
-  const collapse = { isCollapsed: true, at: 1_000 }
-
-  expect(withCollapses(read, { [row]: collapse }, collapse.at + 1).collapses).toEqual({ [row]: collapse })
-  const later = withCollapses(read, { [row]: collapse }, collapse.at + 60 * 60_000)
-  expect(later.collapses).toEqual({})
-  expect(later.read?.is === 'read' && collapsedRows(later.read.session)).toEqual([])
   const written: string[] = []
   const io = { random: () => 0.5, write: async (path: string) => (written.push(path), null), wake: async () => {} }
-  await writeCollapse(io, { appHome: '/app', sessionId: 's1' }, read, row, collapse)
+  await writeCollapse(io, { appHome: '/app', sessionId: 's1' }, read, row, { isCollapsed: true, at: 1_000 })
   expect(written.length).toBe(1)
 })
 

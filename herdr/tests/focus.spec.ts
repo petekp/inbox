@@ -8,6 +8,9 @@ import type { Painted } from './gpui-stand-in'
 
 setSystemTime(new Date(NOW))
 
+let clock = NOW
+const pastGuard = () => setSystemTime(new Date((clock += PRESS_GUARD_MS + 1)))
+
 const idsOf = (root: Painted, prefix: string) =>
   allOf(root).flatMap(n => (n.id?.startsWith(prefix) && n.click ? [n.id] : []))
 
@@ -91,6 +94,7 @@ test('a press on a row with a status line above its buttons keeps the buttons on
   }
   const before = buttonsLine()
   const explain = allOf(byId(panel.paint(), 'row d18')!).find(n => n.label === 'Explain')!
+  pastGuard()
   panel.click(explain)
   await panel.settle()
   expect(panel.panel.queue.outs.map(o => o.rowId)).toEqual(['d18'])
@@ -125,16 +129,17 @@ test('a reply sent before the panel follows another terminal is still out when i
   })!
   panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
   typeIn(panel.panel.input!.state, 'Ran it and it passed')
+  pastGuard()
   panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Send')!)
   await panel.settle()
-  expect(panel.panel.queue.sentTexts.map(t => t.text)).toEqual(['Ran it and it passed'])
+  expect(Object.values(panel.panel.ui.sentReplies).map(t => t.text)).toEqual(['Ran it and it passed'])
   focusTerminal('t2')
   panel.paint()
   focusTerminal('t1')
   panel.paint()
   await panel.settle()
   expect(panel.panel.queue.outs.map(o => `row ${o.rowId}`)).toEqual([rowId])
-  expect(panel.panel.queue.sentTexts.map(t => t.text)).toEqual(['Ran it and it passed'])
+  expect(Object.values(panel.panel.ui.sentReplies).map(t => t.text)).toEqual(['Ran it and it passed'])
 })
 
 test('a click on an open row’s title collapses it and closes its reply field, and the draft is there once it expands', async () => {
@@ -146,15 +151,11 @@ test('a click on an open row’s title collapses it and closes its reply field, 
   const pressReply = () => panel.click(allOf(byId(panel.paint(), rowId)!).find(n => n.label === 'Reply')!)
   pressReply()
   typeIn(panel.panel.input!.state, 'Ran it and it passed')
-  setSystemTime(new Date(NOW + PRESS_GUARD_MS + 1))
-  try {
-    panel.click(byId(panel.paint(), rowId.replace(/^row /, 'title '))!)
-    expect(panel.panel.ui.typing).toBeNull()
-    expect(allOf(byId(panel.paint(), rowId)!).some(n => n.label === 'Reply')).toBe(false)
-    panel.click(byId(panel.paint(), rowId)!)
-    pressReply()
-    expect(panel.panel.input?.state.value()).toBe('Ran it and it passed')
-  } finally {
-    setSystemTime(new Date(NOW))
-  }
+  pastGuard()
+  panel.click(byId(panel.paint(), rowId.replace(/^row /, 'title '))!)
+  expect(panel.panel.ui.typing).toBeNull()
+  expect(allOf(byId(panel.paint(), rowId)!).some(n => n.label === 'Reply')).toBe(false)
+  panel.click(byId(panel.paint(), rowId)!)
+  pressReply()
+  expect(panel.panel.input?.state.value()).toBe('Ran it and it passed')
 })

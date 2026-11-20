@@ -2,7 +2,7 @@
 
 Status: building
 
-The controller is built (PR 2.1). No look uses it yet. PRs 2.2 to 2.5 move the looks onto it, one look per PR.
+The controller is built (PR 2.1). PRs 2.2 to 2.5 move the looks onto it, one look per PR. omp and Herdr run on it.
 
 Each look decides for itself which tab it shows, where its cursor goes, when a draft is deleted and when it redraws. The five looks have drifted apart on these rules. `hooks/ui-controller.ts` holds one copy of them as pure code. It does no IO, imports no host and sets no timers. [The files table](../looks/files-shared-controller.md) lists its files.
 
@@ -46,23 +46,20 @@ The panel runs on the controller. It keeps its line layout, button focus and pag
 - A reply's draft stays until the reply arrives, not only until the press is confirmed.
 - It wakes when something changes, instead of polling every 200 ms.
 
-### Herdr look (PR 2.3)
+### Herdr look (PR 2.3, done)
 
-The look keeps its press queue and per-row refusal. `left[sessionId]` stores the controller's state. Its `LookConfig`: running marks pulsed, the title tint in steps, Undo from the session's close. What changes:
+The look runs on the controller. It keeps its press queue and per-row refusal, its drawing, motion and springs. `left[sessionId]` keeps the controller's state of each session the look left, in memory only, as the look kept its state before. Its `LookConfig`: running marks pulsed, the title tint in steps, Undo from the session's close. What changes for the person:
 
-- It moves to another tab when the shown tab is empty and rows arrive (#675).
+- It moves to another tab when the shown tab is empty and rows arrive ([#675](https://github.com/petekp/inbox/issues/675)).
 - Opening the look, or switching to another session, shows Asks when a row waits there.
 - Each tab keeps its own cursor, and new rows can open with no row picked.
 - A click that opens a row guards that row's buttons from a second click for `PRESS_GUARD_MS`.
 - A close by the agent waits while the list was used within `FOLD_QUIET_MS`.
-- A refused or stale reply reopens its field only when the person has not moved. Today the field stays open on a refusal whatever the person did.
-- Drafts follow the shared rule, which differs from `herdr/src/out.ts:isSentConfirmed` in six ways:
-  - It reads the last action's `at` instead of waiting for `lastPress` to name the press.
-  - It compares `at`, not the whole last action as JSON.
-  - It checks that the reply is the sent text.
-  - It waits while the delivery is `held`, not only `queued`.
-  - It keeps one sent reply per row, which a new reply replaces.
-  - When the last action vanishes, it deletes the draft only after a confirmed press.
+- A pointer moving or a wheel scrolling over the list counts as list use, so it holds a due fold, an arrival and an agent's close ([#673](https://github.com/petekp/inbox/issues/673)).
+- A refused or stale reply reopens its field only when the person has not moved. A refused goal reopens its field on the Status page too, in every look.
+- A reply's draft stays until the reply arrives, by the shared rule.
+- New rows get their title tint in every tab, not only the tab the look shows.
+- A host older than 0.5.0 saves no collapses, so a collapse there lasts `COLLAPSE_WAIT_MS`.
 
 ### Codex tab (PR 2.4)
 

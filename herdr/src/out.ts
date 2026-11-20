@@ -1,14 +1,14 @@
 import { feedbackText, feedbackTone, holdsStatusWhileOut, type FeedbackTone } from '../../hooks/feedback'
 import type { Feedback } from '../../hooks/feedback'
 import { actionId } from '../../hooks/press-labels'
-import { isPressConfirmed } from '../../hooks/press-reducer'
 import { pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import { deliveryLabel } from '../../hooks/rows'
 import type { SessionView } from '../../hooks/session-view'
 import { GOAL_KEYS_ID } from '../../hooks/status-keys'
-import type { LocalResult, PressKind, RowNote } from '../../types'
+import type { SettledOutcome } from '../../hooks/ui-controller-types'
+import type { LocalResult, PressKind } from '../../types'
 import type { Block, Button } from './blocks'
 import type { LastPress } from './files'
 
@@ -22,7 +22,8 @@ export const GIVE_UP_MS = 15_000
 
 /**
  * A press the look sent that has no result yet. `action` is its button's action id, and `kind` its button's kind as
- * the press found it, or null for a press that no plan action makes. `label` is its button's label, and `reply` the
+ * the press found it, or null for a press that no plan action makes. `uiPressId` is the id the shared controller gave
+ * the press, which hears how it ended. `label` is its button's label, and `reply` the
  * text a reply sends. `pending` is what its opens, copies or refreshes read while under way, or null
  * for a press that sends, which reads `SENDING`. `result` is how the opens and copies the look ran itself went.
  * `before` is the row as the look drew it when pressed. `isWritten` is whether its press file is written, and
@@ -31,6 +32,7 @@ export const GIVE_UP_MS = 15_000
  */
 export type Out = {
   pressId: string
+  uiPressId: number
   rowId: string
   path: string
   action: string
@@ -93,69 +95,59 @@ export const notAppliedText = (why: string): RowLine => ({
   source: { is: 'notSent', reason: why, retry: null },
 })
 
+/** How a press the look sent ended, for the shared controller, by the id the controller gave it. */
+export type Ended = { uiPressId: number; outcome: SettledOutcome }
+
 type Settled = {
   outs: Out[]
-  notes: Record<string, RowNote>
   lines: Record<string, RowLine>
+  ended: Ended[]
   toClaim: Out[]
 }
 
+const UNCONFIRMED: SettledOutcome = { error: null, note: null, isUnconfirmed: true }
+const STALE: SettledOutcome = { error: null, note: 'stale', isUnconfirmed: false }
+
+/** A press a host applied, as its row's delivery reads now: sent, refused, or not confirmed. */
+function appliedOutcome(view: SessionView, rowId: string): SettledOutcome {
+  const delivery = view.lastActions[rowId]?.delivery
+
+  return {
+    error: delivery?.state === 'failed' ? delivery.reason : null,
+    note: null,
+    isUnconfirmed: delivery?.state === 'unconfirmed',
+  }
+}
+
 /**
- * The presses still out after a read of the session. The host's `lastPress` ends the press it names: applied, or
- * stale when its row had already changed, which gets the shared stale note. Another press ends when its row changed.
- * A host applies presses oldest first and press ids sort by time, so a taken press older than `lastPress` will not be
+ * The presses still out after a read of the session, and how the others ended. The host's `lastPress` ends the press
+ * it names: applied, or stale when its row had already changed. Another press ends when its row changed. A host
+ * applies presses oldest first and press ids sort by time, so a taken press older than `lastPress` will not be
  * reported, and reads as not confirmed. By `GIVE_UP_MS` after its write, a taken press reads the same, and one still
  * in its folder goes to `toClaim` for the look to take back.
  */
 export function settleOuts(outs: readonly Out[], view: SessionView, lastPress: LastPress | null, now: number): Settled {
-  const settled: Settled = { outs: [], notes: {}, lines: {}, toClaim: [] }
+  const settled: Settled = { outs: [], lines: {}, ended: [], toClaim: [] }
+  const end = (out: Out, outcome: SettledOutcome) => settled.ended.push({ uiPressId: out.uiPressId, outcome })
   for (const out of outs) {
     if (lastPress?.id === out.pressId) {
-      if (lastPress.outcome === 'stale') settled.notes[out.rowId] = { note: 'stale', at: now }
+      end(out, lastPress.outcome === 'stale' ? STALE : appliedOutcome(view, out.rowId))
       continue
     }
-    if (rowSignature(view, out.rowId) !== out.before) continue
+    if (rowSignature(view, out.rowId) !== out.before) {
+      end(out, appliedOutcome(view, out.rowId))
+      continue
+    }
     const isPassed = lastPress !== null && lastPress.id > out.pressId
-    if (out.isWritten && out.isTaken && isPassed) settled.lines[out.rowId] = unconfirmedLine(out, now)
-    else if (!out.isWritten || out.waitingSince === null || now - out.waitingSince < GIVE_UP_MS) settled.outs.push(out)
-    else if (out.isTaken) settled.lines[out.rowId] = unconfirmedLine(out, now)
+    const isGivenUp = out.waitingSince !== null && now - out.waitingSince >= GIVE_UP_MS
+    if (out.isWritten && out.isTaken && (isPassed || isGivenUp)) {
+      settled.lines[out.rowId] = unconfirmedLine(out, now)
+      end(out, UNCONFIRMED)
+    } else if (!out.isWritten || !isGivenUp) settled.outs.push(out)
     else settled.toClaim.push(out)
   }
 
   return settled
-}
-
-/** A row's last press as the view gives it, to tell whether a press saved a new one. */
-export const lastActionKey = (view: SessionView, rowId: string): string =>
-  JSON.stringify(view.lastActions[rowId] ?? null)
-
-/** A reply or goal the look sent, from its `type` press, with its row's `lastActionKey` when pressed. */
-export type SentText = { pressId: string; rowId: string; text: string; lastBefore: string }
-
-/**
- * Whether the host confirmed a sent text's press, as `isPressConfirmed` decides, or null until a read shows the host
- * finished it: `lastPress` names it, or names a later press, since a host applies presses oldest first, and the row's
- * delivery no longer reads queued. A host that holds a message until the agent's turn ends names its press while the
- * message is queued. `lastPress` carries no send error, so the row's delivery gives it, and a press that saved no last
- * press on its row was not sent.
- */
-export function isSentConfirmed(sent: SentText, view: SessionView, lastPress: LastPress | null): boolean | null {
-  const isNamed = lastPress?.id === sent.pressId
-  const isPassed = lastPress !== null && lastPress.id > sent.pressId
-  if (!isNamed && !isPassed) return null
-  const delivery = view.lastActions[sent.rowId]?.delivery
-  const isChanged = lastActionKey(view, sent.rowId) !== sent.lastBefore
-  const isStale = isNamed && lastPress?.outcome === 'stale'
-  if (isChanged && !isStale && delivery?.state === 'queued') return null
-
-  return (
-    isChanged &&
-    isPressConfirmed({
-      error: delivery?.state === 'failed' ? delivery.reason : null,
-      note: isStale ? 'stale' : null,
-      isUnconfirmed: delivery?.state === 'unconfirmed',
-    })
-  )
 }
 
 /** When the look next needs to read for its presses: a reread, or giving up. */

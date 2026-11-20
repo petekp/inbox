@@ -3,8 +3,9 @@ import { expect, test } from 'bun:test'
 import type { Block } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import type { LookUi } from '../src/draw'
-import { afterSend } from '../src/keys'
-import { demoScreen, uiOn } from './fixtures'
+import { freshUi } from '../../hooks/ui-controller-types'
+import { HERDR_LOOK, applyEvents } from '../src/controller'
+import { NOW, demoScreen, uiOn } from './fixtures'
 
 const SUGGESTION = 'Ship 0.5.0 to the store'
 
@@ -49,10 +50,16 @@ test('Edit opens the field with the suggestion and a Set button, and the fieldâ€
   expect(labelsOf(left).map(b => b.label)).toEqual(['Set goal', 'Edit'])
 })
 
-test('sending the goal field closes it, and a refused send keeps it open', () => {
-  const typing = uiOn('overview', { typing: 'goal' })
-  expect(afterSend(typing, 'goal', true)).toMatchObject({ typing: null })
-  expect(afterSend(typing, 'goal', false)).toMatchObject({ typing: 'goal' })
+test('sending the goal field closes it, and a refused send opens it again with its words while the person has not moved', () => {
+  const { view } = demoScreen()
+  const onStatus = applyEvents(freshUi(HERDR_LOOK, 'overview'), view, [{ type: 'open-field', id: 'goal' }], NOW).ui
+  const sent = applyEvents(onStatus, view, [{ type: 'press', press: { action: 'type', id: 'goal', text: 'Ship it' }, by: 'key' }], NOW + 1)
+  expect(sent.ui.typing).toBeNull()
+  const outcome = { error: 'the session refused it', note: null, isUnconfirmed: false }
+  const refused = applyEvents(sent.ui, view, [{ type: 'press-settled', pressId: 1, outcome }], NOW + 2)
+  expect({ typing: refused.ui.typing, draft: refused.ui.drafts.goal?.text }).toEqual({ typing: 'goal', draft: 'Ship it' })
+  const moved = applyEvents(sent.ui, view, [{ type: 'show-tab', tab: 'needsYou' }, { type: 'press-settled', pressId: 1, outcome }], NOW + 2)
+  expect(moved.ui.typing).toBeNull()
 })
 
 test('with no suggestion New opens the empty field labelled Set, and Edit of a running goal labelled Save', () => {

@@ -4,11 +4,9 @@ import type { PrPress } from '../../hooks/pr-press'
 import type { RowPress } from '../../hooks/presses'
 import type { SessionView } from '../../hooks/session-view'
 import type { Holds } from '../../hooks/timing'
-import type { LocalResult, PressKind, RowNote } from '../../types'
+import type { LocalResult, PressKind } from '../../types'
 import type { LastPress } from './files'
 import {
-  isSentConfirmed,
-  lastActionKey,
   nextOutCheckAt,
   notAppliedLine,
   notAppliedText,
@@ -17,7 +15,7 @@ import {
   rowSignature,
   settleOuts,
 } from './out'
-import type { Out, RowLine, SentText } from './out'
+import type { Ended, Out, RowLine } from './out'
 import { newPressId, pressFileText, pressPath } from './press-file'
 import { firstError, isRunHere, pendingOf } from './run-here'
 import type { HereEffect } from './run-here'
@@ -50,21 +48,31 @@ export type PressTarget = {
 type RunHere = (effects: readonly HereEffect[], pending: LocalResult) => Promise<LocalResult>
 
 /** `finish` takes what runs the look's own opens, and what draws the row again once they ran. */
-type Sent =
-  { is: 'refused'; reason: string } | { is: 'sent'; finish: (runHere: RunHere, ran: () => void) => Promise<void> }
+type Sent = { is: 'refused' } | { is: 'sent'; finish: (runHere: RunHere, ran: () => void) => Promise<void> }
+
+/**
+ * What a press carries besides its press: what it opens or copies, its button's label and kind, the text a reply
+ * sends, and the id the shared controller gave it.
+ */
+export type SendOptions = {
+  effects: readonly Effect[]
+  label: string
+  kind: PressKind | null
+  reply?: string
+  uiPressId: number
+}
 
 /** Where a press file goes when the look takes it back: a name no host lists, since hosts read only `.json` names. */
 export const claimedPath = (path: string) => `${path}.withdrawn`
 
 /**
- * The presses the look has out for one session, and the notes and lines the ended ones leave on their rows.
- * `sentTexts` are the replies and goals it sent whose host has not yet answered, which can be after their press ends.
+ * The presses the look has out for one session, and the lines the ended ones leave on their rows. `ended` holds how
+ * each press ended, refused ones too, until the look gives them to the shared controller.
  */
 export class PressQueue {
   outs: Out[] = []
-  notes: Record<string, RowNote> = {}
   lines: Record<string, RowLine> = {}
-  sentTexts: SentText[] = []
+  private ended: Ended[] = []
 
   constructor(private readonly io: QueueIo) {}
 
@@ -73,18 +81,13 @@ export class PressQueue {
    * file and wakes the host. Refused, with the reason on its row, when there is no session to send to or its row has
    * a press out.
    */
-  send(
-    target: PressTarget | null,
-    press: RowPress | PrPress,
-    effects: readonly Effect[],
-    label: string,
-    kind: PressKind | null,
-    reply?: string,
-  ): Sent {
+  send(target: PressTarget | null, press: RowPress | PrPress, o: SendOptions): Sent {
+    const { effects, label, kind, reply, uiPressId } = o
     const rowId = pressRowId(press)
     const refuse = (reason: string): Sent => {
       this.lines[rowId] = notSentLine(reason)
-      return { is: 'refused', reason }
+      this.ended.push({ uiPressId, outcome: { error: reason, note: null, isUnconfirmed: false } })
+      return { is: 'refused' }
     }
     if (target === null) return refuse('this terminal has no inbox to send to.')
     if (this.outs.some(o => o.rowId === rowId)) return refuse('the last press on this row has not finished.')
@@ -93,6 +96,7 @@ export class PressQueue {
     const pending = pendingOf(effects, now)
     const out: Out = {
       pressId,
+      uiPressId,
       rowId,
       path: pressPath(target.appHome, target.sessionId, pressId),
       action: outAction(press),
@@ -107,13 +111,7 @@ export class PressQueue {
       isTaken: false,
     }
     this.outs = [...this.outs, out]
-    if ('id' in press && press.action === 'type')
-      this.sentTexts = [
-        ...this.sentTexts,
-        { pressId, rowId, text: press.text, lastBefore: lastActionKey(target.view, rowId) },
-      ]
     delete this.lines[rowId]
-    delete this.notes[rowId]
 
     return { is: 'sent', finish: (runHere, ran) => this.finish(out, now, target, press, effects, runHere, ran) }
   }
@@ -137,8 +135,7 @@ export class PressQueue {
     const failed = await this.io.write(out.path, text)
     if (failed !== null) {
       this.outs = this.outs.filter(o => o !== out)
-      this.forget(out)
-      this.lines[out.rowId] = notAppliedText(failed)
+      this.endRefused(out, notAppliedText(failed))
       return
     }
     out.isWritten = true
@@ -146,52 +143,44 @@ export class PressQueue {
     await this.io.wake(target.terminal, out.pressId)
   }
 
-  private forget(out: Out): void {
-    this.sentTexts = this.sentTexts.filter(s => s.pressId !== out.pressId)
+  /** Ends `out` as refused, with `line` on its row. */
+  private endRefused(out: Out, line: RowLine): void {
+    this.lines[out.rowId] = line
+    const error = line.source.is === 'notSent' ? line.source.reason : line.text
+    this.ended.push({ uiPressId: out.uiPressId, outcome: { error, note: null, isUnconfirmed: false } })
   }
 
-  /** Whether a read can still end a press or answer a sent text. */
+  /** Whether a read can still end a press. */
   isAwaiting(): boolean {
-    return this.outs.length > 0 || this.sentTexts.length > 0
+    return this.outs.length > 0
   }
 
-  /** Takes the sent texts a read answers out of `sentTexts`, and gives the confirmed ones. A press no host took waits. */
-  private answerSentTexts(view: SessionView, lastPress: LastPress | null): SentText[] {
-    const isUntaken = (s: SentText) => this.outs.some(o => o.pressId === s.pressId && !o.isTaken)
-    const answers = this.sentTexts.map(sent => ({
-      sent,
-      isConfirmed: isUntaken(sent) ? null : isSentConfirmed(sent, view, lastPress),
-    }))
-    this.sentTexts = answers.flatMap(a => (a.isConfirmed === null ? [a.sent] : []))
-
-    return answers.flatMap(a => (a.isConfirmed ? [a.sent] : []))
+  /** How the presses ended since the last call, oldest first. */
+  takeEnded(): Ended[] {
+    return this.ended.splice(0)
   }
 
   /**
    * Ends the presses a read of the session answers, as `settleOuts` says, after checking which written files a host
    * took. A press past its give-up time that no host took is taken back first, so it cannot apply later. When a host
-   * took it in the meantime, it waits again as taken. Returns the sent texts the read shows confirmed.
+   * took it in the meantime, it waits again as taken. `takeEnded` then gives how each ended press went.
    */
-  async settle(view: SessionView, lastPress: LastPress | null, agent: string): Promise<SentText[]> {
+  async settle(view: SessionView, lastPress: LastPress | null, agent: string): Promise<void> {
     for (const out of this.outs) if (out.isWritten) out.isTaken = await this.io.isGone(out.path)
-    const confirmed = this.answerSentTexts(view, lastPress)
     const now = this.io.now()
     const settled = settleOuts(this.outs, view, lastPress, now)
     this.outs = settled.outs
-    this.notes = { ...this.notes, ...settled.notes }
     this.lines = { ...this.lines, ...settled.lines }
+    this.ended.push(...settled.ended)
     for (const out of settled.toClaim) {
       if (await this.io.claim(out.path)) {
-        this.forget(out)
-        this.lines[out.rowId] = notAppliedLine(out, agent)
+        this.endRefused(out, notAppliedLine(out, agent))
         continue
       }
       out.isTaken = true
       out.waitingSince = this.io.now()
       this.outs = [...this.outs, out]
     }
-
-    return confirmed
   }
 
   nextCheckAt(): number | null {
