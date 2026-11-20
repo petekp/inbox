@@ -177,6 +177,22 @@ test('a reply the queue refuses opens its field again with its words', async () 
   expect(panel.panel.input?.state.value()).toBe('Use the cache')
 })
 
+test('a second reply with new words while the first is out is refused by the queue and opens its field with them', async () => {
+  const panel = await opened()
+  panel.click(nodeOf(panel, 'row d13'))
+  later(PRESS_GUARD_MS + 1)
+  panel.click(buttonOf(panel, 'd13', 'Reply'))
+  typeIn(found(panel.panel.input, 'the reply field').state, 'Use the cache')
+  panel.click(buttonOf(panel, 'd13', 'Send'))
+  expect(panel.panel.ui.typing).toBeNull()
+  panel.click(buttonOf(panel, 'd13', 'Reply'))
+  typeIn(found(panel.panel.input, 'the reply field').state, 'Use the network')
+  panel.click(buttonOf(panel, 'd13', 'Send'))
+  expect(panel.panel.queue.lines.d13?.text).toBe('Not sent: the last press on this row has not finished.')
+  expect(panel.panel.ui.typing).toBe('d13')
+  expect(panel.panel.input?.state.value()).toBe('Use the network')
+})
+
 const FACTS = { isFetchingPrs: false, hasAsksBlocker: false, lastTypedMessageAt: null }
 const readOn = (ui: UiState, view: SessionView, at: number, more: UiEvent[] = []) =>
   applyEvents(ui, view, [{ type: 'read', host: FACTS }, ...more], at).ui

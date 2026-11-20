@@ -3,10 +3,11 @@ import type { PrAction } from '../../hooks/pr-press'
 import type { TabView as View } from './core'
 import { stepRow } from '../../hooks/row-motion'
 import type { RowTarget, RowTrack } from '../../hooks/row-motion'
-import { tabState, drawnRows, undoing } from './tab-state'
+import { tabState, drawnRows } from './tab-state'
+import { isUndoing } from './tab-press'
 import type { Row } from './tab-state'
 import { reducedMotion } from './tab-motion'
-import { openRowId } from './tab-selection'
+import { openRowId } from './tab-ui'
 import { prPlan } from './tab-rows'
 import type { PrBlockPlan } from './tab-rows'
 import { prLastLine } from './tab-pr-lines'
@@ -58,7 +59,7 @@ export const PR_CLEAR_MOTION = 'pr-clear'
  */
 export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<string>): DrawnPrs {
   const { blocks, rows } = prPlan(v)
-  const openId = openRowId(rows, 'prs', v)
+  const openId = openRowId('prs')
   const listed = new Set(rows.map(r => r.id))
   const last = tabState.lastPrs
   const step = (id: string, target: RowTarget, isNew = false): RowTrack | null => {
@@ -99,7 +100,7 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
       ? 'gone'
       : b.state.is === 'open'
         ? 'open'
-        : undoing.has(id)
+        : isUndoing(id)
           ? 'undoing'
           : 'settled'
     const track = step(motion, target)

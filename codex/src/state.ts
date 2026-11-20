@@ -160,7 +160,7 @@ export type Heard = {
   promptMissedAt: number | null
 }
 
-export const NOTHING_HEARD: Heard = {
+const NOTHING_HEARD: Heard = {
   startAt: null,
   promptAt: null,
   prompts: 0,

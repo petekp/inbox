@@ -104,6 +104,7 @@ export function restoredUi(ui: UiState): UiState {
     heldClose: {},
     isOpening: false,
     opensOnAsks: false,
+    isFirstOpen: false,
   }
 }
 
@@ -168,7 +169,7 @@ function step(ui: UiState, view: SessionView, by: 1 | -1, ids: string[], now: nu
 function handle(ui: UiState, view: SessionView, e: UiEvent, now: number): UiStep {
   switch (e.type) {
     case 'opened':
-      return withCommands(opened(ui, now))
+      return withCommands(opened(ui, now, e.isFirst === true))
     case 'closed':
       return withCommands(closed(ui))
     case 'reset':

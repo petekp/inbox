@@ -1,6 +1,5 @@
 import type { Tab, PageTab } from '../types'
 import type { ScreenTab } from './inbox-text'
-import type { ListedTab } from './arrivals'
 
 /** Any tab a look can show: a row tab or a page tab. */
 export type ShownTab = Tab | PageTab
@@ -62,11 +61,6 @@ export function tabBadge(id: ShownTab, counts: Readonly<Record<Tab, number>>): s
   return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null
 }
 
-/** Whether a shown tab lists rows you answer or close: Asks and Finds. */
-export function isListedTab(tab: ShownTab): tab is ListedTab {
-  return tab === 'needsYou' || tab === 'findings'
-}
-
 /** Whether a shown tab is a row tab, which has rows, a count and a cursor. */
 export function isRowTab(tab: ShownTab): tab is Tab {
   return tab !== 'overview'
@@ -84,5 +78,3 @@ export function screenTabOf(tab: ShownTab): ScreenTab {
 
 /** The tabs that list rows: Asks, Finds and PRs. */
 export const ROW_TABS = TAB_NAMES.filter((t): t is TabName & { id: Tab } => isRowTab(t.id))
-
-export const LISTED_TABS = TAB_NAMES.filter((t): t is TabName & { id: ListedTab } => isListedTab(t.id))

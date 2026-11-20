@@ -79,6 +79,13 @@ Row motion and the leaving-row wait stay in the look. `Kept` goes to version 3 a
 - A stale reply reopens its field only when the person has not moved.
 - A reply's draft stays until the reply arrives.
 - After a page swap, Undo keeps its time and a refused press's text stays.
+- After the person's reply stops a row waiting, the cursor leaves that row, as in omp and Herdr.
+- A second press of the same action on a row is refused while the first is out.
+- A new press on a row clears that row's old error and note.
+- The goal field closes when its goal is sent, and its draft stays until the goal arrives.
+- Alt-click on the open row's title folds every row in the tab, as the fold-all key does.
+- Each collapse is saved at once in its own request, instead of waiting for the save before it to finish.
+- Rows that arrive are followed only when they wait on the person, so a PR is followed only for a waiting thread or a failing check.
 
 ### Terminal and desktop (PR 2.5)
 

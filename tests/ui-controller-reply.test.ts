@@ -3,6 +3,7 @@ import { test } from './test-with-timeout'
 
 import { closeItem } from '../hooks/ledger-close'
 import { PRESS_TIMEOUT_MS } from '../hooks/session-view'
+import { SETTLED_MS } from '../hooks/timing'
 import { noticeOf, rowErrorOf } from '../hooks/ui-controller'
 import { holdsOf } from '../hooks/ui-controller-reply'
 import { DEMO_REPLY_MS, type SettledOutcome } from '../hooks/ui-controller-types'
@@ -78,6 +79,18 @@ test('a reply with no words, or a repeat of an action still out on its row, send
   const answer = { action: 'answer', id: 'i2', option: 'Yes' } as const
   const first = send(ui, S, { type: 'press', press: answer, by: 'key' }, T0 + 10)
   expect(send(first.ui, S, { type: 'press', press: answer, by: 'key' }, T0 + 20).commands).toEqual([])
+  const run = sent()
+  expect(send(run.ui, S, { type: 'press', press: reply('Use Node'), by: 'key' }, T0 + 40).commands).toEqual([])
+})
+
+test('a reply with other words goes out while the first is out, and its draft stays until it arrives', () => {
+  const run = sent()
+  const second = send(run.ui, S, { type: 'press', press: reply('Use Bun'), by: 'key' }, T0 + 40)
+  expect(kinds(second.commands)).toEqual(['press'])
+  const firstArrived = withLastAction(S, 'i1', replyAction('Use Node', T0 + 45, { state: 'arrived' }))
+  expect(read(second.ui, firstArrived, T0 + 50).ui.drafts.i1?.text).toBe('Use Bun')
+  const secondArrived = withLastAction(S, 'i1', replyAction('Use Bun', T0 + 55, { state: 'arrived' }))
+  expect(read(second.ui, secondArrived, T0 + 60).ui.drafts.i1).toBe(undefined)
 })
 
 test('a sent reply’s draft is deleted once the view shows the reply arrived', () => {
@@ -170,6 +183,24 @@ test('a press whose row is gone reports its error or stale note under the tabs i
   expect(stale.ui.notes.i2).toEqual({ note: 'stale', at: T0 + 20 })
 })
 
+test('a new press on a row clears the error and stale note of its last press', () => {
+  const { ui } = openOn(S)
+  const first = send(ui, S, { type: 'press', press: { action: 'explain', id: 'i2' }, by: 'key' }, T0 + 10)
+  const refused = send(first.ui, S, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 20)
+  const stale = send(first.ui, S, { type: 'press-settled', pressId: 1, outcome: { ...OK, note: 'stale' } }, T0 + 20)
+  expect(rowErrorOf(refused.ui, 'i2', T0 + 30)).toBe(REFUSED.error)
+  const again = send(
+    refused.ui,
+    S,
+    { type: 'press', press: { action: 'answer', id: 'i2', option: 'Yes' }, by: 'key' },
+    T0 + 30,
+  )
+  expect(rowErrorOf(again.ui, 'i2', T0 + 30)).toBe(null)
+  expect(stale.ui.notes.i2).toBeDefined()
+  const noted = send(stale.ui, S, { type: 'press', press: { action: 'explain', id: 'i2' }, by: 'key' }, T0 + 30)
+  expect(noted.ui.notes.i2).toBe(undefined)
+})
+
 test('a press with no answer gives up after PRESS_TIMEOUT_MS unless its message is held or queued', () => {
   const { ui } = openOn(S)
   const pressed = send(ui, S, { type: 'press', press: { action: 'explain', id: 'i2' }, by: 'key' }, T0 + 10)
@@ -208,6 +239,18 @@ test('a confirmed Undo selects the row it brought back once a tab lists it', () 
   expect(back.ui.selection.needsYou.id).toBe('i2')
   expect(back.ui.restoring).toBe(null)
   expect(back.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i2', closedId: null })
+})
+
+test('a refused Undo whose row’s Undo time ended while it was out reports under the tabs, since its row folds', () => {
+  const closed = dismissedByPerson(S, 'i2', T0 + 5)
+  const { ui } = openOn(closed)
+  const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by: 'key' }, T0 + 10)
+  const inTime = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 20)
+  expect(rowErrorOf(inTime.ui, 'i2', T0 + 20)).toBe(REFUSED.error)
+  const late = T0 + 5 + SETTLED_MS
+  const ended = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: REFUSED }, late)
+  expect(rowErrorOf(ended.ui, 'i2', late)).toBe(null)
+  expect(noticeOf(ended.ui, late)).toEqual({ text: REFUSED.error, at: late, isError: true })
 })
 
 test('a confirmed Undo whose answer lands after the read that lists its row selects the row at once', () => {

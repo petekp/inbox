@@ -12,8 +12,9 @@ import { prMarkId, isBlockPressShown } from '../../hooks/pr-rows'
 import { isDismissed } from '../../hooks/pr-views'
 import type { PrView } from '../../types'
 import type { TabView as View } from './core'
-import { sending, SENDING, errors } from './tab-state'
-import { outPending } from './tab-press'
+import { SENDING } from './tab-state'
+import { errorOf } from './tab-ui'
+import { outOn, outPending } from './tab-press'
 import { noteOf } from './tab-parts'
 
 /** A press status, and its age after it, which stays muted. */
@@ -29,12 +30,12 @@ export function prLastLine(v: View, pr: PrView): PressLine | null {
  * Mark press out, such as Dismiss, draws none of its own, as `holdsStatusWhileOut` says.
  */
 export function pressLine(v: View, id: string, showsLast: boolean): PressLine | null {
-  const out = sending.get(id)
+  const out = outOn(id)
   const shownOut = out && !holdsStatusWhileOut(out.kind) ? out : null
   const pending = shownOut ? outPending(v, id) : null
   if (pending) return { text: feedbackText(pending, 'codex'), age: null, tone: 'muted' }
   if (shownOut && shownOut.pending === null) return { text: SENDING, age: null, tone: 'muted' }
-  const error = errors.get(id)
+  const error = errorOf(id)
   if (error) return { text: error, age: null, tone: 'error' }
   const note = noteOf(id)
   if (note) return { text: note, age: null, tone: 'muted' }

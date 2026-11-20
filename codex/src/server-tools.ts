@@ -113,6 +113,8 @@ export function shownRowsOf(args: Record<string, unknown>): Record<string, numbe
   return times(args.shownRows)
 }
 
+const strings = (raw: unknown): string[] => (Array.isArray(raw) ? raw.filter(x => typeof x === 'string') : [])
+
 export function holdsOf(args: Record<string, unknown>): Holds {
   const shownSince = typeof args.shownSince === 'number' && Number.isFinite(args.shownSince) ? args.shownSince : null
 
@@ -121,7 +123,8 @@ export function holdsOf(args: Record<string, unknown>): Holds {
     discarded: times(args.discarded),
     shownSince,
     listInput: listInputOf(args.listInput),
-    undoShown: Array.isArray(args.undoShown) ? args.undoShown.filter(x => typeof x === 'string') : [],
+    undoShown: strings(args.undoShown),
+    undoOut: strings(args.undoOut),
   }
 }
 

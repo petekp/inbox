@@ -1,26 +1,25 @@
-import { RowActions } from './row-actions'
+import { inputOf, RowActions } from './row-actions'
 import type { RowPart } from '../../hooks/row-parts'
 import { partAttrs } from './tab-part-gap'
 import { closedTitleTone, DOT, settledMark, fieldExit, settledLabel, shortAgo } from '../../hooks/rows'
 import { entryId } from '../../hooks/action-plan'
-import { isListedTab, isRowTab } from '../../hooks/tabs'
+import { isRowTab } from '../../hooks/tabs'
 import { feedbackText, feedbackTone, hasAge, isStatusUnderActions, type FeedbackTone } from '../../hooks/feedback'
-import { SETTLED_MS } from '../../hooks/timing'
 import type { RowView } from '../../hooks/rows'
 import { TAB_OF } from './arrivals'
-import { closedTitleClock, newRowIn, showNewRows } from '../../hooks/arrivals'
+import { closedTitleClock, newRowIn } from '../../hooks/arrivals'
+import { newRowsOf } from '../../hooks/ui-controller-tabs'
+import type { InputKind } from '../../hooks/ui-controller-types'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
 import { drawsPanel, stepRow } from '../../hooks/row-motion'
 import type { RowTarget, RowTrack } from '../../hooks/row-motion'
-import { isUndoLeft } from './settle'
-import { tabState, drafts, sending, SENDING, errors, copies, entering, undoing, drawnRows } from './tab-state'
-import type { Row, Entry, Lists } from './tab-state'
-import { reducedMotion, drawIn } from './tab-motion'
-import { drawnTab, shownSettled, openRowId, open, isOpenGuarded, rowActions } from './tab-selection'
-import { discardReply, outPending } from './tab-press'
-import { foldAllHere } from './tab-fold-all'
-import { act, listsOf, pressTitle } from './tab-rows'
+import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
+import type { Key, Row, Entry, Lists } from './tab-state'
+import { reducedMotion } from './tab-motion'
+import { dispatch, drawnTab, errorOf, isGuarded, openRowId, pressRow } from './tab-ui'
+import { isUndoing, outOn, outPending } from './tab-press'
+import { listsOf, pressTitle, shownSettled } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
 import type { DrawnPrs } from './tab-pr-steps'
 import { stepStatus } from './tab-status-steps'
@@ -53,10 +52,7 @@ export function stepLists(v: View): {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
   const t = drawnTab()
-  if (document.visibilityState === 'visible' && !tabState.isHelpShown)
-    tabState.newRows = showNewRows(tabState.newRows, t, now)
-  const rows = isListedTab(t) ? lists.byTab[t] : []
-  const openId = isRowTab(t) ? openRowId(rows, t, v) : undefined
+  const openId = isRowTab(t) ? openRowId(t) : undefined
   const changed = new Set<string>()
   const kept = new Set<string>()
   const prs = t === 'prs' ? stepPrs(v, now, changed, kept) : null
@@ -79,7 +75,7 @@ export function stepLists(v: View): {
       const target: RowTarget = !listedIds.has(id)
         ? 'gone'
         : 'settled' in x
-          ? undoing.has(id)
+          ? isUndoing(id)
             ? 'undoing'
             : 'settled'
           : id === openId
@@ -107,30 +103,21 @@ export function stepLists(v: View): {
   return { lists, prs, status, banners, changed }
 }
 
-export async function undo(r: RowView) {
-  if (undoing.has(r.id)) return
-  const t = TAB_OF[r.type]
-  undoing.add(r.id)
-  try {
-    await act(r.id, { action: 'undo', id: r.id }, () => open(t, r.id))
-  } finally {
-    undoing.delete(r.id)
-    const at = tabState.seen.get(r.id)
-    const isTimeLeft = at !== undefined && isUndoLeft(at, Date.now())
-    const error = errors.get(r.id)
-    if (error && !isTimeLeft) {
-      tabState.lineNote = { text: error, at: Date.now(), isError: true }
-      drawIn(SETTLED_MS)
-    }
-    tabState.draw()
-  }
+const undo = (r: RowView, by: InputKind) => pressRow({ action: 'undo', id: r.id }, by)
+
+/** The row's buttons, or none while its reply field is open. */
+export function rowActions(row: Row): { options: Key[]; keys: Key[]; more: Key[] } {
+  if (row.typing && tabState.ui.typing === row.id) return { options: [], keys: [], more: [] }
+
+  return { options: row.options, keys: row.keys, more: row.more }
 }
 
 /** A row's press as its line draws it: whether one is out or still sending, and the status it shows. */
 function pressOf(row: Row) {
-  const isPressing = sending.has(row.id)
+  const out = outOn(row.id)
+  const isPressing = out !== null
   const pending = outPending(tabState.view, row.id)
-  const isSending = isPressing && sending.get(row.id)?.pending === null
+  const isSending = out !== null && out.pending === null
   const f = isFeedbackShown(row) ? row.feedback : null
   const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
   const tone: FeedbackTone = isPressing ? 'muted' : feedbackTone(f)
@@ -162,7 +149,8 @@ export function ListRow({
 }: {
   row: Row
   track: RowTrack
-  onSelect: (isAll: boolean) => void
+  /** A press on the row's line, and whether Option was held. */
+  onSelect: (isAll: boolean, by: InputKind) => void
   now: number
 }) {
   const isClosing = drawsPanel(track) && (track.state === 'closing' || track.state === 'leaving')
@@ -173,7 +161,7 @@ export function ListRow({
       class={`${markClassOf(row.handleTone ?? null, row.isHandleRunning ?? false)}${isTreeHung ? ' has-tree' : ''}`}
       ref={row.isHandleRunning && !isTreeHung ? pulseInStep : undefined}
     >
-      <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
+      <TitleTint row={newRowIn(newRowsOf(tabState.ui), row.id, drawnTab())} tone="key">
         {isTreeHung ? (
           <span class="glyph" ref={row.isHandleRunning ? pulseInStep : undefined}>
             <MarkGlyph text={row.handle} />
@@ -215,7 +203,7 @@ export function ListRow({
             <span class="lead">{row.lead}</span>{' '}
           </>
         ) : null}
-        <TitleTint row={newRowIn(tabState.newRows, row.id, drawnTab())} tone="key">
+        <TitleTint row={newRowIn(newRowsOf(tabState.ui), row.id, drawnTab())} tone="key">
           {row.title}
         </TitleTint>
       </span>
@@ -227,7 +215,7 @@ export function ListRow({
   return (
     <div
       class={`row ${isSelected ? 'selected' : 'collapsed'}${isClosing ? ' closing' : ''}`}
-      onClick={isSelected ? undefined : e => onSelect(e.altKey)}
+      onClick={isSelected ? undefined : e => onSelect(e.altKey, inputOf(e))}
     >
       {handle}
       <div class="content">
@@ -235,7 +223,7 @@ export function ListRow({
           type="button"
           class="line"
           aria-expanded={isSelected}
-          onClick={isSelected ? e => onSelect(e.altKey) : undefined}
+          onClick={isSelected ? e => onSelect(e.altKey, inputOf(e)) : undefined}
         >
           <span class="text parted">{textParts()}</span>
           {isTitleMoving ? (
@@ -275,7 +263,8 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const { keys, more } = rowActions(row)
   const copied = copies.get(row.id)
   const note = noteOf(row.id)
-  const isTyping = !!row.typing && tabState.typing === row.id
+  const isTyping = !!row.typing && tabState.ui.typing === row.id
+  const error = errorOf(row.id)
   const notes = [
     row.fold?.note ? (
       <div class="muted parted">
@@ -288,7 +277,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
       </div>
     ) : null,
     note ? <div class="muted">{note}</div> : null,
-    errors.has(row.id) ? <div class="tone-error">{errors.get(row.id)}</div> : null,
+    error ? <div class="tone-error">{error}</div> : null,
   ].filter(Boolean)
   const bodyEnd: RowPart = row.body ? (row.bodyEnd?.() ?? 'detail') : 'title'
   const actionsAbove: RowPart = notes.length > 0 ? 'status' : bodyEnd
@@ -309,29 +298,22 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
         more={more}
         followsAnswers={row.options.length > 0 && keys[0]?.emphasis !== 'quiet'}
         reply={
-          isTyping
+          isTyping && row.typing
             ? {
                 id: row.id,
-                hint: row.typing!.hint,
-                draft: () => drafts.get(row.id)?.text ?? '',
-                onDraft: text =>
-                  drafts.set(row.id, { text, since: drafts.get(row.id)?.since ?? tabState.view?.at ?? Date.now() }),
-                send: text => {
-                  tabState.typing = null
-                  row.typing!.send(text)
-                },
+                hint: row.typing.hint,
+                draft: () => tabState.ui.drafts[row.id]?.text ?? '',
+                onDraft: text => dispatch([{ type: 'edit-draft', id: row.id, text }], { isDrawn: false }),
+                send: row.typing.send,
                 exit: row.view ? fieldExit(row.view) : 'cancel',
-                onExit: () => {
-                  if (row.view && fieldExit(row.view) === 'discard') discardReply(row.id)
-                  else {
-                    tabState.typing = null
-                    tabState.draw()
-                  }
-                },
+                onExit: () =>
+                  dispatch([
+                    { type: 'close-field', id: row.id, isDiscard: !!row.view && fieldExit(row.view) === 'discard' },
+                  ]),
               }
             : null
         }
-        isBlocked={isOpenGuarded}
+        isBlocked={() => isGuarded(row.id, 'click')}
       />
       {lines.map((l, n) => (
         <div
@@ -366,10 +348,12 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
 function SettledView({ settled: r, wasOpen }: { settled: RowView; wasOpen: boolean }) {
   const { state } = r
   if (state.is !== 'settled') return null
-  const start = tabState.seen.get(r.id) ?? Date.now()
+  const now = Date.now()
+  const start = tabState.ui.undoSeen[r.id] ?? now
   const tone = closedTitleTone(state)
-  const clock = tone === 'muted' ? undefined : closedTitleClock(tabState.closedSeen, r.id, state.at, Date.now())
-  const error = errors.get(r.id)
+  const seen = new Map(Object.entries(tabState.ui.closedSeen))
+  const clock = tone === 'muted' ? undefined : closedTitleClock(seen, r.id, state.at, now)
+  const error = errorOf(r.id)
 
   return (
     <div class={wasOpen ? 'row settled was-open' : 'row settled'}>
@@ -395,10 +379,10 @@ function SettledView({ settled: r, wasOpen }: { settled: RowView; wasOpen: boole
           </div>
           <UndoPlace
             start={start}
-            isUndoing={undoing.has(r.id)}
+            isUndoing={isUndoing(r.id)}
             canUndo={state.canUndo}
             offersUndo={state.offersUndo}
-            onUndo={() => void undo(r)}
+            onUndo={by => undo(r, by)}
           />
         </div>
       </div>
@@ -406,8 +390,7 @@ function SettledView({ settled: r, wasOpen }: { settled: RowView; wasOpen: boole
   )
 }
 
-export function Entries({ entries, group, all, now }: { entries: Entry[]; group: Group; all: Row[]; now: number }) {
-  const t = TAB_OF[group]
+export function Entries({ entries, now }: { entries: Entry[]; now: number }) {
   if (entries.length === 0) return null
 
   return (
@@ -424,7 +407,7 @@ export function Entries({ entries, group, all, now }: { entries: Entry[]; group:
                 row={x.row}
                 track={drawn.track}
                 now={now}
-                onSelect={isAll => pressTitle(t, all, all.indexOf(x.row), isAll ? foldAllHere : undefined)}
+                onSelect={(isAll, by) => pressTitle(x.row.id, isAll, by)}
               />
             ) : (
               <SettledView settled={x.settled} wasOpen={drawn.track.hasOpenForm} />

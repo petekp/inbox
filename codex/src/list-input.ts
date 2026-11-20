@@ -1,34 +1,13 @@
-import { FOLD_QUIET_MS, withListInput } from '../../hooks/timing'
-import type { ListInput } from '../../hooks/timing'
-import { cancelTimer, later } from './tab-host'
 import { instanceAbort, root, tabState } from './tab-state'
+import { dispatch } from './tab-ui'
 
-let input: ListInput | null = null
-let isPointerOnList = false
-let wake: number | undefined
+/** How often a pointer moving over the list notes input, as in the Herdr look. */
+const LIST_INPUT_STEP_MS = 250
 
-/**
- * The person's input on the list. A pointer resting on the list counts as input now, so rows never fold under it, but
- * only while this page is the active, visible tab: a hidden or replaced page gets no pointerleave.
- */
-export function listInput(now: number): ListInput | null {
-  const isPointerShown = isPointerOnList && tabState.isActive && document.visibilityState === 'visible'
-
-  return isPointerShown && input ? { since: input.since, last: now } : input
-}
-
-/** Ends a pointer the page can no longer see, as when Codex hides the tab or the window loses focus. */
-function pointerGone() {
-  if (isPointerOnList) note()
-  isPointerOnList = false
-}
-
-/** Notes an input, and draws again once the list has been quiet for FOLD_QUIET_MS, when a held row can fold. */
+/** Tells the controller the person used the list, so rows hold still until `FOLD_QUIET_MS` after the last input. */
 function note() {
-  const now = Date.now()
-  input = withListInput(listInput(now), now)
-  cancelTimer(wake)
-  wake = later(() => tabState.draw(), FOLD_QUIET_MS)
+  if (!tabState.isActive || !tabState.serverView) return
+  dispatch([{ type: 'list-input' }], { isDrawn: false })
 }
 
 const isOnList = (target: EventTarget | null) =>
@@ -36,25 +15,13 @@ const isOnList = (target: EventTarget | null) =>
 
 const options = { passive: true, signal: instanceAbort.signal }
 
-for (const type of ['pointerdown', 'keydown', 'wheel'] as const)
-  document.addEventListener(type, () => tabState.isActive && note(), options)
+for (const type of ['pointerdown', 'keydown', 'wheel'] as const) document.addEventListener(type, note, options)
 
 document.addEventListener(
-  'pointerover',
+  'pointermove',
   e => {
-    const isOn = tabState.isActive && isOnList(e.target)
-    if (isOn !== isPointerOnList) note()
-    isPointerOnList = isOn
-  },
-  options,
-)
-
-document.documentElement.addEventListener('pointerleave', pointerGone, options)
-window.addEventListener('blur', pointerGone, options)
-document.addEventListener(
-  'visibilitychange',
-  () => {
-    if (document.visibilityState !== 'visible') pointerGone()
+    const isNew = Date.now() - (tabState.ui.listInput?.last ?? 0) >= LIST_INPUT_STEP_MS
+    if (isNew && isOnList(e.target)) note()
   },
   options,
 )

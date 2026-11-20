@@ -2,9 +2,13 @@ import type { ActionEmphasis, ActionIcon, RowView } from '../../hooks/rows'
 import { actionId } from '../../hooks/press-labels'
 import type { RowPress } from '../../hooks/presses'
 import type { PressKind } from '../../types'
+import type { InputKind } from '../../hooks/ui-controller-types'
 import { actionLabel, ROW_COPY } from '../../hooks/rows'
 import { rowKeyPlan } from '../../hooks/action-plan'
 import type { AnswerRow } from '../../hooks/action-plan'
+
+/** The input a click event came from: a key pressed on a focused button sends a click with no clicks counted. */
+export const inputOf = (e: MouseEvent): InputKind => (e.detail === 0 ? 'key' : 'click')
 
 const ICONS = {
   check: 'M20 6 9 17l-5-5',
@@ -51,7 +55,7 @@ type RowAction = {
   icon?: IconName
   /** Its press is out, so it draws dim and ignores presses. */
   isOut?: boolean
-  run: () => void
+  run: (by: InputKind) => void
 }
 
 type LedgerAction = RowAction & { hotkey?: string }
@@ -62,7 +66,7 @@ export function ledgerActions(
   allOptions: boolean,
   pressing: string | null,
   on: {
-    press: (press: RowPress, kind: PressKind) => void
+    press: (press: RowPress, kind: PressKind, by: InputKind) => void
     reply: () => void
     discard: () => void
     showOptions: () => void
@@ -74,7 +78,7 @@ export function ledgerActions(
     | { slot: 'choice'; action: (typeof planned.options)[number]['action']; hotkey?: string }
   const draw = (k: Drawn): LedgerAction => {
     if (k.slot === 'retry')
-      return { label: k.label, emphasis: k.emphasis, icon: k.icon, run: () => on.press(k.press, k.kind) }
+      return { label: k.label, emphasis: k.emphasis, icon: k.icon, run: by => on.press(k.press, k.kind, by) }
     if (k.slot === 'allOptions') return { label: k.label, emphasis: k.emphasis, run: on.showOptions }
     const a = k.action
     return {
@@ -89,7 +93,7 @@ export function ledgerActions(
           ? on.reply
           : a.press.action === 'discard'
             ? on.discard
-            : () => on.press(a.press, a.kind),
+            : by => on.press(a.press, a.kind, by),
     }
   }
   return {
@@ -119,8 +123,8 @@ export function ActionButton({ action, isBlocked }: { action: RowAction; isBlock
       type="button"
       class={`${action.emphasis === 'primary' ? 'key primary' : action.emphasis === 'quiet' ? 'key ghost' : 'key'}${action.isDismiss ? ' dismiss' : ''}${action.isOut ? ' out' : ''}`}
       disabled={isBlocked() || action.isOut === true}
-      onClick={() => {
-        if (!isBlocked() && !action.isOut) action.run()
+      onClick={e => {
+        if (!isBlocked() && !action.isOut) action.run(inputOf(e))
       }}
     >
       {action.icon ? <Icon name={action.icon} /> : null}

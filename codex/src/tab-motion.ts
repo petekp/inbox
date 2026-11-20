@@ -368,31 +368,28 @@ function glideTabs(widths: Drawing['tabWidths']) {
 }
 
 /**
- * Unfolds or folds `id` in `shown`, and grows or shrinks the list drawn under `data-motion="closed-<motion>"`: an Asks
- * group's closed rows, or a Status done fold's finished rows.
+ * Starts to grow or shrink the list drawn under `data-motion="closed-<motion>"` after its fold opened or shut: an Asks
+ * group's closed rows, or a Status done fold's finished rows. Returns what runs after the caller's draw. `isOpen`
+ * reads whether the fold is open now, so a fold opened again before its list finished shrinking stays drawn.
  */
-export function toggleFold(id: string, shown: Set<string>, motion = id) {
+export function foldMove(motion: string, isOpening: boolean, isOpen: () => boolean): () => void {
   const el = root.querySelector<HTMLElement>(`[data-motion="closed-${motion}"]`)
-  if (!shown.has(id)) {
-    shown.add(id)
+  if (isOpening) {
     if (closingFolds.delete(motion) && el) delete el.dataset.closing
     else entering.add(`closed-${motion}`)
-    tabState.draw()
-    return
+    return () => undefined
   }
-  shown.delete(id)
-  if (!el || reducedMotion.matches) {
-    tabState.draw()
-    return
-  }
+  if (!el || reducedMotion.matches) return () => undefined
   closingFolds.add(motion)
-  tabState.draw()
-  el.dataset.closing = '1'
-  fadeAway(el, springOf(el, el.getBoundingClientRect().height), true)
-  later(() => {
-    if (shown.has(id) || !closingFolds.delete(motion)) return
-    tabState.draw()
-  }, LEAVE_FADE_MS + HEIGHT_SETTLE_MS)
+
+  return () => {
+    el.dataset.closing = '1'
+    fadeAway(el, springOf(el, el.getBoundingClientRect().height), true)
+    later(() => {
+      if (isOpen() || !closingFolds.delete(motion)) return
+      tabState.draw()
+    }, LEAVE_FADE_MS + HEIGHT_SETTLE_MS)
+  }
 }
 
 /** Scrolls the open row into view, and again once its height has come to rest. */
@@ -405,10 +402,6 @@ export function revealSelected() {
 }
 
 const TIMER_SLACK_MS = 50
-
-export function drawIn(ms: number) {
-  later(tabState.draw, ms + TIMER_SLACK_MS)
-}
 
 let moveWake: { at: number; timer: ReturnType<typeof later> } | null = null
 

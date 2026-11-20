@@ -3,7 +3,7 @@ import { shownMilestones } from '../../hooks/status-goal-page'
 import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
 import { WAS_PREFIX } from '../../hooks/status-page'
 import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { statusUnfolded, tabState } from './tab-state'
+import { tabState } from './tab-state'
 import { isParentFolded } from './tab-status-fold'
 import { stepLines } from './tab-line-steps'
 import type { TextLine } from './tab-line-steps'
@@ -35,7 +35,7 @@ const milestoneLines = (milestones: MilestoneRow[]): GoalLine[] =>
 
 /** The goal's lines that step: the milestones it draws, none while a met goal's fold is shut. */
 const goalLines = (page: StatusPage): GoalLine[] =>
-  page.goal ? milestoneLines(shownMilestones(page.goal, id => statusUnfolded.has(id))) : []
+  page.goal ? milestoneLines(shownMilestones(page.goal, id => tabState.ui.statusUnfolded.includes(id))) : []
 
 /** The lines under the goal's text: what it was, where it stands now, and what it waits on. None under a suggestion. */
 function goalHead(page: StatusPage): TextLine[] {

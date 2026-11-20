@@ -1,4 +1,4 @@
-import { Icon } from './row-actions'
+import { Icon, inputOf } from './row-actions'
 import {
   closedLineAction,
   closedShown,
@@ -18,18 +18,18 @@ import type { ResultMark } from '../../hooks/rows'
 import type { Finding } from '../../types'
 import type { FoldGroup } from './arrivals'
 import type { TabView as View } from './core'
-import { unfolded, closedAll, sending, closingFolds, drawnRows, tabState } from './tab-state'
-import type { Row, Entry, Lists } from './tab-state'
-import { clickFold } from './tab-fold-all'
-import { toggleFold } from './tab-motion'
-import { act } from './tab-rows'
+import { closingFolds, drawnRows, tabState } from './tab-state'
+import type { Entry, Lists } from './tab-state'
+import { clickFold, toggleFold } from './tab-fold-all'
+import { outOn } from './tab-press'
+import { dispatch, pressRow } from './tab-ui'
 import { ResultMarkView, GroupTitle, EmptyState } from './tab-parts'
 import { Entries } from './tab-list'
 
 function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): ClosedLine[] {
   const closed = v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks']
 
-  return closedShown(closed, settledIn(entries), closedAll.has(kind)).map(d => ({
+  return closedShown(closed, settledIn(entries), tabState.ui.closedAll.includes(kind)).map(d => ({
     id: d.id,
     how: d.how,
     ask: d.ask,
@@ -40,19 +40,7 @@ function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): Clos
   }))
 }
 
-function ItemGroup({
-  v,
-  kind,
-  entries,
-  all,
-  now,
-}: {
-  v: View
-  kind: 'question' | 'task'
-  entries: Entry[]
-  all: Row[]
-  now: number
-}) {
+function ItemGroup({ v, kind, entries, now }: { v: View; kind: 'question' | 'task'; entries: Entry[]; now: number }) {
   const title = kind === 'question' ? 'Questions' : 'Tasks'
   const mark = NEEDS_YOU_MARKS[kind]
   const rest = staying(entries)
@@ -62,7 +50,7 @@ function ItemGroup({
   return (
     <section>
       <GroupTitle title={title} count={waitingCount(rows.map(r => r.view))} mark={mark} />
-      <Entries entries={entries} group={kind} all={all} now={now} />
+      <Entries entries={entries} now={now} />
       <GroupEnd
         group={kind}
         empty={groupEmpty(title, rest)}
@@ -118,7 +106,7 @@ function GroupEnd({
   now: number
 }) {
   const earlier = earlierLabel(total, closed.length)
-  const isUnfolded = unfolded.has(group)
+  const isUnfolded = tabState.ui.unfolded.includes(group)
   const isListed = total > 0 && (isUnfolded || closingFolds.has(group))
 
   return (
@@ -135,12 +123,7 @@ function GroupEnd({
               type="button"
               class="fold"
               data-fold={group}
-              onClick={e =>
-                clickFold(e, isUnfolded, () => {
-                  closedAll.delete(group)
-                  toggleFold(group, unfolded)
-                })
-              }
+              onClick={e => clickFold(e, isUnfolded, () => toggleFold(group))}
             >
               {foldLabel(total)}
               <Icon name={isUnfolded ? 'down' : 'right'} />
@@ -160,7 +143,11 @@ function GroupEnd({
                     <div class="muted">{d.ask}</div>
                     <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
                     {action ? (
-                      <button type="button" disabled={sending.has(d.id)} onClick={() => act(d.id, action.press)}>
+                      <button
+                        type="button"
+                        disabled={outOn(d.id) !== null}
+                        onClick={e => pressRow(action.press, inputOf(e))}
+                      >
                         {action.label}
                       </button>
                     ) : null}
@@ -171,14 +158,7 @@ function GroupEnd({
             )
           })}
           {earlier ? (
-            <button
-              type="button"
-              class="earlier"
-              onClick={() => {
-                closedAll.add(group)
-                tabState.draw()
-              }}
-            >
+            <button type="button" class="earlier" onClick={() => dispatch([{ type: 'earlier', fold: group }])}>
               {earlier}
             </button>
           ) : null}
@@ -197,7 +177,6 @@ function notHeardText(v: View): [string, string?] | null {
 }
 
 export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
-  const all = lists.byTab.needsYou
   const closedCount = itemsClosed(v, 'question', lists.questions).length + itemsClosed(v, 'task', lists.tasks).length
   const notHeard = notHeardText(v)
   const empty = emptyTab(v, {
@@ -220,8 +199,8 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
           </div>
         </section>
       ) : null}
-      <ItemGroup v={v} kind="question" entries={lists.questions} all={all} now={now} />
-      <ItemGroup v={v} kind="task" entries={lists.tasks} all={all} now={now} />
+      <ItemGroup v={v} kind="question" entries={lists.questions} now={now} />
+      <ItemGroup v={v} kind="task" entries={lists.tasks} now={now} />
     </main>
   )
 }
@@ -230,7 +209,7 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
   const settled = settledIn(lists.findings)
   const closedOf = (kind: Finding['kind']) => v.findings.closed.filter(f => f.kind === kind)
   const shown = (kind: Finding['kind']) =>
-    closedShown(closedOf(kind), settled, closedAll.has(kind)).map(f => ({
+    closedShown(closedOf(kind), settled, tabState.ui.closedAll.includes(kind)).map(f => ({
       id: f.id,
       how: f.how,
       ask: f.title,
@@ -256,7 +235,7 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
         return (
           <section>
             <GroupTitle title={g.title} count={waitingCount(rows.map(r => r.view))} mark={FINDING_GROUPS[g.kind]} />
-            <Entries entries={g.entries} group="finding" all={lists.byTab.findings} now={now} />
+            <Entries entries={g.entries} now={now} />
             <GroupEnd
               group={g.kind}
               empty={groupEmpty(g.title, rest)}

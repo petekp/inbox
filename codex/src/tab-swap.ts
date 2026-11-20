@@ -1,43 +1,66 @@
 import { isRowTab, isShownTab } from '../../hooks/tabs'
 import { ARRIVAL_TABS } from '../../hooks/arrivals'
 import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
-import {
-  tabState,
-  selection,
-  drafts,
-  optionsShown,
-  unfolded,
-  statusUnfolded,
-  inboxWindow,
-  handoff,
-  root,
-} from './tab-state'
+import { restoredUi } from '../../hooks/ui-controller'
+import { freshUi, NO_UI_CURSOR } from '../../hooks/ui-controller-types'
+import type { UiState } from '../../hooks/ui-controller-types'
+import type { Draft, FoldKind } from '../../types'
+import { tabState, inboxWindow, handoff, root, CODEX_LOOK } from './tab-state'
 import type { Kept, CandidatePage, PageHandoff } from './tab-state'
 import { later, cancelTimer, dispose, callTool, READ_TIMEOUT_MS } from './tab-host'
 import { applyPageVariables } from './tab-page-variables'
 
 const KEPT_KEY = 'inbox-tab-kept'
 
-function capturedState(): Kept {
+/**
+ * What a page keeps across a swap: the controller's state as `restoredUi` leaves it, under `ui`, and beside it the
+ * fields a page from before `ui` reads, so an older page still opens on the same tab, rows, drafts and folds. Those
+ * fields leave out a sent reply's draft, since an older page drops a draft once it sends it.
+ */
+export function keptOf(ui: UiState, isDemo: boolean): Kept {
   return {
-    version: isRowTab(tabState.tab) ? 1 : 2,
-    isDemo: tabState.isDemo,
-    tab: tabState.tab,
+    version: isRowTab(ui.tab) ? 1 : 2,
+    isDemo,
+    tab: ui.tab,
     selection: {
-      needsYou: selection.needsYou?.id ?? null,
-      findings: selection.findings?.id ?? null,
-      prs: selection.prs?.id ?? null,
+      needsYou: ui.selection.needsYou.id,
+      findings: ui.selection.findings.id,
+      prs: ui.selection.prs.id,
     },
-    typing: tabState.typing,
-    drafts: [...drafts],
-    optionsShown: [...optionsShown],
-    unfolded: [...unfolded],
-    shownSince: tabState.shownSince,
-    statusUnfolded: [...statusUnfolded],
+    typing: ui.typing,
+    drafts: Object.entries(ui.drafts).filter(([id, d]) => ui.sentReplies[id]?.text !== d.text.trim()),
+    optionsShown: [...ui.optionsShown],
+    unfolded: [...ui.unfolded],
+    ...(ui.shownSince === null ? {} : { shownSince: ui.shownSince }),
+    statusUnfolded: [...ui.statusUnfolded],
+    ui: { version: 3, state: restoredUi(ui) },
   }
 }
 
-export function restoreState(incoming?: Kept) {
+/** The controller's state from what a page kept: its `ui`, or for a page from before `ui`, the fields it kept. */
+export function uiOfKept(kept: Kept, now: number): UiState {
+  if (kept.ui?.version === 3) return restoredUi({ ...freshUi(CODEX_LOOK), ...kept.ui.state, config: CODEX_LOOK })
+  const fresh = freshUi(CODEX_LOOK, isShownTab(kept.tab) ? kept.tab : 'overview')
+  const cursor = (id: string | null) => (id ? { id, index: 0, guard: null } : NO_UI_CURSOR)
+  // A draft an earlier page kept as text began before now, so a row that closed before this page stays closed.
+  const draft = (d: Draft | string): Draft => (typeof d === 'string' ? { text: d, since: now } : d)
+  const unfolded = kept.unfolded.flatMap((g): FoldKind[] => (g === 'finding' ? ['issue', 'opportunity'] : [g]))
+
+  return {
+    ...fresh,
+    // A page swap is not a leave, so the rows the old page kept in place stay.
+    shownSince: typeof kept.shownSince === 'number' ? kept.shownSince : now,
+    selection: Object.fromEntries(ARRIVAL_TABS.map(t => [t, cursor(kept.selection[t])])) as UiState['selection'],
+    typing: kept.typing,
+    drafts: Object.fromEntries(kept.drafts.map(([id, d]) => [id, draft(d)])),
+    optionsShown: [...kept.optionsShown],
+    unfolded: [...new Set(unfolded)],
+    statusUnfolded: [...(kept.statusUnfolded ?? [])],
+  }
+}
+
+/** Takes the state the last page kept, if any. Returns whether there was one. */
+export function restoreState(incoming?: Kept): boolean {
   let kept: Kept | null = incoming ?? inboxWindow.__inboxKept ?? null
   if (!incoming) {
     delete inboxWindow.__inboxKept
@@ -47,24 +70,12 @@ export function restoreState(incoming?: Kept) {
       kept ??= raw ? (JSON.parse(raw) as Kept) : null
     } catch {}
   }
-  if (kept?.version !== 1 && kept?.version !== 2) return
+  if (kept?.version !== 1 && kept?.version !== 2) return false
   tabState.isDemo = kept.isDemo
-  if (isShownTab(kept.tab)) tabState.tab = kept.tab
-  // A page swap is not a leave, so the rows the old page kept in place stay.
-  if (typeof kept.shownSince === 'number') tabState.shownSince = kept.shownSince
-  for (const t of ARRIVAL_TABS) {
-    const id = kept.selection[t]
-    selection[t] = id ? { id, openedAt: 0 } : null
-  }
-  tabState.typing = kept.typing
-  tabState.focusTyping = tabState.typing !== null
-  // A draft an earlier page kept as text began before now, so a row that closed before this page stays closed.
-  for (const [id, draft] of kept.drafts)
-    drafts.set(id, typeof draft === 'string' ? { text: draft, since: Date.now() } : draft)
-  for (const id of kept.optionsShown) optionsShown.add(id)
-  for (const g of kept.unfolded)
-    for (const fold of g === 'finding' ? (['issue', 'opportunity'] as const) : [g]) unfolded.add(fold)
-  for (const id of kept.statusUnfolded ?? []) statusUnfolded.add(id)
+  tabState.ui = uiOfKept(kept, Date.now())
+  tabState.focusField = tabState.ui.typing
+
+  return true
 }
 
 const PAGE_START_MS = 2_000
@@ -149,7 +160,7 @@ export async function swapPage(target: string) {
     while (tabState.activePresses > 0 && Date.now() < deadline) await new Promise<void>(resolve => later(resolve, 30))
     if (tabState.activePresses > 0) throw new Error('The current press is still running.')
     if (tabState.isDisposed || tabState.requestedPage !== target || staged.aborted) return
-    const kept = capturedState()
+    const kept = keptOf(tabState.ui, tabState.isDemo)
     root.replaceWith(nextRoot)
     try {
       ownedStyle.replaceWith(nextStyle)

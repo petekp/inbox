@@ -200,7 +200,7 @@ type Harness = {
 test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, held faint while its row regrows from a shrink, a moving row’s clamped title draws the closed weight and never shows with its full title, and a dismissed open row draws only its settled line', async context => {
   await inTab(async ({ state, moves, fades, settle, after }) => {
     await import('../src/tab')
-    const { read } = await import('../src/tab-read')
+    const { read } = await import('../src/tab-ui')
     await settle()
     let last = item('i2', 'Tag the release', 2)
     for (const [n, redrawAtMs] of [40, 80, 180].entries()) {

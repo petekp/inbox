@@ -1,7 +1,9 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
+import type { SessionView } from '../hooks/session-view'
 import { FOLD_QUIET_MS, SETTLED_MS } from '../hooks/timing'
+import { reduceUi } from '../hooks/ui-controller'
 import { freshUi } from '../hooks/ui-controller-types'
 import {
   closedByAgent,
@@ -15,6 +17,7 @@ import {
   send,
   sessionWith,
   T0,
+  viewOf,
   withFindings,
   withItems,
 } from './ui-controller-helpers'
@@ -45,6 +48,21 @@ test('opening on the Status page or with Help shown makes no move', () => {
   const helped = send(freshUi(LOOK, 'findings'), s, { type: 'show-help', isShown: true }, T0)
   const opened = send(helped.ui, s, { type: 'opened' }, T0)
   expect(read(opened.ui, s, T0).ui.tab).toBe('findings')
+})
+
+test('a look that opens on its Status page with no tab of its own moves to Asks only while a question waits there', () => {
+  const asked = sessionWith({ items: [question('i1')], findings: [finding('f1')] })
+  const first = (s: typeof asked) => {
+    const opened = send(freshUi(LOOK, 'overview'), s, { type: 'opened', isFirst: true }, T0)
+    return read(opened.ui, s, T0)
+  }
+  expect(first(asked).ui.tab).toBe('needsYou')
+  expect(first(asked).commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou' })
+  expect(first(sessionWith({ findings: [finding('f1')] })).ui.tab).toBe('overview')
+  expect(first(asked).ui.isFirstOpen).toBe(false)
+  const again = send(first(sessionWith({})).ui, asked, { type: 'visible', isVisible: false }, T0 + 10)
+  const shown = send(again.ui, asked, { type: 'visible', isVisible: true }, T0 + 20)
+  expect(read(shown.ui, asked, T0 + 20).ui.tab).toBe('overview')
 })
 
 test('a row that arrives on another tab is followed only when it arrives while the shown tab draws nothing, settled rows included', () => {
@@ -182,4 +200,50 @@ test('a closed look keeps no held arrivals and makes no move on a read', () => {
   expect(closed.ui.shownSince).toBe(null)
   const run = send(closed.ui, sessionWith({ items: [question('i1')] }), { type: 'read', host: FACTS }, T0 + 20)
   expect(run.ui.tab).toBe('findings')
+})
+
+test('a PR listed while PRs load is not new, and its waiting thread is followed once they have loaded', () => {
+  const empty = sessionWith({})
+  const start = openOn(empty)
+  const base = viewOf(empty, start.ui, T0 + 10)
+  const pr = {
+    ref: 'a/b#1',
+    number: 1,
+    title: 'Fix it',
+    url: 'https://github.com/a/b/pull/1',
+    isDraft: false,
+    state: 'OPEN',
+    base: 'main',
+    mergeable: 'MERGEABLE',
+    reviewDecision: '',
+    checks: [],
+    threads: [
+      {
+        id: 't1',
+        author: 'reviewer',
+        reply: null,
+        isWaiting: true,
+        isOutdated: false,
+        isLinesChanged: false,
+        path: 'a.ts',
+        line: 1,
+        body: 'Rename this',
+        url: 'https://github.com/a/b/pull/1#t1',
+        at: 5,
+      },
+    ],
+    isYours: true,
+    wasSeenOpen: true,
+    error: null,
+  }
+  const withPr: SessionView = {
+    ...base,
+    prs: { ...base.prs, drawn: [{ pr, state: { is: 'open' }, isRanked: false }] },
+  }
+  const loading = reduceUi(start.ui, withPr, { type: 'read', host: { ...FACTS, isFetchingPrs: true } }, T0 + 10)
+  expect(loading.ui.tab).toBe('needsYou')
+  expect(loading.ui.newRows).toEqual({})
+  const loaded = reduceUi(loading.ui, withPr, { type: 'read', host: FACTS }, T0 + 20)
+  expect(loaded.ui.tab).toBe('prs')
+  expect(loaded.commands).toContainEqual({ kind: 'tab-shown', tab: 'prs' })
 })

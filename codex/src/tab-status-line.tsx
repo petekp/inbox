@@ -5,16 +5,14 @@ import { COUNTS_GAP, COUNTS_LABEL, countWords, unfoldedRows } from '../../hooks/
 import { statusRowPads } from '../../hooks/status-gaps'
 import type { StatusKey } from '../../hooks/status-keys'
 import type { StatusRow } from '../../hooks/status-page'
-import { closingFolds, drafts, sending, statusUnfolded, tabState } from './tab-state'
+import { closingFolds, tabState } from './tab-state'
 import type { Key } from './tab-state'
-import { act } from './tab-rows'
 import { NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName, toggleParentFold } from './tab-status-fold'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
-import { revealSelected } from './tab-motion'
-import { switchTab, open } from './tab-selection'
-import { tabRows } from './tab-rows'
+import { dispatch, pressRow } from './tab-ui'
+import { outOn } from './tab-press'
 import { pulseInStep, markClassOf, MarkGlyph } from './tab-parts'
 import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 
@@ -29,26 +27,13 @@ function fitMergedLine(el: HTMLElement | null, merged: string) {
   el.textContent = mergedLine(merged, text => !measure || measure.measureText(text).width <= el.clientWidth)
 }
 
-/** A Status row's View press: Asks shows with the ask selected and in view. */
-function showAsk(askId: string) {
-  switchTab('needsYou')
-  const index = tabState.view ? tabRows(tabState.view, 'needsYou').findIndex(r => r.id === askId) : -1
-  open('needsYou', askId, index < 0 ? undefined : index)
-  tabState.draw()
-  revealSelected()
-}
-
-/** Opens the goal's field with `text` in it, as a fresh draft. */
-function openGoalField(text: string) {
-  drafts.set(GOAL_KEYS_ID, { text, since: tabState.view?.at ?? Date.now() })
-  tabState.typing = GOAL_KEYS_ID
-  tabState.focusTyping = true
-  tabState.draw()
-}
+/** Opens the goal's field with `text` in it. */
+const openGoalField = (text: string) => dispatch([{ type: 'open-field', id: GOAL_KEYS_ID, seed: text }])
 
 /** A Status key as a tab key. Remove goal draws out while the goal's press is on its way. */
 function statusKey({ press, label, emphasis, kind }: StatusKey): Key {
-  if (press.action === 'show-ask') return { label, emphasis, run: () => showAsk(press.askId) }
+  if (press.action === 'show-ask')
+    return { label, emphasis, run: by => dispatch([{ type: 'show-ask', id: press.askId, by }]) }
   if (press.action === 'toggle-fold') return { label, emphasis, run: () => toggleStatusFold(press.foldId) }
   if (press.action === 'toggle-collapse') return { label, emphasis, run: () => toggleParentFold(press.id) }
   if (press.action === 'type-goal') return { label, emphasis, run: () => openGoalField(press.text) }
@@ -56,8 +41,8 @@ function statusKey({ press, label, emphasis, kind }: StatusKey): Key {
   return {
     label,
     emphasis,
-    ...(sending.has(GOAL_KEYS_ID) ? { isOut: true } : {}),
-    run: () => void act(GOAL_KEYS_ID, { action: press.action, id: GOAL_KEYS_ID }, undefined, null, kind),
+    ...(outOn(GOAL_KEYS_ID) === null ? {} : { isOut: true }),
+    run: by => pressRow({ action: press.action, id: GOAL_KEYS_ID }, by, { pending: null, kind }),
   }
 }
 
@@ -182,7 +167,7 @@ export function StatusLine({
       </div>
     )
   if (row.kind === 'done-fold' || row.kind === 'counts') {
-    const isUnfolded = statusUnfolded.has(row.id)
+    const isUnfolded = tabState.ui.statusUnfolded.includes(row.id)
     const fold = foldMotion(row.id)
     const chevron = <Icon name={isUnfolded ? 'down' : 'right'} />
     const doneWords = row.kind === 'done-fold' ? row.text.split(' ') : []

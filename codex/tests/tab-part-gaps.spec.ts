@@ -107,7 +107,7 @@ test('the Codex tab pads each part of an open question, task and finding partGap
   try {
     const { applyPageVariables } = await import('../src/tab-page-variables')
     applyPageVariables()
-    const { tabState, selection, errors, copies, root } = await import('../src/tab-state')
+    const { tabState, copies, root } = await import('../src/tab-state')
     const { stepLists } = await import('../src/tab-list')
     const { NeedsYou, Findings } = await import('../src/tab-groups')
     const { settleAnswers } = await import('../src/tab-ask-tree')
@@ -132,13 +132,16 @@ test('the Codex tab pads each part of an open question, task and finding partGap
       const tab = c.kind === 'finding' ? 'findings' : 'needsYou'
       room = c.isWide ? WIDE_ROOM : NARROW_ROOM
       tabState.view = view
-      tabState.tab = tab
-      tabState.typing = c.typing ? row.id : null
-      selection[tab] = { id: row.id, openedAt: now }
-      errors.clear()
+      tabState.serverView = view
+      tabState.ui = {
+        ...tabState.ui,
+        tab,
+        typing: c.typing ? row.id : null,
+        selection: { ...tabState.ui.selection, [tab]: { id: row.id, index: 0, guard: null } },
+        errors: c.feedback === 'above' ? { [row.id]: { text: 'Could not send.', at: Date.now() } } : {},
+      }
       copies.clear()
       if (hasCopy) copies.set(row.id, { name: 'the reply', text: 'Keep it' })
-      if (c.feedback === 'above') errors.set(row.id, 'Could not send.')
       const draw = () => {
         const { lists } = stepLists(view)
         render(h(tab === 'findings' ? Findings : NeedsYou, { v: view, lists, now }), root)
