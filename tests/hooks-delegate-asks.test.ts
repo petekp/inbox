@@ -66,3 +66,21 @@ test('in a coordinator’s Herdr app terminal, the record tool and the update ad
     ['question', 'Name the command greet?'],
   ])
 })
+
+test('a delegate resumed into a conversation its inbox has not read catches up at start and adds no question', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], APP_TERMINAL)
+  terminalIs({ parent: 't1', labels: { 'fleet.domain': 'inbox' } })
+  on('session.turns', () => ({ value: 3 }))
+  on('model.fork', () => ({ value: { isAnswered: false as const, reason: 'nothing-to-fork' as const } }))
+  const said = (role: 'user' | 'assistant', text: string) => ({ role, text, toolUses: [] as never[] })
+  w.transcriptRows = [
+    said('user', 'Add a greeting CLI. Node or Python?'),
+    said('assistant', 'The plan is written. 1. Node or Python? 2. Name the command greet?'),
+  ]
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  expect(storedAsks().items).toEqual([])
+})

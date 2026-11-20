@@ -76,11 +76,12 @@ export async function delegateSession(target: HerdrTarget | null, run: Run): Pro
   return null
 }
 
-/** `delegateSession` read once, at the first call. A terminal's labels and parent are set as Herdr starts it. */
+/**
+ * `delegateSession`, read again at each call, so a label set after the terminal started, such as a coordinator's
+ * `fleet.role`, counts from the next call. Null when the read throws.
+ */
 export function delegateReader(target: HerdrTarget | null, run: Run): () => Promise<DelegateSession | null> {
-  let read: Promise<DelegateSession | null> | null = null
-
-  return () => (read ??= delegateSession(target, run).catch(() => null))
+  return () => delegateSession(target, run).catch(() => null)
 }
 
 /** What `hc get` says about a terminal beyond its status: the focus its inbox published and its last note. */

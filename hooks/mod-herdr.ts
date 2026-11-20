@@ -128,11 +128,11 @@ async function currentTarget(calls: HerdrCalls) {
   return { target: herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME }), HOME }
 }
 
-/** The delegate session the mod runs, as `delegateSession` reads it from the terminal at turn-on. */
-let delegateRead: Promise<DelegateSession | null> | null = null
-
-export function modDelegate(): Promise<DelegateSession | null> {
-  return delegateRead ?? Promise.resolve(null)
+/** The delegate session the mod runs, as `delegateSession` reads it from the terminal now. Null when the read fails. */
+export function modDelegate(calls: HerdrCalls): Promise<DelegateSession | null> {
+  return currentTarget(calls)
+    .then(({ target }) => delegateSession(target, calls.run))
+    .catch(() => null)
 }
 
 async function targetOf(calls: HerdrCalls) {
@@ -168,7 +168,6 @@ export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | HerdrOpen
 export async function startInHerdr(calls: HerdrCalls, redraw: () => unknown): Promise<void> {
   askHost = { calls, redraw }
   const target = await targetOf(calls)
-  delegateRead = delegateSession(target, calls.run).catch(() => null)
   if (target?.kind !== 'terminal') return
   const result = await startInHerdrApp(
     calls.run,
