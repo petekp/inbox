@@ -53,12 +53,28 @@ test('Edit opens the field with the suggestion and a Set button, and the fieldâ€
 test('sending the goal field closes it, and a refused send opens it again with its words while the person has not moved', () => {
   const { view } = demoScreen()
   const onStatus = applyEvents(freshUi(HERDR_LOOK, 'overview'), view, [{ type: 'open-field', id: 'goal' }], NOW).ui
-  const sent = applyEvents(onStatus, view, [{ type: 'press', press: { action: 'type', id: 'goal', text: 'Ship it' }, by: 'key' }], NOW + 1)
+  const sent = applyEvents(
+    onStatus,
+    view,
+    [{ type: 'press', press: { action: 'type', id: 'goal', text: 'Ship it' }, by: 'key' }],
+    NOW + 1,
+  )
   expect(sent.ui.typing).toBeNull()
   const outcome = { error: 'the session refused it', note: null, isUnconfirmed: false }
   const refused = applyEvents(sent.ui, view, [{ type: 'press-settled', pressId: 1, outcome }], NOW + 2)
-  expect({ typing: refused.ui.typing, draft: refused.ui.drafts.goal?.text }).toEqual({ typing: 'goal', draft: 'Ship it' })
-  const moved = applyEvents(sent.ui, view, [{ type: 'show-tab', tab: 'needsYou' }, { type: 'press-settled', pressId: 1, outcome }], NOW + 2)
+  expect({ typing: refused.ui.typing, draft: refused.ui.drafts.goal?.text }).toEqual({
+    typing: 'goal',
+    draft: 'Ship it',
+  })
+  const moved = applyEvents(
+    sent.ui,
+    view,
+    [
+      { type: 'show-tab', tab: 'needsYou' },
+      { type: 'press-settled', pressId: 1, outcome },
+    ],
+    NOW + 2,
+  )
   expect(moved.ui.typing).toBeNull()
 })
 

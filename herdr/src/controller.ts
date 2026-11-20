@@ -15,7 +15,7 @@ import { foldClickOpens } from './fold-all'
 /** The Herdr look pulses running marks on the GPU, steps title tints, and times Undo from the session's close. */
 export const HERDR_LOOK: LookConfig = { runningMarks: 'pulse', titleTint: 'steps', undoClock: 'session' }
 
-export type Applied = { ui: UiState; commands: UiCommand[]; nextWakeAt: number | null }
+type Applied = { ui: UiState; commands: UiCommand[]; nextWakeAt: number | null }
 
 /** Runs `events` through the shared controller in order, each on the state the last one left. */
 export function applyEvents(ui: UiState, view: SessionView, events: readonly UiEvent[], now: number): Applied {
@@ -50,7 +50,8 @@ function changeEvents(c: ViewChange, ui: UiState, by: InputKind): UiEvent[] {
   if ('showOptions' in c) return [{ type: 'show-options', id: c.showOptions }]
   if ('closedFold' in c) return [{ type: 'fold', fold: c.closedFold, isOpen: !ui.unfolded.includes(c.closedFold) }]
   if ('earlier' in c) return [{ type: 'earlier', fold: c.earlier }]
-  if ('toggleFold' in c) return [{ type: 'status-fold', id: c.toggleFold, isOpen: !ui.statusUnfolded.includes(c.toggleFold) }]
+  if ('toggleFold' in c)
+    return [{ type: 'status-fold', id: c.toggleFold, isOpen: !ui.statusUnfolded.includes(c.toggleFold) }]
   if ('showAsk' in c) return [{ type: 'show-ask', id: c.showAsk, by }]
 
   return [{ type: 'show-help', isShown: !ui.isHelpShown }]
@@ -94,7 +95,9 @@ export function titleClickEvents(ui: UiState, id: string, isCollapsed: boolean, 
 const isSamePress = (a: RowPress | PrPress, b: RowPress | PrPress) => JSON.stringify(a) === JSON.stringify(b)
 
 const buttonsIn = (blocks: readonly Block[]): Button[] =>
-  blocks.flatMap((b): Button[] => ('buttons' in b ? (b.buttons ?? []) : b.kind === 'empty' ? (b.under?.buttons ?? []) : []))
+  blocks.flatMap((b): Button[] =>
+    'buttons' in b ? (b.buttons ?? []) : b.kind === 'empty' ? (b.under?.buttons ?? []) : [],
+  )
 
 /** The drawn button that makes `press`, for its label, kind and effects, as when the undo key presses a drawn Undo. */
 export function buttonOf(blocks: readonly Block[], press: RowPress | PrPress): Button | null {
@@ -112,7 +115,10 @@ export type LeftSession = { ui: UiState; shownAt: number }
  * The sessions whose state the look keeps: those holding a draft or a sent reply, the most recently shown first, and
  * those with a press still out, whose answer the state's press ids match.
  */
-export function keptLeft(left: Record<string, LeftSession>, hasPressOut: (id: string) => boolean): Record<string, LeftSession> {
+export function keptLeft(
+  left: Record<string, LeftSession>,
+  hasPressOut: (id: string) => boolean,
+): Record<string, LeftSession> {
   const out = Object.entries(left).filter(([id]) => hasPressOut(id))
 
   return { ...keptUiStates(left, null), ...Object.fromEntries(out) }

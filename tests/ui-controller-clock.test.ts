@@ -96,13 +96,21 @@ test('an answer still queued when its Undo ends wakes the look once its message 
     ...S,
     ledger: closeItem(S.ledger, 'i1', { how: 'answered', outcome: 'Yes' }, at),
     lastActions: {
-      i1: { kind: 'mark' as const, action: 'answer', text: 'Yes', at, delivery: { state: 'queued' as const, message: 'Yes' } },
+      i1: {
+        kind: 'mark' as const,
+        action: 'answer',
+        text: 'Yes',
+        at,
+        delivery: { state: 'queued' as const, message: 'Yes' },
+      },
     },
   }
   const { ui } = openOn(S, at - 100)
   const afterUndo = at + SETTLED_MS + 1
   const listed = send(ui, answered, { type: 'list-input' }, afterUndo - 2)
-  expect(readWakeAt(listed.ui, viewOf(answered, listed.ui, afterUndo), afterUndo)).toBe(at + SETTLED_MS + QUEUED_AFTER_MS)
+  expect(readWakeAt(listed.ui, viewOf(answered, listed.ui, afterUndo), afterUndo)).toBe(
+    at + SETTLED_MS + QUEUED_AFTER_MS,
+  )
 })
 
 test('Undo timed from the first read starts when the look first draws the closed row, and the host is told which rows it keeps', () => {

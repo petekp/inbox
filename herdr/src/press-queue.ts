@@ -6,15 +6,7 @@ import type { SessionView } from '../../hooks/session-view'
 import type { Holds } from '../../hooks/timing'
 import type { LocalResult, PressKind } from '../../types'
 import type { LastPress } from './files'
-import {
-  nextOutCheckAt,
-  notAppliedLine,
-  notAppliedText,
-  notSentLine,
-  outAction,
-  rowSignature,
-  settleOuts,
-} from './out'
+import { nextOutCheckAt, notAppliedLine, notAppliedText, notSentLine, outAction, rowSignature, settleOuts } from './out'
 import type { Ended, Out, RowLine } from './out'
 import { newPressId, pressFileText, pressPath } from './press-file'
 import { firstError, isRunHere, pendingOf } from './run-here'
@@ -54,7 +46,7 @@ type Sent = { is: 'refused' } | { is: 'sent'; finish: (runHere: RunHere, ran: ()
  * What a press carries besides its press: what it opens or copies, its button's label and kind, the text a reply
  * sends, and the id the shared controller gave it.
  */
-export type SendOptions = {
+type SendOptions = {
   effects: readonly Effect[]
   label: string
   kind: PressKind | null

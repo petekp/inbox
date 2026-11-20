@@ -224,7 +224,8 @@ test('each case of the followed terminal draws its own message, and a read sessi
   const o = {
     now: NOW,
     holds: { ...NO_HOLDS, shownSince: NOW },
-    notes: {}, queue: { outs: [], lines: {} },
+    notes: {},
+    queue: { outs: [], lines: {} },
   }
   const cases: [Followed, Parameters<typeof screenOf>[1]][] = [
     [{ is: 'no-terminal' }, null],

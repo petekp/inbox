@@ -52,9 +52,14 @@ test('a press is refused, with the reason on its row, when its row has a press o
   })
   expect(queue.outs.length).toBe(1)
   expect(queue.takeEnded()).toEqual([
-    { uiPressId: 2, outcome: { error: 'the last press on this row has not finished.', note: null, isUnconfirmed: false } },
+    {
+      uiPressId: 2,
+      outcome: { error: 'the last press on this row has not finished.', note: null, isUnconfirmed: false },
+    },
   ])
-  expect(new PressQueue(fakeIo().io).send(null, { action: 'done', id: rowId }, opts('Done', 'mark', 1)).is).toBe('refused')
+  expect(new PressQueue(fakeIo().io).send(null, { action: 'done', id: rowId }, opts('Done', 'mark', 1)).is).toBe(
+    'refused',
+  )
 })
 
 test('a press shows its own opens’ result at once, then writes its file with it and wakes the session file’s terminal', async () => {
@@ -154,20 +159,35 @@ const taken = () => fakeIo({ isGone: async () => true }).io
 
 test('the host’s answer to a reply ends it as applied, stale or failed, for the shared controller', async () => {
   const answers: [SessionView, (pressId: string) => LastPress, SettledOutcome][] = [
-    [replied({ state: 'arrived' }), id => ({ id, outcome: 'applied' }), { error: null, note: null, isUnconfirmed: false }],
-    [replied({ state: 'queued', message: REPLY }), id => ({ id, outcome: 'stale' }), { error: null, note: 'stale', isUnconfirmed: false }],
+    [
+      replied({ state: 'arrived' }),
+      id => ({ id, outcome: 'applied' }),
+      { error: null, note: null, isUnconfirmed: false },
+    ],
+    [
+      replied({ state: 'queued', message: REPLY }),
+      id => ({ id, outcome: 'stale' }),
+      { error: null, note: 'stale', isUnconfirmed: false },
+    ],
     [
       replied({ state: 'failed', reason: 'the session refused it' }),
       id => ({ id, outcome: 'applied' }),
       { error: 'the session refused it', note: null, isUnconfirmed: false },
     ],
-    [replied({ state: 'unconfirmed', message: REPLY }), id => ({ id, outcome: 'applied' }), { error: null, note: null, isUnconfirmed: true }],
+    [
+      replied({ state: 'unconfirmed', message: REPLY }),
+      id => ({ id, outcome: 'applied' }),
+      { error: null, note: null, isUnconfirmed: true },
+    ],
   ]
   for (const [shown, last, outcome] of answers) {
     const queue = new PressQueue(taken())
     const pressId = await sendReply(queue, 7)
     await queue.settle(shown, last(pressId), AGENT)
-    expect({ outs: queue.outs.length, ended: queue.takeEnded() }).toEqual({ outs: 0, ended: [{ uiPressId: 7, outcome }] })
+    expect({ outs: queue.outs.length, ended: queue.takeEnded() }).toEqual({
+      outs: 0,
+      ended: [{ uiPressId: 7, outcome }],
+    })
   }
 })
 

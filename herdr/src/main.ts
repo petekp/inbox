@@ -313,7 +313,8 @@ export default class Inbox extends View {
     const b = from ?? buttonOf(this.blocks, p)
     const d = b?.does.is === 'press' ? b.does : null
     const isGoal = p.action === 'type' && p.id === GOAL_KEYS_ID
-    const label = p.action !== 'type' ? (b?.label ?? '') : isGoal && view ? goalSubmitLabel(view.statusPage) : ROW_COPY.send
+    const label =
+      p.action !== 'type' ? (b?.label ?? '') : isGoal && view ? goalSubmitLabel(view.statusPage) : ROW_COPY.send
     const reply = p.action === 'type' && !isGoal ? p.text.trim() : undefined
     const options = { effects: d?.effects ?? [], label, kind: d?.kind ?? null, uiPressId: c.pressId }
     const sent = this.queue.send(target, p, reply === undefined ? options : { ...options, reply })
@@ -364,7 +365,8 @@ export default class Inbox extends View {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
       press: (b, cx, isAll) => this.apply(buttonEvents(b.does, this.ui, 'click', isAll), cx, b),
-      collapse: (id, isCollapsed, cx, isAll) => this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
+      collapse: (id, isCollapsed, cx, isAll) =>
+        this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
       select: (id, cx) => this.apply(titleClickEvents(this.ui, id, false, false), cx),
       pick: (tab: ShownTab, cx) => this.apply([{ type: 'show-tab', tab }], cx),
       motion: new Map(),

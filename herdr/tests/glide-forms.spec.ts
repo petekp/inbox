@@ -219,7 +219,8 @@ test('a Dismiss whose reply lands 16, 100 or 300 ms after its press moves the li
 test('a Dismiss out on a row the cursor leaves with j before its reply grows no status on the row it closes', () => {
   const pressedOn = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
   const move = keyMove('j', [], pressedOn, null)
-  const next = move?.is === 'event' && move.event.type === 'step' ? move.event.ids[move.event.ids.indexOf('d13') + 1] : null
+  const next =
+    move?.is === 'event' && move.event.type === 'step' ? move.event.ids[move.event.ids.indexOf('d13') + 1] : null
   const left = tabBlocks(demoScreen(), uiOn('needsYou', { selected: next ?? null }))
   const pressedThenLeft = outOn(left, 'd13', 'dismiss', 'Dismiss', 'mark')
   const statusOf = (blocks: Block[]) =>
