@@ -19,6 +19,8 @@ const NO_BRANCH_ANSWERS = {
   'a folder that is not a Git repository':
     'failed to run git: fatal: not a git repository (or any of the parent directories): .git\n',
   'a repository with no remote': 'no git remotes found',
+  'a repository whose remotes are not on GitHub':
+    'none of the git remotes configured for this repository point to a known GitHub host. To tell gh about a new GitHub host, please use `gh auth login`',
   'a branch with no PR': 'no pull requests found for branch "main"',
 }
 

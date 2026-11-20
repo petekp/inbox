@@ -246,9 +246,11 @@ function withSeen(view: Omit<PrView, 'wasSeenOpen'>, previous: PrView | undefine
  * What `gh pr view` prints when the folder has no branch to look a PR up for, so the session has no branch PR:
  * "no pull requests found for branch ...", "could not determine current branch: failed to run git: not on any branch"
  * on a detached HEAD, "failed to run git: fatal: not a git repository ..." outside a repository, and "no git remotes
- * found" in a repository with no remote, as a new one has.
+ * found" in a repository with no remote, as a new one has, and "none of the git remotes configured for this repository
+ * point to a known GitHub host" in one whose remotes are not on GitHub.
  */
-const NO_BRANCH_PR = /no pull requests found|not on any branch|not a git repository|no git remotes found/i
+const NO_BRANCH_PR =
+  /no pull requests found|not on any branch|not a git repository|no git remotes found|none of the git remotes configured for this repository point to a known github host/i
 
 /**
  * The ref of the branch's PR, from gh. `known` is the branch's PR as of the last fetch: it stays the branch's PR when
