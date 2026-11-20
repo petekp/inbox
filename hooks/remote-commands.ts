@@ -108,6 +108,7 @@ export const REMOTE_ACTIONS: readonly RowPress['action'][] = [
   'dismiss',
   'discuss',
   'explain',
+  'compare',
   'issue',
   'discard',
   'remove-goal',

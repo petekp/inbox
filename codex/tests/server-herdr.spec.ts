@@ -503,3 +503,70 @@ test('companion goal controls reject stale views and retain outcomes across retr
     await removeTempDir(dir, handle)
   }
 })
+
+test('a companion Compare queues once and keeps the design question open', async () => {
+  const dir = tempDir()
+  const now = 2_000_000
+  const session = 'compare-session'
+  await updateState(dir, session, s => ({
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items: [
+        {
+          id: 'i1',
+          kind: 'question',
+          ask: 'Which layout should we use?',
+          label: null,
+          from: 'record',
+          options: ['North', 'South'],
+          rec: null,
+          turn: 1,
+          at: 1,
+          helps: [],
+          isDesignChoice: true,
+        },
+      ],
+    },
+  }))
+  const messages: string[] = []
+  const handle = makeServer({
+    dir,
+    now: () => now,
+    exec: async args => {
+      if (args.includes('queue')) messages.push(args.join(' '))
+      return { code: 0, stdout: 'Queued message fixture', stderr: '' }
+    },
+    tabHtml: '',
+    fallbackCli: async () => 'codex',
+    comparePage: '/fixture/compare.html',
+  })
+  const scope = [{ id: session, name: 'Compare check' }]
+  try {
+    const command: RemoteCommand = {
+      format: 2,
+      kind: 'command',
+      id: `${now.toString(36)}-compare-command-fixture`,
+      session,
+      issuedAt: now,
+      expected: remoteRowVersion(await readState(dir, session), 'i1'),
+      press: { action: 'compare', id: 'i1' },
+    }
+    const parsed = pressFile(JSON.stringify(command))
+    assert.ok(parsed.ok && parsed.file.format === 2)
+    const request = { version: 1, operation: 'apply', session, file: parsed.file } as const
+    await handle.companion(request, scope)
+    await handle.companion(request, scope)
+    const saved = await readState(dir, session)
+    assert.equal(saved.remoteCommands[command.id]?.state, 'applied')
+    assert.deepEqual(
+      saved.ledger.items.map(item => item.ask),
+      ['Which layout should we use?'],
+    )
+    assert.equal(messages.length, 1)
+    assert.match(messages[0]!, /\/fixture\/compare\.html/)
+    assert.match(messages[0]!, /Which layout should we use\?/)
+  } finally {
+    await removeTempDir(dir, handle)
+  }
+})
