@@ -464,7 +464,8 @@ var CLAUDE_CODE = {
       kind: "different",
       reason: "Only the fullscreen terminal lets a plugin scroll the conversation, so the classic terminal and the Claude app draw no Show explanation."
     },
-    "done-press-age": { kind: "full" }
+    "done-press-age": { kind: "full" },
+    "delegate-asks": { kind: "full" }
   }
 };
 
@@ -625,7 +626,8 @@ var CODEX = {
       kind: "unsupported",
       reason: "Codex gives a plugin no call that scrolls its conversation."
     },
-    "done-press-age": { kind: "full" }
+    "done-press-age": { kind: "full" },
+    "delegate-asks": { kind: "full" }
   }
 };
 
@@ -735,7 +737,8 @@ var OMP = {
       kind: "unsupported",
       reason: "omp's conversation is the terminal's own scrollback, which no extension can scroll."
     },
-    "done-press-age": { kind: "full" }
+    "done-press-age": { kind: "full" },
+    "delegate-asks": { kind: "full" }
   }
 };
 
@@ -1982,6 +1985,31 @@ async function delegatesInHc(target, run, isRunning) {
   }
   return null;
 }
+async function delegateSession(target, run) {
+  if (target?.kind !== "terminal")
+    return null;
+  for (const hc of target.hc) {
+    const r = await run([hc, "get", target.terminal, "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
+    if (r.code === UNSTARTABLE_CODE)
+      continue;
+    if (r.code !== 0)
+      return null;
+    try {
+      const t = JSON.parse(r.stdout);
+      const parent = typeof t?.parent === "string" && t.parent.trim() ? t.parent.trim() : null;
+      const domain = t?.labels?.["fleet.domain"];
+      const hasDomain = typeof domain === "string" && domain.trim() !== "";
+      const isCoordinator = t?.labels?.["fleet.role"] === "coordinator";
+      return !isCoordinator && (parent !== null || hasDomain) ? { parent } : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function delegateReader(target, run) {
+  return () => delegateSession(target, run).catch(() => null);
+}
 async function described(hc, address, run) {
   const r = await run([hc, "get", address, "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
   if (r.code !== 0)
@@ -2019,6 +2047,34 @@ function childAgents(stdout, parent) {
 
 // ../hooks/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
+
+// ../hooks/ask-subject.ts
+var NAMED_THING = /#\d+|\b\d{2,}\b|\b[A-Z][A-Z0-9]+-\d+\b|https?:\/\/|[\w~.-]*\/[\w.-]+|\b[\w-]+\.[a-z]{1,5}\b|`[^`]+`|"[^"]+"|\u201C[^\u201D]+\u201D/;
+var EMPTY_WORDS = new Set(`a about above after again ahead all already also an and any anything are as at back be been before being below both
+but by can could did do does doing done each either else every everything first for from get go going had has have
+here how i if in into is it its just last later lets let me more my need next no not now of ok okay on once one ones
+only or other others our out over own rest same should so some something soon still such sure than that the their
+them then there these they this those to today too until up us want was way we were what when where whether which who why
+will with would yes yet you your
+approve proceed continue start stop wait hold skip leave keep drop cancel finish resume restart retry redo
+run merge push pull commit deploy ship publish open close post send file fix build make try test check
+review mark ready use take add remove delete update change apply land rebase install copy move create write draft
+edit set show see look pick choose decide answer reply tell say ask like prefer handle follow work
+pr prs branch thing step plan design option variant version note rule issue item task question proposal idea
+code problem stuff part green current new old latest previous mentioned proposed suggested remaining pending`.split(/\s+/));
+function stem2(word) {
+  return word.replace(/(?:ies|es|s|ed|ing)$/, "");
+}
+function isEmptyWord(word) {
+  if (word.length === 1 || word === "ll" || word === "re" || word === "ve")
+    return true;
+  return EMPTY_WORDS.has(word) || EMPTY_WORDS.has(stem2(word)) || EMPTY_WORDS.has(`${stem2(word)}e`);
+}
+function namesSubject(ask) {
+  if (NAMED_THING.test(ask))
+    return true;
+  return (ask.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).some((w) => !isEmptyWord(w));
+}
 
 // ../hooks/ledger-close.ts
 var MAX_CLOSED = 12;
@@ -2368,6 +2424,9 @@ function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
   const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === "talk" ? press.id : null;
   return applyUpdate(ledger, { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) }, now, exchange.turn, promptAt);
 }
+function withoutNewAsks(u) {
+  return { ...u, added: [], todos: [] };
+}
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
@@ -2409,7 +2468,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       addedIds.push(restated.id);
       continue;
     }
-    if (recordedThisTurn.has(a.kind)) {
+    if (recordedThisTurn.has(a.kind) || !namesSubject(a.ask)) {
       addedIds.push(null);
       continue;
     }
@@ -2428,7 +2487,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       rec: null
     };
     const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
-    if (isKnown)
+    if (isKnown || !namesSubject(work))
       continue;
     items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update" });
     nextId += 1;
@@ -7100,9 +7159,15 @@ function agentTools(host) {
     { name: "order_prs", description: orderDescription(host), inputSchema: ORDER_SCHEMA }
   ];
 }
-function toolAnswer(host, ledger, tool, input, now, presses, fields) {
+function delegateRefusal(delegate) {
+  const starter = delegate.parent ? `the session in Herdr terminal ${delegate.parent}` : "the session that started this one";
+  return `Not recorded: this is a delegate session, so the user's inbox does not take its questions or tasks. Write this one in your REPORT.md, or message ${starter}. That session asks the user what only they can decide. Findings are still recorded.`;
+}
+function toolAnswer(host, ledger, tool, input, now, presses, fields, delegate) {
   switch (tool) {
     case "record":
+      if (delegate && (input.kind === "question" || input.kind === "task"))
+        return unchanged(ledger, delegateRefusal(delegate));
       return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields);
     case "close":
       return recordClose(host, ledger, input, now, presses);
@@ -8330,9 +8395,9 @@ function completedAttempt(state, deliveryId, outcome) {
     } : s)
   };
 }
-function recorded(host, s, tool, args, now, fields) {
+function recorded(host, s, tool, args, now, fields, delegate) {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt };
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields);
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields, delegate);
   const ledger = withOrderStatuses(r.ledger, s.prViews.views);
   const state = linkDialogs({ ...s, ledger }, now);
   const answered = ledger.items.find((i) => !state.ledger.items.some((o) => o.id === i.id));
@@ -12379,7 +12444,7 @@ function parsedReply(ex, reply) {
   return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join(`
 `));
 }
-function applied(s, parsed, now, promptAt) {
+function applied(s, parsed, now, promptAt, isDelegate) {
   const next = s.pending[0];
   if (!next)
     return s;
@@ -12390,7 +12455,8 @@ function applied(s, parsed, now, promptAt) {
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed", failedAttempts: s.presence.failedAttempts + 1 }
     };
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger;
+  const update = parsed && isDelegate ? withoutNewAsks(parsed) : parsed;
+  const ledger = update ? applyExchangeUpdate(s.ledger, update, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed;
   const isCurrent = !hasDroppedReply;
   const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
@@ -12722,11 +12788,12 @@ function isUnseen(s) {
   return s.presence.turnsStarted === 0 && s.presence.ledgerState === "current" && s.pending.length === 0 && isBlankLedger(ledger);
 }
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
-function appliedCatchUp(s, begun, parsed, now) {
+function appliedCatchUp(s, begun, parsed, now, isDelegate) {
   const covered = new Set(begun.pending.map(pendingKey));
+  const update = parsed && isDelegate ? withoutNewAsks(parsed) : parsed;
   return linkDialogs({
     ...s,
-    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
+    ledger: update ? applyUpdate(s.ledger, update, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
@@ -13365,6 +13432,7 @@ async function runUpdates(host) {
     else
       writing.push(settled);
   };
+  const isDelegate = await host.delegate().catch(() => null) !== null;
   try {
     while (hasWork(await host.read())) {
       const held = await host.exclusive(async () => {
@@ -13383,7 +13451,7 @@ async function runUpdates(host) {
               const parsed = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
               const at = await host.now();
               const noted = (x) => reply.heard ? withAnswer(withCall(x, CATCH_UP_CALL, reply.heard, parsed !== null, at), CATCH_UP_CALL, reply.heard, parsed !== null, at, x.ledger.turn) : x;
-              const after = await host.update((x) => appliedCatchUp(noted(x), s, parsed, at));
+              const after = await host.update((x) => appliedCatchUp(noted(x), s, parsed, at, isDelegate));
               if (!parsed)
                 return "stop";
               if (reply.kind === "reply" && reply.statusCall)
@@ -13404,7 +13472,7 @@ async function runUpdates(host) {
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn)
                 return x;
               isApplied = parsed !== null;
-              return applied(x, parsed, at, promptAt);
+              return applied(x, parsed, at, promptAt, isDelegate);
             });
             if (isApplied)
               followUp(writeStatus(after, { exchange: { kind: "reply", exchange: next.ex }, ask: host.ask }, next.ex.tasks));
@@ -16116,6 +16184,7 @@ function sessionCalls(context) {
       ...host,
       names: OMP2,
       inOrder: (fn) => resultsOrder.run(id, fn),
+      delegate: context.delegate,
       background: (results) => deps.background(results),
       ...deps.isNextBuild ? { records: statusRecords(dir, id) } : {},
       catchUp: (s) => askOverConversation(host, OMP2, s, screenText(OMP2, openPanels.has(id), panelScreenTab(id)), conversationText(ctx))
@@ -16532,6 +16601,7 @@ function createInbox(pi, deps = defaultDeps) {
     logHerdr,
     presses: ompPresses(deps.herdrTarget, (ctx, file) => inbox.herdrFile(ctx, file), logHerdr),
     run,
+    delegate: delegateReader(deps.herdrTarget, run),
     memory: {
       isGhMissing: false,
       prShared: NO_PR_SHARED,
@@ -16600,8 +16670,9 @@ function createInbox(pi, deps = defaultDeps) {
         if (isUnattended(ctx))
           return { content: [{ type: "text", text: "The inbox is not shown in this session." }] };
         let answer = { result: "", personLine: null };
+        const delegate = await context.delegate();
         await change(sessionIdOf(ctx), (s) => {
-          const r = recorded(OMP2, s, name, args, deps.now(), TOOL_FIELDS);
+          const r = recorded(OMP2, s, name, args, deps.now(), TOOL_FIELDS, delegate);
           answer = r;
           return r.state;
         });

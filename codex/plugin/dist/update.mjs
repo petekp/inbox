@@ -2386,6 +2386,36 @@ function prClearActions(prState, links) {
   ];
 }
 
+// ../hooks/ask-subject.ts
+var NAMED_THING = /#\d+|\b\d{2,}\b|\b[A-Z][A-Z0-9]+-\d+\b|https?:\/\/|[\w~.-]*\/[\w.-]+|\b[\w-]+\.[a-z]{1,5}\b|`[^`]+`|"[^"]+"|“[^”]+”/;
+var EMPTY_WORDS = new Set(
+  `a about above after again ahead all already also an and any anything are as at back be been before being below both
+but by can could did do does doing done each either else every everything first for from get go going had has have
+here how i if in into is it its just last later lets let me more my need next no not now of ok okay on once one ones
+only or other others our out over own rest same should so some something soon still such sure than that the their
+them then there these they this those to today too until up us want was way we were what when where whether which who why
+will with would yes yet you your
+approve proceed continue start stop wait hold skip leave keep drop cancel finish resume restart retry redo
+run merge push pull commit deploy ship publish open close post send file fix build make try test check
+review mark ready use take add remove delete update change apply land rebase install copy move create write draft
+edit set show see look pick choose decide answer reply tell say ask like prefer handle follow work
+pr prs branch thing step plan design option variant version note rule issue item task question proposal idea
+code problem stuff part green current new old latest previous mentioned proposed suggested remaining pending`.split(
+    /\s+/
+  )
+);
+function stem2(word) {
+  return word.replace(/(?:ies|es|s|ed|ing)$/, "");
+}
+function isEmptyWord(word) {
+  if (word.length === 1 || word === "ll" || word === "re" || word === "ve") return true;
+  return EMPTY_WORDS.has(word) || EMPTY_WORDS.has(stem2(word)) || EMPTY_WORDS.has(`${stem2(word)}e`);
+}
+function namesSubject(ask) {
+  if (NAMED_THING.test(ask)) return true;
+  return (ask.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).some((w) => !isEmptyWord(w));
+}
+
 // ../hooks/reply-parse.ts
 var NL4 = "\n";
 var MAX_HELPS = 3;
@@ -2600,6 +2630,9 @@ function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
     promptAt
   );
 }
+function withoutNewAsks(u) {
+  return { ...u, added: [], todos: [] };
+}
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 function isPersonsAnswer(outcome) {
   return outcome.trim() !== "" && !NOT_AN_ANSWER.test(outcome);
@@ -2643,7 +2676,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       addedIds.push(restated.id);
       continue;
     }
-    if (recordedThisTurn.has(a.kind)) {
+    if (recordedThisTurn.has(a.kind) || !namesSubject(a.ask)) {
       addedIds.push(null);
       continue;
     }
@@ -2662,7 +2695,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
       rec: null
     };
     const isKnown = items.some((i) => restates(i.ask, work)) || ledger.findings.some((f) => restates(f.title, work)) || repeatsClosed(ledger.closed, { ...todo, helps: [] }, promptAt);
-    if (isKnown) continue;
+    if (isKnown || !namesSubject(work)) continue;
     items.push({ ...todo, helps: [], id: `i${nextId}`, turn, at: now, from: "update" });
     nextId += 1;
     added += 1;
@@ -4691,7 +4724,7 @@ async function updateState(dir, sessionId, change, now = Date.now) {
 function parsedReply(ex, reply) {
   return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
 }
-function applied(s, parsed2, now, promptAt) {
+function applied(s, parsed2, now, promptAt, isDelegate) {
   const next = s.pending[0];
   if (!next) return s;
   const { ex } = next;
@@ -4701,7 +4734,8 @@ function applied(s, parsed2, now, promptAt) {
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed", failedAttempts: s.presence.failedAttempts + 1 }
     };
-  const ledger = parsed2 ? applyExchangeUpdate(s.ledger, parsed2, ex, now, promptAt) : s.ledger;
+  const update = parsed2 && isDelegate ? withoutNewAsks(parsed2) : parsed2;
+  const ledger = update ? applyExchangeUpdate(s.ledger, update, ex, now, promptAt) : s.ledger;
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed2;
   const isCurrent = !hasDroppedReply;
   const failedAttempts = parsed2 ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
@@ -4978,11 +5012,12 @@ function needsCatchUp(s) {
   return presence.ledgerState !== "current" || hasUnappliedTurn || hasMissedStatus;
 }
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
-function appliedCatchUp(s, begun, parsed2, now) {
+function appliedCatchUp(s, begun, parsed2, now, isDelegate) {
   const covered = new Set(begun.pending.map(pendingKey));
+  const update = parsed2 && isDelegate ? withoutNewAsks(parsed2) : parsed2;
   return linkDialogs({
     ...s,
-    ledger: parsed2 ? applyUpdate(s.ledger, parsed2, now, s.ledger.turn, now) : s.ledger,
+    ledger: update ? applyUpdate(s.ledger, update, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
@@ -5050,6 +5085,31 @@ function delegateSteps(command) {
 var delegateRef = (name) => `herdr:${name}`;
 function delegateRefs(command) {
   return new Set(delegateSteps(command).map((step) => delegateRef(step.name)));
+}
+
+// ../hooks/hc-terminals.ts
+var HC_TIMEOUT_MS = 5e3;
+async function delegateSession(target, run2) {
+  if (target?.kind !== "terminal") return null;
+  for (const hc of target.hc) {
+    const r = await run2([hc, "get", target.terminal, "--json"], { cwd: "/", timeoutMs: HC_TIMEOUT_MS });
+    if (r.code === UNSTARTABLE_CODE) continue;
+    if (r.code !== 0) return null;
+    try {
+      const t = JSON.parse(r.stdout);
+      const parent = typeof t?.parent === "string" && t.parent.trim() ? t.parent.trim() : null;
+      const domain = t?.labels?.["fleet.domain"];
+      const hasDomain = typeof domain === "string" && domain.trim() !== "";
+      const isCoordinator = t?.labels?.["fleet.role"] === "coordinator";
+      return !isCoordinator && (parent !== null || hasDomain) ? { parent } : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+function delegateReader(target, run2) {
+  return () => delegateSession(target, run2).catch(() => null);
 }
 
 // ../hooks/herdr-labels.ts
@@ -6069,6 +6129,7 @@ async function runUpdates(host) {
     if (host.background) host.background(settled);
     else writing.push(settled);
   };
+  const isDelegate = await host.delegate().catch(() => null) !== null;
   try {
     while (hasWork(await host.read())) {
       const held = await host.exclusive(async () => {
@@ -6093,7 +6154,7 @@ async function runUpdates(host) {
                 at,
                 x.ledger.turn
               ) : x;
-              const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed3, at));
+              const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed3, at, isDelegate));
               if (!parsed3) return "stop";
               if (reply.kind === "reply" && reply.statusCall)
                 followUp(writeStatus(after2, reply.statusCall, s.hostTasks));
@@ -6119,7 +6180,7 @@ async function runUpdates(host) {
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
               isApplied = parsed2 !== null;
-              return applied(x, parsed2, at, promptAt);
+              return applied(x, parsed2, at, promptAt, isDelegate);
             });
             if (isApplied)
               followUp(
@@ -6791,7 +6852,7 @@ var refreshStatus2 = (dir, sessionId, ask, now, onWrite, records) => refreshStat
   inOrder: inOrderFor(dir, sessionId),
   records
 });
-var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
+var runUpdates2 = (dir, sessionId, ask, now, onWrite, records, delegate = async () => null) => {
   const store = codexStore(dir, sessionId, now, onWrite);
   return runUpdates({
     ...store,
@@ -6799,6 +6860,7 @@ var runUpdates2 = (dir, sessionId, ask, now, onWrite, records) => {
     names: CODEX2,
     inOrder: inOrderFor(dir, sessionId),
     records,
+    delegate,
     catchUp: async (s) => {
       const isMoved = await withCurrentRollout(s) !== s;
       const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath;
@@ -6830,6 +6892,6 @@ async function main() {
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
   const records = existsSync3(join7(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
-  else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records);
+  else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records, delegateReader(herdrTarget(process.env), run));
 }
 main().catch(() => process.exit(0));
