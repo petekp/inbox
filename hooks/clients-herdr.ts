@@ -30,7 +30,7 @@ export const HERDR: LookTable = {
     },
     'exchange-trigger': { kind: 'host' },
     'settle-window': { kind: 'full' },
-    'fold-on-typed-message': { kind: 'host' },
+    'fold-on-typed-message': { kind: 'full' },
     'fold-waits-for-list-use': {
       kind: 'different',
       reason:
@@ -40,7 +40,11 @@ export const HERDR: LookTable = {
     'status-tab': { kind: 'full' },
     'turn-working': { kind: 'host' },
     'host-task-list': { kind: 'host' },
-    'hooks-need-trust': { kind: 'host' },
+    'hooks-need-trust': {
+      kind: 'unsupported',
+      reason:
+        'The session Codex publishes carries no hook-trust state, so the look shows no banner when Codex is not running the hooks. No reason is recorded: issue #681.',
+    },
     'compare-in-background': { kind: 'host' },
     'compare-page': { kind: 'host' },
     'running-marks': {

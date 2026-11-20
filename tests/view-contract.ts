@@ -12,11 +12,6 @@ import { shownMilestones } from '../hooks/status-goal-page'
 
 type Drawn = { look: Look; now: number }
 
-/**
- * How a look shows one field of the shared view. `text`: the words `texts` gives must show in what the look draws.
- * `nested`: the field holds more of the view, whose own fields have rules. `not text`: the look shows the field
- * another way, which `why` names.
- */
 type FieldRule<T> =
   { is: 'text'; texts: (v: T, d: Drawn) => (string | null)[] } | { is: 'nested' } | { is: 'not text'; why: string }
 
@@ -31,16 +26,16 @@ type Rules<T, V = T> = Record<keyof T, FieldRule<V>>
 
 const pressDoneAt = (r: RowView): number | null => (r.feedback?.is === 'done' ? r.feedback.at : null)
 
-/**
- * Every field of a row, and `pressAge`, which no field holds: once a press on the row finished, the row shows how long
- * ago in place of `at`.
- */
 const ROW_FIELDS: Rules<RowView> & { pressAge: FieldRule<RowView> } = {
   id: KEY,
   type: notText('It picks the list the row sits in.'),
   number: text((r, d) => (r.number === null ? [] : [rowTitle(r, d.look)])),
   title: text((r, d) => [rowTitle(r, d.look)]),
-  at: text((r, d) => (r.at === null || pressDoneAt(r) !== null ? [] : [shortAgo(d.now - r.at)])),
+  at: text((r, d) => {
+    const isAgeShown = r.at !== null && r.state.is !== 'settled' && pressDoneAt(r) === null
+
+    return isAgeShown ? [shortAgo(d.now - r.at!)] : []
+  }),
   pressAge: text((r, d) => {
     const at = pressDoneAt(r)
 
@@ -69,7 +64,6 @@ const ROW_FIELDS: Rules<RowView> & { pressAge: FieldRule<RowView> } = {
 
 type Kind<K extends StatusRow['kind']> = Extract<StatusRow, { kind: K }>
 
-/** Each kind of Status row's fields. A new kind fails the type check here until it has rules. */
 const STATUS_ROW_FIELDS: { [K in StatusRow['kind']]: Rules<Kind<K>> } = {
   subject: {
     depth: STYLE,
@@ -139,7 +133,6 @@ const MILESTONE_FIELDS: Rules<MilestoneRow> = {
   rows: NESTED,
 }
 
-/** The goal on its page. A suggested next goal takes the place of the goal's text and the lines under it. */
 type GoalPlace = { goal: GoalBlock; isOffered: boolean }
 
 const goalLine = (line: (g: GoalBlock) => string | null) =>
@@ -168,7 +161,6 @@ const PAGE_FIELDS: Rules<StatusPage> = {
   stale: text(p => [p.error === null ? p.stale : null]),
 }
 
-/** A field of the shared view, as "row.contextLine" or "subject.stall". */
 type FieldName =
   | `row.${keyof typeof ROW_FIELDS & string}`
   | `page.${keyof StatusPage & string}`
@@ -178,7 +170,6 @@ type FieldName =
       [K in StatusRow['kind']]: `${K}.${keyof (typeof STATUS_ROW_FIELDS)[K] & string}`
     }[StatusRow['kind']]
 
-/** One text a look must draw: the field it comes from and its words. */
 export type Expected = { field: FieldName; text: string }
 
 function textsOf<T>(prefix: string, rules: Record<string, FieldRule<T>>, v: T, d: Drawn): Expected[] {
@@ -192,7 +183,6 @@ function textsOf<T>(prefix: string, rules: Record<string, FieldRule<T>>, v: T, d
   )
 }
 
-/** The texts an open row draws, from every field its rule says a look shows as words. */
 export function rowTexts(row: RowView, d: Drawn): Expected[] {
   return textsOf('row', ROW_FIELDS, row, d)
 }
@@ -201,10 +191,6 @@ function statusRowTexts(r: StatusRow, d: Drawn): Expected[] {
   return textsOf(r.kind, STATUS_ROW_FIELDS[r.kind] as Record<string, FieldRule<StatusRow>>, r, d)
 }
 
-/**
- * The texts the Status page draws: its own fields, the goal, the milestones it shows and every row shown, with the
- * folds `isUnfolded` names open.
- */
 export function statusTexts(page: StatusPage, d: Drawn, isUnfolded: (id: string) => boolean): Expected[] {
   const rowsOf = (rows: StatusRow[]) => unfoldedRows(rows, isUnfolded).flatMap(r => statusRowTexts(r, d))
 
@@ -219,7 +205,6 @@ export function statusTexts(page: StatusPage, d: Drawn, isUnfolded: (id: string)
   ]
 }
 
-/** Every fold on the Status page, so a look's test can open them all. */
 export function statusFoldIds(page: StatusPage): string[] {
   const ofRows = (rows: StatusRow[]): string[] =>
     rows.flatMap(r => (r.kind === 'done-fold' || r.kind === 'counts' ? [r.id, ...ofRows(r.rows)] : []))
@@ -232,7 +217,6 @@ export function statusFoldIds(page: StatusPage): string[] {
   ]
 }
 
-/** Every field whose rule says a look shows it as words, which the contract sessions must each give at least once. */
 export function textFields(): FieldName[] {
   const named = (prefix: string, rules: Record<string, FieldRule<never>>) =>
     Object.entries(rules).flatMap(([key, rule]) => (rule.is === 'text' ? [`${prefix}.${key}` as FieldName] : []))
@@ -246,10 +230,6 @@ export function textFields(): FieldName[] {
   ]
 }
 
-/**
- * The fields a look leaves out on purpose, each with the feature whose entry in the parity record is not `full` for
- * that look. A look's contract test skips these, and fails once the look draws one, so the list stays true.
- */
 export const LOOK_GAPS: Record<Look, Partial<Record<FieldName, FeatureId>>> = {
   terminal: {},
   desktop: {},
@@ -258,28 +238,27 @@ export const LOOK_GAPS: Record<Look, Partial<Record<FieldName, FeatureId>>> = {
   herdr: { 'row.pressAge': 'done-press-age' },
 }
 
-/** Whitespace folded to single spaces, so a text wrapped onto two lines still matches. */
 const folded = (s: string): string => s.replace(/\s+/g, ' ').trim()
 
-/** The text with its inline markdown read, so a look that draws `**bold**` as bold and one that draws the markers both match. */
 const plain = (s: string): string =>
   parseInline(folded(s))
     .map(span => span.text)
     .join('')
 
-/** Whether `drawn` holds `text` as whole words, so an age such as "4m" does not match inside "14m". */
 function isDrawn(text: string, drawn: string): boolean {
   const words = plain(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
   return new RegExp(`(?<![\\p{L}\\p{N}])${words}(?![\\p{L}\\p{N}])`, 'u').test(plain(drawn))
 }
 
-/** The expected texts a look's drawn text lacks, leaving out its gaps. */
+export function repeatedTexts(expected: Expected[], others: string[]): Expected[] {
+  return expected.filter(e => others.some(o => isDrawn(e.text, o)))
+}
+
 export function missingTexts(look: Look, expected: Expected[], drawn: string): Expected[] {
   return expected.filter(e => LOOK_GAPS[look][e.field] === undefined && !isDrawn(e.text, drawn))
 }
 
-/** The expected texts of a look's gaps that its drawn text holds after all, so a gap the look closed leaves the list. */
 export function drawnGaps(look: Look, expected: Expected[], drawn: string): Expected[] {
   return expected.filter(e => LOOK_GAPS[look][e.field] !== undefined && isDrawn(e.text, drawn))
 }

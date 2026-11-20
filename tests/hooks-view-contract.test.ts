@@ -3,7 +3,14 @@ import type { Session } from '../types'
 import { test } from './test-with-timeout'
 import { SESSION_VERSION } from '../hooks/session-version'
 import { sessionView } from '../hooks/session-view'
+import Fold from '../hooks/fold-client'
+import Links from '../hooks/links-client'
+import Parent from '../hooks/parent-client'
+import Press from '../hooks/press-client'
+import RowClient from '../hooks/row-client'
+import Tabs from '../hooks/tabs-client'
 import type { TabsProps } from '../hooks/tabs-client'
+import Title from '../hooks/title-client'
 import { NO_HOLDS, PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { contractSessions } from './view-contract-sessions'
 import { drawnGaps, missingTexts, rowTexts, statusFoldIds, statusTexts } from './view-contract'
@@ -18,24 +25,46 @@ const NOW = 1_000_000_000
 const WIDE_COLUMNS = 120
 const SHOWN_BEFORE_MS = 10_000
 
-const stringsIn = (value: unknown): string[] =>
-  typeof value === 'string'
-    ? [value]
-    : Array.isArray(value)
-      ? value.flatMap(stringsIn)
-      : typeof value === 'object' && value !== null
-        ? Object.values(value).flatMap(stringsIn)
-        : []
+const MODULES: Record<string, unknown> = {
+  'hooks/fold-client.tsx': Fold,
+  'hooks/links-client.tsx': Links,
+  'hooks/parent-client.tsx': Parent,
+  'hooks/press-client.tsx': Press,
+  'hooks/row-client.tsx': RowClient,
+  'hooks/tabs-client.tsx': Tabs,
+  'hooks/title-client.tsx': Title,
+}
+
+const element =
+  (type: string) =>
+  (props: Record<string, unknown>): Node => ({ type, props, children: [props.children ?? []].flat() })
+
+const SURFACE = {
+  elements: { Box: element('Box'), Text: element('Text') },
+  state: undefined,
+  setState: () => {},
+  onPointer: () => {},
+  post: () => {},
+  columns: 0,
+  rows: 0,
+}
+
+function drawnBy(node: Node): Node {
+  const module = MODULES[String(node.props?.module)]
+  if (!module) throw new Error(`No Client module ${String(node.props?.module)} in the test.`)
+
+  return (module as unknown as (props: unknown, surface: typeof SURFACE) => Node)(node.props?.props, SURFACE)
+}
 
 const textOf = (n: unknown): string => {
   if (typeof n === 'string') return n
   if (typeof n !== 'object' || n === null) return ''
   const node = n as Node
-  const own =
-    node.type === 'Client' ? stringsIn(node.props?.props) : node.type === 'Button' ? stringsIn(node.props?.label) : []
+  if (node.type === 'Client') return textOf(drawnBy(node))
+  const label = node.type === 'Button' && typeof node.props?.label === 'string' ? [node.props.label] : []
   const isInline = node.type === 'Text'
 
-  return [...own, ...(node.children ?? []).map(textOf)].join(isInline ? '' : ' ')
+  return [...label, ...(node.children ?? []).map(textOf)].join(isInline ? '' : ' ')
 }
 
 const failures = (look: ModLook, expected: Expected[], drawn: string) => ({
@@ -92,6 +121,8 @@ for (const look of ['terminal', 'desktop'] as const)
           if (await pane.find({ key: select }))
             if (look === 'terminal') await pane.press({ key: select })
             else await pane.pointer({ type: 'down', x: 0, y: 0, button: 'left', in: select })
+          else if (!(await pane.find({ key: `view-${id}` })) && !(await pane.find({ key: `settled-${id}` })))
+            throw new Error(`Row ${id} is not drawn.`)
           await settle()
           const view = viewNow()
           const row = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows].find(

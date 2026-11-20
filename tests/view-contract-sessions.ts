@@ -43,7 +43,6 @@ function running(id: string, name: string, subjectId: string, at: number): Child
   }
 }
 
-/** An open press whose file was gone, so the row's feedback names the file and why, in words no button repeats. */
 function failedOpen(at: number): LastAction {
   const part = { kind: 'open' as const, name: 'calibration.md', isCommand: false, error: 'it no longer exists' }
 
@@ -56,7 +55,6 @@ function failedOpen(at: number): LastAction {
   }
 }
 
-/** The demo with a goal under way: a settled row, a recommendation's reason beside short answers, a failed open, an idle subject, merged and replaced plans, more children than show, and closed work past the rows drawn for it. */
 function underWay(now: number, agent: string): Session {
   const s = demoSession(now, agent)
   const o = s.ledger.overview!
@@ -104,7 +102,6 @@ function underWay(now: number, agent: string): Session {
   }
 }
 
-/** The goal met, with its milestones folded, the head apart from it, a suggested next goal, and seen open work folded into counts. */
 function met(now: number, agent: string): Session {
   const s = demoSession(now, agent)
   const o = s.ledger.overview!
@@ -134,7 +131,6 @@ function met(now: number, agent: string): Session {
   }
 }
 
-/** A goal set a moment ago, whose milestones the Status call has not written yet. */
 function justSet(now: number, agent: string): Session {
   const s = demoSession(now, agent)
   const o = s.ledger.overview!
@@ -148,11 +144,64 @@ function justSet(now: number, agent: string): Session {
   }
 }
 
-/** The sessions every look's contract test draws. Together they give every field the contract says a look shows as words. */
+function distinctAges<T extends { at: number | null }>(rows: T[], now: number, used: Set<number>): T[] {
+  return rows.map(row => {
+    if (row.at === null) return row
+    let at = row.at
+
+    while (used.has(Math.round((now - at) / MIN))) at -= MIN
+    used.add(Math.round((now - at) / MIN))
+
+    return { ...row, at }
+  })
+}
+
+function distinct(s: Session, now: number): Session {
+  const o = s.ledger.overview!
+  const used = new Set<number>()
+  const items = distinctAges(s.ledger.items, now, used)
+  const closed = s.ledger.closed.map(c => (c.item ? { ...c, item: distinctAges([c.item], now, used)[0] } : c))
+  const heldUp = new Set<string>()
+  const askSubjects = Object.fromEntries(
+    Object.entries(o.askSubjects).map(([ask, ids]) => {
+      const first = ids.filter(id => !heldUp.has(id))
+
+      first.forEach(id => heldUp.add(id))
+
+      return [ask, first]
+    }),
+  )
+  const subjectTexts = new Set(o.subjects.map(x => x.text))
+  const { d18: _handOff, ...lastActions } = s.lastActions
+  const explained: LastAction = {
+    kind: 'talk',
+    action: 'explain',
+    text: 'Explain',
+    at: now - 3 * MIN,
+    turnsStarted: 13,
+  }
+
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      items,
+      closed,
+      findings: distinctAges(s.ledger.findings, now, new Set()),
+      overview: {
+        ...o,
+        askSubjects,
+        milestones: o.milestones.map(m => (subjectTexts.has(m.text) ? { ...m, text: 'needs your choice' } : m)),
+      },
+    },
+    lastActions: { ...lastActions, d11: explained },
+  }
+}
+
 export function contractSessions(now: number, agent: string): { name: string; session: Session }[] {
   return [
     { name: 'goal under way', session: underWay(now, agent) },
     { name: 'goal met', session: met(now, agent) },
     { name: 'goal just set', session: justSet(now, agent) },
-  ]
+  ].map(({ name, session }) => ({ name, session: distinct(session, now) }))
 }

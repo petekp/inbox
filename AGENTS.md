@@ -9,7 +9,7 @@ The inbox is drawn in five looks: the Claude Code terminal, the Claude desktop a
 - Design each feature for every client from the start: the Claude Code terminal, the Claude desktop app, Codex and omp. Work out how each host gets the events and data the feature needs.
 - Put shared logic in the owner `docs/looks.md` names, so each host calls it.
 - Leave a host out only for a real host limit, recorded in "Differences on purpose" with its reason. Doing a host later is not a reason.
-- Give the feature a `FeatureId` in `hooks/client-features.ts` and an entry in each table of `hooks/clients.ts`. `./scripts/check.sh` fails on an entry that is not `full` or `host` and has no row.
+- Give the feature a `FeatureId` in `hooks/client-features.ts` and an entry in each `hooks/clients-<id>.ts` table. `./scripts/check.sh` fails on an entry that is not `full` or `host` and has no row.
 
 ## Every change
 
