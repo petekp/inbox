@@ -25,7 +25,7 @@ set -eu
 DIR=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
 TOOLS="$DIR/node_modules/.bin"
 if [ ! -x "$TOOLS/prettier" ] || [ ! -x "$TOOLS/tsc" ] || [ ! -x "$TOOLS/esbuild" ]; then
-    echo "  x not checked. Install the root tools once: npm --prefix $DIR ci"
+    echo "  x not checked. Install the root tools once: npm --prefix $DIR ci --ignore-scripts"
     exit 1
 fi
 status=0
