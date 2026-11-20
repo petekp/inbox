@@ -81,6 +81,11 @@ install_reason() {
 }
 
 rebuild() {
+    reason=$(install_reason . package-lock.json)
+    if [ -n "$reason" ]; then
+        echo "Installing the root tools: $reason"
+        npm --prefix "$DIR" ci --ignore-scripts || return 1
+    fi
     reason=$(install_reason codex codex/package-lock.json)
     if [ -n "$reason" ]; then
         echo "Installing the Codex plugin's tools: $reason"

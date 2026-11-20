@@ -9,12 +9,12 @@ The inbox is drawn in five looks: the Claude Code terminal, the Claude desktop a
 - Design each feature for every client from the start: the Claude Code terminal, the Claude desktop app, Codex and omp. Work out how each host gets the events and data the feature needs.
 - Put shared logic in the owner `docs/looks.md` names, so each host calls it.
 - Leave a host out only for a real host limit, recorded in "Differences on purpose" with its reason. Doing a host later is not a reason.
-- Give the feature a `FeatureId` in `hooks/clients.ts`, with an entry for every client. `./scripts/check.sh` fails on an entry that is not `full` and has no row.
+- Give the feature a `FeatureId` in `hooks/client-features.ts` and an entry in each `hooks/clients-<id>.ts` table. `./scripts/check.sh` fails on an entry that is not `full` or `host` and has no row.
 
 ## Every change
 
 - The repo is public. Keep private paths, other people's names and session content out of commits.
-- Run `./scripts/check.sh` after every change.
+- Run `./scripts/check.sh` after every change. CI runs part of it.
 - Keep each file at 5,000 tokens or under, counting tokens as bytes / 4. `.token-ceilings` lists the files allowed over it, each with the most tokens it may hold. `scripts/check-sizes.mjs` fails on a file over its limit. Split a file that grows past it.
 - Change shared behavior in the owner listed in `docs/looks.md`. Adapters map shared row and action descriptions to native controls. Hosts run events, storage and effects. Rebuild the Codex bundles after a shared-module change with `npm --prefix codex run build`, the omp bundle with `npm --prefix omp run build`, and the Herdr mod with `npm --prefix herdr run build`.
 - To bring `next` into a branch, run `./scripts/merge-next.sh`. It merges `origin/next`, rebuilds the bundles from the merged sources and runs `./scripts/check.sh`.

@@ -1,0 +1,10 @@
+{
+  "name": "inbox-dev",
+  "private": true,
+  "description": "Pins the tools scripts/check.sh and the pull request checks run: Prettier, TypeScript and esbuild",
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "prettier": "3.9.9",
+    "typescript": "7.0.2"
+  }
+}

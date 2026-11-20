@@ -73,6 +73,7 @@ export type FeatureId =
   | 'fold-all'
   | 'suggested-goal'
   | 'show-explanation'
+  | 'done-press-age'
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */
 export type ClientId = 'claude-code' | 'codex' | 'omp'
@@ -90,3 +91,22 @@ type Support = { kind: 'full' } | { kind: 'different' | 'unsupported'; reason: s
  * whose first column names the feature id in backticks. The check fails when the row is missing.
  */
 export type Client = { support: Record<FeatureId, Support> }
+
+/**
+ * A look with no host of its own: it draws the session a host publishes, so a host's id never names it. Exact's web and
+ * iOS clients join this list as `exact-web` and `exact-ios` once they ship, each with its own table and Differences on
+ * purpose parts named `differences-<id>`.
+ */
+export type PublishedLookId = 'herdr'
+
+/**
+ * How a published look supports a feature. `host` means the publishing host does all of it and the look has no part,
+ * so the host's own entry in `CLIENTS` says what the person gets. The other kinds mean what they mean for a host.
+ */
+type LookSupport = Support | { kind: 'host' }
+
+/**
+ * One published look's table, declared in `hooks/clients-<look>.ts` and named in `PUBLISHED_LOOKS` in
+ * `hooks/clients.ts`, written as a host's table is. Its Differences on purpose rows compare it with the Codex tab.
+ */
+export type LookTable = { support: Record<FeatureId, LookSupport> }

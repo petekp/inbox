@@ -2879,6 +2879,7 @@ import { fileURLToPath } from "node:url";
 // src/state.ts
 import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   lstat,
   mkdir,
@@ -3780,8 +3781,9 @@ function processIdentity(pid) {
       stdio: "pipe",
       timeout: 1e3
     };
-    const boot = bootSession ?? execFileSync("/usr/sbin/sysctl", ["-n", "kern.bootsessionuuid"], options).trim();
-    const started = execFileSync("/bin/ps", ["-p", String(pid), "-o", "lstart="], options).trim();
+    const isLinux = process.platform === "linux";
+    const boot = bootSession ?? (isLinux ? readFileSync("/proc/sys/kernel/random/boot_id", "utf8") : execFileSync("/usr/sbin/sysctl", ["-n", "kern.bootsessionuuid"], options)).trim();
+    const started = isLinux ? linuxStartTime(pid) : execFileSync("/bin/ps", ["-p", String(pid), "-o", "lstart="], options).trim();
     if (!boot || !started) return null;
     bootSession = boot;
     const identity = createHash("sha256").update(boot).update("\0").update(started).digest("hex").slice(0, 32);
@@ -3790,6 +3792,10 @@ function processIdentity(pid) {
   } catch {
     return null;
   }
+}
+function linuxStartTime(pid) {
+  const stat6 = readFileSync(`/proc/${pid}/stat`, "utf8");
+  return stat6.slice(stat6.lastIndexOf(")") + 2).split(" ")[19] ?? "";
 }
 function isLive(owner, generation, observedLiveAt) {
   try {
@@ -4214,9 +4220,9 @@ function childrenEnded(o, isEnded, at) {
   if (!o?.children.some(isEnding)) return o;
   return { ...o, children: o.children.map((c) => isEnding(c) ? { ...c, endedAt: at } : c) };
 }
-var HERDR = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
+var HERDR2 = /(?:^|[;&|\n]\s*)herdr agent (start|prompt|wait) ([A-Za-z0-9_-]+)([^;&|\n]*)/g;
 function delegateSteps(command) {
-  return [...command.matchAll(HERDR)].map(([, verb, name, args]) => ({
+  return [...command.matchAll(HERDR2)].map(([, verb, name, args]) => ({
     name,
     isPrompt: verb === "prompt",
     isWaitForEnd: verb === "wait" && !/--until working/.test(args ?? "")
