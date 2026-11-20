@@ -47,7 +47,7 @@ source-only)
         echo "$changed" | sed 's/^/  /'
         echo "A pull request carries source only. After it merges, a bot rebuilds the bundles on next and commits them."
         echo "Fix: ./scripts/merge-next.sh takes next's bundles. Or run"
-        echo "  git restore --source=\"\$(git merge-base $base HEAD)\" --staged --worktree -- $BUNDLE_DIRS"
+        echo "  git restore --source=\"\$(git merge-base origin/next HEAD)\" --staged --worktree -- $BUNDLE_DIRS"
         echo "and commit the result."
         exit 1
     fi
