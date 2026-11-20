@@ -8,6 +8,7 @@ import {
   IDLE_AFTER_MS,
   isNumberOnly,
   isOpen,
+  isUnderWay,
   NAME_KEPT,
   nameKey,
   TEXT_KEPT,
@@ -26,10 +27,6 @@ import {
   withRestatedGoalAsMilestones,
 } from './status-goal-ops'
 import { withSuggestion } from './status-suggest'
-
-function isUnderWay(s: Pick<Subject, 'status'>): boolean {
-  return s.status === 'working' || s.status === 'waits-on-other'
-}
 
 /** What an answer did to the work, read once its subject changes have applied at `now`. */
 type AnswerWork = {

@@ -144,26 +144,33 @@ export function parseStatus(text: string | null): StatusAnswer | null {
   return ops.length === 0 ? { kind: 'unchanged' } : { kind: 'ops', ops }
 }
 
-/**
- * The answer to apply after the next-goal retry: every line of `first`, and only the GOAL and SUGGEST lines of
- * `retry`, so a retry that answers only the goal keeps the subject lines the first answer wrote.
- */
-export function withNextGoal(first: StatusAnswer, retry: StatusAnswer | null): StatusAnswer {
-  const goalOps = retry?.kind === 'ops' ? retry.ops.filter(o => o.kind === 'goal' || o.kind === 'suggest') : []
-  if (goalOps.length === 0) return first
+/** The prompt that asks the Status call once more about what its answer left out, and which lines of the second answer to add. */
+export type StatusRetry = { prompt: string; keeps: (op: Op) => boolean }
 
-  return { kind: 'ops', ops: [...(first.kind === 'ops' ? first.ops : []), ...goalOps] }
+/**
+ * The answer to apply after a retry: every line of `first`, and the lines of `retry` that `keeps` takes, so a retry
+ * that answers only what it was asked keeps the lines the first answer wrote.
+ */
+export function withRetryLines(
+  first: StatusAnswer,
+  retry: StatusAnswer | null,
+  keeps: (op: Op) => boolean,
+): StatusAnswer {
+  const added = retry?.kind === 'ops' ? retry.ops.filter(keeps) : []
+  if (added.length === 0) return first
+
+  return { kind: 'ops', ops: [...(first.kind === 'ops' ? first.ops : []), ...added] }
 }
 
 /**
  * Asks the Status call through `ask`, and once more when the answer holds no operation, as `parseStatus` refuses it.
- * When `retryFor` gives a prompt for an answer that parses, the call is asked once more with that prompt, and the
- * GOAL and SUGGEST lines of the second answer are added to the first. A call that gives no text is not asked again.
- * Returns the answer to apply, null when none parsed, and the last call's result.
+ * When `retryFor` gives a retry for an answer that parses, the call is asked once more with its prompt, and the lines
+ * of the second answer it keeps are added to the first. A call that gives no text is not asked again. Returns the
+ * answer to apply, null when none parsed, and the last call's result.
  */
 export async function askStatus<T extends { text: string | null }>(
   ask: (prompt: string | null) => Promise<T>,
-  retryFor: (answer: StatusAnswer, text: string) => string | null = () => null,
+  retryFor: (answer: StatusAnswer, text: string) => StatusRetry | null = () => null,
 ): Promise<{ answer: StatusAnswer | null; last: T }> {
   const first = await ask(null)
   if (first.text === null) return { answer: null, last: first }
@@ -174,7 +181,7 @@ export async function askStatus<T extends { text: string | null }>(
   }
   const retry = retryFor(answer, first.text)
   if (retry === null) return { answer, last: first }
-  const again = await ask(retry)
+  const again = await ask(retry.prompt)
 
-  return { answer: withNextGoal(answer, parseStatus(again.text)), last: again }
+  return { answer: withRetryLines(answer, parseStatus(again.text), retry.keeps), last: again }
 }

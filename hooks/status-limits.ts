@@ -154,3 +154,8 @@ export function stems(text: string): Set<string> {
 export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }
+
+/** Whether a subject is under way: working, or waiting on something outside the session. */
+export function isUnderWay(s: Pick<Subject, 'status'>): boolean {
+  return s.status === 'working' || s.status === 'waits-on-other'
+}

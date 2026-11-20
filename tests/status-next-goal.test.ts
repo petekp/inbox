@@ -4,7 +4,7 @@ import { test } from './test-with-timeout'
 import { askStatus, parseStatus } from '../hooks/status'
 import { applyStatus } from '../hooks/status-ops'
 import { goalBlocks } from '../hooks/status-prompt-goal'
-import { nextGoalRetry } from '../hooks/status-prompt'
+import { statusRetry } from '../hooks/status-retry'
 import type { SessionStatus } from '../types'
 import { after, MIN } from './status-helpers'
 
@@ -22,7 +22,7 @@ async function asked(last: SessionStatus | null, answers: string[]) {
       prompts.push(retry ?? PROMPT)
       return { text: answers.shift() ?? null }
     },
-    nextGoalRetry(last, PROMPT),
+    statusRetry({ last, asks: [], tasks: [], now: 30 * MIN }, PROMPT),
   )
 
   return { prompts, applied }
@@ -70,6 +70,17 @@ test('an answer that gives the next goal, or SUGGEST -, is asked once, and a sec
     kind: 'ops',
     ops: [{ kind: 'set', ref: 'Import', status: 'working', text: 'CSV and JSON work' }],
   })
+})
+
+test('an answer that meets the goal with no GOAL or SUGGEST line is asked once more for the next goal', async () => {
+  const running = after(null, `${WORK}\nGOAL: Import ready to demo | working Import works; queued Error messages`, 20 * MIN)
+  const meets = 'DONE: Import works | shipped\nDONE: Error messages | clear'
+  const { prompts, applied } = await asked(running, [meets, 'SUGGEST: Import shipped to the store'])
+
+  expect(prompts).toHaveLength(2)
+  expect(prompts[1]).toContain('The goal is met, and no next goal is suggested.')
+  expect(applied?.kind === 'ops' && applied.ops.at(-1)).toEqual({ kind: 'suggest', text: 'Import shipped to the store' })
+  expect((await asked(running, ['DONE: Import works | shipped'])).prompts).toHaveLength(1)
 })
 
 test('an answer of only SUGGEST - while nothing is suggested changes nothing, as NO CHANGE does', () => {

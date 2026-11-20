@@ -4,6 +4,7 @@ import { catchUpFromEmpty } from './replays/catch-up-from-empty'
 import { catchUpShipped } from './replays/catch-up-shipped'
 import { childrenFinished } from './replays/children-finished'
 import { coordinatorDay } from './replays/coordinator-day'
+import { finishedPass } from './replays/finished-pass'
 import { fixThroughMerge } from './replays/fix-through-merge'
 import { headAfterDone } from './replays/head-after-done'
 import { headDescription } from './replays/head-description'
@@ -67,4 +68,5 @@ export const REPLAYS: Replay[] = [
   fixThroughMerge,
   headDescription,
   headAfterDone,
+  finishedPass,
 ]
