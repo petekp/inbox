@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T22:39:15.630Z. 304233 characters follow.
+// Built at 2026-11-20T06:07:11.479Z. 304333 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5182,17 +5182,19 @@ var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
 var LONGEST_MOVE_PX = 2000;
 var FRAME_MS = 16;
 var STEP_MS = 1;
+var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
 function springStep(s, target, ms, spring = HEIGHT_SPRING) {
   const w = 2 * Math.PI / spring.response;
   let { x, v } = s;
   for (let t = 0;t < ms; t += STEP_MS) {
+    if (t % FRAME_MS === 0 && isAtRest({ x, v }, target, spring))
+      return { x: target, v: 0 };
     const dt = Math.min(STEP_MS, ms - t);
     v += (-w * w * (x - target) - 2 * spring.damping * w * v) * dt;
     x += v * dt;
   }
   return { x, v };
 }
-var isAtRest = (s, target, spring) => Math.abs(s.x - target) < spring.epsilon && Math.abs(s.v) * FRAME_MS < spring.epsilon;
 function springFrames(from, target, spring = HEIGHT_SPRING) {
   const frames = [from.x];
   let s = from;

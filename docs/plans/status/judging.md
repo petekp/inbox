@@ -29,7 +29,7 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 | `evals/status-run.ts` | The runner and its results file |
 | `evals/status-health.ts` | The health report `scripts/status-health.sh` prints from a folder of real Status call records: dropped head descriptions, blank milestone text, idle working subjects left untouched, suggested goals, and the lines code dropped by kind. It calls no model. |
 | `tests/status-evals.test.ts`, `tests/status-bar.test.ts` | The checks with no model calls |
-| `tests/status-evals-scenes.ts` | The pages and Status call answers those checks grade |
+| `tests/status-evals-scene-base.ts`, `tests/status-evals-scenes.ts` | The base page and how a page becomes what a rule reads, then the pages and Status call answers those checks grade |
 
 ### What goes in the suite
 
