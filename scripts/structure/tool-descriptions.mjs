@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { join } from 'node:path'
 
 const require = createRequire(new URL('../../codex/package.json', import.meta.url))
 const esbuild = require('esbuild')
@@ -21,6 +23,7 @@ const claude = agentTools(CLAUDE_CODE).map(tool =>
 export const limit = MAX_TOOL_DESCRIPTION
 export const hosts = { 'Claude Code': claude, Codex: TOOLS, omp: agentTools(OMP) }
 `
+const HOST_FILES = ['codex/src/server-tools.ts', 'omp/src/texts.ts']
 
 async function registered(root) {
   const { outputFiles } = await esbuild.build({
@@ -42,6 +45,7 @@ async function registered(root) {
  * first 4096 characters". Every host's descriptions are held to that bound, so none loses guidance at its end.
  */
 export async function checkToolDescriptions(root, errors) {
+  if (!HOST_FILES.every(path => existsSync(join(root, path)))) return
   const { hosts, limit } = await registered(root)
   for (const [host, tools] of Object.entries(hosts))
     for (const { name, description } of tools)

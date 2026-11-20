@@ -1,4 +1,4 @@
-import { readdirSync, realpathSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import { localTarget } from './imports.mjs'
@@ -114,7 +114,7 @@ function loopThrough(graph, component) {
 
 export function checkCycles(root, errors) {
   const rootDir = realpathSync(root)
-  const files = DIRS.flatMap(dir => sourceFiles(rootDir, dir))
+  const files = DIRS.filter(dir => existsSync(join(rootDir, dir))).flatMap(dir => sourceFiles(rootDir, dir))
   const graph = new Map(files.map(path => [path, new Set()]))
   const api = new API({ cwd: rootDir })
   try {
