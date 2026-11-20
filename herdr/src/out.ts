@@ -134,8 +134,10 @@ export type SentText = { pressId: string; rowId: string; text: string; lastBefor
 
 /**
  * Whether the host confirmed a sent text's press, as `isPressConfirmed` decides, or null until a read shows the host
- * finished it: `lastPress` names it, or names a later press, since a host applies presses oldest first. `lastPress`
- * carries no send error, so the row's delivery gives it, and a press that saved no last press on its row was not sent.
+ * finished it: `lastPress` names it, or names a later press, since a host applies presses oldest first, and the row's
+ * delivery no longer reads queued. A host that holds a message until the agent's turn ends names its press while the
+ * message is queued. `lastPress` carries no send error, so the row's delivery gives it, and a press that saved no last
+ * press on its row was not sent.
  */
 export function isSentConfirmed(sent: SentText, view: SessionView, lastPress: LastPress | null): boolean | null {
   const isNamed = lastPress?.id === sent.pressId
@@ -143,12 +145,14 @@ export function isSentConfirmed(sent: SentText, view: SessionView, lastPress: La
   if (!isNamed && !isPassed) return null
   const delivery = view.lastActions[sent.rowId]?.delivery
   const isChanged = lastActionKey(view, sent.rowId) !== sent.lastBefore
+  const isStale = isNamed && lastPress?.outcome === 'stale'
+  if (isChanged && !isStale && delivery?.state === 'queued') return null
 
   return (
     isChanged &&
     isPressConfirmed({
       error: delivery?.state === 'failed' ? delivery.reason : null,
-      note: isNamed && lastPress?.outcome === 'stale' ? 'stale' : null,
+      note: isStale ? 'stale' : null,
       isUnconfirmed: delivery?.state === 'unconfirmed',
     })
   )

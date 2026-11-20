@@ -14620,12 +14620,24 @@ async function unpublishSession(files, appHome, sessionId) {
     files.removeFolder(pressFolder(appHome, sessionId))
   ]);
 }
+var DONE = { waiting: null };
 var LOGGED_CHARS = 100;
 var message2 = (err) => err instanceof Error ? err.message : String(err);
 var logged = (text) => clipLabel(text, LOGGED_CHARS);
 function pressDrainer(files, owns, apply, log) {
   const takenMark = `.${Math.random().toString(36).slice(2)}.taken`;
   const draining = new Map;
+  const waitingRuns = new Map;
+  const runInOrder = (folder, waiting, onError) => {
+    const next = (waitingRuns.get(folder) ?? Promise.resolve()).then(waiting).then(() => {
+      return;
+    }, onError);
+    waitingRuns.set(folder, next);
+    next.then(() => {
+      if (waitingRuns.get(folder) === next)
+        waitingRuns.delete(folder);
+    });
+  };
   const drainOnce = async (folder, sessionId) => {
     const names = [...await files.list(folder).catch(() => [])].filter((name) => name.endsWith(".json")).sort();
     if (names.length === 0 || !await owns(sessionId).catch(() => false))
@@ -14654,12 +14666,15 @@ function pressDrainer(files, owns, apply, log) {
         });
       }
     }
+    const failed = (file) => (err) => log(`Herdr press ${logged(file.id)} failed: ${message2(err)}`);
     for (const { path, taken, file } of waiting.sort((a, b) => fileTime(a.file) - fileTime(b.file))) {
-      const isTaken = await apply(sessionId, file).catch((err) => {
-        log(`Herdr press ${logged(file.id)} failed: ${message2(err)}`);
-        return file.format !== 2;
+      const started = await apply(sessionId, file).catch((err) => {
+        failed(file)(err);
+        return file.format === 2 ? null : DONE;
       });
-      if (isTaken) {
+      if (started) {
+        if (started.waiting)
+          runInOrder(folder, started.waiting, failed(file));
         await files.remove(taken).catch((err) => log(`Herdr press ${logged(file.id)} not removed: ${message2(err)}`));
       } else if (taken !== path) {
         await files.move(taken, path).catch((err) => log(`Herdr press ${logged(file.id)} not put back: ${message2(err)}`));
@@ -14707,12 +14722,19 @@ var LOOK_OUTCOME = {
   isRowFailed: false,
   wakesAfterSettle: false
 };
-async function applyHerdrFile(host, file, sessionId = "") {
+var finished = (outcome) => ({ is: "done", outcome });
+var startedFile = (started, after) => {
+  if (started.is === "waiting")
+    return { waiting: async () => after(await started.finish()) };
+  after(started.outcome);
+  return DONE;
+};
+async function startHerdrFile(host, file, sessionId = "") {
   if (file.format === 2) {
     if (file.kind === "command")
-      return applyRemoteCommand(host, file, sessionId);
+      return finished(await applyRemoteCommand(host, file, sessionId));
     if (file.session !== sessionId)
-      return LOOK_OUTCOME;
+      return finished(LOOK_OUTCOME);
     const now = await host.now();
     let refresh = false;
     await host.update((s) => {
@@ -14737,26 +14759,43 @@ async function applyHerdrFile(host, file, sessionId = "") {
     });
     if (refresh)
       await host.refreshPrsIfDue?.();
-    return LOOK_OUTCOME;
+    return finished(LOOK_OUTCOME);
   }
   if (isLookFile(file)) {
     await host.update((s) => lookReportedOn(s, file.look));
-    return LOOK_OUTCOME;
+    return finished(LOOK_OUTCOME);
   }
   if (isPrsShownFile(file)) {
     await host.refreshPrsIfDue?.();
-    return LOOK_OUTCOME;
+    return finished(LOOK_OUTCOME);
   }
   if (!isPressFile(file)) {
     const { row, isCollapsed, at } = file.collapse;
     await host.update((s) => withCollapse(s, row, isCollapsed, at));
-    return LOOK_OUTCOME;
+    return finished(LOOK_OUTCOME);
   }
   const { result } = file;
-  const outcome = await press(result ? { ...host, perform: async () => result.error } : host, file.press, false, file.holds);
-  const lastHerdrPress = { id: file.id, outcome: outcome.note === "stale" ? "stale" : "applied" };
-  await host.update((s) => ({ ...s, lastHerdrPress }));
-  return outcome;
+  const started = await startPress(result ? { ...host, perform: async () => result.error } : host, file.press, false, file.holds);
+  const saveLast = (outcome) => host.update((s) => ({
+    ...s,
+    lastHerdrPress: { id: file.id, outcome: outcome?.note === "stale" ? "stale" : "applied" }
+  }));
+  const isQueuedOnSave = host.isDeliveryHeldUntilRun === true && (started.effects?.some((e) => e.kind === "send") ?? false);
+  if (!isQueuedOnSave) {
+    const outcome = await started.finish();
+    await saveLast(outcome);
+    return finished(outcome);
+  }
+  const lastUnsaved = await saveLast(null).then(() => null, (err) => err);
+  return {
+    is: "waiting",
+    finish: async () => {
+      const outcome = await started.finish();
+      if (lastUnsaved !== null)
+        throw lastUnsaved;
+      return outcome;
+    }
+  };
 }
 
 // ../hooks/herdr-sweep.ts
@@ -14931,10 +14970,7 @@ function ompPresses(target, apply, log) {
       } catch (err) {
         return log(`Herdr presses not read: ${message4(err)}`);
       }
-      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile3(path, "utf8"), appHome, sessionId, "omp", terminal), async (_id, file) => {
-        await apply(ctx, file);
-        return true;
-      }, log);
+      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile3(path, "utf8"), appHome, sessionId, "omp", terminal), (_id, file) => apply(ctx, file), log);
       const watchFolder = (wake) => {
         let isStopped = false;
         let watcher = null;
@@ -15133,8 +15169,10 @@ function panelCalls(context, sessions, herdrAsk) {
       return outcome;
     },
     herdrFile: async (ctx, file) => {
-      if ((await applyHerdrFile(hostFor(ctx), file, sessionIdOf(ctx))).wakesAfterSettle)
-        wakeLater(ctx);
+      return startedFile(await startHerdrFile(hostFor(ctx), file, sessionIdOf(ctx)), (outcome) => {
+        if (outcome.wakesAfterSettle)
+          wakeLater(ctx);
+      });
     },
     resume: (ctx) => sendToAgent(ctx, RESUME_TEXT),
     collapse: async (ctx, row, isCollapsed) => {

@@ -10,6 +10,7 @@ import { statusChanged } from '../../hooks/session-status'
 import { recorded, withHolds } from '../../hooks/session-presses'
 import type { RowNote } from '../../types'
 import type { HerdrFile } from '../../hooks/herdr-press-file'
+import type { StartedFile } from '../../hooks/herdr-app'
 import { withCollapse } from '../../hooks/collapse'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
@@ -74,7 +75,7 @@ export type ServerDeps = {
   /** Reports each state the server writes to the Herdr app terminal Codex runs in. */
   onWrite?: OnWrite
   /** Starts applying the presses the Herdr look writes, with `apply`. */
-  followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<void>) => void
+  followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>) => void
   /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
   herdrAsk?: CodexHerdrAsk
 }
@@ -281,7 +282,7 @@ export function makeServer(given: ServerDeps): Server {
       }
       return errors
     },
-    apply: onHerdrFile,
+    apply: async (id, file) => void (await (await onHerdrFile(id, file)).waiting?.()),
     fetch: (id, state) =>
       fetchPrsWhenDue(
         id,

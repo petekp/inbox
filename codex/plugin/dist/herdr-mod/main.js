@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-19T22:34:35.746Z. 304228 characters follow.
+// Built at 2026-11-20T06:07:11.479Z. 304333 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -6694,9 +6694,12 @@ function isSentConfirmed(sent, view, lastPress) {
     return null;
   const delivery = view.lastActions[sent.rowId]?.delivery;
   const isChanged = lastActionKey(view, sent.rowId) !== sent.lastBefore;
+  const isStale = isNamed && lastPress?.outcome === "stale";
+  if (isChanged && !isStale && delivery?.state === "queued")
+    return null;
   return isChanged && isPressConfirmed({
     error: delivery?.state === "failed" ? delivery.reason : null,
-    note: isNamed && lastPress?.outcome === "stale" ? "stale" : null,
+    note: isStale ? "stale" : null,
     isUnconfirmed: delivery?.state === "unconfirmed"
   });
 }

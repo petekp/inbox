@@ -9,7 +9,7 @@ import { pressFolder } from '../../hooks/herdr'
 import type { HerdrTarget } from '../../hooks/herdr'
 import type { HerdrFile } from '../../hooks/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../hooks/herdr-app'
-import type { PressFiles } from '../../hooks/herdr-app'
+import type { PressFiles, StartedFile } from '../../hooks/herdr-app'
 import type { HerdrModResult, ModFiles } from '../../hooks/herdr-install'
 import { startInHerdrApp } from '../../hooks/herdr-start'
 import type { SweepFiles } from '../../hooks/herdr-sweep'
@@ -102,7 +102,7 @@ export type OmpPresses = {
  */
 export function ompPresses(
   target: HerdrTarget | null,
-  apply: (ctx: OmpContext, file: HerdrFile) => Promise<void>,
+  apply: (ctx: OmpContext, file: HerdrFile) => Promise<StartedFile>,
   log: (text: string) => void,
 ): OmpPresses {
   let stopFollowing: (() => void) | null = null
@@ -127,10 +127,7 @@ export function ompPresses(
       const drain = pressDrainer(
         pressFiles,
         sessionId => isPublishedHere(path => readFile(path, 'utf8'), appHome, sessionId, 'omp', terminal),
-        async (_id, file) => {
-          await apply(ctx, file)
-          return true
-        },
+        (_id, file) => apply(ctx, file),
         log,
       )
       const watchFolder = (wake: () => void) => {

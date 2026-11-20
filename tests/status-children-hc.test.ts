@@ -3,7 +3,7 @@ import { test } from './test-with-timeout'
 
 import { delegatesSettled } from '../hooks/children'
 import { childEnded, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
-import { applyHerdrFile } from '../hooks/herdr-app'
+import { startHerdrFile } from '../hooks/herdr-app'
 import { delegatesInHerdr, HERDR_FORMAT, herdrTarget } from '../hooks/herdr'
 import { emptySession } from '../hooks/session-files'
 import type { PressHost } from '../hooks/host-press'
@@ -145,7 +145,7 @@ test('a look file the Herdr look wrote sets the last look on the saved Status', 
     drawnWrittenAt: 21 * MIN,
   }
 
-  await applyHerdrFile(host, { format: HERDR_FORMAT, id: 'p1', look })
+  await startHerdrFile(host, { format: HERDR_FORMAT, id: 'p1', look })
 
   expect(saved.ledger.overview?.lastLookAt).toBe(20 * MIN + LOOK_MIN_MS)
 })

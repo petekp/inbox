@@ -145,6 +145,7 @@ const replied = (delivery: Delivery): SessionView => ({
   },
 })
 const queued = replied({ state: 'queued', message: REPLY })
+const arrived = replied({ state: 'arrived' })
 const applied = (id: string): LastPress => ({ id, outcome: 'applied' })
 
 const drafts = { [rowId]: { text: `${REPLY} `, since: NOW } }
@@ -161,16 +162,17 @@ async function draftsAfter(answers: [SessionView, (pressId: string) => LastPress
   return { kept, queue }
 }
 
-test('a sent reply keeps its draft until the host finishes its press, then a confirmed send deletes it', async () => {
+test('a sent reply keeps its draft until the host finishes its press and its message has left the queue, then a confirmed send deletes it', async () => {
   const named = await draftsAfter([
     [queued, () => null],
     [queued, applied],
+    [arrived, applied],
   ])
-  expect(named.kept).toEqual([drafts, {}])
+  expect(named.kept).toEqual([drafts, drafts, {}])
   expect(named.queue.isAwaiting()).toBe(false)
   const ended = await draftsAfter([[queued, () => null]])
   expect([ended.queue.outs.length, ended.queue.isAwaiting()]).toEqual([0, true])
-  const passed = await draftsAfter([[replied({ state: 'arrived' }), id => applied(`${id}~`)]])
+  const passed = await draftsAfter([[arrived, id => applied(`${id}~`)]])
   expect(passed.kept).toEqual([{}])
 })
 
@@ -210,7 +212,7 @@ test('a reply the look gives up on keeps its draft, whether no host took it or i
 
 test('a confirmed send leaves a draft edited after it, and deletes an unedited one once its open field closes', async () => {
   const queue = new PressQueue(taken())
-  const confirmed = await queue.settle(queued, applied(await sendReply(queue)), AGENT)
+  const confirmed = await queue.settle(arrived, applied(await sendReply(queue)), AGENT)
   const edited = { [rowId]: { text: `${REPLY}, and add a test`, since: NOW } }
   expect(withoutConfirmed(edited, confirmed, null, []).drafts).toEqual(edited)
   const open = withoutConfirmed(drafts, confirmed, rowId, [])
@@ -225,7 +227,7 @@ test('a later send on the row, still out, keeps the draft when an earlier send i
   await queue.settle(queued, null, AGENT)
   clock.now = NOW + 1000
   await sendReply(queue)
-  const confirmed = await queue.settle(queued, applied(first), AGENT)
+  const confirmed = await queue.settle(arrived, applied(first), AGENT)
   expect(confirmed.map(c => c.pressId)).toEqual([first])
   expect(withoutConfirmed(drafts, confirmed, null, queue.sentTexts)).toEqual({ drafts, waiting: [] })
 })
