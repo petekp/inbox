@@ -90,9 +90,17 @@ test('an answer that meets the goal with no GOAL or SUGGEST line is asked once m
   expect((await asked(running, ['DONE: Import works | shipped'])).prompts).toHaveLength(1)
 })
 
-test('an answer of only SUGGEST - while nothing is suggested changes nothing, as NO CHANGE does', () => {
+test('an answer of only SUGGEST - while nothing is suggested changes nothing but the note of the work it judged', () => {
   const none = parseStatus('NO CHANGE\nSUGGEST: -')!
 
   expect(applyStatus(null, none, 30 * MIN, new Set())).toBeNull()
-  expect(applyStatus(met(), none, 30 * MIN, new Set())).toEqual(met())
+  expect(applyStatus(met(), none, 30 * MIN, new Set())).toEqual({ ...met(), noGoalFor: expect.any(String) })
+})
+
+test('after SUGGEST: -, an answer with no goal line is asked once more only when the goal, the open subjects or the asks changed', async () => {
+  const declined = applyStatus(met(), { kind: 'ops', ops: [{ kind: 'suggest', text: null }] }, 22 * MIN, new Set())
+  const moved = declined && after(declined, 'NEW: working | Search | started', 25 * MIN)
+
+  expect((await asked(declined, ['NO CHANGE'])).prompts).toHaveLength(1)
+  expect((await asked(moved, ['NO CHANGE', 'SUGGEST: -'])).prompts).toHaveLength(2)
 })

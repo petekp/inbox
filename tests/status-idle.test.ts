@@ -114,3 +114,31 @@ test('a waiting subject kept with the same words leaves the idle block for a day
   expect(suggestOnly && statusRetry(input(3 * DAY + 60 * MIN), 'prompt')(suggestOnly, 'SUGGEST: -')).toBeNull()
   expect(statusPrompt(input(4 * DAY + MIN), EXCHANGE)).toContain('s6 | waits-on-other | Font license | 4d\n</idle>')
 })
+
+test('a line counts for an idle subject only when it applies to that subject', () => {
+  const input = { last: stalled(), asks: [askItem('i1')], tasks: [], now: 3 * DAY }
+  const unanswered = (text: string) => {
+    const answer = parseStatus(`${text}\nSET: s1 | working | queue built\nSUGGEST: -`)
+    const retry = answer && statusRetry(input, 'prompt')(answer, text)
+    return retry?.prompt.split('\n').find(l => l.startsWith('Your answer has no line')) ?? null
+  }
+
+  expect(unanswered('WAS: s6 | was waiting on the old vendor')).toBeNull()
+  expect(unanswered('LINK: i1 | s6')).toBeNull()
+  expect(unanswered('LINK: i9 | s6')).toContain('s6 Font license')
+  expect(unanswered('SET: S6 | waits-on-other | waits on the vendor')).toContain('s6 Font license')
+})
+
+test('of two open subjects with one name, a line naming them answers only the first, as it applies only to that one', () => {
+  const last = stalled()
+  const twin = {
+    ...last,
+    subjects: last.subjects.map(s => (s.id === 's4' ? { ...s, name: 'Offline sync', status: 'working' as const } : s)),
+  }
+  const input = { last: twin, asks: [askItem('i1')], tasks: [], now: 3 * DAY }
+  const text = 'DONE: Offline sync | queue works\nSET: s6 | waits-on-other | waits on the vendor\nSUGGEST: -'
+  const answer = parseStatus(text)
+  const retry = answer && statusRetry(input, 'prompt')(answer, text)
+
+  expect(retry?.prompt).toContain('no line for these subjects in <idle>: s4 Offline sync.')
+})

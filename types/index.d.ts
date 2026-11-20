@@ -162,6 +162,12 @@ export type SessionStatus = {
    * with Set. Null when the call offers none, and once a goal is set.
    */
   suggestedGoal: string | null
+  /**
+   * The goal, open subjects and open asks when the Status call last answered `SUGGEST: -` while asked for the next
+   * goal. While they stay the same, an answer with no GOAL or SUGGEST line is not asked once more. Absent in a Status
+   * an earlier build saved.
+   */
+  noGoalFor?: string | null
 
   /** When the person last looked: the last time a look ended. Null before the first look. */
   lastLookAt: number | null

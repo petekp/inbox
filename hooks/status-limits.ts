@@ -155,6 +155,13 @@ export function isOpen(s: Pick<Subject, 'status'>): boolean {
   return s.status !== 'done' && s.status !== 'dropped'
 }
 
+/** The subject a Status line's ref names: the one with that id, else the first open subject with that name. */
+export function findSubject(subjects: readonly Subject[], ref: string): Subject | null {
+  const key = nameKey(clipWords(ref, NAME_KEPT))
+
+  return subjects.find(s => s.id === ref) ?? subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
+}
+
 /** Whether a subject is under way: working, or waiting on something outside the session. */
 export function isUnderWay(s: Pick<Subject, 'status'>): boolean {
   return s.status === 'working' || s.status === 'waits-on-other'

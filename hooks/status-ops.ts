@@ -3,6 +3,7 @@ import type { Op, StatusAnswer } from './status'
 import { isChildRunning, isSubjectSeen } from './status-children'
 import {
   clipWords,
+  findSubject,
   DESCRIPTION_KEPT,
   EMPTY_SESSION_STATUS,
   IDLE_AFTER_MS,
@@ -26,7 +27,7 @@ import {
   settleGoal,
   withRestatedGoalAsMilestones,
 } from './status-goal-ops'
-import { withSuggestion } from './status-suggest'
+import { withNoGoalNoted, withSuggestion } from './status-suggest'
 
 /** What an answer did to the work, read once its subject changes have applied at `now`. */
 type AnswerWork = {
@@ -175,11 +176,7 @@ export function applyOps(
     goalRefused: null,
   }
   const closedHere = new Set<string>()
-  const find = (ref: string) => {
-    const key = nameKey(clipWords(ref, NAME_KEPT))
-
-    return o.subjects.find(s => s.id === ref) ?? o.subjects.find(s => isOpen(s) && nameKey(s.name) === key) ?? null
-  }
+  const find = (ref: string) => findSubject(o.subjects, ref)
   /**
    * The subject that closed since the person last looked whose name `name` repeats word for word, the latest first. A
    * NEW for it reopens it, so the page shows one row for the piece, not one for each time it finished. A longer name,
@@ -352,5 +349,7 @@ export function applyStatus(
   const settled = changes ? o : settleGoal(o, now, readSetAt, new Map())
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
 
-  return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }
+  const kept = settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }
+
+  return withNoGoalNoted(kept, answer, askIds)
 }
