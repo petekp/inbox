@@ -1,7 +1,12 @@
 # The checks in scripts/check.sh that need no Herdr app and no sign-in, run on every pull request to next or main and
-# on every push to next. scripts/check.sh stays the full check. It also runs the root type check, against the engine
-# types only a signed-in session writes, the Herdr look's type check, against the Herdr app's own type files, and
-# `herdr-app check`.
+# on every push to next or main. scripts/check.sh stays the full check. It also runs the root type check, against the
+# engine types only a signed-in session writes, the Herdr look's type check, against the Herdr app's own type files,
+# and `herdr-app check`.
+#
+# Pull requests to next carry source only, so the source only job fails one that changes a built bundle, and each
+# look's job builds its bundle. bundles.yml commits the rebuilt bundles to next after each push. main takes next's
+# commits at a release, so on a pull request or push to main each look's job checks that its committed bundle matches
+# its sources.
 
 name: checks
 
@@ -9,7 +14,7 @@ on:
   pull_request:
     branches: [next, main]
   push:
-    branches: [next]
+    branches: [next, main]
 
 permissions:
   contents: read
@@ -23,8 +28,25 @@ env:
   # The Bun that omp/package.json and herdr/package.json pin, which their bundle builds require.
   BUN_VERSION: '1.4.4'
   CLAUDE_CODE_VERSION: '2.1.329'
+  # The bundle script each look's job runs: check, which fails on a committed bundle that does not match its sources,
+  # for main, and build, which fails only on a bundle that does not build, for next.
+  BUNDLE_SCRIPT: ${{ (github.base_ref == 'main' || github.ref == 'refs/heads/main') && 'check' || 'build' }}
 
 jobs:
+  source-only:
+    name: source only
+    if: github.event_name == 'pull_request' && github.base_ref == 'next'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # The pull request's merge commit and its first parent, the tip of next.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: no built bundles
+        run: ./scripts/bundles.sh source-only HEAD^1
+
   mod:
     name: mod
     runs-on: ubuntu-24.04
@@ -92,7 +114,7 @@ jobs:
       - name: install tools
         run: npm --prefix codex ci --ignore-scripts --no-audit --no-fund
       - name: codex bundles
-        run: npm --prefix codex run --silent check
+        run: npm --prefix codex run --silent "$BUNDLE_SCRIPT"
       - name: codex types
         run: npm --prefix codex run --silent types
       - name: codex tests
@@ -119,7 +141,7 @@ jobs:
       - name: install tools
         run: bun install --cwd omp --frozen-lockfile --ignore-scripts
       - name: omp bundle
-        run: npm --prefix omp run --silent check
+        run: npm --prefix omp run --silent "$BUNDLE_SCRIPT"
       - name: omp types
         run: npm --prefix omp run --silent types
       - name: omp tests
@@ -146,6 +168,6 @@ jobs:
       - name: install tools
         run: bun install --cwd herdr --frozen-lockfile --ignore-scripts
       - name: herdr mod
-        run: npm --prefix herdr run --silent check
+        run: npm --prefix herdr run --silent "$BUNDLE_SCRIPT"
       - name: herdr tests
         run: bun test --cwd herdr tests

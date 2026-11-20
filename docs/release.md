@@ -4,6 +4,8 @@ Pull requests merge into the `next` branch. A release fast-forwards `main` to `n
 
 Run the automated checks on the `next` commit you will release, before `main` moves.
 
+Release a `next` commit whose bundles match its sources. Pull requests carry source only, and after each push to `next` the `bundles` workflow commits the rebuilt bundles as "Rebuild bundles for <short sha>". Before you pick the commit, wait for that workflow's latest run to finish, with `gh run list --workflow bundles.yml --branch next --limit 3`, and pull `next` again. CI on `main` fails when a committed bundle does not match its sources, and `./scripts/bundles.sh check` runs the same check locally.
+
 ## 1. Run the automated checks
 
 Write the engine types first, with the Claude Code the release is checked against. `check.sh` type-checks against whatever `.claude-plugin/types` holds, and a session writes that folder only when it loads the mod from this checkout, so types an older session wrote hide what the current engine requires. One session writes them:
@@ -18,7 +20,8 @@ Send each command's output to a log file and check its exit status. Each must ex
 
 | Command | What it checks |
 | --- | --- |
-| `./scripts/check.sh` | Formatting, file sizes, plugin validation, structure, one version in the three plugin manifests, type checks, all test suites, and that the Codex and omp bundles match their sources. |
+| `./scripts/check.sh` | Formatting, file sizes, plugin validation, structure, one version in the three plugin manifests, type checks, all test suites, and that the bundles build. |
+| `./scripts/bundles.sh check` | That the committed bundles match their sources. It refuses to run while the working tree's bundles differ from HEAD's, and `./scripts/bundles.sh restore` puts them back. |
 | `./scripts/eval.sh` | The inbox model on every case in `evals/cases/`, on Sonnet and on Codex. |
 | `./scripts/eval.sh --suite agent --agent all` | How Claude, Codex and omp use the `record` and `close` tools under the inbox's guidance, on every case in `evals/agent-cases/`. The omp runs need a Claude sign-in in omp: run `omp`, then `/login`. |
 | `./scripts/eval.sh --suite status --judge` | The Status call on every replay in `evals/replays/`, on Sonnet and on Codex, with the judge at its checkpoints. Known failing checks are listed apart and do not fail the run. |
@@ -87,6 +90,8 @@ Installs update as soon as the bump is pushed, so the release notes are written 
 
 1. Write the release notes to a file outside the repo, with the `release-notes` skill from [petekp/claude-code-setup](https://github.com/petekp/claude-code-setup/tree/main/skills/release-notes). Without it, use its order: one line on the effect people will notice most, what they'll notice in each look, how to update in each agent, then the technical changes.
 2. Set the new version in `.claude-plugin/plugin.json`, `codex/plugin/.codex-plugin/plugin.json` and `omp/package.json`. The Codex and omp bundles take it from these files when you build them in step 3. `./scripts/check.sh` fails when the three differ.
-3. Run `npm --prefix codex run build`, `npm --prefix omp run build` and `npm --prefix herdr run build`, then `./scripts/check.sh`.
-4. Commit as "Bump to x.y.z" on `next`, and tag it `vx.y.z`. Push `next`, the tag, and the same commit to `main`.
-5. Publish the release at once with `gh release create vx.y.z --notes-file <notes file>`.
+3. Run `./scripts/check.sh`, which builds the bundles with the new version.
+4. Commit the three version files as "Bump to x.y.z" on `next`, and push `next`. Put the bundles back first with `./scripts/bundles.sh restore`, since the `bundles` workflow rebuilds them.
+5. Wait for the workflow's run for the bump to finish, with `gh run list --workflow bundles.yml --branch next --limit 3`. Pull `next`: its tip is now "Rebuild bundles for <bump sha>". Run `./scripts/bundles.sh check` there.
+6. Tag that commit `vx.y.z`. Push the tag, and the same commit to `main`. CI on `main` checks its bundles again.
+7. Publish the release at once with `gh release create vx.y.z --notes-file <notes file>`.

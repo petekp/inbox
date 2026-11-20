@@ -10,9 +10,11 @@
 # scripts/build-types.mjs, that the inbox tools' input types match their
 # schemas, with scripts/build-tool-inputs.mjs, its types with tsc, and its tests with
 # `claude plugin test`. Then the Codex plugin in codex/, the omp extension in
-# omp/ and the Herdr look in herdr/, and, when the Herdr app is installed, a
-# load of the built Herdr mod in the app's own runtime with `herdr-app check`.
-# Exits 1 on any failure, and when a check cannot run.
+# omp/ and the Herdr look in herdr/, each built into the working tree, and,
+# when the Herdr app is installed, a load of the built Herdr mod in the app's
+# own runtime with `herdr-app check`. Last, on a branch other than next or
+# main, that the branch's commits change no built bundle, with
+# scripts/bundles.sh. Exits 1 on any failure, and when a check cannot run.
 #
 # Needs node, bun, the claude CLI and the Herdr app, whose type files the
 # Herdr look's types check against. Prettier, TypeScript and esbuild come from
@@ -31,7 +33,15 @@ fi
 status=0
 log=$(mktemp)
 herdr_scratch=
-trap 'rm -f "$log"; [ -z "$herdr_scratch" ] || rm -rf "$herdr_scratch"' EXIT
+# The builds below write the bundles into the working tree. When they matched HEAD before, put them back on exit, so a
+# commit after check.sh cannot pick them up. Bundles you built yourself stay.
+restore_bundles=no
+# shellcheck disable=SC2046
+if git -C "$DIR" diff --quiet HEAD -- $("$DIR/scripts/bundles.sh" dirs); then
+    restore_bundles=yes
+fi
+trap 'rm -f "$log"; [ -z "$herdr_scratch" ] || rm -rf "$herdr_scratch"
+[ "$restore_bundles" = no ] || "$DIR/scripts/bundles.sh" restore' EXIT
 
 # Runs one check and prints the check's output only when it fails. A log that
 # lists every test, as the root tests step's does, prints each failed test's
@@ -96,10 +106,10 @@ check "eval cases" sh -c '"$1/node_modules/.bin/esbuild" "$1/evals/check-cases.t
     --format=esm --outfile="$2/check-cases.mjs" --log-level=warning && node "$2/check-cases.mjs" "$1"' _ "$DIR" "$cases"
 rm -rf "$cases"
 
-# The Codex plugin in codex/: its committed bundles match its sources, its
-# types, and its tests. Its tools come from its own package.json.
+# The Codex plugin in codex/: its bundles build, its types, and its tests. The
+# build writes into the working tree, and the tests run the built bundles. Its tools come from its own package.json.
 if [ -d "$DIR/codex/node_modules" ]; then
-    check "codex bundles" npm --prefix "$DIR/codex" run --silent check
+    check "codex build" npm --prefix "$DIR/codex" run --silent build
     check "codex types" npm --prefix "$DIR/codex" run --silent types
     check "codex tests" npm --prefix "$DIR/codex" test --silent
 else
@@ -107,7 +117,7 @@ else
     status=1
 fi
 
-# The omp extension in omp/: its committed bundle matches its sources, its types and its tests. omp runs on Bun, and its
+# The omp extension in omp/: its bundle builds, its types and its tests. omp runs on Bun, and its
 # types come from omp's own packages in omp/node_modules.
 if ! command -v bun >/dev/null 2>&1; then
     echo "  x omp: not checked. Install Bun: https://bun.sh"
@@ -116,12 +126,12 @@ elif [ ! -d "$DIR/omp/node_modules" ]; then
     echo "  x omp: not checked. Install its tools once: bun install --cwd $DIR/omp --frozen-lockfile --ignore-scripts"
     status=1
 else
-    check "omp bundle" npm --prefix "$DIR/omp" run --silent check
+    check "omp build" npm --prefix "$DIR/omp" run --silent build
     check "omp types" npm --prefix "$DIR/omp" run --silent types
     check "omp tests" bun test --cwd "$DIR/omp" tests
 fi
 
-# The Herdr look in herdr/: its committed mod matches its sources, its types and its tests. Its types check against
+# The Herdr look in herdr/: its mod builds, its types and its tests, which load the built mod. Its types check against
 # the type files of the Herdr app installed here, which herdr/herdr-types.ts copies in.
 if ! command -v bun >/dev/null 2>&1; then
     echo "  x herdr: not checked. Install Bun: https://bun.sh"
@@ -130,7 +140,7 @@ elif [ ! -d "$DIR/herdr/node_modules" ]; then
     echo "  x herdr: not checked. Install its tools once: bun install --cwd $DIR/herdr --frozen-lockfile --ignore-scripts"
     status=1
 else
-    check "herdr mod" npm --prefix "$DIR/herdr" run --silent check
+    check "herdr build" npm --prefix "$DIR/herdr" run --silent build
     check "herdr types" npm --prefix "$DIR/herdr" run --silent types
     check "herdr tests" bun test --cwd "$DIR/herdr" tests
 fi
@@ -150,5 +160,19 @@ if command -v herdr-app >/dev/null 2>&1; then
 else
     echo "  - herdr app check: skipped, herdr-app is not installed"
 fi
+
+# A pull request carries source only, and a bot commits the rebuilt bundles to next after it merges.
+branch=$(git -C "$DIR" symbolic-ref -q --short HEAD || true)
+case $branch in
+'' | next | main) echo "  - source only: skipped, HEAD is ${branch:-detached}" ;;
+*)
+    if git -C "$DIR" rev-parse -q --verify origin/next >/dev/null; then
+        check "source only" "$DIR/scripts/bundles.sh" source-only origin/next
+    else
+        echo "  x source only: not checked. Fetch next first: git fetch origin next"
+        status=1
+    fi
+    ;;
+esac
 
 exit "$status"

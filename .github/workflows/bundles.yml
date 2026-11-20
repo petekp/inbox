@@ -1,0 +1,92 @@
+# After each push to next, rebuilds the bundles from next's tip and commits them to next when they differ, with
+# scripts/bundle-bot.sh. Pull requests carry source only, and checks.yml fails one that changes a bundle.
+#
+# The build job installs the tools and builds with a read-only token, and hands the change to the push job as a patch.
+# The push job holds the only write token. It applies the patch and pushes, and runs no build or installed tool.
+#
+# The push job pushes with the workflow's GITHUB_TOKEN, and GitHub starts no workflow run for a push made with it, so
+# the bot's commit starts neither this workflow nor checks.yml:
+# https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow
+#
+# One run at a time. A run that waits is replaced by a newer one, and each run builds next's tip when it starts, so the
+# newest run covers every push before it. When a push lands during a run, the run's own push is refused, and the run
+# for the new push builds the new tip.
+
+name: bundles
+
+on:
+  push:
+    branches: [next]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bundles-next
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '26'
+  # The Bun that omp/package.json and herdr/package.json pin, which their bundle builds require.
+  BUN_VERSION: '1.4.4'
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      changed: ${{ steps.build.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: next
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: install tools
+        run: |
+          npm --prefix codex ci --ignore-scripts --no-audit --no-fund
+          bun install --cwd omp --frozen-lockfile --ignore-scripts
+          bun install --cwd herdr --frozen-lockfile --ignore-scripts
+      - name: build
+        id: build
+        run: ./scripts/bundle-bot.sh build "$RUNNER_TEMP/bundles"
+      - if: steps.build.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundles
+          path: ${{ runner.temp }}/bundles
+          retention-days: 1
+
+  push:
+    name: push
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundles
+          path: ${{ runner.temp }}/bundles
+      - name: read the base
+        id: base
+        run: |
+          base=$(cat "$RUNNER_TEMP/bundles/base")
+          echo "$base" | grep -Eq '^[0-9a-f]{40}$' || { echo "Not a commit: $base"; exit 1; }
+          echo "sha=$base" >>"$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.base.outputs.sha }}
+          persist-credentials: false
+      - name: push
+        env:
+          BUNDLE_PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/bundle-bot.sh push "$RUNNER_TEMP/bundles"
