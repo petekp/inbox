@@ -33,7 +33,7 @@ import type { TabView as View } from './core'
 import { tabState } from './tab-state'
 import type { Key, Row, Lists } from './tab-state'
 import { drawnSettled, isTabInPlace } from './settle'
-import { dispatch, drawnTab, isClickGuarded, openRowId, pressRow } from './tab-ui'
+import { dispatch, drawnTab, isGuarded, openRowId, pressRow } from './tab-ui'
 import { isUndoing, outOn, sendingSince, undoingIds } from './tab-press'
 import { foldAllHere } from './tab-fold-all'
 import { askTree } from './tab-ask-tree'
@@ -61,6 +61,8 @@ export function pressTitle(id: string, isAll: boolean, by: InputKind) {
   const t = drawnTab()
   const isOpen = isRowTab(t) && openRowId(t) === id
   const isCollapsed = tabState.view?.collapsed.includes(id) === true
+  const isGuardedFold = isOpen && isGuarded(id, by)
+  if (isAll && isGuardedFold) return
   if (isAll && (isOpen || isCollapsed)) foldAllHere(!isOpen)
   else dispatch([{ type: 'title-press', id, by }])
 }
@@ -103,7 +105,7 @@ function itemRow(v: View, r: RowView): Row {
     title: r.title,
     ...(r.holdsUpLine ? { holdsUp: r.holdsUpLine } : {}),
     age: r.at === null ? undefined : shortAgo(v.at - r.at),
-    ...askTree(r, actions.options, answerRow, () => isClickGuarded(id)),
+    ...askTree(r, actions.options, answerRow, () => isGuarded(id, 'click')),
     ...actions,
     typing: {
       hint: replyHint(r, 'Codex'),

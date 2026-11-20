@@ -44,7 +44,8 @@ test('what a page keeps reads in a 0.6.0 page as the same tab, cursors, draft an
     shownSince: 50,
     selection: { ...fresh.selection, needsYou: { id: 'i2', index: 1, guard: { by: 'click', at: NOW - 10 } } },
     typing: 'i2',
-    drafts: { i2: { text: 'Waiting for access', since: 60 } },
+    drafts: { i2: { text: 'Waiting for access', since: 60 }, i4: { text: 'Use Node', since: 70 } },
+    sentReplies: { i4: { pressId: 3, text: 'Use Node', atBefore: null, isConfirmed: true } },
     unfolded: ['task'],
     statusUnfolded: ['s1'],
     undoSeen: { i1: NOW - 2_000 },
@@ -65,5 +66,6 @@ test('what a page keeps reads in a 0.6.0 page as the same tab, cursors, draft an
   assert.deepEqual(swapped.errors, { i3: { text: 'Could not send.', at: NOW - 100 } })
   assert.deepEqual(swapped.selection.needsYou, ui.selection.needsYou)
   assert.deepEqual(swapped.pressesOut, {})
+  assert.deepEqual(swapped.drafts.i4, { text: 'Use Node', since: 70 })
   assert.equal(swapped.config, CODEX_LOOK)
 })

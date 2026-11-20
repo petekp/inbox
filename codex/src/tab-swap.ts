@@ -14,7 +14,8 @@ const KEPT_KEY = 'inbox-tab-kept'
 
 /**
  * What a page keeps across a swap: the controller's state as `restoredUi` leaves it, under `ui`, and beside it the
- * fields a page from before `ui` reads, so an older page still opens on the same tab, rows, drafts and folds.
+ * fields a page from before `ui` reads, so an older page still opens on the same tab, rows, drafts and folds. Those
+ * fields leave out a sent reply's draft, since an older page drops a draft once it sends it.
  */
 export function keptOf(ui: UiState, isDemo: boolean): Kept {
   return {
@@ -27,7 +28,7 @@ export function keptOf(ui: UiState, isDemo: boolean): Kept {
       prs: ui.selection.prs.id,
     },
     typing: ui.typing,
-    drafts: Object.entries(ui.drafts),
+    drafts: Object.entries(ui.drafts).filter(([id, d]) => ui.sentReplies[id]?.text !== d.text.trim()),
     optionsShown: [...ui.optionsShown],
     unfolded: [...ui.unfolded],
     ...(ui.shownSince === null ? {} : { shownSince: ui.shownSince }),

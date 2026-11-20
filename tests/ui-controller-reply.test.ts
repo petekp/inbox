@@ -79,6 +79,18 @@ test('a reply with no words, or a repeat of an action still out on its row, send
   const answer = { action: 'answer', id: 'i2', option: 'Yes' } as const
   const first = send(ui, S, { type: 'press', press: answer, by: 'key' }, T0 + 10)
   expect(send(first.ui, S, { type: 'press', press: answer, by: 'key' }, T0 + 20).commands).toEqual([])
+  const run = sent()
+  expect(send(run.ui, S, { type: 'press', press: reply('Use Node'), by: 'key' }, T0 + 40).commands).toEqual([])
+})
+
+test('a reply with other words goes out while the first is out, and its draft stays until it arrives', () => {
+  const run = sent()
+  const second = send(run.ui, S, { type: 'press', press: reply('Use Bun'), by: 'key' }, T0 + 40)
+  expect(kinds(second.commands)).toEqual(['press'])
+  const firstArrived = withLastAction(S, 'i1', replyAction('Use Node', T0 + 45, { state: 'arrived' }))
+  expect(read(second.ui, firstArrived, T0 + 50).ui.drafts.i1?.text).toBe('Use Bun')
+  const secondArrived = withLastAction(S, 'i1', replyAction('Use Bun', T0 + 55, { state: 'arrived' }))
+  expect(read(second.ui, secondArrived, T0 + 60).ui.drafts.i1).toBe(undefined)
 })
 
 test('a sent reply’s draft is deleted once the view shows the reply arrived', () => {

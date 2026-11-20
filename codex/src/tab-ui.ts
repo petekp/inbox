@@ -66,9 +66,9 @@ export function afterDraw() {
 /** A refused press's text on row `id`, while it shows. */
 export const errorOf = (id: string): string | null => rowErrorOf(tabState.ui, id, Date.now())
 
-/** Whether a click on row `id` falls in the guard of the click that opened it. */
-export const isClickGuarded = (id: string): boolean =>
-  isGuardedPress(tabState.ui, tabState.ui.tab, id, 'click', Date.now())
+/** Whether a press by `by` on row `id` falls in the guard of the input that opened it. */
+export const isGuarded = (id: string, by: InputKind): boolean =>
+  isGuardedPress(tabState.ui, tabState.ui.tab, id, by, Date.now())
 
 /** One timer: it reads the view again when the view changes on the clock, and otherwise ticks the controller. */
 let wake: { at: number; isRead: boolean; timer: number } | null = null

@@ -73,14 +73,15 @@ const isUndoPress = (p: RowPress | PrPress) => p.action === 'undo' || p.action =
 
 /**
  * Sends a press, unless it repeats an action still out on its row, falls in the guard of the input that opened the
- * row, or is a reply with no words. A reply's field closes and its draft stays, holding its row, until the reply
- * arrives.
+ * row, or is a reply with no words. A reply repeats only when its words match the reply still out. A reply's field
+ * closes and its draft stays, holding its row, until the reply arrives.
  */
 export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by: InputKind, now: number): UiStep {
   const rowId = pressRowId(p)
   const action = actionId(p)
-  const isRepeat = Object.values(ui.pressesOut).some(o => o.rowId === rowId && o.action === action)
   const isReply = p.action === 'type'
+  const isOtherReply = isReply && ui.sentReplies[rowId]?.text !== p.text.trim()
+  const isRepeat = !isOtherReply && Object.values(ui.pressesOut).some(o => o.rowId === rowId && o.action === action)
   const isBlank = isReply && p.text.trim() === ''
   if (isRepeat || isBlank || isGuardedPress(ui, ui.tab, rowId, by, now)) return withCommands(ui)
   const holds = holdsOf(ui, now)
@@ -237,7 +238,7 @@ function sentFate(ui: UiState, view: SessionView, row: string): SentFate {
   const isOut = Object.values(ui.pressesOut).some(o => o.pressId === sent.pressId)
   if (last === undefined) return sent.atBefore === null && isOut ? 'wait' : sent.isConfirmed ? 'release' : 'keep'
   if (last.at === sent.atBefore) return isOut ? 'wait' : 'keep'
-  if (last.reply?.trim() !== sent.text) return 'keep'
+  if (last.reply?.trim() !== sent.text) return isOut ? 'wait' : 'keep'
   const state = last.delivery?.state
   if (state === 'held' || state === 'queued') return 'wait'
 

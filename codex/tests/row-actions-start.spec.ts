@@ -158,10 +158,11 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     second.value = 'Second overlapping reply'
     second.dispatchEvent(new host.Event('input', { bubbles: true }))
     button('Send')!.click()
-    await pause(40)
-    assert.equal(heldPresses.length, 1, 'a second reply went out while the first was out')
-    assert.equal(document.querySelector('input')?.value, 'Second overlapping reply')
+    await until(() => heldPresses.length === 2)
     heldPresses[0]!()
+    await pause(40)
+    assert.match(document.getElementById('app')?.textContent ?? '', /Sending…/)
+    heldPresses[1]!()
     await until(() => !(document.getElementById('app')?.textContent?.includes('Sending…') ?? false))
   } finally {
     await host.happyDOM.close()

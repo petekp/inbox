@@ -211,8 +211,11 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
     const realNow = Date.now
     let clockAhead = 0
     Date.now = () => realNow() + clockAhead
-    const moveOnList = () =>
-      root.querySelector('.list')!.dispatchEvent(new window.Event('pointermove', { bubbles: true }) as unknown as Event)
+    const moveOnList = () => {
+      const list = root.querySelector('.list')
+      if (list === null) throw new Error('the tab draws no list')
+      list.dispatchEvent(new window.Event('pointermove', { bubbles: true }) as unknown as Event)
+    }
     try {
       for (; clockAhead < SETTLED_MS; clockAhead += FOLD_QUIET_MS / 2) {
         moveOnList()

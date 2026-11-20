@@ -17,7 +17,7 @@ import type { RowTarget, RowTrack } from '../../hooks/row-motion'
 import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
 import type { Key, Row, Entry, Lists } from './tab-state'
 import { reducedMotion } from './tab-motion'
-import { dispatch, drawnTab, errorOf, isClickGuarded, openRowId, pressRow } from './tab-ui'
+import { dispatch, drawnTab, errorOf, isGuarded, openRowId, pressRow } from './tab-ui'
 import { isUndoing, outOn, outPending } from './tab-press'
 import { listsOf, pressTitle, shownSettled } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
@@ -313,7 +313,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
               }
             : null
         }
-        isBlocked={() => isClickGuarded(row.id)}
+        isBlocked={() => isGuarded(row.id, 'click')}
       />
       {lines.map((l, n) => (
         <div
