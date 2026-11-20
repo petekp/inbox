@@ -31,6 +31,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/arrivals.ts` | Shared module. Which rows are new, and where a look moves for them. |
 | `hooks/ledger.ts` | Shared module. The empty ledger, how many sessions each host keeps, and the upgrade of a saved ledger. |
 | `hooks/reply-parse.ts` | Shared module. The parser that reads the inbox model's answer into an `Update`: its update lines, help steps, commands and todos. |
+| `hooks/ask-subject.ts` | Shared module. Whether an ask from the inbox model's answer names a subject, which a NEW or TODO line needs to add a question or task. |
 | `hooks/ask-match.ts` | Shared module. Whether two asks say the same thing, whether a new ask repeats an open or closed one, which option a recommendation names, and whether an answer is a question back. |
 | `hooks/ledger-close.ts` | Shared module. Closing and reopening items and findings, pruning closed records, and whether a closed record counts as handled, dismissed or lapsed. |
 | `hooks/ledger-update.ts` | Shared module. Applying a parsed update to the ledger, and adding findings and the items the agent records. |

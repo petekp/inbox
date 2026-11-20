@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util'
 import { EMPTY } from '../hooks/ledger'
 import { CLAUDE_CODE } from '../hooks/model-text'
 import { isAgentTool, toolAnswer } from '../hooks/tools'
+import type { DelegateSession } from '../hooks/hc-terminals'
 import { CODEX } from '../codex/src/texts'
 import type { LastAction, Ledger } from '../types'
 import { servedTools, type CaseTools } from './probe-tools'
@@ -16,6 +17,7 @@ const state: {
   ledger: Partial<Ledger>
   lastActions: Record<string, LastAction>
   tools: CaseTools | null
+  delegate: DelegateSession | null
 } = JSON.parse(readFileSync(values.state!, 'utf8'))
 const host = state.agent === 'codex' ? CODEX : CLAUDE_CODE
 let ledger = { ...EMPTY, ...state.ledger } as Ledger
@@ -28,7 +30,7 @@ function send(id: unknown, result: unknown) {
 
 function call(name: string, args: Record<string, unknown>): { text: string; isError: boolean } {
   if (!isAgentTool(name)) return { text: `Unknown tool: ${name}`, isError: true }
-  const r = toolAnswer(host, ledger, name, args, Date.now(), presses, offered.fields)
+  const r = toolAnswer(host, ledger, name, args, Date.now(), presses, offered.fields, state.delegate)
   ledger = r.ledger
   appendFileSync(values.log!, `${JSON.stringify({ tool: name, args, result: r.result })}\n`)
 

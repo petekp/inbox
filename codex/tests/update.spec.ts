@@ -50,7 +50,7 @@ test('a killed update worker leaves pending exchanges recoverable', async t => {
     's1',
     async () => {
       calls += 1
-      return 'NEW: decide | - | Deploy now? | Yes / No | Yes'
+      return 'NEW: decide | - | Deploy the API now? | Yes / No | Yes'
     },
     () => 5,
   )
@@ -70,17 +70,17 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     ],
   }))
   const prompts: string[] = []
-  const answers = ['NEW: decide | - | Deploy now? | Yes / No | Yes', null]
+  const answers = ['NEW: decide | - | Deploy the API now? | Yes / No | Yes', null]
   const ask = async (p: string) => (prompts.push(p), answers.shift() ?? null)
   assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isRetrying: false, error: null })
   await runUpdates(dir, 's1', ask, () => 5)
 
   const kept = await readState(dir, 's1')
   assert.equal(prompts.length, 2)
-  assert.match(prompts[1] ?? '', /i1 \| decide \| - \| Deploy now\?/)
+  assert.match(prompts[1] ?? '', /i1 \| decide \| - \| Deploy the API now\?/)
   assert.deepEqual(
     kept.ledger.items.map(i => i.ask),
-    ['Deploy now?'],
+    ['Deploy the API now?'],
   )
   assert.deepEqual(
     kept.pending.map(p => [p.ex.turn, p.failed]),
@@ -174,7 +174,7 @@ test('an Explain exchange keeps its question open while applying the rest of the
     ...s,
     presence: { ...s.presence, turnsStarted: 2 },
     pending: [
-      { ex: ex(1, 'Deploy now? Check the build?'), turnsStarted: 1 },
+      { ex: ex(1, 'Deploy the API now? Check the iOS build?'), turnsStarted: 1 },
       {
         ex: { ...ex(2, 'Deployment means making the build live.'), press: { id: 'i1', action: 'explain' } },
         turnsStarted: 2,
@@ -182,7 +182,7 @@ test('an Explain exchange keeps its question open while applying the rest of the
     ],
   }))
   const replies = [
-    'NEW: decide | - | Deploy now? | Yes / No | Yes\nNEW: do | - | Check the build | - | -',
+    'NEW: decide | - | Deploy the API now? | Yes / No | Yes\nNEW: do | - | Check the iOS build | - | -',
     'CLOSED: i1 | done: explained\nCLOSED: i2 | done: checked',
   ]
   await runUpdates(
@@ -194,11 +194,11 @@ test('an Explain exchange keeps its question open while applying the rest of the
   const applied = await readState(dir, 's1')
   assert.deepEqual(
     applied.ledger.items.map(i => i.ask),
-    ['Deploy now?'],
+    ['Deploy the API now?'],
   )
   assert.deepEqual(
     applied.ledger.closed.map(c => c.ask),
-    ['Check the build'],
+    ['Check the iOS build'],
   )
   assert.deepEqual(applied.pending, [])
 })

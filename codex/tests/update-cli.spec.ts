@@ -77,7 +77,7 @@ test('a failed update saves the CLI it ran, its exit code, only the error and wa
     '**Weighing the deploy** The person asked whether to deploy the app.',
     streamError,
     'codex',
-    'Deploy now? The person said the key is in .env.',
+    'Deploy the API now? The person said the key is in .env.',
     error,
   ].join('\n')
   const { exec } = fakeRunner(() => ({ code: 1, stdout: '', stderr }))
@@ -90,7 +90,7 @@ test('a failed update saves the CLI it ran, its exit code, only the error and wa
   assert.equal(s.callFailures.ledger.lastFailure?.process?.code, 1)
   assert.equal(s.callFailures.ledger.lastFailure?.at, 7)
   assert.equal(s.callFailures.ledger.lastFailure?.process?.stderr, `${streamError}\n${error}`)
-  assert.doesNotMatch(JSON.stringify(s.callFailures), /deploy the app|API_KEY|Deploy now|Weighing/)
+  assert.doesNotMatch(JSON.stringify(s.callFailures), /deploy the app|API_KEY|Deploy the API now|Weighing/)
   assert.deepEqual(
     [
       s.callFailures.ledger.lastFailure.cause,
@@ -143,7 +143,7 @@ test('a reply with a NUL byte reaches codex on stdin, and both calls of its upda
   assert.equal(s.presence.ledgerState, 'current')
   assert.deepEqual(
     s.ledger.items.map(i => i.ask),
-    ['Deploy now?'],
+    ['Deploy the API now?'],
   )
   assert.equal(s.ledger.overview?.head?.title, 'Building the deploy script')
   assert.equal(s.callFailures.ledger.lastFailure, null)

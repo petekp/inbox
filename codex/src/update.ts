@@ -24,6 +24,7 @@ import {
   reconcileUpdateStatus as reconcileStatus,
   runUpdates as runSessionUpdates,
 } from '../../hooks/session-host'
+import type { DelegateSession } from '../../hooks/hc-terminals'
 import type { Ask } from '../../hooks/session-host'
 import { refreshStatus as refreshSessionStatus } from '../../hooks/status-records'
 import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
@@ -252,6 +253,7 @@ export const runUpdates = (
   now: () => number,
   onWrite?: OnWrite,
   records?: StatusRecords,
+  delegate: () => Promise<DelegateSession | null> = async () => null,
 ): Promise<void> => {
   const store = codexStore(dir, sessionId, now, onWrite)
 
@@ -261,6 +263,7 @@ export const runUpdates = (
     names: CODEX,
     inOrder: inOrderFor(dir, sessionId),
     records,
+    delegate,
     catchUp: async s => {
       const isMoved = (await withCurrentRollout(s)) !== s
       const path = isMoved ? (await store.update(withCurrentRollout)).transcriptPath : s.transcriptPath

@@ -104,14 +104,14 @@ test('where classic.SessionStart is skipped, the first prompt after /clear, /res
 test('a ledger update held during clear cannot write its old question into the new conversation', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.ledgerReply = 'NEW: decide | 1 | Old question? | Yes / No | Yes'
+  w.ledgerReply = 'NEW: decide | 1 | Keep the old cache? | Yes / No | Yes'
   let entered!: () => void
   let release!: () => void
   const inWrite = new Promise<void>(resolve => (entered = resolve))
   const held = new Promise<void>(resolve => (release = resolve))
   let didHold = false
   on('state.set', { plugin: 'inbox', key: 'session' } as const, async (_$, e, next) => {
-    if (!didHold && e.value.ledger.items.some(i => i.ask === 'Old question?')) {
+    if (!didHold && e.value.ledger.items.some(i => i.ask === 'Keep the old cache?')) {
       didHold = true
       entered()
       await held

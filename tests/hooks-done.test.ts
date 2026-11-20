@@ -20,7 +20,7 @@ test('Done on a task Claude just left tells Claude once Undo ends, and a task fr
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   w.ledgerReply = 'NEW: do | - | Water the plants | - | -'
   await reply('plan the day', 'Water the plants when you can.', 't1')
-  w.ledgerReply = ['NEW: do | - | Sign in to npm | - | -', 'NEW: do | - | Approve the deploy | - | -'].join('\n')
+  w.ledgerReply = ['NEW: do | - | Sign in to npm | - | -', 'NEW: do | - | Approve the v12 deploy | - | -'].join('\n')
   await reply('publish it', 'Sign in to npm and approve the deploy, then I publish.', 't2')
   const pane = await $.ui.mount(PANE)
   const done = async (id: string) => {
@@ -37,7 +37,7 @@ test('Done on a task Claude just left tells Claude once Undo ends, and a task fr
   expect(w.sent).toEqual([])
   expect(await pane.find({ key: 'undo-i3' })).toBeDefined()
   await clock.advance(SETTLED_MS / 2)
-  expect(w.sent).toEqual(['Done:\n- Sign in to npm\n- Approve the deploy'])
+  expect(w.sent).toEqual(['Done:\n- Sign in to npm\n- Approve the v12 deploy'])
 
   await reply('thanks', 'Published.', 't3')
   await done('i1')
@@ -88,12 +88,12 @@ test('a Done message that waits for its prompt to run reads Queued instead of No
 const doneWakeAfterRewrite = async ($: Engine, on: On, isMatched: boolean) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
-  w.ledgerReply = ['NEW: decide | 1 | Ship it? | yes / no | yes', 'NEW: do | - | Sign in to npm | - | -'].join('\n')
+  w.ledgerReply = ['NEW: decide | 1 | Ship v12? | yes / no | yes', 'NEW: do | - | Sign in to npm | - | -'].join('\n')
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.prompt.submit({ text: 'publish it', wait: false, origin: { kind: 'composer' } })
   await $.turn.start({ text: 'publish it', turnId: 't1' })
   await $.turn.complete({
-    answer: 'Ship it? And sign in to npm first.',
+    answer: 'Ship v12? And sign in to npm first.',
     durationMs: 5,
     isAborted: false,
     turnId: 't1',
@@ -135,7 +135,7 @@ for (const switchAt of [null, 'before-submit', 'during-submit'] as const)
   test(`a refused Done batch stays recoverable after resume, with session switch during send: ${switchAt}`, async ($, on) => {
     const clock = mock.clock(on, { now: 1_000_000 })
     world($, on, [])
-    w.ledgerReply = ['NEW: do | - | Sign in to npm | - | -', 'NEW: do | - | Approve the deploy | - | -'].join('\n')
+    w.ledgerReply = ['NEW: do | - | Sign in to npm | - | -', 'NEW: do | - | Approve the v12 deploy | - | -'].join('\n')
     await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
     await $.prompt.submit({ text: 'publish it', wait: false, origin: { kind: 'composer' } })
     await $.turn.start({ text: 'publish it', turnId: 't1' })

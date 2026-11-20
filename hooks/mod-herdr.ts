@@ -12,6 +12,7 @@ import {
   herdrTokens,
 } from './herdr'
 import type { EnvelopeSource, HerdrAgent, HerdrTarget } from './herdr'
+import { delegateSession, type DelegateSession } from './hc-terminals'
 import { PRESS_LABEL } from './herdr-labels'
 import {
   followPresses,
@@ -125,6 +126,13 @@ async function currentTarget(calls: HerdrCalls) {
   const [HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME] = await calls.env()
 
   return { target: herdrTarget({ HERDR_PANE_ID, HC_TERMINAL_ID, HERDR_APP_HOME, HOME }), HOME }
+}
+
+/** The delegate session the mod runs, as `delegateSession` reads it from the terminal now. Null when the read fails. */
+export function modDelegate(calls: HerdrCalls): Promise<DelegateSession | null> {
+  return currentTarget(calls)
+    .then(({ target }) => delegateSession(target, calls.run))
+    .catch(() => null)
 }
 
 async function targetOf(calls: HerdrCalls) {

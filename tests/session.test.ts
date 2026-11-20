@@ -329,7 +329,7 @@ test('each call’s last failure is saved in its own record with its cause, a pr
 })
 
 test('each call’s latest answer is saved as the model wrote it, with the turn its rows carry, a call with no text keeps the answer before it, and a long answer keeps its start', async () => {
-  const misread = 'NEW: decide | Push the change? | Push / Not yet | Push | -'
+  const misread = 'NEW: decide | Push the greet change? | Push / Not yet | Push | -'
   const long = `${LEDGER_REPLY}\n${'x'.repeat(ANSWER_CHARS)}`
   const ledgerAnswers = [misread, null, long]
   const { host } = fakeHost(async (_prompt, system) =>

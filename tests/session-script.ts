@@ -13,7 +13,7 @@ import type { Effect } from '../hooks/press-reducer'
 import { TOOL_FIELDS } from '../hooks/tool-schemas'
 
 type ScriptedHost<S extends Session = Session> = {
-  host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host }
+  host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder' | 'delegate'> & { names: Host }
   delivered: string[]
   performed: Extract<Effect, { kind: 'open' | 'copy' | 'scroll' }>[]
 }
@@ -29,10 +29,11 @@ export function fakeHostWith<S extends Session>(
     const order = orderedKeys()
     const delivered: string[] = []
     const performed: Extract<Effect, { kind: 'open' | 'copy' | 'scroll' }>[] = []
-    const host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder'> & { names: Host } = {
+    const host: SessionHost<S> & Pick<UpdateHost<S>, 'inOrder' | 'delegate'> & { names: Host } = {
       ...storage,
       names: CLAUDE_CODE,
       inOrder: fn => order.run('session', fn),
+      delegate: async () => null,
       now: () => (clock += 10),
       ask,
       deliver: async (_s, text) => {
@@ -100,6 +101,7 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
       { kind: 'task', ask: 'Try the CLI by hand' },
       await host.now(),
       TOOL_FIELDS,
+      null,
     )
     toolAnswer = r.result
     return r.state

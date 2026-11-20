@@ -218,7 +218,7 @@ describe('pressDrainer', () => {
       },
     }
     for (const ask of ['Sign in to npm', 'Rotate the key'])
-      await host.update(s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask }, 1, TOOL_FIELDS).state)
+      await host.update(s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask }, 1, TOOL_FIELDS, null).state)
     const rows = (await host.read()).ledger.items.map(i => i.id)
     const files: Record<string, string> = {}
     let pressedAt = 0

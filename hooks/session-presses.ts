@@ -3,6 +3,7 @@ import { remoteHeldRows } from './remote-viewers'
 import { remoteCommandState, remoteDeliveryOutcome } from './remote-command-state'
 import { linkDialogs } from './dialogs'
 import { closedAt, pruneClosed } from './ledger-close'
+import type { DelegateSession } from './hc-terminals'
 import type { Host } from './model-text'
 import { applyPrPress, withFinishedPrsSettled } from './pr-tab'
 import { isPrPress, lastPressOf, pressRowId } from './pr-press'
@@ -148,7 +149,8 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
 /**
  * Applies a call of one of `agentTools` from the agent to the ledger. `result` is the tool's answer, and `personLine` the
  * line the person sees under the call, as `hooks/tools.ts:ToolAnswer` says. `fields` are the input fields of the tools
- * the agent has, as its host knows them.
+ * the agent has, as its host knows them. `delegate` is the delegate session this is, as
+ * `hooks/hc-terminals.ts:delegateSession` reads it, or null when it is none.
  */
 export function recorded<S extends Session>(
   host: Host,
@@ -157,9 +159,10 @@ export function recorded<S extends Session>(
   args: Record<string, unknown>,
   now: number,
   fields: ToolFields,
+  delegate: DelegateSession | null,
 ): { state: S } & Omit<ToolAnswer, 'ledger'> {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt }
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields)
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields, delegate)
   const ledger = withOrderStatuses(r.ledger, s.prViews.views)
   const state = linkDialogs({ ...s, ledger }, now)
   const answered = ledger.items.find(i => !state.ledger.items.some(o => o.id === i.id))

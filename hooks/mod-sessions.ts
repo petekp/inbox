@@ -4,6 +4,7 @@ import { sessionToolFields, TOOL_FIELDS } from './tool-schemas'
 import { recorded } from './session-presses'
 import { CLAUDE_CODE } from './model-text'
 import type { AgentTool } from './tools'
+import type { DelegateSession } from './hc-terminals'
 import { exclusiveKeys, orderedKeys } from './session-host'
 import { withDemoPresence } from './demo'
 
@@ -73,8 +74,14 @@ export function withoutRowActions(lastActions: Record<string, LastAction>): Reco
 }
 
 /** The mod's answer to an inbox tool call in `s`, which asks only for fields the conversation's agent has. */
-export function answerToolCall(s: Session, tool: AgentTool, input: Record<string, unknown>, now: number) {
-  return recorded(CLAUDE_CODE, s, tool, input, now, sessionToolFields(s))
+export function answerToolCall(
+  s: Session,
+  tool: AgentTool,
+  input: Record<string, unknown>,
+  now: number,
+  delegate: DelegateSession | null,
+) {
+  return recorded(CLAUDE_CODE, s, tool, input, now, sessionToolFields(s), delegate)
 }
 
 /** How the mod came to load a conversation: as the mod started, or after /clear, /resume or a fork in the session. */

@@ -62,7 +62,7 @@ export function readsFor(agent: Agent, c: Case, isGuided: boolean): string[] {
     ...ledger.findings.map((f): [AgentTool, Record<string, unknown>] => ['close', { id: f.id, reason: 'fixed' }]),
   ]
   const answers = [...SAMPLE_CALLS, ...rowCalls].map(
-    ([name, args]) => toolAnswer(host, ledger, name, args, SAMPLE_NOW, presses, fields).result,
+    ([name, args]) => toolAnswer(host, ledger, name, args, SAMPLE_NOW, presses, fields, c.delegate ?? null).result,
   )
   const shown = { ...EMPTY, ...c.ledger } as Ledger
   const told = agent === 'omp' ? [...ompNotes(host, shown, c.prompt), c.prompt] : [message(c, host)]

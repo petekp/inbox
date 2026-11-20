@@ -259,6 +259,7 @@ export function sessionCalls(context: HostContext) {
       ...host,
       names: OMP,
       inOrder: fn => resultsOrder.run(id, fn),
+      delegate: context.delegate,
       background: results => deps.background(results),
       ...(deps.isNextBuild ? { records: statusRecords(dir, id) } : {}),
       catchUp: s =>

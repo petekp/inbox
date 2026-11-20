@@ -1,7 +1,7 @@
 import { remoteCommandArrival } from './remote-command-state'
 import { linkDialogs } from './dialogs'
 import { EMPTY } from './ledger'
-import { applyExchangeUpdate } from './ledger-update'
+import { applyExchangeUpdate, withoutNewAsks } from './ledger-update'
 import { parseReply } from './reply-parse'
 import type { Update } from './reply-parse'
 import { addActivity } from './catch-up-text'
@@ -293,9 +293,16 @@ export function parsedReply(ex: Exchange, reply: string | null): Update | null {
 /**
  * Applies the model's parsed answer for the oldest pending exchange, and drops that exchange. An answer that could not
  * be read is null: an exchange whose first update failed stays pending, marked failed, for the next update to try
- * again. The Status call's answer goes in separately, through `appliedStatus`.
+ * again. The Status call's answer goes in separately, through `appliedStatus`. In a delegate session the answer adds no
+ * question or task.
  */
-export function applied<S extends Session>(s: S, parsed: Update | null, now: number, promptAt: number): S {
+export function applied<S extends Session>(
+  s: S,
+  parsed: Update | null,
+  now: number,
+  promptAt: number,
+  isDelegate: boolean,
+): S {
   const next = s.pending[0]
   if (!next) return s
   const { ex } = next
@@ -305,7 +312,8 @@ export function applied<S extends Session>(s: S, parsed: Update | null, now: num
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: 'failed', failedAttempts: s.presence.failedAttempts + 1 },
     }
-  const ledger = parsed ? applyExchangeUpdate(s.ledger, parsed, ex, now, promptAt) : s.ledger
+  const update = parsed && isDelegate ? withoutNewAsks(parsed) : parsed
+  const ledger = update ? applyExchangeUpdate(s.ledger, update, ex, now, promptAt) : s.ledger
   const hasDroppedReply = s.presence.hasDroppedReply || !parsed
   const isCurrent = !hasDroppedReply
   const failedAttempts = parsed ? s.presence.failedAttempts : s.presence.failedAttempts + 1

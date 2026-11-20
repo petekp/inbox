@@ -108,6 +108,7 @@ import {
   askHerdrModAgain,
   openInHerdr,
   isExitReason,
+  modDelegate,
   publishToHerdr,
   type HerdrCalls,
 } from './mod-herdr'
@@ -1039,6 +1040,7 @@ function updateLedger($: EngineInterface) {
     await runUpdates({
       ...hostOf($, owner),
       names: CLAUDE_CODE,
+      delegate: () => modDelegate(herdrCalls($)),
       catchUp: () => catchUpReply($, owner),
       inOrder: fn => resultsOrder.run(owner.id, fn),
       background: statuses => void statuses,
@@ -1157,11 +1159,11 @@ async function runTool(
   input: Record<string, unknown>,
   toolUseId: string | undefined,
 ): Promise<string> {
-  const now = await $.clock.now()
+  const [now, delegate] = await Promise.all([$.clock.now(), modDelegate(herdrCalls($))])
   const owner = currentOwner()
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
   await commit($, owner, s => {
-    const r = answerToolCall(s, tool, input, now)
+    const r = answerToolCall(s, tool, input, now, delegate)
     answer = r
     return r.state
   })

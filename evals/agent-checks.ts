@@ -1,3 +1,4 @@
+import type { DelegateSession } from '../hooks/hc-terminals'
 import type { AgentTool } from '../hooks/tools'
 import type { LastAction, Ledger } from '../types'
 import type { CaseTools } from './probe-tools'
@@ -48,6 +49,8 @@ export type Case = {
   agents?: Agent[]
   /** The inbox tools the agent has, when not this build's, as `evals/probe-tools.ts:probeTools` gives them. */
   tools?: CaseTools
+  /** The delegate session the agent runs as, which the tools answer for. Without it, the agent runs as no delegate. */
+  delegate?: DelegateSession
 }
 
 export type Call = { tool: string; args: Record<string, unknown>; result: string }

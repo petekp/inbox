@@ -1,6 +1,6 @@
 import { linkDialogs } from './dialogs'
 import { isBlankLedger } from './ledger'
-import { applyUpdate } from './ledger-update'
+import { applyUpdate, withoutNewAsks } from './ledger-update'
 import type { Update } from './reply-parse'
 import { lookEnded, lookReported, lookStarted } from './status-children'
 import type { ReportedLook, ShownRows } from './status-children'
@@ -179,14 +179,21 @@ const pendingKey = (p: Session['pending'][number]) => `${p.turnsStarted}:${p.ex.
  * Applies the model's answer to a catch-up over the whole conversation. `begun` is the session when the catch-up
  * began. The answer covers the exchanges pending then and the turns started then, whether or not it applied, so
  * an exchange that ended during the catch-up still waits. A catch-up that applied clears `failed`, including the
- * warning for a dropped reply.
+ * warning for a dropped reply. In a delegate session the answer adds no question or task.
  */
-export function appliedCatchUp<S extends Session>(s: S, begun: Session, parsed: Update | null, now: number): S {
+export function appliedCatchUp<S extends Session>(
+  s: S,
+  begun: Session,
+  parsed: Update | null,
+  now: number,
+  isDelegate: boolean,
+): S {
   const covered = new Set(begun.pending.map(pendingKey))
+  const update = parsed && isDelegate ? withoutNewAsks(parsed) : parsed
 
   return linkDialogs({
     ...s,
-    ledger: parsed ? applyUpdate(s.ledger, parsed, now, s.ledger.turn, now) : s.ledger,
+    ledger: update ? applyUpdate(s.ledger, update, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter(p => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,

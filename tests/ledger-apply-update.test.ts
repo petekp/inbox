@@ -16,7 +16,7 @@ describe('applyUpdate', () => {
 
     const second = applyUpdate(
       { ...first, turn: 2 },
-      parseReply('CLOSED: i1 | yes, renamed\nNEW: decide | - | Push the branch? | - | yes')!,
+      parseReply('CLOSED: i1 | yes, renamed\nNEW: decide | - | Push the greet branch? | - | yes')!,
       2000,
       2,
     )
