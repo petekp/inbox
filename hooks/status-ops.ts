@@ -215,8 +215,12 @@ export function applyOps(
   }
   const set = (s: Subject, status: OpenStatus, text: string) => {
     const isUnchanged = s.status === status && hasSameWords(s.text, text)
-    const isWorkResumed = status === 'working' && now - s.changedAt >= IDLE_AFTER_MS
-    if (isUnchanged && !isWorkResumed) return
+    const isIdle = now - s.changedAt >= IDLE_AFTER_MS
+    const isWorkResumed = status === 'working' && isIdle
+    if (isUnchanged && !isWorkResumed) {
+      if (isIdle && isUnderWay(s)) s.keptAt = now
+      return
+    }
     s.status = status
     s.text = clipWords(text, TEXT_KEPT)
     s.closedAt = null

@@ -1,10 +1,11 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { askStatus } from '../hooks/status'
+import { askStatus, parseStatus } from '../hooks/status'
 import { withChild } from '../hooks/status-children'
 import { statusPrompt } from '../hooks/status-prompt'
 import { statusRetry } from '../hooks/status-retry'
+import { upgradeStatus } from '../hooks/status-upgrade'
 import type { SessionStatus } from '../types'
 import { after, askItem, MIN, page, shape } from './status-helpers'
 
@@ -91,4 +92,25 @@ test('an answer with no line for an idle subject is asked once more for those su
     ],
   })
   expect(statusRetry(input, 'prompt')({ kind: 'ops', ops: answer?.kind === 'ops' ? answer.ops : [] }, '')).toBeNull()
+})
+
+test('a waiting subject kept with the same words leaves the idle block for a day, and its idle time still counts from its last change', () => {
+  const kept = upgradeStatus(
+    JSON.parse(
+      JSON.stringify(
+        after(
+          stalled(),
+          'SET: s1 | working | queue built\nSET: s6 | waits-on-other | waits on the vendor',
+          3 * DAY,
+          ASKS,
+        ),
+      ),
+    ),
+  )
+  const input = (now: number) => ({ last: kept, asks: [askItem('i1')], tasks: [], now })
+  const suggestOnly = parseStatus('SUGGEST: -')
+
+  expect(statusPrompt(input(3 * DAY + 60 * MIN), EXCHANGE)).not.toContain('<idle>')
+  expect(suggestOnly && statusRetry(input(3 * DAY + 60 * MIN), 'prompt')(suggestOnly, 'SUGGEST: -')).toBeNull()
+  expect(statusPrompt(input(4 * DAY + MIN), EXCHANGE)).toContain('s6 | waits-on-other | Font license | 4d\n</idle>')
 })

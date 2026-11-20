@@ -70,7 +70,8 @@ function answerOf(record: StatusRecord): StatusAnswer | null {
   const firstAnswer = parseStatus(first?.answer ?? null)
   if (!retry || !firstAnswer || !first?.answer)
     return parseStatus(record.attempts.filter(a => a.answer).at(-1)?.answer ?? null)
-  const asked = record.input ? statusRetry(record.input, record.prompt)(firstAnswer, first.answer) : null
+  const input = record.input ? { ...record.input, last: upgradeStatus(record.input.last) } : null
+  const asked = input ? statusRetry(input, record.prompt)(firstAnswer, first.answer) : null
 
   return withRetryLines(firstAnswer, parseStatus(retry.answer), asked?.keeps ?? isGoalLine)
 }

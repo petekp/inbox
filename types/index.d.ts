@@ -19,6 +19,11 @@ export type Subject = {
   /** When its status or where it stands last changed. Code sets it; the model never writes a time. */
   changedAt: number
   closedAt: number | null
+  /**
+   * When an unchanged SET last kept it working or waiting after it had gone a day without a change. The call's
+   * <idle> block leaves it out for a day after. Absent in a Status an earlier build saved.
+   */
+  keptAt?: number | null
   /** The subject a DROP moved this one's work into. A subject with one never shows. */
   into: string | null
 }

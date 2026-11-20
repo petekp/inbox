@@ -8,11 +8,17 @@ import type { StatusCallInput } from './status-prompt'
 import { nextGoalAsk } from './status-prompt-goal'
 import { answersNextGoal, isNextGoalAsked } from './status-suggest'
 
-/** Whether `op` closes `s` or sets where it stands, naming it by its id or its name. */
+/**
+ * Whether `op` answers for `s`: it sets, closes or drops it, repeats its name in a NEW line, or links an ask or a child
+ * to it. A line names `s` as `applyOps` finds a subject, by its exact id or by its name.
+ */
 function isLineFor(op: Op, s: Subject): boolean {
-  if (op.kind !== 'set' && op.kind !== 'done' && op.kind !== 'drop') return false
+  const names = (ref: string) => ref === s.id || nameKey(clipWords(ref, NAME_KEPT)) === nameKey(s.name)
+  if (op.kind === 'set' || op.kind === 'done' || op.kind === 'drop') return names(op.ref)
+  if (op.kind === 'new') return names(op.name)
+  if (op.kind === 'link') return names(op.subject)
 
-  return op.ref.toLowerCase() === s.id || nameKey(clipWords(op.ref, NAME_KEPT)) === nameKey(s.name)
+  return false
 }
 
 /**

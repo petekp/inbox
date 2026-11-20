@@ -125,7 +125,8 @@ export function idleSubjects(o: SessionStatus | null, asks: readonly Pick<Item, 
   const isWorkedOn = (s: Subject) => (o?.children ?? []).some(c => c.subjectId === s.id && isChildRunning(c, now))
 
   return (o?.subjects ?? []).filter(
-    s => isUnderWay(s) && now - s.changedAt >= IDLE_AFTER_MS && !held.has(s.id) && !isWorkedOn(s),
+    s =>
+      isUnderWay(s) && now - Math.max(s.changedAt, s.keptAt ?? 0) >= IDLE_AFTER_MS && !held.has(s.id) && !isWorkedOn(s),
   )
 }
 
