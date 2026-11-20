@@ -9,8 +9,19 @@ import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { drawPanel } from '../src/panel'
 import type { PanelUi } from '../src/panel'
-import { handleKey } from '../src/panel-keys'
-import { keys, labelOf, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
+import {
+  cursorOf,
+  keyed,
+  keys,
+  labelOf,
+  NOW,
+  onPage,
+  screenOf,
+  strip,
+  style,
+  text,
+  withCursorOn,
+} from './panel-harness'
 
 const goallessScreen = () => {
   const s = demoState(NOW)
@@ -80,9 +91,9 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   const moved = text(screen, second).split('\n')
   expect(moved[buttonAt(held[0]!)]).not.toContain('↵')
   expect(moved[buttonAt(held[1]!)]).toContain('↵ View question')
-  expect(keys(screen, second, 'j').selectedId).toBe('s1')
-  expect(keys(screen, second, 'j', 'j', 'j').selectedId).toBe('goal')
-  expect(keys(screen, onPage, 'k').selectedId).toBe('goal')
+  expect(cursorOf(keys(screen, second, 'j'))).toBe('s1')
+  expect(cursorOf(keys(screen, second, 'j', 'j', 'j'))).toBe('goal')
+  expect(cursorOf(keys(screen, onPage, 'k'))).toBe('goal')
   expect(text(screen, onPage).split('\n').at(-1)).toContain('j k select')
   expect(text(unheldScreen(), onPage)).not.toContain('View ')
 })
@@ -90,16 +101,18 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
 test('View on a Status row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
   const screen = goallessScreen()
   for (const key of ['v', 'enter']) {
-    const result = handleKey(screen, onPage, key, NOW)
+    const result = keyed(screen, onPage, key, NOW)
     expect(result.press).toBeUndefined()
-    expect(result.ui).toMatchObject({ tab: 'needsYou', selectedId: 'd17', shownSince: NOW })
-    expect(handleKey(screen, result.ui, 'noop', NOW).ui.selectedId).toBe('d17')
+    expect(result.ui).toMatchObject({ tab: 'needsYou', shownSince: NOW })
+    expect(cursorOf(result.ui)).toBe('d17')
+    expect(cursorOf(keyed(screen, result.ui, 'noop', NOW).ui)).toBe('d17')
   }
   const onS3 = keys(screen, onPage, 'j')
-  const onAsk = handleKey(screen, onS3, 'enter', NOW).ui
-  expect(onAsk).toMatchObject({ tab: 'needsYou', selectedId: 'd11' })
-  expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS - 1).press).toBeUndefined()
-  expect(handleKey(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
+  const onAsk = keyed(screen, onS3, 'enter', NOW).ui
+  expect(onAsk.tab).toBe('needsYou')
+  expect(cursorOf(onAsk)).toBe('d11')
+  expect(keyed(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS - 1).press).toBeUndefined()
+  expect(keyed(screen, onAsk, 'enter', NOW + PRESS_GUARD_MS).press).toMatchObject({ action: 'answer', id: 'd11' })
 })
 
 test('a Status row’s View leaves once its asks close, and the selection moves to the row that still has one', () => {
@@ -108,13 +121,13 @@ test('a Status row’s View leaves once its asks close, and the selection moves 
   const screen = screenOf({
     view: sessionView({ ...s, ledger: { ...s.ledger, items } }, NOW, SETTLED_MS, NO_HOLDS),
   })
-  const onS3 = { ...onPage, selectedId: 's3' }
+  const onS3 = withCursorOn({ ...onPage }, 's3')
   const lines = text(screen, onS3).split('\n')
   const s3 = statusListRows(screen.view.statusPage).find(r => r.id === 's3')!
   expect(s3).toMatchObject({ ask: null, mark: '○' })
   expect(lines.filter(l => l.includes('View '))).toHaveLength(1)
   expect(lines.find(l => l.includes('View '))).toContain('↵ View task')
-  expect(handleKey(screen, onS3, 'v', NOW).ui.selectedId).toBe('d17')
+  expect(cursorOf(keyed(screen, onS3, 'v', NOW).ui)).toBe('d17')
 })
 
 test('on a Status page taller than the panel, j and k scroll the newly selected row into view', () => {
@@ -163,7 +176,7 @@ test('on the Status page, j reaches the done fold after the rows with buttons, E
   const fold = screen.view.statusPage.rows.find(r => r.kind === 'done-fold')!
   const finished = fold.kind === 'done-fold' ? fold.rows : []
   const onFold = keys(screen, onPage, 'j', 'j', 'j')
-  expect(onFold.selectedId).toBe(fold.id)
+  expect(cursorOf(onFold)).toBe(fold.id)
   const folded = text(screen, onFold).split('\n')
   expect(folded.filter(l => l.includes(`${labelOf(fold)} ›`))).toHaveLength(1)
   expect(finished.length).toBeGreaterThan(0)
@@ -199,10 +212,10 @@ test('on the Status page, j reaches a subject with rows under it, f folds them b
   expect(under.length).toBeGreaterThan(0)
   expect(text(screen, onPage)).toContain(`${labelOf(parent)} v`)
   expect(text(screen, onPage)).not.toContain('Fold')
-  const onParent = { ...onPage, selectedId: parent.id }
+  const onParent = withCursorOn({ ...onPage }, parent.id)
   expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toContain(parent.id)
 
-  const pressed = handleKey(screen, onParent, 'f', NOW)
+  const pressed = keyed(screen, onParent, 'f', NOW)
   expect(pressed.press).toEqual({ action: 'collapse', id: parent.id, isCollapsed: true })
 
   const folded = foldedScreen(screen, parent.id)
@@ -211,7 +224,7 @@ test('on the Status page, j reaches a subject with rows under it, f folds them b
   for (const row of under) expect(text(folded, onParent)).not.toContain(labelOf(row))
   const parentAt = lines.findIndex(l => l.includes(labelOf(parent)))
   expect(lines[parentAt + 1]).not.toMatch(/^ │/)
-  expect(handleKey(folded, onParent, 'f', NOW).press).toEqual({ action: 'collapse', id: parent.id, isCollapsed: false })
+  expect(keyed(folded, onParent, 'f', NOW).press).toEqual({ action: 'collapse', id: parent.id, isCollapsed: false })
   expect(text(foldedScreen(screen), onParent)).toBe(text(screen, onParent))
   expect(text(folded, onParent, 28)).toContain(`› ${parent.foldCount}`)
   expect(text(folded, onParent)).toContain('f unfold')
@@ -221,8 +234,8 @@ test('on the Status page, f folds a milestone’s rows behind its name, keeps it
   const screen = screenOf()
   const milestone = screen.view.statusPage.goal!.milestones.find(m => m.foldId === null && m.foldCount > 0)!
   expect(statusKeyRows(screen.view.statusPage).map(t => t.id)).toContain(milestone.id)
-  const onMilestone = { ...onPage, selectedId: milestone.id }
-  expect(handleKey(screen, onMilestone, 'f', NOW).press).toEqual({
+  const onMilestone = withCursorOn({ ...onPage }, milestone.id)
+  expect(keyed(screen, onMilestone, 'f', NOW).press).toEqual({
     action: 'collapse',
     id: milestone.id,
     isCollapsed: true,

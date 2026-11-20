@@ -5,6 +5,7 @@ import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS } from '../hooks/arrivals'
 import { closeItem } from '../hooks/ledger-close'
 import { RUNNING_FRAME_MS, SETTLED_MS } from '../hooks/timing'
 import { keptUiStates, noticeOf, restoredUi, rowErrorOf } from '../hooks/ui-controller'
+import { readWakeAt } from '../hooks/ui-controller-clock'
 import { holdsOf } from '../hooks/ui-controller-reply'
 import { freshUi, MAX_KEPT_UI, type UiState } from '../hooks/ui-controller-types'
 import type { Session } from '../types'
@@ -19,6 +20,7 @@ import {
   send,
   sessionWith,
   T0,
+  viewOf,
   withFindings,
 } from './ui-controller-helpers'
 
@@ -41,6 +43,21 @@ test('a look that draws running marks as frames wakes on each frame while a mark
   expect(pulse.nextWakeAt).toBe(null)
   const closed = send(helped.ui, S, { type: 'closed' }, T0 + 2)
   expect(closed.nextWakeAt).toBe(null)
+})
+
+test('a running-mark frame wakes the look without a read, and work that needs the view wakes both', () => {
+  const frames = openOn(S, T0, 'needsYou', { ...LOOK, runningMarks: 'frames' })
+  const helped = send(frames.ui, S, { type: 'show-help', isShown: true }, T0 + 1)
+  expect(helped.nextWakeAt).not.toBe(null)
+  expect(readWakeAt(helped.ui, viewOf(S, helped.ui, T0 + 1), T0 + 1)).toBe(null)
+  const refused = send(
+    openOn(S).ui,
+    S,
+    { type: 'press', press: { action: 'answer', id: 'i1', option: 'Yes' }, by: 'key' },
+    T0,
+  )
+  const settled = send(refused.ui, S, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 5)
+  expect(readWakeAt(settled.ui, viewOf(S, settled.ui, T0 + 5), T0 + 5)).toBe(T0 + 5 + SETTLED_MS)
 })
 
 test('a new row’s title tint wakes a stepped look at each step and the end of its fade, and an end look only at the end', () => {

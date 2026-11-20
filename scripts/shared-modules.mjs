@@ -119,4 +119,10 @@ export const SHARED = [
   'fold-chevron',
   'fold-all',
   'action-plan',
+  'ui-controller',
+  'ui-controller-clock',
+  'ui-controller-reply',
+  'ui-controller-selection',
+  'ui-controller-tabs',
+  'ui-controller-types',
 ]

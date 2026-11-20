@@ -53,7 +53,8 @@ import {
   prButtons,
   pressFeedback,
 } from './panel-lines'
-import type { Button, Entry, Group, Lead } from './panel-lines'
+import type { Button, Entry, Group, Lead, Line } from './panel-lines'
+import { rowErrorOf } from '../../hooks/ui-controller'
 import type { PanelScreen, PanelUi } from './panel'
 
 /** The question before omp installs the inbox's Herdr mod, as a row its buttons can focus, while it shows. */
@@ -390,8 +391,13 @@ export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: 
 
   const collapsed = new Set(screen.view.collapsed)
   const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
+  // A refused press's text shows on its row in place of the row's status, as long as the controller keeps it.
+  const shown = (line: Line): Line => {
+    const error = rowErrorOf(ui, line.id, now)
+    const feedback = error === null ? line.feedback : { text: error, tone: 'error' as const, source: null }
 
-  return entries.map(e =>
-    e.kind === 'row' && collapsed.has(e.line.id) ? { ...e, line: { ...e.line, isCollapsed: true } } : e,
-  )
+    return { ...line, feedback, ...(collapsed.has(line.id) ? { isCollapsed: true } : {}) }
+  }
+
+  return entries.map(e => (e.kind === 'row' ? { ...e, line: shown(e.line) } : e))
 }

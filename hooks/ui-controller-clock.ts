@@ -61,8 +61,12 @@ function frameWakeAt(ui: UiState, view: SessionView, now: number): number | null
   return isRunning ? nextBoundary(now, RUNNING_FRAME_MS) : null
 }
 
-/** When something drawn changes on the clock alone, or the controller has work due, after `now`. Null when nothing is. */
-export function nextWakeAt(ui: UiState, view: SessionView, now: number): number | null {
+/**
+ * When the view changes on the clock alone, or the controller has work due, after `now`: every wake but a running-mark
+ * frame or a title tint step, which a look draws from the clock with the view it has. A host that reads the view from
+ * a file reads it again only at this time.
+ */
+export function readWakeAt(ui: UiState, view: SessionView, now: number): number | null {
   const lasts = Object.values(view.lastActions)
   const settled = settledStates(view)
   const isFirstRead = ui.config.undoClock === 'first-read'
@@ -92,9 +96,18 @@ export function nextWakeAt(ui: UiState, view: SessionView, now: number): number 
     ui.notice === null ? null : ui.notice.at + SETTLED_MS,
     ui.restoring === null ? null : ui.restoring.at + SETTLED_MS,
     ...Object.values(ui.collapses).map(c => c.at + COLLAPSE_WAIT_MS),
+    ...ui.demoReplies.map(d => d.dueAt),
+  ]
+
+  return earliestOf(times.filter(t => t !== null && t > now))
+}
+
+/** When something drawn changes on the clock alone, or the controller has work due, after `now`. Null when nothing is. */
+export function nextWakeAt(ui: UiState, view: SessionView, now: number): number | null {
+  const times = [
+    readWakeAt(ui, view, now),
     frameWakeAt(ui, view, now),
     ui.shownSince === null ? null : tintWakeAt(ui, view, now),
-    ...ui.demoReplies.map(d => d.dueAt),
   ]
 
   return earliestOf(times.filter(t => t !== null && t > now))

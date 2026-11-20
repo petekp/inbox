@@ -9,7 +9,7 @@ import { drawLine } from '../src/panel-draw'
 import { entriesOf } from '../src/panel-entries'
 import { INITIAL_UI } from '../src/panel'
 import { linesOf } from '../src/panel-lines'
-import { NOW, screenOf, style } from './panel-harness'
+import { NOW, screenOf, style, withCursorOn } from './panel-harness'
 
 const WIDE = 200
 const NARROW = 40
@@ -30,7 +30,7 @@ function drawnBlankRows(c: RowCase, row: RowView): number {
     ? { ...screen.view, needsYou: { ...screen.view.needsYou, questions: [], tasks: [], [list]: [row] } }
     : { ...screen.view, findings: { ...screen.view.findings, rows: [row] } }
   const tab = c.kind === 'finding' ? 'findings' : 'needsYou'
-  const ui = { ...INITIAL_UI, tab, selectedId: row.id, typing: c.typing ? row.id : null } as const
+  const ui = withCursorOn({ ...INITIAL_UI, tab, typing: c.typing ? row.id : null }, row.id)
   const shown = { ...screen, view }
   const line = linesOf(entriesOf(shown, ui, tab, NOW)).find(l => l.id === row.id)!
   const width = c.isWide ? WIDE : NARROW

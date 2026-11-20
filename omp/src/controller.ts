@@ -1,44 +1,37 @@
 import { HERDR_CHECK_MS } from '../../hooks/herdr'
 import { PR_POLL_MS } from '../../hooks/host-prs'
-import { isPrPress, pressRowId } from '../../hooks/pr-press'
 import type { PrPress } from '../../hooks/pr-press'
-import { isPressConfirmed } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
-import { showsRunningMark } from '../../hooks/session-view'
-import { showNewRows, titleTintEndsAt } from '../../hooks/arrivals'
 import { READING_TEXT } from '../../hooks/banners'
-import { timedChangeAt, RUNNING_FRAME_MS, withListInput } from '../../hooks/timing'
 import type { Holds } from '../../hooks/timing'
-import type { Draft } from '../../types'
 import type { ShownTab } from '../../hooks/tabs'
-import { INITIAL_UI, drawPanel, holdsOf, isAnimating, noticeFor, tallestTabHeight } from './panel'
-import type { PanelPress, PanelScreen, PanelUi, Style } from './panel'
-import { afterHandOff, handleKey, isLineWaiting } from './panel-keys'
-import { followRows } from './panel-tabs'
-import type { SeenRows } from './panel-tabs'
-
-const ANIMATION_MS = 200
-
-const collapsedAfter = (collapsed: string[], p: { id: string; isCollapsed: boolean }) =>
-  p.isCollapsed ? [...collapsed.filter(id => id !== p.id), p.id] : collapsed.filter(id => id !== p.id)
+import { notesOf, restoredUi } from '../../hooks/ui-controller'
+import { holdsOf } from '../../hooks/ui-controller-reply'
+import { readWakeAt } from '../../hooks/ui-controller-clock'
+import type { HostFacts, SettledOutcome, UiCommand, UiEvent, UiState } from '../../hooks/ui-controller-types'
+import type { RowNote } from '../../types'
+import { INITIAL_UI, NO_LOCAL, OMP_LOOK, drawPanel, sharedOf, tallestTabHeight } from './panel'
+import type { LocalPress, PanelScreen, PanelUi, Style } from './panel'
+import { applyEvents, handleKey } from './panel-keys'
+import type { KeyResult } from './panel-keys'
 
 /** What the panel needs from a session, so the live inbox and the demo can both supply it. */
 export type PanelSource = {
-  screen(holds: Holds): Promise<PanelScreen>
-  press(
-    p: RowPress | PrPress,
-    holds: Holds,
-  ): Promise<{ error: string | null; note: 'stale' | null; isUnconfirmed: boolean }>
+  screen(holds: Holds, notes: Record<string, RowNote>): Promise<PanelScreen>
+  /** Applies a press. `pressId` is the shared controller's, which the demo's stand-in reply answers to. */
+  press(p: RowPress | PrPress, holds: Holds, pressId: number): Promise<SettledOutcome>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
   /** Answers the question before omp installs the inbox's Herdr mod. */
   answerHerdr?(isYes: boolean): Promise<void>
   /** Saves the row `id` as collapsed or expanded. */
   collapse(id: string, isCollapsed: boolean): Promise<void>
-  /** The replies begun and not sent, which an earlier panel of this session kept. */
-  drafts(): Record<string, Draft>
-  /** Keeps `drafts` for the next panel, and holds the rows `holds` names in place while no panel is open. */
-  keepDrafts(drafts: Record<string, Draft>, holds: Holds): void
+  /** The controller state an earlier panel of this session kept, or null. */
+  savedUi(): Promise<UiState | null>
+  /** Keeps `ui` for the next panel, and holds the rows `holds` names in place while no panel is open. */
+  keepUi(ui: UiState, holds: Holds): void
+  /** Sends the demo's stand-in reply to press `pressId`. */
+  demoReply?(pressId: number): void
   fetchPrsWhenDue(isTabShown: boolean): void
   /** Asks Herdr about the running delegates, when a check is due. */
   checkDelegatesWhenDue(): void
@@ -62,7 +55,11 @@ type PanelDeps = {
   requestRender(): void
   /** Closes the panel. */
   close(): void
-  timers: { every(fn: () => void, ms: number): unknown; stop(handle: unknown): void }
+  timers: {
+    every(fn: () => void, ms: number): unknown
+    after(fn: () => void, ms: number): unknown
+    stop(handle: unknown): void
+  }
   /** The rows the terminal has, or undefined when the panel may grow. */
   height(): number | undefined
 }
@@ -75,21 +72,43 @@ type Panel = {
   dispose(): void
 }
 
+const hostFacts = (screen: PanelScreen): HostFacts => ({
+  isFetchingPrs: screen.isFetchingPrs,
+  hasAsksBlocker: screen.stop !== null,
+  lastTypedMessageAt: null,
+})
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+/** Whether the rows `ui` holds for its drafts and discards changed since `before`, so the session should keep them. */
+const isKeptChanged = (before: UiState, ui: UiState) =>
+  ui.drafts !== before.drafts ||
+  ui.typing !== before.typing ||
+  ui.discarded !== before.discarded ||
+  ui.sentReplies !== before.sentReplies
+
 /**
- * The open panel: the cached screen, the person's ui state, and the work a key starts. A redraw timer runs only while
- * something on the screen moves by itself.
+ * The open panel: the cached screen and the person's ui state, which the shared controller runs. One timer wakes the
+ * panel when the controller says something changes on the clock: it reads the session again only when the view
+ * changes, and otherwise redraws a running mark's frame or a title's tint step.
  */
+/** How long a failed read waits before the panel reads again. */
+const READ_RETRY_MS = 1000
+
 export function createPanel(deps: PanelDeps): Panel {
   const { source, style, timers } = deps
-  let ui: PanelUi = { ...INITIAL_UI, drafts: source.drafts(), closedSeen: new Map(), shownSince: deps.openedAt }
+  let ui: PanelUi = { ...INITIAL_UI, shownSince: deps.openedAt }
   let screen: PanelScreen | null = null
-  let animation: unknown = null
-  /** Redraws without reading the session again, since a running mark's frame needs only the clock. */
-  let frames: unknown = null
-  let timedChange: { at: number; timer: unknown } | null = null
+  let wake: { at: number; isRead: boolean; timer: unknown } | null = null
   let version = 0
-  let seen: SeenRows = {}
-  let isOpening = true
+  let isLoaded = false
+  let isDisposed = false
+  /**
+   * Answers to presses, which the next read applies after the screen it reads. The host saves a press's change before
+   * it answers, so that screen shows the change while the press still counts as out, and a close the person pressed
+   * moves the cursor at once.
+   */
+  const settled: UiEvent[] = []
   /**
    * The panel's height while it is open: its tallest tab's when it opens, and after that only taller, so the session
    * above it stays still as tabs switch and rows grow or close.
@@ -97,105 +116,96 @@ export function createPanel(deps: PanelDeps): Panel {
   let heldHeight: number | null = null
   const stops: (() => void)[] = []
 
-  const syncFrames = () => {
-    const hasFrames =
-      screen !== null &&
-      (titleTintEndsAt(ui.newRows, screen.view, ui.closedSeen, deps.now()) !== null ||
-        showsRunningMark(screen.view, ui.tab, ui.isHelpShown, kind => ui.unfolded.includes(kind)))
-    if (hasFrames && frames === null) frames = timers.every(() => deps.requestRender(), RUNNING_FRAME_MS)
-    if (!hasFrames && frames !== null) {
-      timers.stop(frames)
-      frames = null
+  function schedule(at: number | null): void {
+    if (isDisposed || screen === null) return
+    const readAt = at === null ? null : readWakeAt(ui, screen.view, deps.now())
+    const isRead = readAt !== null && at !== null && readAt <= at
+    if (wake !== null && wake.at === at && wake.isRead === isRead) return
+    if (wake !== null) timers.stop(wake.timer)
+    wake = null
+    if (at === null) return
+    wake = { at, isRead, timer: timers.after(onWake, Math.max(0, at - deps.now())) }
+  }
+
+  function onWake(): void {
+    const isRead = wake?.isRead === true
+    wake = null
+    if (isRead) void refresh()
+    else {
+      apply([{ type: 'tick' }])
+      deps.requestRender()
     }
   }
 
-  const syncAnimation = () => {
-    const isMoving = screen !== null && isAnimating(screen, ui, deps.now())
-    if (isMoving && animation === null) animation = timers.every(() => void refresh(), ANIMATION_MS)
-    if (!isMoving && animation !== null) {
-      timers.stop(animation)
-      animation = null
+  /** Reads again after `READ_RETRY_MS`, or at the wake already due sooner, so the clock goes on after a failed read. */
+  function retryRead(): void {
+    if (isDisposed || screen === null) return
+    const at = deps.now() + READ_RETRY_MS
+    if (wake !== null && wake.at <= at) {
+      wake.isRead = true
+      return
     }
-    syncFrames()
-    const now = deps.now()
-    const at = screen === null ? null : timedChangeAt(screen.view.lastActions, now)
-    if (timedChange !== null && timedChange.at !== at) {
-      timers.stop(timedChange.timer)
-      timedChange = null
-    }
-    if (at !== null && timedChange === null)
-      timedChange = { at, timer: timers.every(() => void refresh(), at - now + ANIMATION_MS) }
+    if (wake !== null) timers.stop(wake.timer)
+    wake = { at, isRead: true, timer: timers.after(onWake, READ_RETRY_MS) }
   }
 
-  /** Hands the session the drafts when they changed since `before`. */
-  const keepDraftsChangedFrom = (before: PanelUi) => {
-    if (ui.drafts !== before.drafts) source.keepDrafts(ui.drafts, holdsOf(ui))
+  /** Takes a step's state, keeps what the session holds for it, and runs its commands. */
+  function settle(result: KeyResult): void {
+    const before = ui
+    ui = result.ui
+    if (isKeptChanged(before, ui)) source.keepUi(sharedOf(ui), holdsOf(ui, deps.now()))
+    schedule(result.nextWakeAt)
+    for (const c of result.commands) run(c)
   }
 
-  /** Draws the session's latest screen. `pressedId` names a row that waited before its press, so the selection may move on from it. */
-  async function refresh(pressedId?: string): Promise<void> {
+  function apply(events: UiEvent[], now = deps.now()): void {
+    if (screen !== null && !isDisposed) settle(applyEvents(screen, ui, events, now))
+  }
+
+  function run(c: UiCommand): void {
+    if (c.kind === 'press') void runPress(c.pressId, c.press, c.holds)
+    else if (c.kind === 'save-collapse') void source.collapse(c.id, c.isCollapsed).then(() => refresh())
+    else if (c.kind === 'read') void refresh()
+    else if (c.kind === 'tab-shown') source.shown(c.tab, holdsOf(ui, deps.now()))
+    else if (c.kind === 'demo-reply') source.demoReply?.(c.pressId)
+    // An open field and the selected row draw on every render, so focus-field and reveal need nothing more.
+  }
+
+  async function runPress(pressId: number, p: RowPress | PrPress, holds: Holds): Promise<void> {
+    const outcome = await source
+      .press(p, holds, pressId)
+      .catch((err: unknown): SettledOutcome => ({ error: errorText(err), note: null, isUnconfirmed: false }))
+    settled.push({ type: 'press-settled', pressId, outcome })
+    await refresh()
+  }
+
+  /** Reads the session's latest screen, applies the answers to presses since the last read, and draws. */
+  async function refresh(): Promise<void> {
     const mine = ++version
-    const next = await source.screen(holdsOf(ui)).catch(() => null)
-    if (mine !== version) return
+    const next = await source.screen(holdsOf(ui, deps.now()), notesOf(ui)).catch(() => null)
+    if (mine !== version || isDisposed) return
     if (next === null) {
       if (screen && !screen.isReadFailed) {
         screen = { ...screen, isReadFailed: true }
         deps.requestRender()
       }
+      retryRead()
       return
     }
+    const isFirst = screen === null
     screen = next
-    const followed = followRows(next, ui, seen, isOpening, deps.now())
-    ui = pressedId === undefined ? followed.ui : afterHandOff(next, followed.ui, pressedId, deps.now())
-    seen = followed.seen
-    isOpening = false
-    source.shown(ui.tab, holdsOf(ui))
-    syncAnimation()
+    if (isFirst) apply([{ type: 'opened' }], deps.openedAt)
+    apply([{ type: 'read', host: hostFacts(next) }, ...settled.splice(0)])
+    if (isFirst) source.shown(ui.tab, holdsOf(ui, deps.now()))
     deps.requestRender()
   }
 
-  async function resume(): Promise<void> {
-    const why = await source.resume().catch((err: unknown) => (err instanceof Error ? err.message : String(err)))
+  async function localPress(p: LocalPress): Promise<void> {
+    if (p.action === 'herdr-ask') return source.answerHerdr?.(p.isYes).then(() => refresh())
+    const why = await source.resume().catch(errorText)
     if (why !== null && ui.resuming?.is === 'sending')
       ui = { ...ui, resuming: { stopAt: ui.resuming.stopAt, is: 'refused', why } }
     await refresh()
-  }
-
-  async function press(p: PanelPress): Promise<void> {
-    if (p.action === 'resume') return resume()
-    if (p.action === 'herdr-ask') return source.answerHerdr?.(p.isYes).then(() => refresh())
-    if (p.action === 'all-options') return
-    if (p.action === 'collapse') {
-      if (screen) screen = { ...screen, view: { ...screen.view, collapsed: collapsedAfter(screen.view.collapsed, p) } }
-      deps.requestRender()
-      return source.collapse(p.id, p.isCollapsed).then(() => refresh())
-    }
-    if (p.action === 'collapse-all') {
-      const collapsed = p.changes.reduce(collapsedAfter, screen?.view.collapsed ?? [])
-      if (screen) screen = { ...screen, view: { ...screen.view, collapsed } }
-      deps.requestRender()
-      for (const c of p.changes) await source.collapse(c.id, c.isCollapsed)
-      return refresh()
-    }
-    const rowId = pressRowId(p)
-    const wasWaiting = screen !== null && isLineWaiting(screen, ui, rowId, deps.now())
-    const sentDraft = !isPrPress(p) && p.action === 'type' ? ui.drafts[p.id] : undefined
-    const outcome = await source.press(p, holdsOf(ui)).catch((err: unknown) => ({
-      error: err instanceof Error ? err.message : String(err),
-      note: null,
-      isUnconfirmed: false,
-    }))
-    const now = deps.now()
-    const isDraftUnedited = sentDraft !== undefined && ui.drafts[rowId] === sentDraft
-    if (isPressConfirmed(outcome) && isDraftUnedited) {
-      const before = ui
-      const { [rowId]: _sent, ...drafts } = ui.drafts
-      ui = { ...ui, drafts }
-      keepDraftsChangedFrom(before)
-    }
-    const notice = noticeFor(outcome, now)
-    if (notice) ui = { ...ui, notice }
-    await refresh(wasWaiting ? rowId : undefined)
   }
 
   return {
@@ -203,8 +213,6 @@ export function createPanel(deps: PanelDeps): Panel {
       if (screen === null) return [` ${READING_TEXT}`]
       const now = deps.now()
       const maxHeight = deps.height()
-      if (!ui.isHelpShown) ui = { ...ui, newRows: showNewRows(ui.newRows, ui.tab, now) }
-      syncFrames()
       heldHeight ??= tallestTabHeight(screen, ui, width, now, style, maxHeight)
       const drawn = drawPanel(screen, ui, width, now, style, maxHeight, Math.min(heldHeight, maxHeight ?? Infinity))
       heldHeight = Math.max(heldHeight, drawn.lines.length)
@@ -215,19 +223,18 @@ export function createPanel(deps: PanelDeps): Panel {
       return drawn.lines
     },
     handleInput(key, text) {
-      if (screen === null) return
-      const now = deps.now()
-      const result = handleKey(screen, ui, key, now, text)
-      const before = ui
-      ui = { ...result.ui, listInput: withListInput(ui.listInput, now) }
-      keepDraftsChangedFrom(before)
-      source.shown(ui.tab, holdsOf(ui))
+      if (screen === null || isDisposed) return
+      const result = handleKey(screen, ui, key, deps.now(), text)
+      settle(result)
       if (result.close) deps.close()
-      if (result.press) void press(result.press)
-      else void refresh()
+      if (result.press) void localPress(result.press)
       deps.requestRender()
     },
     async start() {
+      const saved = await source.savedUi().catch(() => null)
+      if (isDisposed) return
+      if (saved) ui = { ...restoredUi({ ...saved, config: OMP_LOOK }), ...NO_LOCAL, shownSince: deps.openedAt }
+      isLoaded = true
       stops.push(source.onChange(() => void refresh()))
       const prs = timers.every(() => source.fetchPrsWhenDue(ui.tab === 'prs'), PR_POLL_MS)
       stops.push(() => timers.stop(prs))
@@ -238,14 +245,13 @@ export function createPanel(deps: PanelDeps): Panel {
       await refresh()
     },
     dispose() {
+      if (screen !== null) ui = applyEvents(screen, ui, [{ type: 'closed' }], deps.now()).ui
       version++
+      isDisposed = true
       for (const stop of stops.splice(0)) stop()
-      if (animation !== null) timers.stop(animation)
-      animation = null
-      if (frames !== null) timers.stop(frames)
-      frames = null
-      if (timedChange !== null) timers.stop(timedChange.timer)
-      timedChange = null
+      if (wake !== null) timers.stop(wake.timer)
+      wake = null
+      if (isLoaded) source.keepUi(sharedOf(ui), holdsOf(ui, deps.now()))
     },
   }
 }

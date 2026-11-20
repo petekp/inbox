@@ -40,7 +40,10 @@ export type InputKind = 'click' | 'key'
 /** The input that opened a row, which a second press by the same input cannot land on for `PRESS_GUARD_MS`. */
 type Guard = { by: InputKind; at: number }
 
-/** A row tab's cursor. `id: null` means no row was picked, so the first waiting row opens. */
+/**
+ * A row tab's cursor. `id: null` means no row was picked, so the first waiting row opens. `index` is the row's place
+ * among the tab's rows at the last read, or -1 for an id that is not a row, such as a fold line a look selects.
+ */
 export type UiCursor = { id: string | null; index: number; guard: Guard | null }
 
 export type PressOut = {

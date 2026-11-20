@@ -90,6 +90,7 @@ export function closed(ui: UiState): UiState {
     ...ui,
     shownSince: null,
     typing: null,
+    isHelpShown: false,
     isOpening: false,
     opensOnAsks: false,
     heldArrivals: {},

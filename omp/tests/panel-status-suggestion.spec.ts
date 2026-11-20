@@ -4,8 +4,7 @@ import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
 import { sessionView } from '../../hooks/session-view'
 import type { SessionStatus } from '../../types'
 import { demoState } from '../src/demo'
-import { handleKey } from '../src/panel-keys'
-import { keys, NOW, onPage, screenOf, strip, style, text, drawn } from './panel-harness'
+import { drawn, keyed, keys, NOW, onPage, screenOf, strip, style, text } from './panel-harness'
 
 const SUGGESTED = 'Ship 0.5.0 to the store'
 
@@ -52,15 +51,15 @@ test('Edit opens the field holding the suggestion with a Set submit, and the fie
 
 test('Set sends take-goal for the goal', () => {
   const screen = suggesting()
-  const set = handleKey(screen, onPage, 's', NOW)
+  const set = keyed(screen, onPage, 's', NOW)
   expect(set.press).toEqual({ action: 'take-goal', id: 'goal' })
-  expect(set.ui).toMatchObject({ selectedId: 'goal' })
+  expect(set.ui).toMatchObject({ statusSelection: 'goal' })
 })
 
 test('submitting the edited field sends it', () => {
   const screen = suggesting()
   const edited = keys(screen, onPage, 'e')
-  const sent = handleKey(screen, edited, 'enter', NOW)
+  const sent = keyed(screen, edited, 'enter', NOW)
   expect(sent.press).toEqual({ action: 'type', id: 'goal', text: SUGGESTED })
   expect(sent.ui).toMatchObject({ typing: null })
 })

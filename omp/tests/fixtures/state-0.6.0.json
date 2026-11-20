@@ -1,0 +1,540 @@
+{
+  "version": 1,
+  "sessionId": "omp-060",
+  "ledger": {
+    "overview": {
+      "head": { "title": "Pinch to dismiss", "description": "Adding a pinch that dismisses glances" },
+      "subjects": [
+        {
+          "id": "s1",
+          "name": "Dismiss gesture",
+          "status": "working",
+          "text": "pinch fades the glance",
+          "was": null,
+          "merged": null,
+          "createdAt": 1699999880000,
+          "changedAt": 1699999880000,
+          "closedAt": null,
+          "into": null
+        },
+        {
+          "id": "s2",
+          "name": "Glasses pairing",
+          "status": "working",
+          "text": "needs this Mac paired",
+          "was": null,
+          "merged": null,
+          "createdAt": 1699999280000,
+          "changedAt": 1699999280000,
+          "closedAt": null,
+          "into": null
+        },
+        {
+          "id": "s3",
+          "name": "Flick option",
+          "status": "queued",
+          "text": "waits on your pick",
+          "was": "flick and pinch both",
+          "merged": null,
+          "createdAt": 1699999280000,
+          "changedAt": 1699999280000,
+          "closedAt": null,
+          "into": null
+        },
+        {
+          "id": "s4",
+          "name": "Fade-out",
+          "status": "done",
+          "text": "dismissed glances fade",
+          "was": null,
+          "merged": null,
+          "createdAt": 1699998500000,
+          "changedAt": 1699998500000,
+          "closedAt": 1699998500000,
+          "into": null
+        },
+        {
+          "id": "s5",
+          "name": "Glasses trial",
+          "status": "waits-on-other",
+          "text": "lenses ship Friday",
+          "was": null,
+          "merged": null,
+          "createdAt": 1699989200000,
+          "changedAt": 1699989200000,
+          "closedAt": null,
+          "into": null
+        },
+        {
+          "id": "s6",
+          "name": "Glance hit test",
+          "status": "done",
+          "text": "finds the glance you look at",
+          "was": null,
+          "merged": null,
+          "createdAt": 1699982000000,
+          "changedAt": 1699982000000,
+          "closedAt": 1699982000000,
+          "into": null
+        },
+        {
+          "id": "s7",
+          "name": "Settings toggle",
+          "status": "done",
+          "text": "pinch can be turned off",
+          "was": null,
+          "merged": null,
+          "createdAt": 1699978400000,
+          "changedAt": 1699978400000,
+          "closedAt": 1699978400000,
+          "into": null
+        },
+        {
+          "id": "s8",
+          "name": "Haptic tap",
+          "status": "done",
+          "text": "a tap confirms the pinch",
+          "was": null,
+          "merged": null,
+          "createdAt": 1699974800000,
+          "changedAt": 1699974800000,
+          "closedAt": 1699974800000,
+          "into": null
+        }
+      ],
+      "children": [
+        {
+          "id": "c1",
+          "ref": "demo-review",
+          "kind": "subagent",
+          "name": "Review the gesture code",
+          "subjectId": "s1",
+          "startedAt": 1699999760000,
+          "endedAt": null,
+          "lastActivityAt": 1699999940000,
+          "delegateState": null
+        },
+        {
+          "id": "c3",
+          "ref": "demo-tuning",
+          "kind": "delegate",
+          "name": "Tune how hard a pinch must be",
+          "subjectId": "s1",
+          "startedAt": 1699999460000,
+          "endedAt": null,
+          "lastActivityAt": 1699999460000,
+          "delegateState": "blocked"
+        },
+        {
+          "id": "c4",
+          "ref": "demo-fade-timing",
+          "kind": "delegate",
+          "name": "Time the fade-out",
+          "subjectId": "s1",
+          "startedAt": 1699998200000,
+          "endedAt": 1699999820000,
+          "lastActivityAt": 1699998200000,
+          "delegateState": "finished"
+        },
+        {
+          "id": "c5",
+          "ref": "demo-pairing-errors",
+          "kind": "subagent",
+          "name": "Search the pairing errors",
+          "subjectId": "s2",
+          "startedAt": 1699998500000,
+          "endedAt": null,
+          "lastActivityAt": 1699998800000,
+          "delegateState": null
+        },
+        {
+          "id": "c6",
+          "ref": "c6",
+          "kind": "delegate",
+          "name": "Calibrate the eye tracker",
+          "subjectId": null,
+          "startedAt": 1699989200000,
+          "endedAt": 1699992800000,
+          "lastActivityAt": 1699989200000,
+          "delegateState": "finished",
+          "summary": "PR #31 open"
+        },
+        {
+          "id": "c7",
+          "ref": "c7",
+          "kind": "delegate",
+          "name": "Write the lens notes",
+          "subjectId": null,
+          "startedAt": 1699982000000,
+          "endedAt": 1699985600000,
+          "lastActivityAt": 1699982000000,
+          "delegateState": "finished",
+          "summary": "Notes are in docs/lenses.md"
+        },
+        {
+          "id": "c8",
+          "ref": "c8",
+          "kind": "delegate",
+          "name": "Measure battery drain",
+          "subjectId": null,
+          "startedAt": 1699971200000,
+          "endedAt": 1699974800000,
+          "lastActivityAt": 1699971200000,
+          "delegateState": "finished"
+        }
+      ],
+      "askSubjects": { "d11": ["s3"], "d14": ["s2"], "d17": ["s2"] },
+      "nextId": 8,
+      "nextChildId": 9,
+      "lastLookAt": 1699998200000,
+      "missedInLastLook": {},
+      "look": null,
+      "lastCallReadAt": null,
+      "goal": {
+        "text": "Pinch ships in the beta",
+        "setAt": 1699996400000,
+        "metAt": null,
+        "was": null,
+        "isAwaitingMilestones": false,
+        "source": "inferred"
+      },
+      "removedGoals": [],
+      "goalRemoved": null,
+      "milestones": [
+        {
+          "id": "m4",
+          "name": "Glances found by gaze",
+          "status": "done",
+          "text": "",
+          "was": null,
+          "changedAt": 1699982000000,
+          "closedAt": 1699982000000
+        },
+        {
+          "id": "m1",
+          "name": "Glances fade out",
+          "status": "done",
+          "text": "",
+          "was": null,
+          "changedAt": 1699997600000,
+          "closedAt": 1699997600000
+        },
+        {
+          "id": "m2",
+          "name": "Pinch dismisses reliably",
+          "status": "working",
+          "text": "tuning pinch pressure",
+          "was": null,
+          "changedAt": 1699997900000,
+          "closedAt": null
+        },
+        {
+          "id": "m3",
+          "name": "Flick decided",
+          "status": "queued",
+          "text": "waits on your pick",
+          "was": null,
+          "changedAt": 1699999700000,
+          "closedAt": null
+        },
+        {
+          "id": "m5",
+          "name": "Beta build sent",
+          "status": "queued",
+          "text": "after the glasses trial",
+          "was": null,
+          "changedAt": 1699996400000,
+          "closedAt": null
+        }
+      ],
+      "nextMilestoneId": 6,
+      "serves": { "s1": "m2", "s3": "m3", "s4": "m1", "s5": "m5", "s6": "m4", "s7": "none", "s8": "none" },
+      "goalRefused": null,
+      "suggestedGoal": null,
+      "changedAt": null,
+      "quietCalls": 0
+    },
+    "items": [
+      {
+        "id": "d11",
+        "kind": "question",
+        "label": "1",
+        "from": "update",
+        "ask": "Dismiss a glance with a pinch, or a flick of the wrist?",
+        "context": "A glance stays up until it times out, and testers asked for a way to clear it sooner.",
+        "options": ["Pinch", "Flick"],
+        "optionDescriptions": {
+          "Pinch": "Touch thumb and finger together to clear the glance.",
+          "Flick": "Flick the wrist outward to clear it."
+        },
+        "rec": "Pinch",
+        "recReason": "a flick fires by accident while walking",
+        "isDesignChoice": true,
+        "helps": [],
+        "turn": 14,
+        "at": 1699999280000,
+        "earlier": {
+          "ask": "Which gesture should clear a glance?",
+          "answer": "Flick",
+          "at": 1699740800000,
+          "repo": "glasses-app",
+          "score": 0.41,
+          "isShown": true
+        }
+      },
+      {
+        "id": "d12",
+        "kind": "question",
+        "label": "2",
+        "from": "update",
+        "ask": "Bring a dismissed glance back when you look at it?",
+        "options": ["Leave it gone", "Bring it back"],
+        "rec": "Leave it gone",
+        "helps": [],
+        "turn": 14,
+        "at": 1699999280000
+      },
+      {
+        "id": "d13",
+        "kind": "question",
+        "label": "3",
+        "from": "update",
+        "ask": "Show glances while you are walking or driving?",
+        "options": ["Yes", "No"],
+        "rec": "No",
+        "helps": [],
+        "turn": 14,
+        "at": 1699999280000
+      },
+      {
+        "id": "d14",
+        "kind": "task",
+        "label": null,
+        "from": "record",
+        "ask": "Put on the glasses and pair them with this Mac",
+        "options": [],
+        "rec": null,
+        "helps": [{ "kind": "terminal", "command": "visor pair", "name": "visor pair" }],
+        "turn": 14,
+        "at": 1699999700000
+      },
+      {
+        "id": "d15",
+        "kind": "question",
+        "label": null,
+        "from": "record",
+        "ask": "What should the wake word be for the agent?",
+        "options": [],
+        "rec": null,
+        "helps": [],
+        "turn": 11,
+        "at": 1699997600000
+      },
+      {
+        "id": "d16",
+        "kind": "task",
+        "label": null,
+        "from": "record",
+        "ask": "Check the glances outdoors in bright sun",
+        "options": [],
+        "rec": null,
+        "helps": [{ "kind": "copy", "text": "http://localhost:3000/preview", "name": "preview URL" }],
+        "turn": 14,
+        "at": 1699999700000
+      },
+      {
+        "id": "d18",
+        "kind": "task",
+        "label": null,
+        "from": "record",
+        "ask": "Run the gesture tests and send back the failures",
+        "options": [],
+        "rec": null,
+        "helps": [{ "kind": "run", "command": "npm run test:gestures", "name": "gesture tests" }],
+        "turn": 14,
+        "at": 1699999760000
+      },
+      {
+        "id": "d17",
+        "kind": "task",
+        "label": null,
+        "from": "record",
+        "ask": "Calibrate eye tracking for the new lenses",
+        "options": [],
+        "rec": null,
+        "helps": [],
+        "turn": 12,
+        "at": 1699998500000
+      }
+    ],
+    "closed": [
+      {
+        "id": "d5",
+        "kind": "question",
+        "ask": "Track hands with the camera or the wristband?",
+        "outcome": "Wristband",
+        "how": "answered",
+        "at": 1699994600000
+      },
+      {
+        "id": "d6",
+        "kind": "question",
+        "ask": "Commit the gesture and the anchor fix separately?",
+        "outcome": "yes",
+        "how": "answered",
+        "at": 1699996400000
+      },
+      {
+        "id": "d9",
+        "kind": "task",
+        "ask": "Add the simulator key to .env.local",
+        "outcome": "done",
+        "how": "done",
+        "at": 1699997300000
+      },
+      {
+        "id": "d7",
+        "kind": "question",
+        "ask": "Fall back to voice when your hands are busy?",
+        "outcome": "closed by omp: no longer applies: voice already takes over when no hand is seen",
+        "how": "claude",
+        "at": 1699998200000
+      },
+      {
+        "id": "d8",
+        "kind": "question",
+        "ask": "Add a gaze-only mode too?",
+        "outcome": "dismissed",
+        "how": "dismissed",
+        "at": 1699998800000
+      },
+      {
+        "id": "d10",
+        "kind": "question",
+        "ask": "Fade a glance when you look away?",
+        "outcome": "Yes, fade it",
+        "how": "answered",
+        "at": 1700000000000,
+        "item": {
+          "id": "d10",
+          "kind": "question",
+          "label": null,
+          "from": "record",
+          "ask": "Fade a glance when you look away?",
+          "options": ["Yes, fade it", "No, keep it solid"],
+          "rec": "Yes, fade it",
+          "helps": [],
+          "turn": 14,
+          "at": 1699999280000
+        }
+      }
+    ],
+    "findings": [
+      {
+        "id": "d20",
+        "kind": "opportunity",
+        "title": "Pinch and flick could share one gesture handler",
+        "detail": "Both paths read the hand **the same way** before acting. One `onGesture` handler would keep them from *drifting apart*.",
+        "path": "src/input/gestures.ts",
+        "at": 1699989200000
+      },
+      {
+        "id": "d21",
+        "kind": "opportunity",
+        "title": "Glances could re-sort only when one moves",
+        "detail": "The view sorts every glance by distance on every frame. Sorting only when one moves would save battery on long sessions.",
+        "path": "src/view/glances.ts",
+        "at": 1699994600000
+      },
+      {
+        "id": "d22",
+        "kind": "issue",
+        "title": "Snoozed glances come back after a restart",
+        "detail": "The saved layout keeps snoozed glances, and a restart shows them again, so a glance snoozed for an hour returns at once.",
+        "path": "src/view/layout.ts",
+        "at": 1699997300000
+      },
+      {
+        "id": "d23",
+        "kind": "issue",
+        "title": "Pinned glances drift in a dim room",
+        "detail": "Anchoring trusts the camera’s position even when tracking is poor, so in a dim room a pinned glance slides a few centimeters a minute.",
+        "path": "src/space/anchors.ts",
+        "at": 1699998200000
+      }
+    ],
+    "closedFindings": [
+      {
+        "id": "d19",
+        "kind": "issue",
+        "title": "The view redraws every glance when one changes",
+        "detail": "A change to one glance redraws all of them.",
+        "path": "src/view/Glance.tsx",
+        "at": 1699985600000,
+        "how": "claude",
+        "outcome": "closed by omp: fixed, it now redraws only the glance that changed",
+        "closedAt": 1699992800000
+      }
+    ],
+    "prs": ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
+    "prOrder": null,
+    "nextId": 24,
+    "turn": 14,
+    "batchTurn": 14,
+    "updates": 14
+  },
+  "turn": { "person": null, "trigger": null, "activity": [], "press": null },
+  "told": { "inbox": null, "closed": [] },
+  "presence": {
+    "turnsStarted": 14,
+    "turnsApplied": 14,
+    "ledgerState": "current",
+    "hasDroppedReply": false,
+    "failedAttempts": 0,
+    "isConversationUnreadable": false,
+    "isUpdating": false,
+    "isTurnRunning": false,
+    "turnStartedAt": null,
+    "lastReplyAt": 1699999880000,
+    "lastTypedMessageAt": null
+  },
+  "place": { "folder": "/Users/you/code/visor", "branch": "pinch-dismiss" },
+  "pending": [],
+  "sent": [],
+  "lastActions": {
+    "d18": {
+      "kind": "handoff",
+      "action": "step-0",
+      "text": "Run gesture tests",
+      "at": 1699999940000,
+      "turnsStarted": 14
+    },
+    "acme/visor#31 thread DT1": {
+      "kind": "handoff",
+      "action": "thread-address",
+      "text": "Address",
+      "at": 1699999880000,
+      "turnsStarted": 14,
+      "repliedAt": 1699999940000
+    }
+  },
+  "remoteCommands": {},
+  "remoteCommandFloor": 0,
+  "remoteViewers": {},
+  "heldRows": ["d11"],
+  "collapsed": {},
+  "shownSince": null,
+  "prViews": { "views": {}, "branchRef": null, "isFetching": false },
+  "stop": null,
+  "overviewFailure": null,
+  "callFailures": {
+    "ledger": { "lastFailure": null, "recoveredAt": null },
+    "status": { "lastFailure": null, "recoveredAt": null }
+  },
+  "lastAnswers": { "ledger": null, "status": null },
+  "lastOverviewCallAt": null,
+  "overviewTurn": 0,
+  "hostTasks": [],
+  "dialogQuestions": [],
+  "toolFields": null
+}

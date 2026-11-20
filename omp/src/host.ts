@@ -245,7 +245,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     deps,
     dir,
     openPanels: new Map(),
-    drafts: new Map(),
+    uiStates: new Map(),
     prepared: new Set(),
     prFetches: prFetchTracker(deps.now, id => sessions.notifyChanged(id)),
     listeners: new Map(),
@@ -399,7 +399,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     const source = isDemo
       ? demoSource({
           now: deps.now,
-          after: (fn, ms) => void ctx.setTimeout(fn, ms),
           settleWindowMs: deps.settleWindowMs,
           version,
           isNextBuild: deps.isNextBuild,
@@ -418,7 +417,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           openedAt,
           requestRender: () => tui.requestRender(),
           close: () => done(null),
-          timers: { every: (fn, ms) => ctx.setInterval(fn, ms), stop: handle => ctx.clearTimer(handle as never) },
+          timers: {
+            every: (fn, ms) => ctx.setInterval(fn, ms),
+            after: (fn, ms) => ctx.setTimeout(fn, ms),
+            stop: handle => ctx.clearTimer(handle as never),
+          },
           height: () => Math.max(10, tui.terminal.rows - 4),
         })
         void panel.start()
@@ -461,12 +464,11 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       const screen = isDemo
         ? await demoSource({
             now: deps.now,
-            after: () => {},
             settleWindowMs: deps.settleWindowMs,
             version,
             comparePage: deps.comparePage,
             modelName: modelNameOf(ctx),
-          }).screen(NO_HOLDS)
+          }).screen(NO_HOLDS, {})
         : await inbox.screen(ctx)
       const { needsYou, findings } = screen.view
       ctx.ui.notify(`Asks ${needsYou.count}, Finds ${findings.count}`, 'info')

@@ -5,7 +5,7 @@ import type { Run } from '../../hooks/gh'
 import type { SessionHost } from '../../hooks/session-host'
 import type { prFetchTracker } from '../../hooks/host-prs'
 import type { ShownTab } from '../../hooks/tabs'
-import type { Draft } from '../../types'
+import type { UiState } from '../../hooks/ui-controller-types'
 import type { OmpState } from './state'
 import type { HostDeps } from './host'
 import type { OmpPresses } from './host-presses'
@@ -39,8 +39,8 @@ export type HostContext = {
   dir: string
   /** The open panels, with the tab each shows. */
   openPanels: Map<string, ShownTab>
-  /** The replies each session's person began and has not sent, by session id. A panel starts from them when it opens. */
-  drafts: Map<string, Record<string, Draft>>
+  /** Each session's panel state from the shared controller, by session id. A panel starts from it when it opens. */
+  uiStates: Map<string, UiState>
   prepared: Set<string>
   prFetches: ReturnType<typeof prFetchTracker>
   listeners: Map<string, Set<() => void>>

@@ -5,9 +5,8 @@ import { SETTLED_MS } from '../../hooks/timing'
 import { sessionView } from '../../hooks/session-view'
 import { INITIAL_UI, bandLines, render } from '../src/panel'
 import type { PanelScreen } from '../src/panel'
-import { handleKey } from '../src/panel-keys'
 import { emptyState } from '../src/state'
-import { drawn, firstQuestion, NOW, onRow, screenOf, strip, style, text } from './panel-harness'
+import { cursorOf, drawn, firstQuestion, keyed, NOW, onRow, screenOf, strip, style, text } from './panel-harness'
 
 test('the footer names the inbox model, or says there is none', () => {
   expect(text(screenOf(), INITIAL_UI)).toContain('inbox model Claude Sonnet 4.5')
@@ -75,7 +74,7 @@ test('a stop shows above the Asks rows with its fix, and the band says it under 
   expect(lines[at]).toContain('Sign-in expired.')
   expect(lines[at + 1]).toContain('Run /login, then send a message to resume.')
   expect(at).toBeLessThan(lines.findIndex(l => l.includes('Questions')))
-  expect(handleKey(screen, INITIAL_UI, 'enter', NOW).ui.selectedId).toBe(firstQuestion(screen).id)
+  expect(cursorOf(keyed(screen, INITIAL_UI, 'enter', NOW).ui)).toBe(firstQuestion(screen).id)
   const band = bandLines(screen, 120, NOW, style).map(strip)
   expect(band[1]).toContain('Stopped 2m ago: sign-in expired. Run /login, then send a message to resume.')
 })
@@ -83,8 +82,8 @@ test('a stop shows above the Asks rows with its fix, and the band says it under 
 test('an API error stop opens on Resume, which reads Resuming… and presses once', () => {
   const stop: Stop = { kind: 'api-error', detail: 'overloaded', resets: null, at: stopAt }
   const screen = screenOf({ stop })
-  const pressed = handleKey(screen, INITIAL_UI, 'enter', NOW)
+  const pressed = keyed(screen, INITIAL_UI, 'enter', NOW)
   expect(pressed.press).toEqual({ action: 'resume' })
   expect(text(screen, pressed.ui)).toContain('Resuming…')
-  expect(handleKey(screen, pressed.ui, 'enter', NOW).press).toBeUndefined()
+  expect(keyed(screen, pressed.ui, 'enter', NOW).press).toBeUndefined()
 })

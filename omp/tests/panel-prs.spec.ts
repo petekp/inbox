@@ -24,9 +24,8 @@ import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelScreen } from '../src/panel'
-import { handleKey } from '../src/panel-keys'
 import { emptyState } from '../src/state'
-import { drawn, ESC, NOW, screenOf, text } from './panel-harness'
+import { drawn, ESC, keyed, NOW, screenOf, text, withCursorOn } from './panel-harness'
 
 function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAction> = {}): PanelScreen {
   const s = demoState(NOW)
@@ -78,8 +77,8 @@ test('a ranked PR that changed since the order draws the changed line with Rank 
 
   expect(changed).toBe(lines.findIndex(l => l.includes('#33 builds on #29.')) + 1)
   expect(lines[changed]).toContain('g Rank again')
-  expect(handleKey(screen, ui, 'g', NOW).press).toEqual({ action: 'pr-rank-again' })
-  expect(handleKey(screen, { ...ui, selectedId: 'pr:order' }, 'enter', NOW).press).toEqual({ action: 'pr-rank-again' })
+  expect(keyed(screen, ui, 'g', NOW).press).toEqual({ action: 'pr-rank-again' })
+  expect(keyed(screen, withCursorOn({ ...ui }, 'pr:order'), 'enter', NOW).press).toEqual({ action: 'pr-rank-again' })
 
   const pressed = withOrder(
     { statuses },
@@ -117,12 +116,12 @@ test('Clear merged and closed draws above the PR blocks, and m from any row or E
   const at = lines.findIndex(l => l.includes('m Clear merged and closed'))
   expect(at).toBeGreaterThan(-1)
   expect(at).toBeLessThan(lines.findIndex(l => /#(29|31|33) /.test(l)))
-  const onThread = {
-    ...ui,
-    selectedId: screen.view.prs.drawn.flatMap(d => waitingThreads(d.pr).map(t => `${d.pr.ref} thread ${t.id}`))[0]!,
-  }
-  expect(handleKey(screen, onThread, 'm', NOW).press).toEqual({ action: 'pr-clear-finished' })
-  expect(handleKey(screen, { ...ui, selectedId: CLEAR_FINISHED_ID }, 'enter', NOW).press).toEqual({
+  const onThread = withCursorOn(
+    ui,
+    screen.view.prs.drawn.flatMap(d => waitingThreads(d.pr).map(t => `${d.pr.ref} thread ${t.id}`))[0]!,
+  )
+  expect(keyed(screen, onThread, 'm', NOW).press).toEqual({ action: 'pr-clear-finished' })
+  expect(keyed(screen, withCursorOn({ ...ui }, CLEAR_FINISHED_ID), 'enter', NOW).press).toEqual({
     action: 'pr-clear-finished',
   })
   expect(helpKeys('omp').map(k => k.keys)).toContain('m')
@@ -146,14 +145,14 @@ test('the PRs tab opens with Clear merged and closed unselected when no PR waits
   const screen = screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, NO_HOLDS) })
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   expect(text(screen, ui)).toContain('Clear merged and closed')
-  expect(handleKey(screen, ui, 'enter', NOW).press).not.toEqual({ action: 'pr-clear-finished' })
+  expect(keyed(screen, ui, 'enter', NOW).press).not.toEqual({ action: 'pr-clear-finished' })
 })
 
 test('Clear merged and closed does not show when the only finished PR is the branch’s own', () => {
   const screen = withFinished({ 'acme/visor#31': 'MERGED' })
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   expect(text(screen, ui)).not.toContain('Clear merged and closed')
-  expect(handleKey(screen, ui, 'm', NOW).press).toBeUndefined()
+  expect(keyed(screen, ui, 'm', NOW).press).toBeUndefined()
 })
 
 test('a PR a fetch finds merged settles as ✓ Merged while the PRs tab shows, and u presses its Undo', () => {
@@ -164,7 +163,7 @@ test('a PR a fetch finds merged settles as ✓ Merged while the PRs tab shows, a
   const screen = screenOf({ view: sessionView(settled, NOW, SETTLED_MS, holds) })
   const ui = { ...INITIAL_UI, tab: 'prs' as const, shownSince: NOW - 1 }
   expect(text(screen, ui)).toMatch(/#29 .*✓ Merged/)
-  expect(handleKey(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
+  expect(keyed(screen, ui, 'u', NOW).press).toEqual({ action: 'pr-undo', ref: 'acme/visor#29' })
 })
 
 function withLast(screen: PanelScreen, id: string, last: LastAction): PanelScreen {
@@ -239,7 +238,7 @@ test('a press on the PRs tab says when it was made, and a failing check keeps As
   expect(drawn).toMatch(/✓ Asked to resolve conflicts\s+5m ago/)
   expect(drawn).toMatch(/Addressed\s+2m ago/)
   expect(drawn).toMatch(new RegExp(`${check.name}\\s+✓ Asked to fix\\s+14m ago`))
-  const open = text(pressed, { ...INITIAL_UI, tab: 'prs', selectedId: checkId }).split('\n')
+  const open = text(pressed, withCursorOn({ ...INITIAL_UI, tab: 'prs' }, checkId)).split('\n')
   const buttons = open.findIndex(l => l.includes('Fix again'))
   expect(open[buttons + 1]?.replace(/^ │ /, '').trim()).toBe('✓ Asked to fix')
 })
@@ -264,9 +263,9 @@ test('the PRs tab opens on the first thread that waits, and its press goes throu
   const { pr } = screen.view.prs.drawn[0]!
   const first = waitingThreads(pr).find(t => !threadSentIn(screen.view.lastActions)(pr, t))!
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
-  const result = handleKey(screen, ui, 'a', NOW)
+  const result = keyed(screen, ui, 'a', NOW)
   expect(result.press).toMatchObject({ action: 'thread-address', thread: first.id })
-  expect(handleKey(screen, ui, 'enter', NOW).press).toMatchObject({ action: 'thread-address' })
+  expect(keyed(screen, ui, 'enter', NOW).press).toMatchObject({ action: 'thread-address' })
 })
 
 test('the PRs tab says when gh is missing, when gh is not signed in, and when there are no PRs', () => {

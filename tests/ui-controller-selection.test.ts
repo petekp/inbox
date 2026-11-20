@@ -198,3 +198,14 @@ test('a collapse the person made shows at once, before the view lists it', () =>
   expect(view.collapsed).not.toContain('i2')
   expect(collapsedOf(run.ui, view)).toContain('i2')
 })
+
+test('a cursor on a line that is not a row stays there as rows change, and a row a press pinned moves off once it leaves', () => {
+  const { ui } = openOn(THREE)
+  const onFold = send(ui, THREE, { type: 'select', tab: 'needsYou', id: 'fold:question', by: 'key' }, T0 + 10)
+  const four = withItems(THREE, [question('i1'), question('i2'), question('i3'), question('i4')])
+  expect(read(onFold.ui, four, LATER).ui.selection.needsYou.id).toBe('fold:question')
+  const pressed = send(ui, THREE, { type: 'press', press: answer('i1'), by: 'key' }, T0 + 10)
+  expect(pressed.ui.selection.needsYou).toEqual({ id: 'i1', index: 0, guard: null })
+  const left = read(pressed.ui, withItems(THREE, [question('i2'), question('i3')]), LATER)
+  expect(left.ui.selection.needsYou.id).toBe('i2')
+})

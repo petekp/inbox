@@ -13,14 +13,15 @@ import { sessionView } from '../../hooks/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelUi } from '../src/panel'
-import { handleKey } from '../src/panel-keys'
 import { HERDR_ASK_ID } from '../src/panel-lines'
 import {
   buttonLine,
   buttonLines,
+  cursorOf,
   drawn,
   ESC,
   firstQuestion,
+  keyed,
   keys,
   NOW,
   onRow,
@@ -28,6 +29,7 @@ import {
   screenOf,
   strip,
   text,
+  withCursorOn,
 } from './panel-harness'
 
 test('a selected row draws its buttons in the shared key plan order', () => {
@@ -129,7 +131,7 @@ test('the recommended option wraps "(recommended)" under its label where its but
 test('Enter on the opening focus answers with the recommended option', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
-  const result = handleKey(screen, onRow(row), 'enter', NOW)
+  const result = keyed(screen, onRow(row), 'enter', NOW)
   expect(result.press).toEqual({ action: 'answer', id: row.id, option: row.item!.rec! })
 })
 
@@ -147,8 +149,8 @@ test('a button letter presses that button', () => {
   const screen = screenOf()
   const row = firstQuestion(screen)
   const flick = row.item!.options.find(o => o !== row.item!.rec)!
-  expect(handleKey(screen, onRow(row), 'b', NOW).press).toEqual({ action: 'answer', id: row.id, option: flick })
-  expect(handleKey(screen, onRow(row), 'x', NOW).press).toEqual({ action: 'dismiss', id: row.id })
+  expect(keyed(screen, onRow(row), 'b', NOW).press).toEqual({ action: 'answer', id: row.id, option: flick })
+  expect(keyed(screen, onRow(row), 'x', NOW).press).toEqual({ action: 'dismiss', id: row.id })
 })
 
 test('Tab and Shift+Tab cycle through the tabs in order, and each digit picks its tab', () => {
@@ -223,7 +225,7 @@ test('a collapsed row’s Holds up line and its group’s Closed fold start at t
     { tab: 'findings' as const, rows: screen.view.findings.rows },
   ]
   for (const { tab, rows } of tabs) {
-    const lines = text(screen, { ...INITIAL_UI, tab, selectedId: null }, 120).split('\n')
+    const lines = text(screen, withCursorOn({ ...INITIAL_UI, tab }, null), 120).split('\n')
     const titleAt = (row: RowView) => {
       const start = new RegExp(`(\\d+\\) )?${row.title.slice(0, 16).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`)
       const line = lines.findIndex(l => start.test(l))
@@ -286,12 +288,12 @@ test('moving through rows wraps from the last to the first, and stops on each Cl
   ]
   const first = open[0]!
   const atFirst = keys(screen, INITIAL_UI, 'down')
-  expect(atFirst.selectedId).toBe(open[1]!.id)
+  expect(cursorOf(atFirst)).toBe(open[1]!.id)
   const wrapped = keys(screen, INITIAL_UI, ...open.map(() => 'down'))
-  expect(wrapped.selectedId).toBe(first.id)
-  expect(keys(screen, INITIAL_UI, 'up').selectedId).toBe(open.at(-1)!.id)
-  expect(keys(screen, INITIAL_UI, 'j').selectedId).toBe(open[1]!.id)
-  expect(keys(screen, INITIAL_UI, 'k').selectedId).toBe(open.at(-1)!.id)
+  expect(cursorOf(wrapped)).toBe(first.id)
+  expect(cursorOf(keys(screen, INITIAL_UI, 'up'))).toBe(open.at(-1)!.id)
+  expect(cursorOf(keys(screen, INITIAL_UI, 'j'))).toBe(open[1]!.id)
+  expect(cursorOf(keys(screen, INITIAL_UI, 'k'))).toBe(open.at(-1)!.id)
 })
 
 test('PR buttons follow the shared plan order for the block, its threads and its checks', () => {
@@ -312,7 +314,7 @@ test('PR buttons follow the shared plan order for the block, its threads and its
   const presses = { lastActions, turns, now: NOW }
   const block = prBlockActions(pr, isSent, prs.branchRef, presses)
   expect(block.slice(0, 2).map(a => a.label)).toEqual(['Try again', 'Resolve conflicts'])
-  const lines = text(screen, { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(ref) }).split('\n')
+  const lines = text(screen, withCursorOn({ ...INITIAL_UI, tab: 'prs' }, prMarkId(ref))).split('\n')
   expect(lines.findIndex(l => l.includes('Refresh PRs'))).toBeLessThan(lines.findIndex(l => l.includes(pr.title)))
   expect(lines.join('\n')).toContain('Last refresh failed: HTTP 502')
   const plans = [
@@ -321,7 +323,7 @@ test('PR buttons follow the shared plan order for the block, its threads and its
     ...blockingChecks(pr).map(c => checkActions(pr, c, presses)),
   ]
   expect(plans.length).toBeGreaterThan(3)
-  let ui: PanelUi = { ...INITIAL_UI, tab: 'prs', selectedId: prMarkId(pr.ref) }
+  let ui: PanelUi = withCursorOn({ ...INITIAL_UI, tab: 'prs' }, prMarkId(pr.ref))
   for (const plan of plans) {
     const opened = buttonLines(screen, ui).length === 0 ? keys(screen, ui, 'enter') : ui
     const line = buttonLine(screen, opened)
@@ -353,23 +355,23 @@ test('a row keeps its age at a narrow width and beside a long outcome, and its t
 test('the Herdr install question sits above the Asks rows, and its buttons answer it once', () => {
   const asking = herdrAskOf('/app', undefined, null)
   const screen = screenOf({ herdrAsk: asking })
-  const onAsk: PanelUi = { ...INITIAL_UI, selectedId: HERDR_ASK_ID }
+  const onAsk: PanelUi = withCursorOn({ ...INITIAL_UI }, HERDR_ASK_ID)
   const lines = text(screen, INITIAL_UI).split('\n')
   const askAt = lines.findIndex(l => l.includes("Install the inbox's Herdr mod?"))
 
   expect(askAt).toBeGreaterThan(-1)
   expect(askAt).toBeLessThan(lines.findIndex(l => l.includes(firstQuestion(screen).title)))
-  const install = handleKey(screen, onAsk, 'enter', NOW)
+  const install = keyed(screen, onAsk, 'enter', NOW)
   expect(install.press).toEqual({ action: 'herdr-ask', isYes: true })
   expect(install.ui.focus).toBe(null)
-  expect(handleKey(screen, keys(screen, onAsk, 'right'), 'enter', NOW).press).toEqual({
+  expect(keyed(screen, keys(screen, onAsk, 'right'), 'enter', NOW).press).toEqual({
     action: 'herdr-ask',
     isYes: false,
   })
 
   const saving = screenOf({ herdrAsk: answeringOf(asking, false) })
   expect(text(saving, onAsk)).toContain('Saving the answer…')
-  expect(handleKey(saving, onAsk, 'enter', NOW).press?.action).not.toBe('herdr-ask')
+  expect(keyed(saving, onAsk, 'enter', NOW).press?.action).not.toBe('herdr-ask')
 })
 
 test('the w key folds every fold of the shown tab, then opens them all, and saves each row it collapses', () => {
@@ -378,17 +380,11 @@ test('the w key folds every fold of the shown tab, then opens them all, and save
     .filter(r => r.state.is !== 'settled')
     .map(r => r.id)
   expect(ids.length).toBeGreaterThan(1)
-  const folded = handleKey(screen, { ...INITIAL_UI, selectedId: ids[0]! }, 'w', NOW)
-  expect(folded.press).toEqual({
-    action: 'collapse-all',
-    changes: expect.arrayContaining(ids.map(id => ({ id, isCollapsed: true }))),
-  })
+  const folded = keyed(screen, withCursorOn({ ...INITIAL_UI }, ids[0]!), 'w', NOW)
+  expect(folded.sent).toEqual(expect.arrayContaining(ids.map(id => ({ action: 'collapse', id, isCollapsed: true }))))
   const collapsed = { ...screen, view: { ...screen.view, collapsed: ids } }
-  const opened = handleKey(collapsed, folded.ui, 'w', NOW)
-  expect(opened.press).toEqual({
-    action: 'collapse-all',
-    changes: expect.arrayContaining(ids.map(id => ({ id, isCollapsed: false }))),
-  })
+  const opened = keyed(collapsed, folded.ui, 'w', NOW)
+  expect(opened.sent).toEqual(expect.arrayContaining(ids.map(id => ({ action: 'collapse', id, isCollapsed: false }))))
 })
 
 test('an open row shows its whole title on as many lines as it takes, and a collapsed row cuts it after two lines', () => {

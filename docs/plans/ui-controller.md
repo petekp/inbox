@@ -31,11 +31,11 @@ The press guard keeps a second press by the same input from landing on a row tha
 
 Each PR deletes the look's own copy of the rules, listed in [Owners: rules written twice](../looks/owners-written-twice.md). It updates the look's rows in Differences on purpose, such as "Reply while its send is out". It adds a `FeatureId` row where a change below is a feature.
 
-### omp panel (PR 2.2)
+### omp panel (PR 2.2, done)
 
-The panel keeps its line layout, button focus and page scroll. Its per-session drafts become a map of the controller's state, saved through `OmpState` and converted in `upgraded` in `omp/src/state.ts`. Its `LookConfig`: running marks as frames, the title tint in steps, Undo from the session's close. What changes for the person:
+The panel runs on the controller. It keeps its line layout, button focus and page scroll. Its per-session drafts become a map of the controller's state, saved through `OmpState` and converted in `upgraded` in `omp/src/state.ts`. Its `LookConfig`: running marks as frames, the title tint in steps, Undo from the session's close. What changes for the person:
 
-- It opens on Asks only when a row waits there, and otherwise keeps the Status page.
+- It opens on the tab it was last on. A row tab gives way to Asks when a row waits there. The Status page stays even then.
 - It does not follow rows that arrive while Help shows or while keys came within `FOLD_QUIET_MS`.
 - Each tab keeps its own cursor, so switching back returns to the same row.
 - A cursor whose row left lands on the first waiting row from its place, not from the top.
@@ -93,6 +93,10 @@ Row motion and the leaving-row wait stay in the look. `Kept` goes to version 3 a
 - Drafts survive loading another conversation and coming back.
 - Arrivals and an agent's close wait while the pane was used within `FOLD_QUIET_MS`.
 
+### Exact web and iOS
+
+The private Exact clients are one TypeScript app, built for web and for iOS. When their Milestones 4–5 UI starts, they call `reduceUi` directly, with their own `LookConfig`. They take the reserved `exact-web` and `exact-ios` parity slots, which join `PUBLISHED_LOOKS` in `hooks/clients.ts` as [the look map](../looks.md) describes. Their first step is to check that the iOS build can bundle an import from `hooks/`.
+
 ## Other sessions' state
 
-A host keeps another session's state only while it holds a draft or a sent reply, and at most the 20 most recently shown (`keptUiStates`). Every other session starts from `freshUi`. After a reload, `restoredUi` drops the presses still out, the demo's replies, and the arrivals and closes held while the list was in use, since no answer or timer survives a reload.
+A host keeps another session's state only while it holds a draft or a sent reply, and at most the 20 most recently shown (`keptUiStates`). Every other session starts from `freshUi`. omp saves a session's state in that session's own file, and only while it holds a draft or a sent reply (`isUiWorthKeeping`). `omp/src/state.ts:pruneSessions` keeps at most `KEPT_SESSIONS` session files, so what omp saves stays bounded too. After a reload, `restoredUi` drops the presses still out, the demo's replies, and the arrivals and closes held while the list was in use, since no answer or timer survives a reload.

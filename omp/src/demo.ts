@@ -16,7 +16,6 @@ export function demoState(now: number): OmpState {
 /** A panel source over the shared demo data. A press changes the sample and sends nothing. */
 export function demoSource(deps: {
   now(): number
-  after(fn: () => void, ms: number): void
   settleWindowMs: number
   version: string
   isNextBuild?: boolean
@@ -27,10 +26,12 @@ export function demoSource(deps: {
   let state = demoState(deps.now())
   const listeners = new Set<() => void>()
   const changed = () => listeners.forEach(l => l())
+  /** Each sent press's message, which the stand-in agent answers when the controller says its reply is due. */
+  const sentById = new Map<number, NonNullable<ReturnType<typeof demoSent>>>()
 
   return {
-    screen: async holds => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, holds),
+    screen: async (holds, notes) => ({
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds, notes),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,
@@ -39,7 +40,7 @@ export function demoSource(deps: {
       isNextBuild: deps.isNextBuild,
       isDemo: true,
     }),
-    press: async (p, holds) => {
+    press: async (p, holds, pressId) => {
       const at = deps.now()
       const r = pressOn(
         state,
@@ -64,15 +65,18 @@ export function demoSource(deps: {
         presence: { ...state.presence, ...after.turns },
       }
       const sent = demoSent(r, after.turns)
-      if (sent)
-        deps.after(() => {
-          const replied = demoReplied({ lastActions: state.lastActions, turns: state.presence }, sent)
-          state = { ...state, lastActions: replied.lastActions, presence: { ...state.presence, ...replied.turns } }
-          changed()
-        }, deps.settleWindowMs)
+      if (sent) sentById.set(pressId, sent)
       changed()
 
-      return { error: null, note: null, isUnconfirmed: false }
+      return { error: null, note: null, isUnconfirmed: false, isDemoSent: sent !== null }
+    },
+    demoReply: pressId => {
+      const sent = sentById.get(pressId)
+      if (!sent) return
+      sentById.delete(pressId)
+      const replied = demoReplied({ lastActions: state.lastActions, turns: state.presence }, sent)
+      state = { ...state, lastActions: replied.lastActions, presence: { ...state.presence, ...replied.turns } }
+      changed()
     },
     collapse: async (id, isCollapsed) => {
       state = withCollapse(state, id, isCollapsed, deps.now())
@@ -81,8 +85,8 @@ export function demoSource(deps: {
     resume: async () => null,
     fetchPrsWhenDue: () => {},
     checkDelegatesWhenDue: () => {},
-    drafts: () => ({}),
-    keepDrafts: () => {},
+    savedUi: async () => null,
+    keepUi: () => {},
     shown: () => {},
     showedRows: () => {},
     onChange: listener => {

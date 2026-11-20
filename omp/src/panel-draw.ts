@@ -6,6 +6,7 @@ import { isStatusUnderActions } from '../../hooks/feedback'
 import { resultGlyph, runningMark } from '../../hooks/timing'
 import { closedTitleClock, newRowIn, steppedTitleTint } from '../../hooks/arrivals'
 import { UNDO_KEY } from '../../hooks/help'
+import { newRowsOf } from '../../hooks/ui-controller-tabs'
 import { textMark } from '../../hooks/marks'
 import { COLLAPSED_TITLE_LINES } from '../../hooks/row-parts'
 import type { BannerView } from '../../hooks/banners'
@@ -194,10 +195,10 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       ? line.feedback
       : null
   const clock = line.settled
-    ? closedTitleClock(ui.closedSeen, line.id, line.settled.at, now)
+    ? closedTitleClock(new Map(Object.entries(ui.closedSeen)), line.id, line.settled.at, now)
     : line.isPrHead
       ? undefined
-      : newRowIn(ui.newRows, line.id, ui.tab)
+      : newRowIn(newRowsOf(ui), line.id, ui.tab)
   const tintTone = line.settled ? line.settled.tint : 'key'
   const tintShare = steppedTitleTint(clock, now)
   const tint: Tint | undefined = tintTone && tintShare > 0 ? { tone: tintTone, share: tintShare } : undefined

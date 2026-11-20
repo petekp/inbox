@@ -1,80 +1,15 @@
 import type { Tab } from '../../types'
-import {
-  ARRIVAL_TABS,
-  closedGroups,
-  followTo,
-  isPrsTabEmpty,
-  isTabEmpty,
-  listedRowIds,
-  openRowIds,
-  prRowIds,
-  addNewRows,
-  recordRows,
-} from '../../hooks/arrivals'
-import type { RowRecord } from '../../hooks/arrivals'
 import type { ToneName } from '../../hooks/tones'
 import { ROW_COPY } from '../../hooks/rows'
 import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../hooks/tabs'
-import { openOnArrival } from '../../hooks/action-plan'
 import { GOAL_KEYS_ID, goalSubmitLabel, statusKeyRows, statusSelected } from '../../hooks/status-keys'
 import type { IsCollapsed } from '../../hooks/status-folds'
 import type { StatusPage } from '../../hooks/status-page'
 import type { ShownTab, TabNaming } from '../../hooks/tabs'
 import type { Draw } from './panel-draw'
-import { entriesOf } from './panel-entries'
-import { drawnKeys, withTab } from './panel-keys'
-import { linesOf, waitsOf } from './panel-lines'
+import { drawnKeys } from './panel-keys'
 import { collapsedIn, fit, spread, visibleLength } from './panel-text'
-import type { PanelScreen, PanelUi, Style } from './panel'
-
-export type SeenRows = RowRecord<Tab>
-
-/** Each tab's row ids: every row it lists, and the open rows a freshly opened panel moves for. PRs are null while they load. */
-function tabRows(screen: PanelScreen): { listed: Record<Tab, string[] | null>; open: Record<Tab, string[]> } {
-  const { view } = screen
-
-  return {
-    listed: { ...listedRowIds(view), prs: screen.isFetchingPrs ? null : prRowIds(view.prs.drawn) },
-    open: { ...openRowIds(view), prs: [] },
-  }
-}
-
-function isShownEmpty(screen: PanelScreen, ui: PanelUi, tab: Tab): boolean {
-  const { view } = screen
-  if (tab === 'prs') return isPrsTabEmpty(view.prs.drawn.length, screen.isFetchingPrs)
-  const rows = tab === 'needsYou' ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows
-  return isTabEmpty({
-    rows,
-    settled: new Set(rows.filter(r => r.state.is === 'settled').map(r => r.id)),
-    closed: closedGroups(view, tab, kind => ui.unfolded.includes(kind)),
-    hasBlocker: tab === 'needsYou' && screen.stop !== null,
-  })
-}
-
-/**
- * Records which rows are new since `seen`, and where the panel moves for them. While the shown tab is empty, it moves
- * to the first other tab with new rows, or as the panel opens, with open rows. A default selection stays on the row it
- * was on when new rows arrive above it.
- */
-export function followRows(
-  screen: PanelScreen,
-  ui: PanelUi,
-  seen: SeenRows,
-  isOpening: boolean,
-  now: number,
-): { ui: PanelUi; seen: SeenRows } {
-  const { listed, open } = tabRows(screen)
-  const recorded = recordRows(seen, listed)
-  ui = { ...ui, newRows: addNewRows(ui.newRows, recorded.added) }
-  const { tab } = ui
-  if (!isRowTab(tab)) return { ui, seen: recorded.seen }
-  const to = followTo(ARRIVAL_TABS, tab, isShownEmpty(screen, ui, tab), isOpening ? open : recorded.added)
-  if (to) return { ui: withTab(ui, to, now), seen: recorded.seen }
-  const arrived = recorded.added[tab]
-  const kept = openOnArrival(waitsOf(linesOf(entriesOf(screen, ui, tab, now))), ui.selectedId, arrived)
-
-  return { ui: kept === null ? ui : { ...ui, selectedId: kept }, seen: recorded.seen }
-}
+import type { Style } from './panel'
 
 type TabCell = {
   id: ShownTab
@@ -141,7 +76,7 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
           : [
               ...statusHints(
                 screen.view.statusPage,
-                ui.selectedId,
+                ui.statusSelection,
                 id => ui.statusUnfolded.includes(id),
                 collapsedIn(screen.view),
               ),
