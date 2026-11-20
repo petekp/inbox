@@ -1691,9 +1691,6 @@ function fitTabs(layouts, fits) {
 function tabBadge(id, counts) {
   return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
 }
-function isListedTab(tab) {
-  return tab === "needsYou" || tab === "findings";
-}
 function isRowTab(tab) {
   return tab !== "overview";
 }
@@ -1701,7 +1698,6 @@ function screenTabOf(tab) {
   return { label: TAB_NAMES.find((t) => t.id === tab)?.label ?? tab, isPage: !isRowTab(tab) };
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
-var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 
 // ../hooks/band.ts
 function isMaybeStale(view, isReadFailed = false) {
@@ -8630,6 +8626,7 @@ function freshUi(config, tab = "needsYou") {
     isVisible: true,
     isOpening: false,
     opensOnAsks: false,
+    isFirstOpen: false,
     rowsSeen: {},
     heldArrivals: {},
     newRows: {},
@@ -8883,15 +8880,24 @@ var isUndoPress = (p) => p.action === "undo" || p.action === "pr-undo";
 function press(ui, view, p, by, now) {
   const rowId = pressRowId(p);
   const action = actionId(p);
-  const isRepeat = Object.values(ui.pressesOut).some((o) => o.rowId === rowId && o.action === action);
   const isReply = p.action === "type";
+  const isOtherReply = isReply && ui.sentReplies[rowId]?.text !== p.text.trim();
+  const isRepeat = !isOtherReply && Object.values(ui.pressesOut).some((o) => o.rowId === rowId && o.action === action);
   const isBlank = isReply && p.text.trim() === "";
   if (isRepeat || isBlank || isGuardedPress(ui, ui.tab, rowId, by, now))
     return withCommands(ui);
   const holds = holdsOf(ui, now);
   const pressId = ui.nextPressId;
   const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now };
-  let next = { ...ui, nextPressId: pressId + 1, pressesOut: { ...ui.pressesOut, [pressId]: out } };
+  const { [rowId]: _error, ...errors } = ui.errors;
+  const { [rowId]: _note, ...notes } = ui.notes;
+  let next = {
+    ...ui,
+    nextPressId: pressId + 1,
+    pressesOut: { ...ui.pressesOut, [pressId]: out },
+    errors,
+    notes
+  };
   if (isReply) {
     const text = p.text.trim();
     const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false };
@@ -8911,11 +8917,21 @@ function press(ui, view, p, by, now) {
   }
   return withCommands(next, { kind: "press", pressId, press: p, holds });
 }
+function settledAt(view, id) {
+  const row = allRows(view).find((r) => r.id === id)?.state;
+  const pr = view.prs.drawn.find((d) => prMarkId(d.pr.ref) === id)?.state;
+  const state = row ?? pr;
+  return state?.is === "settled" ? state.at : null;
+}
+function isUndoShown(ui, view, id, now) {
+  const at = ui.config.undoClock === "first-read" ? ui.undoSeen[id] ?? null : settledAt(view, id);
+  return at !== null && now < at + SETTLED_MS;
+}
 function undoKey(ui, view, now) {
   if (!isRowTab(ui.tab))
     return withCommands(ui);
   const lists = drawnLists(view, () => true, (r) => r);
-  const isStillShown = (id) => ui.config.undoClock === "session" || ui.undoSeen[id] !== undefined && ui.undoSeen[id] + SETTLED_MS > now;
+  const isStillShown = (id) => ui.config.undoClock === "session" || isUndoShown(ui, view, id, now);
   const undos = tabUndos(ui.tab, lists, view.prs.drawn).filter((u) => isStillShown(pressRowId(u.press)));
   const latest = latestUndo(undos);
   return latest === null ? withCommands(ui) : press(ui, view, latest.press, "key", now);
@@ -8932,7 +8948,9 @@ function pressSettled(ui, view, pressId, outcome, now) {
   const { [pressId]: _out, ...pressesOut } = ui.pressesOut;
   let next = { ...ui, pressesOut };
   const row = out.rowId;
-  const isRowListed = isListed(view, row);
+  const isUndo = out.action === "undo" || out.action === "pr-undo";
+  const hasUndoTimeEnded = isUndo && !isUndoShown(ui, view, row, now);
+  const isRowListed = isListed(view, row) && !hasUndoTimeEnded;
   if (outcome.note === "stale")
     next = isRowListed ? { ...next, notes: { ...next.notes, [row]: { note: "stale", at: now } } } : { ...next, notice: { text: noteText(), at: now, isError: false } };
   if (outcome.error !== null && !isNotSentShown(view, row))
@@ -8983,7 +9001,7 @@ function sentFate(ui, view, row) {
   if (last.at === sent.atBefore)
     return isOut ? "wait" : "keep";
   if (last.reply?.trim() !== sent.text)
-    return "keep";
+    return isOut ? "wait" : "keep";
   const state = last.delivery?.state;
   if (state === "held" || state === "queued")
     return "wait";
@@ -9035,12 +9053,13 @@ function shownTab(ui, tab, now) {
     newRows
   };
 }
-function opened(ui, now) {
+function opened(ui, now, isFirst = false) {
   return {
     ...ui,
     shownSince: now,
     isOpening: true,
     opensOnAsks: true,
+    isFirstOpen: isFirst,
     rowsSeen: {},
     newRows: {},
     closedSeen: {},
@@ -9055,6 +9074,7 @@ function closed(ui) {
     isHelpShown: false,
     isOpening: false,
     opensOnAsks: false,
+    isFirstOpen: false,
     heldArrivals: {},
     heldClose: {}
   };
@@ -9095,13 +9115,15 @@ function recordTabs(ui, view, host, now) {
 }
 var hasAsksWaiting = (view) => view.needsYou.count > 0;
 function openingMove(ui, view, now) {
-  const settled = { ...ui, isOpening: false, opensOnAsks: false };
-  const isOnRowTab = isRowTab(ui.tab) && !ui.isHelpShown && ui.typing === null;
-  if (!isOnRowTab)
+  const settled = { ...ui, isOpening: false, opensOnAsks: false, isFirstOpen: false };
+  const isFree = !ui.isHelpShown && ui.typing === null;
+  const isOnRowTab = isRowTab(ui.tab) && isFree;
+  const isOnFirstStatus = ui.tab === "overview" && ui.isFirstOpen && isFree;
+  if (!isOnRowTab && !isOnFirstStatus)
     return withCommands(settled);
   if (ui.opensOnAsks && ui.tab !== "needsYou" && hasAsksWaiting(view))
     return moveTo(settled, "needsYou", now);
-  if (!ui.isOpening || !isShownEmpty(ui, view, ui.tab))
+  if (!isOnRowTab || !ui.isOpening || !isShownEmpty(ui, view, ui.tab))
     return withCommands(settled);
   const to = followTo(ARRIVAL_TABS, ui.tab, true, { ...openRowIds(view), prs: [] });
   return to === null ? withCommands(settled) : moveTo(settled, to, now);
@@ -9165,13 +9187,19 @@ function readWakeAt(ui, view, now) {
   const isFirstRead = ui.config.undoClock === "first-read";
   const cursor = isRowTab(ui.tab) ? ui.selection[ui.tab] : null;
   const isHolding = hasHeldArrivals(ui) || Object.keys(ui.heldClose).length > 0;
+  const folding = settled.map(({ id, state }) => isFirstRead ? { ...state, at: ui.undoSeen[id] ?? now } : state);
   const times = [
     ...lasts.flatMap((l) => l.delivery?.state === "queued" ? [queuedSentAt(l) + QUEUED_AFTER_MS] : []),
     ...lasts.flatMap((l) => l.result === undefined ? [] : [l.result.at + (l.result.state === "pending" ? PRESS_TIMEOUT_MS : SETTLED_MS)]),
     ...pressEndsAt(ui, view),
     ...settled.flatMap(({ id, state }) => state.canUndo ? [isFirstRead ? (ui.undoSeen[id] ?? now) + SETTLED_MS : state.at + SETTLED_MS] : []),
     ...settled.flatMap(({ state }) => state.offersUndo && isSendOnItsWay(state.delivery) ? [undoPlaceEndsAt(state)] : []),
-    nextFoldAt(settled.map((s) => s.state), { lastTypedMessageAt: ui.host.lastTypedMessageAt, listInput: ui.listInput, now, settleWindowMs: SETTLED_MS }),
+    nextFoldAt(folding, {
+      lastTypedMessageAt: ui.host.lastTypedMessageAt,
+      listInput: ui.listInput,
+      now,
+      settleWindowMs: SETTLED_MS
+    }),
     timedChangeAt(view.lastActions, now),
     isHolding && ui.listInput !== null ? ui.listInput.last + FOLD_QUIET_MS : null,
     cursor?.guard ? cursor.guard.at + PRESS_GUARD_MS : null,
@@ -9257,7 +9285,8 @@ function restoredUi(ui) {
     heldArrivals: {},
     heldClose: {},
     isOpening: false,
-    opensOnAsks: false
+    opensOnAsks: false,
+    isFirstOpen: false
   };
 }
 function read(ui, view, host, now) {
@@ -9297,7 +9326,7 @@ function step(ui, view, by, ids, now) {
 function handle(ui, view, e, now) {
   switch (e.type) {
     case "opened":
-      return withCommands(opened(ui, now));
+      return withCommands(opened(ui, now, e.isFirst === true));
     case "closed":
       return withCommands(closed(ui));
     case "reset":

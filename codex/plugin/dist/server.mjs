@@ -109,14 +109,10 @@ var TAB_NAMES = [
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
 var SHOWN_TABS = numbered(TAB_NAMES);
-function isListedTab(tab) {
-  return tab === "needsYou" || tab === "findings";
-}
 function isRowTab(tab) {
   return tab !== "overview";
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
-var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 
 // ../hooks/help.ts
 var FINDING_GROUPS = {
