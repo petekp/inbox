@@ -8,11 +8,12 @@ The inbox has five looks: `terminal`, `desktop`, `codex`, `omp` and `herdr`. A l
 
 Shared modules are in `hooks/`. Every host consumes them, directly or through a build. They import only shared modules and shared types. `scripts/check-structure.mjs` checks those boundaries, including type imports. Codex and omp type checking need no generated Claude engine types.
 
-Every source file in `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the six parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
+Every source file in `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
 
 - [Shared modules](looks/files-shared.md)
 - [Shared modules for the Status](looks/files-shared-status.md)
 - [Shared modules for Herdr](looks/files-shared-herdr.md)
+- [The shared UI controller](looks/files-shared-controller.md)
 - [The mod](looks/files-mod.md)
 - [Codex](looks/files-codex.md)
 - [omp](looks/files-omp.md)
