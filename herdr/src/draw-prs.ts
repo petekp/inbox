@@ -297,11 +297,6 @@ function clearLine(screen: LookScreen): Block[] {
 /** The rule that separates two PRs, in the middle of a section's space. */
 const ruleBetween = (ref: string): Block => ({ kind: 'rule', id: `rule ${ref}`, text: null })
 
-/** The first row the PRs tab can open, which it opens while the person has opened none of its rows. */
-function firstSelectable(blocks: Block[]): string | null {
-  return blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelectable && !b.isCollapsed)?.id ?? null
-}
-
 /** The PRs tab as the look draws it, from the shared PR plans in the desktop look's order. */
 export function prTabBlocks(screen: LookScreen, selected: string | null): Block[] {
   const { view } = screen
@@ -327,15 +322,12 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
     ...(n > 0 ? [ruleBetween(d.pr.ref)] : []),
     ...(d === othersStart ? [caption] : []),
   ]
-  const draw = (open: string | null) => [
+
+  return [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
     ...orderLines(screen),
-    ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, open)]),
+    ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, selected)]),
     ...(prs.olderText ? [ruleBetween('older prs'), note('older prs', prs.olderText, 'muted')] : []),
   ]
-  const blocks = draw(selected)
-  const isShown = blocks.some(b => b.kind === 'row' && b.isSelected)
-
-  return isShown ? blocks : draw(firstSelectable(blocks))
 }

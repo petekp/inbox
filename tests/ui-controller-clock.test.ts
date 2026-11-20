@@ -3,7 +3,7 @@ import { test } from './test-with-timeout'
 
 import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS } from '../hooks/arrivals'
 import { closeItem } from '../hooks/ledger-close'
-import { RUNNING_FRAME_MS, SETTLED_MS } from '../hooks/timing'
+import { QUEUED_AFTER_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../hooks/timing'
 import { keptUiStates, noticeOf, restoredUi, rowErrorOf } from '../hooks/ui-controller'
 import { readWakeAt } from '../hooks/ui-controller-clock'
 import { holdsOf } from '../hooks/ui-controller-reply'
@@ -90,6 +90,29 @@ test('a row’s error shows for SETTLED_MS, wakes the look when it ends, and a t
   expect(noticeOf(ended.ui, T0 + 20 + SETTLED_MS)).toBe(null)
 })
 
+test('an answer still queued when its Undo ends wakes the look once its message has waited QUEUED_AFTER_MS past that end', () => {
+  const at = T0
+  const answered = {
+    ...S,
+    ledger: closeItem(S.ledger, 'i1', { how: 'answered', outcome: 'Yes' }, at),
+    lastActions: {
+      i1: {
+        kind: 'mark' as const,
+        action: 'answer',
+        text: 'Yes',
+        at,
+        delivery: { state: 'queued' as const, message: 'Yes' },
+      },
+    },
+  }
+  const { ui } = openOn(S, at - 100)
+  const afterUndo = at + SETTLED_MS + 1
+  const listed = send(ui, answered, { type: 'list-input' }, afterUndo - 2)
+  expect(readWakeAt(listed.ui, viewOf(answered, listed.ui, afterUndo), afterUndo)).toBe(
+    at + SETTLED_MS + QUEUED_AFTER_MS,
+  )
+})
+
 test('Undo timed from the first read starts when the look first draws the closed row, and the host is told which rows it keeps', () => {
   const closed = dismissed(S, 'i1', T0)
   const late = T0 + SETTLED_MS / 2
@@ -104,6 +127,15 @@ test('Undo timed from the first read starts when the look first draws the closed
   const sessionLook = read(openOn(S, T0 - 100).ui, closed, late)
   expect(sessionLook.ui.undoSeen).toEqual({})
   expect(holdsOf(sessionLook.ui, late).undoShown).toBe(undefined)
+})
+
+test('on the first-read Undo clock a closed row’s fold wakes the look SETTLED_MS after its first read, not after its close', () => {
+  const closed = closedByAgent(S, 'i1', T0)
+  const late = T0 + SETTLED_MS / 2
+  const firstRead = read(openOn(S, T0 - 100, 'needsYou', { ...LOOK, undoClock: 'first-read' }).ui, closed, late)
+  expect(readWakeAt(firstRead.ui, viewOf(closed, firstRead.ui, late), late)).toBe(late + SETTLED_MS)
+  const sessionLook = read(openOn(S, T0 - 100).ui, closed, late)
+  expect(readWakeAt(sessionLook.ui, viewOf(closed, sessionLook.ui, late), late)).toBe(T0 + SETTLED_MS)
 })
 
 test('a restored look keeps drafts, folds and cursors, and drops presses, timers and held moves', () => {

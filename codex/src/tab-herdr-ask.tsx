@@ -3,7 +3,7 @@ import { SETTLED_MS } from '../../hooks/timing'
 import type { HerdrAsk, OpenHerdrAsk } from '../../hooks/herdr-ask'
 import type { TabView as View } from './core'
 import { callTool, later } from './tab-host'
-import { read } from './tab-read'
+import { read } from './tab-ui'
 import { tabState } from './tab-state'
 import { Banner } from './tab-parts'
 

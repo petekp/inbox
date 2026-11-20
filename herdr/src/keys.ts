@@ -1,69 +1,16 @@
-import { drawnLists, latestUndo, openOnArrival, rowAfterClose, steppedIndex, tabUndos } from '../../hooks/action-plan'
-import type { RowWait } from '../../hooks/action-plan'
-import { addNewRows, showNewRows } from '../../hooks/arrivals'
 import { COLLAPSE_KEY, FOLD_ALL_KEY, UNDO_KEY } from '../../hooks/help'
-import type { PrPress } from '../../hooks/pr-press'
-import type { RowPress } from '../../hooks/presses'
-import type { SessionView } from '../../hooks/session-view'
-import { isDrawnInPlace } from '../../hooks/timing'
 import type { ShownTab } from '../../hooks/tabs'
-import type { Draft } from '../../types'
-import type { Block, Button, Does, RowBlock, ViewChange } from './blocks'
-import type { LookUi, TabCell } from './draw'
-import type { SentText } from './out'
+import type { UiEvent } from '../../hooks/ui-controller-types'
+import type { Block, Button, RowBlock } from './blocks'
+import type { TabCell } from './draw'
 
 /**
- * What a key does in the look: switch tabs, select a row, collapse or expand it, press a button, give focus back to
- * the terminal, or close the open text field.
+ * What a key does in the look: an event for the shared controller, a press of a drawn button, giving focus back to
+ * the terminal, or nothing.
  */
-type KeyMove =
-  | { is: 'tab'; tab: ShownTab }
-  | { is: 'select'; id: string }
-  | { is: 'collapse'; id: string; isCollapsed: boolean }
-  | { is: 'fold-all' }
-  | { is: 'press'; button: Button }
-  | { is: 'leave' }
-  | { is: 'close' }
-  | null
+type KeyMove = { is: 'event'; event: UiEvent } | { is: 'press'; button: Button } | { is: 'leave' } | null
 
 const isSelectable = (b: Block): b is RowBlock => b.kind === 'row' && b.isSelectable
-
-/** The row after or before the selected one, wrapping at either end, or the first or last row when none is selected. */
-function stepRow(blocks: Block[], by: 1 | -1): string | null {
-  const rows = blocks.filter(isSelectable)
-  const next = steppedIndex(
-    rows.findIndex(r => r.isSelected),
-    by,
-    rows.length,
-  )
-
-  return rows[next]?.id ?? null
-}
-
-/** The press of the Undo the undo key presses on a row tab: the one whose row or PR closed last. */
-export function tabUndo(view: SessionView, tab: ShownTab, shownSince: number): RowPress | PrPress | null {
-  if (tab === 'overview') return null
-  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows]
-  const drawn = new Set(rows.filter(r => isDrawnInPlace(r, shownSince)).map(r => r.id))
-  const lists = drawnLists(
-    view,
-    id => drawn.has(id),
-    r => r,
-  )
-
-  return latestUndo(tabUndos(tab, lists, view.prs.drawn))?.press ?? null
-}
-
-const isSamePress = (a: RowPress | PrPress, b: RowPress | PrPress) => JSON.stringify(a) === JSON.stringify(b)
-
-/** The drawn button of that Undo, unless its press is out. */
-function undoButton(blocks: Block[], undo: RowPress | PrPress): Button | null {
-  const drawn = blocks
-    .flatMap(b => (b.kind === 'row' ? b.buttons : []))
-    .find(b => b.does.is === 'press' && isSamePress(b.does.press, undo))
-
-  return drawn && !drawn.isOut ? drawn : null
-}
 
 function stepTab(tabs: TabCell[], by: 1 | -1): ShownTab | null {
   const at = tabs.findIndex(t => t.isSelected)
@@ -71,38 +18,38 @@ function stepTab(tabs: TabCell[], by: 1 | -1): ShownTab | null {
   return tabs[(at + by + tabs.length) % tabs.length]?.id ?? null
 }
 
+const event = (e: UiEvent): KeyMove => ({ is: 'event', event: e })
+
 /**
  * The move a key makes, as the Herdr look's Help lists: ← → switch tabs, j k move between rows, z collapses or
- * expands the selected row, u presses `undo`,
- * the Undo of the row that closed last, a selected row's hotkeys press its buttons, the tab's own keys such as g
- * press its line's buttons, and escape leaves the look. While a text field is open, `typing` names its row: the keys
- * type into it, and escape closes it.
+ * expands the selected row, w folds or opens every fold, u presses the Undo of the row that closed last, a selected
+ * row's hotkeys press its buttons, the tab's own keys such as g press its line's buttons, and escape leaves the look.
+ * While a text field is open, `typing` names its row: the keys type into it, and escape closes it. Under Help, only
+ * ← → and escape do anything.
  */
 export function keyMove(
   key: string,
   tabs: TabCell[],
   blocks: Block[],
   typing: string | null,
-  undo: RowPress | PrPress | null = null,
+  isHelpShown = false,
 ): KeyMove {
-  if (typing !== null) return key === 'escape' ? { is: 'close' } : null
+  if (typing !== null) return key === 'escape' ? event({ type: 'close-field', id: typing, isDiscard: false }) : null
   if (key === 'escape') return { is: 'leave' }
   if (key === 'left' || key === 'right') {
     const tab = stepTab(tabs, key === 'right' ? 1 : -1)
-    return tab ? { is: 'tab', tab } : null
+    return tab ? event({ type: 'show-tab', tab }) : null
   }
+  if (isHelpShown) return null
   if (key === 'j' || key === 'k') {
-    const id = stepRow(blocks, key === 'j' ? 1 : -1)
-    return id ? { is: 'select', id } : null
+    const ids = blocks.filter(isSelectable).map(r => r.id)
+    return ids.length > 0 ? event({ type: 'step', by: key === 'j' ? 1 : -1, ids }) : null
   }
-  if (key === FOLD_ALL_KEY) return { is: 'fold-all' }
-  if (key === UNDO_KEY) {
-    const button = undo ? undoButton(blocks, undo) : null
-    return button ? { is: 'press', button } : null
-  }
+  if (key === FOLD_ALL_KEY) return event({ type: 'fold-all', isOpening: null })
+  if (key === UNDO_KEY) return event({ type: 'undo-key' })
   const selected = blocks.find((b): b is RowBlock => b.kind === 'row' && b.isSelected)
   if (key === COLLAPSE_KEY && selected?.isSelectable)
-    return { is: 'collapse', id: selected.id, isCollapsed: !selected.isCollapsed }
+    return event({ type: 'collapse', id: selected.id, isCollapsed: !selected.isCollapsed })
   const lines = blocks.flatMap(b =>
     b.kind === 'line' || b.kind === 'banner' ? b.buttons : b.kind === 'empty' ? (b.under?.buttons ?? []) : [],
   )
@@ -111,138 +58,9 @@ export function keyMove(
   return pressed ? { is: 'press', button: pressed } : null
 }
 
-/** Selecting a row closes the text field of any other row. Its draft is kept. */
-export const withSelected = (ui: LookUi, id: string): LookUi => ({
-  ...ui,
-  selected: id,
-  typing: ui.typing === id ? id : null,
-})
-
-/**
- * The look's state after a row or a Status parent collapses or opens. A row becomes the selected one and a collapse
- * closes its field. A Status parent is no row, so the selection stays.
- */
-export const withCollapsed = (ui: LookUi, id: string, isCollapsed: boolean): LookUi => ({
-  ...(ui.tab === 'overview' ? ui : withSelected(ui, id)),
-  ...(isCollapsed && { typing: null }),
-})
-
-/**
- * After a publish, moves the selection off a selected row that waited at the last draw and no longer does, to the row
- * `rowAfterClose` gives, as the terminal's `openAfterClose` does. `last` and `now` are the tab's rows at the last draw
- * and at this one.
- */
-export function withClosedSelection(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
-  const id = ui.selected
-  const wasWaiting = last.some(r => r.id === id && r.isWaiting)
-  const isWaiting = now.some(r => r.id === id && r.isWaiting)
-  if (id === null || !wasWaiting || isWaiting) return ui
-  const next = rowAfterClose(now, id)
-
-  return next === null ? { ...ui, selected: null, typing: null } : withSelected(ui, next)
-}
-
-/**
- * After a publish, selects the first new row that waits while the selected row is collapsed, as `openOnArrival` says,
- * and records the new rows. The look finds them only in the tab it shows. `last` and `now` are the tab's rows at the
- * last draw and at this one.
- */
-function withArrivals(ui: LookUi, last: RowWait[], now: RowWait[]): LookUi {
-  const added = now.filter(r => !last.some(l => l.id === r.id)).map(r => r.id)
-  const id = ui.selected === null ? null : openOnArrival(now, ui.selected, added)
-  const recorded = added.length === 0 ? ui : { ...ui, newRows: addNewRows(ui.newRows, { [ui.tab]: added }) }
-
-  return id === null ? recorded : withSelected(recorded, id)
-}
-
-/** `ui` as the look shows its tab `at`: the tab's new rows start their tint's clock, and ended tints are dropped. */
-function withShownNewRows(ui: LookUi, at: number): LookUi {
-  const newRows = showNewRows(ui.newRows, ui.tab, at)
-  const isSame = newRows.size === ui.newRows.size && [...newRows].every(([id, row]) => ui.newRows.get(id) === row)
-
-  return isSame ? ui : { ...ui, newRows }
-}
-
-/**
- * The tab a draw showed, and its rows, or null when it showed no inbox, as while a session is read. `pressed` are the
- * rows that had a press out.
- */
-export type LastWaits = { tab: ShownTab; rows: RowWait[] | null; pressed: string[] }
-
-const waitsIn = (rows: RowWait[], id: string) => rows.some(r => r.id === id && r.isWaiting)
-
-/**
- * The look's state after a draw that shows `rows` while the presses `outs` are out, from the rows the last draw showed,
- * and what this draw leaves for the next. Rows count as closed or new only between two draws of the same tab's rows. A
- * new row's clock starts once `isTabShown`, which is false while Help covers the tab. `isAnswer` says a row that had a
- * press out at the last draw no longer waits: the publish answers the person's press, so its moves are theirs and the
- * next row opens at once, as the Codex tab opens it when the press returns.
- */
-export function withDrawnRows(
-  ui: LookUi,
-  last: LastWaits,
-  rows: RowWait[] | null,
-  at: number,
-  isTabShown: boolean,
-  outs: readonly { rowId: string }[],
-): { ui: LookUi; last: LastWaits; isAnswer: boolean } {
-  const lastRows = last.tab === ui.tab ? last.rows : null
-  const isCompared = rows !== null && lastRows !== null
-  const arrived = isCompared ? withArrivals(withClosedSelection(ui, lastRows, rows), lastRows, rows) : ui
-  const isAnswer = isCompared && last.pressed.some(id => waitsIn(lastRows, id) && !waitsIn(rows, id))
-  const drawn = isTabShown ? withShownNewRows(arrived, at) : arrived
-
-  return { ui: drawn, last: { tab: drawn.tab, rows, pressed: outs.map(o => o.rowId) }, isAnswer }
-}
-
 /**
  * Whether a click in the list gives the keys to the open text field rather than to the look: while the field is open
  * and drawn, which it is not under Help. GPUI delivers a click to every handler on its path, so a click on the field,
  * on its box or anywhere else in the list reaches the list's handler.
  */
-export const isFieldDrawn = (ui: LookUi, isHelpShown: boolean): boolean => ui.typing !== null && !isHelpShown
-
-/** Switching tabs closes the open text field. Its draft is kept. */
-export const withTab = (ui: LookUi, tab: ShownTab): LookUi => ({ ...ui, tab, selected: null, typing: null })
-
-/** The look's state after a press goes: an Undo selects its row. */
-export function afterPress(ui: LookUi, press: Extract<Does, { is: 'press' }>['press']): LookUi {
-  return 'id' in press && press.action === 'undo' ? withSelected(ui, press.id) : ui
-}
-
-/** A field's text that went as a press closes the field. A refused one keeps it open. Either keeps the draft. */
-export const afterSend = (ui: LookUi, rowId: string, isSent: boolean): LookUi =>
-  isSent && ui.typing === rowId ? { ...ui, typing: null } : ui
-
-/**
- * The drafts without those whose sent text the host confirmed, as the other looks delete a sent reply's draft, and
- * the confirmations still `waiting` for their row's open field to close. A draft whose words changed after the send
- * stays. A later send on the row, still `pending`, replaces an earlier one's confirmation.
- */
-export function withoutConfirmed(
-  drafts: Record<string, Draft>,
-  confirmed: readonly SentText[],
-  typing: string | null,
-  pending: readonly SentText[],
-): { drafts: Record<string, Draft>; waiting: SentText[] } {
-  const current = confirmed.filter(c => !pending.some(p => p.rowId === c.rowId && p.pressId > c.pressId))
-  const done = current.filter(c => c.rowId !== typing)
-  const isSentDraft = (id: string, d: Draft) => done.some(c => c.rowId === id && c.text === d.text.trim())
-
-  return {
-    drafts: Object.fromEntries(Object.entries(drafts).filter(([id, d]) => !isSentDraft(id, d))),
-    waiting: current.filter(c => c.rowId === typing),
-  }
-}
-
-const toggled = <T>(list: T[], x: T): T[] => (list.includes(x) ? list.filter(y => y !== x) : [...list, x])
-
-/** The look's state after a button that changes only what the look shows, other than Help. */
-export function withChange(ui: LookUi, c: Exclude<ViewChange, { toggleHelp: true }>): LookUi {
-  if ('showOptions' in c) return { ...ui, optionsShown: toggled(ui.optionsShown, c.showOptions) }
-  if ('closedFold' in c) return { ...ui, unfolded: toggled(ui.unfolded, c.closedFold) }
-  if ('earlier' in c) return { ...ui, closedAll: [...ui.closedAll, c.earlier] }
-  if ('toggleFold' in c) return { ...ui, statusUnfolded: toggled(ui.statusUnfolded, c.toggleFold) }
-
-  return withSelected({ ...ui, tab: 'needsYou' }, c.showAsk)
-}
+export const isFieldDrawn = (typing: string | null, isHelpShown: boolean): boolean => typing !== null && !isHelpShown

@@ -3,6 +3,7 @@ import type { CompanionHandler } from './companion-protocol'
 import { delegatesSettled } from '../../hooks/children'
 import type { RunWithInput } from './run'
 import { delegatesInHerdr, herdrCheckGate } from '../../hooks/herdr'
+import type { DelegateSession } from '../../hooks/hc-terminals'
 import type { PrPress } from '../../hooks/pr-press'
 import { noteText } from '../../hooks/press-reducer'
 import type { RowPress } from '../../hooks/presses'
@@ -78,6 +79,8 @@ export type ServerDeps = {
   followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>) => void
   /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
   herdrAsk?: CodexHerdrAsk
+  /** The delegate session Codex runs as, as `hooks/hc-terminals.ts:delegateSession` reads it. Without it, none. */
+  delegate?: () => Promise<DelegateSession | null>
 }
 
 type Message = { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
@@ -149,8 +152,9 @@ export function makeServer(given: ServerDeps): Server {
       case 'close':
       case 'order_prs': {
         let result = ''
+        const delegate = (await deps.delegate?.().catch(() => null)) ?? null
         await codexStore(dir, id, now, deps.onWrite).update(s => {
-          const r = recorded(CODEX, s, name, args, now(), listedToolFields())
+          const r = recorded(CODEX, s, name, args, now(), listedToolFields(), delegate)
           result = r.result
           return heard(r.state)
         })

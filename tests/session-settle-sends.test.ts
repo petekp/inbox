@@ -21,7 +21,7 @@ for (const isDeliveryHeldUntilRun of [false, true])
     }
     const holds = { ...NO_HOLDS, shownSince: clock }
     await host.update(
-      s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask: 'Sign in to npm' }, clock, TOOL_FIELDS).state,
+      s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask: 'Sign in to npm' }, clock, TOOL_FIELDS, null).state,
     )
     const id = (await host.read()).ledger.items[0]!.id
     await press(host, { action: 'done', id }, false, holds)
@@ -47,7 +47,7 @@ for (const isDeliveryHeldUntilRun of [false, true])
     }
     const holds = { ...NO_HOLDS, shownSince: clock }
     await host.update(
-      s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask: 'Sign in to npm' }, clock, TOOL_FIELDS).state,
+      s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask: 'Sign in to npm' }, clock, TOOL_FIELDS, null).state,
     )
     const id = (await host.read()).ledger.items[0]!.id
     await press(host, { action: 'done', id }, false, holds)
@@ -74,7 +74,7 @@ test('a typed reply to a question while its answer is held for Undo sends the an
     },
   }
   const question = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'In-memory'] }
-  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, clock, TOOL_FIELDS).state)
+  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, clock, TOOL_FIELDS, null).state)
   const id = (await host.read()).ledger.items[0]!.id
   await press(host, { action: 'answer', id, option: 'Redis' }, false, NO_HOLDS)
   expect(sent).toEqual([])
@@ -98,7 +98,7 @@ test('a typed question back goes to the agent as a question about the ask, and t
     },
   }
   const question = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'In-memory'] }
-  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, clock, TOOL_FIELDS).state)
+  await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, clock, TOOL_FIELDS, null).state)
   const id = (await host.read()).ledger.items[0]!.id
   await press(host, { action: 'type', id, text: 'Why not Redis?' }, false, NO_HOLDS)
   await press(host, { action: 'type', id, text: 'Redis?' }, false, NO_HOLDS)
@@ -122,7 +122,7 @@ for (const isDeliveryHeldUntilRun of [false, true])
     }
     const holds = { ...NO_HOLDS, shownSince: clock }
     const question = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'In-memory'] }
-    await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, clock, TOOL_FIELDS).state)
+    await host.update(s => recorded(CLAUDE_CODE, s, 'record', question, clock, TOOL_FIELDS, null).state)
     const id = (await host.read()).ledger.items[0]!.id
     await press(host, { action: 'answer', id, option: 'Redis' }, false, holds)
     clock += host.settleWindowMs

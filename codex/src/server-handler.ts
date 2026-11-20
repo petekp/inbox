@@ -17,6 +17,8 @@ import { herdrLog, herdrOnWrite } from './host'
 import { codexHerdrAsk, followCodexPresses, startCodexInHerdrApp } from './server-herdr'
 import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
 import { NEXT_BUILD_MARK } from '../../hooks/banners'
+import { delegateReader } from '../../hooks/hc-terminals'
+import { herdrTarget } from '../../hooks/herdr'
 
 function devPageIn(dir: string): () => Promise<string | null> {
   let cached: { path: string; mtimeMs: number; html: string } | null = null
@@ -83,6 +85,7 @@ export function createHandler(
     onWrite: herdrOnWrite(process.env, run, dir, Date.now, log),
     followHerdrPresses: followHerdrPresses(log),
     herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
+    delegate: delegateReader(herdrTarget(process.env), run),
     openCatchUp: startUpdate && {
       codexHome,
       startUpdate,

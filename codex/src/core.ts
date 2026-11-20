@@ -108,7 +108,7 @@ export function noteToolCall(s: SessionState, turnId: string | null, now: number
  * missed a turn since it last ran, or when it recorded two turns and Stop none,
  * so no reply reaches the inbox model.
  */
-export type HeardState = 'heard' | 'none' | 'partial'
+type HeardState = 'heard' | 'none' | 'partial'
 
 export function heardState(h: Heard): HeardState {
   if (h.startAt === null && h.promptAt === null && h.stopAt === null) return 'none'

@@ -72,12 +72,13 @@ export function shownTab(ui: UiState, tab: ShownTab, now: number): UiState {
   }
 }
 
-export function opened(ui: UiState, now: number): UiState {
+export function opened(ui: UiState, now: number, isFirst = false): UiState {
   return {
     ...ui,
     shownSince: now,
     isOpening: true,
     opensOnAsks: true,
+    isFirstOpen: isFirst,
     rowsSeen: {},
     newRows: {},
     closedSeen: {},
@@ -93,9 +94,18 @@ export function closed(ui: UiState): UiState {
     isHelpShown: false,
     isOpening: false,
     opensOnAsks: false,
+    isFirstOpen: false,
     heldArrivals: {},
     heldClose: {},
   }
+}
+
+/** Help shown or closed. Closing it starts the title tint of the new rows its tab shows. */
+export function helpShown(ui: UiState, isShown: boolean, now: number): UiState {
+  const isTabShown = !isShown && ui.isVisible && ui.shownSince !== null && isRowTab(ui.tab)
+  const newRows = isTabShown ? asRecord(showNewRows(newRowsOf(ui), ui.tab, now)) : ui.newRows
+
+  return { ...ui, isHelpShown: isShown, newRows }
 }
 
 /** A page that shows again only reconsiders Asks: its clocks and records go on. */
@@ -125,7 +135,7 @@ export function recordTabs(ui: UiState, view: SessionView, host: HostFacts, now:
   const recorded = recordRows<Tab>(seen, listed)
   const isTinting = ui.isVisible && ui.shownSince !== null
   const added = addNewRows(newRowsOf(ui), isTinting ? recorded.added : {})
-  const newRows = isTinting && isRowTab(ui.tab) ? showNewRows(added, ui.tab, now) : added
+  const newRows = isTinting && isRowTab(ui.tab) && !ui.isHelpShown ? showNewRows(added, ui.tab, now) : added
   const rowsSeen = Object.fromEntries(Object.entries(recorded.seen).map(([t, ids]) => [t, [...(ids ?? [])]]))
 
   return {
@@ -136,13 +146,18 @@ export function recordTabs(ui: UiState, view: SessionView, host: HostFacts, now:
 
 const hasAsksWaiting = (view: SessionView) => view.needsYou.count > 0
 
-/** The move an open makes: Asks when a row there waits, else away from an empty tab to one with open rows. */
+/**
+ * The move an open makes: Asks when a row there waits, else away from an empty tab to one with open rows. The Status
+ * page stays, unless the look opened on it with no tab the person chose.
+ */
 function openingMove(ui: UiState, view: SessionView, now: number): UiStep {
-  const settled = { ...ui, isOpening: false, opensOnAsks: false }
-  const isOnRowTab = isRowTab(ui.tab) && !ui.isHelpShown && ui.typing === null
-  if (!isOnRowTab) return withCommands(settled)
+  const settled = { ...ui, isOpening: false, opensOnAsks: false, isFirstOpen: false }
+  const isFree = !ui.isHelpShown && ui.typing === null
+  const isOnRowTab = isRowTab(ui.tab) && isFree
+  const isOnFirstStatus = ui.tab === 'overview' && ui.isFirstOpen && isFree
+  if (!isOnRowTab && !isOnFirstStatus) return withCommands(settled)
   if (ui.opensOnAsks && ui.tab !== 'needsYou' && hasAsksWaiting(view)) return moveTo(settled, 'needsYou', now)
-  if (!ui.isOpening || !isShownEmpty(ui, view, ui.tab as Tab)) return withCommands(settled)
+  if (!isOnRowTab || !ui.isOpening || !isShownEmpty(ui, view, ui.tab as Tab)) return withCommands(settled)
   const to = followTo(ARRIVAL_TABS, ui.tab as Tab, true, { ...openRowIds(view), prs: [] })
 
   return to === null ? withCommands(settled) : moveTo(settled, to, now)

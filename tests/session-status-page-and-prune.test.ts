@@ -162,7 +162,7 @@ test('an applied model answer that changes nothing still makes the session seen,
   const begun = { ...emptySession(), presence: { ...emptySession().presence, turnsStarted: 1 } }
   const prompted = { ...begun, ledger: { ...begun.ledger, turn: 1 } }
   expect(hasLedger(prompted)).toBe(false)
-  const none = appliedCatchUp(prompted, prompted, parseReply('NONE'), 5)
+  const none = appliedCatchUp(prompted, prompted, parseReply('NONE'), 5, false)
   expect(hasLedger(none)).toBe(true)
   expect(isUnseen(none)).toBe(false)
 
@@ -171,7 +171,7 @@ test('an applied model answer that changes nothing still makes the session seen,
 })
 
 test('a prune keeps the closed records of held rows and of rows closed since the showing began, a linked PR’s view, and a dismissed PR’s view only while the showing that dismissed it lasts', () => {
-  const tasks = Array.from({ length: 14 }, (_, n) => `NEW: do | - | Task ${n} | - | -`).join('\n')
+  const tasks = Array.from({ length: 14 }, (_, n) => `NEW: do | - | Task ${n} of the export | - | -`).join('\n')
   const opened = applyUpdate(EMPTY, parseReply(tasks)!, 10, 1)
   const ids = opened.items.map(i => i.id)
   const closes = (some: string[]) => parseReply(some.map(id => `CLOSED: ${id} | done`).join('\n'))!

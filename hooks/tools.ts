@@ -2,6 +2,7 @@ import { isQuestionBack, recommendedOption, rewordedQuestion } from './ask-match
 import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
+import type { DelegateSession } from './hc-terminals'
 import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
 import { isDismissed } from './pr-views'
@@ -48,8 +49,21 @@ export function isAgentTool(name: string): name is AgentTool {
 type Presses = { lastActions: Record<string, LastAction>; turnStartedAt: number | null }
 
 /**
+ * Why a delegate session's question or task is not recorded, and where it goes instead: the session that started it
+ * asks the person.
+ */
+function delegateRefusal(delegate: DelegateSession): string {
+  const starter = delegate.parent
+    ? `the session in Herdr terminal ${delegate.parent}`
+    : 'the session that started this one'
+
+  return `Not recorded: this is a delegate session, so the user's inbox does not take its questions or tasks. Write this one in your REPORT.md, or message ${starter}. That session asks the user what only they can decide. Findings are still recorded.`
+}
+
+/**
  * The answer to a call of one of `agentTools`. `fields` are the input fields of the tools the agent has, which can be
- * an older build's, so the answer never asks for a field the agent cannot send.
+ * an older build's, so the answer never asks for a field the agent cannot send. In a delegate session, `record` refuses
+ * a question or a task as `delegateRefusal` says.
  */
 export function toolAnswer(
   host: Host,
@@ -59,9 +73,13 @@ export function toolAnswer(
   now: number,
   presses: Presses,
   fields: ToolFields,
+  delegate: DelegateSession | null,
 ): ToolAnswer {
   switch (tool) {
     case 'record':
+      if (delegate && (input.kind === 'question' || input.kind === 'task'))
+        return unchanged(ledger, delegateRefusal(delegate))
+
       return (
         recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields)
       )

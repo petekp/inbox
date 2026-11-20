@@ -57,6 +57,9 @@ async function builtTab(items: Ledger['items'], lastActions: Record<string, Last
     for (let n = 0; n < 280 && !isDrawn(); n++) await new Promise<void>(resolve => setTimeout(resolve, 25))
   }
   document.write(resource.contents[0]!.text)
+  const asksTab = () => document.querySelector('.tab[title="Asks"]') as { click(): void } | null
+  await until(() => asksTab() !== null)
+  asksTab()?.click()
 
   return {
     document,
@@ -130,7 +133,7 @@ test('the built tab draws an open row’s pending open muted, not in the error c
     [...tab.document.querySelectorAll('.panel div')].find(d => d.textContent?.trim() === 'Opening plan.md…')
   try {
     await tab.until(() => /Could not open plan\.md/.test(tab.rowWith('Check the build')?.textContent ?? ''))
-    ;(tab.rowWith('Check the build')!.querySelector('button.line') as { click(): void } | null)!.click()
+    assert.ok(tab.rowWith('Check the build')?.classList.contains('selected'), 'the waiting row is not open')
     const open = () => [...tab.document.querySelectorAll('.panel button')].find(b => /^Open/.test(b.textContent ?? ''))
     await tab.until(() => open() !== undefined)
     ;(open() as { click(): void } | undefined)!.click()

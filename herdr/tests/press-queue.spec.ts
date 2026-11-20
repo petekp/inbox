@@ -3,9 +3,9 @@ import { expect, test } from 'bun:test'
 import { isPressFile, pressFile } from '../../hooks/herdr-press-file'
 import { NO_HOLDS } from '../../hooks/timing'
 import type { SessionView } from '../../hooks/session-view'
-import type { Delivery, LocalResult } from '../../types'
+import type { Delivery, LocalResult, PressKind } from '../../types'
+import type { SettledOutcome } from '../../hooks/ui-controller-types'
 import type { LastPress } from '../src/files'
-import { withoutConfirmed } from '../src/keys'
 import { GIVE_UP_MS } from '../src/out'
 import { PressQueue } from '../src/press-queue'
 import type { PressTarget, QueueIo } from '../src/press-queue'
@@ -38,11 +38,12 @@ const target: PressTarget = {
   projectFolder: '/w',
 }
 const open = [{ kind: 'open' as const, target: '/w/plan.md', name: 'plan.md' }]
+const opts = (label: string, kind: PressKind | null, uiPressId: number) => ({ effects: [], label, kind, uiPressId })
 
 test('a press is refused, with the reason on its row, when its row has a press out or there is no session', () => {
   const queue = new PressQueue(fakeIo().io)
-  expect(queue.send(target, { action: 'done', id: rowId }, [], 'Done', 'mark').is).toBe('sent')
-  const again = queue.send(target, { action: 'type', id: rowId, text: 'hi' }, [], 'Send', null, 'hi')
+  expect(queue.send(target, { action: 'done', id: rowId }, opts('Done', 'mark', 1)).is).toBe('sent')
+  const again = queue.send(target, { action: 'type', id: rowId, text: 'hi' }, { ...opts('Send', null, 2), reply: 'hi' })
   expect(again.is).toBe('refused')
   expect(queue.lines[rowId]).toEqual({
     text: 'Not sent: the last press on this row has not finished.',
@@ -50,13 +51,21 @@ test('a press is refused, with the reason on its row, when its row has a press o
     source: { is: 'notSent', reason: 'the last press on this row has not finished.', retry: null },
   })
   expect(queue.outs.length).toBe(1)
-  expect(new PressQueue(fakeIo().io).send(null, { action: 'done', id: rowId }, [], 'Done', 'mark').is).toBe('refused')
+  expect(queue.takeEnded()).toEqual([
+    {
+      uiPressId: 2,
+      outcome: { error: 'the last press on this row has not finished.', note: null, isUnconfirmed: false },
+    },
+  ])
+  expect(new PressQueue(fakeIo().io).send(null, { action: 'done', id: rowId }, opts('Done', 'mark', 1)).is).toBe(
+    'refused',
+  )
 })
 
 test('a press shows its own opens’ result at once, then writes its file with it and wakes the session file’s terminal', async () => {
   const { io, files, woken, clock } = fakeIo()
   const queue = new PressQueue(io)
-  const sent = queue.send(target, { action: 'done', id: rowId }, open, 'Open plan', 'local')
+  const sent = queue.send(target, { action: 'done', id: rowId }, { ...opts('Open plan', 'local', 1), effects: open })
   if (sent.is !== 'sent') throw new Error('refused')
   const drawn: (string | undefined)[] = []
   await sent.finish(
@@ -79,7 +88,7 @@ test('a press shows its own opens’ result at once, then writes its file with i
 test('a press whose file is not yet written is not taken and does not give up', async () => {
   const { io, clock } = fakeIo()
   const queue = new PressQueue(io)
-  const sent = queue.send(target, { action: 'done', id: rowId }, open, 'Open plan', 'local')
+  const sent = queue.send(target, { action: 'done', id: rowId }, { ...opts('Open plan', 'local', 1), effects: open })
   if (sent.is !== 'sent') throw new Error('refused')
   let finishOpen = () => undefined as void
   const finishing = sent.finish(
@@ -97,7 +106,7 @@ test('a press whose file is not yet written is not taken and does not give up', 
 test('at the give-up time the look takes back a press no host took, and one a host took meanwhile waits as taken', async () => {
   const lost = fakeIo()
   const queue = new PressQueue(lost.io)
-  const sent = queue.send(target, { action: 'done', id: rowId }, [], 'Done', 'mark')
+  const sent = queue.send(target, { action: 'done', id: rowId }, opts('Done', 'mark', 1))
   if (sent.is === 'sent')
     await sent.finish(
       async (_e, pending) => pending,
@@ -108,10 +117,11 @@ test('at the give-up time the look takes back a press no host took, and one a ho
   expect(lost.files.size).toBe(0)
   expect(queue.outs).toEqual([])
   expect(queue.lines[rowId]?.text).toBe(`Not applied: ${AGENT}'s inbox did not answer.`)
+  expect(queue.takeEnded().map(e => [e.uiPressId, e.outcome.error])).toEqual([[1, `${AGENT}'s inbox did not answer.`]])
 
   const raced = fakeIo({ isGone: async () => false, claim: async () => false })
   const held = new PressQueue(raced.io)
-  const pressed = held.send(target, { action: 'done', id: rowId }, [], 'Done', 'mark')
+  const pressed = held.send(target, { action: 'done', id: rowId }, opts('Done', 'mark', 1))
   if (pressed.is === 'sent')
     await pressed.finish(
       async (_e, pending) => pending,
@@ -121,13 +131,14 @@ test('at the give-up time the look takes back a press no host took, and one a ho
   await held.settle(view, null, AGENT)
   expect(held.outs.map(o => [o.isTaken, o.waitingSince])).toEqual([[true, NOW + GIVE_UP_MS]])
   expect(held.lines).toEqual({})
+  expect(held.takeEnded()).toEqual([])
 })
 
 const REPLY = 'Call it hello'
 const typed = { action: 'type' as const, id: rowId, text: REPLY }
 
-async function sendReply(queue: PressQueue) {
-  const sent = queue.send(target, typed, [], 'Send', null, REPLY)
+async function sendReply(queue: PressQueue, uiPressId = 1) {
+  const sent = queue.send(target, typed, { ...opts('Send', null, uiPressId), reply: REPLY })
   if (sent.is !== 'sent') throw new Error('refused')
   const pressId = queue.outs.at(-1)!.pressId
   await sent.finish(
@@ -144,90 +155,58 @@ const replied = (delivery: Delivery): SessionView => ({
     [rowId]: { kind: 'talk', action: 'type', text: 'Send', reply: REPLY, at: NOW + 50, delivery },
   },
 })
-const queued = replied({ state: 'queued', message: REPLY })
-const arrived = replied({ state: 'arrived' })
-const applied = (id: string): LastPress => ({ id, outcome: 'applied' })
-
-const drafts = { [rowId]: { text: `${REPLY} `, since: NOW } }
 const taken = () => fakeIo({ isGone: async () => true }).io
 
-async function draftsAfter(answers: [SessionView, (pressId: string) => LastPress | null][]) {
-  const queue = new PressQueue(taken())
-  const pressId = await sendReply(queue)
-  const kept = []
-  for (const [shown, last] of answers) {
-    const confirmed = await queue.settle(shown, last(pressId), AGENT)
-    kept.push(withoutConfirmed(drafts, confirmed, null, queue.sentTexts).drafts)
-  }
-  return { kept, queue }
-}
-
-test('a sent reply keeps its draft until the host finishes its press and its message has left the queue, then a confirmed send deletes it', async () => {
-  const named = await draftsAfter([
-    [queued, () => null],
-    [queued, applied],
-    [arrived, applied],
-  ])
-  expect(named.kept).toEqual([drafts, drafts, {}])
-  expect(named.queue.isAwaiting()).toBe(false)
-  const ended = await draftsAfter([[queued, () => null]])
-  expect([ended.queue.outs.length, ended.queue.isAwaiting()]).toEqual([0, true])
-  const passed = await draftsAfter([[arrived, id => applied(`${id}~`)]])
-  expect(passed.kept).toEqual([{}])
-})
-
-test('a failed, unconfirmed, stale or unsaved send keeps its draft', async () => {
-  const answers: [SessionView, (pressId: string) => LastPress][] = [
-    [replied({ state: 'failed', reason: 'the session refused it' }), applied],
-    [replied({ state: 'unconfirmed', message: REPLY }), applied],
-    [queued, id => ({ id, outcome: 'stale' })],
-    [view, applied],
+test('the host’s answer to a reply ends it as applied, stale or failed, for the shared controller', async () => {
+  const answers: [SessionView, (pressId: string) => LastPress, SettledOutcome][] = [
+    [
+      replied({ state: 'arrived' }),
+      id => ({ id, outcome: 'applied' }),
+      { error: null, note: null, isUnconfirmed: false },
+    ],
+    [
+      replied({ state: 'queued', message: REPLY }),
+      id => ({ id, outcome: 'stale' }),
+      { error: null, note: 'stale', isUnconfirmed: false },
+    ],
+    [
+      replied({ state: 'failed', reason: 'the session refused it' }),
+      id => ({ id, outcome: 'applied' }),
+      { error: 'the session refused it', note: null, isUnconfirmed: false },
+    ],
+    [
+      replied({ state: 'unconfirmed', message: REPLY }),
+      id => ({ id, outcome: 'applied' }),
+      { error: null, note: null, isUnconfirmed: true },
+    ],
   ]
-  for (const answer of answers) {
-    const { kept, queue } = await draftsAfter([answer])
-    expect(kept).toEqual([drafts])
-    expect(queue.isAwaiting()).toBe(false)
+  for (const [shown, last, outcome] of answers) {
+    const queue = new PressQueue(taken())
+    const pressId = await sendReply(queue, 7)
+    await queue.settle(shown, last(pressId), AGENT)
+    expect({ outs: queue.outs.length, ended: queue.takeEnded() }).toEqual({
+      outs: 0,
+      ended: [{ uiPressId: 7, outcome }],
+    })
   }
 })
 
 test('a reply whose file no host took waits, even once the host answers a later press', async () => {
   const queue = new PressQueue(fakeIo().io)
   const pressId = await sendReply(queue)
-  expect(await queue.settle(queued, applied(`${pressId}~`), AGENT)).toEqual([])
-  expect(queue.sentTexts.map(s => s.pressId)).toEqual([pressId])
+  await queue.settle(view, { id: `${pressId}~`, outcome: 'applied' }, AGENT)
+  expect({ outs: queue.outs.map(o => o.pressId), ended: queue.takeEnded() }).toEqual({ outs: [pressId], ended: [] })
 })
 
-test('a reply the look gives up on keeps its draft, whether no host took it or its file could not be written', async () => {
-  const lost = fakeIo()
-  const queue = new PressQueue(lost.io)
-  await sendReply(queue)
-  lost.clock.now = NOW + GIVE_UP_MS
-  expect(await queue.settle(view, null, AGENT)).toEqual([])
-  expect(queue.lines[rowId]?.text).toBe(`Not applied: ${AGENT}'s inbox did not answer.`)
-  expect(queue.isAwaiting()).toBe(false)
+test('a reply whose file could not be written ends refused, with the reason on its row', async () => {
   const unwritten = new PressQueue(fakeIo({ write: async () => 'the disk is full' }).io)
-  await sendReply(unwritten)
-  expect(unwritten.isAwaiting()).toBe(false)
-})
-
-test('a confirmed send leaves a draft edited after it, and deletes an unedited one once its open field closes', async () => {
-  const queue = new PressQueue(taken())
-  const confirmed = await queue.settle(arrived, applied(await sendReply(queue)), AGENT)
-  const edited = { [rowId]: { text: `${REPLY}, and add a test`, since: NOW } }
-  expect(withoutConfirmed(edited, confirmed, null, []).drafts).toEqual(edited)
-  const open = withoutConfirmed(drafts, confirmed, rowId, [])
-  expect(open).toEqual({ drafts, waiting: confirmed })
-  expect(withoutConfirmed(drafts, open.waiting, null, []).drafts).toEqual({})
-})
-
-test('a later send on the row, still out, keeps the draft when an earlier send is confirmed', async () => {
-  const { io, clock } = fakeIo({ isGone: async () => true })
-  const queue = new PressQueue(io)
-  const first = await sendReply(queue)
-  await queue.settle(queued, null, AGENT)
-  clock.now = NOW + 1000
-  await sendReply(queue)
-  const confirmed = await queue.settle(arrived, applied(first), AGENT)
-  expect(confirmed.map(c => c.pressId)).toEqual([first])
-  expect(withoutConfirmed(drafts, confirmed, null, queue.sentTexts)).toEqual({ drafts, waiting: [] })
+  await sendReply(unwritten, 3)
+  expect([unwritten.isAwaiting(), unwritten.holdsPresses()]).toEqual([false, true])
+  const [ended] = unwritten.takeEnded()
+  expect(unwritten.holdsPresses()).toBe(false)
+  expect({ id: ended?.uiPressId, isError: ended?.outcome.error !== null, line: unwritten.lines[rowId]?.tone }).toEqual({
+    id: 3,
+    isError: true,
+    line: 'error',
+  })
 })

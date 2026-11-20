@@ -5,14 +5,13 @@ import { bannerOf, tabBarBanners } from '../../hooks/banners'
 import { DOT, ROW_COPY } from '../../hooks/rows'
 import { isRowTab, shownTabs, tabBadge } from '../../hooks/tabs'
 import { footerError } from '../../hooks/view'
-import { SETTLED_MS } from '../../hooks/timing'
+import { noticeOf } from '../../hooks/ui-controller'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Tab } from '../../types'
 import type { TabView as View } from './core'
-import { tabState, selection, drawnRows } from './tab-state'
-import { switchTab, drawnTab } from './tab-selection'
+import { tabState } from './tab-state'
+import { dispatch, drawnTab, read, resetView } from './tab-ui'
 import { swapPage } from './tab-swap'
-import { read } from './tab-read'
 import { pulseInStep, MarkGlyph, markClassOf, GroupTitle, Banner } from './tab-parts'
 import { HerdrAskBanner } from './tab-herdr-ask'
 import { bannerMotion, lineMotion } from './tab-line-steps'
@@ -80,9 +79,7 @@ export function tabBanners(v: View): BannerLine[] {
       ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
     ],
     footerErrorOf(v),
-    tabState.lineNote && Date.now() - tabState.lineNote.at < SETTLED_MS
-      ? { text: tabState.lineNote.text, isError: tabState.lineNote.isError === true }
-      : null,
+    noticeOf(tabState.ui, Date.now()),
   ).map(banner => ({ id: banner.kind, banner }))
 }
 
@@ -115,13 +112,10 @@ export function TabBar({ v }: { v: View }) {
         {shownTabs().map(t => (
           <button
             type="button"
-            class={`tab ${shown === t.id && !tabState.isHelpShown ? 'shown' : ''}`}
+            class={`tab ${shown === t.id && !tabState.ui.isHelpShown ? 'shown' : ''}`}
             title={t.label}
             data-tab={t.id}
-            onClick={() => {
-              switchTab(t.id)
-              tabState.draw()
-            }}
+            onClick={() => dispatch([{ type: 'show-tab', tab: t.id }])}
           >
             <span class="tab-symbol" aria-hidden="true">
               {t.symbol}
@@ -137,14 +131,11 @@ export function TabBar({ v }: { v: View }) {
       </div>
       <button
         type="button"
-        class={`tab help-tab ${tabState.isHelpShown ? 'shown' : ''}`}
+        class={`tab help-tab ${tabState.ui.isHelpShown ? 'shown' : ''}`}
         title={`${HELP_COPY.name} (?)`}
         aria-label={HELP_COPY.name}
-        aria-pressed={tabState.isHelpShown}
-        onClick={() => {
-          tabState.isHelpShown = !tabState.isHelpShown
-          tabState.draw()
-        }}
+        aria-pressed={tabState.ui.isHelpShown}
+        onClick={() => dispatch([{ type: 'show-help', isShown: !tabState.ui.isHelpShown }])}
       >
         <HelpIcon />
       </button>
@@ -176,23 +167,10 @@ export function TabBar({ v }: { v: View }) {
 }
 
 export async function toggleDemo() {
-  tabState.viewGeneration++
+  resetView()
   tabState.isDemo = !tabState.isDemo
-  // A new showing. The server makes the sample at its first read after this, so the row it closes as it starts stays.
-  tabState.shownSince = Date.now()
   tabState.readError = null
   tabState.pollFailures = 0
-  tabState.view = null
-  tabState.seen = new Map()
-  tabState.rowsSeen = {}
-  tabState.newRows = new Map()
-  tabState.closedSeen = new Map()
-  drawnRows.clear()
-  tabState.lastLists = null
-  selection.needsYou = null
-  selection.findings = null
-  selection.prs = null
-  tabState.typing = null
   tabState.draw()
   await read()
 }

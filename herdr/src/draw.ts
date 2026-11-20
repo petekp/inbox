@@ -1,7 +1,6 @@
-import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
 import type { Closed, FoldKind } from '../../types'
 import type { RowPress } from '../../hooks/presses'
-import type { ClosedDelivery, ResultMark, RowView, SettledState } from '../../hooks/rows'
+import type { ClosedDelivery, ResultMark, RowView } from '../../hooks/rows'
 import {
   NEEDS_YOU_GROUPS,
   ROW_COPY,
@@ -22,7 +21,7 @@ import {
   shortAgo,
   waitingCount,
 } from '../../hooks/rows'
-import { firstWaiting, rowAfterClose, rowKeyPlan } from '../../hooks/action-plan'
+import { rowKeyPlan } from '../../hooks/action-plan'
 import type { RowWait } from '../../hooks/action-plan'
 import { stepEffects } from '../../hooks/help-steps'
 import { groupEmptyText, tabBarBanners } from '../../hooks/banners'
@@ -34,13 +33,14 @@ import { earlierLineText } from '../../hooks/earlier-answers'
 import type { SessionView } from '../../hooks/session-view'
 import { shownTabs, tabBadge } from '../../hooks/tabs'
 import type { ShownTab } from '../../hooks/tabs'
-import { QUEUED_AFTER_MS, SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
+import { SETTLED_MS, isDrawnInPlace } from '../../hooks/timing'
 import { footerError } from '../../hooks/view'
 import type { PressKind } from '../../types'
 import { button, emptyBlock } from './blocks'
 import type { Block, BodyLine, Button, Does, Field, Mark, RowBlock } from './blocks'
 import { prTabBlocks } from './draw-prs'
 import { prRowWaits } from '../../hooks/pr-rows'
+import { undoPlaceEndsAt } from '../../hooks/ui-controller-clock'
 import { openPrViews } from '../../hooks/pr-views'
 import { statusBlocks } from './draw-status'
 import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
@@ -49,8 +49,8 @@ import { GOAL_KEYS_ID, goalSubmitLabel } from '../../hooks/status-keys'
 const LOOK = 'herdr'
 
 /**
- * What the look keeps between draws: the tab, the row the person opened, what they unfolded, and the row whose
- * field is open, or `GOAL_KEYS_ID` for the goal's.
+ * What the drawing reads of the look's state: the tab, the row its cursor is on, what the person unfolded, and the row
+ * whose field is open, or `GOAL_KEYS_ID` for the goal's.
  */
 export type LookUi = {
   tab: ShownTab
@@ -60,22 +60,7 @@ export type LookUi = {
   optionsShown: string[]
   statusUnfolded: string[]
   typing: string | null
-  /** The rows that arrived while their tab showed, whose bar shows until it fades. */
-  newRows: NewRows
-  closedSeen: ClosedSeen
 }
-
-export const freshUi = (tab: ShownTab): LookUi => ({
-  tab,
-  selected: null,
-  unfolded: [],
-  closedAll: [],
-  optionsShown: [],
-  statusUnfolded: [],
-  typing: null,
-  newRows: new Map(),
-  closedSeen: new Map(),
-})
 
 /** What one draw of a session shows, from its published file. */
 export type LookScreen = {
@@ -135,12 +120,6 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
     }),
   ]
 }
-
-/**
- * When a settled row's spent Undo stops keeping its place, if its message is still queued then. The host sends an
- * answer or Fix held for Undo when Undo ends, and a message still queued `QUEUED_AFTER_MS` later waits for the agent.
- */
-export const undoPlaceEndsAt = (state: SettledState): number => state.at + SETTLED_MS + QUEUED_AFTER_MS
 
 /**
  * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
@@ -373,19 +352,6 @@ export function rowWaits({ view, shownSince }: LookScreen, tab: ShownTab): RowWa
   return tab === 'overview' ? [] : waitsOf(groupsOf(view, tab, shownSince), view.collapsed)
 }
 
-/**
- * The row the look opens: the one the person selected while it can open. While it is settled, as when its Undo is
- * out, the row `rowAfterClose` gives. Else the first that waits.
- */
-function selectedOf(groups: Group[], selected: string | null, collapsed: string[]): string | null {
-  const isSettled = (id: string) => groups.some(g => g.rows.some(r => r.id === id && r.state.is === 'settled'))
-  const waits = waitsOf(groups, collapsed)
-  if (selected === null || !waits.some(r => r.id === selected)) return firstWaiting(waits)
-  if (!isSettled(selected)) return selected
-
-  return rowAfterClose(waits, selected) ?? firstWaiting(waits)
-}
-
 function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'findings'): Block[] {
   const groups = groupsOf(screen.view, tab, screen.shownSince)
   const empty = emptyTab(screen.view, {
@@ -396,11 +362,10 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
     isReadFailed: false,
   })
   if (empty) return [emptyBlock(tab, empty)]
-  const selected = selectedOf(groups, ui.selected, screen.view.collapsed)
 
   return groups.flatMap((g, n): Block[] => [
     ...(n > 0 ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null } as const] : []),
-    ...groupBlocks(g, ui, selected, screen),
+    ...groupBlocks(g, ui, ui.selected, screen),
   ])
 }
 

@@ -11,4 +11,4 @@ export const ex = (turn: number, reply: string): Exchange => ({
   tasks: [],
 })
 
-export const LEDGER_ANSWER = 'NEW: decide | - | Deploy now? | Yes / No | Yes'
+export const LEDGER_ANSWER = 'NEW: decide | - | Deploy the API now? | Yes / No | Yes'

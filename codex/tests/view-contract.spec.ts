@@ -77,7 +77,7 @@ const failures = (expected: Expected[], drawn: string) => ({
 test('the Codex tab draws every field of each open row and of the Status page with its folds open', async () => {
   const restore = installPage()
   try {
-    const { tabState, selection, statusUnfolded, root } = await import('../src/tab-state')
+    const { tabState, root } = await import('../src/tab-state')
     const { stepLists } = await import('../src/tab-list')
     const { NeedsYou, Findings } = await import('../src/tab-groups')
     const { StatusTab } = await import('../src/tab-status')
@@ -91,10 +91,11 @@ test('the Codex tab draws every field of each open row and of the Status page wi
       isFetchingPrs: false,
       isGhMissing: false,
     })
-    tabState.shownSince = now - DAY
+    tabState.ui = { ...tabState.ui, shownSince: now - DAY }
     const drawn = (v: TabView, tab: 'needsYou' | 'findings' | 'overview') => {
       tabState.view = v
-      tabState.tab = tab
+      tabState.serverView = v
+      tabState.ui = { ...tabState.ui, tab }
       const step = stepLists(v)
       tabState.lastBanners = step.banners
       const draw = () => {
@@ -117,14 +118,16 @@ test('the Codex tab draws every field of each open row and of the Status page wi
       ] as const
       const rows = tabs.flatMap(([tab, list]) =>
         list.map(row => {
-          selection[tab] = { id: row.id, openedAt: now }
+          tabState.ui = {
+            ...tabState.ui,
+            selection: { ...tabState.ui.selection, [tab]: { id: row.id, index: 0, guard: null } },
+          }
 
           return { name, part: row.id, ...failures(rowTexts(row, { look: 'codex', now }), drawn(v, tab)) }
         }),
       )
       const open = statusFoldIds(v.statusPage)
-      statusUnfolded.clear()
-      for (const id of open) statusUnfolded.add(id)
+      tabState.ui = { ...tabState.ui, statusUnfolded: open }
       const expected = statusTexts(v.statusPage, { look: 'codex', now }, id => open.includes(id))
       const status = { name, part: 'Status', ...failures(expected, drawn(v, 'overview')) }
 

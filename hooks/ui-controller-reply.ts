@@ -1,6 +1,7 @@
 import { drawnLists, latestUndo, tabUndos } from './action-plan'
 import { prRowIds } from './arrivals'
 import { pressRowId, isPrPress, type PrPress } from './pr-press'
+import { prMarkId } from './pr-rows'
 import { actionId } from './press-labels'
 import { isPressConfirmed, noteText } from './press-reducer'
 import type { RowPress } from './presses'
@@ -72,20 +73,29 @@ const isUndoPress = (p: RowPress | PrPress) => p.action === 'undo' || p.action =
 
 /**
  * Sends a press, unless it repeats an action still out on its row, falls in the guard of the input that opened the
- * row, or is a reply with no words. A reply's field closes and its draft stays, holding its row, until the reply
- * arrives.
+ * row, or is a reply with no words. A reply repeats only when a reply is out on its row and its words match the
+ * row's latest sent reply. A reply's field closes and its draft stays, holding its row, until the reply arrives.
  */
 export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by: InputKind, now: number): UiStep {
   const rowId = pressRowId(p)
   const action = actionId(p)
-  const isRepeat = Object.values(ui.pressesOut).some(o => o.rowId === rowId && o.action === action)
   const isReply = p.action === 'type'
+  const isOtherReply = isReply && ui.sentReplies[rowId]?.text !== p.text.trim()
+  const isRepeat = !isOtherReply && Object.values(ui.pressesOut).some(o => o.rowId === rowId && o.action === action)
   const isBlank = isReply && p.text.trim() === ''
   if (isRepeat || isBlank || isGuardedPress(ui, ui.tab, rowId, by, now)) return withCommands(ui)
   const holds = holdsOf(ui, now)
   const pressId = ui.nextPressId
   const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now }
-  let next: UiState = { ...ui, nextPressId: pressId + 1, pressesOut: { ...ui.pressesOut, [pressId]: out } }
+  const { [rowId]: _error, ...errors } = ui.errors
+  const { [rowId]: _note, ...notes } = ui.notes
+  let next: UiState = {
+    ...ui,
+    nextPressId: pressId + 1,
+    pressesOut: { ...ui.pressesOut, [pressId]: out },
+    errors,
+    notes,
+  }
   if (isReply) {
     const text = p.text.trim()
     const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false }
@@ -106,6 +116,22 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
   return withCommands(next, { kind: 'press', pressId, press: p, holds })
 }
 
+/** When row or PR `id` closed, by the session's clock, or null when the view draws it unsettled or not at all. */
+function settledAt(view: SessionView, id: string): number | null {
+  const row = allRows(view).find(r => r.id === id)?.state
+  const pr = view.prs.drawn.find(d => prMarkId(d.pr.ref) === id)?.state
+  const state = row ?? pr
+
+  return state?.is === 'settled' ? state.at : null
+}
+
+/** Whether settled row `id` still offers its Undo, by the look's Undo clock. */
+function isUndoShown(ui: UiState, view: SessionView, id: string, now: number): boolean {
+  const at = ui.config.undoClock === 'first-read' ? (ui.undoSeen[id] ?? null) : settledAt(view, id)
+
+  return at !== null && now < at + SETTLED_MS
+}
+
 /** The undo key: the shown tab's Undo whose row closed last. */
 export function undoKey(ui: UiState, view: SessionView, now: number): UiStep {
   if (!isRowTab(ui.tab)) return withCommands(ui)
@@ -114,8 +140,7 @@ export function undoKey(ui: UiState, view: SessionView, now: number): UiStep {
     () => true,
     r => r,
   )
-  const isStillShown = (id: string) =>
-    ui.config.undoClock === 'session' || (ui.undoSeen[id] !== undefined && ui.undoSeen[id] + SETTLED_MS > now)
+  const isStillShown = (id: string) => ui.config.undoClock === 'session' || isUndoShown(ui, view, id, now)
   const undos = tabUndos(ui.tab, lists, view.prs.drawn).filter(u => isStillShown(pressRowId(u.press)))
   const latest = latestUndo(undos)
 
@@ -148,7 +173,9 @@ export function pressSettled(
   const { [pressId]: _out, ...pressesOut } = ui.pressesOut
   let next: UiState = { ...ui, pressesOut }
   const row = out.rowId
-  const isRowListed = isListed(view, row)
+  const isUndo = out.action === 'undo' || out.action === 'pr-undo'
+  const hasUndoTimeEnded = isUndo && !isUndoShown(ui, view, row, now)
+  const isRowListed = isListed(view, row) && !hasUndoTimeEnded
   if (outcome.note === 'stale')
     next = isRowListed
       ? { ...next, notes: { ...next.notes, [row]: { note: 'stale', at: now } } }
@@ -170,10 +197,9 @@ export function pressSettled(
   if (outcome.isDemoSent)
     next = { ...next, demoReplies: [...next.demoReplies, { pressId, dueAt: now + DEMO_REPLY_MS }] }
   const isReplyBack = out.isReply && (outcome.error !== null || outcome.note === 'stale')
-  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, out) || !isRowTab(out.tab))
-    return withCommands(next, ...restored.commands)
-  const index = tabWaits(next, view, out.tab).findIndex(r => r.id === row)
-  const back = withCursor(next, out.tab, { id: row, index, guard: null })
+  if (!(isReplyBack || outcome.isRowFailed) || !hasNotMoved(next, out)) return withCommands(next, ...restored.commands)
+  const index = isRowTab(out.tab) ? tabWaits(next, view, out.tab).findIndex(r => r.id === row) : -1
+  const back = isRowTab(out.tab) ? withCursor(next, out.tab, { id: row, index, guard: null }) : next
 
   return isReplyBack
     ? withCommands({ ...back, typing: row }, ...restored.commands, { kind: 'focus-field', id: row })
@@ -212,7 +238,7 @@ function sentFate(ui: UiState, view: SessionView, row: string): SentFate {
   const isOut = Object.values(ui.pressesOut).some(o => o.pressId === sent.pressId)
   if (last === undefined) return sent.atBefore === null && isOut ? 'wait' : sent.isConfirmed ? 'release' : 'keep'
   if (last.at === sent.atBefore) return isOut ? 'wait' : 'keep'
-  if (last.reply?.trim() !== sent.text) return 'keep'
+  if (last.reply?.trim() !== sent.text) return isOut ? 'wait' : 'keep'
   const state = last.delivery?.state
   if (state === 'held' || state === 'queued') return 'wait'
 

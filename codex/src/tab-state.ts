@@ -1,5 +1,6 @@
 import type { JSX } from 'preact'
-import { earliestOf } from '../../hooks/timing'
+import { freshUi } from '../../hooks/ui-controller-types'
+import type { InputKind, LookConfig, UiState } from '../../hooks/ui-controller-types'
 import type { IconName } from './row-actions'
 import type { ActionEmphasis, RowView } from '../../hooks/rows'
 import type { DrawnEntry, DrawnLists } from '../../hooks/action-plan'
@@ -7,8 +8,7 @@ import type { Feedback } from '../../hooks/feedback'
 import type { RowPart } from '../../hooks/row-parts'
 import type { ShownTab } from '../../hooks/tabs'
 import type { Draft, Finding, PressKind, Tab } from '../../types'
-import type { FoldGroup, SeenRows } from './arrivals'
-import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
+import type { FoldGroup } from './arrivals'
 import type { TabView as View } from './core'
 import type { RowTrack } from '../../hooks/row-motion'
 import type { HostContext } from './tab-host'
@@ -29,7 +29,7 @@ export type Key = {
   isDismiss?: boolean
   icon?: IconName
   isOut?: boolean
-  run: () => void
+  run: (by: InputKind) => void
 }
 
 export type Row = {
@@ -68,48 +68,23 @@ export type Row = {
 
 export type Entry = DrawnEntry<Row>
 
-export const selection: Record<Tab, { id: string; openedAt: number; index?: number } | null> = {
-  needsYou: null,
-  findings: null,
-  prs: null,
-}
+/** The Codex tab's settings for the shared controller: running marks pulse, the page animates title tints, and Undo times from the first read. */
+export const CODEX_LOOK: LookConfig = { runningMarks: 'pulse', titleTint: 'self', undoClock: 'first-read' }
 
-export const drafts = new Map<string, Draft>()
-export const optionsShown = new Set<string>()
-export const unfolded = new Set<FoldGroup>()
-/** The Closed folds whose earlier lines the person opened. */
-export const closedAll = new Set<FoldGroup>()
-/** The Status's done folds whose finished rows show, by the fold's id. Each starts folded. */
-export const statusUnfolded = new Set<string>()
 /**
- * The latest press on its way, by row id: its request number, when it began on the tab's clock, its pending Local
- * result or null for a message, which reads SENDING, and its action, so its button draws as out before the view says
- * so. A reply's action is null, since a reply is never out. `lastBefore` is the row's saved last press when the press
- * started, from `lastPressKey`. `kind` is the kind of the plan action pressed, or null for a press that no plan action
- * makes, such as Undo or a typed reply.
+ * What the tab keeps of each press the controller has out, by its press id: its row, its pending Local result or null
+ * for a message, which reads SENDING, `lastBefore`, the row's saved last press when the press started, from
+ * `lastPressKey`, and `kind`, the kind of the plan action pressed, or null for a press no plan action makes, such as
+ * Undo or a typed reply.
  */
-export const sending = new Map<
-  string,
-  {
-    seq: number
-    since: number
-    pending: Feedback | null
-    action: string | null
-    lastBefore: string
-    kind: PressKind | null
-  }
+export const localOuts = new Map<
+  number,
+  { rowId: string; pending: Feedback | null; lastBefore: string; kind: PressKind | null }
 >()
 
-/** When the oldest press the tab has not heard back on began, or null while none is out. */
-export function sendingSince(): number | null {
-  return earliestOf([...sending.values()].map(s => s.since))
-}
 export const SENDING = 'Sending…'
-export const errors = new Map<string, string>()
-export const notes = new Map<string, { text: string; at: number }>()
 export const copies = new Map<string, { name: string; text: string }>()
 export const entering = new Set<string>()
-export const undoing = new Set<string>()
 /** Folds whose list still shrinks after a press folded them, by the list's motion key after `closed-`. */
 export const closingFolds = new Set<string>()
 /** A row's or PR block's track, and the PR block it drew open, which it still draws while its height shrinks over it. */
@@ -117,7 +92,10 @@ type DrawnRow = { track: RowTrack; openBlock?: OpenPrBlock }
 export const drawnRows = new Map<string, DrawnRow>()
 
 export type Kept = {
-  /** 2 while a page tab shows. An older page reads only version 1, so it drops the whole kept state instead of a tab it cannot draw. */
+  /**
+   * 2 while a page tab shows. A page before the Status page reads only version 1, so it drops the whole kept state
+   * instead of a tab it cannot draw. The fields up to `statusUnfolded` are what pages before `ui` read.
+   */
   version: 1 | 2
   isDemo: boolean
   tab: ShownTab
@@ -132,6 +110,8 @@ export type Kept = {
   shownSince?: number
   /** Missing on a state an earlier page kept. */
   statusUnfolded?: string[]
+  /** The shared controller's state, from `restoredUi`. Missing on a state an earlier page kept. */
+  ui?: { version: 3; state: UiState }
 }
 export type CandidatePage = {
   initialize: () => Promise<boolean>
@@ -173,24 +153,14 @@ class TabState {
   stagedHostChanges: HostContext = {}
   pollFailures = 0
   readAt = 0
-  tab: ShownTab = 'needsYou'
-  /** When this page began showing `tab`. A row that closes since then stays in place no longer than that, as `isSettledInPlace` says. */
-  shownSince = Date.now()
-  /** Whether Help shows in place of the tab's body. Switching tabs closes it. */
-  isHelpShown = false
-  typing: string | null = null
-  focusTyping = false
+  /** The person's state in the tab, which the shared controller runs. A page with nothing kept opens on the Status page. */
+  ui: UiState = freshUi(CODEX_LOOK, 'overview')
+  /** The last view the server sent, which the controller reads. `view` is it as drawn, with the collapses the person made. */
+  serverView: View | null = null
+  /** The field the next draw focuses. */
+  focusField: string | null = null
   /** Whether the draw under way shows a read of the view, not the person's input. */
   isReadDraw = false
-  discarded: Record<string, number> = {}
-  lineNote: { text: string; at: number; isError?: boolean } | null = null
-  seen = new Map<string, number>()
-  rowsSeen: SeenRows = {}
-  newRows: NewRows = new Map()
-  /** When the tab first drew each closed row, which starts its title's tint. */
-  closedSeen: ClosedSeen = new Map()
-  /** Whether the page was visible at the last read, so a row that arrived while it was hidden gets no tint. */
-  wasVisibleAtRead = false
   lastLists: Lists | null = null
   /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
   lastPrs: DrawnPrs | null = null

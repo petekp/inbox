@@ -2,14 +2,13 @@ import { expect, setSystemTime, test } from 'bun:test'
 
 import { prMarkId } from '../../hooks/pr-rows'
 import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/timing'
+import { PRESS_GUARD_MS } from '../../hooks/timing'
 import type { Block, RowBlock } from '../src/blocks'
-import { rowWaits, tabBlocks, tabCells } from '../src/draw'
-import { withClosedSelection, withSelected } from '../src/keys'
+import { tabBlocks, tabCells } from '../src/draw'
 import { NEXT_FRAME_MS } from '../src/block-glide'
 import { NO_TRACKS, heldTabs, moveRows } from '../src/motion'
 import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
-import { NOW, demoScreen, dismissedPr, dismissedSession, uiOn, withDismissedAsk } from './fixtures'
+import { NOW, demoScreen, dismissedPr, dismissedSession, uiOn } from './fixtures'
 import { allOf, openPanel } from './gpui-stand-in'
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
@@ -124,26 +123,6 @@ test('a PR dismissed and then undone changes form in place, never drawn twice an
 
 const openRow = (blocks: Block[]) => rowsOf(blocks).find(r => r.isSelected)?.id
 
-test('closing the open row opens the next row that waits after it, keeps it once the row folds, and Undo reopens it', () => {
-  const ui = uiOn('needsYou', { selected: 'd13' })
-  const closing = withDismissedAsk('d13', NOW - 500)
-  const moved = withClosedSelection(ui, rowWaits(demoScreen(), 'needsYou'), rowWaits(closing, 'needsYou'))
-  expect(moved.selected).toBe('d15')
-  expect(openRow(tabBlocks(closing, moved))).toBe('d15')
-  expect(openRow(tabBlocks(withDismissedAsk('d13', NOW - SETTLED_MS - 5000), moved))).toBe('d15')
-  const undoing = withSelected(moved, 'd13')
-  expect(openRow(tabBlocks(closing, undoing))).toBe('d15')
-  expect(openRow(tabBlocks(demoScreen(), undoing))).toBe('d13')
-})
-
-test('a selected row that did not wait, such as a handed-off one, stays open', () => {
-  const ui = uiOn('needsYou', { selected: 'd18' })
-  const waits = rowWaits(demoScreen(), 'needsYou')
-  expect(waits.find(r => r.id === 'd18')?.isWaiting).toBe(false)
-  expect(withClosedSelection(ui, waits, waits)).toBe(ui)
-  expect(openRow(tabBlocks(demoScreen(), ui))).toBe('d18')
-})
-
 const boxesOf = (moved: ReturnType<typeof moveRows>, ids: string[]) => ids.map(id => moved.motion.get(id)?.box ?? null)
 
 test('a fold’s lines enter shut and open at the next draw, and a shut fold fades them out, then shuts them', () => {
@@ -200,7 +179,7 @@ test('in the panel, opening each row of a tab and pressing z leaves no row open 
     collapsed.push(id)
   }
   expect(collapsed.length).toBeGreaterThan(1)
-  expect(panel.ui.selected).toBe(collapsed.at(-1)!)
+  expect(panel.blocks.find(b => b.kind === 'row' && b.isSelected)?.id).toBe(collapsed.at(-1)!)
 })
 
 test('a field a press brings in opens and shows in the draw after the press, and the lines it takes the place of hide at once and shut', () => {
@@ -345,8 +324,7 @@ async function nextPanelDelay(isPressed: boolean) {
     tick()
     if (isPressed) panel.click(allOf(row!).find(n => n.label === 'Dismiss')!)
     panel.paint()
-    const read = panel.panel.read
-    if (read?.is === 'read') panel.panel.read = { ...read, session: dismissedSession(rowId, at) }
+    panel.publish(dismissedSession(rowId, at))
     tick()
     panel.measure(() => ({ width: 300, height: 40 }))
     setSystemTime(new Date(at + NEXT_FRAME_MS))

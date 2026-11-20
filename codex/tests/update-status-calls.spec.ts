@@ -39,7 +39,7 @@ test('a reply’s Status comes from the separate Status call, after the ledger u
   assert.equal(state.ledger.overview?.head?.title, 'Building the deploy script')
   assert.deepEqual(
     state.ledger.items.map(i => i.ask),
-    ['Deploy now?'],
+    ['Deploy the API now?'],
   )
   assert.equal(systems.length, 2)
   assert.ok(systems.includes(PARTS_STATUS_SYSTEM))
@@ -51,7 +51,7 @@ test('a failed Status call leaves the ledger update applied with no Status', asy
   assert.equal(state.ledger.overview, null)
   assert.deepEqual(
     state.ledger.items.map(i => i.ask),
-    ['Deploy now?'],
+    ['Deploy the API now?'],
   )
   assert.deepEqual(state.pending, [])
 })

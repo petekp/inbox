@@ -74,6 +74,8 @@ export type UiState = {
   isVisible: boolean
   isOpening: boolean
   opensOnAsks: boolean
+  /** The look opened with no tab the person chose, so its Status page gives way to Asks too. */
+  isFirstOpen: boolean
   rowsSeen: Partial<Record<Tab, string[]>>
   heldArrivals: Partial<Record<Tab, string[]>>
   newRows: Record<string, NewRow>
@@ -116,7 +118,8 @@ export type SettledOutcome = {
 }
 
 export type UiEvent =
-  | { type: 'opened' }
+  /** `isFirst`: the look opens with no tab of its own, as a page with nothing kept. */
+  | { type: 'opened'; isFirst?: boolean }
   | { type: 'closed' }
   | { type: 'reset' }
   | { type: 'read'; host: HostFacts }
@@ -167,6 +170,7 @@ export function freshUi(config: LookConfig, tab: ShownTab = 'needsYou'): UiState
     isVisible: true,
     isOpening: false,
     opensOnAsks: false,
+    isFirstOpen: false,
     rowsSeen: {},
     heldArrivals: {},
     newRows: {},

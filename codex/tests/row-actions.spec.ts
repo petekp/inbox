@@ -13,7 +13,7 @@ import { POLL_MS } from '../src/settle'
 import { buttons, named, task, window } from './row-actions-fixtures'
 import { TOOL_FIELDS } from '../../hooks/tool-schemas'
 
-test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, keeps a done row in place past its Undo while the pointer is on the list, folds it once the pointer leaves, and folds a done row at once on a tab switch', async () => {
+test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, keeps a done row in place past its Undo while the pointer moves on the list, folds it once the pointer rests, and folds a done row at once on a tab switch', async () => {
   const state = emptyState('renderer')
   state.ledger = task().ledger
   state.heard.startAt = 1
@@ -209,17 +209,28 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         b => b.querySelector('.tab-word')?.textContent === label,
       )!
     const realNow = Date.now
-    root.querySelector('.list')!.dispatchEvent(new window.Event('pointerover', { bubbles: true }) as unknown as Event)
-    Date.now = () => realNow() + SETTLED_MS
+    let clockAhead = 0
+    Date.now = () => realNow() + clockAhead
+    const moveOnList = () => {
+      const list = root.querySelector('.list')
+      if (list === null) throw new Error('the tab draws no list')
+      list.dispatchEvent(new window.Event('pointermove', { bubbles: true }) as unknown as Event)
+    }
     try {
-      await pause(POLL_MS + 100)
+      for (; clockAhead < SETTLED_MS; clockAhead += FOLD_QUIET_MS / 2) {
+        moveOnList()
+        await pause(20)
+      }
+      for (const startedAt = performance.now(); performance.now() - startedAt < POLL_MS + 100;) {
+        moveOnList()
+        await pause(FOLD_QUIET_MS / 4)
+      }
       assert.match(
         root.querySelector('.row.settled')?.textContent ?? '',
         /Tag the release/,
         'a row under the pointer folded',
       )
       assert.ok(root.querySelector('.key.undo:not(.spent)') === null, 'Undo is still offered')
-      document.documentElement.dispatchEvent(new window.Event('pointerleave') as unknown as Event)
       await pause(FOLD_QUIET_MS + 400)
       assert.ok(root.querySelector('.row.settled') === null, 'a settled row is still drawn')
       assert.match(root.textContent ?? '', /2 closed/)
@@ -235,7 +246,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
         TOOL_FIELDS,
       ).ledger
       await eventually(() => (root.textContent ?? '').includes('Publish the notes'))
-      root.querySelector<HTMLElement>('.row .line')!.click()
+      await eventually(() => root.querySelector('.row.selected') !== null)
       await pause(PRESS_GUARD_MS + 50)
       ;(await available('Done')).click()
       await until(() => root.querySelector('.row.settled') !== null)

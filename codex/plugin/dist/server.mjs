@@ -30,6 +30,24 @@ var SYNONYMS = [
 ];
 var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
 
+// ../hooks/ask-subject.ts
+var EMPTY_WORDS = new Set(
+  `a about above after again ahead all already also an and any anything are as at back be been before being below both
+but by can could did do does doing done each either else every everything first for from get go going had has have
+here how i if in into is it its just last later lets let me more my need next no not now of ok okay on once one ones
+only or other others our out over own rest same should so some something soon still such sure than that the their
+them then there these they this those to today too until up us want was way we were what when where whether which who why
+will with would yes yet you your
+approve proceed continue start stop wait hold skip leave keep drop cancel finish resume restart retry redo
+run merge push pull commit deploy ship publish open close post send file fix build make try test check
+review mark ready use take add remove delete update change apply land rebase install copy move create write draft
+edit set show see look pick choose decide answer reply tell say ask like prefer handle follow work
+pr prs branch thing step plan design option variant version note rule issue item task question proposal idea
+code problem stuff part green current new old latest previous mentioned proposed suggested remaining pending`.split(
+    /\s+/
+  )
+);
+
 // ../hooks/ledger-close.ts
 var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
@@ -91,14 +109,10 @@ var TAB_NAMES = [
 ];
 var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
 var SHOWN_TABS = numbered(TAB_NAMES);
-function isListedTab(tab) {
-  return tab === "needsYou" || tab === "findings";
-}
 function isRowTab(tab) {
   return tab !== "overview";
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
-var LISTED_TABS = TAB_NAMES.filter((t) => isListedTab(t.id));
 
 // ../hooks/help.ts
 var FINDING_GROUPS = {

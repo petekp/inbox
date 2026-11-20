@@ -16,11 +16,10 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-title-tint.tsx` | Codex adapter. A row's title in a span whose tint a Web Animation fades from the clock's point, so a row drawn again mid-fade does not start over. |
 | `codex/src/tab-line-steps.ts` | Codex adapter. Steps lines that come and go, such as banners and a press's status, through the row states, so a line enters and leaves from its place. |
 | `codex/src/tab-status-steps.ts` | Codex adapter. Steps the Status page's lines, the goal's milestones and the lines under the goal's text with `stepLines`. |
-| `codex/src/tab-selection.ts` | Codex adapter. The shown tab and its open row: switching tabs, following arrivals, and opening and selecting rows. |
 | `codex/src/tab-swap.ts` | Codex adapter. The swap to the server's newer page, and the state the old page hands to it. |
-| `codex/src/tab-read.ts` | Codex adapter. Reads the view and applies it, and sends the replies and discards the server holds with each request. |
-| `codex/src/tab-press.ts` | Codex adapter. The parts of a press that need no rows: showing the text a failed copy leaves for copying by hand, checking whether it was sent, and starting or dropping a reply. |
-| `codex/src/tab-rows.tsx` | Codex adapter. Each tab's rows, built from the view, and `act`, which sends a press. `act` and the row builders call each other, so they share a file. |
+| `codex/src/tab-ui.ts` | Codex adapter. Runs the tab on the shared controller: `dispatch` sends each event to `reduceUi` and runs the commands it returns, `read` and `poll` read the view, `pressRow` sends a press, and one timer wakes the tab at the controller's `nextWakeAt`. |
+| `codex/src/tab-press.ts` | Codex adapter. Reads of the presses out in the controller's state that need no rows: the press out on a row, the Undos under way, and when the oldest press began. |
+| `codex/src/tab-rows.tsx` | Codex adapter. Each tab's rows, built from the view, with the actions each row's buttons press. |
 | `codex/src/tab-part-gap.ts` | Codex adapter. `partAttrs` names a part of an open row and sets its top padding, and `--above` for the tree's strokes, from `partGap`. |
 | `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's Holds up line, context and option lines as the `.tree` its ◆ starts. |
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
@@ -40,10 +39,9 @@ Part of [the look map](../looks.md#files).
 | `codex/src/row-actions.tsx` | Codex adapter. Maps shared actions to buttons and draws reply fields. Its production components have mounted tests. |
 | `codex/src/tab.html` | Codex adapter. The tab's page shell. `codex/build.mjs` replaces each `/*TAB_CSS:name*/` line with `tab-css/name.css`, so the shell sets the order the styles apply in. |
 | `codex/src/tab-css/` | Codex adapter. The tab's styles, one file per concern. |
-| `codex/src/arrivals.ts` | Codex adapter. The tab's rows, tabs and empty-tab rule, built on `hooks/arrivals.ts`. |
-| `codex/src/settle.ts` | Codex adapter. Polling, the settled rows the tab draws, and how long the tab offers Undo. |
-| `codex/src/list-input.ts` | Codex adapter. The person's presses, keys, scrolls and pointer on the list, which keep a row due to fold in place. |
-| `codex/src/undo-key.ts` | Codex adapter. The undo key: presses the Undo the shared rule picks, by the tab's own Undo timing. |
+| `codex/src/arrivals.ts` | Codex adapter. The group types the Asks and Finds tabs draw, and the tab each group belongs to. |
+| `codex/src/settle.ts` | Codex adapter. The poll's interval, which settled rows the tab draws, and how long the tab offers Undo. |
+| `codex/src/list-input.ts` | Codex adapter. Sends the controller the person's presses, keys, scrolls and pointer moves on the list, which hold a due fold, an arrival and an agent's close. |
 | `codex/src/texts.ts` | Codex adapter. Texts only Codex reads, and the `CODEX` host. |
 | `codex/src/core.ts` | Codex host. Codex bindings over `hooks/session-turns.ts`, `hooks/session-status.ts` and `hooks/session-view.ts`, the tab view and tab helpers. |
 | `codex/src/data-dir.ts` | Codex host. The data folder and the dev build, which the loader reads. It imports no shared module, so a shared-module change leaves the loader's bundle unchanged. |

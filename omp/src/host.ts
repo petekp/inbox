@@ -14,6 +14,7 @@ import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 import { clipboardCommands, noClipboardCommand } from '../../hooks/clipboard-commands'
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
 import { herdrReporter, herdrTarget } from '../../hooks/herdr'
+import { delegateReader } from '../../hooks/hc-terminals'
 import type { HerdrTarget } from '../../hooks/herdr'
 import { herdrPanelOpener } from '../../hooks/herdr-open'
 import type { Run } from '../../hooks/gh'
@@ -253,6 +254,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     logHerdr,
     presses: ompPresses(deps.herdrTarget, (ctx, file) => inbox.herdrFile(ctx, file), logHerdr),
     run,
+    delegate: delegateReader(deps.herdrTarget, run),
     memory: {
       isGhMissing: false,
       prShared: NO_PR_SHARED,
@@ -325,8 +327,9 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       execute: async (_toolCallId, args, _signal, _onUpdate, ctx) => {
         if (isUnattended(ctx)) return { content: [{ type: 'text', text: 'The inbox is not shown in this session.' }] }
         let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
+        const delegate = await context.delegate()
         await change(sessionIdOf(ctx), s => {
-          const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now(), TOOL_FIELDS)
+          const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now(), TOOL_FIELDS, delegate)
           answer = r
 
           return r.state

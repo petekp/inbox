@@ -74,6 +74,7 @@ export type FeatureId =
   | 'suggested-goal'
   | 'show-explanation'
   | 'done-press-age'
+  | 'delegate-asks'
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */
 export type ClientId = 'claude-code' | 'codex' | 'omp'

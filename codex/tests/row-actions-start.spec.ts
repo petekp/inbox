@@ -142,6 +142,8 @@ test('the built tab starts without randomUUID and reloads without losing its hos
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')
     button('Send')!.click()
     await until(() => document.getElementById('app')?.textContent?.includes('Reply not confirmed') ?? false)
+    assert.ok(document.querySelector('.row.selected') === null, 'the answered row is still open')
+    ;(document.querySelector('.row button.line') as { click(): void } | null)?.click()
     assert.match(document.querySelector('.row.selected')?.textContent ?? '', /Check the build/)
     button('Reply')!.click()
     assert.equal(document.querySelector('input')?.value, 'Keep these exact words')
@@ -239,6 +241,9 @@ test('the built tab keeps polling after a view it cannot draw, so a queued Expla
   const button = (label: string) => [...host.document.querySelectorAll('button')].find(b => b.textContent === label)
   try {
     host.document.write(resource.contents[0]!.text)
+    const findsTab = () => host.document.querySelector('.tab[title="Finds"]') as { click(): void } | null
+    await until(() => findsTab() !== null)
+    findsTab()?.click()
     await until(() => button('Explain') !== undefined)
     button('Explain')!.click()
     await until(() => text().includes('Queued: Explain'))

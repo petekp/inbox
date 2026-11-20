@@ -4,6 +4,7 @@ import { EMPTY } from '../hooks/ledger'
 import { guidanceText } from '../hooks/model-text'
 import { toolAnswer } from '../hooks/tools'
 import type { AgentTool } from '../hooks/tools'
+import type { DelegateSession } from '../hooks/hc-terminals'
 import { OMP } from '../omp/src/texts'
 import type { LastAction, Ledger } from '../types'
 import { ompNotes, probeTools, type CaseTools } from './probe-tools'
@@ -27,6 +28,7 @@ type State = {
   ledger: Partial<Ledger>
   lastActions: Record<string, LastAction>
   tools: CaseTools | null
+  delegate: DelegateSession | null
 }
 
 function required(name: string): string {
@@ -96,7 +98,16 @@ export default function (pi: Pi): void {
       loadMode: 'essential',
       approval: 'read',
       execute: async (_toolCallId, args) => {
-        const r = toolAnswer(OMP, ledger, name, args as Record<string, unknown>, Date.now(), presses, offered.fields)
+        const r = toolAnswer(
+          OMP,
+          ledger,
+          name,
+          args as Record<string, unknown>,
+          Date.now(),
+          presses,
+          offered.fields,
+          state.delegate,
+        )
         ledger = r.ledger
         appendFileSync(logPath, `${JSON.stringify({ tool: name, args, result: r.result })}\n`)
 

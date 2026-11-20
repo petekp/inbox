@@ -106,5 +106,6 @@ export const CLAUDE_CODE: Client = {
         'Only the fullscreen terminal lets a plugin scroll the conversation, so the classic terminal and the Claude app draw no Show explanation.',
     },
     'done-press-age': { kind: 'full' },
+    'delegate-asks': { kind: 'full' },
   },
 }

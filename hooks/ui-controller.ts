@@ -27,7 +27,17 @@ import {
   titlePress,
   withCursor,
 } from './ui-controller-selection'
-import { closed, follow, hasHeldArrivals, opened, readTabs, recordTabs, shownTab, visible } from './ui-controller-tabs'
+import {
+  closed,
+  follow,
+  hasHeldArrivals,
+  helpShown,
+  opened,
+  readTabs,
+  recordTabs,
+  shownTab,
+  visible,
+} from './ui-controller-tabs'
 import {
   chain,
   freshUi,
@@ -40,7 +50,8 @@ import {
 } from './ui-controller-types'
 import type { RowNote } from '../types'
 
-const PERSON_EVENTS = new Set<UiEvent['type']>([
+/** The events the person makes in a look, which count as their use of the list. */
+export const PERSON_EVENTS: ReadonlySet<UiEvent['type']> = new Set<UiEvent['type']>([
   'show-tab',
   'show-help',
   'show-ask',
@@ -93,6 +104,7 @@ export function restoredUi(ui: UiState): UiState {
     heldClose: {},
     isOpening: false,
     opensOnAsks: false,
+    isFirstOpen: false,
   }
 }
 
@@ -157,7 +169,7 @@ function step(ui: UiState, view: SessionView, by: 1 | -1, ids: string[], now: nu
 function handle(ui: UiState, view: SessionView, e: UiEvent, now: number): UiStep {
   switch (e.type) {
     case 'opened':
-      return withCommands(opened(ui, now))
+      return withCommands(opened(ui, now, e.isFirst === true))
     case 'closed':
       return withCommands(closed(ui))
     case 'reset':
@@ -169,7 +181,7 @@ function handle(ui: UiState, view: SessionView, e: UiEvent, now: number): UiStep
     case 'show-tab':
       return withCommands(shownTab(ui, e.tab, now), { kind: 'tab-shown', tab: e.tab })
     case 'show-help':
-      return withCommands({ ...ui, isHelpShown: e.isShown })
+      return withCommands(helpShown(ui, e.isShown, now))
     case 'show-ask':
       return showAsk(ui, view, e.id, e.by, now)
     case 'select':
