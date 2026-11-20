@@ -1,7 +1,7 @@
 import type { SessionStatus } from '../types'
 import type { Op, StatusAnswer } from './status'
 import { restatesGoal, setTypedGoal } from './status-goal-ops'
-import { clipWords, DESCRIPTION_KEPT } from './status-limits'
+import { clipWords, DESCRIPTION_KEPT, isOpen } from './status-limits'
 
 /** Whether a goal is set and not met, so no goal is offered in its place. */
 export const hasRunningGoal = (o: SessionStatus): boolean => o.goal !== null && o.goal.metAt === null
@@ -9,6 +9,26 @@ export const hasRunningGoal = (o: SessionStatus): boolean => o.goal !== null && 
 /** Whether the Status call is asked for the next goal: no goal runs and none is suggested. */
 export const isNextGoalAsked = (o: SessionStatus | null): boolean =>
   o === null || (!hasRunningGoal(o) && o.suggestedGoal === null)
+
+/** The work a next-goal answer judged: the goal and whether it is met, the open subjects and the open asks. */
+function nextGoalWork(o: SessionStatus, askIds: ReadonlySet<string>): string {
+  const goal = o.goal ? `${o.goal.text} ${o.goal.metAt === null ? 'running' : 'met'}` : 'none'
+  const open = o.subjects.filter(isOpen).map(s => `${s.id} ${s.status}`)
+
+  return [goal, open.sort().join(', '), [...askIds].sort().join(', ')].join(' | ')
+}
+
+/** Whether the call already answered `SUGGEST: -` for the same work, so it is not asked once more for the next goal. */
+export const isNextGoalDeclined = (o: SessionStatus, askIds: ReadonlySet<string>): boolean =>
+  o.noGoalFor === nextGoalWork(o, askIds)
+
+/** `o` after `answer`, noting the work it judged when it answered `SUGGEST: -` while asked for the next goal. */
+export function withNoGoalNoted(o: SessionStatus, answer: StatusAnswer, askIds: ReadonlySet<string>): SessionStatus {
+  const line = answer.kind === 'ops' ? answer.ops.findLast(op => op.kind === 'suggest') : undefined
+  const isDeclined = line?.kind === 'suggest' && line.text === null && isNextGoalAsked(o)
+
+  return isDeclined ? { ...o, noGoalFor: nextGoalWork(o, askIds) } : o
+}
 
 /** Whether `answer` gives the next goal the call was asked for: a GOAL line, or a SUGGEST line with an outcome or -. */
 export const answersNextGoal = (answer: StatusAnswer): boolean =>

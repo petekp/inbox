@@ -2,7 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { parseStatus, withNextGoal } from '../hooks/status'
+import { parseStatus, withRetryLines } from '../hooks/status'
+import { statusRetry } from '../hooks/status-retry'
 import type { Op, StatusAnswer } from '../hooks/status'
 import { applyOps, applyStatus } from '../hooks/status-ops'
 import { upgradeStatus } from '../hooks/status-upgrade'
@@ -55,17 +56,24 @@ function withCarriedText(saved: SessionStatus | null, previous: SessionStatus | 
   return { ...saved, milestones }
 }
 
+/** Whether `op` sets or suggests the goal: the lines a next-goal retry adds. */
+const isGoalLine = (op: Op) => op.kind === 'goal' || op.kind === 'suggest'
+
 /**
- * The answer the recording build applied: the last that parsed, or after the next-goal retry, which the attempt's own
- * prompt marks, the first answer with the retry's GOAL and SUGGEST lines.
+ * The answer the recording build applied: the last that parsed, or after a retry, which the attempt's own prompt
+ * marks, the first answer with the retry's lines this checkout's `statusRetry` asks for. A record with no input to
+ * build that retry from adds the retry's GOAL and SUGGEST lines, as the first retry did.
  */
 function answerOf(record: StatusRecord): StatusAnswer | null {
   const [first, ...rest] = record.attempts.filter(a => a.answer)
   const retry = rest.find(a => a.prompt !== undefined)
   const firstAnswer = parseStatus(first?.answer ?? null)
-  if (retry && firstAnswer) return withNextGoal(firstAnswer, parseStatus(retry.answer))
+  if (!retry || !firstAnswer || !first?.answer)
+    return parseStatus(record.attempts.filter(a => a.answer).at(-1)?.answer ?? null)
+  const input = record.input ? { ...record.input, last: upgradeStatus(record.input.last) } : null
+  const asked = input ? statusRetry(input, record.prompt)(firstAnswer, first.answer) : null
 
-  return parseStatus(record.attempts.filter(a => a.answer).at(-1)?.answer ?? null)
+  return withRetryLines(firstAnswer, parseStatus(retry.answer), asked?.keeps ?? isGoalLine)
 }
 
 function replay(session: number, record: StatusRecord, previous: SessionStatus | null): Replayed {
@@ -168,7 +176,7 @@ function blankMilestones(rs: Replayed[]): { all: Rate; linked: Rate } {
 }
 
 /**
- * The working subjects the call read as idle, as `idleSubjects` finds them. Counts those the answer left untouched,
+ * The working or waiting subjects the call read as idle, as `idleSubjects` finds them. Counts those the answer left untouched,
  * and those it touched by setting them working.
  */
 function idleRates(rs: Replayed[]): { untouched: Rate; setWorking: Rate } {
@@ -257,7 +265,7 @@ console.log('')
 console.log(`Head descriptions dropped: ${head.text()}`)
 console.log(`Open milestones with blank text: ${blank.all.text()}`)
 console.log(`  with linked open work: ${blank.linked.text()}`)
-console.log(`Idle working subjects left untouched: ${idle.untouched.text()}`)
+console.log(`Idle subjects left untouched: ${idle.untouched.text()}`)
 console.log(`  touched ones set working again: ${idle.setWorking.text()}`)
 console.log(`Goal met, no suggestion: answers with SUGGEST ${met.written.text()}`)
 console.log(`  suggestion shown after: ${met.shown.text()}`)

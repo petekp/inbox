@@ -6,7 +6,7 @@ Part of [the look map](../looks.md#files).
 | --- | --- |
 | `hooks/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the merged line and the text before a stall. |
 | `hooks/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order, with each part's folds after its open or its closed rows, and the counts by mark. |
-| `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds no operation. A line that is not an operation is left out. |
+| `hooks/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds no operation, or with a retry prompt when one is given. A line that is not an operation is left out. |
 | `hooks/status-freshness.ts` | Shared module. When a Status call last changed what the page says, and the Status tab's status line: a failed update, or "Not updated in 2h" after five calls that read a reply with agent work and changed nothing. |
 | `hooks/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |
 | `hooks/status-ops.ts` | Shared module. How an answer changes the saved Status: `applyOps`, `applyStatus`, and when a HEAD line replaces the head. |
@@ -25,4 +25,5 @@ Part of [the look map](../looks.md#files).
 | `hooks/status-upgrade-goal.ts` | Shared module. The goal's fields of a saved Status, for `upgradeStatus`. Only an object loads as a goal. |
 | `hooks/status-prompt.ts` | Shared module. What the Status call reads: `STATUS_SYSTEM`, or for a host with `splitsPlanIntoSubjects` `PARTS_STATUS_SYSTEM`, and its prompts after a reply, during a long turn and for a catch-up. |
 | `hooks/status-prompt-goal.ts` | Shared module. What the Status call reads about the goal: its lines and input blocks, and its rules as named parts, so `statusSystem` can leave one out for an ablation. |
+| `hooks/status-retry.ts` | Shared module. `statusRetry`: what the Status call is asked once more after an answer that leaves a subject in `<idle>` with no line, or leaves no goal running and none suggested with no GOAL or SUGGEST line, and which lines of the second answer are kept. |
 | `hooks/status-records.ts` | Shared module. The Status call: `statusCallPrompt` builds its prompt, `askAndWriteStatus` sends it and writes the answer, and `refreshStatus` runs one during a long turn. It also holds the call records, `StatusRecord` and `writeStatusRecord`. |

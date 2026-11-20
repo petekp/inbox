@@ -299,6 +299,10 @@ export const GOOD_RUNS: Record<string, string[]> = {
     'DONE: s2 | long strings kept whole',
     'NO CHANGE',
   ],
+  'finished-pass': [
+    'DONE: s2 | fix merged and pushed\nDONE: m1 | review delivered\nSET: s1 | waits-on-other | Page text done, screenshots needed',
+    'SET: s1 | waits-on-other | Page text done, screenshots needed\nSUGGEST: Editor focus pass done',
+  ],
   'idle-work': [
     'DONE: s1 | iPad crash fixed\nSET: s4 | waits-on-other | fast on big libraries, waits on review\nNEW: working | Retry button | broken on web again\nNEW: working | PR 3655 | waits on review',
   ],
