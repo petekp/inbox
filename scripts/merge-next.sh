@@ -73,12 +73,12 @@ is_merging() {
     git rev-parse -q --verify MERGE_HEAD >/dev/null
 }
 
-# Prints why the tools in folder $1 need installing, given its lockfile $2, or nothing when they are current. Git sets
-# ORIG_HEAD to the branch as it was before the merge.
+# Prints why the tools in folder $1 need installing, given its lockfile $2, or nothing when they are current. It compares
+# the branch as it was before the merge: $before in this run, or ORIG_HEAD, which the merge set, after --continue.
 install_reason() {
     if [ ! -d "$1/node_modules" ]; then
         echo "they are missing"
-    elif ! git diff --quiet ORIG_HEAD -- "$2"; then
+    elif ! git diff --quiet "${before:-ORIG_HEAD}" -- "$2"; then
         echo "the merge changed $2"
     fi
 }
