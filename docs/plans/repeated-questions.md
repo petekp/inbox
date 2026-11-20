@@ -1,8 +1,8 @@
 # Earlier answers on question rows
 
-Status: built. For the first week of the question history, the hosts record matches and draw nothing. Then the line shows.
+Status: built. For the first week of the question history, the hosts record matches and draw nothing. Then the line shows. Once 21 days have passed since the history began, the `record` answer lists earlier answers to the agent too, as [repeated-questions-record.md](repeated-questions-record.md) says.
 
-When a question reaches the person's inbox, its row shows the closest answer the person gave to a similar question before. The person can answer with it as with any answer, or ignore it. The agent never sees the earlier answer, and nothing closes on its own.
+When a question reaches the person's inbox, its row shows the closest answer the person gave to a similar question before. The person can answer with it as with any answer, or ignore it. Nothing closes on its own.
 
 The check needs no model call. It is a keyword search (BM25) over local files, run once when the question is added.
 

@@ -36,7 +36,7 @@ import {
 } from './server-tools'
 import { makeHooksTrustNow } from './server-trust'
 import { makeBackground } from './background'
-import { pruneSessions, readState, updateState } from './state'
+import { pruneSessions, readState, recordMatchesNow, updateState } from './state'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
 import type { CodexHerdrAsk } from './server-herdr'
@@ -153,8 +153,9 @@ export function makeServer(given: ServerDeps): Server {
       case 'order_prs': {
         let result = ''
         const delegate = (await deps.delegate?.().catch(() => null)) ?? null
+        const earlier = name === 'record' ? await recordMatchesNow(args, now()) : []
         await codexStore(dir, id, now, deps.onWrite).update(s => {
-          const r = recorded(CODEX, s, name, args, now(), listedToolFields(), delegate)
+          const r = recorded(CODEX, s, name, args, now(), listedToolFields(), delegate, earlier)
           result = r.result
           return heard(r.state)
         })

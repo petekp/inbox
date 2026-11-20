@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Compares, in the question history, the share of matched questions answered with their earlier answer when the row
-// drew the line and when it did not, as "What shows it works" in docs/plans/repeated-questions.md sets out. The
-// interval resamples sessions. Run: node scripts/earlier-answers-report.mjs [history folder]
+// drew the line and when it did not, as "What shows it works" in docs/plans/repeated-questions.md sets out. It counts
+// questions asked in the history's first 21 days only. The interval resamples sessions. Run: node scripts/earlier-answers-report.mjs [history folder]
 import { readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +9,8 @@ import { join } from 'node:path'
 const RESAMPLES = 2000
 const WORKS_RISE = 0.03
 const FAILS_BELOW = 0.01
+// ROW_MEASUREMENT_MS in hooks/question-history.ts: after it, the record answer lists earlier answers too.
+const MEASURED_MS = 21 * 24 * 60 * 60_000
 
 const folder =
   process.argv[2] ?? join(process.env.XDG_STATE_HOME?.trim() || join(homedir(), '.local/state'), 'inbox', 'questions')
@@ -24,7 +26,9 @@ const files = readdirSync(folder)
     }
   })
 
-const matchedOf = file => file.questions.filter(q => q.earlier)
+const historyStart = Math.min(...files.map(file => file.created))
+const matchedOf = file =>
+  file.questions.filter(q => q.earlier && (q.askedAt ?? q.answeredAt) < historyStart + MEASURED_MS)
 
 function shares(sessions) {
   const count = { shown: [0, 0], hidden: [0, 0] }

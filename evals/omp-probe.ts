@@ -7,6 +7,7 @@ import type { AgentTool } from '../hooks/tools'
 import type { DelegateSession } from '../hooks/hc-terminals'
 import { OMP } from '../omp/src/texts'
 import type { LastAction, Ledger } from '../types'
+import { caseEarlier, type CaseAnswer } from './case-history'
 import { ompNotes, probeTools, type CaseTools } from './probe-tools'
 
 /**
@@ -29,6 +30,7 @@ type State = {
   lastActions: Record<string, LastAction>
   tools: CaseTools | null
   delegate: DelegateSession | null
+  history: CaseAnswer[]
 }
 
 function required(name: string): string {
@@ -98,16 +100,10 @@ export default function (pi: Pi): void {
       loadMode: 'essential',
       approval: 'read',
       execute: async (_toolCallId, args) => {
-        const r = toolAnswer(
-          OMP,
-          ledger,
-          name,
-          args as Record<string, unknown>,
-          Date.now(),
-          presses,
-          offered.fields,
-          state.delegate,
-        )
+        const input = args as Record<string, unknown>
+        const now = Date.now()
+        const earlier = name === 'record' ? caseEarlier(state.history ?? [], input, now) : []
+        const r = toolAnswer(OMP, ledger, name, input, now, presses, offered.fields, state.delegate, earlier)
         ledger = r.ledger
         appendFileSync(logPath, `${JSON.stringify({ tool: name, args, result: r.result })}\n`)
 

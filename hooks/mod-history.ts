@@ -1,5 +1,6 @@
 import type { Session } from '../types'
-import { historyStep, isHistoryStepNeeded } from './history-store'
+import type { AnswerDoc } from './earlier-answers'
+import { historyStep, isHistoryStepNeeded, recordMatches } from './history-store'
 import type { HistoryPlace } from './history-store'
 import { historyFolder } from './question-history'
 import { upgradeSession } from './session-files'
@@ -69,4 +70,9 @@ export function withHistory(
 
     return changed instanceof Promise ? changed.then(step) : step(changed)
   }
+}
+
+/** The earlier answers the `record` answer lists for a call, as `recordMatches` finds them. */
+export async function modRecordMatches(e: HistoryEngine, input: Record<string, unknown>): Promise<AnswerDoc[]> {
+  return recordMatches(await historyPlace(e), input, await e.now()).catch(() => [])
 }

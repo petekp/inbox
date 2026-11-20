@@ -133,5 +133,6 @@ export const HERDR: LookTable = {
       reason: 'A row whose press finished keeps showing when it arrived. No reason is recorded: issue #677.',
     },
     'delegate-asks': { kind: 'host' },
+    'record-earlier-answers': { kind: 'host' },
   },
 }
