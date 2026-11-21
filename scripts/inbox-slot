@@ -2,22 +2,28 @@
 """Let one heavy job at a time run on this Mac: ./scripts/check.sh, or the inbox-ui VM.
 
   inbox-slot run [--for WHAT] [--no-wait] -- COMMAND [ARGS...]
-  inbox-slot take [--for WHAT] [--no-wait] [--pid PID]
+  inbox-slot take --pid PID [--for WHAT] [--no-wait]
   inbox-slot release [--pid PID]
   inbox-slot status
 
+One rule decides who gets the slot: it is free, or its holder's tracked process
+has exited. The terminal never decides it, so two jobs from one terminal
+exclude each other.
+
 run takes the slot, runs the command and releases the slot when the command
-exits for any reason. Prefer it: inbox-slot run -- ./scripts/check.sh
+exits for any reason. It tracks its own process, and releases only that hold.
+Prefer it: inbox-slot run -- ./scripts/check.sh
 
 take waits until the slot is free, then records the holder: its terminal
 (HC_TERMINAL_ID, when set), the process to track, what the slot is for and the
-time. --no-wait fails at once, exit 1, naming the holder. The tracked process
-defaults to the process that called take. A holder whose tracked process has
-exited counts as released, so pass --pid with a process that lives as long as
-the job, such as the VM's. Use take for the VM, and release when it is shut down.
+time. --no-wait fails at once, exit 1, naming the holder. Taking again with the
+pid that already holds it succeeds. --pid is required: pass a process that lives
+as long as the job, such as the VM's. The caller's own shell would end with the
+call and release the slot at once. Use take for the VM, and release when it is
+shut down.
 
-release clears your own hold: the one recorded for your terminal, or with no
-terminal, for --pid.
+release clears a hold made by take: the one recorded for your terminal, or for
+--pid. It never clears a hold made by run, which clears itself.
 
 status prints the holder and how long it has held the slot. It changes nothing.
 
@@ -90,27 +96,22 @@ def write(record):
     os.replace(temporary, SLOT_FILE)
 
 
-def identity(pid):
-    return os.environ.get("HC_TERMINAL_ID") or f"pid:{pid}"
-
-
 def describe(record):
     terminal = record["terminal"]
     who = f"terminal {terminal}" if terminal else f"pid {record['pid']}"
     return f"{who} for {record['purpose']}, held for {age(record['taken_at'])}, tracking pid {record['pid']}"
 
 
-def take(purpose, pid, wait):
+def take(purpose, pid, wait, kind):
     if not process_start(pid):
         raise Refused(f"process {pid} is not running")
-    me = identity(pid)
     announced = False
     while True:
         with locked():
             current = holder()
-            if current is None or current["key"] == me:
+            if current is None or current["pid"] == pid:
                 write({
-                    "key": me, "terminal": os.environ.get("HC_TERMINAL_ID"), "purpose": purpose, "pid": pid,
+                    "terminal": os.environ.get("HC_TERMINAL_ID"), "purpose": purpose, "pid": pid, "kind": kind,
                     "pid_started": process_start(pid),
                     "taken_at": current["taken_at"] if current else time.time(),
                 })
@@ -125,26 +126,32 @@ def take(purpose, pid, wait):
 
 
 def release(pid):
-    me = identity(pid)
+    terminal = os.environ.get("HC_TERMINAL_ID")
+    if not terminal and pid is None:
+        raise Refused("HC_TERMINAL_ID is not set; pass --pid with the process the hold tracks")
     with locked():
         current = holder()
         if current is None:
             write(None)
             print("the slot is free")
-        elif current["key"] != me:
-            raise Refused(f"the slot is held by {describe(current)}, not by you")
-        else:
-            write(None)
-            print("released the slot")
+            return
+        is_mine = (pid is not None and current["pid"] == pid) or (pid is None and current["terminal"] == terminal)
+        if current["kind"] != "take" or not is_mine:
+            raise Refused(f"the slot is held by {describe(current)}, and no take of yours made that hold")
+        write(None)
+        print("released the slot")
 
 
 def run_command(args):
     me = os.getpid()
-    take(args.purpose, me, not args.no_wait)
+    take(args.purpose, me, not args.no_wait, "run")
     try:
         return subprocess.run(args.command).returncode
     finally:
-        release(me)
+        with locked():
+            current = holder()
+            if current and current["pid"] == me:
+                write(None)
 
 
 def main():
@@ -155,10 +162,10 @@ def main():
         p.add_argument("--for", dest="purpose", default="a heavy job", help="what the slot is for, such as check.sh or vm")
         p.add_argument("--no-wait", action="store_true", help="fail at once when the slot is held")
         if name == "take":
-            p.add_argument("--pid", type=int, default=os.getppid(), help="the process to track")
+            p.add_argument("--pid", type=int, required=True, help="the process to track; it must live as long as the job")
     sub.choices["run"].add_argument("command", nargs=argparse.REMAINDER, help="after --, the command to run")
     rel = sub.add_parser("release")
-    rel.add_argument("--pid", type=int, default=os.getppid(), help="the process the hold tracks, when you have no terminal")
+    rel.add_argument("--pid", type=int, help="the process the hold tracks; defaults to the hold for your terminal")
     sub.add_parser("status")
     args = parser.parse_args()
     try:
@@ -169,7 +176,7 @@ def main():
                 raise Refused("give the command to run after --")
             return run_command(args)
         if args.command_name == "take":
-            take(args.purpose, args.pid, not args.no_wait)
+            take(args.purpose, args.pid, not args.no_wait, "take")
         elif args.command_name == "release":
             release(args.pid)
         else:
