@@ -1,7 +1,7 @@
 // Built by codex/build.mjs from codex/src and core/. Do not edit.
 
 // src/hook-main.ts
-import { dirname as dirname6, join as join10 } from "node:path";
+import { dirname as dirname7, join as join10 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/detached-update.ts
@@ -16,6 +16,29 @@ function detachedUpdate(dir, env, script) {
     });
     child.unref();
   };
+}
+
+// src/cli.ts
+function namedCli(env) {
+  return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
+}
+var MAX_ANCESTORS = 8;
+async function ancestorCodex(exec, startPid) {
+  let pid = startPid;
+  for (let level = 0; level < MAX_ANCESTORS && pid > 1; level++) {
+    const r = await exec(["ps", "-o", "ppid=,comm=", "-p", String(pid)], { cwd: "/", timeoutMs: 5e3 }).catch(
+      () => null
+    );
+    const match = r && r.code === 0 ? /^\s*(\d+)\s+(.+?)\s*$/.exec(r.stdout) : null;
+    const [, parent, command] = match ?? [];
+    if (!parent || !command) return null;
+    if (/^\/(.*\/)?codex$/.test(command)) return { pid, cli: command };
+    pid = Number(parent);
+  }
+  return null;
+}
+async function ancestorCli(exec, startPid) {
+  return (await ancestorCodex(exec, startPid))?.cli ?? null;
 }
 
 // ../core/domain/status-limits.ts
@@ -3710,10 +3733,8 @@ function herdrLog(dir) {
   })().catch(() => void 0);
 }
 
-// src/command-log.ts
-var RUNNER = { id: String(process.pid), startedAt: Date.now() };
-async function isRunning(runner) {
-  const pid = Number(runner.id);
+// src/pid.ts
+function isPidRunning(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
@@ -3722,6 +3743,10 @@ async function isRunning(runner) {
     return err.code !== "ESRCH";
   }
 }
+
+// src/command-log.ts
+var RUNNER = { id: String(process.pid), startedAt: Date.now() };
+var isRunning = async (runner) => isPidRunning(Number(runner.id));
 function commandsPath(dir, sessionId) {
   return commandLogPath(join4(dir, "sessions"), sessionId);
 }
@@ -4933,14 +4958,113 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
   };
 }
 
+// src/registry.ts
+import { randomUUID as randomUUID2 } from "node:crypto";
+import { mkdir as mkdir5, readdir as readdir3, readFile as readFile4, rename as rename6, rm as rm4, writeFile as writeFile6 } from "node:fs/promises";
+import { dirname as dirname4 } from "node:path";
+
+// ../core/runtime/session-registry.ts
+function registryFolder(env) {
+  const inbox = inboxStateFolder(env);
+  return inbox ? `${inbox}/registry` : null;
+}
+function registryHerdr(target) {
+  return target?.kind === "terminal" ? { terminal: target.terminal, appHome: target.appHome } : null;
+}
+var fileName = (host, sessionId) => `${host}-${sessionFile(sessionId)}`;
+function entryOf(text2) {
+  try {
+    const value = text2 === null ? null : JSON.parse(text2);
+    return value?.format === 1 && Number.isInteger(value.pid) && Number.isFinite(value.startedAt) ? value : null;
+  } catch {
+    return null;
+  }
+}
+async function writeRegistryEntry(files2, folder, source, s, view, now, pid) {
+  try {
+    const path = `${folder}/${fileName(source.host, source.sessionId)}`;
+    const kept = entryOf(await files2.read(path));
+    const owner = pid ?? kept?.pid;
+    if (owner === void 0) return;
+    const fields = {
+      format: 1,
+      ...source,
+      title: null,
+      pid: owner,
+      startedAt: kept && kept.pid === owner ? kept.startedAt : now,
+      isTurnRunning: s.presence.isTurnRunning,
+      counts: { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count }
+    };
+    const isUnchanged2 = kept && JSON.stringify({ ...kept, writtenAt: 0 }) === JSON.stringify({ ...fields, writtenAt: 0 });
+    if (isUnchanged2) return;
+    const entry = { ...fields, writtenAt: now };
+    await files2.write(path, JSON.stringify(entry));
+    await pruneEnded(files2, folder, source.host, path);
+  } catch (error) {
+    files2.log(
+      `inbox: the session registry entry could not be written: ${error instanceof Error ? error.message : error}`
+    );
+  }
+}
+async function pruneEnded(files2, folder, host, own) {
+  const paths = (await files2.list(folder)).filter((name) => name.startsWith(`${host}-`) && name.endsWith(".json")).map((name) => `${folder}/${name}`).filter((path) => path !== own);
+  const entries = await Promise.all(paths.map(async (path) => ({ path, entry: entryOf(await files2.read(path)) })));
+  const owned = entries.flatMap(({ path, entry }) => entry ? [{ path, pid: entry.pid }] : []);
+  if (owned.length === 0) return;
+  const live = await files2.livePids([...new Set(owned.map((e) => e.pid))]);
+  if (!live) return;
+  await Promise.all(owned.filter((e) => !live.has(e.pid)).map((e) => files2.remove(e.path)));
+}
+
+// src/registry.ts
+var registryFiles = (log) => ({
+  list: (folder) => readdir3(folder).catch(() => []),
+  read: (path) => readFile4(path, "utf8").catch(missingAsNull),
+  write: async (path, text2) => {
+    await mkdir5(dirname4(path), { recursive: true, mode: 448 });
+    const tmp = `${path}.${process.pid}-${randomUUID2()}.tmp`;
+    await writeFile6(tmp, text2, { mode: 384 });
+    await rename6(tmp, path);
+  },
+  remove: (path) => rm4(path, { force: true }),
+  livePids: async (pids) => new Set(pids.filter(isPidRunning)),
+  log
+});
+function registryOnWrite(env, dir, now, pid, log = herdrLog(dir)) {
+  const folder = registryFolder(env);
+  if (!folder) return void 0;
+  const files2 = registryFiles(log);
+  const herdr = registryHerdr(herdrTarget(env));
+  return async (written) => {
+    const s = await readState(dir, written.sessionId);
+    const at = now();
+    await writeRegistryEntry(
+      files2,
+      folder,
+      { host: "codex", sessionId: s.sessionId, agent: CODEX2.agent, projectFolder: s.root, version: "0.6.0", herdr },
+      s,
+      viewOf(s, at),
+      at,
+      pid
+    );
+  };
+}
+function eachOnWrite(...writes) {
+  const given = writes.filter((w) => w !== void 0);
+  if (given.length === 0) return void 0;
+  return async (s) => {
+    await Promise.all(given.map((w) => w(s)));
+  };
+}
+
 // src/shared-daemon.ts
 var PS_TIMEOUT_MS = 5e3;
 var INIT_PID = 1;
-var MAX_ANCESTORS = 6;
+var MAX_ANCESTORS2 = 6;
 var isSharedDaemon = (command) => /(^|\/)codex\s.*\bapp-server\b/.test(command) && /--managed-daemon\b|--listen[ =]unix:\/\//.test(command);
 async function isUnderSharedDaemon(pid, run2) {
   let current = pid;
-  for (let level = 0; level < MAX_ANCESTORS && current > INIT_PID; level++) {
+  for (let level = 0; level < MAX_ANCESTORS2 && current > INIT_PID; level++) {
     const r = await run2(["ps", "-o", "ppid=,command=", "-p", String(current)], { cwd: "/", timeoutMs: PS_TIMEOUT_MS });
     const match = r.code === 0 ? /^\s*(\d+)\s+(.*)$/.exec(r.stdout.trim()) : null;
     if (!match) return false;
@@ -4963,25 +5087,6 @@ async function withoutSharedTerminal(env, run2, pid, log) {
 
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
-
-// src/cli.ts
-function namedCli(env) {
-  return env.CODEX_CLI_PATH || env.CODEX_APP_RUNTIME_CLI_PATH || null;
-}
-var MAX_ANCESTORS2 = 8;
-async function ancestorCli(exec, startPid) {
-  let pid = startPid;
-  for (let level = 0; level < MAX_ANCESTORS2 && pid > 1; level++) {
-    const r = await exec(["ps", "-o", "ppid=,comm=", "-p", String(pid)], { cwd: "/", timeoutMs: 5e3 }).catch(
-      () => null
-    );
-    const match = r && r.code === 0 ? /^\s*(\d+)\s+(.+?)\s*$/.exec(r.stdout) : null;
-    if (!match) return null;
-    if (/^\/(.*\/)?codex$/.test(match[2])) return match[2];
-    pid = Number(match[1]);
-  }
-  return null;
-}
 
 // src/dialogs.ts
 function noteDialogs(s, dialogs) {
@@ -5569,10 +5674,10 @@ function rolloutOfLines(lines, cwd, currentTurnId) {
 }
 
 // src/transcript.ts
-import { readdir as readdir3, stat as stat4 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname4, join as join7 } from "node:path";
+import { readdir as readdir4, stat as stat4 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname5, join as join7 } from "node:path";
 async function namesIn(dir, pattern) {
-  const names = await readdir3(dir).catch(() => []);
+  const names = await readdir4(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
 }
 var ROLLOUT_NAME = canReadZstd ? /^rollout-.+\.jsonl(\.zst)?$/ : /^rollout-.+\.jsonl$/;
@@ -5596,10 +5701,10 @@ async function newestRollout(codexHome, isWanted) {
   return archived === void 0 ? null : join7(archive, archived);
 }
 function codexHomeOf(path) {
-  const folder = dirname4(path);
-  if (basename2(folder) === "archived_sessions") return dirname4(folder);
-  const sessions = dirname4(dirname4(dirname4(folder)));
-  return basename2(sessions) === "sessions" ? dirname4(sessions) : null;
+  const folder = dirname5(path);
+  if (basename2(folder) === "archived_sessions") return dirname5(folder);
+  const sessions = dirname5(dirname5(dirname5(folder)));
+  return basename2(sessions) === "sessions" ? dirname5(sessions) : null;
 }
 async function historyBase(path) {
   const base = (await readSessionMeta(path))?.payload?.history_base;
@@ -5915,11 +6020,11 @@ function exitCodeOf(err) {
 }
 
 // src/question-history.ts
-import { mkdir as mkdir5, readdir as readdir4, readFile as readFile4, rename as rename6, stat as stat5, writeFile as writeFile6 } from "node:fs/promises";
-import { dirname as dirname5, join as join9 } from "node:path";
+import { mkdir as mkdir6, readdir as readdir5, readFile as readFile5, rename as rename7, stat as stat5, writeFile as writeFile7 } from "node:fs/promises";
+import { dirname as dirname6, join as join9 } from "node:path";
 var nodeFs = {
   list: async (folder) => {
-    const names = await readdir4(folder).catch(() => []);
+    const names = await readdir5(folder).catch(() => []);
     const listed = await Promise.all(
       names.map(async (name) => {
         const info = await stat5(join9(folder, name)).catch(() => null);
@@ -5928,12 +6033,12 @@ var nodeFs = {
     );
     return listed.filter((x) => x !== null);
   },
-  read: (path) => readFile4(path, "utf8"),
+  read: (path) => readFile5(path, "utf8"),
   write: async (path, text2) => {
-    await mkdir5(dirname5(path), { recursive: true });
+    await mkdir6(dirname6(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile6(tmp, text2);
-    await rename6(tmp, path);
+    await writeFile7(tmp, text2);
+    await rename7(tmp, path);
   }
 };
 function questionHistoryPlace(env, dir) {
@@ -5944,7 +6049,7 @@ function questionHistoryPlace(env, dir) {
     folder,
     host: "codex",
     keptSessions: async () => {
-      const names = (await readdir4(join9(dir, "sessions")).catch(() => [])).filter(isSessionFile);
+      const names = (await readdir5(join9(dir, "sessions")).catch(() => [])).filter(isSessionFile);
       const read = await Promise.all(
         names.map(async (name) => {
           const id = name.slice(0, -".json".length);
@@ -5961,18 +6066,23 @@ function questionHistoryPlace(env, dir) {
 async function main() {
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const dist = dirname6(fileURLToPath2(import.meta.url));
-  const dir = dataDir(process.env, dirname6(dist));
+  const dist = dirname7(fileURLToPath2(import.meta.url));
+  const dir = dataDir(process.env, dirname7(dist));
   await withoutSharedTerminal(process.env, run, process.ppid, herdrLog(dir));
   useQuestionHistory(questionHistoryPlace(process.env, dir));
   const startUpdate = detachedUpdate(dir, process.env, join10(dist, "update.mjs"));
-  const out = await handleHook(JSON.parse(raw), {
+  const input = JSON.parse(raw);
+  const codexPid = input.hook_event_name === "SessionStart" ? (await ancestorCodex(run, process.ppid))?.pid ?? null : null;
+  const out = await handleHook(input, {
     dir,
     env: process.env,
     now: Date.now,
     startUpdate: (id) => startUpdate(id),
     startStatusRefresh: (id) => startUpdate(id, STATUS_REFRESH),
-    onWrite: herdrOnWrite(process.env, run, dir, Date.now),
+    onWrite: eachOnWrite(
+      herdrOnWrite(process.env, run, dir, Date.now),
+      registryOnWrite(process.env, dir, Date.now, codexPid)
+    ),
     run,
     parentPid: process.ppid
   });

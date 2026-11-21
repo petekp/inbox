@@ -2,7 +2,7 @@
 // Built by omp/build.ts with Bun 1.4.4 from omp/src and core/. Do not edit.
 
 // src/host.ts
-import { randomUUID } from "crypto";
+import { randomUUID as randomUUID2 } from "crypto";
 
 // ../core/domain/gh.ts
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
@@ -473,7 +473,8 @@ var CLAUDE_CODE = {
     },
     "done-press-age": { kind: "full" },
     "delegate-asks": { kind: "full" },
-    "record-earlier-answers": { kind: "full" }
+    "record-earlier-answers": { kind: "full" },
+    "session-registry": { kind: "full" }
   }
 };
 
@@ -636,7 +637,11 @@ var CODEX = {
     },
     "done-press-age": { kind: "full" },
     "delegate-asks": { kind: "full" },
-    "record-earlier-answers": { kind: "full" }
+    "record-earlier-answers": { kind: "full" },
+    "session-registry": {
+      kind: "different",
+      reason: "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process."
+    }
   }
 };
 
@@ -748,7 +753,8 @@ var OMP = {
     },
     "done-press-age": { kind: "full" },
     "delegate-asks": { kind: "full" },
-    "record-earlier-answers": { kind: "full" }
+    "record-earlier-answers": { kind: "full" },
+    "session-registry": { kind: "full" }
   }
 };
 
@@ -1542,7 +1548,7 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 import { existsSync } from "fs";
 import { stat as stat6 } from "fs/promises";
 import { homedir } from "os";
-import { dirname as dirname5, join as join7 } from "path";
+import { dirname as dirname6, join as join7 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
 var version = "0.6.0";
@@ -12348,6 +12354,18 @@ function herdrLog(dir) {
   });
 }
 
+// src/pid.ts
+function isPidRunning(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0)
+    return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code !== "ESRCH";
+  }
+}
+
 // ../core/domain/model-text.ts
 function guidanceText(host) {
   return `# Inbox
@@ -13583,17 +13601,7 @@ var NO_CONVERSATION_SCROLL = "this app does not let the inbox scroll its convers
 // src/command-log.ts
 var changes = orderedKeys();
 var RUNNER = { id: String(process.pid), startedAt: Date.now() };
-async function isRunning(runner) {
-  const pid = Number(runner.id);
-  if (!Number.isSafeInteger(pid) || pid <= 0)
-    return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err.code !== "ESRCH";
-  }
-}
+var isRunning = async (runner) => isPidRunning(Number(runner.id));
 function commandsPath(dir, sessionId) {
   return commandLogPath(join2(dir, "sessions"), sessionId);
 }
@@ -14169,6 +14177,64 @@ function questionHistoryPlace(env, dir) {
       return read.filter((x) => x !== null);
     }
   };
+}
+
+// ../core/runtime/session-registry.ts
+function registryFolder(env) {
+  const inbox = inboxStateFolder(env);
+  return inbox ? `${inbox}/registry` : null;
+}
+function registryHerdr(target) {
+  return target?.kind === "terminal" ? { terminal: target.terminal, appHome: target.appHome } : null;
+}
+var fileName = (host, sessionId) => `${host}-${sessionFile(sessionId)}`;
+function entryOf(text) {
+  try {
+    const value = text === null ? null : JSON.parse(text);
+    return value?.format === 1 && Number.isInteger(value.pid) && Number.isFinite(value.startedAt) ? value : null;
+  } catch {
+    return null;
+  }
+}
+async function writeRegistryEntry(files, folder, source, s, view, now, pid) {
+  try {
+    const path = `${folder}/${fileName(source.host, source.sessionId)}`;
+    const kept = entryOf(await files.read(path));
+    const owner = pid ?? kept?.pid;
+    if (owner === undefined)
+      return;
+    const fields = {
+      format: 1,
+      ...source,
+      title: null,
+      pid: owner,
+      startedAt: kept && kept.pid === owner ? kept.startedAt : now,
+      isTurnRunning: s.presence.isTurnRunning,
+      counts: { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count }
+    };
+    const isUnchanged = kept && JSON.stringify({ ...kept, writtenAt: 0 }) === JSON.stringify({ ...fields, writtenAt: 0 });
+    if (isUnchanged)
+      return;
+    const entry = { ...fields, writtenAt: now };
+    await files.write(path, JSON.stringify(entry));
+    await pruneEnded(files, folder, source.host, path);
+  } catch (error) {
+    files.log(`inbox: the session registry entry could not be written: ${error instanceof Error ? error.message : error}`);
+  }
+}
+async function pruneEnded(files, folder, host, own) {
+  const paths = (await files.list(folder)).filter((name) => name.startsWith(`${host}-`) && name.endsWith(".json")).map((name) => `${folder}/${name}`).filter((path) => path !== own);
+  const entries = await Promise.all(paths.map(async (path) => ({ path, entry: entryOf(await files.read(path)) })));
+  const owned = entries.flatMap(({ path, entry }) => entry ? [{ path, pid: entry.pid }] : []);
+  if (owned.length === 0)
+    return;
+  const live = await files.livePids([...new Set(owned.map((e) => e.pid))]);
+  if (!live)
+    return;
+  await Promise.all(owned.filter((e) => !live.has(e.pid)).map((e) => files.remove(e.path)));
+}
+async function removeRegistryEntry(files, folder, host, sessionId) {
+  await files.remove(`${folder}/${fileName(host, sessionId)}`).catch((error) => files.log(`inbox: the session registry entry could not be removed: ${error instanceof Error ? error.message : error}`));
 }
 
 // src/ask-form-entities.ts
@@ -16358,9 +16424,27 @@ function panelCalls(context, sessions, herdrAsk) {
   return { inbox, liveSource };
 }
 
+// src/registry.ts
+import { randomUUID } from "crypto";
+import { mkdir as mkdir6, readdir as readdir4, readFile as readFile5, rename as rename5, rm as rm3, writeFile as writeFile6 } from "fs/promises";
+import { dirname as dirname4 } from "path";
+var registryFiles = (log) => ({
+  list: (folder) => readdir4(folder).catch(() => []),
+  read: (path) => readFile5(path, "utf8").catch(missingAsNull),
+  write: async (path, text) => {
+    await mkdir6(dirname4(path), { recursive: true, mode: 448 });
+    const tmp = `${path}.${process.pid}-${randomUUID()}.tmp`;
+    await writeFile6(tmp, text, { mode: 384 });
+    await rename5(tmp, path);
+  },
+  remove: (path) => rm3(path, { force: true }),
+  livePids: async (pids) => new Set(pids.filter(isPidRunning)),
+  log
+});
+
 // src/host-sessions.ts
-import { mkdir as mkdir6, readdir as readdir4, rename as rename5, rm as rm3, rmdir, writeFile as writeFile6 } from "fs/promises";
-import { dirname as dirname4, join as join6 } from "path";
+import { mkdir as mkdir7, readdir as readdir5, rename as rename6, rm as rm4, rmdir, writeFile as writeFile7 } from "fs/promises";
+import { dirname as dirname5, join as join6 } from "path";
 
 // ../core/domain/conversation.ts
 var NL7 = `
@@ -16412,22 +16496,22 @@ function sessionIdInFile(file) {
 }
 var publishFiles = {
   write: async (path, text) => {
-    await mkdir6(dirname4(path), { recursive: true });
-    await writeFile6(path, text);
+    await mkdir7(dirname5(path), { recursive: true });
+    await writeFile7(path, text);
   },
-  move: (from, to) => rename5(from, to),
-  remove: (path) => rm3(path, { force: true }),
-  removeFolder: (path) => rm3(path, { recursive: true, force: true })
+  move: (from, to) => rename6(from, to),
+  remove: (path) => rm4(path, { force: true }),
+  removeFolder: (path) => rm4(path, { recursive: true, force: true })
 };
 var recordFiles = {
   write: async (path, text) => {
-    await mkdir6(dirname4(path), { recursive: true });
+    await mkdir7(dirname5(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile6(tmp, text);
-    await rename5(tmp, path);
+    await writeFile7(tmp, text);
+    await rename6(tmp, path);
   },
-  list: (folder) => readdir4(folder).catch(() => []),
-  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm3(p, { force: true }))),
+  list: (folder) => readdir5(folder).catch(() => []),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm4(p, { force: true }))),
   removeFolder: (path) => rmdir(path)
 };
 var statusRecords = (dir, sessionId) => ({
@@ -16466,8 +16550,11 @@ function sessionCalls(context) {
   };
   const gh = ghFinder(run);
   function reportCounts(id, left) {
+    if (id !== memory.shownId)
+      return;
+    deps.background(reportRegistry(id, left));
     const target = deps.herdrTarget;
-    if (!target || id !== memory.shownId)
+    if (!target)
       return;
     const appHome = target.kind === "terminal" ? target.appHome : null;
     deps.background(reportToHerdr(run, async () => {
@@ -16498,18 +16585,47 @@ function sessionCalls(context) {
       return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };
     }, deps.after));
   }
-  function reportEnded(id) {
+  let registryWork = Promise.resolve();
+  const inRegistryOrder = (work) => registryWork = registryWork.then(work).catch((error) => context.logHerdr(`inbox: the session registry could not be updated: ${error instanceof Error ? error.message : error}`));
+  const reportRegistry = (id, left) => inRegistryOrder(async () => {
+    const folder = deps.registryFolder;
+    if (!folder)
+      return;
+    const files = registryFiles(context.logHerdr);
+    if (left)
+      await removeRegistryEntry(files, folder, "omp", left);
+    const s = await readState(dir, id);
+    const now = deps.now();
+    const source = {
+      host: "omp",
+      sessionId: id,
+      agent: OMP2.agent,
+      projectFolder: memory.shownCwd?.() ?? null,
+      version,
+      herdr: registryHerdr(deps.herdrTarget)
+    };
+    await writeRegistryEntry(files, folder, source, s, sessionView(s, now, deps.settleWindowMs), now, process.pid);
+  });
+  async function reportEnded(id) {
+    const folder = deps.registryFolder;
+    const removal = folder ? inRegistryOrder(() => removeRegistryEntry(registryFiles(context.logHerdr), folder, "omp", id)) : Promise.resolve();
     const target = deps.herdrTarget;
-    if (!target)
-      return Promise.resolve(false);
+    if (!target) {
+      await removal;
+      return false;
+    }
     const appHome = target.kind === "terminal" ? target.appHome : null;
-    return reportToHerdr(run, async () => {
-      if (appHome)
-        await unpublishSession(publishFiles, appHome, id).catch(() => {
-          return;
-        });
-      return { target, tokens: CLEARED_TOKENS, session: null };
-    }, deps.after);
+    const [, isTaken] = await Promise.all([
+      removal,
+      reportToHerdr(run, async () => {
+        if (appHome)
+          await unpublishSession(publishFiles, appHome, id).catch(() => {
+            return;
+          });
+        return { target, tokens: CLEARED_TOKENS, session: null };
+      }, deps.after)
+    ]);
+    return isTaken;
   }
   const resultsOrder = orderedKeys();
   function hostFor(ctx) {
@@ -16881,11 +16997,11 @@ async function copyToClipboard(text) {
 var defaultDeps = {
   stateDir: (pi) => join7(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
-  newId: randomUUID,
+  newId: randomUUID2,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
-  isNextBuild: existsSync(join7(dirname5(dirname5(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
-  comparePage: join7(dirname5(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
+  isNextBuild: existsSync(join7(dirname6(dirname6(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join7(dirname6(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -16894,7 +17010,8 @@ var defaultDeps = {
   after: (ms, fn) => void setTimeout(fn, ms).unref(),
   isUsageLimit: isUsageLimitOutcome,
   herdrTarget: herdrTarget(process.env),
-  questionHistory: (dir) => questionHistoryPlace(process.env, dir)
+  questionHistory: (dir) => questionHistoryPlace(process.env, dir),
+  registryFolder: registryFolder(process.env)
 };
 function byNewestRevision(a, b) {
   const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
