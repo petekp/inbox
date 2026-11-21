@@ -26,7 +26,7 @@ The changelog page "is generated from the CHANGELOG.md on GitHub". On 2026-10-08
 
 ### What this means for the inbox's minimum engine
 
-- `askInboxModel` sends `system` as a block array with `cache: true` (`hooks/register.tsx:askInboxModel`). That form arrived in 2.1.292. [CL#2-1-292]
+- `askInboxModel` sends `system` as a block array with `cache: true` (`hooks/mod-host.ts:askInboxModel`). That form arrived in 2.1.292. [CL#2-1-292]
 - README says "built and tested with Claude Code 2.1.292" (`README.md:20`).
 - The desktop app keeps a 2.1.289 engine on disk next to 2.1.293 (live). Inference: a Code-mode session on 2.1.289 may fail the per-turn call or lose caching. The sessions running on 2026-10-08 used 2.1.293.
 - The inbox sets `isDeferred: false` through `tool.describe` (`hooks/register.tsx:on('tool.describe')`). The changelog and the mods API page date only the `$.tool.register` field (2.1.293, "earlier versions ignore it"). When `tool.describe` gained it is unknown.
@@ -118,7 +118,7 @@ the version each names, and the Claude Code changelog.
 - **Notes only, from the 2.1.309 notes.** "Fixed a mod's `turn.step` hook that
   names a model by alias, such as `haiku`, failing every request with a model
   error": the inbox names `sonnet` in `$.model.complete`
-  (`hooks/register.tsx`), not in a `turn.step` hook. "Improved the error when
+  (`hooks/mod-host.ts`), not in a `turn.step` hook. "Improved the error when
   a hooks module is nested too deep to load: it now names the file": the
   inbox's module is `hooks/register.tsx`. "Fixed plugins and skills synced from
   claude.ai being removed, sometimes mid-session, after a disk read error."
@@ -144,6 +144,6 @@ Checked on 2026-11-18 on the terminal's Claude Code 2.1.327 (`claude --version`)
 
 Checked on 2026-11-18 for issue #329, in the `inbox-ui` VM. The app was 6.6395.0 and its bundled Claude Code was 2.1.326 (`main.log`: "session spawn on required_version:2.1.326"). The engine ran with `CLAUDE_CODE_ENTRYPOINT=claude-desktop`. The app starts it with `ANTHROPIC_BASE_URL=https://api.anthropic.com`, so the guest's `/etc/hosts` sent `api.anthropic.com` to 127.0.0.1 and no model call was possible. The branch's mod loaded through `CLAUDE_CODE_PLUGIN_DIRS`. The host's app, 5.11492.5 with engine 2.1.325, was read from its files and not run.
 
-- **The app's automatic "continue" message.** It carries `origin: { kind: 'auto-continuation' }`, which the inbox does not count as the person's words. This comes from the app's code, not from a live message. In `app.asar` of 5.11492.5, the limit auto-resume engine sends its message with `origin: { kind: "auto-continuation" }` and `initiator: "limit-auto-resume"`. Two other automatic sends use the same origin: a CI monitor's wake (`initiator: "ci-monitor"`) and a dispatched task. The Claude Code binary lists `auto-continuation` among its origin kinds. `isPersonsWords` in `hooks/register.tsx` accepts only `composer`, `bridge` and a plugin's `asUser` prompt. Which of these sends the changelog's "one automatic message" is an inference: the limit auto-resume is the one that resumes a session. No live message was seen, because that needs a usage limit to be reached.
+- **The app's automatic "continue" message.** It carries `origin: { kind: 'auto-continuation' }`, which the inbox does not count as the person's words. This comes from the app's code, not from a live message. In `app.asar` of 5.11492.5, the limit auto-resume engine sends its message with `origin: { kind: "auto-continuation" }` and `initiator: "limit-auto-resume"`. Two other automatic sends use the same origin: a CI monitor's wake (`initiator: "ci-monitor"`) and a dispatched task. The Claude Code binary lists `auto-continuation` among its origin kinds. `isPersonsWords` in `hooks/mod-prompts.ts` accepts only `composer`, `bridge` and a plugin's `asUser` prompt. Which of these sends the changelog's "one automatic message" is an inference: the limit auto-resume is the one that resumes a session. No live message was seen, because that needs a usage limit to be reached.
 - **Smoke test.** In a new Code session in the `greet` folder, `/inbox demo` docked the pane. The band and the demo rows drew, and "inbox: Showing sample entries in the inbox" came back with no model turn. Pressing the "Pinch" option on a demo question closed it at once with a ✓ and the answer, and the question count went from 4 to 3 in the pane and from 7 to 6 in the band. A typed prompt's transcript row has `origin` `{"kind":"human"}`, as in the 3.1623.0 check. The Go > Search box found none of the local sessions by title in this app version, so the check ran in a new session.
 - **Not checked.** The origin of a Monitor batch in the desktop app, the number of inbox model calls during a Monitor that prints often, the permission row, and a reply the person stops (fixed in Claude Code 2.1.318, which this engine includes). Each needs a model turn, which the blocked API ruled out.

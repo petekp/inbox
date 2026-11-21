@@ -33,25 +33,31 @@ Public docs say nothing about this. It comes from the engine types, the changelo
 - `$.session.surfaces()` "Returns every surface the session draws on … `terminal` under the REPL first, then the remote ones in the order they attached. A session may draw on several at once (a terminal and two phones) … Empty in a plain -p run". `$.session.surface()` is deprecated. [T: `session.surfaces`]
 - `PromptComposeInput.surfaces` gives "Where the session draws at this render … empty where nothing draws". [T: `PromptComposeInput`]
 
-The inbox's gate (`hooks/register.tsx`):
+The inbox's gate (`hooks/register.tsx` and `hooks/mod-start.ts:sessionStarted`):
 
 ```ts
 on('session.start', async ($, e, next) => {
-  await registerInboxCommand($)
+  const m = modOf($)
+  await registerInboxCommand(m)
   const r = await next(e)
-  const isDesktop = (await $.session.surfaces()).includes('desktop') || (await isStartedByDesktopApp($))
-  if (e.isInteractive || isDesktop) await turnOn($)
+  await sessionStarted(m, e.isInteractive)
   return r
 })
+
+async function sessionStarted(m: Mod, isInteractive: boolean) {
+  const isDesktop = (await m.setup.surfaces()).includes('desktop') || (await isStartedByDesktopApp(m))
+  if (isInteractive || isDesktop) await turnOn(m)
+}
+
 on('session.attach', { surface: 'desktop' }, async ($, e, next) => {
-  await ensureOn($)
+  await ensureOn(modOf($))
   return next(e)
 })
 ```
 
-- `session.start` is at `hooks/register.tsx:on('session.start')`, the gate inside it, `session.attach` at `hooks/register.tsx:on('session.attach')`. Commit `05c3548` added the desktop gate.
+- `session.start` is at `hooks/register.tsx:on('session.start')`, the gate in `hooks/mod-start.ts:sessionStarted`, `session.attach` at `hooks/register.tsx:on('session.attach')`. Commit `05c3548` added the desktop gate.
 - `isStartedByDesktopApp` is true when `CLAUDE_CODE_ENTRYPOINT` is `claude-desktop` or `claude-desktop-3p` and `CLAUDE_CODE_CHILD_SESSION` is unset. The app sets the entrypoint and removes `CLAUDE_CODE_CHILD_SESSION` ([desktop](../claude-desktop-app/how-it-runs.md#how-the-app-runs-claude-code)). Claude Code sets `CLAUDE_CODE_CHILD_SESSION=1` for every command it runs. So a `claude -p` that a desktop session runs inherits the entrypoint, reads as a child, and stays off.
-- It handles the attach arriving before or after the start. `hooks/register.tsx:turnOn` shares one `turningOn` promise, so two calls that overlap run `hooks/register.tsx:initializeInbox` once. `initializeInbox` sets `isOn`. `hooks/register.tsx:ensureOn` returns early when `isOn` is set or `turningOn` is pending. The start path calls `turnOn` without that check, so a start that follows a finished attach runs `initializeInbox` again. That run cancels the intervals the first one started before it starts its own. Whether a start can follow an attach is not verified.
+- It handles the attach arriving before or after the start. `hooks/mod-start.ts:turnOn` shares one `turningOn` promise, so two calls that overlap run `hooks/mod-start.ts:initializeInbox` once. `initializeInbox` sets `isOn`. `hooks/mod-start.ts:ensureOn` returns early when `isOn` is set or `turningOn` is pending. The start path calls `turnOn` without that check, so a start that follows a finished attach runs `initializeInbox` again. That run cancels the intervals the first one started before it starts its own. Whether a start can follow an attach is not verified.
 - Tests: `tests/hooks-startup.test.ts` test "a headless run stays inactive when ${origin.kind} invokes the inbox command" checks that a headless start does nothing. The tests `tests/hooks-startup.test.ts` "the desktop app turns the mod on when it attaches before the start" and "… after the start" check a desktop attach in both orders and mount the band with `surface: 'desktop'`. "a session the desktop app started carries its saved rows into a first prompt that comes before the attach" and "a claude -p run from a desktop session stays off" check the entrypoint path.
 
 ## Mobile
