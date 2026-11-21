@@ -27,6 +27,9 @@ type Check =
     }
   | { reply: string }
   | { notReply: string }
+  /** Matches a shell command the agent ran. Claude Code has no shell in the suite, so a case with one leaves it out. */
+  | { ran: string }
+  | { notRan: string }
   /** No inbox id, such as i3 or f112, in the reply. Ids are lowercase, so "F1" is not one. */
   | { noIds: true }
 
@@ -82,11 +85,52 @@ function itemKey(call: Call, n: number): string {
   return ask === '' ? `#${n}` : `${String(call.args.kind)}\n${ask}`
 }
 
-export function failures(o: Outcome, checks: Check[]): string[] {
+/**
+ * The shell commands in an agent's own output, Codex's command items and omp's `bash` calls, each cut into the simple
+ * commands its lines, `;`, `&&`, `||` and `|` separate, so a check reads each command on its own.
+ */
+function shellCommands(agent: Agent, raw: string): string[] {
+  const events = raw.split('\n').flatMap(line => {
+    try {
+      return [JSON.parse(line)]
+    } catch {
+      return []
+    }
+  })
+  const whole =
+    agent === 'codex'
+      ? events
+          .filter(e => e.type === 'item.completed' && e.item?.type === 'command_execution')
+          .map(e => String(e.item.command))
+      : agent === 'omp'
+        ? events
+            .filter(e => e.type === 'tool_execution_start' && e.toolName === 'bash')
+            .map(e => String(e.args?.command ?? ''))
+        : []
+
+  return whole.flatMap(command =>
+    command
+      .replace(/\\\n/g, ' ')
+      .split(/\n|;|&&|\|\|?/)
+      .map(piece => piece.trim())
+      .filter(piece => piece !== ''),
+  )
+}
+
+export function failures(o: Outcome, checks: Check[], agent: Agent): string[] {
   const has = (pattern: string, text: string) => new RegExp(pattern, 'i').test(text)
   const out: string[] = []
+  const commands = shellCommands(agent, o.raw)
   for (const c of checks) {
-    if ('reply' in c) {
+    if (('ran' in c || 'notRan' in c) && agent === 'claude') {
+      out.push('Claude Code has no shell in the suite, so a ran or notRan check cannot pass there')
+    } else if ('ran' in c) {
+      if (!commands.some(command => has(c.ran, command)))
+        out.push(`ran no command like /${c.ran}/; ran: ${commands.join(' ; ') || 'none'}`)
+    } else if ('notRan' in c) {
+      const command = commands.find(command => has(c.notRan, command))
+      if (command !== undefined) out.push(`ran "${command}"`)
+    } else if ('reply' in c) {
       if (!has(c.reply, o.reply)) out.push(`reply lacks /${c.reply}/`)
     } else if ('notReply' in c) {
       const m = o.reply.match(new RegExp(c.notReply, 'i'))
