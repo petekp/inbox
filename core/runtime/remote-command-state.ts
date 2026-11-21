@@ -1,5 +1,5 @@
-import { reopenOnFailure } from '../view/press-reducer'
-import type { RemoteCommandRecord, Session } from '../../types'
+import { refuseDoneNotification, reopenOnFailure } from '../view/press-reducer'
+import type { Delivery, RemoteCommandRecord, Session } from '../../types'
 
 /**
  * A session's command log: each remote command a host admitted, by id, and `floor`, the latest command time outside
@@ -27,17 +27,21 @@ export type CommandStore = {
 export const EMPTY_LOG: CommandLog = { version: 1, writtenAt: 0, floor: 0, commands: {} }
 
 /**
- * The log with the records an earlier build saved in `s`. A record the log already has wins, and the floor is the
- * larger. The session's floor counts only beside such records, since this build raises it as a guard after a downgrade.
+ * The log with the records an earlier build saved in `s`. A record the log has wins, unless it was only accepted.
+ * The session's floor counts beside such records, and for a log never written, since a log that went missing may have
+ * held any command up to it.
  */
 export function withLegacy(log: CommandLog, s: Session): CommandLog {
-  const legacy = s.remoteCommands
-  if (!legacy) return log
-  const floor = Math.max(log.floor, s.remoteCommandFloor ?? 0)
-  const missing = Object.entries(legacy).filter(([id]) => !(id in log.commands))
-  if (missing.length === 0 && floor === log.floor) return log
+  const legacy = s.remoteCommands ?? {}
+  const isSessionFloorKept = s.remoteCommands !== undefined || log.writtenAt === 0
+  const floor = isSessionFloorKept ? Math.max(log.floor, s.remoteCommandFloor ?? 0) : log.floor
+  const further = Object.entries(legacy).filter(([id, c]) => {
+    const kept = log.commands[id]
+    return !kept || (kept.state === 'accepted' && c.state !== 'accepted')
+  })
+  if (further.length === 0 && floor === log.floor) return log
 
-  return { ...log, floor, commands: { ...Object.fromEntries(missing), ...log.commands } }
+  return { ...log, floor, commands: { ...log.commands, ...Object.fromEntries(further) } }
 }
 
 /** `s` without the command records an earlier build saved in it. */
@@ -251,14 +255,43 @@ export function remoteReceipts(log: CommandLog) {
   )
 }
 
-/** Marks the message command `id` held on `row` Not sent with `reason`, and the Done it closed the row with. */
+/**
+ * The message on a row that no running send will deliver: one never given an id, or one whose attempt never returned.
+ * A message whose attempt is gone may have been sent, so it is left as it is.
+ */
+function unsentMessage(s: Session, delivery: Delivery | undefined): { id: string | null } | null {
+  if (delivery?.state !== 'queued' && delivery?.state !== 'unconfirmed') return null
+  const id = delivery.id
+  if (!id) return { id: null }
+
+  return s.sent.find(x => x.deliveryId === id)?.phase === 'attempting' ? { id } : null
+}
+
+/**
+ * Marks Not sent with `reason` what command `id` left to send for `row`: its held message, its own message that no
+ * running send will deliver, and the Done it closed the row with. Only call it when nothing still sends for the
+ * command. Returns `s` itself when there is nothing to mark.
+ */
 export function blockRemoteDeferred<S extends Session>(s: S, id: string, row: string, reason: string): S {
   const last = s.lastActions[row]
-  const held = last?.commandId === id && last.delivery?.state === 'held'
-  const ledger = held && last.kind === 'mark' ? reopenOnFailure(s.ledger, row, last.at) : s.ledger
+  const delivery = last?.commandId === id ? last.delivery : undefined
+  const unsent = unsentMessage(s, delivery)
+  const isRowBlocked = delivery?.state === 'held' || unsent !== null
+  const unsentDone = unsent?.id ?? null
+  const isDoneBlocked = (c: Session['ledger']['closed'][number]) =>
+    c.commandId === id &&
+    (!c.doneNotification ||
+      (c.how === 'done' && c.doneNotification.id === unsentDone && c.doneNotification.error === undefined))
+  if (!isRowBlocked && !s.ledger.closed.some(isDoneBlocked)) return s
+  const reopened = isRowBlocked && last?.kind === 'mark' ? reopenOnFailure(s.ledger, row, last.at) : s.ledger
+  const ledger = unsentDone ? refuseDoneNotification(reopened, unsentDone, reason) : reopened
+
   return {
     ...s,
-    lastActions: held ? { ...s.lastActions, [row]: { ...last, delivery: { state: 'failed', reason } } } : s.lastActions,
+    lastActions:
+      isRowBlocked && last
+        ? { ...s.lastActions, [row]: { ...last, delivery: { state: 'failed', reason } } }
+        : s.lastActions,
     ledger: {
       ...ledger,
       closed: ledger.closed.map(c =>
@@ -270,23 +303,40 @@ export function blockRemoteDeferred<S extends Session>(s: S, id: string, row: st
   }
 }
 
+/** Each command a row of `s` names, with the row. */
+function commandRows(s: Session): [string, string][] {
+  return [
+    ...Object.entries(s.lastActions).flatMap(([row, a]): [string, string][] =>
+      a.commandId ? [[a.commandId, row]] : [],
+    ),
+    ...s.ledger.closed.flatMap((c): [string, string][] => (c.commandId ? [[c.commandId, c.id]] : [])),
+  ]
+}
+
 /**
- * Marks each command left `attempting` by a process that no longer runs `uncertain`, after saving its row's held
- * message or Done as Not sent. Without this, such a command's held message would wait forever.
+ * Marks each command left `attempting` by a process that no longer runs `uncertain`, after saving what it left to
+ * send as Not sent. Does the same for a row whose command the log has no record of, as after an unreadable log was
+ * moved aside. Without this, such a command's message would wait forever.
  */
 export async function recoverStrandedCommands<S extends Session>(host: {
   commands?: CommandStore
+  read(): Promise<S>
   update(change: (s: S) => S | Promise<S>): Promise<S>
 }): Promise<void> {
   const store = host.commands
   if (!store) return
+  const reason = 'This action was interrupted, so it may not have run.'
+  const s = await host.read()
   const log = await store.read()
   const stranded: [string, RemoteCommandRecord][] = []
   for (const [id, c] of Object.entries(log.commands))
     if (c.state === 'attempting' && c.runner && !(await store.isRunning(c.runner))) stranded.push([id, c])
+  const known = withLegacy(log, s).commands
+  const unknown = commandRows(s).filter(([id, row]) => !(id in known) && blockRemoteDeferred(s, id, row, reason) !== s)
+  if (stranded.length === 0 && unknown.length === 0) return
+  const blocked: [string, string][] = [...stranded.map(([id, c]): [string, string] => [id, c.row]), ...unknown]
+  await host.update(x => blocked.reduce((y, [id, row]) => blockRemoteDeferred(y, id, row, reason), x))
   if (stranded.length === 0) return
-  const reason = 'This action was interrupted, so it may not have run.'
-  await host.update(s => stranded.reduce((x, [id, c]) => blockRemoteDeferred(x, id, c.row, reason), s))
   await store.update(current =>
     stranded.reduce((next, [id]) => {
       const c = next.commands[id]

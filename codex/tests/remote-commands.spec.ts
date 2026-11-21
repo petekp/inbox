@@ -6,7 +6,7 @@ import { demoSession } from '../../core/view/demo'
 import { upgradeSession } from '../../core/view/session-files'
 import { remoteRowVersion, startRemoteCommand } from '../../core/remote/remote-commands'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
-import { commandsOf, EMPTY_LOG, remoteReceipts, withRecord } from '../../core/runtime/remote-command-state'
+import { commandsOf, EMPTY_LOG, remoteReceipts, withLegacy, withRecord } from '../../core/runtime/remote-command-state'
 import type { CommandLog } from '../../core/runtime/remote-command-state'
 import { followCommandRows, movedLegacyCommands } from '../../core/runtime/command-store'
 import { pruned } from '../../core/runtime/session-presses'
@@ -14,6 +14,7 @@ import { fakeHostWith } from '../../tests/session-script'
 import { memoryCommandStore } from '../../tests/memory-command-store'
 import { codexCommandStore, commandsPath } from '../src/command-log'
 import { tempDir } from './helpers'
+import type { Delivery } from '../../types'
 
 let fixtures = 0
 
@@ -93,6 +94,22 @@ function fixture(isRunning?: (runner: { id: string }) => boolean) {
       state = upgradeSession(durable)
     },
   }
+}
+
+async function setRowDelivery(f: ReturnType<typeof fixture>, delivery: Delivery) {
+  await f.host.update(s => {
+    const last = s.lastActions.i1
+    if (!last) throw new Error('The command pressed no row.')
+    return { ...s, lastActions: { ...s.lastActions, i1: { ...last, delivery } } }
+  })
+}
+
+async function strand(f: ReturnType<typeof fixture>, id: string) {
+  await f.commands.update(log => {
+    const record = log.commands[id]
+    if (!record) throw new Error('The command was not admitted.')
+    return withRecord(log, id, { ...record, state: 'attempting', runner: { id: 'ended', startedAt: 0 } })
+  })
 }
 
 function arrived(log: CommandLog, id: string): CommandLog {
@@ -253,27 +270,54 @@ test('a command left running by a process that has ended stops running, and its 
   const f = fixture(runner => runner.id === 'this-process')
   const c = f.command()
   await f.run(c)
-  await f.host.update(s => {
-    const last = s.lastActions.i1
-    if (!last) throw new Error('The command pressed no row.')
-    return {
-      ...s,
-      lastActions: {
-        ...s.lastActions,
-        i1: { ...last, delivery: { state: 'held', message: 'Fixture reply', until: Infinity, by: null } },
-      },
-    }
-  })
-  await f.commands.update(log => {
-    const record = log.commands[c.id]
-    if (!record) throw new Error('The command was not admitted.')
-    return withRecord(log, c.id, { ...record, state: 'attempting', runner: { id: 'ended', startedAt: 0 } })
-  })
+  await setRowDelivery(f, { state: 'held', message: 'Fixture reply', until: Infinity, by: null })
+  await strand(f, c.id)
   await f.run({ ...f.command(), expected: 'a different row version' })
   const receipt = await f.receipt(c.id)
   assert.equal(receipt?.state, 'failed')
   assert.equal(receipt?.error, 'The host could not confirm this action.')
   assert.equal(f.state().lastActions.i1?.delivery?.state, 'failed')
+})
+
+test('a command whose message waits for the agent’s turn reads Not sent once the process that held it has ended', async () => {
+  const f = fixture(runner => runner.id === 'this-process')
+  const c = f.command()
+  await f.run(c)
+  await setRowDelivery(f, { state: 'queued', message: 'Fixture reply' })
+  await strand(f, c.id)
+  await f.run({ ...f.command(), expected: 'a different row version' })
+  assert.equal(f.state().lastActions.i1?.delivery?.state, 'failed')
+  assert.equal((await f.receipt(c.id))?.state, 'failed')
+})
+
+test('a row whose command the log has no record of reads Not sent instead of waiting forever', async () => {
+  const f = fixture()
+  const c = f.command()
+  await f.run(c)
+  await setRowDelivery(f, { state: 'held', message: 'Fixture reply', until: Infinity, by: null })
+  await f.commands.update(() => ({ ...EMPTY_LOG, floor: 1 }))
+  await f.run({ ...f.command(), expected: 'a different row version' })
+  assert.equal(f.state().lastActions.i1?.delivery?.state, 'failed')
+})
+
+test('a command log that was never written refuses commands at or before the session’s floor', async () => {
+  const f = fixture()
+  const c = f.command()
+  f.setState({ ...f.state(), remoteCommandFloor: c.issuedAt })
+  await f.run(c)
+  assert.equal(f.delivered.length, 0)
+  assert.equal((await f.receipt(c.id))?.state, 'expired')
+})
+
+test('a record an earlier build took further wins over the same command only accepted in the log', async () => {
+  const f = fixture()
+  const c = f.command()
+  await f.run(c)
+  const applied = (await f.commands.read()).commands[c.id]
+  if (!applied) throw new Error('The command was not admitted.')
+  const log = withRecord({ ...EMPTY_LOG, writtenAt: 1 }, c.id, { ...applied, state: 'accepted' })
+  const merged = withLegacy(log, { ...f.state(), remoteCommands: { [c.id]: applied } })
+  assert.equal(merged.commands[c.id]?.state, 'applied')
 })
 
 test('a session an earlier build saved with its commands keeps their outcomes in the command log', async () => {
@@ -298,6 +342,7 @@ test('a command whose delivery id the log cannot take sends nothing', async () =
   f.allowUpdates(2)
   await f.run(c).catch(() => undefined)
   assert.equal(f.delivered.length, 0)
+  assert.equal(f.state().lastActions.i1?.delivery?.state, 'failed')
 })
 
 test('an unreadable command log is moved aside, and the log that replaces it refuses every earlier command', async () => {

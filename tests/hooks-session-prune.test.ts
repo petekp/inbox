@@ -22,7 +22,7 @@ async function firstSave($: Engine, clock: { settle: () => Promise<void> }) {
 
 test('a prune keeps every running session’s save however many run, and the newest ended ones up to the count', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
+  world($, on, [], { XDG_STATE_HOME: '/state' })
   const running = ids('running', KEPT_SESSIONS + 5)
   const ended = ids('ended', KEPT_SESSIONS + 2)
   running.forEach((id, n) => w.stored.set(`s:${id}`, saveOf(n + 1)))
@@ -30,8 +30,14 @@ test('a prune keeps every running session’s save however many run, and the new
   w.sessionFiles = filesOf([...running, 'exited'])
   w.endedPids = [200 + running.length]
   w.stored.set('s:exited', saveOf(99))
+  const logOf = (id: string) => `/state/inbox/claude-code/${id}.commands.json`
+  const logged = ['exited', 'ended-2', 'ended-3', 'running-1']
+  logged.forEach(id => {
+    w.written[logOf(id)] = '{}'
+  })
 
   await firstSave($, clock)
+  expect(logged.filter(id => logOf(id) in w.written)).toEqual(['ended-3', 'running-1'])
   expect(running.filter(id => !w.stored.has(`s:${id}`))).toEqual([])
   expect(['exited', ...ended].filter(id => !w.stored.has(`s:${id}`))).toEqual(['exited', 'ended-1', 'ended-2'])
   expect(w.stored.has('s:session-1')).toBe(true)

@@ -11,7 +11,8 @@ export function memoryCommandStore(isRunning: (runner: CommandRunner) => boolean
     read: async () => log,
     update: change => {
       const result = writing.then(async () => {
-        log = await change(log)
+        const next = await change(log)
+        if (next !== log) log = { ...next, writtenAt: log.writtenAt + 1 }
         return log
       })
       writing = result.catch(() => undefined)

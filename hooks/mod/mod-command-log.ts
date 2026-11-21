@@ -25,12 +25,15 @@ const RUNNER: CommandRunner = { id: crypto.randomUUID(), startedAt: Date.now() }
 const changes = orderedKeys()
 const madeFolders = new Set<string>()
 
+/** A conversation's command log, which `remove` deletes along with the conversation's saved session. */
+export type ModCommandStore = CommandStore & { remove(): Promise<void> }
+
 /**
  * The command log of the mod's session `sessionId`, in `$XDG_STATE_HOME/inbox/claude-code`, else
  * `~/.local/state/inbox/claude-code`. The engine has no call that moves a file or makes a folder, so those run `mv`
  * and `mkdir`. `onChange` runs after each change it keeps.
  */
-export function modCommandStore(calls: CommandLogCalls, sessionId: string, onChange?: () => unknown): CommandStore {
+export function modCommandStore(calls: CommandLogCalls, sessionId: string, onChange?: () => unknown): ModCommandStore {
   const runOrThrow = async (argv: string[]) => {
     const r = await calls.run(argv)
     if (r.code !== 0) throw new Error(`${argv[0]} exited ${r.code}: ${r.stderr.trim()}`)
@@ -54,18 +57,18 @@ export function modCommandStore(calls: CommandLogCalls, sessionId: string, onCha
     lock: (path, fn) => changes.run(path, fn),
   }
   const isRunning = async (runner: CommandRunner) => runner.id === RUNNER.id
+  const pathOf = async () => commandLogPath(await folderOf(), sessionId)
   const storeAt = async () =>
-    fileCommandStore(
-      files,
-      commandLogPath(await folderOf(), sessionId),
-      { runner: RUNNER, isRunning },
-      { now: calls.now, log: calls.log, onChange },
-    )
+    fileCommandStore(files, await pathOf(), { runner: RUNNER, isRunning }, { now: calls.now, log: calls.log, onChange })
 
   return {
     runner: RUNNER,
     isRunning,
     read: async () => (await storeAt()).read(),
     update: async change => (await storeAt()).update(change),
+    remove: async () => {
+      const path = await pathOf()
+      await changes.run(path, () => runOrThrow(['rm', '-f', '--', path]))
+    },
   }
 }

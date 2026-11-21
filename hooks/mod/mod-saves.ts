@@ -1,5 +1,5 @@
 import { EMPTY_LOG, remoteCommandState, remoteReceipts, withLegacy } from '../../core/runtime/remote-command-state'
-import type { CommandStore } from '../../core/runtime/remote-command-state'
+import type { ModCommandStore } from './mod-command-log'
 import { followCommandRows, movedLegacyCommands } from '../../core/runtime/command-store'
 import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
 import type { Session, ViewerLeases } from '../../types'
@@ -71,7 +71,23 @@ export type SaveEngine = {
   /** The ids of the conversations running in any Claude Code process, or null when they cannot be told. */
   runningSessions: () => Promise<ReadonlySet<string> | null>
   /** A conversation's command log, whose `onChange` runs after each change it keeps. */
-  commands?: (id: string, onChange?: () => unknown) => CommandStore
+  commands?: (id: string, onChange?: () => unknown) => ModCommandStore
+}
+
+/** Deletes the saved sessions at `keys`, and the command logs of their conversations. */
+async function deleteSaves(e: SaveEngine, keys: string[]) {
+  await Promise.all(keys.map(key => whileLockHeld(e, () => e.store.delete(key))))
+  const ids = keys.filter(key => key.startsWith('s:')).map(key => key.slice('s:'.length))
+  await Promise.all(
+    ids.map(id =>
+      e
+        .commands?.(id)
+        .remove()
+        .catch((error: unknown) =>
+          e.log(`inbox: deleting the command log of session ${id} failed: ${errorText(error)}`),
+        ),
+    ),
+  )
 }
 
 /**
@@ -213,7 +229,7 @@ async function dropEndedSaves(e: SaveEngine, keep: string, size: number): Promis
     dropped.push(next.key)
     freed += next.size
   }
-  await Promise.all(dropped.map(old => whileLockHeld(e, () => e.store.delete(old))))
+  await deleteSaves(e, dropped)
   if (dropped.length > 0) e.log(`inbox: the store was full, so it deleted ${dropped.length} ended sessions' saves`)
 
   return dropped.length > 0
@@ -230,9 +246,7 @@ async function pruneSaves(e: SaveEngine, keep: string) {
   const { count, saves } = await endedSaves(e, keys, keep, running)
   const stale = saves.slice(0, Math.max(0, count - KEPT_SESSIONS)).map(age => age.key)
   // `p:` keys held the last-session offer, which earlier builds saved per folder.
-  await Promise.all(
-    [...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => whileLockHeld(e, () => e.store.delete(old))),
-  )
+  await deleteSaves(e, [...stale, ...keys.filter(k => k.startsWith('p:'))])
 }
 
 /**
