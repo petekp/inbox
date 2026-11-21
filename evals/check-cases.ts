@@ -3,11 +3,14 @@ import { join } from 'node:path'
 import { EMPTY, upgradeLedger } from '../core/domain/ledger'
 import type { Ledger } from '../types'
 import { readCases } from './harness'
+import { pageSetProblems } from './status-judge'
+import { readJudgePages } from './status-judge-text'
 
 /**
  * Checks the eval case files with no model calls: every saved ledger loads through `upgradeLedger` with its items,
  * findings and Status, and every agent case after a Compare press gives that press and checks that no close of the
- * agent's takes effect. Prints each problem and exits 1 when there is one.
+ * agent's takes effect, and the judge's pages in `evals/judge-pages/` load as `pageSetProblems` asks. Prints each problem and
+ * exits 1 when there is one.
  */
 const root = process.argv[2] ?? process.cwd()
 const read = (name: string) => readCases<Record<string, any>>(join(root, 'evals', name)).cases
@@ -50,6 +53,9 @@ for (const c of read('agent-cases')) {
   )
     problems.push(`agent-cases ${c.name}: a Compare case must give the Compare press in lastActions`)
 }
+
+for (const s of readJudgePages(join(root, 'evals', 'judge-pages'), [1, 2]))
+  for (const p of pageSetProblems(s)) problems.push(`judge-pages set ${s.set}: ${p}`)
 
 for (const p of problems) console.log(p)
 process.exit(problems.length > 0 ? 1 : 0)

@@ -52,7 +52,8 @@ import {
   provenance,
   readBaselines,
   readCases,
-  repoFile,
+  fileCode,
+  gradingCode,
   report,
   resultsPath,
   runCount,
@@ -443,6 +444,21 @@ if (isGuided && agents.includes('claude')) {
     )
 }
 
+const RUN_SETTINGS: Record<Agent, string[]> = {
+  claude: [...CLAUDE_FLAGS, String(MAX_TOOL_DESCRIPTION)],
+  codex: [...CODEX_FLAGS, ...CODEX_SETTINGS, ...CODEX_ISOLATION_CONFIG],
+  omp: OMP_FLAGS,
+}
+const GRADING = gradingCode(['evals/agent-checks.ts'])
+/** The stand-in inbox's own code, which carries the ledger from call to call and, in omp, delivers the guidance. */
+const probeCode = (custom: string | undefined, path: string): string =>
+  custom === undefined ? fileCode(path) : readFileSync(custom, 'utf8')
+const PROBE_CODE: Record<Agent, string> = {
+  claude: probeCode(values.probe, 'evals/probe.ts'),
+  codex: probeCode(values.probe, 'evals/probe.ts'),
+  omp: probeCode(values['omp-probe'], 'evals/omp-probe.ts'),
+}
+const ALL_AGENTS: Agent[] = ['claude', 'codex', 'omp']
 const about = provenance(
   isGuided ? 'agent' : 'agent-no-guidance',
   { claude: 'claude', codex: codexCli, omp: 'omp' },
@@ -457,9 +473,12 @@ const about = provenance(
     'close description Claude': guidedCloseDescription(CLAUDE_CODE, ''),
     cases: caseFiles.text,
     models: JSON.stringify(REQUESTED),
-    runner: readFileSync(process.argv[1]!, 'utf8'),
-    probe: readFileSync(probeServer, 'utf8'),
-    'omp probe': readFileSync(ompProbe, 'utf8'),
+    reads: JSON.stringify(
+      ALL_AGENTS.flatMap(a =>
+        caseFiles.cases.filter(c => c.agents?.includes(a) ?? true).map(c => readsFor(a, c, isGuided)),
+      ),
+    ),
+    grading: JSON.stringify([GRADING, RUN_SETTINGS, PROBE_CODE]),
   },
 )
 const path = resultsPath(values.out, about)
@@ -493,15 +512,12 @@ const { results, stopped } =
     : { results: [] as Result[], stopped: preflight }
 writeResults(path, about, results, stopped)
 const judged = [...firstRuns, ...results]
-const RUN_SETTINGS: Record<Agent, string[]> = {
-  claude: [...CLAUDE_FLAGS, String(MAX_TOOL_DESCRIPTION)],
-  codex: [...CODEX_FLAGS, ...CODEX_SETTINGS, ...CODEX_ISOLATION_CONFIG],
-  omp: OMP_FLAGS,
-}
-const grading = repoFile('evals/agent-checks.ts')
 const stamps: Stamps = Object.fromEntries(
   agents.flatMap(a =>
-    casesFor(a).map(c => [`${a} ${c.name}`, stamp(c, readsFor(a, c, isGuided), [grading, ...RUN_SETTINGS[a]])]),
+    casesFor(a).map(c => [
+      `${a} ${c.name}`,
+      stamp(c, readsFor(a, c, isGuided), [GRADING, PROBE_CODE[a], ...RUN_SETTINGS[a]]),
+    ]),
   ),
 )
 const baselines = readBaselines(about.suite)

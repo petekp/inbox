@@ -1,0 +1,9 @@
+{
+  "id": "s2-bad-goal-not-the-person",
+  "breaks": "goal",
+  "na": ["no-restating", "was-lines", "split"],
+  "note": "Bad goal: the page is the same as the good page, but the outcome comes from a teammate's tracking issue that the agent read, not from the person's words.",
+  "page": "Proposed goal · from your message\nAll three offices post payroll to Xero, CSV off\n✓ Xero connected   ● London posting   ○ Berlin, Austin posting   ○ CSV workaround off\n\nXero payroll\nMapping London payroll lines to Xero accounts\n\n● London journals\n  posting, pensions unmapped\n  └ ● Post last month's London payroll to the Xero demo company\n✓ Xero sign-in\n  connects and refreshes\n── Last seen\n○ Berlin and Austin journals\n  not started\n○ CSV workaround removal\n  stays until all post",
+  "previous": null,
+  "facts": "Goal: none set\nFocus now: Posting Penny's payroll journals to Xero for the company's offices. The person has stated no goal in this session. The target \"all three offices post payroll to Xero, then the CSV workaround goes\" is written in the project's tracking issue, which a teammate wrote and the agent read\nPieces of work:\n- London journals (also called the London payroll): being worked on now. London's payroll journals post to Xero; the pension lines do not map to an account yet. Changed at this step.\n- Xero sign-in (also called Xero OAuth): delivered. Penny connects to a Xero organisation and refreshes its token. Changed at this step.\n- Berlin and Austin journals: not started yet. Not started; each office needs its own tax line mapping.\n- CSV workaround removal (also called the manual CSV download): not started yet. The manual CSV download stays until every office posts to Xero.\nOpen asks:\n- none\nNot work:\n- none\nRunning work:\n- Posts last month's London payroll to the Xero demo company, for London journals"
+}

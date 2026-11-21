@@ -1,0 +1,9 @@
+{
+  "id": "s1-bad-was-lines",
+  "breaks": "was-lines",
+  "na": ["child-labels", "no-restating", "goal", "milestones", "split"],
+  "note": "Bad was-lines: the leaderboard only made progress in its planned order, so \"was: global board only\" names an earlier state, not a replaced plan or a merged piece.",
+  "page": "Add a daily challenge mode to Lantern Run\n\n● Challenge leaderboard\n  global and friends boards work\n  was: global board only\n── Seen\n○ Streak rewards\n  not started\n✓ 1 done",
+  "previous": "Add a daily challenge mode to Lantern Run\n\n● Daily challenge\n  seed generator works, untuned\n  was: hand-built levels\n── Seen\n○ Challenge leaderboard\n  not started\n○ Streak rewards\n  not started",
+  "facts": "Focus now: Adding a daily challenge mode to the Lantern Run mobile game\nPieces of work:\n- Challenge leaderboard: being worked on now. The global board and the friends board both list each day's scores; they were built in the planned order, the global board first. Changed at this step.\n- Daily challenge (also called the daily run): delivered. Each day's level is generated from a seed all players share, with tuned difficulty.\n- Streak rewards: not started yet. Rewards for playing the challenge many days in a row; nothing is built yet.\nOpen asks:\n- none\nNot work:\n- rule: Keep the game's download under 150 MB\nRunning work:\n- none"
+}

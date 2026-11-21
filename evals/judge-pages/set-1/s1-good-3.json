@@ -1,0 +1,9 @@
+{
+  "id": "s1-good-3",
+  "breaks": null,
+  "na": ["child-labels", "no-restating", "goal", "milestones", "split"],
+  "note": "Good: right after the daily challenge switched from hand-built levels to a seed generator, the row says the new state and its was line names the replaced plan.",
+  "page": "Add a daily challenge mode to Lantern Run\n\n● Daily challenge\n  seed generator works, untuned\n  was: hand-built levels\n── Seen\n○ Challenge leaderboard\n  not started\n○ Streak rewards\n  not started",
+  "previous": "Add a daily challenge mode to Lantern Run\n\n● Daily challenge\n  half the levels built\n○ Challenge leaderboard\n  not started\n○ Streak rewards\n  not started",
+  "facts": "Focus now: Adding a daily challenge mode to the Lantern Run mobile game\nPieces of work:\n- Daily challenge (also called the daily run): being worked on now. Each day's level is generated from a seed all players share; the generator works and its difficulty is not tuned yet. Plan changed; it was a fixed set of hand-built levels, one for each day. Changed at this step.\n- Challenge leaderboard: not started yet. A board of each day's challenge scores; nothing is built yet.\n- Streak rewards: not started yet. Rewards for playing the challenge many days in a row; nothing is built yet.\nOpen asks:\n- none\nNot work:\n- rule: Keep the game's download under 150 MB\nRunning work:\n- none"
+}

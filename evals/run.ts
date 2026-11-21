@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -23,7 +23,8 @@ import {
   provenance,
   readBaselines,
   readCases,
-  repoFile,
+  fileCode,
+  gradingCode,
   report,
   resultsPath,
   runCount,
@@ -75,15 +76,27 @@ const agents: Agent[] = selected
 const runs = runCount(values.runs)
 const caseFiles = readCases<Case>(values.cases)
 const cases: Case[] = selectCases(caseFiles.cases, values.case)
+/** What reads each model's answer, applies it to the ledger and grades the result. */
+const GRADING = gradingCode([
+  'core/domain/ledger.ts',
+  'core/domain/reply-parse.ts',
+  'core/domain/ledger-update.ts',
+  'evals/model-checks.ts',
+])
+const CALL: Record<Agent, string> = {
+  claude: gradingCode(['evals/claude-model.ts']),
+  codex: fileCode('codex/src/update.ts', ['MODEL', 'TIMEOUT_MS', 'OFF', 'modelHome', 'codexAsk']),
+}
 const about = provenance(
   'model',
   { claude: 'claude', codex: codexCli },
   {
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
+    prompts: JSON.stringify(caseFiles.cases.flatMap(c => [inputs('claude', c).prompt, inputs('codex', c).prompt])),
     cases: caseFiles.text,
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
-    runner: readFileSync(process.argv[1]!, 'utf8'),
+    grading: [GRADING, CALL.claude, CALL.codex].join('\0'),
   },
 )
 const path = resultsPath(values.out, about)
@@ -201,13 +214,11 @@ const jobs: Job<Result>[] = agents.flatMap(a =>
 const { results, stopped } = await runJobs(jobs, so => writeResults(path, about, so))
 writeResults(path, about, results, stopped)
 const judged = [...firstRuns, ...results]
-const GRADING = ['core/domain/reply-parse.ts', 'core/domain/ledger-update.ts', 'evals/model-checks.ts'].map(repoFile)
-const CALL: Record<Agent, string> = { claude: repoFile('evals/claude-model.ts'), codex: MODEL }
 const stamps: Stamps = Object.fromEntries(
   agents.flatMap(a =>
     cases.map(c => {
       const { prompt, system } = inputs(a, c)
-      return [`${a} ${c.name}`, stamp(c, [system, prompt], [...GRADING, CALL[a]])]
+      return [`${a} ${c.name}`, stamp(c, [system, prompt], [GRADING, CALL[a]])]
     }),
   ),
 )

@@ -16,9 +16,9 @@
 # both, 3 runs each by default. Fixed rules check the page after every step, and a replay fails a check that fails at
 # a step in more than one run of three. The report also says which targeted steps reproduced their failure.
 # --judge also runs the judge on Opus at each replay's checkpoints. --judge-pages <folder> runs only the judge, once
-# on each page of set-1.json and set-2.json in that folder, and fails unless it calls every page right. --judge-set 1
-# judges only set 1, as each revision of the judge's instructions does. The judge's pages are kept in the main
-# checkout's .scratch/status-judge-pages/. Run the suite at each release, and after a
+# on each page in that folder's set-1/ and set-2/, and fails unless it calls every page right. --judge-set 1
+# judges only set 1, as each revision of the judge's instructions does. The judge's pages are in evals/judge-pages/.
+# Run the suite at each release, and after a
 # change to STATUS_SYSTEM, statusPrompt or the code that applies a Status answer.
 #
 # Needs the claude CLI for Sonnet and Opus, the codex CLI, or CODEX_CLI_PATH, for Codex, and the omp CLI and
@@ -38,7 +38,7 @@
 # descriptions and the case's own prompt, not the guidance.
 # Runs default to 8 for the model suite and 5 for the agent suite.
 # --with judges this run together with an earlier results file, for the rerun rule. It refuses a file that ran other
-# code, text, cases, models or CLI versions.
+# text, prompts, cases, grading code, models or CLI versions.
 # --set-baseline saves each selected case's count to evals/baselines.json, on a clean tree, from 20 or more runs
 # that could all be graded.
 #

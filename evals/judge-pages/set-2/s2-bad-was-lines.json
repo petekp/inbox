@@ -1,0 +1,9 @@
+{
+  "id": "s2-bad-was-lines",
+  "breaks": "was-lines",
+  "na": ["child-labels", "no-restating", "goal", "milestones", "split"],
+  "note": "Bad was-lines: the was line gives the reason the plan changed, bursts slipping through, instead of naming the replaced plan, fixed one-minute windows.",
+  "page": "Add per-key rate limits to the gateway\n\n● Per-key limits\n  token bucket built, not deployed\n  was: bursts slipped through\n── Seen\n○ Overage alerts\n  not started\n✓ 1 done",
+  "previous": "Add per-key rate limits to the gateway\n\n● Per-key limits\n  fixed windows built\n✓ Limit headers\n  sent on every response\n○ Overage alerts\n  not started",
+  "facts": "Focus now: Adding per-key rate limits to the public API gateway\nPieces of work:\n- Per-key limits (also called the rate limiter): being worked on now. Each API key gets a token bucket sized to its plan; it is built and not deployed. The person chose it after a load test showed bursts getting through at the edges of each window. Plan changed; it was counting each key's requests in fixed one-minute windows. Changed at this step.\n- Limit headers: delivered. Every response carries RateLimit headers.\n- Overage alerts: not started yet. Emails to a customer whose key nears its limit; nothing is built yet.\nOpen asks:\n- none\nNot work:\n- rule: Keep p99 gateway latency under 20 ms\nRunning work:\n- none"
+}
