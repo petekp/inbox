@@ -19,11 +19,14 @@ import { DESKTOP_CELL_PT, DESKTOP_LINE_PT } from '../pane/pane-sizes'
 
 let isBandFramePending = false
 
-/** Redraws the terminal band at the running mark's next frame. A desktop Svg moves on its own. */
-function nextBandFrame(m: Mod) {
+/**
+ * Redraws the terminal band when the running mark's next frame starts on the clock, as the pane's frames do, so the two
+ * marks change together. A desktop Svg moves on its own.
+ */
+function nextBandFrame(m: Mod, now: number) {
   if (isBandFramePending) return
   isBandFramePending = true
-  m.clock.after(RUNNING_FRAME_MS, () => {
+  m.clock.after(RUNNING_FRAME_MS - (now % RUNNING_FRAME_MS), () => {
     isBandFramePending = false
     void redraw(m)
   })
@@ -58,7 +61,7 @@ export async function band(
   const look = lookOf(e.surface)
   const nothing = nothingText(view.sync.ledger)
   const isChecking = counts.length === 0 && nothing.isChecking
-  if (isChecking && look === 'terminal') nextBandFrame(m)
+  if (isChecking && look === 'terminal') nextBandFrame(m, now)
   const Svg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null
   // The mark's place stays while it is hidden, so the text does not move.
   const desktopMark =
