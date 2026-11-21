@@ -1526,27 +1526,41 @@ async function demoReply($: EngineInterface, pressId: number) {
 
 /** The pane's state: the saved controller state, with the terminal's config while it draws the pane, else desktop's. */
 async function readUi($: EngineInterface): Promise<UiState> {
-  return modUiOf(await read($, UI), paneState.drawsTerminal ? 'terminal' : paneState.paneLook)
+  const ui = modUiOf(await read($, UI), paneState.drawsTerminal ? 'terminal' : paneState.paneLook)
+
+  return { ...ui, listInput: paneState.listInput }
 }
+
+/** Runs `work` after every batch already queued for the controller, so no two read and save its state at once. */
+function inUiQueue<T>(work: () => Promise<T>): Promise<T> {
+  const run = paneState.uiQueue.then(work)
+  paneState.uiQueue = run.then(
+    () => undefined,
+    () => undefined,
+  )
+
+  return run
+}
+
+const withoutListInput = (ui: UiState) => JSON.stringify({ ...ui, listInput: null })
 
 /**
  * Runs `events` through the shared controller on the drawn view, one batch at a time, saves its state, and runs its
  * commands. `'read'` reads what the drawn session says about its host. A press's `surface` reaches its commands.
  */
 function sendUi($: EngineInterface, events: (UiEvent | 'read')[], surface?: UiPressArgument['surface']) {
-  const run = paneState.uiQueue.then(() => applyUi($, events, surface))
-  paneState.uiQueue = run.catch(() => undefined)
-
-  return run
+  return inUiQueue(() => applyUi($, events, surface))
 }
 
 async function applyUi($: EngineInterface, events: (UiEvent | 'read')[], surface?: UiPressArgument['surface']) {
-  const [drawn, isPaneOpen] = await Promise.all([drawnState($), isPaneShown($)])
+  const [drawn, isPaneShownNow] = await Promise.all([drawnState($), isPaneShown($)])
+  const isPaneOpen = isPaneShownNow && paneState.loadingRevision === null
   const host = hostFactsOf(drawn)
   const synced = withPaneShown(events, drawn.ui, isPaneOpen)
   const all = synced.map((event): UiEvent => (event === 'read' ? { type: 'read', host } : event))
   const applied = applyUiEvents(drawn.ui, drawn.view, all, drawn.now)
-  if (JSON.stringify(applied.ui) !== JSON.stringify(drawn.ui)) await update($, UI, () => applied.ui)
+  paneState.listInput = applied.ui.listInput
+  if (withoutListInput(applied.ui) !== withoutListInput(drawn.ui)) await update($, UI, () => applied.ui)
   scheduleUiWake($, applied.ui, drawn.view, applied.nextWakeAt, drawn.now)
   for (const c of applied.commands) void runUiCommand($, c, surface).catch(() => undefined)
 }
@@ -1580,9 +1594,11 @@ function landTerminalFrame($: EngineInterface, ui: UiState, view: SessionView, n
 async function wakeUi($: EngineInterface) {
   const isRead = paneState.uiWake?.isRead === true
   paneState.uiWake = null
-  if (!isRead && !paneState.isTerminalFrameLanded) return
+  const isFrameDrawing = paneState.drawsTerminal && !paneState.isTerminalFrameLanded
+  if (!isRead && isFrameDrawing) return
   await sendUi($, [isRead ? 'read' : { type: 'tick' }])
   if (isRead) return redraw($)
+  if (!paneState.drawsTerminal) return
   paneState.isTerminalFrameLanded = false
   await update($, RUNNING_FRAME, n => n + 1)
 }
@@ -1598,22 +1614,30 @@ async function runUiCommand($: EngineInterface, c: UiCommand, surface?: UiPressA
 }
 
 /** Keeps the leaving conversation's state among the others kept, and starts the pane over, closed, on the same tab. */
-async function leaveUi($: EngineInterface) {
-  const [ui, now] = await Promise.all([readUi($), $.clock.now()])
-  const id = conversation.id
-  paneState.keptUi = keptUiStates({ ...paneState.keptUi, [id]: { ui, shownAt: now } }, null)
-  await update($, UI, () => freshUi(ui.config, ui.tab))
+function leaveUi($: EngineInterface) {
+  return inUiQueue(async () => {
+    const [ui, now] = await Promise.all([readUi($), $.clock.now()])
+    const id = conversation.id
+    paneState.keptUi = keptUiStates({ ...paneState.keptUi, [id]: { ui, shownAt: now } }, null)
+    await update($, UI, () => ({ ...freshUi(ui.config, ui.tab), nextPressId: ui.nextPressId }))
+  })
 }
 
-/** Takes the state kept for conversation `id`, else goes on from the current one. No press's answer survives a load. */
-async function enterUi($: EngineInterface, id: string) {
-  const { [id]: kept, ...others } = paneState.keptUi
-  paneState.keptUi = others
-  const ui = restoredUi(kept?.ui ?? (await readUi($)))
-  openFields.clear()
-  const isShown = await isPaneShown($)
-  await update($, UI, () => ({ ...ui, shownSince: null }))
-  await sendUi($, isShown ? [{ type: 'opened' }, 'read'] : ['read'])
+/**
+ * Takes the state kept for conversation `id`, else goes on from the current one. No press's answer survives a load,
+ * and press ids keep counting up, so an answer from the conversation left never matches a press here. The pane opens
+ * on the conversation once the load ends.
+ */
+function enterUi($: EngineInterface, id: string) {
+  return inUiQueue(async () => {
+    const { [id]: kept, ...others } = paneState.keptUi
+    paneState.keptUi = others
+    const current = await readUi($)
+    const ui = restoredUi(kept?.ui ?? current)
+    openFields.clear()
+    const nextPressId = Math.max(ui.nextPressId, current.nextPressId)
+    await update($, UI, () => ({ ...ui, shownSince: null, nextPressId }))
+  })
 }
 
 /** The drawn session and its view. `canScrollConversation` is whether the surface drawing it can scroll the conversation. */
@@ -1850,6 +1874,30 @@ async function applyConversation(
   saved: { session: SavedRecord | undefined } | null,
   parent?: SavedRecord,
 ) {
+  paneState.loadingRevision = revision
+  try {
+    await loadConversationRows($, id, revision, by, sessionRoot, saved, parent)
+  } finally {
+    endConversationLoad($, revision)
+  }
+}
+
+/** The loaded conversation's rows are drawn: the controller sees the pane as it is, and opens it on them. */
+function endConversationLoad($: EngineInterface, revision: number) {
+  if (paneState.loadingRevision !== revision) return
+  paneState.loadingRevision = null
+  if (revision === sessionState.loadRevision) void sendUi($, ['read']).catch(() => undefined)
+}
+
+async function loadConversationRows(
+  $: EngineInterface,
+  id: string,
+  revision: number,
+  by: LoadedBy,
+  sessionRoot: string,
+  saved: { session: SavedRecord | undefined } | null,
+  parent?: SavedRecord,
+) {
   if (revision !== sessionState.loadRevision) return
   const isLoading = () => revision === sessionState.loadRevision && conversation.id === id
   cancelUndoScroll()
@@ -1882,6 +1930,7 @@ async function applyConversation(
     )) === id
   if (!isLoading()) return
   if (saved !== null) await bringBack($, parent ?? saved.session, isLoading, parent !== undefined)
+  endConversationLoad($, revision)
   const { ledger, presence } = await read($, SESSION)
   const isEmpty = isBlankLedger(ledger)
   const needsCatchUp =

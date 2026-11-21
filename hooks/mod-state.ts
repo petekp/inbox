@@ -16,6 +16,10 @@ class PaneState {
   isTerminalFrameLanded = false
   /** The pane was asked to open and the controller has not heard yet, so a render draws the open's move. */
   isOpenUnheard = false
+  /** The load revision of a conversation still loading. Until it ends, the controller sees the pane closed. */
+  loadingRevision: number | null = null
+  /** The last list input, kept out of the saved state so a pointer move writes nothing and redraws nothing. */
+  listInput: UiState['listInput'] = null
   /**
    * The states of other conversations this process showed that hold a draft or a sent reply, by conversation id. The
    * engine keeps plugin state per session, and `/clear` starts a new one, so they live here.
