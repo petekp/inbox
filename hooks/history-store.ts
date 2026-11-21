@@ -1,6 +1,6 @@
 import type { Session } from '../types'
-import { answerIndex, bestEarlier, earlierOf } from './earlier-answers'
-import type { AnswerIndex } from './earlier-answers'
+import { answerIndex, bestEarlier, earlierOf, rankedEarlier } from './earlier-answers'
+import type { AnswerDoc, AnswerIndex } from './earlier-answers'
 import {
   answerKey,
   historyDocs,
@@ -9,6 +9,7 @@ import {
   isEarlierShown,
   isHistoryChanged,
   questionHistory,
+  ROW_MEASUREMENT_MS,
   upgradeHistoryFile,
 } from './question-history'
 import type { HistoryFile, HistoryHost } from './question-history'
@@ -207,4 +208,30 @@ async function withEarlier<S extends Session>(
   const items = s.ledger.items.map(i => (matches.has(i.id) ? { ...i, earlier: matches.get(i.id)! } : i))
 
   return { ...s, ledger: { ...s.ledger, items } }
+}
+
+/** The most earlier answers the `record` answer lists. */
+export const RECORD_MATCHES = 3
+
+/**
+ * The earlier answers most like the question a `record` call asks, best first, for the `record` answer to list. None
+ * for a call that records no question, and none until `ROW_MEASUREMENT_MS` after the history began. A history that
+ * cannot be read gives none.
+ */
+export async function recordMatches(
+  place: HistoryPlace | null,
+  input: Record<string, unknown>,
+  now: number,
+): Promise<AnswerDoc[]> {
+  const ask = typeof input.ask === 'string' ? input.ask.trim() : ''
+  if (!place || input.kind !== 'question' || ask === '') return []
+  const options = Array.isArray(input.options) ? input.options.filter(o => typeof o === 'string') : []
+  try {
+    const files = await readHistory(place)
+    if (now - historyStart(files, now) < ROW_MEASUREMENT_MS) return []
+
+    return rankedEarlier(indexOf(place, files, now), { ask, options }, '', RECORD_MATCHES).map(m => m.doc)
+  } catch {
+    return []
+  }
 }

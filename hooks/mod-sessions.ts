@@ -5,6 +5,7 @@ import { recorded } from './session-presses'
 import { CLAUDE_CODE } from './model-text'
 import type { AgentTool } from './tools'
 import type { DelegateSession } from './hc-terminals'
+import type { AnswerDoc } from './earlier-answers'
 import { exclusiveKeys, orderedKeys } from './session-host'
 import { withDemoPresence } from './demo'
 
@@ -80,8 +81,9 @@ export function answerToolCall(
   input: Record<string, unknown>,
   now: number,
   delegate: DelegateSession | null,
+  earlier: readonly AnswerDoc[],
 ) {
-  return recorded(CLAUDE_CODE, s, tool, input, now, sessionToolFields(s), delegate)
+  return recorded(CLAUDE_CODE, s, tool, input, now, sessionToolFields(s), delegate, earlier)
 }
 
 /** How the mod came to load a conversation: as the mod started, or after /clear, /resume or a fork in the session. */

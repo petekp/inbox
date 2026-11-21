@@ -84,6 +84,7 @@ export const SHARED = [
   'session-files',
   'session-presentation',
   'earlier-answers',
+  'record-matches',
   'question-history',
   'history-store',
   'saved-check-keys',

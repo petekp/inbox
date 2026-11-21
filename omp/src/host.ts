@@ -35,7 +35,7 @@ import type { PanelScreen } from './panel'
 import { wrapText } from './panel-text'
 import { styleOf } from './theme'
 import type { OmpState } from './state'
-import { useQuestionHistory } from './state'
+import { recordMatchesNow, useQuestionHistory } from './state'
 import { questionHistoryPlace } from './question-history'
 import type { HistoryPlace } from '../../hooks/history-store'
 import { OMP, TOOL_LABELS } from './texts'
@@ -328,8 +328,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         if (isUnattended(ctx)) return { content: [{ type: 'text', text: 'The inbox is not shown in this session.' }] }
         let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
         const delegate = await context.delegate()
+        const input = args as Record<string, unknown>
+        const earlier = name === 'record' ? await recordMatchesNow(input, deps.now()) : []
         await change(sessionIdOf(ctx), s => {
-          const r = recorded(OMP, s, name, args as Record<string, unknown>, deps.now(), TOOL_FIELDS, delegate)
+          const r = recorded(OMP, s, name, input, deps.now(), TOOL_FIELDS, delegate, earlier)
           answer = r
 
           return r.state

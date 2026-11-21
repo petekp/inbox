@@ -8,6 +8,7 @@ import { OMP } from '../omp/src/texts'
 import type { Ledger } from '../types'
 import type { Agent, Case } from './agent-checks'
 import { guidance, message } from './agent-cli'
+import { caseEarlier } from './case-history'
 import { ompNotes, servedTools } from './probe-tools'
 
 const HOSTS: Record<Agent, Host> = { claude: CLAUDE_CODE, codex: CODEX, omp: OMP }
@@ -60,10 +61,15 @@ export function readsFor(agent: Agent, c: Case, isGuided: boolean): string[] {
       ['close', { id: i.id, answer: 'yes' }],
     ]),
     ...ledger.findings.map((f): [AgentTool, Record<string, unknown>] => ['close', { id: f.id, reason: 'fixed' }]),
+    ...(c.history ?? []).map((h): [AgentTool, Record<string, unknown>] => [
+      'record',
+      { kind: 'question', ask: h.ask, options: ['Yes', 'No'] },
+    ]),
   ]
-  const answers = [...SAMPLE_CALLS, ...rowCalls].map(
-    ([name, args]) => toolAnswer(host, ledger, name, args, SAMPLE_NOW, presses, fields, c.delegate ?? null).result,
-  )
+  const answers = [...SAMPLE_CALLS, ...rowCalls].map(([name, args]) => {
+    const earlier = name === 'record' ? caseEarlier(c.history ?? [], args, SAMPLE_NOW) : []
+    return toolAnswer(host, ledger, name, args, SAMPLE_NOW, presses, fields, c.delegate ?? null, earlier).result
+  })
   const shown = { ...EMPTY, ...c.ledger } as Ledger
   const told = agent === 'omp' ? [...ompNotes(host, shown, c.prompt), c.prompt] : [message(c, host)]
   const instructions = !isGuided || agent === 'claude' ? '' : agent === 'codex' ? guidance(CODEX) : guidanceText(OMP)

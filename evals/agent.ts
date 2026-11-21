@@ -175,6 +175,7 @@ function sandbox(c: Case, agent: Agent) {
       lastActions: c.lastActions ?? {},
       tools: c.tools ?? null,
       delegate: c.delegate ?? null,
+      history: c.history ?? [],
     }),
   )
   writeFileSync(log, '')

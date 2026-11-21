@@ -276,7 +276,7 @@ import {
   save,
   type SaveEngine,
 } from './mod-saves'
-import { type HistoryEngine, withHistory } from './mod-history'
+import { type HistoryEngine, modRecordMatches, withHistory } from './mod-history'
 import { runningSessions } from './running-sessions'
 import { paneAskRows, paneAskTabs } from './pane-asks'
 import { paneRowKeys } from './pane-row-keys'
@@ -1159,11 +1159,15 @@ async function runTool(
   input: Record<string, unknown>,
   toolUseId: string | undefined,
 ): Promise<string> {
-  const [now, delegate] = await Promise.all([$.clock.now(), modDelegate(herdrCalls($))])
+  const [now, delegate, earlier] = await Promise.all([
+    $.clock.now(),
+    modDelegate(herdrCalls($)),
+    tool === 'record' ? modRecordMatches(historyEngine($), input) : [],
+  ])
   const owner = currentOwner()
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
   await commit($, owner, s => {
-    const r = answerToolCall(s, tool, input, now, delegate)
+    const r = answerToolCall(s, tool, input, now, delegate, earlier)
     answer = r
     return r.state
   })
