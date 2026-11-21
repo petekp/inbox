@@ -13,7 +13,7 @@ Shared modules are in `core/`. Every host consumes them, directly or through a b
 - `core/runtime/`: what a host runs through its `SessionHost`: turns, presses, PR fetches, the agent's tools, the Status call records, the question history store, and the remote command journal and viewer leases a session keeps.
 - `core/remote/`: publishing a session to the Herdr look, the remote commands it delivers, and starting and finding Herdr terminals.
 
-A type-only import may name a type from any layer, since it loads no code. Code in `core/` imports only `core/` and `types/`, type imports included. The Claude Code mod is in `hooks/`: `hooks/register.tsx` wires the engine's events, `hooks/mod/` holds the mod's runtime, and `hooks/pane/` draws the terminal and desktop looks. Codex, omp and the Herdr look import only `core/` and `types/` of the inbox's code. `scripts/structure/imports.mjs` checks these rules. Codex and omp type checking need no generated Claude engine types.
+A type-only import may name a type from any layer, since it loads no code. Code in `core/` imports only `core/` and `types/`, type imports included. The Claude Code mod is in `hooks/`: `hooks/register.tsx` wires the engine's events, `hooks/mod/` holds the mod's runtime, and `hooks/pane/` draws the terminal and desktop looks. Codex, omp and the Herdr look never import `hooks/`, and the mod never imports their code. `scripts/structure/imports.mjs` checks these rules. Codex and omp type checking need no generated Claude engine types.
 
 Every source file in `core/`, `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
 

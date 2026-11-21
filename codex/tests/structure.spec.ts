@@ -60,10 +60,6 @@ const forbidden = [
     target: '../codex/src/host',
   },
   { path: 'core/view/tones.ts', text: "import { value } from '../../hooks/register'", target: './register' },
-  { path: 'core/domain/ledger.ts', text: "import { value } from '../view/view'", target: 'core/view' },
-  { path: 'core/domain/ledger.ts', text: "import { value, type Value } from '../view/view'", target: 'core/view' },
-  { path: 'core/view/view.ts', text: "export { value } from '../runtime/tools'", target: 'core/runtime' },
-  { path: 'core/runtime/tools.ts', text: "const remote = import('../remote/herdr')", target: 'core/remote' },
   { path: 'hooks/mod/claude.ts', text: "import { value } from '../../codex/src/host'", target: '../codex/src/host' },
   {
     path: 'codex/src/consumer.ts',
@@ -145,6 +141,43 @@ for (const { path, text, target } of forbidden)
         ?.replace(/\.tsx?$/, '') ?? target
     assert.ok(result.stdout.includes(name), result.stdout + result.stderr)
   })
+
+const laterLayerLoads = [
+  { path: 'core/domain/ledger.ts', text: "import { value } from '../view/view'", layer: 'core/view' },
+  { path: 'core/domain/ledger.ts', text: "import { value, type Value } from '../view/view'", layer: 'core/view' },
+  { path: 'core/view/view.ts', text: "export { value } from '../runtime/tools'", layer: 'core/runtime' },
+  { path: 'core/runtime/tools.ts', text: "const remote = import('../remote/herdr')", layer: 'core/remote' },
+]
+
+for (const { path, text, layer } of laterLayerLoads)
+  test(`the structure gate rejects ${text} in ${path} as a load from ${layer}`, t => {
+    const f = fixture(t)
+    f.write(path, `${text}\n`)
+    const result = f.check()
+    assert.equal(result.status, 1, result.stdout + result.stderr)
+    assert.ok(result.stdout.includes(`${path} loads '`), result.stdout + result.stderr)
+    assert.ok(result.stdout.includes(`from ${layer}.`), result.stdout + result.stderr)
+  })
+
+test('the structure gate rejects a core file that loads a later layer through a file in types/', t => {
+  const f = fixture(t)
+  f.write('types/bridge.ts', "export { value } from '../core/remote/herdr'\n")
+  f.write('core/domain/ledger.ts', "import { value } from '../../types/bridge'\nexport const used = value\n")
+  const result = f.check()
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.ok(
+    result.stdout.includes("types/bridge.ts, which core/domain loads, loads '../core/remote/herdr' from core/remote."),
+    result.stdout + result.stderr,
+  )
+})
+
+test('the structure gate accepts a core file that names a type through a file in types/ that loads a later layer', t => {
+  const f = fixture(t)
+  f.write('types/bridge.ts', "export { value } from '../core/remote/herdr'\nexport type Value = number\n")
+  f.write('core/domain/ledger.ts', "import type { Value } from '../../types/bridge'\nexport type Used = Value\n")
+  const result = f.check()
+  assert.ok(!result.stdout.includes('types/bridge.ts'), result.stdout + result.stderr)
+})
 
 test('the structure gate checks an existing JavaScript file that shadows a core TypeScript module as core code', t => {
   const f = fixture(t)

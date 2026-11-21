@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
+import { filesUnder } from './imports.mjs'
 import { API, nameOf, propertiesOf, ts } from './ts.mjs'
 
 const PLAN_STATUS = /^Status: (proposed|building|built|superseded by \S+)/m
@@ -91,22 +92,15 @@ export function checkLookMap(root, errors) {
   if (!fileParts.length) errors.push(`${LOOK_PARTS}/ has no files-*.md part to hold the Files rows.`)
   else {
     const rows = new Set(fileParts.flatMap(part => [...read(root, part).matchAll(/^\| `([^`]+)` \|/gm)].map(m => m[1])))
-    for (const dir of [
-      'core/domain',
-      'core/view',
-      'core/runtime',
-      'core/remote',
-      'hooks',
-      'hooks/mod',
-      'hooks/pane',
-      'codex/src',
-      'omp/src',
-      'herdr/src',
-    ].filter(dir => exists(root, dir)))
-      for (const entry of readdirSync(join(root, dir))) {
-        const path = `${dir}/${entry}`
-        if (isMapped(path) && !rows.has(path)) errors.push(`${LOOK_PARTS}/files-*.md has no Files row for ${path}.`)
-      }
+    const flatDirs = ['hooks', 'hooks/mod', 'hooks/pane', 'codex/src', 'omp/src', 'herdr/src'].filter(dir =>
+      exists(root, dir),
+    )
+    const sources = [
+      ...(exists(root, 'core') ? filesUnder(root, 'core') : []),
+      ...flatDirs.flatMap(dir => readdirSync(join(root, dir)).map(entry => `${dir}/${entry}`)),
+    ]
+    for (const path of sources)
+      if (isMapped(path) && !rows.has(path)) errors.push(`${LOOK_PARTS}/files-*.md has no Files row for ${path}.`)
   }
   const maps = [LOOK_MAP, ...lookParts(root, '')].map(map => ({ map, text: read(root, map) }))
   const refs = maps

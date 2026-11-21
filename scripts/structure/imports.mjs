@@ -57,16 +57,15 @@ function importsOf(source) {
   return found
 }
 
-function sourceFiles(root, dir) {
+/** Every file under `dir`, in any folder depth, as a path from `root`. */
+export function filesUnder(root, dir) {
   return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(entry => {
     const path = `${dir}/${entry.name}`
-    return entry.isDirectory()
-      ? sourceFiles(root, path)
-      : /\.(?:[cm]?ts|tsx|[cm]?js|jsx)$/.test(entry.name)
-        ? [path]
-        : []
+    return entry.isDirectory() ? filesUnder(root, path) : [path]
   })
 }
+
+const sourceFiles = (root, dir) => filesUnder(root, dir).filter(path => /\.(?:[cm]?ts|tsx|[cm]?js|jsx)$/.test(path))
 
 export function localTarget(path) {
   if (existsSync(path) && statSync(path).isFile()) return realpathSync(path)
@@ -183,17 +182,17 @@ export function checkImports(root, errors) {
             : herdrFiles.includes(path)
               ? 'herdr'
               : 'codex'
-    const queue = files.map(path => ({ path, mode: modeOf(path) }))
+    const queue = files.map(path => ({ path, mode: modeOf(path), layer: layerOf(path) }))
     const visited = new Set()
     while (queue.length) {
-      const { path, mode } = queue.shift()
+      const { path, mode, layer } = queue.shift()
       const absolute = join(root, path)
       const project = snapshot.getDefaultProjectForFile(absolute)
       const source = sourceFor(project, absolute)
       if (!source) throw new Error(`Cannot parse ${path}.`)
       const canonical = realpathSync(source.fileName)
       const relative = canonical.startsWith(rootDir) ? canonical.slice(rootDir.length) : path
-      const visitKey = `${mode}:${canonical}`
+      const visitKey = `${mode}:${layer}:${canonical}`
       if (visited.has(visitKey)) continue
       visited.add(visitKey)
 
@@ -209,10 +208,11 @@ export function checkImports(root, errors) {
         if (mode === 'core') {
           if (!target?.startsWith(core) && !target?.startsWith(types))
             errors.push(`${relative} imports '${from}'. Code in core/ imports only core/ and types/.`)
-          const [fromLayer, toLayer] = [layerOf(relative), targetPath ? layerOf(targetPath) : -1]
-          if (!dependency.isTypeOnly && fromLayer !== -1 && toLayer > fromLayer)
+          const toLayer = targetPath ? layerOf(targetPath) : -1
+          const loadedFor = layerOf(relative) === -1 ? `, which ${CORE_LAYERS[layer]} loads,` : ''
+          if (!dependency.isTypeOnly && layer !== -1 && toLayer > layer)
             errors.push(
-              `${relative} loads '${from}' from ${CORE_LAYERS[toLayer]}. A core file loads code only from its own layer and the layers before it: ${LAYER_ORDER}.`,
+              `${relative}${loadedFor} loads '${from}' from ${CORE_LAYERS[toLayer]}. A core file loads code only from its own layer and the layers before it: ${LAYER_ORDER}.`,
             )
         } else if (mode === 'mod') {
           if (target?.startsWith(codex) || target?.startsWith(omp) || target?.startsWith(herdr))
@@ -252,7 +252,12 @@ export function checkImports(root, errors) {
         if (!targetPath || target.split(sep).includes('node_modules') || isHerdrAppModule || isOwnFile) continue
         const targetSource = sourceFor(project, target)
         if (!targetSource) continue
-        queue.push({ path: realpathSync(targetSource.fileName).slice(rootDir.length), mode })
+        const loadsCode = mode === 'core' && !dependency.isTypeOnly
+        queue.push({
+          path: realpathSync(targetSource.fileName).slice(rootDir.length),
+          mode,
+          layer: loadsCode ? layer : -1,
+        })
       }
     }
   } finally {

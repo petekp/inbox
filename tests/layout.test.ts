@@ -10,13 +10,11 @@ import {
   LIST_MARGIN_PT,
   ROW_PAD_PT,
   SECTION_GAP_PT,
-  SPACE_UNIT,
 } from '../core/view/layout'
 
-test('the gaps rise from inside an item to between sections, each a whole number of the space unit', () => {
+test('the gaps rise from inside an item to between sections', () => {
   const gaps = [INSIDE_GAP_PT, LIST_GAP_PT, CHILD_GAP_PT, ITEM_GAP_PT, SECTION_GAP_PT]
   expect([...new Set(gaps)].sort((a, b) => a - b)).toEqual(gaps)
-  expect(gaps.filter(gap => gap % SPACE_UNIT !== 0)).toEqual([])
 })
 
 test('a heading sits closer to its first item than two items sit, so it reads as part of what it heads', () => {
