@@ -83,6 +83,7 @@ export const readView = (
     ...NO_SYNC_INPUTS,
     isReadFailed: read.isReadFailed,
     isFetchingPrs: read.isFetchingPrs,
+    turnReadFailedAt: read.turnReadFailedAt,
   })
 
 /**

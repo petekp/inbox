@@ -115,6 +115,7 @@ export function herdrOnWrite(
             writtenAt: Math.max(seq, viewers.writtenAt, commands.writtenAt),
             projectFolder: s.root,
             isFetchingPrs: isPrFetchRunning(s),
+            turnReadFailedAt: s.turnReadFailedAt,
             version: VERSION,
             isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
           },

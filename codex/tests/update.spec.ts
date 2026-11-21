@@ -108,7 +108,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     dir,
     's1',
     async prompt => {
-      assert.deepEqual(viewOf(await readState(dir, 's1'), 6).sync.ledger, { is: 'checking' })
+      assert.deepEqual(viewOf(await readState(dir, 's1'), 6).sync.ledger, { is: 'stale', since: null, why: 'retrying' })
       return ask(prompt)
     },
     () => 6,

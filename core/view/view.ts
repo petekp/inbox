@@ -417,7 +417,8 @@ const FAILED_UPDATE_TEXT = {
 
 export function perTurnStatus(sync: LedgerSync): ItemStatus {
   const why = sync.is === 'stale' || sync.is === 'unavailable' ? sync.why : null
-  const error = why === null || why === 'read-failed' ? null : FAILED_UPDATE_TEXT[why]
+  const isQuiet = why === null || why === 'read-failed' || why === 'retrying'
+  const error = isQuiet ? null : FAILED_UPDATE_TEXT[why]
 
   return { error }
 }

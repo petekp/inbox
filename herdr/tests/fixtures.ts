@@ -21,7 +21,6 @@ export const demoEnvelopeText = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   })
 
-/** The sample as a host publishes a session: a fetch read each PR just now. */
 function readSample(): Session {
   const s = demoSession(NOW, AGENT)
   const views = Object.fromEntries(Object.entries(s.prViews.views).map(([ref, v]) => [ref, { ...v, fetchedAt: NOW }]))

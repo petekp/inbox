@@ -14,7 +14,10 @@ test('the tab reports active work separately from pending exchanges and failed u
     /^The inbox couldn't update from the agent's last reply\..*tries again after the next reply/,
   )
   const running = { ...waiting, presence: { ...waiting.presence, isUpdating: true } }
-  assert.deepEqual([viewOf(running, 60).status, viewOf(running, 60).sync.ledger], [{ error: null }, { is: 'checking' }])
+  assert.deepEqual(
+    [viewOf(running, 60).status, viewOf(running, 60).sync.ledger],
+    [{ error: null }, { is: 'stale', since: null, why: 'retrying' }],
+  )
   const scheduled = { ...waiting, presence: { ...waiting.presence, ledgerState: 'current' as const } }
   assert.deepEqual(
     [viewOf(scheduled, 60).status, viewOf(scheduled, 60).sync.ledger],

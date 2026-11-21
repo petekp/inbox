@@ -66,7 +66,6 @@ export function makeSessionHost(
   })
   let isGhMissing = false
   let prShared: PrShared = NO_PR_SHARED
-  const turnReadFailures = new Map<string, number>()
 
   async function queueMessage(s: SessionState, message: string, resolvedCli?: string): Promise<SendOutcome> {
     let cli: string
@@ -160,24 +159,29 @@ export function makeSessionHost(
    * It first finds a rollout Codex moved again, so the reads after it use the path it saves.
    */
   async function syncTurn(id: string): Promise<SessionState> {
-    return updateState(
+    let isFailureChanged = false
+    const synced = await updateState(
       dir,
       id,
       async saved => {
-        const s = await withRolloutArrivals(await currentRollout(saved), now())
-        const newest = s.transcriptPath === null ? 'unread' : await newestTurnEvent(s.transcriptPath)
-        const isTurnUnread = newest === 'unread' && s.presence.isTurnRunning
-        if (!isTurnUnread) turnReadFailures.delete(id)
-        else if (!turnReadFailures.has(id)) turnReadFailures.set(id, now())
-        if (newest === 'unread' || newest === null) return s
+        const arrived = await withRolloutArrivals(await currentRollout(saved), now())
+        const newest = arrived.transcriptPath === null ? null : await newestTurnEvent(arrived.transcriptPath)
+        const isTurnUnread = newest === 'unread' && arrived.presence.isTurnRunning
+        isFailureChanged = isTurnUnread !== (arrived.turnReadFailedAt !== undefined)
+        const { turnReadFailedAt: _failedAt, ...read } = arrived
+        const s: SessionState = isTurnUnread ? { ...read, turnReadFailedAt: arrived.turnReadFailedAt ?? now() } : read
+        if (newest === 'unread' || newest === null) return isFailureChanged ? s : arrived
         newestTurns.set(id, newest.id)
         const isRunning = newest.kind === 'started'
-        if (isRunning === s.presence.isTurnRunning) return s
+        if (isRunning === s.presence.isTurnRunning) return isFailureChanged ? s : arrived
 
         return isRunning ? turnStarted(s, null) : turnEnded(s, null, now())
       },
       now,
     )
+    if (isFailureChanged) await deps.onWrite?.(synced)
+
+    return synced
   }
 
   const wakeAfterSettle = async (id: string) => {
@@ -200,7 +204,7 @@ export function makeSessionHost(
       {
         ...NO_SYNC_INPUTS,
         isFetchingPrs: !isDemo && prFetches.isFetching(id),
-        turnReadFailedAt: isDemo ? null : (turnReadFailures.get(id) ?? null),
+        turnReadFailedAt: isDemo ? null : (current.turnReadFailedAt ?? null),
         isDemo,
       },
     )

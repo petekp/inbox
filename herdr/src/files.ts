@@ -24,6 +24,7 @@ export function isSessionChange(changed: readonly string[], appHome: string, ses
  * `projectFolder`: the absolute folder the host opens a relative path against, or null when the host gave none.
  * `isFetchingPrs`: the host had a PR fetch running. A file from a host that does not say reads as not fetching.
  * `isReadFailed`: the host could not read the saved inbox. A file from a host that does not say reads as read.
+ * `turnReadFailedAt`: when Codex first failed to read whether the running turn still runs, or null.
  * `savesCollapses`: the session carries `collapsed`, so its host saves the collapses the look writes. An older host
  * deletes a collapse file unread.
  */
@@ -38,6 +39,7 @@ export type ReadSession =
       projectFolder: string | null
       isFetchingPrs: boolean
       isReadFailed: boolean
+      turnReadFailedAt: number | null
     }
   | { is: 'missing' }
   | { is: 'torn' }
@@ -85,6 +87,7 @@ export function readSession(text: string | null): ReadSession {
       typeof file.projectFolder === 'string' && file.projectFolder.startsWith('/') ? file.projectFolder : null,
     isFetchingPrs: file.isFetchingPrs === true,
     isReadFailed: file.isReadFailed === true,
+    turnReadFailedAt: typeof file.turnReadFailedAt === 'number' ? file.turnReadFailedAt : null,
   }
 }
 

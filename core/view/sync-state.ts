@@ -1,6 +1,6 @@
 import type { PrFetchFailure, PrView, Session } from '../../types'
 import { GH_TIMEOUT_MS } from '../domain/gh'
-import { PR_POLL_MS, PRS_REFRESH_MS } from '../domain/pr-fetch'
+import { PR_POLL_MS, PR_SHARED_MS, PRS_REFRESH_MS } from '../domain/pr-fetch'
 import { isStatusQuiet } from '../domain/status-freshness'
 
 /**
@@ -15,22 +15,21 @@ type SyncState<Stale, Unavailable = never> =
   | ([Unavailable] extends [never] ? never : { is: 'unavailable'; why: Unavailable })
 
 /**
- * Why the asks and findings may be behind. They are `checking` while an update runs, or while turns ended that no
- * update read yet, since the host then has a catch-up on its way. `failed`: the last update
- * failed, and `failed-again` its retry too. `read-failed`: the host could not read the saved inbox. `unreadable`: the
- * last catch-up could not read the conversation.
+ * Why the asks and findings may be behind. They are `checking` while an update runs over turns no update read yet, or
+ * while such turns wait for the catch-up the host has on its way. `failed`: the last update failed, `failed-again` its
+ * retry too, and `retrying`: a retry of it runs. `read-failed`: the host could not read the saved inbox.
+ * `unreadable`: the last catch-up could not read the conversation.
  */
-export type LedgerSync = SyncState<'failed' | 'failed-again', 'read-failed' | 'unreadable'>
+export type LedgerSync = SyncState<'failed' | 'failed-again' | 'retrying', 'read-failed' | 'unreadable'>
 
 /** Why the Status page may be behind: its last call failed, or several calls after agent activity changed nothing. */
 export type StatusSync = SyncState<'failed' | 'quiet'>
 
 /**
  * Why one PR's block may be behind. `error`: the last fetch could not read it. `fetch-failed`: a fetch after its read
- * read no PR. `old`: its read is older than a fetch keeps it, or has no time. `unread`: no fetch read it yet.
- * `dropped`: its saved view was dropped to keep the session small, and the next fetch reads it again.
+ * read no PR. `old`: its read is older than a fetch keeps it, or has no time. `dropped`: its saved view was dropped to keep the session small, and the next fetch reads it again.
  */
-export type PrSync = SyncState<'error' | 'fetch-failed' | 'old', 'unread' | 'dropped'>
+export type PrSync = SyncState<'error' | 'fetch-failed' | 'old', 'dropped'>
 
 /** Why gh read no PR at the last fetch: it is missing, signed out, or the fetch failed as a whole. */
 export type GhSync = SyncState<{ kind: 'fetch-failed'; failure: PrFetchFailure }, 'gh-missing' | 'gh-signed-out'>
@@ -68,19 +67,22 @@ export const NO_SYNC_INPUTS: SyncInputs = {
 const FRESH = { is: 'fresh' } as const
 
 /**
- * How old a PR's read may be and still count as current: one refresh while the PRs tab shows, the poll tick that
- * notices it is due, and the longest a fetch runs. A read is older only once its next fetch is late.
+ * How old a PR's read may be and still count as current: the age of a view a fetch takes from another session, one
+ * refresh while the PRs tab shows, the poll tick that notices it is due, and the longest a fetch runs. A read is older
+ * only once its next fetch is late.
  */
-const PR_FRESH_MS = PRS_REFRESH_MS + PR_POLL_MS + GH_TIMEOUT_MS
+const PR_FRESH_MS = PR_SHARED_MS + PRS_REFRESH_MS + PR_POLL_MS + GH_TIMEOUT_MS
 
 function ledgerSync(s: Session, inputs: SyncInputs): LedgerSync {
   const p = s.presence
   if (inputs.isReadFailed) return { is: 'unavailable', why: 'read-failed' }
   if (p.ledgerState === 'current') return FRESH
-  if (p.isUpdating || p.ledgerState === 'behind') return { is: 'checking' }
-  if (s.pending.length === 0 && p.isConversationUnreadable) return { is: 'unavailable', why: 'unreadable' }
+  const isUnreadable = !p.isUpdating && s.pending.length === 0 && p.isConversationUnreadable
+  if (isUnreadable) return { is: 'unavailable', why: 'unreadable' }
+  if (p.ledgerState === 'behind') return { is: 'checking' }
+  const why = p.isUpdating ? 'retrying' : p.failedAttempts > 1 ? 'failed-again' : 'failed'
 
-  return { is: 'stale', since: null, why: p.failedAttempts > 1 ? 'failed-again' : 'failed' }
+  return { is: 'stale', since: null, why }
 }
 
 export function statusSync(s: {
@@ -99,15 +101,13 @@ function turnSync(s: Session, inputs: SyncInputs): TurnSync {
   return isUnknown ? { is: 'stale', since: inputs.turnReadFailedAt, why: 'rollout-unread' } : FRESH
 }
 
-function ghSync(prViews: Session['prViews'], inputs: SyncInputs): GhSync {
+/** A failed fetch stays `stale` while the next one runs, so its notice stays in place until a fetch reads the PRs. */
+function ghSync(prViews: Session['prViews']): GhSync {
   if (prViews.isGhMissing) return { is: 'unavailable', why: 'gh-missing' }
   if (prViews.isGhSignedOut) return { is: 'unavailable', why: 'gh-signed-out' }
   const { failure } = prViews
-  if (!failure) return FRESH
 
-  return inputs.isFetchingPrs
-    ? { is: 'checking' }
-    : { is: 'stale', since: failure.at, why: { kind: 'fetch-failed', failure } }
+  return failure ? { is: 'stale', since: failure.at, why: { kind: 'fetch-failed', failure } } : FRESH
 }
 
 function prSync(view: PrView, failure: PrFetchFailure | null | undefined, isFetching: boolean, now: number): PrSync {
@@ -139,7 +139,7 @@ export function viewSync(s: Session, now: number, inputs: SyncInputs): ViewSync 
     ledger: ledgerSync(s, inputs),
     status: statusSync(s),
     turn: turnSync(s, inputs),
-    gh: ghSync(s.prViews, { ...inputs, isFetchingPrs }),
+    gh: ghSync(s.prViews),
     prs,
   }
 }

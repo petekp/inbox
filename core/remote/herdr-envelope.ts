@@ -25,6 +25,8 @@ export type EnvelopeSource = {
   isFetchingPrs?: boolean
   /** Whether the host could not read the session's saved inbox, so its asks and findings may be missing. */
   isReadFailed?: boolean
+  /** When Codex first failed to read whether the running turn still runs, so the look draws its working marks still. */
+  turnReadFailedAt?: number
   /** The inbox build the host runs, which Help names. A file from an older host has none, and Help then names none. */
   version?: string
   /** Whether the host's folder holds `NEXT_BUILD_MARK`, which adds "next" to the version. */

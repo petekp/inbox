@@ -237,8 +237,8 @@ _Avoid_: collapsed subject, folded milestone
 **Band**:
 In Claude Code, the line above the prompt with the Asks, Finds and PRs
 counts and [Open inbox]. With no counts it reads "Nothing needed", with a
-running mark while the inbox model checks the last exchange, or "May be out of
-date" while the ledger's sync state is stale or unavailable. When the session stops, a second line says why, with
+running mark while the ledger's sync state is checking, or "May be out of
+date" while it is stale or unavailable. When the session stops, a second line says why, with
 [Resume] after an API error. Codex has no band. omp has a band with the same
 counts and no button, which says `/inbox` opens the panel.
 
@@ -247,7 +247,8 @@ Whether a source the view draws from is current: the ledger, the Status page,
 each PR's view and the turn. Each is `fresh`, `checking` (an update is on its
 way), `stale` (an update failed or is overdue) or `unavailable` (the host could
 not read it). Hosts never save it: `viewSync` derives it on each draw. "Nothing
-needed" and "Ready to merge" show only while their source is fresh.
+needed" shows while the ledger is fresh, and with a running mark while it is
+checking. "Ready to merge" shows only while the PR's view is fresh.
 _Avoid_: freshness, up to date
 
 **Banner**:
