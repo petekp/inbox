@@ -5129,7 +5129,6 @@ function emptySession() {
     lastActions: {},
     remoteCommands: {},
     remoteCommandFloor: 0,
-    remoteViewers: {},
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -5195,7 +5194,6 @@ function sessionFields(saved, views) {
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     remoteCommands: saved.remoteCommands ?? {},
     remoteCommandFloor: saved.remoteCommandFloor ?? 0,
-    remoteViewers: saved.remoteViewers ?? {},
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     collapsed: saved.collapsed ?? {},
@@ -5232,7 +5230,7 @@ function sessionFields(saved, views) {
 }
 
 // ../core/view/session-presentation.ts
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers");
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteCommandFloor" && field !== "lastAnswers");
 function presentedSession(session) {
   return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
 }
@@ -5658,22 +5656,19 @@ function withCollapse(s, row, isCollapsed, at) {
 // ../core/runtime/remote-viewers.ts
 var VIEWER_LEASE_MS = 60000;
 var MAX_VIEWERS = 32;
-function updateRemoteViewer(s, update, now) {
+function updateRemoteViewer(leases, update, now) {
   if (update.issuedAt > now + 30000 || now - update.issuedAt > 120000)
-    return s;
-  const viewers = Object.fromEntries(Object.entries(s.remoteViewers).filter(([, viewer]) => viewer.expiresAt + 120000 > now));
+    return leases;
+  const viewers = Object.fromEntries(Object.entries(leases).filter(([, viewer]) => viewer.expiresAt + 120000 > now));
   const previous = viewers[update.id];
   const generation = previous?.generation ?? -1;
   const sameGeneration = update.generation === generation;
-  const isOld = update.generation < generation || sameGeneration && update.sequence <= previous.sequence;
-  const expiredGeneration = sameGeneration && (previous.released || previous.expiresAt <= now);
+  const isOld = previous !== undefined && (update.generation < generation || sameGeneration && update.sequence <= previous.sequence);
   if (isOld)
-    return s;
-  if (expiredGeneration)
-    return previous.released ? s : {
-      ...s,
-      remoteViewers: { ...viewers, [update.id]: { ...previous, released: true } }
-    };
+    return leases;
+  const isGenerationEnded = previous !== undefined && sameGeneration && (previous.released || previous.expiresAt <= now);
+  if (isGenerationEnded)
+    return previous.released ? leases : { ...viewers, [update.id]: { ...previous, released: true } };
   if (!previous && Object.keys(viewers).length >= MAX_VIEWERS)
     throw new Error("Too many Inbox viewers are registered.");
   const sameView = sameGeneration && previous?.tab === update.tab;
@@ -5683,27 +5678,22 @@ function updateRemoteViewer(s, update, now) {
   const seen = active ? { ...sameView ? previous?.shownRows : {}, ...Object.fromEntries(update.shownRows.map((id) => [id, seenAt])) } : {};
   const shownRows = Object.fromEntries(Object.entries(seen).sort((a, b) => b[1] - a[1]).slice(0, 256));
   const listInput = active && update.listActive ? withListInput(sameGeneration ? previous?.listInput ?? null : null, now) : sameGeneration ? previous?.listInput ?? null : null;
-  return {
-    ...s,
-    remoteViewers: {
-      ...viewers,
-      [update.id]: {
-        generation: update.generation,
-        sequence: update.sequence,
-        expiresAt: active ? now + VIEWER_LEASE_MS : now,
-        released: !active,
-        replies,
-        shownRows,
-        shownSince: active ? sameView ? previous?.shownSince ?? now : now : null,
-        tab: update.tab,
-        listActiveAt: active && update.listActive ? now : null,
-        listInput
-      }
-    }
+  const viewer = {
+    generation: update.generation,
+    sequence: update.sequence,
+    expiresAt: active ? now + VIEWER_LEASE_MS : now,
+    released: !active,
+    replies,
+    shownRows,
+    shownSince: active ? sameView ? previous?.shownSince ?? now : now : null,
+    tab: update.tab,
+    listActiveAt: active && update.listActive ? now : null,
+    listInput
   };
+  return { ...viewers, [update.id]: viewer };
 }
-function remoteHeldRows(s, now) {
-  return Object.values(s.remoteViewers).flatMap((viewer) => {
+function remoteHeldRows(leases, s, now) {
+  return Object.values(leases).flatMap((viewer) => {
     if (viewer.released || viewer.expiresAt <= now)
       return [];
     const closed = viewer.tab === "needsYou" ? s.ledger.closed : viewer.tab === "findings" ? s.ledger.closedFindings : [];
@@ -5711,8 +5701,8 @@ function remoteHeldRows(s, now) {
     return [...Object.keys(viewer.replies), ...viewed];
   });
 }
-function remoteViewerReceipts(s) {
-  return Object.fromEntries(Object.entries(s.remoteViewers).map(([id, viewer]) => [
+function remoteViewerReceipts(leases) {
+  return Object.fromEntries(Object.entries(leases).map(([id, viewer]) => [
     id,
     {
       replies: viewer.replies,
@@ -5725,6 +5715,28 @@ function remoteViewerReceipts(s) {
       released: viewer.released
     }
   ]));
+}
+function memoryViewerStores() {
+  const bySession = new Map;
+  const peek = (sessionId) => bySession.get(sessionId) ?? {};
+  return {
+    peek,
+    of: (sessionId, onChange) => ({
+      read: async () => peek(sessionId),
+      update: async (change) => {
+        const before = peek(sessionId);
+        const after = change(before);
+        if (after === before)
+          return before;
+        if (Object.keys(after).length === 0)
+          bySession.delete(sessionId);
+        else
+          bySession.set(sessionId, after);
+        onChange();
+        return after;
+      }
+    })
+  };
 }
 
 // ../core/view/press-reducer.ts
@@ -8452,21 +8464,21 @@ function recorded(host, s, tool, args, now, fields, delegate, earlier = []) {
 function withHolds(s, holds) {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince };
 }
-function rowsInPlace(s, now = Date.now()) {
+function rowsInPlace(s, now = Date.now(), viewers = {}) {
   const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
   const pending = Object.values(s.remoteCommands).filter((c) => c.pendingDelivery && !c.deliveryId).map((c) => c.row);
-  return new Set([...s.heldRows, ...remoteHeldRows(s, now), ...pending, ...since]);
+  return new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pending, ...since]);
 }
-function pruned(s, now = Date.now()) {
+function pruned(s, now = Date.now(), viewers = {}) {
   s = remoteCommandState(s);
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return settledCollapses({
     ...s,
-    ledger: pruneClosed(s.ledger, rowsInPlace(s, now)),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s, now, viewers)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews
   });
 }
@@ -13648,6 +13660,7 @@ async function readSaved(dir, sessionId) {
 async function readState(dir, sessionId) {
   return (await readSaved(dir, sessionId)).state;
 }
+var viewerLeases = memoryViewerStores();
 var updateTails = new Map;
 var exclusiveRuns = exclusiveKeys();
 var madeFolders = new Set;
@@ -13676,7 +13689,7 @@ async function updateState(dir, sessionId, change, now = Date.now) {
     const changed = await historyStep(questionHistory2, sessionId, current, await change(current), Date.now());
     if (isSaved && changed === current)
       return current;
-    const next = pruned(changed, now());
+    const next = pruned(changed, now(), viewerLeases.peek(sessionId));
     const folder = join(dir, "sessions");
     if (!madeFolders.has(folder)) {
       await mkdir(folder, { recursive: true });
@@ -15473,8 +15486,8 @@ function utf8Bytes(text) {
   return bytes;
 }
 var isOverLimit = (text) => text.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text) > PUBLISH_LIMIT_BYTES;
-function withoutFoldedClosed(s, now) {
-  const inPlace = rowsInPlace(s, now);
+function withoutFoldedClosed(s, now, viewers) {
+  const inPlace = rowsInPlace(s, now, viewers);
   const { closed, closedFindings } = s.ledger;
   return {
     ...s,
@@ -15489,7 +15502,7 @@ function publishedText(source, session, log) {
   const text = JSON.stringify(herdrEnvelope(source, session));
   if (!isOverLimit(text))
     return text;
-  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session, source.writtenAt), true));
+  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session, source.writtenAt, source.viewers), true));
   if (isOverLimit(trimmed))
     log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
   return trimmed;
@@ -15630,36 +15643,37 @@ var startedFile = (started, after) => {
   after(started.outcome);
   return DONE;
 };
+async function applyViewerUpdate(host, file) {
+  const now = await host.now();
+  const leases = await host.viewers.read();
+  const next = updateRemoteViewer(leases, file, now);
+  const previous = leases[file.id];
+  const viewer = next[file.id];
+  if (next === leases || !viewer)
+    return;
+  const isSameLook = previous !== undefined && !previous.released && previous.expiresAt > now && previous.generation === file.generation && previous.tab === "overview" && file.tab === "overview";
+  const endedLook = isSameLook && !file.active ? previous : undefined;
+  const lookShownSince = endedLook?.shownSince ?? null;
+  if (endedLook && lookShownSince !== null) {
+    const duration = Math.min(file.visibleForMs ?? 0, now - lookShownSince);
+    await host.update((s) => lookReportedOn(s, {
+      startedAt: now - duration,
+      endedAt: now,
+      drawnWrittenAt: Math.min(now, file.seenAt ?? 0),
+      shown: viewer.released ? endedLook.shownRows : viewer.shownRows
+    }));
+  }
+  await host.viewers.update((current) => updateRemoteViewer(current, file, now));
+  if (!viewer.released && viewer.tab === "prs")
+    await host.refreshPrsIfDue?.();
+}
 async function startHerdrFile(host, file, sessionId = "") {
   if (file.format === 2) {
     if (file.kind === "command")
       return finished(await applyRemoteCommand(host, file, sessionId));
     if (file.session !== sessionId)
       return finished(LOOK_OUTCOME);
-    const now = await host.now();
-    let refresh = false;
-    await host.update((s) => {
-      refresh = false;
-      const previous = s.remoteViewers[file.id];
-      let next = updateRemoteViewer(s, file, now);
-      if (next === s)
-        return s;
-      const viewer = next.remoteViewers[file.id];
-      const sameLook = previous && !previous.released && previous.expiresAt > now && previous.generation === file.generation && previous.tab === "overview" && file.tab === "overview";
-      if (sameLook && !file.active && previous.shownSince !== null) {
-        const duration = Math.min(file.visibleForMs ?? 0, now - previous.shownSince);
-        next = lookReportedOn(next, {
-          startedAt: now - duration,
-          endedAt: now,
-          drawnWrittenAt: Math.min(now, file.seenAt ?? 0),
-          shown: viewer.released ? previous.shownRows : viewer.shownRows
-        });
-      }
-      refresh = !viewer.released && viewer.tab === "prs";
-      return next;
-    });
-    if (refresh)
-      await host.refreshPrsIfDue?.();
+    await applyViewerUpdate(host, file);
     return finished(LOOK_OUTCOME);
   }
   if (isLookFile(file)) {
@@ -16234,7 +16248,7 @@ function sessionCalls(context) {
       const now = deps.now();
       const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, {
         receipts: remoteReceipts(s),
-        viewers: remoteViewerReceipts(s),
+        viewers: remoteViewerReceipts(viewerLeases.peek(id)),
         remoteProtocol: 2,
         remoteActions: REMOTE_ACTIONS,
         remoteHistoryAfter: s.remoteCommandFloor ?? 0,
@@ -16270,6 +16284,7 @@ function sessionCalls(context) {
     const id = sessionIdOf(ctx);
     return {
       now: deps.now,
+      viewers: viewerLeases.of(id, () => reportCounts(id)),
       read: () => readState(dir, id),
       readDurable: () => readState(dir, id),
       update: (fn) => change(id, fn),

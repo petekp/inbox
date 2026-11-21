@@ -254,7 +254,6 @@ function emptySession() {
     lastActions: {},
     remoteCommands: {},
     remoteCommandFloor: 0,
-    remoteViewers: {},
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -275,7 +274,7 @@ var isSessionFile = (name) => SESSION_FILE.test(name);
 
 // ../core/view/session-presentation.ts
 var SESSION_FIELDS = Object.keys(emptySession()).filter(
-  (field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers"
+  (field) => field !== "remoteCommands" && field !== "remoteCommandFloor" && field !== "lastAnswers"
 );
 
 // ../core/remote/herdr.ts

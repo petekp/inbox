@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-21T07:26:36.575Z. 337974 characters follow.
+// Built at 2026-11-21T08:11:31.460Z. 337876 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -2341,7 +2341,6 @@ function emptySession() {
     lastActions: {},
     remoteCommands: {},
     remoteCommandFloor: 0,
-    remoteViewers: {},
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -2398,7 +2397,6 @@ function sessionFields(saved, views) {
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
     remoteCommands: saved.remoteCommands ?? {},
     remoteCommandFloor: saved.remoteCommandFloor ?? 0,
-    remoteViewers: saved.remoteViewers ?? {},
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     collapsed: saved.collapsed ?? {},
@@ -2435,7 +2433,7 @@ function sessionFields(saved, views) {
 }
 
 // ../core/view/session-presentation.ts
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers");
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteCommandFloor" && field !== "lastAnswers");
 
 // ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
