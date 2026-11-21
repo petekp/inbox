@@ -1,9 +1,6 @@
-// Fails on a tracked file over 5,000 tokens (tokens = bytes / 4) that
-// .token-ceilings does not list, and on a listed file past its ceiling. It also
-// fails on a list entry that names no tracked file, or a file now at or under
-// the limit, so the list holds only files that need a ceiling. It uses
-// the rules of the token-limit pre-commit hook, and skips the files the hook
-// skips: lockfiles, built and generated files, binaries, and files marked
+// Fails on a tracked file over 5,000 tokens (tokens = bytes / 4). It uses the
+// rules of the token-limit pre-commit hook, and skips the files the hook skips:
+// lockfiles, built and generated files, binaries, and files marked
 // linguist-generated in .gitattributes.
 //
 // Where that hook is installed, the check also runs the hook's own --scan and
@@ -20,7 +17,6 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const CEILINGS_FILE = '.token-ceilings'
 const TOKEN_LIMIT = 5_000
 const BYTES_PER_TOKEN = 4
 const HEAD_BYTES = 2048
@@ -100,55 +96,13 @@ function markedGenerated(paths) {
   return generated
 }
 
-function parseCeilings(text) {
-  const ceilings = new Map()
-  for (const [index, line] of text.split('\n').entries()) {
-    const entry = line.replace(/^[ \t\r]+|[ \t\r]+$/g, '')
-    if (entry === '' || entry.startsWith('#')) continue
-    const fields = entry.split(/[ \t]+/)
-    const where = `${CEILINGS_FILE}:${index + 1}`
-    if (fields.length !== 2 || !/^[0-9]+$/.test(fields[1]))
-      throw new Error(`${where}: expected "path ceiling", such as "src/app.ts 6000", got: ${entry}`)
-    const [path, ceiling] = fields
-    if (ceilings.has(path)) throw new Error(`${where}: ${path} is listed twice`)
-    ceilings.set(path, Number(ceiling))
-  }
-  return ceilings
-}
-
-function readCeilings() {
-  const path = join(ROOT, CEILINGS_FILE)
-  if (!existsSync(path)) return new Map()
-  let text
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(path))
-  } catch {
-    throw new Error(`${CEILINGS_FILE}: not UTF-8 text`)
-  }
-  return parseCeilings(text)
-}
-
 const trackedFiles = () =>
   git('ls-files', '-z')
     .toString()
     .split('\0')
     .filter(path => path !== '')
 
-function staleEntries(ceilings, tracked) {
-  const stale = []
-  for (const path of ceilings.keys()) {
-    const full = join(ROOT, path)
-    if (!tracked.has(path) || !existsSync(full))
-      stale.push(`${CEILINGS_FILE} lists ${path}, which is not a tracked file.`)
-    else if (Math.floor(lstatSync(full).size / BYTES_PER_TOKEN) <= TOKEN_LIMIT)
-      stale.push(
-        `${CEILINGS_FILE} lists ${path}, which is now at or under the ${TOKEN_LIMIT.toLocaleString('en-US')}-token limit.`,
-      )
-  }
-  return stale.map(problem => `${problem} Remove its entry.`)
-}
-
-function filesOverLimit(ceilings, tracked) {
+function filesOverLimit(tracked) {
   const paths = tracked.filter(path => !skippedByName(path))
   const generated = markedGenerated(paths)
   const over = []
@@ -157,11 +111,10 @@ function filesOverLimit(ceilings, tracked) {
     if (generated.has(path) || !existsSync(full) || !lstatSync(full).isFile()) continue
     const data = readFileSync(full)
     const tokens = Math.floor(data.length / BYTES_PER_TOKEN)
-    const ceiling = ceilings.get(path)
-    if (tokens <= TOKEN_LIMIT || (ceiling !== undefined && tokens <= ceiling)) continue
+    if (tokens <= TOKEN_LIMIT) continue
     const head = data.subarray(0, HEAD_BYTES)
     if (head.includes(0) || GENERATED_MARKER.test(head.toString('latin1'))) continue
-    over.push({ path, tokens, ceiling })
+    over.push({ path, tokens })
   }
   return over
 }
@@ -201,15 +154,10 @@ function differences(ours, hooks) {
 
 const problems = []
 try {
-  const ceilings = readCeilings()
-  const tracked = trackedFiles()
-  problems.push(...staleEntries(ceilings, new Set(tracked)))
-  const over = filesOverLimit(ceilings, tracked)
+  const over = filesOverLimit(trackedFiles())
   for (const file of over)
     problems.push(
-      file.ceiling === undefined
-        ? `${describe(file)} is over the ${TOKEN_LIMIT.toLocaleString('en-US')}-token limit. Split it into smaller files.`
-        : `${describe(file)} is past its ceiling of ${file.ceiling.toLocaleString('en-US')} in ${CEILINGS_FILE}. Move code out of it.`,
+      `${describe(file)} is over the ${TOKEN_LIMIT.toLocaleString('en-US')}-token limit. Split it into smaller files.`,
     )
   const hook = installedHook()
   if (hook !== undefined) {

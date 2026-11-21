@@ -50,7 +50,7 @@ There is no `-p` flag and no `--plugin-dir` on the command line. It is still a h
 - "Desktop is interactive only" (https://code.claude.com/docs/en/desktop, Markdown line 979). This describes the person's experience, not the engine's `isInteractive` flag.
 - The changelog treats the app as an SDK host that resumes sessions: entries at 2.1.208, 2.1.260 and 2.1.282. Entry 2.1.269 adds a fix "(once Desktop bundles this CLI version)".
 
-**How the inbox handles it now** (`hooks/register.tsx`):
+**How the inbox handles it now** (`hooks/register.tsx`, `hooks/mod-lifecycle.ts` and `hooks/mod-load.ts`):
 
 - `session.start` calls `registerInboxCommand` before `next(e)`, so `/inbox` is registered before the first prompt. Registration retries when Inbox activates.
 - An interactive start, a start in a process the app started, or a desktop attach activates Inbox. Only a start is sure to register the tools before the first prompt: see "A reopened session's first prompt". A shared initialization promise prevents concurrent handlers from loading it twice.

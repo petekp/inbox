@@ -89,7 +89,7 @@ Row motion and the leaving-row wait stay in the look. `Kept` goes to version 3 a
 
 ### Terminal and desktop (PR 2.5)
 
-`PluginState.inbox` saves the controller's state in place of the mod's tab, page, selection, Status selection, typing, drafts, discards, shown time, notes, folds, Help and shown options. `upgradeState` in `hooks/register.tsx` converts the old fields once. One timer replaces the Undo-end, fold, timed-change, guard and Queued timers. Its `LookConfig`: the terminal draws running marks as frames and the title tint in steps, desktop pulses the marks and draws the tint once at its end, and both time Undo from the session's close. What changes:
+`PluginState.inbox` saves the controller's state in place of the mod's tab, page, selection, Status selection, typing, drafts, discards, shown time, notes, folds, Help and shown options. `upgradeState` in `hooks/mod-upgrade.ts` converts the old fields once. One timer replaces the Undo-end, fold, timed-change, guard and Queued timers. Its `LookConfig`: the terminal draws running marks as frames and the title tint in steps, desktop pulses the marks and draws the tint once at its end, and both time Undo from the session's close. What changes:
 
 - `/inbox` shows Asks when a row waits there. The band's Open inbox no longer leaves the Status page.
 - When the cursor's row leaves or stops waiting, including a close by the agent, the cursor goes to the next waiting row from that place, never to a handled row.

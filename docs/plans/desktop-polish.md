@@ -61,7 +61,7 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
 
 ## Not changing
 
-- The cards and the palettes (`pal` in `hooks/register.tsx`). Rules 7 and 9 change only which text takes which palette color.
+- The cards and the palettes (`paletteFor` in `hooks/palettes.ts`). Rules 7 and 9 change only which text takes which palette color.
 - The terminal's look.
 - Any wording, except Send's capital S.
 

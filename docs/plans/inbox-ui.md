@@ -2,7 +2,7 @@
 
 Status: built. It is the UI spec the code follows.
 
-This spec sets what the inbox shows in its three looks and how the person acts on it. The looks are the terminal, the Claude desktop app and the Codex Inbox tab. The terminal and the desktop app are drawn by the mod's `hooks/register.tsx`. The Codex tab is drawn by `codex/src/tab.tsx`. Shared rules live in `hooks/view.ts`, `hooks/presses.ts`, `hooks/pr-tab.ts` and `hooks/layout.ts`. [looks.md](../looks.md) lists which file owns each rule.
+This spec sets what the inbox shows in its three looks and how the person acts on it. The looks are the terminal, the Claude desktop app and the Codex Inbox tab. The terminal and the desktop app are drawn by the mod's `hooks/mod-pane-render.tsx`, `hooks/mod-band.tsx` and `hooks/pane-*.tsx`. The Codex tab is drawn by `codex/src/tab.tsx`. Shared rules live in `hooks/view.ts`, `hooks/presses.ts`, `hooks/pr-tab.ts` and `hooks/layout.ts`. [looks.md](../looks.md) lists which file owns each rule.
 
 Claude mode, an inline card in Claude chat, is a separate proposal and is not built: [claude-mode.md](claude-mode.md).
 

@@ -38,7 +38,7 @@ This part holds rows 1-62. They mostly concern desktop behavior, the engine, hoo
 | 30 | How desktop draws `variant="primary"` and `role="dismiss"`. | Sample Button in Code mode. |
 | 31 | With a terminal and desktop attached to one session, which surface fires `onPress`? Do both draw the band at once? | Attach the app to a terminal session, press in each, log `e.surface` and render counts. |
 | 32 | Minimum engine for `Client` on desktop, the desktop Link rules, Button `variant`, Button `Text` children, `$.ui.notify`. | Save each build's `index.d.ts` outside the gitignored path and diff them. |
-| 33 | What `origin.kind` does a prompt typed in desktop Code mode carry? If it is `sdk`, the inbox ignores it as the person's words (`hooks/register.tsx:isPersonsWords`). | Log `e.origin` from `prompt.submit` to the debug log in a Code-mode session. |
+| 33 | What `origin.kind` does a prompt typed in desktop Code mode carry? If it is `sdk`, the inbox ignores it as the person's words (`hooks/mod-prompts.ts:isPersonsWords`). | Log `e.origin` from `prompt.submit` to the debug log in a Code-mode session. |
 | 34 | Does `$.ui.copy` work on desktop? | Answered: yes, `isCopied: true`. [desktop](../claude-desktop-app/live-checks.md#live-probe-of-a-code-mode-session) |
 | 35 | Do `$.prompt.fill`, `suggest`, `read`, `$.ui.selection` and `$.ui.ask` work in Code mode? | A temporary command that calls each and logs results, in a session with its own `CLAUDE_CONFIG_DIR`. |
 | 36 | Does `$.process.run` work in Code mode? | Answered: yes, `git` and `gh` ran. [desktop](../claude-desktop-app/live-checks.md#live-probe-of-a-code-mode-session) |

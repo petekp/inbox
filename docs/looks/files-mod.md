@@ -6,7 +6,48 @@ Part of [the look map](../looks.md#files).
 | --- | --- |
 | `hooks/claude.ts` | Mod only. Claude transcript, command, dialog and stop helpers. |
 | `hooks/explanation-reply.ts` | Mod only. Saves the transcript row where an explanation's reply begins, for Show explanation, and words a refused scroll for the row. |
-| `hooks/register.tsx` | Mod adapter and host. Runs the Pane render. It reads the drawn state, builds the handlers for the calls that need `$`, and calls the `pane-*.tsx` files, which draw every tab. It also runs the band, the per-reply update and the press runner. It keeps the drawn session in an engine atom, saves each conversation's session in the engine store, and builds the mod's `SessionHost`. The plugin directory refuses `$` passed to a function another of the mod's files declares, so every function that takes `$` lives in this file. |
+| `hooks/register.tsx` | Mod entry. Declares the mod's engine atoms and wires each Claude Code hook to the `hooks/mod-*.ts` module that handles it. The plugin directory accepts `# Files: the mod
+
+Part of [the look map](../looks.md#files).
+
+| File | Role |
+| --- | --- |
+| `hooks/claude.ts` | Mod only. Claude transcript, command, dialog and stop helpers. |
+| `hooks/explanation-reply.ts` | Mod only. Saves the transcript row where an explanation's reply begins, for Show explanation, and words a refused scroll for the row. |
+ passed only to a function declared in this file, and the engine reads an atom or a state key only where this file names it. So `modOf` binds, for each hook, the narrow engine calls the modules make, as the `Mod` of `hooks/mod-ports.ts`. The permission hooks stay written here, because the directory accepts one only when it returns `next(e)` itself. |
+| `hooks/mod-ports.ts` | Mod only. `Mod`, what the mod's modules reach through `# Files: the mod
+
+Part of [the look map](../looks.md#files).
+
+| File | Role |
+| --- | --- |
+| `hooks/claude.ts` | Mod only. Claude transcript, command, dialog and stop helpers. |
+| `hooks/explanation-reply.ts` | Mod only. Saves the transcript row where an explanation's reply begins, for Show explanation, and words a refused scroll for the row. |
+: the atoms, clock, pane, conversation, model, setup, store, history, command and Herdr calls. It also carries the operations several modules share, `commit`, `sendUi`, `publishStatus`, `syncLook`, `hostOf` and `fetchPrs`, so the modules that call them and the modules that define them import no value from each other in a loop. A module that uses some fields names them with `Pick`, and one that uses most takes `Mod`. Of those that name their fields, only the session write loop, the state upgrade and message delivery in `hooks/mod-host.ts` take `writeSession`. |
+| `hooks/mod-upgrade.ts` | Mod only. On load, brings what an older build left in engine state to the current shape: the drawn session, the pane's fields from before the shared controller, and a sample copy that lacks a field. `OLD_INITIAL` gives each old field its value while that build wrote nothing there. |
+| `hooks/mod-drawn.ts` | Mod only. Reads what the pane draws: the controller's state, the drawn session or the sample, whether the pane and the PRs tab show, and the /config theme. `redraw` draws the pane again. |
+| `hooks/mod-session-write.ts` | Mod only. Writes a conversation's session. `changeSession` writes the drawn session's atom while no other write lands, saves it to the engine store, and sends a write for a conversation off screen to its saved session. `commit` then updates the Status look, the Herdr look and the controller. |
+| `hooks/mod-host.ts` | Mod only. The mod's `SessionHost`: the inbox model call, a press's effects, and delivering a message to the agent. |
+| `hooks/mod-updates.ts` | Mod only. The inbox model's calls after a reply and during a turn: the ledger update, the Status call and its catch-up, and the records of each call. |
+| `hooks/mod-publish.ts` | Mod only. Publishes the drawn session to the Herdr look, and applies a press that look wrote. |
+| `hooks/mod-dialogs.ts` | Mod only. Permission and question dialogs: notes one opening and closing, and `waitForPermission`, the permission row where the guard skips `classic.PermissionRequest`. |
+| `hooks/mod-ui-loop.ts` | Mod only. Runs events through the shared controller, applies the commands it returns, and schedules its next wake and the terminal's frames. |
+| `hooks/mod-pane-open.ts` | Mod only. Opens and focuses the pane, shows a tab, starts and ends a look at the Status, and follows Herdr delegates while the Status shows. |
+| `hooks/mod-pane-scroll.ts` | Mod only. Scrolls the pane to a row, a Status row or the open row, and keeps the terminal's Undo in view. |
+| `hooks/mod-pane-input.ts` | Mod only. The pane's typing and folds: sends or discards a reply, opens and closes the reply field, moves the cursor, and sets folds, Help and collapsed rows. |
+| `hooks/mod-prs.ts` | Mod only. Finds and fetches the session's PRs, links the PRs a reply names, and polls while a fetch is due. |
+| `hooks/mod-press-run.ts` | Mod only. Runs a row or PR press through the shared press runner, and wakes the controller after a press settles or held sends go out. |
+| `hooks/mod-demo.ts` | Mod only. Shows or hides the sample, runs a press on it, and gives the stand-in agent's reply. |
+| `hooks/mod-load.ts` | Mod only. Loads a conversation's session after a start, `/clear`, `/resume` or a fork, brings it back after a reload, and saves the session's folder and branch. |
+| `hooks/mod-turns.ts` | Mod only. A turn's start and end, and the stop a failed or cut-off turn leaves, with Resume. |
+| `hooks/mod-prompts.ts` | Mod only. A submitted prompt and the rows Claude Code stores: which prompt is the person's words, what Claude reads beside it, and the replies and command rows a turn records. |
+| `hooks/mod-tool-calls.ts` | Mod only. The `record`, `close` and `order_prs` calls, and what other tool calls and spawned agents add to the turn and to the Status's children. |
+| `hooks/mod-lifecycle.ts` | Mod only. Turns the mod on: registers `/inbox` and the tools, upgrades and loads state, and starts the clock and the Herdr listener. Also ends the session's conversation, at exit and at /clear and /resume. |
+| `hooks/mod-command.ts` | Mod only. Runs `/inbox`: opens the pane, shows or hides the sample, or asks about the Herdr mod again. |
+| `hooks/mod-pane-events.ts` | Mod only. The pane's presses, scrolls, messages and close. |
+| `hooks/mod-pane-handlers.ts` | Mod only. The handlers the pane's rows and buttons call, the pane's tab and move keys, where the Status starts in the pane, and the desktop focus after a draw. |
+| `hooks/mod-pane-render.tsx` | Mod only. The Pane render in both looks. It reads the drawn state and the controller's state, and calls the `pane-*.tsx` files, which draw every tab. |
+| `hooks/mod-band.tsx` | Mod only. The band above the prompt: the inbox's counts with Open inbox, and the stop row with Resume. |
 | `hooks/pane-context.ts` | Mod only. The types the Pane render hands its drawing files: `PaneBase` for the values the render computed, `PaneClient` for whether the surface draws Clients, `PaneHandlers` for the calls that need `$`, and `Row`, the shape every list row is drawn from. |
 | `hooks/pane-frame.tsx` | Mod only. The pane's frame in both looks: the tab bar, the inline rail, banners and the status block. |
 | `hooks/pane-row-frame.tsx` | Mod only. `desktopFrame`, the frame a desktop row, group title, PR block or Status row draws in: its mark column, side column and padding. |
@@ -47,7 +88,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/mod-demo-press.ts` | Mod only. A press on the sample: it changes the sample copy, sends nothing, and gives the message the stand-in agent answers. |
 | `hooks/mod-records.ts` | Mod only. What the mod tracks about tool calls, subagents, workflows and Herdr delegates. That includes which calls ran, and the child a finished Agent or Workflow call ended or started. Also the text a permission dialog shows for a tool call. |
 | `hooks/mod-herdr.ts` | Mod only. Reports the drawn conversation to the Herdr pane or app terminal the session runs in. In an app terminal it publishes the session first, moving and removing files with `mv` and `rm` because the engine has no call for either. `delegatesAsked` asks Herdr or `hc` about the session's delegates. `listenForHerdrPresses` follows the terminal's `inbox.press` label with `hc events` and applies the presses the look writes while the session's published file names this terminal. `openInHerdr` opens the Herdr look beside the terminal for `/inbox` and the band's Open inbox press. |
-| `hooks/mod-old-fields.ts` | Mod only. `sessionFromOldFields` builds the session from the separate store fields an older build kept, for a hot reload into this build. The fields' atoms stay in `register.tsx`, because the engine reads an atom only where the file that reads it declares it. |
+| `hooks/mod-old-fields.ts` | Mod only. `sessionFromOldFields` builds the session from the separate store fields an older build kept, for a hot reload into this build. `register.tsx` reads the fields, because the engine reads a state key only where the hooks module names it. |
 | `hooks/mod-plugin-files.ts` | Mod only. Paths in the mod's own folder: the comparison page template and the next-build mark. |
 | `hooks/mod-saves.ts` | Mod only. Saves to the engine store and reads of saved sessions. A save retries while another process holds the store's lock. When a write to a conversation off screen meets the lock through every retry, the changed session is held in memory and tried again in the background, for up to 10 minutes. Later writes and reads of that session start from it, until a newer save of the conversation lands. Every session of the mod shares one store, which the engine caps at 4 MiB of JSON. A saved session keeps at most `SAVED_PR_VIEWS_MAX` characters of PR views: merged and closed PRs go first, then the open PRs read longest ago. The first save of each conversation keeps every running conversation's saved session, and the newest `KEPT_SESSIONS` of the rest. A write the store refuses as full drops the shared PR views no fetch reads and tries again. When it is still full, it deletes the saved sessions of ended conversations, oldest first, and tries once more. A save of the drawn session that still does not fit is logged, and `isLastSaveRefused` tells the `record`, `close` and `order_prs` answers to say the change is not saved. |
 | `hooks/mod-history.ts` | Mod only. The mod's way into the question history, through `$.fs`, `$.env` and the engine store. `withHistory` wraps a change to a saved session in `historyStep`. |

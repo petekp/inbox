@@ -56,7 +56,7 @@ Something only the person can do, such as signing in.
 _Avoid_: do, todo
 
 **Closed item**:
-A question or task that is no longer open: answered, done, dismissed, expired,
+A question or task no longer open: answered, done, dismissed, expired,
 or closed by the agent.
 _Avoid_: decided
 
@@ -336,8 +336,9 @@ A file in `hooks/` that every host consumes, directly or through a build.
 It imports only other shared modules and the shared types.
 
 **Adapter**:
-The code that draws the shared view in one look. For the terminal and desktop
-looks, it is `hooks/register.tsx` and the `hooks/pane-*.tsx` files. For the
+The code that draws the shared view in a look. For the terminal and desktop
+looks, it is `hooks/mod-pane-render.tsx`, `hooks/mod-band.tsx` and
+`hooks/pane-*.tsx`. For the
 Codex tab, it is `codex/src/tab.tsx`, the other `codex/src/tab-*` files,
 `codex/src/row-actions.tsx` and the styles in `codex/src/tab-css/`. For the omp
 panel, it is `omp/src/panel.ts` and the other `omp/src/panel-*.ts` files.
