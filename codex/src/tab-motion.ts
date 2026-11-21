@@ -109,10 +109,13 @@ function growIn(el: HTMLElement, from: SpringState, opacity: number, delay: numb
   fade(el, opacity, 1, ENTER_FADE_MS, false, true, delay + waits)
 }
 
-/** Fades an element's content out while its space holds, then shrinks the space away. */
-function fadeAway(el: HTMLElement, from: SpringState, slide: boolean) {
+/** The height an element that comes or goes starts and ends at: its `data-rest` px, else 0. */
+const restOf = (el: HTMLElement) => Number(el.dataset.rest) || 0
+
+/** Fades an element's content out while its space holds, then shrinks the space to `to`. */
+function fadeAway(el: HTMLElement, from: SpringState, slide: boolean, to = 0) {
   fade(el, opacityOf(el), 0, LEAVE_FADE_MS, true, slide)
-  glide(el, 'height', from, 0, true, true, LEAVE_FADE_MS)
+  glide(el, 'height', from, to, true, true, LEAVE_FADE_MS)
 }
 
 /**
@@ -279,7 +282,7 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
     case 'entering': {
       const isTurn = !isFresh && el.getAnimations().length > 0
       const delay = isTurn && !isSpaceShort(el) ? 0 : Math.max(heightWaitMs, closeWaitMs)
-      growIn(el, isTurn ? from : { x: 0, v: 0 }, isTurn ? opacityOf(el) : 0, delay)
+      growIn(el, isTurn ? from : { x: restOf(el), v: 0 }, isTurn ? opacityOf(el) : 0, delay)
       return true
     }
     case 'closing':
@@ -287,7 +290,7 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
       collapse(el, from, state, openTop, tabState.isReadDraw ? heightWaitMs : 0)
       return true
     case 'leaving':
-      fadeAway(el, from, !isInsideLeaving(el))
+      fadeAway(el, from, !isInsideLeaving(el), restOf(el))
       return true
     default:
       return false
