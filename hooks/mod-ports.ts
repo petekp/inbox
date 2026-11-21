@@ -161,7 +161,7 @@ export type Mod = {
   commands: EngineCalls
   herdr: HerdrCalls
   pluginRoot: string
-  /** Writes the drawn session. The state upgrade and the modules that run the write loop in `mod-session-write.ts` take it. */
+  /** Writes the drawn session. Of the modules that name their fields, only the session write loop, the state upgrade and message delivery take it. */
   writeSession: (change: (s: ModSession) => ModSession) => Promise<ModSession>
   /** Changes `owner`'s session, as `commit` in `hooks/mod-session-write.ts` does. */
   commit: (owner: Owner, change: (s: Session) => Session | Promise<Session>) => Promise<Session>

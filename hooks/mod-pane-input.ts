@@ -14,7 +14,6 @@ import type { UiEvent } from './ui-controller-types'
 type PaneInputCalls = Pick<
   Mod,
   | 'atoms'
-  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'saves'

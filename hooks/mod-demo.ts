@@ -15,7 +15,6 @@ import type { Holds } from './timing'
 type DemoCalls = Pick<
   Mod,
   | 'atoms'
-  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'saves'

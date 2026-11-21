@@ -24,7 +24,6 @@ import { SETTLED_MS } from './timing'
 type HostCalls = Pick<
   Mod,
   | 'atoms'
-  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'conversation'
@@ -39,6 +38,8 @@ type HostCalls = Pick<
   | 'syncLook'
   | 'fetchPrs'
 >
+
+type HostWriteCalls = HostCalls & Pick<Mod, 'writeSession'>
 
 /** Calls the inbox model, reports the call, and returns the answer. */
 export async function askInboxModel(
@@ -86,7 +87,7 @@ async function perform(
  * Sends a message as the person's own prompt. Claude Code may store its row before `$.prompt.submit` returns, as
  * the mod's `session.append` handler sees, and another plugin may rewrite it.
  */
-export async function deliver(m: HostCalls, owner: Owner, text: string, deliveryId: string): Promise<SendOutcome> {
+export async function deliver(m: HostWriteCalls, owner: Owner, text: string, deliveryId: string): Promise<SendOutcome> {
   if (!isCurrent(owner)) return { state: 'rejected', reason: 'the conversation changed first' }
   const since = stored.count
   type Submitted = { entered: string } | { notSent: string }
@@ -118,7 +119,7 @@ export async function deliver(m: HostCalls, owner: Owner, text: string, delivery
 
 /** The mod's SessionHost for the conversation `owner`, with copies going to `surface`. */
 function sessionHost(
-  m: HostCalls,
+  m: HostWriteCalls,
   owner: Owner,
   opts: {
     /** Changes the session, with what the drawing does after each write. */
@@ -168,7 +169,7 @@ function sessionHost(
 }
 
 /** The mod's SessionHost for `owner`'s conversation. A press passes its surface, which copies go to. */
-export function hostOf(m: HostCalls, owner: Owner, surface?: UiPressArgument['surface']): SessionHost<Session> {
+export function hostOf(m: HostWriteCalls, owner: Owner, surface?: UiPressArgument['surface']): SessionHost<Session> {
   return sessionHost(m, owner, {
     update: change => m.commit(owner, change),
     surface,

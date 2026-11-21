@@ -20,7 +20,6 @@ import { refreshStatus, type StatusCall, type StatusRecords } from './status-rec
 type UpdateCalls = Pick<
   Mod,
   | 'atoms'
-  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'conversation'

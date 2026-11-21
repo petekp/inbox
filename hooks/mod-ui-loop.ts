@@ -20,7 +20,6 @@ import { freshUi, type UiCommand, type UiEvent, type UiState } from './ui-contro
 type UiLoopCalls = Pick<
   Mod,
   | 'atoms'
-  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'saves'

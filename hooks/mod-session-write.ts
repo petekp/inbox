@@ -17,7 +17,10 @@ type SessionWriteCalls = Pick<
  * Replaces the drawn session outside the write loop, as a conversation switch or load does. A change that returns
  * the session it was given writes nothing.
  */
-export async function replaceDrawn(m: SessionWriteCalls, change: (s: ModSession) => Session): Promise<ModSession> {
+export async function replaceDrawn(
+  m: Pick<Mod, 'writeSession'> & { atoms: Pick<Mod['atoms'], 'session'> },
+  change: (s: ModSession) => Session,
+): Promise<ModSession> {
   const cur = await m.atoms.session.read()
   if (change(cur) === cur) return cur
 
@@ -97,7 +100,7 @@ export async function commit(
 
 /** Changes the ledger of `owner`'s session. */
 export function commitLedger(
-  m: SessionWriteCalls,
+  m: Pick<Mod, 'commit'>,
   change: (l: Ledger) => Ledger,
   owner: Owner = currentOwner(),
 ): Promise<Session> {

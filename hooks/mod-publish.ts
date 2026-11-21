@@ -13,7 +13,6 @@ import { SETTLED_MS } from './timing'
 type PublishCalls = Pick<
   Mod,
   | 'atoms'
-  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'saves'
