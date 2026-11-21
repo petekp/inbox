@@ -11,7 +11,8 @@ import { lookReportedOn } from '../runtime/session-status'
 import { rowsInPlace } from '../runtime/session-presses'
 import { updateRemoteViewer } from '../runtime/remote-viewers'
 import type { RemoteViewerUpdate, ViewerStore } from '../runtime/remote-viewers'
-import { applyRemoteCommand } from './remote-commands'
+import { startRemoteCommand } from './remote-commands'
+import type { StartedCommand } from './remote-commands'
 import { clipLabel } from '../domain/text'
 
 /**
@@ -196,7 +197,7 @@ const logged = (text: string) => clipLabel(text, LOGGED_CHARS)
 /**
  * Returns a drain: it applies each press file waiting for a session, oldest first by `fileTime`, and removes the file. It
  * reads a folder only when `owns` says this process runs the session there. Legacy files use a process-specific rename.
- * Version-2 files stay in place until application returns; their saved command admission prevents repeated effects. A
+ * Version-2 files stay in place until their start returns; their saved command admission prevents repeated effects. A
  * file `pressFile` refuses or that cannot be read is logged and removed. One drain of a folder runs at a time, and a
  * drain asked for while one runs runs once more after it, so a press that lands mid-drain is not missed. The drain does
  * not wait for what a file leaves `waiting`, so a message held until the agent's turn ends holds up no file behind it.
@@ -329,7 +330,7 @@ const LOOK_OUTCOME: PressOutcome = {
  * A file the Herdr look wrote, applied: done with its outcome, or saved with a message the host holds until the agent's
  * turn ends, which `finish` sends before the press's opens and copies.
  */
-type StartedHerdrFile = { is: 'done'; outcome: PressOutcome } | { is: 'waiting'; finish(): Promise<PressOutcome> }
+type StartedHerdrFile = StartedCommand
 
 const finished = (outcome: PressOutcome): StartedHerdrFile => ({ is: 'done', outcome })
 
@@ -393,7 +394,7 @@ export async function startHerdrFile<S extends Session>(
   sessionId = '',
 ): Promise<StartedHerdrFile> {
   if (file.format === 2) {
-    if (file.kind === 'command') return finished(await applyRemoteCommand(host, file, sessionId))
+    if (file.kind === 'command') return startRemoteCommand(host, file, sessionId)
     if (file.session !== sessionId) return finished(LOOK_OUTCOME)
     await applyViewerUpdate(host, file)
     return finished(LOOK_OUTCOME)

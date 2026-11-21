@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { makeServer } from '../src/server'
 import { readState, updateState } from '../src/state'
+import { codexCommandStore } from '../src/command-log'
 import { readViewers } from '../src/viewers'
 import { remoteRowVersion } from '../../core/remote/remote-commands'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
@@ -55,10 +56,10 @@ test('desktop companion reads are passive and viewer updates preserve the origin
       scope,
     )) as {
       writtenAt: number
-      session: { remoteCommands: object; lastAnswers: { ledger: unknown; status: unknown } }
+      session: { lastAnswers: { ledger: unknown; status: unknown } }
     }
     assert.ok(view.writtenAt > 0)
-    assert.deepEqual(view.session.remoteCommands, {})
+    assert.equal('remoteCommands' in view.session, false)
     assert.equal('remoteViewers' in view.session, false)
     assert.deepEqual(view.session.lastAnswers, { ledger: null, status: null })
     assert.equal(readFileSync(path, 'utf8'), before)
@@ -148,18 +149,20 @@ test('companion goal controls reject stale views and retain outcomes across retr
     return handle.companion({ version: 1, operation: 'apply', session, file: parsed.file }, scope)
   }
   const state = () => readState(dir, session)
+  const commandState = async (id: string) =>
+    (await codexCommandStore(dir, session, () => now).read()).commands[id]?.state
   try {
     await apply(await command({ action: 'type', id: 'goal', text: 'Finish the settings screen' }))
     assert.equal((await state()).ledger.overview?.goal?.text, 'Finish the settings screen')
     const staleRemove = await command({ action: 'remove-goal', id: 'goal' })
     await apply(await command({ action: 'type', id: 'goal', text: 'Finish the profile screen' }))
     await apply(staleRemove)
-    assert.equal((await state()).remoteCommands[staleRemove.id]?.state, 'stale')
+    assert.equal(await commandState(staleRemove.id), 'stale')
     assert.equal((await state()).ledger.overview?.goal?.text, 'Finish the profile screen')
     const remove = await command({ action: 'remove-goal', id: 'goal' })
     await apply(remove)
     assert.equal((await state()).ledger.overview?.goal, null)
-    assert.equal((await state()).remoteCommands[remove.id]?.state, 'applied')
+    assert.equal(await commandState(remove.id), 'applied')
     await apply(await command({ action: 'restore-goal', id: 'goal' }))
     assert.equal((await state()).ledger.overview?.goal?.text, 'Finish the profile screen')
     await apply(remove)
@@ -185,12 +188,12 @@ test('companion goal controls reject stale views and retain outcomes across retr
       () => now,
     )
     await apply(staleSuggestion)
-    assert.equal((await state()).remoteCommands[staleSuggestion.id]?.state, 'stale')
+    assert.equal(await commandState(staleSuggestion.id), 'stale')
     assert.equal((await state()).ledger.overview?.goal, null)
     const take = await command({ action: 'take-goal', id: 'goal' })
     await apply(take)
     assert.equal((await state()).ledger.overview?.goal?.text, 'Ship the profile screen')
-    assert.equal((await state()).remoteCommands[take.id]?.state, 'applied')
+    assert.equal(await commandState(take.id), 'applied')
     await apply(take)
     assert.equal((await state()).ledger.overview?.goal?.text, 'Ship the profile screen')
   } finally {
@@ -252,7 +255,7 @@ test('a companion Compare queues once and keeps the design question open', async
     await handle.companion(request, scope)
     await handle.companion(request, scope)
     const saved = await readState(dir, session)
-    assert.equal(saved.remoteCommands[command.id]?.state, 'applied')
+    assert.equal((await codexCommandStore(dir, session, () => now).read()).commands[command.id]?.state, 'applied')
     assert.deepEqual(
       saved.ledger.items.map(item => item.ask),
       ['Which layout should we use?'],

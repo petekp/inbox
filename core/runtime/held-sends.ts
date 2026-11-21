@@ -1,23 +1,29 @@
-import { confirmRemoteDelivery } from './remote-command-state'
+import { appliedCommands, confirmRemoteDelivery, hasCommandRows, saveDeliveryOutcome } from './remote-command-state'
+import type { CarriedCommands } from './remote-command-state'
 import type { Delivery, Session } from '../../types'
 import { reopenOnFailure, withFailure, withUnconfirmed } from '../view/press-reducer'
-import { completedAttempt } from './session-presses'
+import { attemptCommands, completedAttempt } from './session-presses'
 import type { SendOutcome } from './session-presses'
 import type { SessionHost } from './session-host'
 
 type ReleaseHost<S extends Session> = Pick<
   SessionHost<S>,
-  'now' | 'read' | 'readDurable' | 'update' | 'deliver' | 'prepare' | 'newId' | 'isDeliveryHeldUntilRun'
+  'now' | 'read' | 'readDurable' | 'commands' | 'update' | 'deliver' | 'prepare' | 'newId' | 'isDeliveryHeldUntilRun'
 >
 
+/** The commands whose press ran, read when `s` names any command, which a held message of a command waits for. */
+async function appliedIn<S extends Session>(
+  host: Pick<ReleaseHost<S>, 'commands'>,
+  s: S,
+): Promise<ReadonlySet<string>> {
+  return hasCommandRows(s) ? appliedCommands(host.commands, s) : new Set()
+}
+
 /** The rows whose held message is due: Undo can no longer take its press back. */
-function dueRows(s: Session, now: number): string[] {
+function dueRows(s: Session, now: number, applied: ReadonlySet<string>): string[] {
   return Object.entries(s.lastActions)
     .filter(
-      ([, a]) =>
-        a.delivery?.state === 'held' &&
-        a.delivery.until <= now &&
-        (!a.commandId || s.remoteCommands[a.commandId]?.state === 'applied'),
+      ([, a]) => a.delivery?.state === 'held' && a.delivery.until <= now && (!a.commandId || applied.has(a.commandId)),
     )
     .map(([id]) => id)
 }
@@ -27,7 +33,8 @@ function dueRows(s: Session, now: number): string[] {
  * before this runs, so it sends nothing. A refused answer reopens its question, as a refused press does.
  */
 export async function releaseHeldSends<S extends Session>(host: ReleaseHost<S>, current?: S): Promise<void> {
-  const due = dueRows(current ?? (await host.read()), await host.now())
+  const s = current ?? (await host.read())
+  const due = dueRows(s, await host.now(), await appliedIn(host, s))
   for (const id of due) await releaseOne(host, id, false)
 }
 
@@ -55,6 +62,7 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, i
   let attempt: { deliveryId: string; text: string; at: number } | null = null
   const attemptId = host.newId()
   let startedState: S | undefined
+  const applied = await appliedIn(host, await host.read())
   const started = host.update(async s => {
     // A host may run the change again on a newer session, where Undo or another release already took the row.
     attempt = null
@@ -62,7 +70,7 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, i
     const held = last?.delivery
     const now = await host.now()
     if (!last || held?.state !== 'held' || (held.until > now && !isEarly)) return s
-    if (last.commandId && s.remoteCommands[last.commandId]?.state !== 'applied') return s
+    if (last.commandId && !applied.has(last.commandId)) return s
     await host.prepare?.(s)
     const deliveryId = last.commandId ? `${last.commandId}:send` : attemptId
     attempt = { deliveryId, text: held.message, at: last.at }
@@ -110,7 +118,9 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, i
   const outcome: SendOutcome = await host
     .deliver(await host.read(), sending.text, sending.deliveryId)
     .catch((err: unknown) => ({ state: 'unconfirmed', reason: err instanceof Error ? err.message : String(err) }))
+  let carried: CarriedCommands = { ids: [], arrived: false }
   await host.update(s => {
+    carried = attemptCommands(s, sending.deliveryId, outcome)
     const after = completedAttempt(s, sending.deliveryId, outcome)
     if (outcome.state === 'unconfirmed')
       return { ...after, lastActions: withUnconfirmed(after.lastActions, sending.text, sending.at, sending.deliveryId) }
@@ -125,4 +135,5 @@ async function releaseOne<S extends Session>(host: ReleaseHost<S>, id: string, i
       ledger: isRowFailed && last.kind === 'mark' ? reopenOnFailure(after.ledger, id, sending.at) : after.ledger,
     }
   })
+  await saveDeliveryOutcome(host.commands, carried, sending.deliveryId, outcome)
 }

@@ -9,6 +9,7 @@ import type { DelegateSession } from '../remote/hc-terminals'
 import { parsedReply, applied } from './session-turns'
 import { needsCatchUp, appliedCatchUp } from './session-status'
 import type { SendOutcome } from './session-presses'
+import type { CommandStore } from './remote-command-state'
 import type { CallKind, ProcessFailure, Session, HostTask } from '../../types'
 import { askAndWriteStatus, readForStatus } from './status-records'
 import { askedCall, heardCall, withAnswer, withCall } from './call-record'
@@ -90,6 +91,8 @@ export type SessionHost<S extends Session> = {
   now(): number | Promise<number>
   read(): Promise<S>
   readDurable?(): Promise<S>
+  /** The session's command log. A host without one runs no remote command. */
+  commands?: CommandStore
   /** Changes the session under its lock. An external effect, such as a delivery, runs outside a change. */
   update(change: (s: S) => S | Promise<S>): Promise<S>
   /** Runs `fn` unless another run holds the session's per-reply update. */

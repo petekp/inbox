@@ -21,6 +21,9 @@ import type { HistoryPlace } from '../../core/runtime/history-store'
 import { diagnosticLines } from './diagnostics'
 import { tryWithLock, withLock } from './lock'
 import { readViewers, removeViewers } from './viewers'
+import { codexCommandStore, commandsPath, removeCommands } from './command-log'
+import { followCommandRows, movedLegacyCommands } from '../../core/runtime/command-store'
+import { herdrLog } from './herdr-log'
 import { isShownTab } from '../../core/view/tabs'
 import type { ShownTab } from '../../core/view/tabs'
 
@@ -297,10 +300,17 @@ export async function updateState(
     const { state: current, isSaved } = await readSaved(dir, sessionId)
     const changed = await historyStep(questionHistory, sessionId, current, await change(current), Date.now())
     if (isSaved && changed === current) return current
-    const next = pruned(changed, now(), (await readViewers(dir, sessionId)).leases)
+    const commands = codexCommandStore(dir, sessionId, now)
+    const log = herdrLog(dir)
+    const next = await movedLegacyCommands(
+      commands,
+      pruned(changed, now(), (await readViewers(dir, sessionId)).leases),
+      log,
+    )
     const tmp = `${path}.${process.pid}.tmp`
     await writeFile(tmp, JSON.stringify(next))
     await rename(tmp, path)
+    await followCommandRows(commands, commandsPath(dir, sessionId), next, log)
 
     return next
   })
@@ -337,6 +347,7 @@ export async function pruneSessions(dir: string, keep: string): Promise<void> {
           if ((await stat(path)).mtimeMs !== mtimeMs) return
           await unlink(path)
           await removeViewers(dir, name.slice(0, -'.json'.length))
+          await removeCommands(dir, name.slice(0, -'.json'.length))
         }),
       )
     } catch {

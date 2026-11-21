@@ -36,6 +36,7 @@ import { pageName } from './server-tools'
 import { SETTLE_WINDOW_MS } from './settle'
 import { readState, updateState } from './state'
 import { codexViewerStore } from './viewers'
+import { codexCommandStore } from './command-log'
 import type { ViewerStore } from '../../core/runtime/remote-viewers'
 import type { SessionState } from './state'
 import { withRolloutArrivals } from './rollout-arrivals'
@@ -107,6 +108,7 @@ export function makeSessionHost(
     return {
       ...codexStore(dir, id, now, deps.onWrite),
       viewers: codexViewerStore(dir, id, now, async () => deps.onWrite?.(await readState(dir, id))),
+      commands: codexCommandStore(dir, id, now, async () => deps.onWrite?.(await readState(dir, id))),
       prepare: async s => {
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },

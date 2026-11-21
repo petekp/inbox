@@ -1,8 +1,17 @@
-import { blockRemoteDeferred } from '../runtime/remote-command-state'
+import {
+  blockRemoteDeferred,
+  confirmRemoteDelivery,
+  recoverStrandedCommands,
+  remoteCommandState,
+  withLegacy,
+  withoutLegacy,
+  withRecord,
+} from '../runtime/remote-command-state'
+import type { CommandLog, CommandStore } from '../runtime/remote-command-state'
 import type { RemoteCommandRecord, Session } from '../../types'
 import type { RowPress } from '../domain/presses'
 import type { PressHost, PressOutcome } from '../runtime/host-press'
-import { press } from '../runtime/host-press'
+import { startPress } from '../runtime/host-press'
 import { NO_HOLDS } from '../view/timing'
 
 export type RemoteCommand = {
@@ -19,12 +28,6 @@ const LIFETIME_MS = 24 * 60 * 60_000
 const MAX_COMMANDS = 128
 const MAX_COMMAND_BYTES = 128_000
 const OUTCOME_RESERVE_BYTES = 4096
-
-function newRevision(host: Pick<PressHost<Session>, 'newId'>): string {
-  const id = host.newId()
-  if (!/^[\w-]{1,128}$/.test(id)) throw new Error('The command revision is invalid.')
-  return id
-}
 
 export function remoteRowVersion(s: Session, id: string): string {
   if (id === 'goal') {
@@ -77,16 +80,18 @@ async function matchesRow(s: Session, command: RemoteCommand): Promise<boolean> 
   )
 }
 
-async function requireDurableCommand<S extends Session>(
+/**
+ * Throws unless the saved session holds the write a command's press numbered `seq`, or a later one, and its floor
+ * reaches the command's time. A later saved write was made on top of this one, so it holds this one too.
+ */
+async function requireDurableWrite<S extends Session>(
   host: Pick<PressHost<S>, 'readDurable'>,
-  id: string,
-  expected: RemoteCommandRecord,
-  floor: number,
+  seq: number,
+  issuedAt: number,
 ): Promise<void> {
   if (!host.readDurable) throw new Error('This host cannot confirm saved commands.')
   const durable = await host.readDurable()
-  const saved = durable.remoteCommands[id]
-  if (!saved || JSON.stringify(saved) !== JSON.stringify(expected) || (durable.remoteCommandFloor ?? 0) < floor)
+  if ((durable.commandWrite?.seq ?? 0) < seq || (durable.remoteCommandFloor ?? 0) < issuedAt)
     throw new Error('The command could not be confirmed saved. Nothing was sent.')
 }
 
@@ -143,19 +148,66 @@ function fits(commands: Record<string, RemoteCommandRecord>): boolean {
   )
 }
 
-export async function applyRemoteCommand<S extends Session>(
+/** A command started: done with its outcome, or saved with a message the host holds until the agent's turn ends. */
+export type StartedCommand = { is: 'done'; outcome: PressOutcome } | { is: 'waiting'; finish(): Promise<PressOutcome> }
+
+const done = (outcome: PressOutcome): StartedCommand => ({ is: 'done', outcome })
+
+/**
+ * Writes a command's final state to the log once its press has an outcome. An error or an unconfirmed message first
+ * saves its row's held message or Done as Not sent, so nothing sends it later.
+ */
+async function settled<S extends Session>(
+  host: PressHost<S>,
+  store: CommandStore,
+  command: RemoteCommand,
+  outcome: PressOutcome,
+): Promise<PressOutcome> {
+  if (outcome.error || outcome.isUnconfirmed)
+    await host
+      .update(s => blockRemoteDeferred(s, command.id, command.press.id, 'This action could not be confirmed saved.'))
+      .catch(() => undefined)
+  const s = await host.read()
+  await store.update(log => {
+    const c = log.commands[command.id]
+    if (!c) return log
+    const state = outcome.isUnconfirmed
+      ? 'uncertain'
+      : outcome.error
+        ? 'failed'
+        : outcome.note === 'stale'
+          ? 'stale'
+          : 'applied'
+    return remoteCommandState(
+      withRecord(log, command.id, { ...c, state, error: outcome.error?.slice(0, 256) ?? null, runner: null }),
+      s,
+    )
+  })
+  return outcome
+}
+
+/**
+ * Starts a command a remote viewer sent. The command log admits it in one change, which refuses an id it has with
+ * another action, a command outside its history and a row that changed. A command it has already admitted returns
+ * the outcome it kept. An admitted command is marked `attempting` with this process as its runner, and its press runs
+ * with each session write stamped and read back, so nothing is sent unless the write was saved. A press whose message
+ * the host holds until the agent's turn ends returns `waiting`, so the press files after it do not wait for that turn.
+ */
+export async function startRemoteCommand<S extends Session>(
   host: PressHost<S>,
   command: RemoteCommand,
   sessionId: string,
-): Promise<PressOutcome> {
+): Promise<StartedCommand> {
   if (
     !Number.isSafeInteger(command.issuedAt) ||
     command.issuedAt < 0 ||
     !/^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(command.id)
   )
-    return rejected('The command identity or time is invalid.')
-  if (!host.readDurable || command.session !== sessionId)
-    return rejected('This command belongs to another session or cannot be saved.')
+    return done(rejected('The command identity or time is invalid.'))
+  const store = host.commands
+  if (!host.readDurable || !store || command.session !== sessionId)
+    return done(rejected('This command belongs to another session or cannot be saved.'))
+  await recoverStrandedCommands(host)
   const now = await host.now()
   const time = Number.parseInt(command.id.split('-')[0]!, 36)
   const validTime =
@@ -164,30 +216,29 @@ export async function applyRemoteCommand<S extends Session>(
   const fields = Object.fromEntries(Object.entries(command.press).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
   const canonical = JSON.stringify([command.session, command.issuedAt, command.expected, fields])
   const payload = `sha256-v1:${await digestText(canonical)}`
-  const revision = newRevision(host)
   let admitted = false
   let conflict: string | null = null
-  const claimed = await host.update(async s => {
+  const s = await host.read()
+  const claimed = await store.update(async saved => {
     admitted = false
     conflict = null
-    const existing = s.remoteCommands[command.id]
+    const log = remoteCommandState(withLegacy(saved, s), s)
+    const existing = log.commands[command.id]
     if (existing) {
       const same = existing.payload === payload || existing.payload === rawPayload
       if (!same) conflict = 'This command identity already names a different action.'
       if (same && existing.state === 'accepted' && !validTime)
-        return {
-          ...s,
-          remoteCommands: {
-            ...s.remoteCommands,
-            [command.id]: { ...existing, state: 'expired', error: 'This request expired before execution.', revision },
-          },
-        }
+        return withRecord(log, command.id, {
+          ...existing,
+          state: 'expired',
+          error: 'This request expired before execution.',
+        })
       admitted = same && existing.state === 'accepted'
-      return s
+      return log
     }
-    let floor = s.remoteCommandFloor ?? 0
+    let floor = log.floor
     if (!Number.isSafeInteger(floor) || floor < 0) throw new Error('The saved command cutoff is invalid.')
-    const kept = { ...s.remoteCommands }
+    const kept = { ...log.commands }
     const drop = (id: string) => {
       const record = kept[id]!
       const at = issuedAt(id, record)
@@ -207,7 +258,6 @@ export async function applyRemoteCommand<S extends Session>(
       timeWasValid: validTime,
       issuedAt: command.issuedAt,
       acceptedAt: now,
-      revision,
       state: expired ? 'expired' : !supported ? 'refused' : stale ? 'stale' : 'accepted',
       error: expired
         ? 'This request is outside retained history. Delivery cannot be confirmed.'
@@ -236,92 +286,56 @@ export async function applyRemoteCommand<S extends Session>(
         throw new Error('The refusal cannot fit the reserved receipt slot.')
     }
     admitted = record.state === 'accepted'
-    return { ...s, remoteCommandFloor: floor, remoteCommands: { ...kept, [command.id]: record } }
+    return { ...log, floor, commands: { ...kept, [command.id]: record } }
   })
-  if (conflict) return rejected(conflict)
-  const record = claimed.remoteCommands[command.id]
-  if (!record) return rejected('The command was not accepted.')
-  await requireDurableCommand(host, command.id, record, claimed.remoteCommandFloor ?? 0)
+  if (conflict) return done(rejected(conflict))
+  const record = (claimed as CommandLog).commands[command.id]
+  if (!record) return done(rejected('The command was not accepted.'))
   if (!admitted)
-    return {
+    return done({
       ...rejected(record.error ?? 'This command was already accepted; its outcome is retained.'),
       note: record.state === 'stale' ? 'stale' : null,
-    }
-  const executionRevision = newRevision(host)
+    })
   let executing = false
-  const execution = await host.update(s => {
-    executing = s.remoteCommands[command.id]?.state === 'accepted'
-    if (!executing) return s
-    return {
-      ...s,
-      remoteCommands: {
-        ...s.remoteCommands,
-        [command.id]: { ...s.remoteCommands[command.id]!, revision: executionRevision, state: 'attempting' },
-      },
-    }
+  await store.update(log => {
+    const c = log.commands[command.id]
+    executing = c?.state === 'accepted'
+    return c && executing ? withRecord(log, command.id, { ...c, state: 'attempting', runner: store.runner }) : log
   })
-  if (!executing) return rejected('This command is already running or has an uncertain outcome.')
-  await requireDurableCommand(
-    host,
-    command.id,
-    execution.remoteCommands[command.id]!,
-    execution.remoteCommandFloor ?? 0,
-  )
-  let started = false
-  const durableHost: PressHost<S> = {
+  if (!executing) return done(rejected('This command is already running or has an uncertain outcome.'))
+  let isStarted = false
+  const stamped: PressHost<S> = {
     ...host,
     update: async change => {
-      const nextRevision = newRevision(host)
+      let seq = 0
       const changed = await host.update(async s => {
-        if (!started && !(await matchesRow(s, command))) throw new Error('This item changed before the action.')
-        const next = await change(s)
+        if (!isStarted && !(await matchesRow(s, command))) throw new Error('This item changed before the action.')
+        const next = withoutLegacy(await change(s))
+        seq = (s.commandWrite?.seq ?? 0) + 1
         return {
           ...next,
           heldRows: s.heldRows,
           shownSince: s.shownSince,
-          remoteCommands: {
-            ...next.remoteCommands,
-            [command.id]: { ...next.remoteCommands[command.id]!, revision: nextRevision, state: 'attempting' },
-          },
+          commandWrite: { id: command.id, seq },
+          remoteCommandFloor: Math.max(next.remoteCommandFloor ?? 0, command.issuedAt),
         }
       })
-      await requireDurableCommand(
-        host,
-        command.id,
-        changed.remoteCommands[command.id]!,
-        changed.remoteCommandFloor ?? 0,
-      )
-      started = true
+      await requireDurableWrite(host, seq, command.issuedAt)
+      for (const send of changed.sent)
+        if (send.phase === 'attempting' && send.deliveryId && send.commandIds?.includes(command.id))
+          await confirmRemoteDelivery({ readDurable: host.readDurable, commands: store }, changed, send.deliveryId)
+      isStarted = true
       return changed
     },
   }
-  let outcome: PressOutcome
-  try {
-    outcome = await press(durableHost, command.press, false, { ...NO_HOLDS, shownSince: now }, command.id)
-  } catch (error) {
-    outcome = rejected(error instanceof Error ? error.message : 'Command outcome is uncertain.')
-  }
-  const finalRevision = newRevision(host)
-  const result = await host.update(s => ({
-    ...(outcome.error || outcome.isUnconfirmed
-      ? blockRemoteDeferred(s, command.id, 'This action could not be confirmed saved.')
-      : s),
-    remoteCommands: {
-      ...s.remoteCommands,
-      [command.id]: {
-        ...s.remoteCommands[command.id]!,
-        revision: finalRevision,
-        state: outcome.isUnconfirmed
-          ? 'uncertain'
-          : outcome.error
-            ? 'failed'
-            : outcome.note === 'stale'
-              ? 'stale'
-              : 'applied',
-        error: outcome.error?.slice(0, 256) ?? null,
-      },
-    },
-  }))
-  await requireDurableCommand(host, command.id, result.remoteCommands[command.id]!, result.remoteCommandFloor ?? 0)
-  return outcome
+  const failed = (error: unknown) => rejected(error instanceof Error ? error.message : 'Command outcome is uncertain.')
+  const started = await startPress(stamped, command.press, false, { ...NO_HOLDS, shownSince: now }, command.id).catch(
+    (error: unknown) => failed(error),
+  )
+  if (!('finish' in started)) return done(await settled(host, store, command, started))
+  const finish = async () => settled(host, store, command, await started.finish().catch(failed))
+  const isHeldUntilRun =
+    host.isDeliveryHeldUntilRun === true && (started.effects?.some(e => e.kind === 'send') ?? false)
+
+  return isHeldUntilRun ? { is: 'waiting', finish } : done(await finish())
 }

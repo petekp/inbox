@@ -10,6 +10,7 @@ import { makeServer } from '../src/server'
 import { codexHerdrAsk, followCodexPresses } from '../src/server-herdr'
 import { builtAtLine } from '../../core/remote/herdr-install'
 import { readState, updateState } from '../src/state'
+import { codexCommandStore } from '../src/command-log'
 import { remoteRowVersion } from '../../core/remote/remote-commands'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
 import { NO_HOLDS } from '../../core/view/timing'
@@ -309,13 +310,14 @@ test('a remote typed reply retains its outcome and does not queue twice after th
     expected: remoteRowVersion(initial, 'i1'),
     press: { action: 'type', id: 'i1', text: 'The preview looks good.' },
   }
+  const log = () => codexCommandStore(dir, 'remote-session', () => 1_000_000).read()
   await server()(command)
-  const first = await readState(dir, 'remote-session')
-  assert.equal(first.remoteCommands[command.id]!.state, 'applied')
+  const first = (await log()).commands[command.id]
+  assert.equal(first?.state, 'applied')
   assert.equal(calls.filter(args => args.includes('queue')).length, 1)
   await server()(command)
   const after = await readState(dir, 'remote-session')
   assert.equal(calls.filter(args => args.includes('queue')).length, 1)
-  assert.deepEqual(after.remoteCommands[command.id], first.remoteCommands[command.id])
+  assert.deepEqual((await log()).commands[command.id], first)
   assert.equal(after.ledger.items[0]?.id, 'i1')
 })

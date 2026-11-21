@@ -62,6 +62,7 @@ export async function herdrPress(m: PublishCalls, id: string, f: HerdrFile): Pro
     ...m.hostOf(currentOwner(), 'terminal'),
     refreshPrsIfDue: () => pollPrs(m, true),
     viewers: viewerLeases.of(id, () => void m.publishStatus()),
+    commands: m.saves.commands?.(id, () => void m.publishStatus()),
   }
 
   return startedFile(await startHerdrFile(host, f, id), outcome => {

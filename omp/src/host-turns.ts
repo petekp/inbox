@@ -9,6 +9,8 @@ import { runUpdates } from '../../core/runtime/session-host'
 import { wakeAfterSettle } from '../../core/runtime/host-press'
 import { turnReply } from '../../core/domain/text'
 import { readState } from './state'
+import { ompCommandStore } from './command-log'
+import { markArrived } from '../../core/runtime/remote-command-state'
 import { OMP } from './texts'
 import { isDismissedAsk } from './tool-calls'
 import { isUnattended, sessionIdOf } from './host-context'
@@ -43,13 +45,19 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     const at = deps.now()
     const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch())
     let notes: string[] = []
+    let arrival: string | null | undefined
     const written = await change(id, s => {
       const before = finishedReply === null ? s : turnStarted(endedTurn(id, s, finishedReply, at, { hostTasks }), at)
       const r = notePrompt(OMP, before, text, openPanels.has(id))
       notes = r.notes
+      arrival = r.sentBy?.deliveryId
 
       return r.state
     })
+    await markArrived(
+      ompCommandStore(dir, id, deps.now, () => reportCounts(id)),
+      arrival,
+    )
     if (finishedReply !== null && needsUpdate(written)) deps.background(runUpdates(updateHostFor(ctx)))
 
     return notes

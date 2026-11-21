@@ -1,7 +1,8 @@
 import { REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
 import type { ViewerStore } from '../../core/runtime/remote-viewers'
-import { remoteReceipts } from '../../core/runtime/remote-command-state'
+import { commandsOf, remoteReceipts } from '../../core/runtime/remote-command-state'
+import { ompCommandStore } from './command-log'
 import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -144,6 +145,7 @@ export function sessionCalls(context: HostContext) {
         async () => {
           if (appHome && left) await unpublishSession(publishFiles, appHome, left).catch(() => undefined)
           const s = await readState(dir, id)
+          const commands = await commandsOf(ompCommandStore(dir, id, deps.now), s)
           const now = deps.now()
           const isPublished =
             target.kind === 'terminal' &&
@@ -151,11 +153,11 @@ export function sessionCalls(context: HostContext) {
               publishFiles,
               appHome,
               {
-                receipts: remoteReceipts(s),
+                receipts: remoteReceipts(commands),
                 viewers: remoteViewerReceipts(viewerLeases.peek(id)),
                 remoteProtocol: 2,
                 remoteActions: REMOTE_ACTIONS,
-                remoteHistoryAfter: s.remoteCommandFloor ?? 0,
+                remoteHistoryAfter: commands.floor,
                 host: 'omp',
                 agent: OMP.agent,
                 sessionId: id,
@@ -204,6 +206,7 @@ export function sessionCalls(context: HostContext) {
     return {
       now: deps.now,
       viewers: viewerLeases.of(id, () => reportCounts(id)),
+      commands: ompCommandStore(dir, id, deps.now, () => reportCounts(id)),
       read: () => readState(dir, id),
       readDurable: () => readState(dir, id),
       update: fn => change(id, fn),

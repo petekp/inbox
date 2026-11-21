@@ -1,14 +1,16 @@
 import { REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
 import { readViewers } from './viewers'
-import { remoteReceipts } from '../../core/runtime/remote-command-state'
-import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { commandsOf, remoteReceipts } from '../../core/runtime/remote-command-state'
+import { codexCommandStore } from './command-log'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { isPrFetchRunning, statePath, readState, updateState } from './state'
 import { tryWithLock, withLock } from './lock'
+import { herdrLog } from './herdr-log'
 import type { SessionState } from './state'
 import { viewOf } from './core'
 import { CODEX } from './texts'
@@ -65,28 +67,6 @@ const publishFiles: PublishFiles = {
   removeFolder: path => rm(path, { recursive: true, force: true }),
 }
 
-/** The most `herdr.log` holds before the next line starts it over. */
-const HERDR_LOG_BYTES = 64 * 1024
-
-/**
- * Appends a line to `herdr.log` in the data folder, which says why Herdr's labels or published file did not change, as
- * when no `hc` started. Over `HERDR_LOG_BYTES`, the line starts the file over.
- */
-export function herdrLog(dir: string): (text: string) => void {
-  const path = join(dir, 'herdr.log')
-
-  return text =>
-    void (async () => {
-      const size = await stat(path).then(
-        s => s.size,
-        () => 0,
-      )
-      const line = `${new Date().toISOString()} ${text}\n`
-      await mkdir(dir, { recursive: true })
-      await (size > HERDR_LOG_BYTES ? writeFile(path, line) : appendFile(path, line))
-    })().catch(() => undefined)
-}
-
 /**
  * Reports each written state to the Herdr pane or app terminal in `env`, or is undefined when `env` names neither.
  * Codex runs a hook with its own environment, so the hooks of a Codex CLI in Herdr, and the update a hook starts, know
@@ -114,6 +94,7 @@ export function herdrOnWrite(
     const id = written.sessionId
     await withLock(`${statePath(dir, id)}.herdr`, async () => {
       const [s, viewers] = await Promise.all([readState(dir, id), readViewers(dir, id)])
+      const commands = await commandsOf(codexCommandStore(dir, id, now), s)
       const at = now()
       const seq = s.writtenAt ?? at
       const isPublished =
@@ -122,16 +103,16 @@ export function herdrOnWrite(
           publishFiles,
           target.appHome,
           {
-            receipts: remoteReceipts(s),
+            receipts: remoteReceipts(commands),
             viewers: remoteViewerReceipts(viewers.leases),
             remoteProtocol: 2,
             remoteActions: REMOTE_ACTIONS,
-            remoteHistoryAfter: s.remoteCommandFloor ?? 0,
+            remoteHistoryAfter: commands.floor,
             host: 'codex',
             agent: CODEX.agent,
             sessionId: id,
             terminal: target.terminal,
-            writtenAt: Math.max(seq, viewers.writtenAt),
+            writtenAt: Math.max(seq, viewers.writtenAt, commands.writtenAt),
             projectFolder: s.root,
             isFetchingPrs: isPrFetchRunning(s),
             version: VERSION,

@@ -1,4 +1,3 @@
-import { remoteCommandArrival } from './remote-command-state'
 import { linkDialogs } from '../domain/dialogs'
 import { EMPTY } from '../domain/ledger'
 import { applyExchangeUpdate, withoutNewAsks } from '../domain/ledger-update'
@@ -53,7 +52,8 @@ export function cleared<S extends Session>(s: S): S {
 }
 
 /** A message a press sent, matched to a prompt that arrived. `press` is null for a message no row press sent. */
-export type SentBy = { press: Press | null }
+/** The press that sent a message that arrived, and the delivery id the message went out with, if it had one. */
+export type SentBy = { press: Press | null; deliveryId?: string | null }
 
 /**
  * Records a prompt that arrived and returns what the agent reads beside it, and the press that sent it, if one did.
@@ -123,11 +123,11 @@ function matchSent<S extends Session>(s: S, text: string): { state: S; sentBy: S
 
   return {
     state: {
-      ...remoteCommandArrival(s, sent?.deliveryId ?? null),
+      ...s,
       lastActions,
       sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent,
     },
-    sentBy: sent ? { press: sent.press } : null,
+    sentBy: sent ? { press: sent.press, deliveryId: sent.deliveryId } : null,
   }
 }
 

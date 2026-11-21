@@ -1,6 +1,7 @@
 import { settledCollapses } from '../view/collapse'
 import { remoteHeldRows } from './remote-viewers'
-import { remoteCommandState, remoteDeliveryOutcome } from './remote-command-state'
+import { pendingCommandRows } from './remote-command-state'
+import type { CarriedCommands } from './remote-command-state'
 import { linkDialogs } from '../domain/dialogs'
 import type { AnswerDoc } from '../domain/earlier-answers'
 import { closedAt, pruneClosed } from '../domain/ledger-close'
@@ -92,12 +93,28 @@ export type SendOutcome =
   | { state: 'rejected'; reason: string }
   | { state: 'unconfirmed'; reason: string }
 
+/**
+ * The commands a delivery attempt carries, and whether `outcome` says its message arrived, read before
+ * `completedAttempt` drops the attempt. A message put into the running turn has arrived unless an earlier send of
+ * the same text may still arrive.
+ */
+export function attemptCommands(state: Session, deliveryId: string, outcome: SendOutcome): CarriedCommands {
+  const index = state.sent.findIndex(s => s.deliveryId === deliveryId)
+  const attempt = state.sent[index]
+  if (!attempt) return { ids: [], arrived: false }
+  const text = outcome.state === 'accepted' ? (outcome.entered ?? attempt.text) : attempt.text
+  const earlierUnknown = state.sent
+    .slice(0, index)
+    .some(s => s.text === text && (s.phase === 'attempting' || s.phase === 'uncertain'))
+
+  return {
+    ids: attempt.commandIds ?? [],
+    arrived: outcome.state === 'accepted' && outcome.isInTurn === true && !earlierUnknown,
+  }
+}
+
 export function completedAttempt<S extends Session>(state: S, deliveryId: string, outcome: SendOutcome): S {
-  if (outcome.state === 'rejected')
-    return {
-      ...remoteDeliveryOutcome(state, deliveryId, outcome),
-      sent: state.sent.filter(s => s.deliveryId !== deliveryId),
-    }
+  if (outcome.state === 'rejected') return { ...state, sent: state.sent.filter(s => s.deliveryId !== deliveryId) }
   const index = state.sent.findIndex(s => s.deliveryId === deliveryId)
   const attempt = state.sent[index]
   if (!attempt) return state
@@ -115,12 +132,6 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
   const earlierUnknown = state.sent
     .slice(0, index)
     .some(s => s.text === text && (s.phase === 'attempting' || s.phase === 'uncertain'))
-  state = remoteDeliveryOutcome(
-    state,
-    deliveryId,
-    outcome,
-    outcome.state === 'accepted' && outcome.isInTurn === true && !earlierUnknown,
-  )
   if (outcome.state === 'accepted' && !earlierUnknown) {
     lastActions = outcome.isInTurn
       ? withArrival(lastActions, text, undefined, deliveryId)
@@ -198,10 +209,7 @@ export function rowsInPlace(
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
   ].flatMap(x => (isShownSince(x.at, s.shownSince) ? [x.id] : []))
 
-  const pending = Object.values(s.remoteCommands)
-    .filter(c => c.pendingDelivery && !c.deliveryId)
-    .map(c => c.row)
-  return new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pending, ...since])
+  return new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pendingCommandRows(s), ...since])
 }
 
 /**
@@ -210,7 +218,6 @@ export function rowsInPlace(
  * `settledCollapses` says.
  */
 export function pruned<S extends Session>(s: S, now = Date.now(), viewers: ViewerLeases = {}): S {
-  s = remoteCommandState(s)
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) =>
       isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince),

@@ -156,9 +156,16 @@ export function isEarlierShown(start: number, now: number): boolean {
   return now - start >= BASELINE_MS
 }
 
-/** The history folder: `$XDG_STATE_HOME/inbox/questions`, else `~/.local/state/inbox/questions`. Null with neither. */
-export function historyFolder(env: Readonly<Record<string, string | undefined>>): string | null {
+/** The inbox's state folder: `$XDG_STATE_HOME/inbox`, else `~/.local/state/inbox`. Null with neither. */
+export function inboxStateFolder(env: Readonly<Record<string, string | undefined>>): string | null {
   const state = env.XDG_STATE_HOME?.trim() || (env.HOME?.trim() ? `${env.HOME.trim()}/.local/state` : '')
 
-  return state ? `${state.replace(/\/+$/, '')}/inbox/questions` : null
+  return state ? `${state.replace(/\/+$/, '')}/inbox` : null
+}
+
+/** The history folder: `$XDG_STATE_HOME/inbox/questions`, else `~/.local/state/inbox/questions`. Null with neither. */
+export function historyFolder(env: Readonly<Record<string, string | undefined>>): string | null {
+  const inbox = inboxStateFolder(env)
+
+  return inbox ? `${inbox}/questions` : null
 }

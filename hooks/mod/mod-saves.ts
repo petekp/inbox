@@ -1,4 +1,6 @@
-import { remoteReceipts } from '../../core/runtime/remote-command-state'
+import { EMPTY_LOG, remoteCommandState, remoteReceipts, withLegacy } from '../../core/runtime/remote-command-state'
+import type { ModCommandStore } from './mod-command-log'
+import { followCommandRows, movedLegacyCommands } from '../../core/runtime/command-store'
 import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
 import type { Session, ViewerLeases } from '../../types'
 import { KEPT_SESSIONS } from '../../core/domain/ledger'
@@ -68,6 +70,24 @@ export type SaveEngine = {
   log: (text: string) => void
   /** The ids of the conversations running in any Claude Code process, or null when they cannot be told. */
   runningSessions: () => Promise<ReadonlySet<string> | null>
+  /** A conversation's command log, whose `onChange` runs after each change it keeps. */
+  commands?: (id: string, onChange?: () => unknown) => ModCommandStore
+}
+
+/** Deletes the saved sessions at `keys`, and the command logs of their conversations. */
+async function deleteSaves(e: SaveEngine, keys: string[]) {
+  await Promise.all(keys.map(key => whileLockHeld(e, () => e.store.delete(key))))
+  const ids = keys.filter(key => key.startsWith('s:')).map(key => key.slice('s:'.length))
+  await Promise.all(
+    ids.map(id =>
+      e
+        .commands?.(id)
+        .remove()
+        .catch((error: unknown) =>
+          e.log(`inbox: deleting the command log of session ${id} failed: ${errorText(error)}`),
+        ),
+    ),
+  )
 }
 
 /**
@@ -118,8 +138,25 @@ async function sessionToChange(e: SaveEngine, id: string) {
   return saved.session && { session: upgradeSession(saved.session), savedAt: saved.session.savedAt }
 }
 
+/**
+ * Writes `s` to the store through `tries`. Command records an earlier build saved in it move to its command log
+ * first, and the log follows what the saved session says about its commands.
+ */
+async function storeSession(
+  e: SaveEngine,
+  id: string,
+  savedAt: number,
+  s: Session,
+  tries: (write: () => Promise<void>) => Promise<void>,
+) {
+  const store = e.commands?.(id)
+  const saving = store ? await movedLegacyCommands(store, s, e.log) : s
+  await setMakingRoom(e, sessionKey(id), { version: SESSION_VERSION, savedAt, ...forStore(saving) }, tries)
+  if (store) await followCommandRows(store, id, saving, e.log)
+}
+
 function writeSaved(e: SaveEngine, id: string, savedAt: number, s: Session) {
-  return setMakingRoom(e, sessionKey(id), { version: SESSION_VERSION, savedAt, ...forStore(s) }, write => write())
+  return storeSession(e, id, savedAt, s, write => write())
 }
 
 /**
@@ -192,7 +229,7 @@ async function dropEndedSaves(e: SaveEngine, keep: string, size: number): Promis
     dropped.push(next.key)
     freed += next.size
   }
-  await Promise.all(dropped.map(old => whileLockHeld(e, () => e.store.delete(old))))
+  await deleteSaves(e, dropped)
   if (dropped.length > 0) e.log(`inbox: the store was full, so it deleted ${dropped.length} ended sessions' saves`)
 
   return dropped.length > 0
@@ -209,9 +246,7 @@ async function pruneSaves(e: SaveEngine, keep: string) {
   const { count, saves } = await endedSaves(e, keys, keep, running)
   const stale = saves.slice(0, Math.max(0, count - KEPT_SESSIONS)).map(age => age.key)
   // `p:` keys held the last-session offer, which earlier builds saved per folder.
-  await Promise.all(
-    [...stale, ...keys.filter(k => k.startsWith('p:'))].map(old => whileLockHeld(e, () => e.store.delete(old))),
-  )
+  await deleteSaves(e, [...stale, ...keys.filter(k => k.startsWith('p:'))])
 }
 
 /**
@@ -325,19 +360,17 @@ function logSaveFailure(e: SaveEngine, id: string, error: unknown) {
  * `isLastSaveRefused` true, so the drawn session goes on and its next save writes it whole.
  */
 export function save(e: SaveEngine, owner: Owner, s: ModSession): Promise<void> {
-  const key = sessionKey(owner.id)
   const generation = `${owner.id}:${owner.generation}`
   savedRevisions.set(generation, Math.max(savedRevisions.get(generation) ?? 0, s.revision))
   const { revision: _revision, ...session } = s
   const setAndPrune = Promise.all([sessionState.saving, e.now()]).then(async ([, savedAt]) => {
     if (s.revision < (savedRevisions.get(generation) ?? 0)) return
-    const record = { version: SESSION_VERSION, savedAt, ...forStore(session) }
-    await setMakingRoom(e, key, record, write => whileLockHeld(e, write))
+    await storeSession(e, owner.id, savedAt, session, write => whileLockHeld(e, write))
     refusedAsFull.delete(owner.id)
     // The drawn session was read with any held session of this conversation, so this save holds it too.
     dropHeldNow(owner.id)
     if (prunedSaves.has(generation)) return
-    await pruneSaves(e, key)
+    await pruneSaves(e, sessionKey(owner.id))
     prunedSaves.add(generation)
   })
   const write = setAndPrune.catch((error: unknown) => {
@@ -378,11 +411,17 @@ export async function readSettled(e: SaveEngine, id: string): Promise<{ session:
 
 export async function readRemoteState(e: SaveEngine, id: string, live: Session, leases: ViewerLeases) {
   const viewers = Object.keys(leases).length > 0 ? { viewers: remoteViewerReceipts(leases) } : {}
-  if (!Object.keys(live.remoteCommands).length) return viewers
+  const log =
+    (await e
+      .commands?.(id)
+      .read()
+      .catch(() => null)) ?? EMPTY_LOG
+  if (Object.keys(log.commands).length === 0 && !live.remoteCommands) return viewers
   const saved = await readSaved(e, id)
   if (!saved?.session) return viewers
   const durable = upgradeSession(saved.session)
-  return { receipts: remoteReceipts(durable), ...viewers, remoteHistoryAfter: durable.remoteCommandFloor ?? 0 }
+  const commands = remoteCommandState(withLegacy(log, durable), durable)
+  return { receipts: remoteReceipts(commands), ...viewers, remoteHistoryAfter: commands.floor }
 }
 
 export async function readDurableSession(e: SaveEngine, id: string): Promise<Session> {

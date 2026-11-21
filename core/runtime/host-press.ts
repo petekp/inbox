@@ -1,4 +1,14 @@
-import { cancelRemoteCommand, confirmRemoteDelivery } from './remote-command-state'
+import {
+  appliedCommands,
+  cancelledCommand,
+  confirmRemoteDelivery,
+  hasCommandRows,
+  recoverStrandedCommands,
+  remoteCommandState,
+  saveDeliveryOutcome,
+  undoneCommand,
+} from './remote-command-state'
+import type { CarriedCommands } from './remote-command-state'
 import {
   readFirstEffect,
   PR_READ_FIRST_LABELS,
@@ -25,7 +35,7 @@ import type { EffectHost } from './press-effects'
 import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from '../view/pressed'
 import { releaseHeldSendEarly, releaseHeldSends } from './held-sends'
 import type { RowPress } from '../domain/presses'
-import { completedAttempt, isRepeatWhileOut, withHolds, pressOn } from './session-presses'
+import { attemptCommands, completedAttempt, isRepeatWhileOut, withHolds, pressOn } from './session-presses'
 import type { Pressed, SendOutcome } from './session-presses'
 import type { Holds } from '../view/timing'
 import type { Session, RowNote, LastAction } from '../../types'
@@ -36,6 +46,7 @@ type WakeHost<S extends Session> = Pick<
   | 'now'
   | 'read'
   | 'readDurable'
+  | 'commands'
   | 'update'
   | 'deliver'
   | 'prepare'
@@ -49,6 +60,7 @@ type WakeHost<S extends Session> = Pick<
  * `current` is the session when the host has just read it.
  */
 export async function wakeAfterSettle<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
+  if (hasCommandRows(current ?? (await host.read()))) await recoverStrandedCommands(host)
   await releaseHeldSends(host, current)
   await wakeForDone(host)
 }
@@ -58,19 +70,18 @@ export async function wakeAfterSettle<S extends Session>(host: WakeHost<S>, curr
  * refused message marks those rows with why, so they read "Not sent" and offer Undo.
  */
 async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): Promise<void> {
+  const first = current ?? (await host.read())
+  const applied = hasCommandRows(first) ? await appliedCommands(host.commands, first) : new Set<string>()
   const check = async (s: S) =>
     doneWake(
-      {
-        ...s.ledger,
-        closed: s.ledger.closed.filter(c => !c.commandId || s.remoteCommands[c.commandId]?.state === 'applied'),
-      },
+      { ...s.ledger, closed: s.ledger.closed.filter(c => !c.commandId || applied.has(c.commandId)) },
       {
         now: await host.now(),
         windowMs: host.settleWindowMs,
         isTurnRunning: s.presence.isTurnRunning,
       },
     )
-  if (!(await check(current ?? (await host.read())))) return
+  if (!(await check(first))) return
   let attempt: { deliveryId: string; text: string } | null = null
   const attemptId = host.newId()
   const startedState = await host.update(async s => {
@@ -129,7 +140,9 @@ async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): P
   const outcome: SendOutcome = await host
     .deliver(await host.read(), sending.text, sending.deliveryId)
     .catch((err: unknown) => ({ state: 'unconfirmed', reason: err instanceof Error ? err.message : String(err) }))
+  let carried: CarriedCommands = { ids: [], arrived: false }
   await host.update(s => {
+    carried = attemptCommands(s, sending.deliveryId, outcome)
     const after = completedAttempt(s, sending.deliveryId, outcome)
     if (outcome.state === 'unconfirmed')
       return { ...after, lastActions: withUnconfirmed(after.lastActions, sending.text, undefined, sending.deliveryId) }
@@ -142,6 +155,7 @@ async function wakeForDone<S extends Session>(host: WakeHost<S>, current?: S): P
 
     return { ...after, lastActions, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) }
   })
+  await saveDeliveryOutcome(host.commands, carried, sending.deliveryId, outcome)
 }
 
 export type PressOutcome = {
@@ -162,6 +176,7 @@ export type PressHost<S extends Session> = Pick<
   | 'now'
   | 'read'
   | 'readDurable'
+  | 'commands'
   | 'update'
   | 'deliver'
   | 'prepare'
@@ -266,7 +281,7 @@ export async function startPress<S extends Session>(
   let copy: PressOutcome['copy'] = null
   let error: string | null = null
   let note: PressOutcome['note'] = isStale ? 'stale' : null
-  const pressed: { r?: Pressed; at?: number; deliveryId?: string } = {}
+  const pressed: { r?: Pressed; at?: number; deliveryId?: string; undone?: { id: string; before: S } } = {}
   const effectHost: EffectHost = {
     now: host.now,
     deliveryId: () => pressed.deliveryId ?? host.newId(),
@@ -290,7 +305,12 @@ export async function startPress<S extends Session>(
     send: async (e, deliveryId) => {
       try {
         const outcome = await host.deliver(await host.read(), e.text, deliveryId)
-        await host.update(s => completedAttempt(s, deliveryId, outcome))
+        let carried: CarriedCommands = { ids: [], arrived: false }
+        await host.update(s => {
+          carried = attemptCommands(s, deliveryId, outcome)
+          return completedAttempt(s, deliveryId, outcome)
+        })
+        await saveDeliveryOutcome(host.commands, carried, deliveryId, outcome)
         return outcome.state === 'accepted' ? { state: 'accepted' as const } : outcome
       } catch (err) {
         return { state: 'unconfirmed' as const, reason: err instanceof Error ? err.message : String(err) }
@@ -341,7 +361,7 @@ export async function startPress<S extends Session>(
     .update(async saved => {
       // A host may run the change again on a newer session, where the press can be stale.
       note = isStale ? 'stale' : null
-      Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined })
+      Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined, undone: undefined })
       const s = withoutCheck(withHolds(saved, holds), check)
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
@@ -357,9 +377,9 @@ export async function startPress<S extends Session>(
         firstSend && deliveryId
           ? withDeliveryId(r.lasts, Object.keys(r.lasts), at, firstSend.text, deliveryId)
           : r.lasts
-      const undone = !isPrPress(p) && p.action === 'undo' ? cancelRemoteCommand(s, rowId) : s
+      const undoneId = !isPrPress(p) && p.action === 'undo' ? undoneCommand(s, rowId) : undefined
       const next: S = {
-        ...undone,
+        ...s,
         ledger:
           commandId && p.action === 'done'
             ? {
@@ -376,7 +396,7 @@ export async function startPress<S extends Session>(
         ),
         told: r.reopenedId ? { ...s.told, closed: s.told.closed.filter(id => id !== r.reopenedId) } : s.told,
       }
-      Object.assign(pressed, { r, at, deliveryId })
+      Object.assign(pressed, { r, at, deliveryId, undone: undoneId && { id: undoneId, before: s } })
       if (!firstSend || !deliveryId) return next
 
       return {
@@ -406,6 +426,11 @@ export async function startPress<S extends Session>(
     })
   const r = pressed.r
   const at = pressed.at
+  const undone = pressed.undone
+  if (r && undone && host.commands)
+    await host.commands
+      .update(log => cancelledCommand(remoteCommandState(log, undone.before), undone.id))
+      .catch(() => undefined)
   if (!r || at === undefined)
     return {
       effects: null,
