@@ -40,10 +40,10 @@ import {
   withNewPrRefs,
   type SentBy,
 } from './session-turns'
-import { emptySession, upgradeSession, type SavedSession } from './session-files'
-import { pressOn, pruned, type SendOutcome } from './session-presses'
+import { upgradeSession, type SavedSession } from './session-files'
+import { pruned, type SendOutcome } from './session-presses'
 import { isCompareInBackground } from './press-messages'
-import { sessionView, showsRunningMark, type SessionView } from './session-view'
+import { sessionView, type SessionView } from './session-view'
 import {
   childrenCutOff,
   childStarted,
@@ -73,7 +73,7 @@ import { callReport, MODEL } from './inbox-model'
 import { demoView, isDemoCopy } from './demo'
 import { claudeTasksAfter } from './host-tasks'
 import { noteAnsweredDialog, noteDialog } from './dialogs'
-import { isPrPress, pressRowId, type Applied, type PrPress } from './pr-press'
+import { isPrPress, pressRowId, type PrPress } from './pr-press'
 import { openPrViews, prUndoBlockAfter } from './pr-views'
 import { prBlockRows, threadSentIn } from './pr-rows'
 import { prNeedsYou } from './prs'
@@ -113,46 +113,24 @@ import {
   type HerdrCalls,
 } from './mod-herdr'
 import { ago, cellWidth, turnReply } from './text'
-import { demoAfterPress, demoReplied, demoSent, type DemoSent } from './press-effects'
-import { isPressConfirmed, type Effect } from './press-reducer'
+import { demoReplied } from './press-effects'
+import type { Effect } from './press-reducer'
 import { openTarget } from './open-targets'
 import type { RowPress } from './presses'
 import { statusKeyRows, statusSelected } from './status-keys'
 import { footerError } from './view'
-import { DOT, NEEDS_YOU_GROUPS, settledRowIds, allRows, resumeLabel } from './rows'
+import { DOT, NEEDS_YOU_GROUPS, allRows, resumeLabel } from './rows'
 import { isResumable, RESUME_TEXT, stopFix, stopText, DEMO_NOTICE, bannerOf } from './banners'
 import { rowKeyActions } from './row-key-actions'
 import { comparePagePath, nextBuildMarkPath } from './mod-plugin-files'
 import { bandCounts, isMaybeStale, noCountsText } from './band'
-import { drawnLists, rowsIn, firstWaiting, steppedIndex, tabUndos, latestUndo } from './action-plan'
+import { drawnLists, rowsIn, tabUndos, latestUndo } from './action-plan'
 import { isRowTab, isShownTab, screenTabOf, shownTabs, tabBadge, INBOX_COMMAND_TEXT, type ShownTab } from './tabs'
-import {
-  heldReplies,
-  isGuarded,
-  PERMISSION_FALLBACK_DELAY_MS,
-  PRESS_GUARD_MS,
-  QUEUED_AFTER_MS,
-  timedChangeAt,
-  SETTLED_MS,
-  keptDiscards,
-  nextFoldAt,
-  withListInput,
-  type Holds,
-} from './timing'
+import { heldReplies, PERMISSION_FALLBACK_DELAY_MS, PRESS_GUARD_MS, SETTLED_MS, earliestOf, type Holds } from './timing'
 import { COLLAPSE_KEY, FOLD_ALL_KEY, helpKeys, UNDO_KEY } from './help'
 import { agentTools, NOT_SAVED } from './tools'
 import type { AgentTool } from './tools'
 import type { ToolAnswer } from './tools'
-import {
-  ARRIVAL_TABS,
-  closedGroups,
-  followTo,
-  isPrsTabEmpty,
-  isTabEmpty,
-  openRowIds,
-  prRowIds,
-  showNewRows,
-} from './arrivals'
 import { paneText } from './pane-text'
 import { PARENT_PREFIX } from './pane-status-parent'
 import {
@@ -164,27 +142,8 @@ import {
   TAB_PAD,
 } from './pane-sizes'
 import { lookOf, paletteFor } from './palettes'
-import { endOfTints } from './pane-title-tint'
-import { animateRunningMarks } from './running-mark-timer'
 import { glued } from './terminal-text'
-import {
-  lastUndoEnd,
-  NO_CURSOR,
-  NO_SELECTION,
-  type PendingUndoScroll,
-  RESIZE_SCROLL_MS,
-  sameCursor,
-  selectedIndex,
-  settledLayoutId,
-  settledScrollKey,
-  type Showing,
-  type Shown,
-  rowRecorder,
-  forgetRows,
-  tabRowIds,
-  tabWaits,
-  UNDO_REDRAW_STEPS,
-} from './pane-selection'
+import { RESIZE_SCROLL_MS, settledLayoutId, settledScrollKey, tabRowIds, undoBlockOf } from './pane-selection'
 import {
   type Action,
   COPY_FAILURES,
@@ -193,6 +152,9 @@ import {
   focusKeys,
   followUpPresses,
   type KeyAction,
+  KEY_BINDING_SUFFIX,
+  pressedBy,
+  type PressVia,
   openedField,
   openFields,
   paneHasKeys,
@@ -253,17 +215,24 @@ import { isPrFetchBusy, queuePrFetch } from './mod-pr-queue'
 import { cancelUndoScroll, mod, paneState, resetTurn, sessionState, suspendUndoReveal } from './mod-state'
 import { scrollFailure, withExplanationAwaited, withExplanationReply, withReplyWaitEnded } from './explanation-reply'
 import { noteStatusDrawn, takeShownRows } from './pane-status-shown'
+import { demoPressOn, type DemoPressed } from './mod-demo-press'
 import {
-  arrivedSelection,
-  closeMove,
-  collapseKeyPress,
-  leftRowsSelection,
-  pinnedOn,
-  shownWaits,
-  titlePress,
-} from './pane-open-row'
+  applyUiEvents,
+  hostFactsOf,
+  isReadWake,
+  lookConfigOf,
+  modUiOf,
+  type OldPaneFields,
+  uiFromOldFields,
+  undoStepAt,
+  withPaneShown,
+} from './mod-ui'
+import { keptUiStates, noticeOf, notesOf, restoredUi } from './ui-controller'
+import { nextWakeAt } from './ui-controller-clock'
+import { holdsOf } from './ui-controller-reply'
+import { collapsedOf, isGuardedPress, selectedOf } from './ui-controller-selection'
+import { freshUi, type SettledOutcome, type UiCommand, type UiEvent, type UiState } from './ui-controller-types'
 import { withCollapse } from './collapse'
-import { foldAllOn } from './fold-all'
 import { desktopSpaceLines } from './pane-status-tops'
 import {
   changeSaved,
@@ -290,37 +259,35 @@ import { panePrBlocks, panePrRows } from './pane-prs'
 import { paneStatusLines } from './pane-status-lines'
 import { paneStatus } from './pane-status'
 import { paneHelp } from './pane-help'
-import { foldOf, upgradedUnfolded, withFold } from './fold-keys'
+import { foldOf } from './fold-keys'
 
-const TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
-/**
- * The page tab shown in place of `TAB`, or null while a row tab shows. Kept apart from `TAB` so a build that
- * does not know the page still reads a row tab there.
- */
-const PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | null)
-const SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, NO_SELECTION)
-/** The Status row whose keys work, by id, as `statusSelected` resolves it. */
-const STATUS_SELECTION = atom({ plugin: 'inbox', key: 'statusSelection' } as const, null as string | null)
+/** The pane's interaction state for the drawn conversation, which the shared controller runs through `sendUi`. */
+const UI = atom({ plugin: 'inbox', key: 'ui' } as const, null as UiState | null)
 const THEME = atom({ plugin: 'inbox', key: 'theme' } as const, '')
 const DIALOGS = atom({ plugin: 'inbox', key: 'dialogs' } as const, [] as Dialog[])
-const TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
-const DRAFTS = atom({ plugin: 'inbox', key: 'drafts' } as const, {} as Record<string, Draft>)
-const DISCARDED = atom({ plugin: 'inbox', key: 'discarded' } as const, {} as Record<string, number>)
-/** Null while the pane is closed. */
-const SHOWN = atom({ plugin: 'inbox', key: 'shown' } as const, null as Shown | null)
-const NOTES = atom({ plugin: 'inbox', key: 'notes' } as const, {} as Record<string, RowNote>)
 const REDRAW = atom({ plugin: 'inbox', key: 'redraw' } as const, 0)
 const RUNNING_FRAME = atom({ plugin: 'inbox', key: 'runningFrame' } as const, 0)
 const SESSION = atom({ plugin: 'inbox', key: 'session' } as const, NO_SESSION)
 const AWAY = atom({ plugin: 'inbox', key: 'away' } as const, PRESENT)
 const UNREADABLE = atom({ plugin: 'inbox', key: 'unreadable' } as const, null as string | null)
-const UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
-const STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
-/** The Closed folds whose earlier lines the person opened. */
-const CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
-const OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
-/** Switching tabs or closing the pane closes Help. */
-const IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
+/** The fields an older build kept the pane's state in. `upgradePane` moves them into `UI` once. */
+const OLD_TAB = atom({ plugin: 'inbox', key: 'tab' } as const, 'needsYou' as Tab)
+const OLD_PAGE = atom({ plugin: 'inbox', key: 'page' } as const, null as PageTab | null)
+const OLD_SELECTION = atom({ plugin: 'inbox', key: 'selection' } as const, {} as Record<Tab, Cursor>)
+const OLD_STATUS_SELECTION = atom({ plugin: 'inbox', key: 'statusSelection' } as const, null as string | null)
+const OLD_TYPING = atom({ plugin: 'inbox', key: 'typing' } as const, null as string | null)
+const OLD_DRAFTS = atom({ plugin: 'inbox', key: 'drafts' } as const, {} as Record<string, Draft>)
+const OLD_DISCARDED = atom({ plugin: 'inbox', key: 'discarded' } as const, {} as Record<string, number>)
+const OLD_SHOWN = atom(
+  { plugin: 'inbox', key: 'shown' } as const,
+  null as { tab: ShownTab; isDemo: boolean; since: number } | null,
+)
+const OLD_NOTES = atom({ plugin: 'inbox', key: 'notes' } as const, {} as Record<string, RowNote>)
+const OLD_UNFOLDED = atom({ plugin: 'inbox', key: 'unfolded' } as const, [] as FoldKind[])
+const OLD_CLOSED_ALL = atom({ plugin: 'inbox', key: 'closedAll' } as const, [] as FoldKind[])
+const OLD_STATUS_UNFOLDED = atom({ plugin: 'inbox', key: 'statusUnfolded' } as const, [] as string[])
+const OLD_OPTIONS_SHOWN = atom({ plugin: 'inbox', key: 'optionsShown' } as const, [] as string[])
+const OLD_IS_HELP_SHOWN = atom({ plugin: 'inbox', key: 'isHelpShown' } as const, false)
 const DEMO = atom({ plugin: 'inbox', key: 'demo' } as const, null as DemoCopy | null)
 const DEMO_RECORDING = atom({ plugin: 'inbox', key: 'isDemoRecording' } as const, false)
 
@@ -600,9 +567,9 @@ async function changeSession(
     // A resume drops the running turn, so a write that changes only the turn, such as each tool call's activity,
     // leaves the saved copy alone.
     const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
-    const shown = await read($, SHOWN)
+    const [ui, demo] = await Promise.all([readUi($), read($, DEMO)])
     const kept = pruned(
-      { ...changed, heldRows: [...held], shownSince: shown && !shown.isDemo ? shown.since : null },
+      { ...changed, heldRows: [...held], shownSince: demo === null ? ui.shownSince : null },
       Object.keys(changed.remoteViewers).length > 0 ? await $.clock.now() : 0,
     )
     let landed: ModSession | null = null
@@ -799,47 +766,19 @@ async function commit(
   owner: Owner,
   change: (s: Session) => Session | Promise<Session>,
 ): Promise<Session> {
-  const [typing, drafts] = await Promise.all([read($, TYPING), read($, DRAFTS)])
+  const ui = await readUi($)
   const { before, after, isDrawn } = await changeSession(
     $,
     owner,
     change,
-    new Set(Object.keys(heldReplies(typing, drafts))),
+    new Set(Object.keys(heldReplies(ui.typing, ui.drafts))),
   )
   if (!isDrawn || after === before) return after
   if (before.ledger.overview === null && after.ledger.overview !== null) void syncLook($)
   void publishStatus($)
-  void followNewRows($).catch(() => undefined)
+  void sendUi($, ['read'])
 
   return after
-}
-
-/** At `expiresAt`, redraws the pane and runs that Undo's end work. On the terminal, one loop redraws to the last end. */
-function redrawWhileUndoLasts($: EngineInterface, expiresAt: number) {
-  const ends = paneState.undoEnds
-  if (ends.has(expiresAt)) return
-  ends.add(expiresAt)
-  const redrawAll = () => Promise.all([redraw($), update($, DEMO, d => d && { ...d })])
-  // Desktop redraws once, when Undo ends: while the terminal's steps redrew every 213 ms there, clicks on the
-  // pane's Buttons, Undo among them, did nothing.
-  if (paneState.paneLook === 'terminal' && !paneState.isUndoLoopRunning) {
-    paneState.isUndoLoopRunning = true
-    void (async () => {
-      const stepMs = Math.ceil(SETTLED_MS / UNDO_REDRAW_STEPS)
-      try {
-        while ((await $.clock.now()) + stepMs < Math.max(...ends)) await $.clock.sleep(stepMs).then(redrawAll)
-      } finally {
-        paneState.isUndoLoopRunning = false
-      }
-    })().catch(() => undefined)
-  }
-  later($, 0, async () => {
-    await $.clock.sleep(Math.max(0, expiresAt - (await $.clock.now())))
-    ends.delete(expiresAt)
-    await redrawAll()
-    await openLeftRows($)
-    await finishPendingUndoScroll($)
-  })
 }
 
 function later($: EngineInterface, waitMs: number, run: () => unknown) {
@@ -849,21 +788,11 @@ function later($: EngineInterface, waitMs: number, run: () => unknown) {
   })().catch(() => undefined)
 }
 
-/**
- * A click on row `id`'s title, or with `id` null the `z` key. A collapse keeps the cursor on its row and is saved in the
- * sample copy while the sample shows.
- */
-async function toggleRow($: EngineInterface, id: string | null, isAll?: unknown) {
-  const [{ view, now }, tab, selection] = await Promise.all([drawnState($), readRowTab($), read($, SELECTION)])
-  const toggle = id === null ? collapseKeyPress(view, tab, selection) : titlePress(view, tab, selection, now, id)
-  if (tab === null || toggle === null) return
-  const { is, id: row, index } = toggle
-  if (is === 'select') return select($, tab, row, index)
-  if (isAll) return foldAll($, is === 'expand')
-  const isCollapsed = is === 'collapse'
-  if (isCollapsed) await update($, SELECTION, s => pinnedOn(s, tab, row, index))
-  await saveCollapse($, row, isCollapsed)
-  if (!isCollapsed) await select($, tab, row, index)
+/** A click on row `id`'s title. With `isAll`, it folds or opens every fold of the tab, as the row would go. */
+async function pressTitle($: EngineInterface, id: string, isAll?: unknown) {
+  if (!isAll) return sendUi($, [{ type: 'title-press', id, by: 'click' }])
+  const { view } = await drawnState($)
+  await sendUi($, [{ type: 'fold-all', isOpening: view.collapsed.includes(id) }])
 }
 
 function commandCalls($: EngineInterface): EngineCalls {
@@ -882,88 +811,22 @@ function commandCalls($: EngineInterface): EngineCalls {
 
 /** Saves row `id` collapsed or open, in the sample copy while the sample shows. */
 async function saveCollapse($: EngineInterface, id: string, isCollapsed: boolean) {
-  if (isCollapsed) await update($, TYPING, t => (t === id ? null : t))
   const at = await $.clock.now()
   if (await read($, DEMO)) await update($, DEMO, d => d && withCollapse(d, id, isCollapsed, at))
   else await commit($, currentOwner(), s => withCollapse(s, id, isCollapsed, at))
 }
 
-async function foldAll($: EngineInterface, isOpen: boolean | null) {
-  const [{ view }, tab, unfolded, statusUnfolded] = await Promise.all([
-    drawnState($),
-    readShownTab($),
-    read($, UNFOLDED),
-    read($, STATUS_UNFOLDED),
-  ])
-  const change = foldAllOn(view, tab, { unfolded, statusUnfolded }, isOpen)
-  await Promise.all([
-    update($, UNFOLDED, () => change.unfolded),
-    update($, STATUS_UNFOLDED, () => change.statusUnfolded),
-  ])
-  for (const c of change.collapses) await saveCollapse($, c.id, c.isCollapsed)
+async function toggleHelp($: EngineInterface) {
+  await sendUi($, [{ type: 'show-help', isShown: !(await readUi($)).isHelpShown }])
 }
 
-/** A press on a Status parent's name or its Fold key. */
+/** A press on a Status parent's name or its Fold key. With `isAll`, every fold of the page goes the same way. */
 async function toggleParent($: EngineInterface, id: string, isAll?: unknown) {
   const { view } = await drawnState($)
   const isOpening = view.collapsed.includes(id)
-  await (isAll ? foldAll($, isOpening) : saveCollapse($, id, !isOpening))
+  await sendUi($, [isAll ? { type: 'fold-all', isOpening } : { type: 'collapse', id, isCollapsed: !isOpening }])
 }
 
-async function openLeftRows($: EngineInterface) {
-  const { view, now } = await drawnState($)
-  let isMoved = false
-  await update($, SELECTION, s => {
-    const moved = leftRowsSelection(view, now, s)
-    isMoved = moved !== null
-    return moved ?? s
-  })
-  // The opened row's buttons draw dim while guarded; a fresh value redraws them once the guard ends.
-  if (isMoved) later($, PRESS_GUARD_MS, () => update($, SELECTION, s => ({ ...s })))
-}
-
-async function openAfterClose(
-  $: EngineInterface,
-  id: string,
-  wasWaiting: boolean,
-  skipScroll = false,
-): Promise<{ isMoved: boolean; undoBlock: UiScrollBlock }> {
-  const [{ view }, tab, selection] = await Promise.all([drawnState($), readRowTab($), read($, SELECTION)])
-  const move = closeMove(view, tab, selection, id, wasWaiting)
-  if (tab === null || move === null) return { isMoved: false, undoBlock: 'nearest' }
-  if (move.following !== null && move.index >= 0) await select($, tab, move.following, move.index, !skipScroll)
-  else await update($, SELECTION, s => ({ ...s, [tab]: { ...NO_CURSOR, index: s[tab].index } }))
-
-  return { isMoved: true, undoBlock: move.undoBlock }
-}
-
-/** Redraws when the next press that changes with the clock alone changes, then waits for the next one. */
-async function redrawAtTimedChange($: EngineInterface) {
-  const { lastActions, now } = await drawnState($)
-  const at = timedChangeAt(lastActions, now)
-  if (at === null || (paneState.timedRedrawAt !== null && paneState.timedRedrawAt <= at)) return
-  paneState.timedRedrawAt = at
-  later($, at - now, async () => {
-    paneState.timedRedrawAt = null
-    await redraw($)
-    await redrawAtTimedChange($)
-  })
-}
-
-/** Redraws once the pane draws the loaded session, so its render times Undo, and again as its results and notes clear. */
-async function redrawAfterReload($: EngineInterface) {
-  const { lastActions, notes, now } = await drawnState($)
-  const times = [
-    ...Object.values(lastActions).flatMap(a => (a.result ? [a.result.at] : [])),
-    ...Object.values(notes).map(n => n.at),
-  ]
-  const latest = Math.max(...times)
-  if (times.length > 0 && latest + SETTLED_MS > now) later($, latest + SETTLED_MS - now, () => redraw($))
-  await redraw($)
-  await redrawAtTimedChange($)
-}
-
-/** The Status call after a catch-up, over the whole transcript. */
 function catchUpStatus($: EngineInterface, owner: Owner, transcript: string): StatusCall {
   return {
     exchange: { kind: 'catch-up', conversation: transcript },
@@ -1118,36 +981,68 @@ async function notePrompt(
   return notes
 }
 
-/**
- * A reload keeps $.state, so a running session can still hold its parts in the separate fields of an older build,
- * `notes` as its tab, and the Asks tab as `waiting`, and drafts saved as bare text.
- */
+/** Moves the pane's state from the separate fields of a build before the shared controller into `UI`, once. */
+async function upgradePane($: EngineInterface) {
+  if ((await read($, UI)) !== null) return
+  const [
+    tab,
+    page,
+    selection,
+    statusSelection,
+    typing,
+    drafts,
+    discarded,
+    shown,
+    notes,
+    unfolded,
+    closedAll,
+    statusUnfolded,
+    optionsShown,
+    isHelpShown,
+    now,
+  ] = await Promise.all([
+    read($, OLD_TAB),
+    read($, OLD_PAGE),
+    read($, OLD_SELECTION),
+    read($, OLD_STATUS_SELECTION),
+    read($, OLD_TYPING),
+    read($, OLD_DRAFTS),
+    read($, OLD_DISCARDED),
+    read($, OLD_SHOWN),
+    read($, OLD_NOTES),
+    read($, OLD_UNFOLDED),
+    read($, OLD_CLOSED_ALL),
+    read($, OLD_STATUS_UNFOLDED),
+    read($, OLD_OPTIONS_SHOWN),
+    read($, OLD_IS_HELP_SHOWN),
+    $.clock.now(),
+  ])
+  const old: OldPaneFields = {
+    tab,
+    page,
+    selection,
+    statusSelection,
+    typing,
+    drafts,
+    discarded,
+    shown,
+    notes,
+    unfolded,
+    closedAll,
+    statusUnfolded,
+    optionsShown,
+    isHelpShown,
+  }
+  await update($, UI, ui => ui ?? uiFromOldFields(old, lookConfigOf(paneState.paneLook), now))
+}
+
+/** A reload keeps $.state, so a running session can still hold its parts in the separate fields of an older build. */
 async function upgradeState($: EngineInterface): Promise<Ledger> {
-  const now = await $.clock.now()
   const [session] = await Promise.all([
     upgradeDrawn($),
-    update($, TAB, t => {
-      const renamed = (t as string) === 'notes' ? 'findings' : (t as string) === 'waiting' ? 'needsYou' : t
-
-      return isShownTab(renamed) && isRowTab(renamed) ? renamed : 'needsYou'
-    }),
-    update($, PAGE, p => (isShownTab(p) ? p : null)),
-    update($, SELECTION, ({ waiting, ...s }: Record<Tab, Cursor> & { waiting?: Cursor }) => {
-      const cursors: Record<Tab, Cursor> = { ...NO_SELECTION, ...(waiting ? { needsYou: waiting } : {}), ...s }
-      // A cursor saved before `openedAt` existed: no click opened its row in a way that still guards it.
-      return Object.fromEntries(
-        Object.entries(cursors).map(([t, c]) => [t, { ...c, openedAt: c.openedAt ?? 0 }]),
-      ) as Record<Tab, Cursor>
-    }),
-    update($, UNFOLDED, upgradedUnfolded),
+    upgradePane($),
     // A demo an earlier build seeded may lack a field this one draws, so it ends; /inbox demo seeds a new one.
     update($, DEMO, d => (d === null || isDemoCopy(d) ? d : null)),
-    // A draft saved as bare text began before now, so a row that closed before this load stays closed.
-    update($, DRAFTS, (d: Record<string, Draft | string>) =>
-      Object.fromEntries(
-        Object.entries(d).map(([id, draft]) => [id, typeof draft === 'string' ? { text: draft, since: now } : draft]),
-      ),
-    ),
   ])
 
   return session.ledger
@@ -1187,6 +1082,7 @@ async function runTool(
  */
 function openPane($: EngineInterface, isFieldOpen = false) {
   paneState.paneClosesOnEscape = !isFieldOpen
+  paneState.isOpenUnheard = true
   const opened = $.ui.open({
     id: PANE,
     title: 'Inbox',
@@ -1195,24 +1091,27 @@ function openPane($: EngineInterface, isFieldOpen = false) {
   })
   void opened
     .then(async () => {
-      await syncShown($, { isOpen: true })
+      await sendUi($, (await readUi($)).shownSince === null ? [{ type: 'opened' }, 'read'] : ['read'])
+      paneState.isOpenUnheard = false
       await syncLook($, true)
       await wakeForHeldSends($)
     })
-    .catch(() => undefined)
+    .catch(() => {
+      paneState.isOpenUnheard = false
+    })
 
   return opened
 }
 
 /**
  * Starts a look while the Status shows in the pane, and ends it when it stops showing there. Both are
- * idempotent, so every place that opens, closes or changes the pane's page can call it, after `syncShown`. The sample
+ * idempotent, so every place that opens, closes or changes the pane's page can call it. The sample
  * leaves the real session's look alone. `isOpen` is whether the pane shows, when the caller knows.
  */
 async function syncLook($: EngineInterface, isOpen?: boolean) {
   if (await read($, DEMO)) return
-  const [page, isPaneOpen, now] = await Promise.all([readPage($), isOpen ?? isPaneShown($), $.clock.now()])
-  const isShown = isPaneOpen && page === 'overview'
+  const [ui, isPaneOpen, now] = await Promise.all([readUi($), isOpen ?? isPaneShown($), $.clock.now()])
+  const isShown = isPaneOpen && ui.tab === 'overview'
   const shown = isShown ? {} : takeShownRows()
   await commit($, currentOwner(), s => withLook(s, isShown, now, shown)).catch(() => undefined)
   followDelegates($, isShown)
@@ -1226,100 +1125,26 @@ function followDelegates($: EngineInterface, isShown: boolean) {
       now: () => $.clock.now(),
       ownerId: owner.id,
       overview: async () => upgradeSession(await read($, SESSION)).ledger.overview,
-      isStatusShown: async () => (await readPage($)) === 'overview' && (await isPaneShown($)) && !(await read($, DEMO)),
+      isStatusShown: async () =>
+        (await readUi($)).tab === 'overview' && (await isPaneShown($)) && !(await read($, DEMO)),
       settle: (agents, at) => commit($, owner, s => statusChanged(s, o => delegatesSettled(o, agents, at))),
     }
   })
 }
 
-/**
- * Starts a showing when the pane opens or shows another tab or the sample, and ends it when the pane closes. A row that
- * closes during a showing stays in place no longer than it lasts, as `isSettledInPlace` says. Every write of the shown
- * tab calls it before the pane draws the tab. Idempotent without `since`, like `syncLook`.
- */
-async function syncShown($: EngineInterface, { isOpen, since }: Showing = {}) {
-  const [tab, isDemo, isPaneOpen, now] = await Promise.all([
-    readShownTab($),
-    read($, DEMO).then(d => d !== null),
-    isOpen ?? isPaneShown($),
-    $.clock.now(),
-  ])
-  await update($, SHOWN, s => {
-    if (!isPaneOpen) return null
-    const isSameShowing = since === undefined && s?.tab === tab && s.isDemo === isDemo
-
-    return isSameShowing ? s : { tab, isDemo, since: since ?? now }
-  })
-}
-
-async function readShownTab($: EngineInterface): Promise<ShownTab> {
-  const [page, tab] = await Promise.all([readPage($), read($, TAB)])
-
-  return page ?? tab
-}
-
-/** When the pane began showing the tab it shows now. Null while the pane is closed. */
-async function readShownSince($: EngineInterface): Promise<number | null> {
-  return (await read($, SHOWN))?.since ?? null
-}
-
-/** What the pane holds in place: the rows replies hold, and the rows closed since it showed its tab. */
-async function readHolds($: EngineInterface): Promise<Holds> {
-  const [typing, drafts, discarded, shownSince] = await Promise.all([
-    read($, TYPING),
-    read($, DRAFTS),
-    read($, DISCARDED),
-    readShownSince($),
-  ])
-
-  return { replies: heldReplies(typing, drafts), discarded, shownSince, listInput: paneState.listInput }
-}
-
-/** Notes a press, key, click or pointer move on the pane, so a row due to fold waits until the person stops. */
-async function noteListInput($: EngineInterface) {
-  paneState.listInput = withListInput(paneState.listInput, await $.clock.now())
-}
-
-/** Redraws when the next settled row or PR the view draws can fold. */
-function redrawAtNextFold($: EngineInterface, view: SessionView, lastTypedMessageAt: number | null, now: number) {
-  const settled = [...allRows(view), ...view.prs.drawn].flatMap(r => (r.state.is === 'settled' ? [r.state] : []))
-  const placing = { lastTypedMessageAt, listInput: paneState.listInput, now, settleWindowMs: SETTLED_MS }
-  const at = nextFoldAt(settled, placing)
-  const pending = paneState.foldRedrawAt
-  const isSooner = at !== null && at > now && (pending === null || pending <= now || at < pending)
-  if (!isSooner) return
-  paneState.foldRedrawAt = at
-  later($, at - now, async () => {
-    paneState.foldRedrawAt = null
-    await redraw($)
-  })
-}
-
 /** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
 async function matchPaneEscape($: EngineInterface) {
-  const closesOnEscape = (await read($, TYPING)) === null
+  const closesOnEscape = (await readUi($)).typing === null
   if (closesOnEscape === paneState.paneClosesOnEscape) return
   paneState.paneClosesOnEscape = closesOnEscape
   if (!(await $.ui.panes()).some(p => p.id === PANE)) return
   await $.ui.open({ id: PANE, title: 'Inbox', ...(closesOnEscape ? { closeOnEscape: true as const } : {}) })
 }
 
-async function openTopRow($: EngineInterface) {
-  const [{ view, lastActions }, tab] = await Promise.all([drawnState($), readRowTab($)])
-  if (tab === null) return
-  const prViews = openPrViews(view.prs.drawn)
-  const ids = tabRowIds(view, prViews)[tab]
-  const top = firstWaiting(tabWaits(tab, view, prViews, lastActions))
-  if (top === null) await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
-  else await select($, tab, top, ids.indexOf(top))
-}
-
 async function showInbox($: EngineInterface, opening: ReturnType<typeof openInHerdr>) {
   const herdr = await opening
   if (herdr?.isShown) return herdr.text
   await openPane($)
-  await followNewRows($, true)
-  await openTopRow($)
 
   return herdr?.text
 }
@@ -1330,45 +1155,50 @@ async function openInbox($: EngineInterface, isDemo: boolean) {
   // Opened before any other await unless the Herdr look is opening. After one, the engine no longer counts the press as
   // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
   await openPane($)
-  const { view } = await drawnState($)
-  if (view.needsYou.count > 0) await writeRowTab($, 'needsYou')
-  else if ((await read($, TAB)) === 'prs') await findPrs($)
-  void syncLook($)
-  await followNewRows($, true)
-  await openTopRow($)
+  if ((await readUi($)).tab === 'prs') await findPrs($)
 }
 
 async function sendDraft($: EngineInterface, id: string, surface: UiPressArgument['surface']) {
-  await sendTyped($, id, (await read($, DRAFTS))[id]?.text ?? '', surface)
+  await sendTyped($, id, (await readUi($)).drafts[id]?.text ?? '', surface)
 }
 
 async function sendTyped($: EngineInterface, id: string, text: string, surface: UiPressArgument['surface']) {
-  if (text.trim()) await runPress($, { action: 'type', id, text }, surface)
+  if (text.trim()) await sendUi($, [{ type: 'press', press: { action: 'type', id, text }, by: 'click' }], surface)
   else await focusField($, id)
-}
-
-/** Opens `id`'s field with its draft, or with `seed` as a fresh one, and gives it the keys. */
-async function startTyping($: EngineInterface, id: string, seed?: string) {
-  paneState.focusHint = `type-${id}`
-  const now = await $.clock.now()
-  const drafts = await update($, DRAFTS, d =>
-    d[id] && seed === undefined ? d : { ...d, [id]: { text: seed ?? '', since: now } },
-  )
-  openFields.set(id, openedField(id, drafts[id]))
-  await keepPressedOpen($, id)
-  await update($, TYPING, () => id)
-  await focusField($, id)
 }
 
 async function discardReply($: EngineInterface, id: string) {
   openFields.delete(id)
-  const [now, shownSince] = await Promise.all([$.clock.now(), readShownSince($)])
-  await update($, DISCARDED, d => ({ ...keptDiscards(d, shownSince), [id]: now }))
-  await Promise.all([
-    update($, TYPING, t => (t === id ? null : t)),
-    update($, DRAFTS, ({ [id]: _discarded, ...rest }) => rest),
-  ])
-  await openLeftRows($)
+  await sendUi($, [{ type: 'close-field', id, isDiscard: true }])
+}
+
+/** Opens `id`'s field with its draft, or with `seed` as a fresh one. */
+async function startTyping($: EngineInterface, id: string, seed?: string) {
+  await sendUi($, [{ type: 'open-field', id, ...(seed === undefined ? {} : { seed }) }])
+}
+
+/** Closes `id`'s field and keeps its draft, as Cancel and Escape do. */
+async function closeField($: EngineInterface, id: string) {
+  await sendUi($, [{ type: 'close-field', id, isDiscard: false }])
+}
+
+/**
+ * j or k: the cursor steps among `ids`, from the Status row the pane draws selected when one is given, picked or not.
+ * On the Status, the row it lands on scrolls into view.
+ */
+async function stepCursor($: EngineInterface, by: 1 | -1, ids: string[], statusFrom: string | null = null) {
+  const pick: UiEvent[] = statusFrom === null ? [] : [{ type: 'select', tab: 'overview', id: statusFrom, by: 'key' }]
+  await sendUi($, [...pick, { type: 'step', by, ids }])
+  const ui = await readUi($)
+  if (ui.tab === 'overview' && ui.statusSelection !== null)
+    await scrollToKey($, `status-${ui.statusSelection}`, 'nearest')
+}
+
+/** The controller opened `id`'s field: the pane draws it with its draft, and it takes the keys. */
+async function focusOpenedField($: EngineInterface, id: string) {
+  paneState.focusHint = `type-${id}`
+  openFields.set(id, openedField(id, (await readUi($)).drafts[id]))
+  await focusField($, id)
 }
 
 async function focusField($: EngineInterface, id: string) {
@@ -1385,37 +1215,16 @@ async function focusField($: EngineInterface, id: string) {
   await redraw($)
 }
 
-/** Shows the row tab `tab`, leaving any page tab. */
-async function writeRowTab($: EngineInterface, tab: Tab) {
-  await Promise.all([update($, TAB, () => tab), update($, PAGE, () => null)])
-  await syncShown($)
-}
-
-/** The page tab the pane shows, or null while a row tab shows. */
-function readPage($: EngineInterface): Promise<PageTab | null> {
-  return read($, PAGE)
-}
-
-/** The shown row tab; null while the Status page shows, where no row is drawn, selected or scrolled to. */
-async function readRowTab($: EngineInterface): Promise<Tab | null> {
-  const [page, tab] = await Promise.all([readPage($), read($, TAB)])
-
-  return page === null ? tab : null
-}
-
 async function showTab($: EngineInterface, tab: ShownTab) {
-  cancelUndoScroll()
-  await update($, IS_HELP_SHOWN, () => false)
-  if (!isRowTab(tab)) {
-    await update($, PAGE, () => tab)
-    await syncShown($)
-    void syncLook($)
-    return
-  }
   if (tab === 'prs') await findPrs($)
-  await writeRowTab($, tab)
+  await sendUi($, [{ type: 'show-tab', tab }])
+}
+
+/** The controller showed `tab`: the look follows it, and a row tab scrolls to its open row. */
+async function tabShown($: EngineInterface, tab: ShownTab) {
+  cancelUndoScroll()
   void syncLook($)
-  await scrollToOpenRow($, tab)
+  if (isRowTab(tab)) await scrollToOpenRow($, tab)
 }
 
 /**
@@ -1426,19 +1235,6 @@ async function findPrs($: EngineInterface) {
   if (await read($, DEMO)) return
   await markFetching($, true)
   void fetchPrs($, true)
-}
-
-async function select($: EngineInterface, tab: Tab, id: string, index: number, scroll = true) {
-  if (scroll) {
-    if (paneState.pendingUndoScroll && paneState.pendingUndoScroll.tab === tab) suspendUndoReveal()
-    else cancelUndoScroll()
-  }
-  const openedAt = await $.clock.now()
-  await update($, SELECTION, s => ({ ...s, [tab]: { id, index, openedAt } }))
-  await update($, TYPING, t => (t === id ? t : null))
-  // The row's buttons draw dim while guarded. A render cannot write state, so a fresh value redraws them once the guard ends.
-  later($, PRESS_GUARD_MS, () => update($, SELECTION, s => ({ ...s })))
-  if (scroll) await scrollToRow($, id)
 }
 
 async function scrollToKey(
@@ -1459,7 +1255,7 @@ async function scrollToKey(
 }
 
 async function selectStatusRow($: EngineInterface, id: string, focusKey?: string) {
-  await update($, STATUS_SELECTION, () => id)
+  await sendUi($, [{ type: 'select', tab: 'overview', id, by: 'click' }])
   const isDrawn = await scrollToKey($, `status-${id}`, 'nearest')
   if (isDrawn && focusKey) await $.ui.focus({ requestId: PANE, key: focusKey }).catch(() => {})
 }
@@ -1468,73 +1264,51 @@ async function scrollToRow($: EngineInterface, id: string) {
   await scrollToKey($, `view-${id}`, paneState.isInlinePane ? 'start' : 'nearest')
 }
 
+/** Scrolls the pending Undo into view on the inline terminal, while it lasts and the person has not moved. */
 async function revealPendingUndo($: EngineInterface): Promise<boolean> {
   const pending = paneState.pendingUndoScroll
   if (!pending || !pending.revealUndo || !paneState.isInlineTerminalPane || pending.sessionId !== conversation.id)
     return false
-  const [tab, selection, drawn] = await Promise.all([readRowTab($), read($, SELECTION), drawnState($)])
-  if (paneState.pendingUndoScroll !== pending || tab === null) return false
-  if (tab !== pending.tab || !sameCursor(selection[tab], pending.cursor) || drawn.now >= pending.expiresAt) return false
-  const prs = drawn.view.prs.drawn
-  const key = settledScrollKey(
-    pending.key,
-    settledLayoutId(tab, drawn.view, prs, drawn.lastActions, drawn.notes, drawn.now, paneState.terminalInlineSize),
+  const drawn = await drawnState($)
+  const { ui, view, now } = drawn
+  if (paneState.pendingUndoScroll !== pending || ui.tab !== pending.tab || now >= pending.expiresAt) return false
+  const ids = tabRowIds(view, openPrViews(view.prs.drawn))[pending.tab]
+  const block = undoBlockOf(ids, pending.rowId, selectedOf(ui, view, pending.tab))
+  const prs = view.prs.drawn
+  const layout = settledLayoutId(
+    pending.tab,
+    view,
+    prs,
+    drawn.lastActions,
+    drawn.notes,
+    now,
+    paneState.terminalInlineSize,
   )
-  return scrollToKey($, key, pending.block, () => paneState.pendingUndoScroll === pending && pending.revealUndo, 5)
+  const key = settledScrollKey(pending.key, layout)
+  return scrollToKey($, key, block, () => paneState.pendingUndoScroll === pending && pending.revealUndo, 5)
 }
 
-async function keepUndoVisible($: EngineInterface, key: string, block: UiScrollBlock, at: number, revision: number) {
-  if (revision !== paneState.undoScrollRevision) return
-  const [tab, selection] = await Promise.all([readRowTab($), read($, SELECTION)])
-  if (revision !== paneState.undoScrollRevision || tab === null) return
-  const pending: PendingUndoScroll = {
-    key,
-    tab,
-    cursor: selection[tab],
-    block,
-    expiresAt: at + SETTLED_MS,
-    sessionId: conversation.id,
-    revealUndo: true,
-  }
-  paneState.pendingUndoScroll = pending
+/** Keeps the Undo `key` of row `rowId`, which a press just closed, in view on the inline terminal while it lasts. */
+async function keepUndoVisible($: EngineInterface, key: string, rowId: string, at: number, revision: number) {
+  const ui = await readUi($)
+  if (revision !== paneState.undoScrollRevision || !isRowTab(ui.tab)) return
+  const sessionId = conversation.id
+  paneState.pendingUndoScroll = { key, rowId, tab: ui.tab, expiresAt: at + SETTLED_MS, sessionId, revealUndo: true }
   await revealPendingUndo($)
 }
 
-async function finishPendingUndoScroll($: EngineInterface) {
+/**
+ * The controller moved a tab's cursor to row `id`. After a close it moved off `closedId`, and an Undo the inline
+ * terminal keeps in view for that row stays in view.
+ */
+async function revealRow($: EngineInterface, tab: Tab, id: string, closedId: string | null) {
   const pending = paneState.pendingUndoScroll
-  if (!pending) return
-  const revision = paneState.undoScrollRevision
-  const [tab, selection, drawn] = await Promise.all([readRowTab($), read($, SELECTION), drawnState($)])
-  if (paneState.pendingUndoScroll !== pending || revision !== paneState.undoScrollRevision) return
-  const cursor = tab === null ? NO_CURSOR : selection[tab]
-  if (tab !== null && tab === pending.tab && paneState.isInlineTerminalPane && conversation.id === pending.sessionId) {
-    const prs = drawn.view.prs.drawn
-    const openId =
-      cursor.id ??
-      (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, drawn.view, openPrViews(prs), drawn.lastActions)) : null)
-    const isSettling = drawn.now < pending.expiresAt
-    const baseKey = isSettling && pending.revealUndo ? pending.key : openId ? `view-${openId}` : null
-    const block = isSettling && pending.revealUndo ? pending.block : 'start'
-    if (baseKey) {
-      const key = settledScrollKey(
-        baseKey,
-        settledLayoutId(tab, drawn.view, prs, drawn.lastActions, drawn.notes, drawn.now, paneState.terminalInlineSize),
-      )
-      await scrollToKey(
-        $,
-        key,
-        block,
-        () => paneState.pendingUndoScroll === pending && revision === paneState.undoScrollRevision,
-        5,
-      )
-    }
+  if (closedId !== null && pending?.rowId === closedId && pending.revealUndo) return void (await revealPendingUndo($))
+  if (closedId === null) {
+    if (pending?.tab === tab) suspendUndoReveal()
+    else cancelUndoScroll()
   }
-  if (
-    drawn.now >= pending.expiresAt &&
-    paneState.pendingUndoScroll === pending &&
-    revision === paneState.undoScrollRevision
-  )
-    paneState.pendingUndoScroll = null
+  await scrollToRow($, id)
 }
 
 async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSurface) {
@@ -1542,10 +1316,8 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
   if (surface !== 'desktop' && (await revealPendingUndo($))) return
   if (revision !== paneState.undoScrollRevision) return
   if (paneState.isInlinePane) {
-    const [selection, { view, lastActions }] = await Promise.all([read($, SELECTION), drawnState($)])
-    const prViews = openPrViews(view.prs.drawn)
-    const cursor = selection[tab]
-    const id = cursor.id ?? (cursor.openedAt === 0 ? firstWaiting(tabWaits(tab, view, prViews, lastActions)) : null)
+    const { ui, view } = await drawnState($)
+    const id = selectedOf(ui, view, tab)
     if (revision !== paneState.undoScrollRevision) return
     if (id !== null) {
       await scrollToKey($, `view-${id}`, 'start', () => revision === paneState.undoScrollRevision)
@@ -1558,81 +1330,24 @@ async function scrollToOpenRow($: EngineInterface, tab: Tab, surface?: RenderSur
 
 /** A Status row's View press: Asks shows with the ask selected and in view. */
 async function showAsk($: EngineInterface, askId: string) {
-  const { view } = await drawnState($)
-  const prViews = openPrViews(view.prs.drawn)
-  const index = Math.max(0, tabRowIds(view, prViews).needsYou.indexOf(askId))
-  await select($, 'needsYou', askId, index, false)
-  await showTab($, 'needsYou')
-  await scrollToRow($, askId)
+  await sendUi($, [{ type: 'show-ask', id: askId, by: 'click' }])
 }
 
 /** A set, not a toggle: a second click before the redraw posts the same state, so a double-click leaves it unfolded. */
 async function setFold($: EngineInterface, key: string, isUnfolded: unknown, isAll?: unknown) {
   const fold = foldOf(key)
   if (!fold || typeof isUnfolded !== 'boolean') return
-  if (isAll) return foldAll($, isUnfolded)
-  await ('kind' in fold
-    ? update($, UNFOLDED, u => withFold(u, fold.kind, isUnfolded))
-    : update($, STATUS_UNFOLDED, u => withFold(u, fold.statusId, isUnfolded)))
+  if (isAll) return sendUi($, [{ type: 'fold-all', isOpening: isUnfolded }])
+  await sendUi($, [
+    'kind' in fold
+      ? { type: 'fold', fold: fold.kind, isOpen: isUnfolded }
+      : { type: 'status-fold', id: fold.statusId, isOpen: isUnfolded },
+  ])
 }
 
 async function unlessGuarded($: EngineInterface, rowId: string, press: UiPressArgument, onPress: Action['onPress']) {
-  const [selection, tab, now] = await Promise.all([read($, SELECTION), readRowTab($), $.clock.now()])
-  const cursor = tab === null ? NO_CURSOR : selection[tab]
-  if (cursor.id !== rowId || !isGuarded(cursor.openedAt, now)) await onPress(press)
-}
-
-async function keepPressedOpen($: EngineInterface, id: string) {
-  const tab = await readRowTab($)
-  if (tab === null) return
-  await update($, SELECTION, s =>
-    s[tab].id === null && s[tab].openedAt === 0 ? { ...s, [tab]: { id, index: 0, openedAt: 0 } } : s,
-  )
-}
-
-async function jumpTo($: EngineInterface, tab: Tab) {
-  cancelUndoScroll()
-  await writeRowTab($, tab)
-  await update($, SELECTION, s => ({ ...s, [tab]: NO_CURSOR }))
-  await scrollToOpenRow($, tab)
-}
-
-/**
- * The render cannot write state, so each write
- * that can add a row calls this.
- */
-async function followNewRows($: EngineInterface, isOpening = false) {
-  const record = rowRecorder()
-  const [drawn, tab, page, unfolded, isShown] = await Promise.all([
-    drawnState($),
-    read($, TAB),
-    readPage($),
-    read($, UNFOLDED),
-    isPaneShown($),
-  ])
-  const { prViews: prState, stop, isDemo, isUnread, view } = drawn
-  const added = record({ isDemo, view, isPrsFetching: prState.isFetching, isOpening }, isShown)
-  if (!isShown) return
-  if (Object.values(added).flat().length > 0) void redraw($).catch(() => undefined)
-  let opened: Tab[] = []
-  await update($, SELECTION, s => {
-    const arrived = arrivedSelection(view, added, s)
-    opened = arrived.opened
-    return arrived.selection
-  })
-  if (paneState.isInlinePane && opened.includes(tab)) void scrollToOpenRow($, tab)
-  const isEmpty =
-    tab === 'prs'
-      ? isPrsTabEmpty(view.prs.drawn.length, prState.isFetching)
-      : isTabEmpty({
-          rows: tab === 'needsYou' ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows,
-          settled: new Set(settledRowIds(allRows(view))),
-          closed: closedGroups(view, tab, kind => unfolded.includes(kind)),
-          hasBlocker: tab === 'needsYou' && (!!stop || isUnread),
-        })
-  if (page !== null) return
-  const to = followTo(ARRIVAL_TABS, tab, isEmpty, isOpening ? { ...openRowIds(view), prs: [] } : added)
-  if (to) await jumpTo($, to)
+  const [ui, now] = await Promise.all([readUi($), $.clock.now()])
+  if (!isGuardedPress(ui, ui.tab, rowId, 'click', now)) await onPress(press)
 }
 
 async function isPaneShown($: EngineInterface) {
@@ -1640,14 +1355,12 @@ async function isPaneShown($: EngineInterface) {
 }
 
 async function isPrsTabShown($: EngineInterface) {
-  return (await readRowTab($)) === 'prs' && (await isPaneShown($))
+  return (await readUi($)).tab === 'prs' && (await isPaneShown($))
 }
 
 /** The tab the pane shows, as the inbox model is told: the page tab when one shows, else the row tab. */
 async function shownScreenTab($: EngineInterface): Promise<ScreenTab> {
-  const [page, tab] = await Promise.all([readPage($), read($, TAB)])
-
-  return screenTabOf(page ?? tab)
+  return screenTabOf((await readUi($)).tab)
 }
 
 async function screen($: EngineInterface) {
@@ -1692,7 +1405,7 @@ async function fetchPrsNow($: EngineInterface, ask: FetchAsk) {
     // Fetches run one at a time across conversations, so the drawn session reads whether one still runs.
     await markFetching($, mod.nextFetch !== null)
   }
-  void followNewRows($).catch(() => undefined)
+  void sendUi($, ['read']).catch(() => undefined)
 }
 
 async function pollPrs($: EngineInterface, remote = false) {
@@ -1715,8 +1428,6 @@ async function pollPrs($: EngineInterface, remote = false) {
 /** Takes a dismissed PR off the tab once its row settles, unless it is still tracked or the Dismiss was undone. */
 /** Sends the answers and Fixes held for Undo, and tells Claude about rows closed with Done, once their settle window has passed. */
 async function wakeAfterSettle($: EngineInterface) {
-  // A message sent now reads Queued once QUEUED_AFTER_MS passes, and no change to the session redraws the pane then.
-  later($, QUEUED_AFTER_MS, () => redraw($))
   await wakeSessionAfterSettle(hostOf($, currentOwner()))
 }
 
@@ -1731,87 +1442,47 @@ async function wakeForHeldSends($: EngineInterface) {
   if (dueTimes.length > 0) later($, Math.max(0, Math.min(...dueTimes) - now), () => wakeAfterSettle($))
 }
 
-async function runPress($: EngineInterface, p: RowPress | PrPress, surface: UiPressArgument['surface']) {
+/** Runs the press the controller sent as `pressId`, then tells it how the press ended. */
+async function runPress(
+  $: EngineInterface,
+  pressId: number,
+  p: RowPress | PrPress,
+  holds: Holds,
+  surface?: UiPressArgument['surface'],
+) {
   const mayStayOnRow = isPrPress(p)
     ? ['pr-open', 'pr-refresh', 'thread-open', 'log', 'check-rerun'].includes(p.action)
     : p.action === 'step'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
-  const rowId = pressRowId(p)
-  if (p.action !== 'undo' && !rowId.startsWith('pr:')) await keepPressedOpen($, rowId)
-  const [{ view: drawn }, shownTab] = await Promise.all([drawnState($), readRowTab($)])
-  const wasWaiting = shownWaits(drawn, shownTab).rows.some(r => r.id === rowId && r.isWaiting)
-  if (await read($, DEMO)) return runDemoPress($, p, wasWaiting, undoRevision, surface)
   const now = await $.clock.now()
-  const draft = !isPrPress(p) && p.action === 'type' ? (await read($, DRAFTS))[p.id] : undefined
-  const keepReply = () =>
-    !isPrPress(p) && p.action === 'type'
-      ? update($, DRAFTS, d => (d[p.id] ? d : { ...d, [p.id]: { text: p.text, since: draft?.since ?? now } }))
-      : undefined
-  if (!isPrPress(p) && p.action === 'type') {
-    // A held row stays drawn by its draft's words once its field closes, until the press records its reply.
-    await update($, DRAFTS, d => {
-      const typed = d[p.id]
-      return typed ? { ...d, [p.id]: { ...typed, text: p.text } } : d
-    })
-    await update($, TYPING, t => (t === p.id ? null : t))
+  const isDemo = (await read($, DEMO)) !== null
+  const started = isDemo ? null : await startPress(hostOf($, currentOwner(), surface), p, false, holds)
+  const demo = isDemo ? await runDemoPress($, pressId, p, holds, now) : null
+  const effects = started?.effects ?? (demo?.hasEffects ? [] : null)
+  if (effects) {
+    if (mayStayOnRow && effects.some(effect => effect.kind === 'send')) cancelUndoScroll()
+    const undoKey = await undoKeyAfterPress($, p, surface)
+    if (undoKey !== null && undoRevision === paneState.undoScrollRevision)
+      await keepUndoVisible($, undoKey, pressRowId(p), now, undoRevision)
   }
-  const started = await startPress(hostOf($, currentOwner(), surface), p, false, await readHolds($))
-  const effects = started.effects
-  if (!effects) {
-    const outcome = await started.finish()
-    if (!isPressConfirmed(outcome)) await keepReply()
-    if (outcome.note !== 'stale') return
-    await update($, NOTES, n => ({ ...n, [rowId]: { note: 'stale' as const, at: now } }))
-    later($, SETTLED_MS, () =>
-      update($, NOTES, n => {
-        if (n[rowId]?.at !== now) return n
-        const { [rowId]: _gone, ...rest } = n
-        return rest
-      }),
-    )
-    return
-  }
-  const sends = effects.some(effect => effect.kind === 'send')
-  if (mayStayOnRow && sends) cancelUndoScroll()
-  await Promise.all([
-    update($, NOTES, n => {
-      if (!(rowId in n)) return n
-      const { [rowId]: _gone, ...rest } = n
-      return rest
-    }),
-    'id' in p && p.action === 'type'
-      ? update($, DRAFTS, d => {
-          const { [p.id]: _sent, ...rest } = d
-          return rest
-        })
-      : undefined,
-  ])
-  const undoKey = await undoKeyAfterPress($, p, surface)
-  const canRevealUndo = undoKey !== null && undoRevision === paneState.undoScrollRevision
-  const { isMoved, undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
-  if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
-  if (!isPrPress(p) && p.action === 'compare') void redrawAtTimedChange($).catch(() => undefined)
-  if (!isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
-  // A success note clears SETTLED_MS after its effects finish, when its result is stamped, and a message still on its
-  // way after QUEUED_AFTER_MS reads Queued from then. A fresh value is what redraws the pane at each.
-  if (sends) later($, QUEUED_AFTER_MS, () => redraw($))
-  const outcome = await started.finish()
-  if (outcome.wakesAfterSettle) later($, SETTLED_MS, () => wakeAfterSettle($))
-  if (effects.some(effect => effect.kind !== 'send')) later($, SETTLED_MS, () => redraw($))
-  if (!isPressConfirmed(outcome)) await keepReply()
-  if (!outcome.isRowFailed) return
-  if (isMoved) {
-    cancelUndoScroll()
-    await reopenPressed($, rowId)
-    if (undoKey) await scrollToRow($, rowId)
-  }
-  void publishStatus($)
+  const outcome = started ? await started.finish() : null
+  if (outcome?.wakesAfterSettle) later($, SETTLED_MS, () => wakeAfterSettle($))
+  if (outcome?.isRowFailed) void publishStatus($)
+  const settled: SettledOutcome = outcome
+    ? {
+        error: outcome.error,
+        note: outcome.note,
+        isUnconfirmed: outcome.isUnconfirmed,
+        isRowFailed: outcome.isRowFailed,
+      }
+    : (demo?.outcome ?? { error: null, note: 'stale', isUnconfirmed: false })
+  await sendUi($, ['read', { type: 'press-settled', pressId, outcome: settled }], surface)
 }
 
 async function undoKeyAfterPress(
   $: EngineInterface,
   p: RowPress | PrPress,
-  surface: UiPressArgument['surface'],
+  surface?: UiPressArgument['surface'],
 ): Promise<string | null> {
   if (surface !== 'terminal' || !paneState.isInlineTerminalPane) return null
   const { view } = await drawnState($)
@@ -1825,74 +1496,120 @@ async function undoKeyAfterPress(
     : null
 }
 
-async function reopenPressed($: EngineInterface, id: string) {
-  const tab = await readRowTab($)
-  if (tab === null) return
-  await update($, SELECTION, s => ({ ...s, [tab]: { id, index: s[tab].index, openedAt: 0 } }))
-}
-
-async function selectRestored($: EngineInterface, id: string) {
-  const ids = tabRowIds((await drawnState($)).view, [])
-  const tab: Tab = ids.findings.includes(id) ? 'findings' : 'needsYou'
-  const index = ids[tab].indexOf(id)
-  if (index >= 0) await select($, tab, id, index)
-}
-
-async function runDemoPress(
-  $: EngineInterface,
-  p: RowPress | PrPress,
-  wasWaiting: boolean,
-  undoRevision: number,
-  surface: UiPressArgument['surface'],
-) {
-  const now = await $.clock.now()
-  const rowId = pressRowId(p)
-  if (!isPrPress(p) && p.action === 'type') await update($, TYPING, t => (t === p.id ? null : t))
-  let applied = { stale: true } as Applied
-  let sent = null as DemoSent | null
-  const holds = await readHolds($)
-  const held = new Set(Object.keys(holds.replies))
+/** A press on the sample, which changes the sample copy. The stand-in agent answers a sent message when it is due. */
+async function runDemoPress($: EngineInterface, pressId: number, p: RowPress | PrPress, holds: Holds, now: number) {
+  const texts = {
+    comparePage: comparePagePath($.plugin.root),
+    compareInBackground: isCompareInBackground('claude-code'),
+  }
+  const pressed: { r: DemoPressed | null } = { r: null }
   await update($, DEMO, d => {
     if (!d) return d
-    const sample = emptySession()
-    const r = pressOn(
-      {
-        ...sample,
-        ledger: d.ledger,
-        prViews: d.prViews,
-        lastActions: d.lastActions,
-        presence: { ...sample.presence, ...d.turns },
-      },
-      p,
-      now,
-      { settleWindowMs: SETTLED_MS, holds },
-      { comparePage: comparePagePath($.plugin.root), compareInBackground: isCompareInBackground('claude-code') },
-    )
-    applied = r
-    const { [rowId]: _replaced, ...notes } = d.notes
-    if ('stale' in r) return { ...d, notes: { ...notes, [rowId]: { note: 'stale' as const, at: now } } }
-    const after = demoAfterPress({ lastActions: d.lastActions, turns: d.turns }, r, held)
-    sent = demoSent(r, after.turns)
-
-    return { ...d, ...after, notes }
+    pressed.r = demoPressOn(d, p, now, holds, texts)
+    return pressed.r.demo
   })
-  const pressed = applied
-  const reply = sent
-  if (!isPrPress(p) && p.action === 'type')
-    await update($, DRAFTS, d => {
-      if ('stale' in pressed) return { ...d, [p.id]: { text: p.text, since: d[p.id]?.since ?? now } }
-      const { [p.id]: _sent, ...rest } = d
-      return rest
-    })
-  if (!('stale' in pressed) && !isPrPress(p) && p.action === 'undo') await selectRestored($, p.id)
-  if (!('stale' in pressed)) {
-    const undoKey = await undoKeyAfterPress($, p, surface)
-    const canRevealUndo = undoKey !== null && undoRevision === paneState.undoScrollRevision
-    const { undoBlock } = await openAfterClose($, rowId, wasWaiting, canRevealUndo)
-    if (canRevealUndo) await keepUndoVisible($, undoKey, undoBlock, now, undoRevision)
+  if (pressed.r?.sent) paneState.demoSends.set(pressId, pressed.r.sent)
+
+  return pressed.r
+}
+
+async function demoReply($: EngineInterface, pressId: number) {
+  const sent = paneState.demoSends.get(pressId)
+  if (!sent) return
+  paneState.demoSends.delete(pressId)
+  await update($, DEMO, d => d && { ...d, ...demoReplied(d, sent) })
+}
+
+/** The pane's state: the saved controller state, with the terminal's config while it draws the pane, else desktop's. */
+async function readUi($: EngineInterface): Promise<UiState> {
+  return modUiOf(await read($, UI), paneState.drawsTerminal ? 'terminal' : paneState.paneLook)
+}
+
+/**
+ * Runs `events` through the shared controller on the drawn view, one batch at a time, saves its state, and runs its
+ * commands. `'read'` reads what the drawn session says about its host. A press's `surface` reaches its commands.
+ */
+function sendUi($: EngineInterface, events: (UiEvent | 'read')[], surface?: UiPressArgument['surface']) {
+  const run = paneState.uiQueue.then(() => applyUi($, events, surface))
+  paneState.uiQueue = run.catch(() => undefined)
+
+  return run
+}
+
+async function applyUi($: EngineInterface, events: (UiEvent | 'read')[], surface?: UiPressArgument['surface']) {
+  const [drawn, isPaneOpen] = await Promise.all([drawnState($), isPaneShown($)])
+  const host = hostFactsOf(drawn)
+  const synced = withPaneShown(events, drawn.ui, isPaneOpen)
+  const all = synced.map((event): UiEvent => (event === 'read' ? { type: 'read', host } : event))
+  const applied = applyUiEvents(drawn.ui, drawn.view, all, drawn.now)
+  if (JSON.stringify(applied.ui) !== JSON.stringify(drawn.ui)) await update($, UI, () => applied.ui)
+  scheduleUiWake($, applied.ui, drawn.view, applied.nextWakeAt, drawn.now)
+  for (const c of applied.commands) void runUiCommand($, c, surface).catch(() => undefined)
+}
+
+/** Keeps the one timer at the controller's next wake, or the terminal's next Undo step when that comes first. */
+function scheduleUiWake($: EngineInterface, ui: UiState, view: SessionView, wakeAt: number | null, now: number) {
+  const undoStep = paneState.drawsTerminal && ui.shownSince !== null ? undoStepAt(view, now) : null
+  const at = earliestOf([wakeAt, undoStep])
+  const isRead = at !== null && isReadWake(ui, view, at, now)
+  const wake = paneState.uiWake
+  if (wake !== null && wake.at === at && wake.isRead === isRead) return
+  wake?.timer.cancel()
+  paneState.uiWake = null
+  if (at === null) return
+  try {
+    paneState.uiWake = { at, isRead, timer: $.clock.after(Math.max(0, at - now), () => void wakeUi($)) }
+  } catch {
+    // An earlier mod can refuse the timer. The terminal's next render then starts it again.
   }
-  if ('stale' in pressed || pressed.effects.length > 0)
-    later($, SETTLED_MS, () => update($, DEMO, d => d && { ...d, ...(reply ? demoReplied(d, reply) : {}) }))
+}
+
+/** A terminal render draws the last frame, and starts the timer again when it died, as when the engine refused it. */
+function landTerminalFrame($: EngineInterface, ui: UiState, view: SessionView, now: number) {
+  paneState.drawsTerminal = true
+  paneState.isTerminalFrameLanded = true
+  const wake = paneState.uiWake
+  if (wake === null || wake.at < now) scheduleUiWake($, ui, view, nextWakeAt(ui, view, now), now)
+}
+
+/** A wake reads the view again when it changed on the clock, and otherwise only draws the next frame or step. */
+async function wakeUi($: EngineInterface) {
+  const isRead = paneState.uiWake?.isRead === true
+  paneState.uiWake = null
+  if (!isRead && !paneState.isTerminalFrameLanded) return
+  await sendUi($, [isRead ? 'read' : { type: 'tick' }])
+  if (isRead) return redraw($)
+  paneState.isTerminalFrameLanded = false
+  await update($, RUNNING_FRAME, n => n + 1)
+}
+
+async function runUiCommand($: EngineInterface, c: UiCommand, surface?: UiPressArgument['surface']) {
+  if (c.kind === 'press') await runPress($, c.pressId, c.press, c.holds, surface)
+  else if (c.kind === 'save-collapse') await saveCollapse($, c.id, c.isCollapsed).then(() => sendUi($, ['read']))
+  else if (c.kind === 'read') await sendUi($, ['read'])
+  else if (c.kind === 'focus-field') await focusOpenedField($, c.id)
+  else if (c.kind === 'reveal') await revealRow($, c.tab, c.id, c.closedId)
+  else if (c.kind === 'tab-shown') await tabShown($, c.tab)
+  else await demoReply($, c.pressId)
+}
+
+/** Keeps the leaving conversation's state among the others kept, and starts the pane over, closed, on the same tab. */
+async function leaveUi($: EngineInterface) {
+  const [ui, now] = await Promise.all([readUi($), $.clock.now()])
+  const id = conversation.id
+  paneState.keptUi = keptUiStates({ ...paneState.keptUi, [id]: { ui, shownAt: now } }, null)
+  await update($, UI, () => freshUi(ui.config, ui.tab))
+}
+
+/** Takes the state kept for conversation `id`, else goes on from the current one. No press's answer survives a load. */
+async function enterUi($: EngineInterface, id: string) {
+  const { [id]: kept, ...others } = paneState.keptUi
+  paneState.keptUi = others
+  const ui = restoredUi(kept?.ui ?? (await readUi($)))
+  openFields.clear()
+  const isShown = await isPaneShown($)
+  await update($, UI, () => ({ ...ui, shownSince: null }))
+  await sendUi($, isShown ? [{ type: 'opened' }, 'read'] : ['read'])
 }
 
 /** The drawn session and its view. `canScrollConversation` is whether the surface drawing it can scroll the conversation. */
@@ -1900,15 +1617,22 @@ async function drawnState(
   $: EngineInterface,
   canScrollConversation = false,
 ): Promise<
-  DemoCopy & { view: SessionView; isDemo: boolean; showsDemoNotices: boolean; isUnread: boolean; now: number }
+  DemoCopy & {
+    view: SessionView
+    ui: UiState
+    isDemo: boolean
+    showsDemoNotices: boolean
+    isUnread: boolean
+    lastTypedMessageAt: number | null
+    now: number
+  }
 > {
-  const [session, notes, demo, isDemoRecording, unreadable, holds, now] = await Promise.all([
+  const [session, ui, demo, isDemoRecording, unreadable, now] = await Promise.all([
     read($, SESSION),
-    read($, NOTES),
+    readUi($),
     read($, DEMO),
     read($, DEMO_RECORDING),
     read($, UNREADABLE),
-    readHolds($),
     $.clock.now(),
     read($, REDRAW),
     // The minute tick while the person is away redraws the ages.
@@ -1916,25 +1640,29 @@ async function drawnState(
   ])
   const { ledger, stop, prViews, lastActions, presence } = session
   const turns = { turnsStarted: presence.turnsStarted, turnsApplied: presence.turnsApplied }
-  const drawn: DemoCopy = demo ?? {
-    ledger,
-    stop,
-    prViews,
-    lastActions,
-    notes,
-    turns,
-  }
+  const notes = notesOf(ui)
+  const drawn: DemoCopy = demo
+    ? { ...demo, notes }
+    : {
+        ledger,
+        stop,
+        prViews,
+        lastActions,
+        notes,
+        turns,
+      }
 
   const isUnread = demo === null && unreadable === conversation.id
 
   const drawnFrom = drawnSession(session, drawn, demo !== null, now)
-  const view = sessionView(drawnFrom, now, SETTLED_MS, holds, drawn.notes, canScrollConversation)
-  redrawAtNextFold($, view, presence.lastTypedMessageAt, now)
+  const view = sessionView(drawnFrom, now, SETTLED_MS, holdsOf(ui, now), notes, canScrollConversation)
 
   return {
     ...drawn,
     lastActions: view.lastActions,
     view,
+    ui,
+    lastTypedMessageAt: presence.lastTypedMessageAt,
     isDemo: demo !== null,
     showsDemoNotices: demo !== null && !isDemoRecording,
     isUnread,
@@ -1949,13 +1677,12 @@ async function setDemo($: EngineInterface, isShown: boolean, isRecording = false
     update($, DEMO, () => (isShown ? demoView(now, CLAUDE_CODE.agent) : null)),
     update($, DEMO_RECORDING, () => isShown && isRecording),
   ])
-  await Promise.all([update($, SELECTION, () => NO_SELECTION), update($, TYPING, () => null)])
+  paneState.demoSends.clear()
   // The sample closes a row as it starts, at `now`, so its showing starts then too and the row stays in place. The
   // pane shows the sample or opens on it next.
-  await syncShown($, { isOpen: true, since: now })
+  await sendUi($, isShown ? [{ type: 'reset' }, { type: 'opened' }, 'read'] : [{ type: 'reset' }, 'read'])
   await syncLook($, true)
-  if ((await read($, TAB)) === 'prs') await findPrs($)
-  await followNewRows($, true)
+  if ((await readUi($)).tab === 'prs') await findPrs($)
 }
 
 function readIsNextBuild($: EngineInterface): Promise<boolean> {
@@ -2006,7 +1733,6 @@ async function initializeInbox($: EngineInterface) {
   await Promise.all([upgradeState($), readVersion($)])
   mod.isOn = true
   mod.toolsRefused = false
-  paneState.timedRedrawAt = null
   const refused = () => {
     mod.toolsRefused = true
   }
@@ -2036,7 +1762,8 @@ async function initializeInbox($: EngineInterface) {
   // After loadConversation, which brings saved state up to date. A band or pane drawn while the mod was off read no
   // state, so no state write draws it again.
   $.ui.invalidate('ui.render')
-  await redrawAfterReload($)
+  await sendUi($, ['read'])
+  await redraw($)
 }
 
 /**
@@ -2126,15 +1853,14 @@ async function applyConversation(
   sessionState.resuming = null
   conversation.id = id
   conversation.root = sessionRoot
-  forgetRows()
   sessionState.isReadingAgain = false
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
   // The theme read at the start is gone after /clear, so each conversation reads it.
   const [current] = await Promise.all([upgradeState($), syncTheme($)])
   const loadedAt = await $.clock.now()
-  // The pane now shows another conversation, so it starts a new showing.
-  await syncShown($, { since: loadedAt })
+  // The pane now shows another conversation, so it opens on it as on a new showing.
+  await enterUi($, id)
   const turns = await $.session.turns().catch(() => null)
   const cutOff = (s: Session) => {
     const loaded = statusChanged(cutOffTurn(cutOffUpdate(s), loadedAt), o => childrenCutOff(o, loadedAt))
@@ -2161,6 +1887,7 @@ async function applyConversation(
   if (!isLoading()) return
   if (needsCatchUp) await catchUpNow($)
   void publishStatus($)
+  void sendUi($, ['read']).catch(() => undefined)
   void wakeForHeldSends($).catch(() => undefined)
   if (tabPrs(ledger).length > 0) void fetchPrs($, false)
 }
@@ -2200,23 +1927,8 @@ async function restore($: EngineInterface, saved: SavedRecord) {
       ledger: { ...loaded, turn: loaded.turn + s.ledger.turn },
       lastActions: withoutRowActions(s.lastActions),
     })),
-    forgetRowState($),
+    sendUi($, [{ type: 'reset' }]),
   ])
-}
-
-async function forgetRowState($: EngineInterface) {
-  await Promise.all([
-    update($, SELECTION, () => NO_SELECTION),
-    update($, TYPING, () => null),
-    update($, UNFOLDED, () => []),
-    update($, STATUS_UNFOLDED, () => []),
-    update($, CLOSED_ALL, () => []),
-    update($, OPTIONS_SHOWN, () => []),
-    update($, DRAFTS, () => ({})),
-    update($, DISCARDED, () => ({})),
-    update($, NOTES, () => ({})),
-  ])
-  openFields.clear()
 }
 
 async function readAgain($: EngineInterface) {
@@ -2242,13 +1954,13 @@ async function readAgain($: EngineInterface) {
       await catchUpNow($)
     void publishStatus($)
     if (tabPrs(ledger).length > 0) void fetchPrs($, false)
-    void followNewRows($).catch(() => undefined)
+    void sendUi($, ['read']).catch(() => undefined)
   }
   await redrawPane($)
 }
 
 function redrawPane($: EngineInterface) {
-  return update($, SELECTION, s => ({ ...s }))
+  return redraw($)
 }
 
 export const register: Register = on => {
@@ -2322,7 +2034,7 @@ export const register: Register = on => {
             presence: { ...empty.presence, isUpdating: false },
           }
         }),
-        forgetRowState($),
+        leaveUi($),
         update($, AWAY, a => ({ ...a, isAway: false })),
       ])
       resetTurn()
@@ -2604,10 +2316,8 @@ export const register: Register = on => {
         : withSubagents
       return place ? place(withDelegates) : withDelegates
     })
-    void redrawAtTimedChange($).catch(() => undefined)
     if (e.reason === 'error' && !sessionState.hasStopFromError) await setStopFromLastReply($)
     void wakeAfterSettle($).catch(() => undefined)
-    void followNewRows($).catch(() => undefined)
     const reply = turnReply([turnReply(sessionState.stepTexts, e.answer), sessionState.turnBox ?? ''])
     const isAnswered = e.reason === 'answer' && reply !== ''
     if (!isAnswered && !sessionState.isDialogDismissed) return r
@@ -2686,7 +2396,7 @@ export const register: Register = on => {
     const args = e.args.trim().split(/\s+/).join(' ')
     if (args === 'herdr') return { text: await askHerdrModAgain(herdrCalls($), () => showInbox($, null)) }
     if (args === 'demo' || args === 'demo recording') await setDemo($, !isShown, args === 'demo recording')
-    else if ((await read($, TAB)) === 'prs') await findPrs($)
+    else if ((await readUi($)).tab === 'prs') await findPrs($)
     const [isDemo, isDemoRecording] = await Promise.all([read($, DEMO).then(d => d !== null), read($, DEMO_RECORDING)])
     const note = await showInbox($, args || isDemo ? null : openInHerdr(herdrCalls($)))
 
@@ -2700,7 +2410,7 @@ export const register: Register = on => {
   })
 
   on('ui.press', async ($, e, next) => {
-    if (e.requestId === PANE) await noteListInput($)
+    if (e.requestId === PANE) await sendUi($, [{ type: 'list-input' }])
     if (e.requestId === PANE && e.surface === 'terminal') {
       if (e.element.startsWith('fold-') || e.element === 'hide-demo') cancelUndoScroll()
       else suspendUndoReveal()
@@ -2715,7 +2425,7 @@ export const register: Register = on => {
   on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
     if (e.origin.kind === 'person') {
       cancelUndoScroll()
-      await noteListInput($)
+      await sendUi($, [{ type: 'list-input' }])
     }
     return next(e)
   })
@@ -2723,7 +2433,7 @@ export const register: Register = on => {
   on('ui.message', async ($, e, next) => {
     const r = await next(e)
     if (e.requestId !== PANE) return r
-    await noteListInput($)
+    await sendUi($, [{ type: 'list-input' }])
     const data = e.data as {
       tab?: unknown
       isUnfolded?: unknown
@@ -2735,7 +2445,7 @@ export const register: Register = on => {
     if (data?.isPointer === true) return r
     const shown = isShownTab(data?.tab) ? data.tab : null
     const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
-    if (e.element === 'tabs' && data?.isHelp === true) await update($, IS_HELP_SHOWN, isShown => !isShown)
+    if (e.element === 'tabs' && data?.isHelp === true) await toggleHelp($)
     else if (e.element === 'tabs' && shown) await showTab($, shown)
     else if (e.element.startsWith('undo-') && followUp && typeof data?.key === 'string')
       followUp({
@@ -2756,7 +2466,7 @@ export const register: Register = on => {
         requestId: e.requestId,
         surface: e.surface,
       })
-    } else if (/^(select|collapse)-/.test(e.element)) await toggleRow($, e.element.replace(/^\w+-/, ''), data?.isAll)
+    } else if (/^(select|collapse)-/.test(e.element)) await pressTitle($, e.element.replace(/^\w+-/, ''), data?.isAll)
     else if (e.element.startsWith(PARENT_PREFIX))
       await toggleParent($, e.element.slice(PARENT_PREFIX.length), data?.isAll)
     else if (e.element.startsWith('fold-'))
@@ -2768,10 +2478,10 @@ export const register: Register = on => {
   on('ui.close', { id: PANE }, async ($, e, next) => {
     cancelUndoScroll()
     const r = await next(e)
-    void syncShown($, { isOpen: false }).then(() => syncLook($, false))
     paneHasKeys.clear()
-    await update($, TYPING, () => null)
-    await update($, IS_HELP_SHOWN, () => false)
+    paneState.drawsTerminal = false
+    await sendUi($, [{ type: 'closed' }])
+    void syncLook($, false)
 
     return r
   })
@@ -2921,59 +2631,31 @@ export const register: Register = on => {
       look === 'desktop'
         ? { rowPad: 2 * DESKTOP_ROW_PAD, settledPad: 2 * DESKTOP_ROW_PAD, buttonGap: 1, isFoldGapped: false }
         : { rowPad: blankLine, settledPad: 0, buttonGap: 2, isFoldGapped: true }
-    const [
-      { prViews: prState, lastActions, notes, turns, stop, view, isDemo, showsDemoNotices, isUnread, now },
-      savedTab,
-      savedPage,
-      selection,
-      theme,
-      typing,
-      drafts,
-      unfolded,
-      isHelpShown,
-      optionsShown,
-      termProgram,
-      statusSelection,
-      statusUnfolded,
-      closedAll,
-    ] = await Promise.all([
+    const [drawn, theme, termProgram] = await Promise.all([
       drawnState($, canScrollConversation),
-      read($, TAB),
-      readPage($),
-      read($, SELECTION),
       read($, THEME),
-      read($, TYPING),
-      read($, DRAFTS),
-      read($, UNFOLDED),
-      read($, IS_HELP_SHOWN),
-      read($, OPTIONS_SHOWN),
       $.env.get('TERM_PROGRAM'),
-      read($, STATUS_SELECTION),
-      read($, STATUS_UNFOLDED),
-      read($, CLOSED_ALL),
-      // A redraw loop on desktop blocks clicks, as `redrawWhileUndoLasts` says.
+      // A redraw loop on desktop blocks clicks, so only the terminal draws running marks and Undo in frames.
       look === 'terminal' ? read($, RUNNING_FRAME) : null,
     ])
-    const tab: Tab = isShownTab(savedTab) && isRowTab(savedTab) ? savedTab : 'needsYou'
-    const isStatusShown = savedPage === 'overview'
-    const shownTab: ShownTab = isStatusShown ? 'overview' : tab
+    const { prViews: prState, lastActions, notes, turns, stop, isDemo, showsDemoNotices, isUnread, now } = drawn
+    // The pane can draw before the controller hears that it opened, so the first frame shows the tab the open moves to.
+    const opening: UiEvent[] = [{ type: 'opened' }, { type: 'read', host: hostFactsOf(drawn) }]
+    const isOpenUnheard = paneState.isOpenUnheard && drawn.ui.shownSince === null
+    const ui = isOpenUnheard ? applyUiEvents(drawn.ui, drawn.view, opening, now).ui : drawn.ui
+    if (look === 'terminal') landTerminalFrame($, ui, drawn.view, now)
+    // A collapse the person made draws at once, before its save reaches the view.
+    const view = { ...drawn.view, collapsed: collapsedOf(ui, drawn.view) }
+    const { typing, drafts, unfolded, isHelpShown, optionsShown, statusSelection, statusUnfolded, closedAll } = ui
+    const shownTab: ShownTab = ui.tab
+    const tab: Tab = isRowTab(shownTab) ? shownTab : 'needsYou'
+    const isStatusShown = shownTab === 'overview'
     const tabList = shownTabs()
-    if (!isHelpShown) paneState.newRows = showNewRows(paneState.newRows, shownTab, now)
-    const tintEnd = endOfTints(look, view, now, ms => later($, ms, () => redraw($)))
-    if (look === 'terminal')
-      animateRunningMarks(
-        showsRunningMark(view, shownTab, isHelpShown, kind => unfolded.includes(kind)) || tintEnd !== null,
-        now,
-        (ms, fn) => $.clock.every(ms, fn),
-        () => void update($, RUNNING_FRAME, n => n + 1).catch(() => undefined),
-      )
-    const undoEnd = lastUndoEnd(view)
-    if (undoEnd !== null) redrawWhileUndoLasts($, undoEnd)
-    // A hot reload keeps TYPING but empties openFields, so an open field takes its key and seed again here.
+    // A hot reload keeps the open field in `ui` but empties openFields, so the field takes its key and seed again here.
     if (typing !== null && !openFields.has(typing)) openFields.set(typing, openedField(typing, drafts[typing]))
     if (e.props.isFocused || typing !== paneState.fieldWithoutKeys) paneState.fieldWithoutKeys = null
     // Escape, or a click outside the pane, closes the field and keeps its draft, as Cancel does.
-    if (isKeyboardHandedBack && typing !== null) later($, 0, () => update($, TYPING, t => (t === typing ? null : t)))
+    if (isKeyboardHandedBack && typing !== null) later($, 0, () => closeField($, typing))
     if ((typing === null) !== paneState.paneClosesOnEscape) later($, 0, () => matchPaneEscape($))
     const size = isInline ? `${e.props.bodyColumns}x${e.props.scroll.bodyRows}` : null
     if (e.surface === 'terminal') paneState.terminalInlineSize = size
@@ -2997,14 +2679,16 @@ export const register: Register = on => {
     const raiseEdge = { dimColor: false, color: pal.raised, inverse: false }
 
     const client: PaneClient = hasClient ? { hasClient: true, elements } : { hasClient: false, elements }
+    const runButtonPress = (p: RowPress | PrPress, via: PressVia) =>
+      sendUi($, [{ type: 'press', press: p, by: pressedBy(via) }], via.surface)
     const handlers: PaneHandlers = {
       rowKeyActions: (r, isAllShown) =>
         rowKeyActions(
           {
-            runPress: (p, surface) => runPress($, p, surface),
+            runPress: runButtonPress,
             startTyping: id => startTyping($, id),
             discardReply: id => discardReply($, id),
-            showAllOptions: id => void update($, OPTIONS_SHOWN, s => (s.includes(id) ? s : [...s, id])),
+            showAllOptions: id => void sendUi($, [{ type: 'show-options', id }]),
           },
           r,
           isAllShown,
@@ -3014,18 +2698,17 @@ export const register: Register = on => {
       discardReply: id => discardReply($, id),
       startTyping: (id, seed) => startTyping($, id, seed),
       selectStatusRow: (id, focusKey) => selectStatusRow($, id, focusKey),
-      updateTyping: fn => update($, TYPING, fn),
-      updateDrafts: fn => update($, DRAFTS, fn),
       sendTyped: (id, text, surface) => sendTyped($, id, text, surface),
-      select: (tab, id, index) => select($, tab, id, index),
-      pressTitle: id => toggleRow($, id),
+      pressTitle: id => pressTitle($, id),
       showTab: tab => showTab($, tab),
-      updateHelpShown: fn => update($, IS_HELP_SHOWN, fn),
-      updateUnfolded: fn => update($, UNFOLDED, fn),
-      updateStatusUnfolded: fn => update($, STATUS_UNFOLDED, fn),
       toggleParent: id => toggleParent($, id),
-      updateClosedAll: fn => update($, CLOSED_ALL, fn),
-      runPress: (p, surface) => runPress($, p, surface),
+      closeField: id => closeField($, id),
+      editDraft: (id, text) => sendUi($, [{ type: 'edit-draft', id, text }]),
+      toggleHelp: () => toggleHelp($),
+      setFold: (fold, isOpen) => sendUi($, [{ type: 'fold', fold, isOpen }]),
+      showEarlier: fold => sendUi($, [{ type: 'earlier', fold }]),
+      setStatusFold: (id, isOpen) => sendUi($, [{ type: 'status-fold', id, isOpen }]),
+      runPress: runButtonPress,
       readAgain: () => readAgain($),
       resume: () => resume($),
       showAsk: askId => showAsk($, askId),
@@ -3078,11 +2761,9 @@ export const register: Register = on => {
     const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
     const ids = rows[tab].map(r => r.id)
     const indexOf = new Map(ids.map((id, n) => [id, n]))
-    const cursor = selection[tab]
-    const settledIds = new Set(isListShown ? settledRowIds(allRows(view)) : [])
-    const top = isListShown ? firstWaiting(tabWaits(tab, view, openPrViews(shownPrs), lastActions)) : null
-    const at = selectedIndex(ids, cursor, top, id => settledIds.has(id))
-    const isOpenGuarded = !isStatusShown && isGuarded(cursor.openedAt, now)
+    const guard = ui.selection[tab].guard
+    const at = isListShown ? ids.indexOf(selectedOf(ui, drawn.view, tab) ?? '') : -1
+    const isOpenGuarded = !isStatusShown && guard !== null && now < guard.at + PRESS_GUARD_MS
     const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
     const isStatusCollapsed = (id: string) => view.collapsed.includes(id)
     const statusKeyRow = isStatusShown
@@ -3149,6 +2830,7 @@ export const register: Register = on => {
     const rowFns = paneRows(
       {
         ...client,
+        ui,
         indexOf,
         at,
         collapsed: new Set(view.collapsed),
@@ -3198,12 +2880,7 @@ export const register: Register = on => {
 
     const shownError = footerError(shownTab, view.status, view.statusPage)
 
-    const openIds = openRowIds(view)
-    const drawnIds = new Set([...openIds.needsYou, ...openIds.findings, ...prRowIds(shownPrs)])
-    const lineNote = Object.entries(notes)
-      .filter(([id, n]) => !drawnIds.has(id) && now - n.at < SETTLED_MS)
-      .map(([, n]) => n)
-      .sort((a, b) => b.at - a.at)[0]
+    const notice = noticeOf(ui, now)
 
     const keyList = helpKeys(look)
     const keyColumn = Math.max(0, ...keyList.map(k => cellWidth(k.keys))) + 2
@@ -3222,7 +2899,7 @@ export const register: Register = on => {
         isNarrowDesktop,
         Box,
         shownError,
-        lineNote,
+        notice,
         tabText,
         termProgram,
         Button,
@@ -3254,6 +2931,7 @@ export const register: Register = on => {
     } = paneRowParts(
       {
         ...client,
+        ui,
         look,
         listColumns,
         Text,
@@ -3376,7 +3054,6 @@ export const register: Register = on => {
         Input,
         typing,
         drafts,
-        now,
         markWidth,
         markGlyph,
         desktopFrame,
@@ -3412,18 +3089,18 @@ export const register: Register = on => {
       sections,
     })
 
-    const move = (step: number) => {
-      const to = steppedIndex(at, step, ids.length)
-      void select($, tab, ids[to] ?? '', to)
-    }
-    const canMove = !isStatusShown && !isHelpShown && (ids.length > 1 || (at < 0 && ids.length > 0))
-    const moveStatus = (step: number) => {
-      const from = statusPressRows.findIndex(r => r.id === statusKeyRow?.id)
-      const to = statusPressRows[steppedIndex(from, step, statusPressRows.length)]
-      if (to) void selectStatusRow($, to.id)
-    }
-    const moveBy = (by: number) =>
-      isHelpShown ? undefined : isStatusShown ? moveStatus(by) : canMove ? move(by) : undefined
+    const moveBy = (by: 1 | -1) =>
+      isHelpShown
+        ? undefined
+        : isStatusShown
+          ? void stepCursor(
+              $,
+              by,
+              statusPressRows.map(r => r.id),
+              statusKeyRow?.id ?? null,
+            )
+          : void stepCursor($, by, ids)
+    const selectedId = isListShown ? (ids[at] ?? null) : null
     // Claude Code sends a key no Button binds to the prompt and gives it the keyboard, so the keys
     // stay bound when there is nothing to move to or close.
     const moveKeys: KeyAction[] = [
@@ -3434,14 +3111,17 @@ export const register: Register = on => {
         label: 'Collapse',
         hotkey: COLLAPSE_KEY,
         kind: 'view',
-        onPress: () => (isListShown && !isHelpShown ? toggleRow($, null) : undefined),
+        onPress: () =>
+          isListShown && selectedId !== null
+            ? void sendUi($, [{ type: 'collapse', id: selectedId, isCollapsed: !view.collapsed.includes(selectedId) }])
+            : undefined,
       },
       {
         key: 'fold-all',
         label: 'Fold all',
         hotkey: FOLD_ALL_KEY,
         kind: 'view',
-        onPress: () => !isHelpShown && foldAll($, null),
+        onPress: () => (isHelpShown ? undefined : void sendUi($, [{ type: 'fold-all', isOpening: null }])),
       },
     ]
     const tabKeys: KeyAction[] = tabList.map(({ id, label, hotkey }) => ({
@@ -3465,8 +3145,8 @@ export const register: Register = on => {
       ...(statusRowKeys.some(k => k.hotkey === UNDO_KEY)
         ? []
         : [
-            undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, (p, surface) =>
-              runPress($, p, surface),
+            undoKey(isListShown ? latestUndo(tabUndos(tab, lists, shownPrs)) : null, () =>
+              sendUi($, [{ type: 'undo-key' }]),
             ),
           ]),
     ]
@@ -3502,7 +3182,7 @@ export const register: Register = on => {
           : tab === 'prs'
             ? prsView()
             : needsYouView()
-    const drawn = (
+    const tree = (
       <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
         {showsDemoNotices ? (
           <Box flexDirection="column" paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
@@ -3534,13 +3214,13 @@ export const register: Register = on => {
         {look === 'desktop' ? null : (
           <Box display="none">
             {keyBindings([...tabKeys, ...moveKeys])}
-            {keyBindings(rowKeys, '-key')}
+            {keyBindings(rowKeys, KEY_BINDING_SUFFIX)}
           </Box>
         )}
       </Box>
     )
     if (look === 'desktop' && paneState.focusedKey !== null) {
-      const keys = focusKeys(drawn)
+      const keys = focusKeys(tree)
       const hint = paneState.focusHint?.startsWith('type-')
         ? fieldKey(paneState.focusHint.slice('type-'.length))
         : paneState.focusHint
@@ -3554,6 +3234,6 @@ export const register: Register = on => {
       }
     }
 
-    return drawn
+    return tree
   })
 }

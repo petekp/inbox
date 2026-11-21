@@ -70,6 +70,7 @@ export function paneRowParts(
     isInline,
     space,
     now,
+    ui,
     Button,
     settledLayout,
     desktopFrame,
@@ -90,12 +91,13 @@ export function paneRowParts(
       | 'isInline'
       | 'space'
       | 'now'
+      | 'ui'
       | 'Button'
       | 'settledLayout'
     > &
     Pick<PaneRowFrame, 'desktopFrame'> &
     Pick<PaneRowLines, 'treeRow' | 'ToneSvg' | 'desktopHairline' | 'markGlyph' | 'markWidth'>,
-  { updateUnfolded, updateClosedAll, runPress }: Pick<PaneHandlers, 'updateUnfolded' | 'updateClosedAll' | 'runPress'>,
+  { setFold, showEarlier, runPress }: Pick<PaneHandlers, 'setFold' | 'showEarlier' | 'runPress'>,
 ) {
   const groupEmpty = (title: string) =>
     look === 'desktop'
@@ -236,7 +238,7 @@ export function paneRowParts(
         <Button
           key={`reopen-${d.id}`}
           label={action.label}
-          onPress={(press: { surface: UiPressArgument['surface'] }) => void runPress(action.press, press.surface)}
+          onPress={(press: UiPressArgument) => void runPress(action.press, press)}
         />
       </Box>
     )
@@ -357,13 +359,7 @@ export function paneRowParts(
   const desktopFoldLines = desktopFoldLinesOf(1)
   /** The button that lists the rest of a Closed fold. */
   const earlierButton = (kind: FoldKind, label: string) => (
-    <Button
-      plain
-      dimColor
-      key={`earlier-${kind}`}
-      label={label}
-      onPress={() => void updateClosedAll(a => (a.includes(kind) ? a : [...a, kind]))}
-    />
+    <Button plain dimColor key={`earlier-${kind}`} label={label} onPress={() => void showEarlier(kind)} />
   )
   /**
    * A group's Closed fold, its label at `textAt`, where the group's rows start their text. `isAfterOpenRow` says the
@@ -386,11 +382,7 @@ export function paneRowParts(
             kind,
             foldLabel(total),
             isUnfolded,
-            () =>
-              void Promise.all([
-                updateUnfolded(u => (u.includes(kind) ? u.filter(k => k !== kind) : [...u, kind])),
-                updateClosedAll(a => a.filter(k => k !== kind)),
-              ]),
+            () => void setFold(kind, !isUnfolded),
             DESKTOP_LIST_MARGIN,
             undefined,
             textAt,
@@ -428,7 +420,7 @@ export function paneRowParts(
   const undoButton = (undo: RowPress | PrPress, at: number | null) => {
     const key = `undo-${pressRowId(undo)}`
     const label = ` ↺ ${UNDO_KEY}: ${ROW_COPY.undo} `
-    const onPress = (press: { surface: UiPressArgument['surface'] }) => runPress(undo, press.surface)
+    const onPress = (press: UiPressArgument) => runPress(undo, press)
     if (svgClientElements) {
       followUpPresses.set(key, onPress)
       const leftMs = at === null ? 0 : Math.max(0, SETTLED_MS - (now - at))
@@ -522,7 +514,7 @@ export function paneRowParts(
 
     return settledTitleLine(title, label, text => desktopTextPt(text) <= linePt)
   }
-  const closedTitleColor = closedTitleTint({ look, pal, now })
+  const closedTitleColor = closedTitleTint({ look, pal, now, ui })
   const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
     const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
     const mark = settledMark(state)

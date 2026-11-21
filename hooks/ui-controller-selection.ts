@@ -85,10 +85,15 @@ function isClosedByPerson(ui: UiState, view: SessionView, id: string, now: numbe
   return Object.values(ui.pressesOut).some(p => p.rowId === id) || (lastAt !== undefined && lastAt >= now - SETTLED_MS)
 }
 
-/** `ui` with `tab`'s cursor moved off row `closedId`, from `index`, and the reveal the shown tab needs. */
-function movedOff(ui: UiState, waits: RowWait[], tab: Tab, closedId: string, index: number): UiStep {
+/**
+ * `ui` with `tab`'s cursor moved off row `closedId`, from `index`, and the reveal the shown tab needs. When a click
+ * closed the row, the row the cursor moves to is guarded, so a double click does not land on it.
+ */
+function movedOff(ui: UiState, waits: RowWait[], tab: Tab, closedId: string, index: number, now: number): UiStep {
   const next = waitingFrom(waits, index)
-  const moved = withCursor(ui, tab, { id: next.id, index: next.index, guard: null })
+  const isClosedByClick = Object.values(ui.pressesOut).some(p => p.rowId === closedId && p.by === 'click')
+  const guard = isClosedByClick ? { by: 'click' as const, at: now } : null
+  const moved = withCursor(ui, tab, { id: next.id, index: next.index, guard })
   const isShown = ui.tab === tab && next.id !== null
 
   return withCommands(
@@ -124,12 +129,14 @@ export function readCursors(
       const isHeld = hasStopped && !isClosedByPerson(next, view, cursor.id, now) && isListInUse(next, now)
       if (isHeld) next = { ...next, heldClose: { ...next.heldClose, [tab]: cursor.id } }
       else {
-        const moved = movedOff(next, waits, tab, cursor.id, isGone ? cursor.index : index)
+        const moved = movedOff(next, waits, tab, cursor.id, isGone ? cursor.index : index, now)
         next = moved.ui
         commands = [...commands, ...moved.commands]
       }
     } else if (index >= 0 && index !== cursor.index) next = withCursor(next, tab, { ...cursor, index })
-    const arrived = openOnArrival(waits, next.selection[tab].id, added[tab] ?? [])
+    const picked = next.selection[tab].id
+    const isOpenRowUnseen = picked === null && next.shownSince === null
+    const arrived = isOpenRowUnseen ? null : openOnArrival(waits, picked, added[tab] ?? [])
     if (arrived !== null)
       next = withCursor(next, tab, { id: arrived, index: waits.findIndex(r => r.id === arrived), guard: null })
     next = { ...next, waitingSeen: { ...next.waitingSeen, [tab]: waits.filter(r => r.isWaiting).map(r => r.id) } }
@@ -157,7 +164,7 @@ export function settleHeldClose(ui: UiState, view: SessionView, now: number): Ui
     const isStillWaiting = waits[index]?.isWaiting === true
     if (cursor.id !== id || isStillWaiting) step = { ui: cleared, commands: step.commands }
     else if (index < 0 || !isListInUse(step.ui, now)) {
-      const moved = movedOff(cleared, waits, tab, id, index >= 0 ? index : cursor.index)
+      const moved = movedOff(cleared, waits, tab, id, index >= 0 ? index : cursor.index, now)
       step = { ui: moved.ui, commands: [...step.commands, ...moved.commands] }
     }
   }
@@ -244,8 +251,11 @@ export function foldAll(ui: UiState, view: SessionView, isOpening: boolean | nul
   }, withCommands(start))
 }
 
-/** Selects the row a confirmed Undo brought back, once a row tab lists it open again, unless a field is open on another row. */
-export function selectRestored(ui: UiState, view: SessionView): UiStep {
+/**
+ * Selects the row a confirmed Undo brought back, once a row tab lists it open again, unless a field is open on another
+ * row. An Undo clicked guards the row, as a click that opens a row does.
+ */
+export function selectRestored(ui: UiState, view: SessionView, now: number): UiStep {
   const restoring = ui.restoring
   if (restoring === null) return withCommands(ui)
   const tab = ROW_TAB_IDS.find(t => tabWaits(ui, view, t).some(r => r.id === restoring.id && r.isWaiting))
@@ -253,7 +263,8 @@ export function selectRestored(ui: UiState, view: SessionView): UiStep {
   const cleared = { ...ui, restoring: null }
   if (ui.typing !== null && ui.typing !== restoring.id) return withCommands(cleared)
   const index = tabWaits(ui, view, tab).findIndex(r => r.id === restoring.id)
-  const moved = withCursor(cleared, tab, { id: restoring.id, index, guard: null })
+  const guard = restoring.by === 'click' ? { by: 'click' as const, at: now } : null
+  const moved = withCursor(cleared, tab, { id: restoring.id, index, guard })
 
   return withCommands(
     moved,

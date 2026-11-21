@@ -1,19 +1,10 @@
-import {
-  titleTintEndsAt,
-  closedTitleClock,
-  newRowIn,
-  newRowShare,
-  steppedTitleTint,
-  TITLE_TINT,
-  type NewRow,
-} from './arrivals'
+import { closedTitleClock, newRowIn, newRowShare, steppedTitleTint, TITLE_TINT, type NewRow } from './arrivals'
 import { fadedOver } from './tones'
-import { paneState } from './mod-state'
 import { closedTitleTone, type SettledState } from './rows'
-import type { InboxView } from './view'
+import { newRowsOf } from './ui-controller-tabs'
 import type { PaneBase } from './pane-context'
 
-type TintArgs = Pick<PaneBase, 'look' | 'pal' | 'now'>
+type TintArgs = Pick<PaneBase, 'look' | 'pal' | 'now' | 'ui'>
 
 /**
  * The color a title takes while its tint lasts, or undefined for its own. The terminal steps from the tint back to
@@ -32,7 +23,7 @@ function tintColor({ look, pal, now }: TintArgs, tone: string, rest: string | un
  */
 export function newTitleTint(args: TintArgs & Pick<PaneBase, 'shownTab'>) {
   return (id: string, rest = args.pal.text) =>
-    tintColor(args, args.pal.key, rest, newRowIn(paneState.newRows, id, args.shownTab))
+    tintColor(args, args.pal.key, rest, newRowIn(newRowsOf(args.ui), id, args.shownTab))
 }
 
 /** A closed row's title and mark color in the tone of how it closed, or undefined once the tint has gone. */
@@ -43,20 +34,11 @@ export function closedTitleTint(args: TintArgs) {
     const tone = closedTitleTone(state)
     if (tone === 'muted') return undefined
 
-    return tintColor(args, pal.mark[tone], pal.muted, closedTitleClock(paneState.closedSeen, id, state.at, now))
+    return tintColor(
+      args,
+      pal.mark[tone],
+      pal.muted,
+      closedTitleClock(new Map(Object.entries(args.ui.closedSeen)), id, state.at, now),
+    )
   }
-}
-
-/**
- * When the last title tint in `view` ends, or null when none is left. On desktop it also asks `redrawAt` for one redraw
- * then, since a redraw loop there blocks clicks.
- */
-export function endOfTints(look: PaneBase['look'], view: InboxView, now: number, redrawAt: (ms: number) => void) {
-  const endsAt = titleTintEndsAt(paneState.newRows, view, paneState.closedSeen, now)
-  if (look === 'desktop' && endsAt !== null && endsAt !== paneState.tintRedrawAt) {
-    paneState.tintRedrawAt = endsAt
-    redrawAt(endsAt - now + 1)
-  }
-
-  return endsAt
 }

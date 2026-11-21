@@ -53,7 +53,6 @@ export function paneStatus(
     Input,
     typing,
     drafts,
-    now,
     statusMarkAt,
     statusFrameEdge,
     statusNameLine,
@@ -95,7 +94,6 @@ export function paneStatus(
       | 'Input'
       | 'typing'
       | 'drafts'
-      | 'now'
       | 'statusUnfolded'
     > &
     Pick<
@@ -128,16 +126,16 @@ export function paneStatus(
     PaneHandlers,
     | 'showAsk'
     | 'runPress'
-    | 'updateDrafts'
-    | 'updateTyping'
+    | 'editDraft'
+    | 'closeField'
     | 'sendTyped'
     | 'startTyping'
     | 'selectStatusRow'
-    | 'updateStatusUnfolded'
+    | 'setStatusFold'
     | 'toggleParent'
   >,
 ) {
-  const { showAsk, runPress, startTyping, selectStatusRow, updateStatusUnfolded, toggleParent } = handlers
+  const { showAsk, runPress, startTyping, selectStatusRow, setStatusFold, toggleParent } = handlers
   const isUnfolded = (id: string) => statusUnfolded.includes(id)
   const isCollapsed = (id: string) => view.collapsed.includes(id)
   const { parentName } = paneStatusParent(
@@ -156,8 +154,7 @@ export function paneStatus(
     },
     handlers,
   )
-  const toggleFold = (id: string) =>
-    void updateStatusUnfolded(u => (u.includes(id) ? u.filter(k => k !== id) : [...u, id]))
+  const toggleFold = (id: string) => void setStatusFold(id, !statusUnfolded.includes(id))
   const { statusPartLine } = paneStatusPart({
     look,
     Box,
@@ -268,11 +265,8 @@ export function paneStatus(
    * Removes the goal and selects its Undo, or brings it back, or sets the suggested goal and selects Edit, then scrolls to the button and focuses it. The pressed button is gone, and the terminal would move its focus to the next button
    * drawn.
    */
-  const pressGoal = async (
-    action: 'remove-goal' | 'restore-goal' | 'take-goal',
-    surface: UiPressArgument['surface'],
-  ) => {
-    await runPress({ action, id: GOAL_KEYS_ID }, surface)
+  const pressGoal = async (action: 'remove-goal' | 'restore-goal' | 'take-goal', via: UiPressArgument) => {
+    await runPress({ action, id: GOAL_KEYS_ID }, via)
     const next = action === 'remove-goal' ? 'restore-goal' : 'type-goal'
     await selectStatusRow(GOAL_KEYS_ID, `${next}-${GOAL_KEYS_ID}`)
   }
@@ -293,7 +287,7 @@ export function paneStatus(
               ? toggleFold(press.foldId)
               : press.action === 'toggle-collapse'
                 ? void toggleParent(press.id)
-                : pressGoal(press.action, p.surface),
+                : pressGoal(press.action, p),
     }))
   const { goalSection, setGoalBare, isTypingGoal } = paneStatusGoal(
     {
@@ -306,7 +300,6 @@ export function paneStatus(
       typing,
       drafts,
       listColumns,
-      now,
       statusKeyRow,
       statusMarkAt,
       statusNameLine,

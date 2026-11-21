@@ -47,6 +47,7 @@ export function paneRows(
     drafts,
     look,
     now,
+    ui,
     isAgeInSide,
     listColumns,
     isInline,
@@ -92,6 +93,7 @@ export function paneRows(
       | 'drafts'
       | 'look'
       | 'now'
+      | 'ui'
       | 'isAgeInSide'
       | 'listColumns'
       | 'isInline'
@@ -130,9 +132,9 @@ export function paneRows(
       | 'answersFit'
     > &
     Pick<PaneRowFrame, 'desktopFrame'>,
-  { updateDrafts, sendTyped, pressTitle }: Pick<PaneHandlers, 'updateDrafts' | 'sendTyped' | 'pressTitle'>,
+  { editDraft, sendTyped, pressTitle }: Pick<PaneHandlers, 'editDraft' | 'sendTyped' | 'pressTitle'>,
 ) {
-  const newTitleColor = newTitleTint({ look, pal, now, shownTab })
+  const newTitleColor = newTitleTint({ look, pal, now, ui, shownTab })
   const handleTint = (row: Row) => newTitleColor(row.id, row.handleTone ? pal.mark[row.handleTone] : pal.muted)
   const { askTree, askEntries, hasTree, treeTextIndent } = paneAskTree(
     { look, Box, Text, pal, space },
@@ -232,9 +234,7 @@ export function paneRows(
           submitLabel={submitLabel}
           autoFocus
           rows={fieldRowCount(drafts[row.id]?.text ?? openFields.get(row.id)?.seed ?? '')}
-          onInput={(value: string) =>
-            void updateDrafts(d => ({ ...d, [row.id]: { text: value, since: d[row.id]?.since ?? now } }))
-          }
+          onInput={(value: string) => void editDraft(row.id, value)}
           onSubmit={(value: string, submit) => sendTyped(row.id, value, submit.surface)}
         />
       ) : null

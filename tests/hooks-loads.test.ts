@@ -4,7 +4,7 @@ import { SESSION_VERSION } from '../hooks/session-version'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
 import { statusPage } from '../hooks/status-page'
 import { w, world } from './hooks-world'
-import { PANE, selectRow, SAVED_SESSION } from './hooks-helpers'
+import { PANE, replyField, selectRow, SAVED_SESSION } from './hooks-helpers'
 
 test('a session saved with no version, mid-turn, by a process that ended loads with no turn running, its Done message goes, and its next save writes the session version', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -188,4 +188,67 @@ test('a tool call after a hot reload, before the load converts the ledger, still
   strip = false
   const r = await $.tool.call({ tool: 'mcp__inbox__close', id: 'f1', reason: 'fixed' } as never)
   expect(r.result).toBe('Closed the finding. Name it by what it says, never by its id.')
+})
+
+test('a 0.6.0 state loads into the controller once: its tab, cursor, open field and draft, folds and shown options carry over', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  const second = { ...SAVED_SESSION.ledger.items[0], id: 'i2', label: '2', ask: 'Which version?' }
+  w.stored.set(
+    's:session-1',
+    JSON.stringify({
+      ...SAVED_SESSION,
+      ledger: { ...SAVED_SESSION.ledger, items: [...SAVED_SESSION.ledger.items, second], nextId: 3 },
+    }),
+  )
+  const old: Record<string, unknown> = {
+    tab: 'needsYou',
+    page: null,
+    selection: {
+      needsYou: { id: 'i2', index: 1, openedAt: 950_000 },
+      findings: { id: null, index: 0, openedAt: 0 },
+      prs: { id: null, index: 0, openedAt: 0 },
+    },
+    statusSelection: null,
+    typing: 'i2',
+    drafts: { i2: { text: 'Python 3.12', since: 950_000 } },
+    discarded: {},
+    shown: { tab: 'needsYou', isDemo: false, since: 950_000 },
+    notes: {},
+    unfolded: ['task'],
+    closedAll: [],
+    statusUnfolded: [],
+    optionsShown: ['i1'],
+    isHelpShown: false,
+  }
+  for (const [key, value] of Object.entries(old))
+    on('state.get', { plugin: 'inbox', key } as never, () => ({ value: { value, version: 1 } as never }))
+  const writes: unknown[] = []
+  on('state.set', { plugin: 'inbox', key: 'ui' } as const, (_$, e, next) => {
+    writes.push(e.value)
+    return next(e)
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await clock.settle()
+  const ui = writes.at(-1) as Record<string, unknown> & { selection: { needsYou: { id: string | null } } }
+  expect({
+    tab: ui.tab,
+    cursor: ui.selection.needsYou.id,
+    typing: ui.typing,
+    drafts: ui.drafts,
+    unfolded: ui.unfolded,
+    optionsShown: ui.optionsShown,
+  }).toEqual({
+    tab: 'needsYou',
+    cursor: 'i2',
+    typing: 'i2',
+    drafts: { i2: { text: 'Python 3.12', since: 950_000 } },
+    unfolded: ['task'],
+    optionsShown: ['i1'],
+  })
+  expect(await replyField(pane, 'i2')).toBeDefined()
 })

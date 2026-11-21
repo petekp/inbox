@@ -266,7 +266,7 @@ for (const look of ['desktop', 'terminal'] as const)
       await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
       const pane = await $.ui.mount({ ...PANE, surface: look })
       if (kind === 'finding') {
-        if (look === 'terminal') await pane.press({ key: 'tab-findings' })
+        if (look === 'terminal') await pane.press({ key: 'tab-key-findings' })
         else {
           const { tabs, gap } = (await pane.find({ key: 'tabs' }))?.props.props as TabsProps
           const x = tabs

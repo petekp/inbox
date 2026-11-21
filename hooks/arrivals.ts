@@ -9,7 +9,7 @@ import type { InboxView } from './view'
 import type { ResultMark, RowView } from './rows'
 import type { Finding, FoldKind, Tab } from '../types'
 
-export type RowRecord<T extends string> = Partial<Record<T, ReadonlySet<string>>>
+type RowRecord<T extends string> = Partial<Record<T, ReadonlySet<string>>>
 
 /**
  * Records each tab's listed row ids, and returns by tab the ids its last record did not have. A tab listed as

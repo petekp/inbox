@@ -2,7 +2,7 @@
 
 Status: building
 
-The controller is built (PR 2.1). PRs 2.2 to 2.5 move the looks onto it, one look per PR. omp and Herdr run on it.
+The controller is built (PR 2.1). PRs 2.2 to 2.5 move the looks onto it, one look per PR. omp, Herdr and the Codex tab run on it, and PR 2.5 moves the terminal and desktop onto it.
 
 Each look decides for itself which tab it shows, where its cursor goes, when a draft is deleted and when it redraws. The five looks have drifted apart on these rules. `hooks/ui-controller.ts` holds one copy of them as pure code. It does no IO, imports no host and sets no timers. [The files table](../looks/files-shared-controller.md) lists its files.
 
@@ -99,6 +99,17 @@ Row motion and the leaving-row wait stay in the look. `Kept` goes to version 3 a
 - A refused or stale reply reopens its field when the person has not moved.
 - Drafts survive loading another conversation and coming back.
 - Arrivals and an agent's close wait while the pane was used within `FOLD_QUIET_MS`.
+- An open on an empty Asks tab moves to a tab with open rows, such as Finds, as in the other looks.
+- Rows that arrive are followed only when they wait on the person, so a PR is followed only for a waiting thread or a failing check.
+- The pane's first frame after an open draws the tab the open moves to, so it never shows the old tab first.
+- A refused reply's field stays closed once the person pressed something after it, even in the same millisecond.
+- Arrivals while the pane is closed leave the cursor unpicked, so the first waiting row opens when the pane shows.
+- A click that closes a row guards the row the cursor moves to, and a clicked Undo guards the row it brings back.
+- The cursor leaves a row the agent closed even when the row holds a draft. The draft stays.
+- The sample starts the pane's showing, so its rows settle and fold as real rows do.
+- Running marks keep moving in the terminal while desktop draws beside it, and a frame redraws only the terminal. A frame waits until the last one has drawn. A timer another mod refuses starts again at the terminal's next render.
+- The end of a title tint reads the view again and redraws both looks.
+- On the Status tab, `j` and `k` step from the row the pane draws selected, picked or not.
 
 ### Exact web and iOS
 
@@ -106,4 +117,4 @@ The private Exact clients are one TypeScript app, built for web and for iOS. Whe
 
 ## Other sessions' state
 
-A host keeps another session's state only while it holds a draft or a sent reply, and at most the 20 most recently shown (`keptUiStates`). Every other session starts from `freshUi`. omp saves a session's state in that session's own file, and only while it holds a draft or a sent reply (`isUiWorthKeeping`). `omp/src/state.ts:pruneSessions` keeps at most `KEPT_SESSIONS` session files, so what omp saves stays bounded too. After a reload, `restoredUi` drops the presses still out, the demo's replies, and the arrivals and closes held while the list was in use, since no answer or timer survives a reload.
+A host keeps another session's state only while it holds a draft or a sent reply, and at most the 20 most recently shown (`keptUiStates`). Every other session starts from `freshUi`. omp saves a session's state in that session's own file, and only while it holds a draft or a sent reply (`isUiWorthKeeping`). `omp/src/state.ts:pruneSessions` keeps at most `KEPT_SESSIONS` session files, so what omp saves stays bounded too. The mod keeps other conversations' states in process memory (`paneState.keptUi`), because Claude Code keeps plugin state per session and `/clear` or `/resume` starts a new one. They survive moving between conversations in one Claude Code process, but not a restart. After a reload, `restoredUi` drops the presses still out, the demo's replies, and the arrivals and closes held while the list was in use, since no answer or timer survives a reload.

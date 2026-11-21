@@ -203,10 +203,12 @@ test('a running mark on the terminal Status keeps moving while the desktop app d
   expect(beside.drawn).toEqual(beside.moving)
 })
 
-test('a running mark moves again at the next redraw after the engine ends its timer', async ($, on) => {
-  let isPeriodRefused = false
-  on('clock.every', { ms: RUNNING_FRAME_MS }, (_$, e, next) => (isPeriodRefused ? { deny: 'refused' } : next(e)))
-  const clock = mock.clock(on, { now: 1_000_000 })
+test('a running mark moves again at the next redraw after the engine refuses its timer', async ($, on) => {
+  let isTimerRefused = false
+  const start = 1_000_000
+  const nextFrameMs = RUNNING_FRAME_MS - (start % RUNNING_FRAME_MS)
+  on('clock.after', { ms: nextFrameMs }, (_$, e, next) => (isTimerRefused ? { deny: 'refused' } : next(e)))
+  const clock = mock.clock(on, { now: start })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply =
@@ -237,9 +239,9 @@ test('a running mark moves again at the next redraw after the engine ends its ti
   const before = await frames()
   expect(before.drawn).toEqual(before.moving)
 
-  isPeriodRefused = true
+  isTimerRefused = true
   await clock.advance(RUNNING_FRAME_MS)
-  isPeriodRefused = false
+  isTimerRefused = false
   const ended = await frames()
   expect(new Set(ended.drawn).size).toBe(1)
 

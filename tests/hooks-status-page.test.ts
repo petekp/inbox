@@ -130,11 +130,13 @@ test('a release build, with no next-build mark, keys Status, Asks, Finds and PRs
   w.paneState = { isShown: true, isFocused: true }
   w.statusReply =
     'HEAD: Adding a greeting CLI | Building a CLI that greets by name\nNEW: working | Runtime | Node or Python\nLINK: i1 | Runtime'
-  let page: { value: unknown; version: number } = { value: 'overview', version: 1 }
-  on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({ value: page as never }))
-  on('state.set', { plugin: 'inbox', key: 'page' } as const, (_$, e) => {
-    page = { value: e.value, version: page.version + 1 }
-    return { value: { isSet: true as const, version: page.version } }
+  on('state.get', { plugin: 'inbox', key: 'page' } as const, () => ({
+    value: { value: 'overview', version: 1 } as never,
+  }))
+  let shownTab: string | null = null
+  on('state.set', { plugin: 'inbox', key: 'ui' } as const, (_$, e, next) => {
+    shownTab = e.value?.tab ?? null
+    return next(e)
   })
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -157,18 +159,18 @@ test('a release build, with no next-build mark, keys Status, Asks, Finds and PRs
     ['tab-key-findings', '3'],
     ['tab-key-prs', '4'],
   ])
-  expect(page.value).toBe('overview')
+  expect(shownTab).toBe('overview')
   expect(prompts.at(-1)).toContain('on its Status tab, which shows a guide to the session')
 
   await pane.press({ key: 'tab-key-needsYou' })
   await clock.settle()
-  expect(page.value).toBeNull()
+  expect(shownTab).toBe('needsYou')
   expect(await pane.find({ key: 'answer-i1-0' })).toBeDefined()
   expect(await pane.find({ text: /Holds up Runtime/ })).toBeDefined()
 
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
-  expect(page.value).toBe('overview')
+  expect(shownTab).toBe('overview')
   const saved = [...w.stored].find(([k]) => k.startsWith('s:'))
   expect(saved && JSON.parse(saved[1]).ledger.overview.look).not.toBeNull()
 })

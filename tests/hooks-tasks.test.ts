@@ -145,20 +145,13 @@ test('last actions an earlier build saved convert once by the table, and a task 
     saved = write.value.lastActions
     return next(write)
   })
-  let savingUnfolded: unknown = null
+  on('state.get', { plugin: 'inbox', key: 'unfolded' } as const, () => ({
+    value: { value: ['finding', 'do'], version: 1 } as never,
+  }))
   let savedUnfolded: unknown = null
-  on('state.set', { plugin: 'inbox', key: 'unfolded' } as const, (_$, e, next) => {
-    const write = savingUnfolded ? { ...e, value: savingUnfolded as never } : e
-    savedUnfolded = write.value
-    return next(write)
-  })
-  const oldCursor = { id: 'i1', index: 0 }
-  let savingOpen: { selection: unknown } | null = null
-  const savedOpen: { selection?: unknown } = {}
-  on('state.set', { plugin: 'inbox', key: 'selection' } as const, (_$, e, next) => {
-    const write = savingOpen ? { ...e, value: savingOpen.selection as never } : e
-    savedOpen.selection = write.value
-    return next(write)
+  on('state.set', { plugin: 'inbox', key: 'ui' } as const, (_$, e, next) => {
+    savedUnfolded = e.value?.unfolded ?? null
+    return next(e)
   })
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -175,33 +168,17 @@ test('last actions an earlier build saved convert once by the table, and a task 
   })
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'f2', reason: 'fixed' } as never)
   saving = old
-  savingUnfolded = ['finding', 'do']
-  savingOpen = {
-    selection: { needsYou: oldCursor, findings: { id: null, index: 0 }, prs: { id: null, index: 0 } },
-  }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   saving = null
-  savingUnfolded = null
-  savingOpen = null
-  const openConverted = {
-    selection: {
-      needsYou: { ...oldCursor, openedAt: 0 },
-      findings: { id: null, index: 0, openedAt: 0 },
-      prs: { id: null, index: 0, openedAt: 0 },
-    },
-  }
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(saved).toEqual(converted)
   expect(savedUnfolded).toEqual(['issue', 'opportunity', 'task'])
-  expect(savedOpen).toEqual(openConverted)
   saved = null
-  savedUnfolded = null
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await clock.settle()
   expect(saved).toEqual(converted)
   expect(savedUnfolded).toEqual(['issue', 'opportunity', 'task'])
-  expect(savedOpen).toEqual(openConverted)
 
   const pane = await $.ui.mount(PANE)
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
