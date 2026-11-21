@@ -1,0 +1,71 @@
+import type { Item, Milestone, SessionStatus, Subject } from '../../types'
+import { isOpen, stems } from '../domain/status-limits'
+import type { MilestoneRow } from './status-goal-page'
+import type { StatusRow } from './status-page'
+
+/** Whether `text` holds every key word of `name`, as `stems` gives them. */
+function holdsEveryWordOf(text: string, name: string): boolean {
+  const said = stems(text)
+  const words = stems(name)
+
+  return words.size > 0 && [...words].every(w => said.has(w))
+}
+
+/** Whether two names are named alike: every key word of the one with fewer key words is in the other. */
+function isNamedAlike(a: string, b: string): boolean {
+  const [x, y] = [stems(a), stems(b)]
+  const [short, long] = x.size <= y.size ? [x, y] : [y, x]
+
+  return short.size > 0 && [...short].every(w => long.has(w))
+}
+
+/** Whether the goal's Now line repeats a working subject: it holds every key word of the subject's name. */
+export const namesWorkingSubject = (nowText: string, subjects: readonly Subject[]): boolean =>
+  subjects.some(x => x.into === null && x.status === 'working' && holdsEveryWordOf(nowText, x.name))
+
+/**
+ * The subject the page draws in a milestone's place: the one subject that serves it and was not dropped, when the two
+ * are named alike and no open ask names the milestone. Null for a dropped milestone.
+ */
+export function subjectInPlaceOf(o: SessionStatus, m: Milestone, items: readonly Item[]): Subject | null {
+  if (m.status === 'dropped') return null
+  const work = o.subjects.filter(x => x.into === null && x.status !== 'dropped' && o.serves[x.id] === m.id)
+  const only = work.length === 1 ? work[0] : undefined
+  const isAskedDirectly = items.some(i => o.askSubjects[i.id]?.includes(m.id))
+
+  return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null
+}
+
+/** Whether the head's title repeats the one open subject, while no goal is set, so its part draws no title. */
+export function isTitleRepeated(title: string, subjects: readonly Subject[]): boolean {
+  const open = subjects.filter(x => x.into === null && isOpen(x))
+  const only = open.length === 1 ? open[0] : undefined
+
+  return only !== undefined && isNamedAlike(title, only.name)
+}
+
+/**
+ * A milestone drawn as the subject in its place, from the rows `partRows` gives that subject at depth 0: the
+ * subject's row takes the milestone's place on the path, and its children sit one step in, joined to the milestone's
+ * column as loose work is. `loose` is the running work linked to the milestone that no shown subject holds.
+ */
+export function milestoneAsSubject(m: MilestoneRow, subjectRows: StatusRow[], loose: StatusRow[]): MilestoneRow {
+  const [row, ...under] = subjectRows
+  if (row?.kind !== 'subject') return m
+  const work = [...loose, ...under.map(r => (r.kind === 'child' || r.kind === 'more' ? { ...r, branch: null } : r))]
+
+  return {
+    ...m,
+    id: row.id,
+    mark: row.mark,
+    tone: row.tone,
+    name: row.name,
+    foldId: null,
+    foldCount: work.length === 0 ? 0 : row.foldCount + loose.length,
+    text: row.text,
+    was: row.was,
+    ask: row.ask,
+    rows: work,
+    subject: row,
+  }
+}

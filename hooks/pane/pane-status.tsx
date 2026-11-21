@@ -29,7 +29,8 @@ import {
 import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from '../../core/view/status-keys'
-import { mergedLine, seenSubjectIds, type StatusRow, WAS_PREFIX } from '../../core/view/status-page'
+import { seenSubjectIds, type StatusRow, WAS_PREFIX } from '../../core/view/status-page'
+import { mergedLine } from '../../core/view/status-page-parts'
 import { countsText, countsUnits, isParentCollapsed, unfoldedRows } from '../../core/view/status-folds'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import { statusRowPads } from '../../core/view/status-gaps'
@@ -306,6 +307,7 @@ export function paneStatus(
       statusPageText,
       statusTextWidth,
       desktopBlockWidth,
+      fitsStatusLine,
       markGlyph,
       markWidth,
       keyRow,
@@ -322,6 +324,7 @@ export function paneStatus(
       isUnfolded,
       isCollapsed,
       parentName,
+      seenTops: (r, padY) => seenTops(r, padY),
       path: paneStatusPath(
         { look, Box, Text, pal, statusMarkAt, statusFrameEdge, statusTextWidth, foldRow, foldButton, desktopFoldLines },
         { isUnfolded, toggleFold },
@@ -396,7 +399,7 @@ export function paneStatus(
         depth: r.depth,
         mark: null,
         content: plainText(<Text color={pal.muted}>{r.text}</Text>, r.text, r.depth),
-        tree: statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1, pad.padY, pad.padBelow),
+        tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1, pad.padY, pad.padBelow) : null,
         ...pad,
       })
     if (r.kind === 'done-fold' || r.kind === 'counts') {

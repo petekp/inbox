@@ -1,7 +1,7 @@
 import { Icon } from './row-actions'
 import type { ParentChevron } from './tab-status-fold'
-import { nameBeforeStall, STATUS_TEXT_LINES } from '../../core/view/status-page'
-import { STALL_GAP } from '../../core/view/status-page-parts'
+import { STATUS_TEXT_LINES } from '../../core/view/status-page'
+import { nameBeforeStall, STALL_GAP } from '../../core/view/status-page-parts'
 import type { StatusStall } from '../../core/view/status-page'
 
 /** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */
@@ -62,8 +62,8 @@ export function NameLine({
           <span class="last">{last}</span>
           {stall ? (
             <>
-              <span class="muted">{STALL_GAP}</span>
-              <span class="muted">{stall.text}</span>
+              <span class="muted stall">{STALL_GAP}</span>
+              <span class="muted stall">{stall.text}</span>
             </>
           ) : null}
           {chevron ? (

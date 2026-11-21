@@ -26,7 +26,7 @@ import { GOAL_KEYS_ID, goalKeyGroups, milestoneKeyPlan, type StatusKey } from '.
 import type { StatusKeyTarget } from '../../core/view/status-keys'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
-import { STALL_GAP } from '../../core/view/status-page-parts'
+import { mergedLine, STALL_GAP } from '../../core/view/status-page-parts'
 import { isParentCollapsed, milestoneRows } from '../../core/view/status-folds'
 import type { IsCollapsed } from '../../core/view/status-folds'
 import type { PaneStatusParent } from './pane-status-parent'
@@ -59,6 +59,7 @@ export function paneStatusGoal(
     statusPageText,
     statusTextWidth,
     desktopBlockWidth,
+    fitsStatusLine,
     markGlyph,
     markWidth,
     keyRow,
@@ -70,7 +71,7 @@ export function paneStatusGoal(
   > &
     Pick<
       PaneStatusLines,
-      'statusMarkAt' | 'statusNameLine' | 'statusPageText' | 'statusTextWidth' | 'desktopBlockWidth'
+      'statusMarkAt' | 'statusNameLine' | 'statusPageText' | 'statusTextWidth' | 'desktopBlockWidth' | 'fitsStatusLine'
     > &
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow' | 'terminalKeyCells'> &
@@ -86,8 +87,11 @@ export function paneStatusGoal(
     isCollapsed,
     parentName,
     path,
+    seenTops,
   }: {
     statusRowLine: StatusRowLine
+    /** Each subject `r` stands for, with its first line in a row padded `padY` above. */
+    seenTops: (r: StatusRow, padY: number) => Drawn['tops']
     statusKeys: (t: StatusKeyTarget) => KeyAction[]
     /** Draws rows as given, with no fold opened. */
     drawRows: (rows: StatusRow[], pads?: { above: number; below: number }[]) => Drawn[]
@@ -186,9 +190,17 @@ export function paneStatusGoal(
   const milestonePad = (m: MilestoneRow) => desktopPad(milestonePadPt(m))
   /** A frame's padding and 1 pt border above its first line on desktop, where a tree or path line starts. */
   const edgeOf = (padY: number) => padY + 2 * DESKTOP_HAIR_LINES
-  /** The milestone's line: its mark, then its name, or the fold of a done milestone folded to its name. */
+  /**
+   * The milestone's line: its mark, then its name, or the fold of a done milestone folded to its name. A subject drawn
+   * in its place adds what a subject's row draws.
+   */
   const milestoneLine = (m: MilestoneRow): Drawn => {
-    const mark = markGlyph({ text: m.mark, isRunning: false }, m.id, m.tone ? pal.mark[m.tone] : pal.muted)
+    const x = m.subject
+    const mark = markGlyph(
+      { text: m.mark, isRunning: x?.isRunning ?? false },
+      m.id,
+      m.tone ? pal.mark[m.tone] : pal.muted,
+    )
     if (m.foldId !== null) {
       const fold = path.foldedName(
         { ...m, foldId: m.foldId },
@@ -205,21 +217,33 @@ export function paneStatusGoal(
     }
 
     const isFolded = isParentCollapsed(m, isCollapsed)
-
-    return statusRowLine({
+    const stall = x?.stall ?? null
+    const line = statusRowLine({
       key: `status-${m.id}`,
       mark,
       padY: milestonePad(m),
       content: [
         m.foldCount > 0
-          ? parentName(m.id, name, null, 0, { isCollapsed: isFolded, count: m.foldCount })
-          : statusNameLine(`goal-${m.id}-name`, name, null, 0),
+          ? parentName(m.id, name, stall, 0, { isCollapsed: isFolded, count: m.foldCount })
+          : statusNameLine(`goal-${m.id}-name`, name, stall, 0),
+        ...(x?.waitsOn ? [statusPageText(`goal-${m.id}-waits-on`, [{ text: x.waitsOn, isNeedsYou: true }], 0)] : []),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
+        ...(x?.merged
+          ? [
+              statusPageText(
+                `goal-${m.id}-merged`,
+                [{ text: mergedLine(x.merged, fitsStatusLine(0)), isMuted: true }],
+                0,
+              ),
+            ]
+          : []),
         ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),
       ],
       isSelected: isSelected(m.id),
     })
+
+    return x ? { ...line, tops: seenTops(x, milestonePad(m)) } : line
   }
   /**
    * A milestone, then on the next line the work that serves it, one step in, each row joined to the milestone's mark

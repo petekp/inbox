@@ -4,8 +4,9 @@ Part of [the look map](../looks.md#files).
 
 | File | Role |
 | --- | --- |
-| `core/view/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. Also the merged line and the text before a stall. |
-| `core/view/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order, with each part's folds after its open or its closed rows, and the counts by mark. |
+| `core/view/status-page.ts` | Shared module. `statusPage` builds the Status page's rows in order. |
+| `core/view/status-repeats.ts` | Shared module. When the Status page draws one piece of work once: the goal's Now line that repeats a working subject, the subject drawn in its milestone's place, and the head's title that repeats the one open subject. |
+| `core/view/status-page-parts.ts` | Shared module. The parts of the Status's list that `statusPage` builds: subject and child rows in order, with each part's folds after its open or its closed rows, and the counts by mark. Also the merged line and the text before a stall. |
 | `core/domain/status.ts` | Shared module. The parser for the Status call's lines, and `askStatus`, which asks the call again when its answer holds no operation, or with a retry prompt when one is given. A line that is not an operation is left out. |
 | `core/domain/status-freshness.ts` | Shared module. When a Status call last changed what the page says, and the Status tab's status line: a failed update, or "Not updated in 2h" after five calls that read a reply with agent work and changed nothing. |
 | `core/domain/status-limits.ts` | Shared module. The Status's limits on words, subjects and children, `EMPTY_SESSION_STATUS`, `isOpen`, and the helpers that clip a text and compare subject names. |

@@ -10,6 +10,7 @@ import {
 import type { GoalBlock, MilestoneRow } from '../../core/view/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { mergedLine } from '../../core/view/status-page-parts'
 import type { StatusPage } from '../../core/view/status-page'
 import { milestoneRows } from '../../core/view/status-folds'
 import type { IsCollapsed } from '../../core/view/status-folds'
@@ -25,6 +26,7 @@ import {
   PAGE_TEXT_AT,
   pageButtonLines,
   pageLine,
+  pageRoom,
   pageRuleCells,
   partHeading,
 } from './panel-page'
@@ -59,6 +61,10 @@ export function goalPartId(part: GoalPart): string | null {
   if (part.is === 'title') return part.suggestion ? GOAL_KEYS_ID : null
   return part.is === 'keys' || part.is === 'suggestion' ? GOAL_KEYS_ID : null
 }
+
+/** The subjects a part stands for, which a look counts as seen while it shows: a subject drawn in a milestone's place. */
+export const goalPartSubjects = (part: GoalPart): string[] =>
+  part.is === 'milestone' && part.row.subject ? [part.row.subject.id] : []
 
 const goalEntry = (part: GoalPart): Entry => ({ kind: 'goal', part })
 
@@ -228,11 +234,12 @@ function foldedNameLines(d: Draw, mark: string, name: string, foldId: string, is
 /**
  * A milestone's lines: its mark and name, then
  * where it stands, its was line and its buttons. A done milestone folded to its name draws the name dim with the fold's
- * chevron after it, and takes Enter as its fold.
+ * chevron after it, and takes Enter as its fold. A subject drawn in its place adds what a subject's row draws.
  */
 function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[] {
   const { width, now, style: s } = d
-  const mark = paintMark({ ...m, isRunning: false }, now, s)
+  const x = m.subject
+  const mark = paintMark({ ...m, isRunning: x?.isRunning ?? false }, now, s)
   const isCollapsed = collapsedIn(d.screen.view)
   const hasWork = milestoneRows(m, id => d.ui.statusUnfolded.includes(id), isCollapsed).length > 0
   const column: PathLine = m.line ?? (hasWork ? 'continues' : null)
@@ -244,9 +251,23 @@ function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[]
   const chevron = foldChevron(m, d, isSelected)
   const namePaint = (t: string) =>
     (m.isMuted ? s.dim : (u: string) => u)(m.isBold || (chevron && isSelected) ? s.bold(t) : t)
-  const [first = '', ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron })
+  const [first = '', ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, {
+    text: m.text,
+    chevron,
+    stall: x?.stall ?? null,
+    waitsOn: x?.waitsOn ?? null,
+  })
+  const merged = x?.merged
+    ? indented(
+        mergedLine(x.merged, t => cellWidth(t) <= pageRoom(PAGE_MARK_AT, width)),
+        PAGE_TEXT_AT,
+        width,
+        STATUS_TEXT_LINES,
+        s.dim,
+      )
+    : []
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : []
-  const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]
+  const after = [...rest, ...merged, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)]
 
   return [first, ...withPathLine(after, column, s)]
 }

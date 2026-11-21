@@ -3,7 +3,8 @@ import { goalKeyGroups, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_I
 import type { StatusKey } from '../../core/view/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
-import { WAS_PREFIX, mergedLine } from '../../core/view/status-page'
+import { WAS_PREFIX } from '../../core/view/status-page'
+import { mergedLine } from '../../core/view/status-page-parts'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { COUNTS_LABEL, countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../core/view/status-folds'
 import { statusGaps } from '../../core/view/status-gaps'
@@ -101,11 +102,17 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
       },
     ]
   if (row.kind === 'more')
-    return [{ ...note(row.id, row.text, 'muted'), depth: row.depth, tree: [{ depth: row.depth - 1, is: row.branch }] }]
+    return [
+      {
+        ...note(row.id, row.text, 'muted'),
+        depth: row.depth,
+        ...(row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}),
+      },
+    ]
   if (row.kind === 'part')
     return [
       { kind: 'gap', id: `gap ${row.id}` },
-      { kind: 'rule', id: row.id, text: row.text, ...(row.isTitle ? { isTitle: true as const } : {}) },
+      { kind: 'rule', id: row.id, text: row.text, ...(row.isTitle && row.text ? { isTitle: true as const } : {}) },
       ...(row.description ? [{ ...note(`${row.id} description`, row.description, 'muted'), isAtEdge: true }] : []),
     ]
   if (row.kind === 'done-fold' || row.kind === 'counts')
@@ -157,7 +164,7 @@ function listBlocks(rows: StatusRow[], isUnfolded: (id: string) => boolean, isCo
 
 /**
  * A milestone on the goal's path, with the line from the milestone above into its mark and on from under it. A done
- * milestone folded to its name draws as its fold.
+ * milestone folded to its name draws as its fold. A subject drawn in its place adds what a subject's row draws.
  */
 function milestoneBlock(
   m: MilestoneRow,
@@ -166,7 +173,8 @@ function milestoneBlock(
   isUnfolded: (id: string) => boolean,
   isCollapsed: IsCollapsed,
 ): Block {
-  const mark = markOf(m.mark, m.tone, false)
+  const x = m.subject
+  const mark = markOf(m.mark, m.tone, x?.isRunning ?? false)
   const path: PathSide = { is: 'milestone', above: lineAbove, below: m.line }
   const tree = hasWork && m.line === null ? { tree: [{ depth: 0, is: 'down' as const }] } : {}
   if (m.foldId !== null)
@@ -190,8 +198,13 @@ function milestoneBlock(
     name: m.name,
     isBold: m.isBold,
     isMuted: m.isMuted,
-    stall: null,
-    under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter(l => l !== null),
+    stall: x?.stall ?? null,
+    ...(x?.waitsOn ? { waitsOn: x.waitsOn } : {}),
+    under: [
+      m.text,
+      x?.merged ? mergedLine(x.merged, t => cellWidth(t) <= MERGED_CELLS) : null,
+      m.was ? `${WAS_PREFIX}${m.was}` : null,
+    ].filter(l => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
     ...foldOf(m, isCollapsed),
     path,

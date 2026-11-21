@@ -112,13 +112,13 @@ export function milestoneRows(
 }
 
 const listRows = (milestones: MilestoneRow[], rows: StatusRow[]) => [
-  ...milestones.flatMap(m => (m.foldId === null ? m.rows : [])),
+  ...milestones.flatMap(m => [...(m.subject ? [m.subject] : []), ...(m.foldId === null ? m.rows : [])]),
   ...rows,
 ]
 
 /**
- * Every row of the Status's list in the order the looks draw them: each milestone's rows, then the list after the goal.
- * A milestone folded to its name holds none. The rows of milestones behind a met goal's shut fold, and of parents the
+ * Every row of the Status's list in the order the looks draw them: each milestone's rows, after the subject drawn in
+ * its place, then the list after the goal. A milestone folded to its name holds none. The rows of milestones behind a met goal's shut fold, and of parents the
  * person folded, are included, which `drawnStatusRows` leaves out.
  */
 export function statusListRows(page: StatusPage): StatusRow[] {
