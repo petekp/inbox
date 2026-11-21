@@ -1095,7 +1095,8 @@ function openPane($: EngineInterface, isFieldOpen = false) {
   })
   void opened
     .then(async () => {
-      await sendUi($, (await readUi($)).shownSince === null ? [{ type: 'opened' }, 'read'] : ['read'])
+      const isOpenNew = (await readUi($)).shownSince === null && paneState.loadingRevision === null
+      await sendUi($, isOpenNew ? [{ type: 'opened' }, 'read'] : ['read'])
       paneState.isOpenUnheard = false
       await syncLook($, true)
       await wakeForHeldSends($)
@@ -1528,7 +1529,7 @@ async function demoReply($: EngineInterface, pressId: number) {
 async function readUi($: EngineInterface): Promise<UiState> {
   const ui = modUiOf(await read($, UI), paneState.drawsTerminal ? 'terminal' : paneState.paneLook)
 
-  return { ...ui, listInput: paneState.listInput }
+  return { ...ui, listInput: paneState.listInput, nextPressId: Math.max(ui.nextPressId, paneState.nextPressId) }
 }
 
 /** Runs `work` after every batch already queued for the controller, so no two read and save its state at once. */
@@ -1560,6 +1561,7 @@ async function applyUi($: EngineInterface, events: (UiEvent | 'read')[], surface
   const all = synced.map((event): UiEvent => (event === 'read' ? { type: 'read', host } : event))
   const applied = applyUiEvents(drawn.ui, drawn.view, all, drawn.now)
   paneState.listInput = applied.ui.listInput
+  paneState.nextPressId = applied.ui.nextPressId
   if (withoutListInput(applied.ui) !== withoutListInput(drawn.ui)) await update($, UI, () => applied.ui)
   scheduleUiWake($, applied.ui, drawn.view, applied.nextWakeAt, drawn.now)
   for (const c of applied.commands) void runUiCommand($, c, surface).catch(() => undefined)
@@ -1619,24 +1621,22 @@ function leaveUi($: EngineInterface) {
     const [ui, now] = await Promise.all([readUi($), $.clock.now()])
     const id = conversation.id
     paneState.keptUi = keptUiStates({ ...paneState.keptUi, [id]: { ui, shownAt: now } }, null)
-    await update($, UI, () => ({ ...freshUi(ui.config, ui.tab), nextPressId: ui.nextPressId }))
+    paneState.listInput = null
+    await update($, UI, () => freshUi(ui.config, ui.tab))
   })
 }
 
 /**
- * Takes the state kept for conversation `id`, else goes on from the current one. No press's answer survives a load,
- * and press ids keep counting up, so an answer from the conversation left never matches a press here. The pane opens
- * on the conversation once the load ends.
+ * Takes the state kept for conversation `id`, else goes on from the current one. No press's answer survives a load.
+ * The pane opens on the conversation once the load ends.
  */
 function enterUi($: EngineInterface, id: string) {
   return inUiQueue(async () => {
     const { [id]: kept, ...others } = paneState.keptUi
     paneState.keptUi = others
-    const current = await readUi($)
-    const ui = restoredUi(kept?.ui ?? current)
+    const ui = restoredUi(kept?.ui ?? (await readUi($)))
     openFields.clear()
-    const nextPressId = Math.max(ui.nextPressId, current.nextPressId)
-    await update($, UI, () => ({ ...ui, shownSince: null, nextPressId }))
+    await update($, UI, () => ({ ...ui, shownSince: null }))
   })
 }
 

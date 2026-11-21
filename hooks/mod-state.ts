@@ -21,6 +21,11 @@ class PaneState {
   /** The last list input, kept out of the saved state so a pointer move writes nothing and redraws nothing. */
   listInput: UiState['listInput'] = null
   /**
+   * The lowest id the next press may take. `$.state` starts over on `/clear`, `/resume` and `/branch`, and this does
+   * not, so a late answer from the conversation left never matches a press in the next.
+   */
+  nextPressId = 1
+  /**
    * The states of other conversations this process showed that hold a draft or a sent reply, by conversation id. The
    * engine keeps plugin state per session, and `/clear` starts a new one, so they live here.
    */
