@@ -1,0 +1,9 @@
+{
+  "id": "s1-bad-each-once",
+  "breaks": "each-once",
+  "na": ["child-labels", "was-lines", "goal", "milestones", "split"],
+  "note": "Bad each-once: the new \"Popup menu\" row is the popup work delivered at the last checkpoint as \"Popup in Firefox\", shown again under another name while the original sits in the done fold.",
+  "page": "Port Tabtrail to Firefox\n\n✓ Popup menu\n  works in Firefox\n● Saved groups\n  restore in both browsers\n── Seen\n○ Firefox listing\n  not started\n✓ 2 more done",
+  "previous": "Port Tabtrail to Firefox\n\n✓ Popup in Firefox\n  opens and groups tabs\n● Saved groups\n  restore in Chrome only\n── Seen\n○ Firefox listing\n  not started\n✓ 1 more done",
+  "facts": "Focus now: Porting the Tabtrail tab-grouping browser extension to Firefox\nPieces of work:\n- Saved groups (also called group storage): being worked on now. Tab groups are saved and come back after a browser restart, in both Chrome and Firefox. Changed at this step.\n- Popup in Firefox (also called the popup menu): delivered. The popup opens in Firefox and groups tabs.\n- Manifest port: delivered. The extension loads in Firefox with its background script.\n- Firefox listing (also called the add-ons store listing): not started yet. The extension's page in the Firefox add-ons store; nothing is written yet.\nOpen asks:\n- none\nNot work:\n- finding: The options page ignores the browser's text size; outside this task\nRunning work:\n- none"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "s2-good-3",
+  "breaks": null,
+  "na": ["child-labels", "no-restating", "goal", "milestones", "split"],
+  "note": "Good: watch sync merged into the watch habit list, which shows once with a merged-in line naming the merged piece.",
+  "page": "Add an Apple Watch app to Kettle\n\n● Watch habit list\n  check-offs reach the phone\n  merged in: Watch sync\n── Seen\n○ Complications\n  not started\n○ Store screenshots\n  not started",
+  "previous": "Add an Apple Watch app to Kettle\n\n● Watch habit list\n  shows today's habits\n○ Watch sync\n  not started\n○ Complications\n  not started\n○ Store screenshots\n  not started",
+  "facts": "Focus now: Adding an Apple Watch app to the Kettle habit tracker\nPieces of work:\n- Watch habit list (also called the watch app's main screen): being worked on now. It lists today's habits, a habit can be checked off on the watch, and check-offs reach the phone. Merged into it: Watch sync. Changed at this step.\n- Watch sync: dropped. Merged into Watch habit list. Changed at this step.\n- Complications (also called watch face complications): not started yet. Watch face complications that show the next habit; nothing is built yet.\n- Store screenshots: not started yet. Watch screenshots for the App Store page; nothing is made yet.\nOpen asks:\n- none\nNot work:\n- rule: Support watchOS 10 and later\nRunning work:\n- none"
+}

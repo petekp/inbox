@@ -1,0 +1,9 @@
+{
+  "id": "s1-bad-no-restating",
+  "breaks": "no-restating",
+  "na": ["was-lines", "goal", "milestones", "split"],
+  "note": "Bad no-restating: the held row's text adds the open question's two options, codes or free text, which restates the ask in other words; its state, schema drafted, is right.",
+  "page": "Add partial refunds to the payments API\n\n● Partial refunds\n  amounts checked, ledger next\n  └ ● Run the refund integration tests\n✓ Idempotency keys\n  retries return first result\n── Seen\n◆ Refund reasons\n  schema drafted; codes or free text · waiting 45m\n○ Refund webhooks\n  not started",
+  "previous": null,
+  "facts": "Focus now: Adding partial refunds to the payments API\nPieces of work:\n- Partial refunds (also called the refund endpoint, POST /refunds): being worked on now. A refund is checked against what is left of the original charge; ledger entries for refunds are not written yet. Changed at this step.\n- Idempotency keys: delivered. A retried refund request with the same key returns the first result.\n- Refund reasons (also called refund reason codes): set aside, not being worked on now. The schema for refund reasons is drafted.\n- Refund webhooks (also called refund events): not started yet. Webhooks that tell merchants when a refund settles; nothing is built yet.\nOpen asks:\n- \"Should refund reasons be a fixed list of codes, or free text?\" holds up Refund reasons\nNot work:\n- finding: The payouts report times out for merchants with many charges; outside this task\nRunning work:\n- Runs the refund integration tests, for Partial refunds"
+}

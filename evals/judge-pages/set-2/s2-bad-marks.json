@@ -1,0 +1,9 @@
+{
+  "id": "s2-bad-marks",
+  "breaks": "marks",
+  "na": ["child-labels", "was-lines", "goal", "milestones", "split"],
+  "note": "Bad marks: the send scheduler was delivered, but its row still reads ● below the Seen line.",
+  "page": "Add a weekly digest email\n\n✓ Digest rollout\n  sent to all users\n✓ Unsubscribe link\n  one click, no sign-in\n── Seen\n● Send scheduler\n  follows each user's time zone\n✓ 2 more done",
+  "previous": null,
+  "facts": "Focus now: Adding a weekly digest email to the notifications service; the digest is out, and the person asked for nothing more\nPieces of work:\n- Digest rollout (also called the launch): delivered. The first digest went to all users. Changed at this step.\n- Unsubscribe link: delivered. One click unsubscribes from the digest, with no sign-in.\n- Digest template: delivered. The email lists the week's activity and renders in the main mail apps.\n- Send scheduler: delivered. Each user gets the digest on Monday morning in their own time zone.\n- Opt-out preference: delivered. Users can turn the digest off in their preferences.\nOpen asks:\n- none\nNot work:\n- finding: Hard-bounced addresses are never removed from the mailing list; outside this task\nRunning work:\n- none"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "s2-bad-head",
+  "breaks": "head",
+  "na": ["child-labels", "no-restating", "was-lines", "goal", "milestones", "split"],
+  "note": "Bad head: the goal still names the per-key rate limits, which were delivered two hours ago, while the session now builds the usage dashboard.",
+  "page": "Add per-key rate limits to the gateway\n\n● Usage dashboard\n  charts requests per key\n── Seen\n○ Overage alerts\n  not started\n✓ 2 done",
+  "previous": "Add per-key rate limits to the gateway\n\n✓ Per-key limits\n  live for every key\n── Seen\n○ Overage alerts\n  not started\n✓ 1 more done",
+  "facts": "Focus now: Building a usage dashboard that shows each API key's traffic; the person asked for it after the per-key rate limits were delivered\nPieces of work:\n- Usage dashboard: being worked on now. It charts each key's requests by day. Changed at this step.\n- Overage alerts: not started yet. Emails to a customer whose key nears its limit; nothing is built yet.\n- Per-key limits (also called the rate limiter): delivered. Each API key is held to its plan's rate by a token bucket, in production.\n- Limit headers: delivered. Every response carries RateLimit headers.\nOpen asks:\n- none\nNot work:\n- rule: Keep p99 gateway latency under 20 ms\nRunning work:\n- none"
+}

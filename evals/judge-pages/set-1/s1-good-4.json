@@ -1,0 +1,9 @@
+{
+  "id": "s1-good-4",
+  "breaks": null,
+  "na": ["child-labels", "was-lines", "goal", "milestones", "split"],
+  "note": "Good: a finished session with nothing following keeps a head naming the finished move, every piece is ✓ or in the done fold, and the person's open task has no row.",
+  "page": "Move the Pylon SDK docs to Astro\n\n✓ Site cutover\n  docs domain serves Astro\n✓ Old URL redirects\n  old links forward\n── Seen\n✓ 4 more done",
+  "previous": null,
+  "facts": "Focus now: Moving the Pylon SDK docs site to Astro; the move is finished, and the person asked for nothing more\nPieces of work:\n- Site cutover (also called the launch, the DNS switch): delivered. The docs domain serves the Astro site. Changed at this step.\n- Old URL redirects: delivered. Every old page URL forwards to its new page.\n- Page migration: delivered. All 140 pages are converted to Markdown with front matter.\n- Site search: delivered. Search works across every page.\n- API reference (also called the versioned reference): delivered. Reference pages for SDK versions 3 and 4 build from the source.\n- Code sample tests: delivered. Every code sample on the site compiles in CI.\nOpen asks:\n- \"Cancel the old docs host's paid plan\" holds up no piece\nNot work:\n- task: Cancel the old docs host's paid plan, which only the person can do\nRunning work:\n- none"
+}

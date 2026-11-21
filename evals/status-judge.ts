@@ -118,6 +118,21 @@ export type JudgePage = JudgeInput & {
 
 export type JudgePageSet = { set: 1 | 2; pages: JudgePage[] }
 
+/** What makes a set's pages unfit to judge by: no pages, a repeated id, or a check that is unknown or both broken and n/a. */
+export function pageSetProblems(s: JudgePageSet): string[] {
+  const known = new Set<string>(JUDGE_CHECKS.map(c => c.id))
+  const ids = s.pages.map(p => p.id)
+
+  return [
+    ...(s.pages.length === 0 ? [`set ${s.set} has no pages`] : []),
+    ...ids.filter((id, i) => ids.indexOf(id) !== i).map(id => `${id} repeats`),
+    ...s.pages.flatMap(p => [
+      ...(p.breaks !== null && !known.has(p.breaks) ? [`${p.id} breaks an unknown check, ${p.breaks}`] : []),
+      ...(p.na ?? []).filter(c => !known.has(c) || c === p.breaks).map(c => `${p.id} lists ${c} as n/a`),
+    ]),
+  ]
+}
+
 /**
  * What the judge got wrong on `page`: any verdict but a fail on the check the page breaks, `n/a` on the checks with
  * nothing to judge, and a pass on the rest. Empty when it called the page right.

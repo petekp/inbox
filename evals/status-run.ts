@@ -16,9 +16,9 @@ import { codexCli } from './codex-cli'
 import { provenance, resultsPath, runCount, runJobs, writeResults } from './harness'
 import type { Job, Run } from './harness'
 import { factsText } from './status-facts'
-import { judgePrompt, mistakeKind, pageMistakes, parseJudgeAnswer } from './status-judge'
+import { judgePrompt, mistakeKind, pageMistakes, pageSetProblems, parseJudgeAnswer } from './status-judge'
 import type { JudgePageSet, JudgeVerdict } from './status-judge'
-import { judgeSystemText } from './status-judge-text'
+import { judgeSystemText, readJudgePages } from './status-judge-text'
 import { LIMITS, runReplay } from './status-replay'
 import type { Agent, CallAnswer, ModelCall, Replay } from './status-replay'
 import { REPLAYS } from './status-replays'
@@ -76,8 +76,11 @@ const statusSystemTexts: Record<Agent, string> = {
   codex: statusSystem(without, CODEX.splitsPlanIntoSubjects),
 }
 const judgeSets = values['judge-set'] === undefined ? [1, 2] : [Number(values['judge-set'])]
-if (!judgeSets.every(n => n === 1 || n === 2))
+if (!judgeSets.every((n): n is JudgePageSet['set'] => n === 1 || n === 2))
   throw new Error(`Unknown --judge-set ${values['judge-set']}. Use 1 or 2.`)
+const judgePages = values['judge-pages'] === undefined ? null : readJudgePages(values['judge-pages'], judgeSets)
+const pageProblems = (judgePages ?? []).flatMap(pageSetProblems)
+if (pageProblems.length > 0) throw new Error(`The judge's pages: ${pageProblems.join('; ')}`)
 
 const judgeSystem = judgeSystemText(ROOT)
 const isJudgeWritten = judgeSystem !== '' && !judgeSystem.startsWith('PLACEHOLDER')
@@ -94,6 +97,7 @@ const about = provenance(
     'systemText claude': systemText(CLAUDE_CODE),
     'systemText codex': systemText(CODEX),
     judge: judgeSystem,
+    ...(judgePages === null ? {} : { 'judge pages': JSON.stringify(judgePages) }),
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL, judge: JUDGE_MODEL, judgeEffort: JUDGE_EFFORT }),
     runner: readFileSync(process.argv[1]!, 'utf8'),
   },
@@ -109,11 +113,10 @@ async function judge(
   return { answer: text, verdicts: parseJudgeAnswer(text) }
 }
 
-if (values['judge-pages'] !== undefined) await checkJudge(values['judge-pages'])
+if (judgePages !== null) await checkJudge(judgePages)
 
 /** Judges every page in the chosen sets, once, and prints each wrong verdict. Exits 0 only when every page was called right. */
-async function checkJudge(dir: string): Promise<never> {
-  const sets = judgeSets.map(n => JSON.parse(readFileSync(join(dir, `set-${n}.json`), 'utf8')) as JudgePageSet)
+async function checkJudge(sets: JudgePageSet[]): Promise<never> {
   type PageRun = Run & { set: number; answer: string | null; mistakes: string[] }
   const jobs: Job<PageRun>[] = sets.flatMap(s =>
     s.pages.map(page => {

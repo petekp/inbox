@@ -1,0 +1,9 @@
+{
+  "id": "s1-bad-goal-agent-words",
+  "breaks": "goal",
+  "na": ["was-lines", "split"],
+  "note": "Bad goal: the page is the same as the good page, but the person stated no goal; the proposal comes from the agent's summary of its own plan, though the page says \"from your message\".",
+  "page": "Proposed goal · from your message\nEvery recipe image on S3, disk store off\n✓ Bucket ready   ● Images copied   ○ Uploads use S3   ○ Disk store off\n\nImage storage move\nCopying recipe images to S3, then switching uploads\n\n● Image copy\n  about 60% copied\n  └ ● Copy the 2019–2021 images to S3\n✓ S3 bucket\n  site reads and writes it\n── Last seen\n○ Upload path\n  still writes to disk\n○ Disk store shutdown\n  after the copy",
+  "previous": null,
+  "facts": "Goal: none set\nFocus now: Moving the Bramble recipe site's images from the web server's disk to S3. The person asked only to start copying the images, and named no end state. The agent's last reply summed up its plan as \"every recipe image on S3, then the disk store switched off\"\nPieces of work:\n- Image copy (also called the backfill, copying the old images): being worked on now. About 60 percent of the 41,000 existing images are copied to S3. Changed at this step.\n- S3 bucket (also called the images bucket): delivered. The bucket and its access policy exist; the site can read and write it. Changed at this step.\n- Upload path (also called new uploads to S3): not started yet. New uploads still write to disk; switching them to S3 is not started.\n- Disk store shutdown (also called switching off the disk store): not started yet. The disk store still serves every image; it goes once every image is on S3.\nOpen asks:\n- none\nNot work:\n- finding: Recipe pages load a 2 MB hero image on phones; outside this task\nRunning work:\n- Copies the 2019 to 2021 images to S3, for Image copy"
+}

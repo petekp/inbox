@@ -1,7 +1,9 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+
+import { stampedCode } from './code-stamp'
 
 /** The repo: `scripts/eval.sh` names it, since the runners run as bundles in a temporary folder. */
 const ROOT = process.env.INBOX_EVAL_ROOT ?? process.cwd()
@@ -102,8 +104,8 @@ type Provenance = {
   args: string[]
   clis: Record<string, string | null>
   /**
-   * A SHA-256 of each text the models read, the cases, the models asked for, and the bundled runner, which holds the
-   * prompt building and the grading, so two runs can be compared without the commit.
+   * A SHA-256 of each text the models read, the cases, the models asked for, and the code that grades the answers, so
+   * two runs can be compared without the commit.
    */
   texts: Record<string, string>
 }
@@ -221,7 +223,7 @@ export function writeResults(path: string, about: Provenance, results: unknown[]
 
 /**
  * SHA-256 hashes of a case, of the text its agent's model reads for it, and of how the run is made and graded: the
- * agent's settings and the source of the grading code.
+ * agent's settings and the grading code, as `gradingCode` gives it.
  */
 type Stamp = { case: string; read: string; grade: string }
 /** Keyed `<agent> <case>`. */
@@ -231,8 +233,12 @@ export function stamp(c: object, read: string[], grade: string[]): Stamp {
   return { case: sha256(JSON.stringify(c)), read: sha256(read.join('\0')), grade: sha256(grade.join('\0')) }
 }
 
-/** A file of this repo, by its path from the repo's root. */
-export const repoFile = (path: string): string => readFileSync(join(ROOT, path), 'utf8')
+/** The code that runs from `entries`, as `stampedCode` gives it, from this repo's files. */
+export const gradingCode = (entries: string[]): string =>
+  stampedCode(entries, path => {
+    const full = join(ROOT, path)
+    return existsSync(full) && statSync(full).isFile() ? readFileSync(full, 'utf8') : null
+  })
 
 /**
  * A case's pass count from a run long enough to judge later runs by, keyed `<agent> <case>`, with the stamp of the

@@ -1,0 +1,9 @@
+{
+  "id": "s1-bad-head",
+  "breaks": "head",
+  "na": ["child-labels", "was-lines", "goal", "milestones", "split"],
+  "note": "Bad head: the goal names the timestamp fix, a small step that is already delivered, while the session is focused on adding dedupe to the pipeline.",
+  "page": "Fix the timestamp parse error\n\n✓ Timestamp parsing\n  ISO and epoch both parse\n● Event dedupe\n  EU deduped, US backfill fails\n── Seen\n○ Late-event window\n  not started\n○ Dedupe metrics\n  not started",
+  "previous": null,
+  "facts": "Focus now: Adding deduplication to the nightly events pipeline\nPieces of work:\n- Event dedupe (also called the dedupe step): being worked on now. Duplicate events are dropped before the warehouse load. Parts: EU region: deduped in the nightly run; US region: the backfill of past days fails on rows with no event id. Changed at this step.\n- Timestamp parsing (also called the parse error fix): delivered. The loader reads both ISO 8601 and epoch timestamps; it was a small fix the dedupe work needed on the way. Changed at this step.\n- Late-event window: not started yet. Handling events that arrive after their day was loaded; nothing is built yet.\n- Dedupe metrics: not started yet. Counts of dropped duplicates for monitoring; nothing is built yet.\nOpen asks:\n- none\nNot work:\n- finding: The staging warehouse's disk is 90% full; outside this task\nRunning work:\n- none"
+}
