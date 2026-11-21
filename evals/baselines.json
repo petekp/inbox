@@ -107,6 +107,42 @@
       "case": "1b5a0f47342afcab3c6e4086cb8f7577d9e4e1219baedc13d60dc1607a873cb8",
       "read": "33a7d112464439e09dcdf33907b17894870082b1324540f44bc6f36d2e2fdc06",
       "grade": "eeb300f8714cf8cadc9466d8e8f8dd9510753cadb00cc9df685dee18410767c6"
+    },
+    "codex merge-names-shown-head": {
+      "passed": 20,
+      "runs": 20,
+      "commit": "8877fa0b45369d98d9bd9eb60558159c99e8cfb9",
+      "date": "2026-11-21T21:37:36.221Z",
+      "models": [
+        "gpt-6.1-sol (requested)"
+      ],
+      "case": "6213cea71db201e6afce2c93d5447ca8b88883643d9d4a198d0043731dd8ad1a",
+      "read": "33f2018fab4ebaa0f50cdec11b3f852a966f361324dabf4e3bb72319a52e1541",
+      "grade": "20123dbf5bf42c39111c4e9e966ae3bc49a53344b4214dd32e042b810bb156c6"
+    },
+    "codex merge-stops-on-newer-head": {
+      "passed": 20,
+      "runs": 20,
+      "commit": "8877fa0b45369d98d9bd9eb60558159c99e8cfb9",
+      "date": "2026-11-21T21:37:36.221Z",
+      "models": [
+        "gpt-6.1-sol (requested)"
+      ],
+      "case": "ad9cf20efe4983ccaf757624973b35eadd6e49199e056edcf3520e6fb224d63e",
+      "read": "33f2018fab4ebaa0f50cdec11b3f852a966f361324dabf4e3bb72319a52e1541",
+      "grade": "20123dbf5bf42c39111c4e9e966ae3bc49a53344b4214dd32e042b810bb156c6"
+    },
+    "codex merge-refused-on-moved-head": {
+      "passed": 20,
+      "runs": 20,
+      "commit": "8877fa0b45369d98d9bd9eb60558159c99e8cfb9",
+      "date": "2026-11-21T21:37:36.221Z",
+      "models": [
+        "gpt-6.1-sol (requested)"
+      ],
+      "case": "f8d55cea0594ab3ebf5d4dfb2c89031864c4ca2623f7d5940bbee142f7c0ae67",
+      "read": "33f2018fab4ebaa0f50cdec11b3f852a966f361324dabf4e3bb72319a52e1541",
+      "grade": "20123dbf5bf42c39111c4e9e966ae3bc49a53344b4214dd32e042b810bb156c6"
     }
   },
   "model": {
