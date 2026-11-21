@@ -71,24 +71,6 @@ var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 // ../core/domain/ledger-update.ts
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
-// ../core/domain/ledger.ts
-var EMPTY = {
-  overview: null,
-  items: [],
-  closed: [],
-  findings: [],
-  closedFindings: [],
-  prs: [],
-  prOrder: null,
-  nextId: 1,
-  turn: 0,
-  batchTurn: 0,
-  updates: 0
-};
-
-// ../core/domain/inbox-text.ts
-var TOLD_NOTHING = { inbox: null, closed: [] };
-
 // ../core/domain/gh.ts
 var GH_TIMEOUT_MS = 2e4;
 var UNSTARTABLE_CODE = -1;
@@ -223,57 +205,8 @@ var NEEDS_YOU_GROUPS = [
 var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
 
 // ../core/view/session-files.ts
-var NO_PRS = { views: {}, branchRef: null, isFetching: false };
-var NO_FAILURE = { lastFailure: null, recoveredAt: null };
-var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
-var NO_ANSWERS = { ledger: null, status: null };
-var NO_TURN = { person: null, trigger: null, activity: [], press: null };
-function emptySession() {
-  return {
-    ledger: EMPTY,
-    turn: NO_TURN,
-    told: TOLD_NOTHING,
-    presence: {
-      turnsStarted: 0,
-      turnsApplied: 0,
-      ledgerState: "current",
-      hasDroppedReply: false,
-      failedAttempts: 0,
-      isConversationUnreadable: false,
-      isUpdating: false,
-      isTurnRunning: false,
-      turnStartedAt: null,
-      lastReplyAt: null,
-      lastTypedMessageAt: null
-    },
-    place: null,
-    pending: [],
-    sent: [],
-    lastActions: {},
-    remoteCommandFloor: 0,
-    commandWrite: null,
-    heldRows: [],
-    collapsed: {},
-    shownSince: null,
-    prViews: NO_PRS,
-    stop: null,
-    overviewFailure: null,
-    callFailures: NO_CALL_FAILURES,
-    lastAnswers: NO_ANSWERS,
-    lastOverviewCallAt: null,
-    overviewTurn: 0,
-    hostTasks: [],
-    dialogQuestions: [],
-    toolFields: null
-  };
-}
 var SESSION_FILE = /^[\w-]{1,100}\.json$/;
 var isSessionFile = (name) => SESSION_FILE.test(name);
-
-// ../core/view/session-presentation.ts
-var SESSION_FIELDS = Object.keys(emptySession()).filter(
-  (field) => field !== "remoteCommandFloor" && field !== "commandWrite" && field !== "lastAnswers"
-);
 
 // ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";

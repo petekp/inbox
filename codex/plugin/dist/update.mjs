@@ -674,13 +674,12 @@ function withChangeNoted(before, after, isActive, now) {
   if (pageWords(before) !== pageWords(after)) return { ...after, changedAt: now, quietCalls: 0 };
   return isActive ? { ...after, quietCalls: after.quietCalls + 1 } : after;
 }
-function statusPageLine(s, now) {
-  const o = s.ledger.overview;
-  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
-  return {
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    stale: isStale ? `Not updated in ${duration(now - o.changedAt)}` : null
-  };
+function isStatusQuiet(o) {
+  return o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS;
+}
+function statusSyncText(sync, now) {
+  if (sync.is !== "stale") return null;
+  return sync.why === "failed" || sync.since === null ? STATUS_FAILED : `Not updated in ${duration(now - sync.since)}`;
 }
 
 // ../core/domain/status-goal-gate.ts
@@ -1855,6 +1854,9 @@ var TIMED_OUT_CODE = -2;
 // ../core/domain/pr-fetch.ts
 var MAX_PRS = 12;
 var MAX_ORDERED_PRS = 30;
+var PR_SHARED_MS = 12e4;
+var PRS_REFRESH_MS = 12e4;
+var PR_POLL_MS = 15e3;
 var CLOSED_PR_REFRESH_MS = 60 * 6e4;
 var LIMIT_RETRY_MS = 5 * 6e4;
 function tabPrs(links) {
@@ -3343,13 +3345,73 @@ function heldLabel(c) {
 }
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
-  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+  failed: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
   "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
   unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
-function perTurnStatus(recovery) {
-  const error = recovery === "none" || recovery === "retrying" ? null : FAILED_UPDATE_TEXT[recovery];
-  return { isRetrying: recovery === "retrying", error };
+function perTurnStatus(sync) {
+  const why = sync.is === "stale" || sync.is === "unavailable" ? sync.why : null;
+  const isQuiet = why === null || why === "read-failed" || why === "retrying";
+  const error = isQuiet ? null : FAILED_UPDATE_TEXT[why];
+  return { error };
+}
+
+// ../core/view/sync-state.ts
+var NO_SYNC_INPUTS = {
+  isReadFailed: false,
+  isFetchingPrs: false,
+  turnReadFailedAt: null,
+  isDemo: false
+};
+var FRESH = { is: "fresh" };
+var PR_FRESH_MS = PR_SHARED_MS + PRS_REFRESH_MS + PR_POLL_MS + GH_TIMEOUT_MS;
+function ledgerSync(s, inputs) {
+  const p = s.presence;
+  if (inputs.isReadFailed) return { is: "unavailable", why: "read-failed" };
+  if (p.ledgerState === "current") return FRESH;
+  const isUnreadable = !p.isUpdating && s.pending.length === 0 && p.isConversationUnreadable;
+  if (isUnreadable) return { is: "unavailable", why: "unreadable" };
+  if (p.ledgerState === "behind") return { is: "checking" };
+  const why = p.isUpdating ? "retrying" : p.failedAttempts > 1 ? "failed-again" : "failed";
+  return { is: "stale", since: null, why };
+}
+function statusSync(s) {
+  if (s.overviewFailure) return { is: "stale", since: s.overviewFailure.at, why: "failed" };
+  const o = s.ledger.overview;
+  return o !== null && isStatusQuiet(o) ? { is: "stale", since: o.changedAt, why: "quiet" } : FRESH;
+}
+function turnSync(s, inputs) {
+  const isUnknown = inputs.turnReadFailedAt !== null && s.presence.isTurnRunning;
+  return isUnknown ? { is: "stale", since: inputs.turnReadFailedAt, why: "rollout-unread" } : FRESH;
+}
+function ghSync(prViews) {
+  if (prViews.isGhMissing) return { is: "unavailable", why: "gh-missing" };
+  if (prViews.isGhSignedOut) return { is: "unavailable", why: "gh-signed-out" };
+  const { failure } = prViews;
+  return failure ? { is: "stale", since: failure.at, why: { kind: "fetch-failed", failure } } : FRESH;
+}
+function prSync(view, failure, isFetching, now) {
+  const readAt = view.fetchedAt ?? null;
+  const isFailedSince = failure != null && (readAt === null || failure.at > readAt);
+  const why = view.error ? "error" : isFailedSince ? "fetch-failed" : readAt === null || now - readAt >= PR_FRESH_MS ? "old" : null;
+  if (why === null) return FRESH;
+  return isFetching ? { is: "checking" } : { is: "stale", since: readAt, why };
+}
+function viewSync(s, now, inputs) {
+  const isFetchingPrs = inputs.isFetchingPrs || s.prViews.isFetching === true;
+  const prs = Object.fromEntries(
+    Object.values(s.prViews.views).map((v) => [
+      v.ref,
+      inputs.isDemo ? FRESH : prSync(v, s.prViews.failure, isFetchingPrs, now)
+    ])
+  );
+  return {
+    ledger: ledgerSync(s, inputs),
+    status: statusSync(s),
+    turn: turnSync(s, inputs),
+    gh: ghSync(s.prViews),
+    prs
+  };
 }
 
 // ../core/domain/status-children.ts
@@ -3412,8 +3474,9 @@ function isSubjectSeen(o, s) {
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function statusPage(s, now) {
+function statusPage(s, now, turn = { is: "fresh" }) {
   const o = s.ledger.overview;
+  const sync = statusSync(s);
   const look = o?.lastLookAt ?? null;
   const subjects = (o?.subjects ?? []).filter((x) => x.into === null);
   const isNew = (x) => o === null || !isSubjectSeen(o, x);
@@ -3475,7 +3538,7 @@ function statusPage(s, now) {
     oldestAskOf,
     items: s.ledger.items,
     running,
-    isTurnRunning: s.presence.isTurnRunning,
+    isTurnRunning: s.presence.isTurnRunning && turn.is === "fresh",
     now
   };
   const foldCtx = { ...ctx, running: [] };
@@ -3590,7 +3653,8 @@ function statusPage(s, now) {
     ...goalParts,
     goal,
     rows,
-    ...statusPageLine(s, now)
+    sync,
+    syncText: statusSyncText(sync, now)
   };
 }
 
@@ -3604,16 +3668,10 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
-function updateRecovery(s) {
-  const { presence } = s;
-  if (presence.ledgerState !== "failed") return "none";
-  if (presence.isUpdating) return "retrying";
-  if (s.pending.length === 0 && presence.isConversationUnreadable) return "unreadable";
-  return presence.failedAttempts > 1 ? "failed-again" : "waiting";
-}
-function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canScrollConversation = false) {
+function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canScrollConversation = false, inputs = NO_SYNC_INPUTS) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
+  const sync = viewSync(s, now, inputs);
   const inbox = inboxView({
     ledger: l,
     lastActions,
@@ -3621,7 +3679,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(updateRecovery(s)),
+    status: perTurnStatus(sync.ledger),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
@@ -3632,11 +3690,12 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
-    statusPage: statusPage(s, now)
+    prs: prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh),
+    statusPage: statusPage(s, now, sync.turn),
+    sync
   };
 }
-function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs) {
+function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs, gh) {
   const pressOutSince = earliestOf(
     Object.entries(lastActions).map(
       ([id, last]) => isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, void 0, s.presence, now)) : null
@@ -3664,8 +3723,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince
     ),
-    isGhSignedOut: s.prViews.isGhSignedOut === true,
-    failure: s.prViews.failure ?? null,
+    gh,
     refresh: prRefreshView(
       { ...s.prViews, isGhMissing: s.prViews.isGhMissing === true },
       s.ledger,
@@ -4120,6 +4178,17 @@ function withCheckKeys(s, views) {
   };
 }
 
+// ../core/domain/stops.ts
+function apiErrorOf(detail) {
+  if (detail === "rate_limit") return { cause: "rate-limit", text: null };
+  if (detail === "overloaded") return { cause: "overloaded", text: null };
+  return { cause: "other", text: detail || null };
+}
+function withApiError(stop) {
+  const apiError = stop.apiError === void 0 ? stop.kind === "api-error" ? apiErrorOf(stop.detail) : null : stop.apiError;
+  return { ...stop, apiError };
+}
+
 // ../core/view/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
@@ -4236,7 +4305,7 @@ function sessionFields(saved, views) {
       ),
       isFetching: false
     },
-    stop: saved.stop ?? null,
+    stop: saved.stop ? withApiError(saved.stop) : null,
     overviewFailure: saved.overviewFailure ?? null,
     callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
     lastAnswers: { ...NO_ANSWERS, ...saved.lastAnswers },
@@ -5266,13 +5335,13 @@ function heardState(h) {
   const turns = h.promptTurns.length > 0 ? h.promptTurns.length : h.prompts;
   return h.startAt === null || isMissed || turns >= 2 && h.stops === 0 ? "partial" : "heard";
 }
-function viewOf(s, now, holds = NO_HOLDS) {
-  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
+function viewOf(s, now, holds = NO_HOLDS, inputs = NO_SYNC_INPUTS) {
+  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds, {}, false, inputs), heard: heardState(s.heard), at: now };
 }
 
 // ../core/view/band.ts
-function isMaybeStale(view, isReadFailed = false) {
-  return isReadFailed || view.status.error !== null || view.status.isRetrying;
+function isMaybeStale(ledger) {
+  return ledger.is === "stale" || ledger.is === "unavailable";
 }
 function bandCounts(view) {
   return ROW_TABS.map((t) => ({ id: t.id, label: t.label, count: view[t.id].count })).filter((c) => c.count > 0);
@@ -5320,14 +5389,6 @@ function delegateReader(target, run2) {
 // ../core/remote/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
 
-// ../core/view/session-presentation.ts
-var SESSION_FIELDS = Object.keys(emptySession()).filter(
-  (field) => field !== "remoteCommandFloor" && field !== "commandWrite" && field !== "lastAnswers"
-);
-function presentedSession(session) {
-  return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
-}
-
 // ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -5369,13 +5430,13 @@ function statusLine(stop, dialogs, input) {
 function focusOf(head) {
   return head ? head.description || head.title : null;
 }
-function herdrTokens(ledger, stop, view, dialogs, isReadFailed = false) {
+function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
     firstAsk: [...view.needsYou.questions, ...view.needsYou.tasks].find(isWaitingRow)?.title ?? null,
     asks: view.needsYou.count,
     findings: view.findings.count,
     focus: focusOf(ledger.overview?.head ?? null),
-    stale: bandCounts(view).length === 0 && isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : null
+    stale: bandCounts(view).length === 0 && isMaybeStale(view.sync.ledger) ? MAYBE_STALE_TEXT : null
   };
   const focus = input.focus ? clipLabel(input.focus, HERDR_VALUE_CHARS) : null;
   const counts = ROW_TABS.map((t) => {
@@ -5505,26 +5566,37 @@ function herdrLabels(tokens) {
   );
 }
 var HERDR_FORMAT = 1;
+function publishedSessionsFolder(appHome) {
+  return `${appHome}/inbox/sessions`;
+}
+function publishedSessionPath(appHome, sessionId) {
+  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
+}
+
+// ../core/view/session-presentation.ts
+var SESSION_FIELDS = Object.keys(emptySession()).filter(
+  (field) => field !== "remoteCommandFloor" && field !== "commandWrite" && field !== "lastAnswers"
+);
+function presentedSession(session) {
+  return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
+}
+
+// ../core/remote/herdr-envelope.ts
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = presentedSession(session);
   const { lastHerdrPress } = session;
-  const { projectFolder, isFetchingPrs, isNextBuild, ...rest } = source;
+  const { projectFolder, isFetchingPrs, isReadFailed, isNextBuild, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
     ...projectFolder?.startsWith("/") && { projectFolder },
     ...isTrimmed && { trimmed: true },
     ...isFetchingPrs && { isFetchingPrs: true },
+    ...isReadFailed && { isReadFailed: true },
     ...isNextBuild && { isNextBuild: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
   };
-}
-function publishedSessionsFolder(appHome) {
-  return `${appHome}/inbox/sessions`;
-}
-function publishedSessionPath(appHome, sessionId) {
-  return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
 }
 
 // ../core/remote/herdr-app.ts
@@ -5638,6 +5710,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           writtenAt: Math.max(seq, viewers.writtenAt, commands.writtenAt),
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
+          turnReadFailedAt: s.turnReadFailedAt,
           version: "0.6.0",
           isNextBuild: existsSync2(join7(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
