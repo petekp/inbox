@@ -7,6 +7,7 @@ import { type Changed, currentOwner, isCurrent, MAX_TRIES, type ModSession, type
 import { upgradeSession } from '../../core/view/session-files'
 import { pruned } from '../../core/runtime/session-presses'
 import { heldReplies } from '../../core/view/timing'
+import { viewerLeases } from './mod-state'
 
 type SessionWriteCalls = Pick<
   Mod,
@@ -53,9 +54,11 @@ export async function changeSession(
     // leaves the saved copy alone.
     const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
     const [ui, demo] = await Promise.all([readUi(m), m.atoms.demo.read()])
+    const leases = viewerLeases.peek(owner.id)
     const kept = pruned(
       { ...changed, heldRows: [...held], shownSince: demo === null ? ui.shownSince : null },
-      Object.keys(changed.remoteViewers).length > 0 ? await m.clock.now() : 0,
+      Object.keys(leases).length > 0 ? await m.clock.now() : 0,
+      leases,
     )
     let landed: ModSession | null = null
     await m.writeSession(cur => {

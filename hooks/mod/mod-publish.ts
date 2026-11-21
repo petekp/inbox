@@ -8,6 +8,7 @@ import { wakeAfterSettle } from './mod-press-run'
 import { pollPrs } from './mod-prs'
 import { readRemoteState } from './mod-saves'
 import { conversation, currentOwner } from './mod-sessions'
+import { viewerLeases } from './mod-state'
 import { SETTLED_MS } from '../../core/view/timing'
 
 type PublishCalls = Pick<
@@ -46,7 +47,7 @@ export function publishStatus(m: PublishCalls, isEnding = false, isExit = false)
         root,
         session,
         dialogs,
-        ...(await readRemoteState(m.saves, conversation.id, session)),
+        ...(await readRemoteState(m.saves, conversation.id, session, viewerLeases.peek(conversation.id))),
         isUnread: unreadable === conversation.id,
       }
     },
@@ -57,7 +58,11 @@ export function publishStatus(m: PublishCalls, isEnding = false, isExit = false)
 /** Applies a Herdr look's press, and gives what waits for the agent's turn. Null when it is for another conversation. */
 export async function herdrPress(m: PublishCalls, id: string, f: HerdrFile): Promise<StartedFile | null> {
   if (id !== conversation.id) return null
-  const host = { ...m.hostOf(currentOwner(), 'terminal'), refreshPrsIfDue: () => pollPrs(m, true) }
+  const host = {
+    ...m.hostOf(currentOwner(), 'terminal'),
+    refreshPrsIfDue: () => pollPrs(m, true),
+    viewers: viewerLeases.of(id, () => void m.publishStatus()),
+  }
 
   return startedFile(await startHerdrFile(host, f, id), outcome => {
     if (outcome.wakesAfterSettle) later(m, SETTLED_MS, () => wakeAfterSettle(m))

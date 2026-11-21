@@ -23,7 +23,8 @@ import { fileURLToPath } from 'node:url'
 
 import { KEPT_SESSIONS } from '../../core/domain/ledger'
 import { SESSION_VERSION } from '../../core/domain/session-version'
-import { pruneSessions, readState, statePath, tryWithLock, updateState, withLock } from '../src/state'
+import { pruneSessions, readState, statePath, updateState } from '../src/state'
+import { tryWithLock, withLock } from '../src/lock'
 import { notePrompt } from '../src/core'
 import { tempDir } from './helpers'
 

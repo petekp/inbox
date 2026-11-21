@@ -11,6 +11,7 @@ import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
 import { REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import { presentedSession } from '../../core/view/session-presentation'
 import { readState, statePath, isPrFetchRunning } from './state'
+import { readViewers } from './viewers'
 import type { SessionState } from './state'
 import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import type { ServerDeps } from './server'
@@ -22,7 +23,7 @@ export function makeCompanion(
   operations: {
     opened(id: string): Promise<string[]>
     apply(id: string, file: HerdrFile): Promise<void>
-    fetch(id: string, state: SessionState): void
+    fetch(id: string, state: SessionState): Promise<void>
     trust(state: SessionState, id: string): HooksTrust | null
   },
 ): CompanionHandler {
@@ -89,20 +90,21 @@ export function makeCompanion(
       captured = await known(entry.id)
     }
     const { state, savedAt } = captured
-    if (request.operation === 'view' && request.opened) operations.fetch(entry.id, state)
+    const viewers = await readViewers(deps.dir, entry.id)
+    if (request.operation === 'view' && request.opened) void operations.fetch(entry.id, state)
     const trust = request.operation === 'view' && request.opened ? operations.trust(state, entry.id) : null
     const result: CompanionView = {
       sessionId: entry.id,
       name: entry.name || basename(state.root) || 'Codex chat',
       projectFolder: state.root,
-      writtenAt: savedAt,
+      writtenAt: Math.max(savedAt, viewers.writtenAt),
       serverNow: deps.now(),
       version: VERSION,
       isFetchingPrs: isPrFetchRunning(state),
       remoteActions: REMOTE_ACTIONS,
       remoteHistoryAfter: state.remoteCommandFloor ?? 0,
       receipts: remoteReceipts(state),
-      viewers: remoteViewerReceipts(state),
+      viewers: remoteViewerReceipts(viewers.leases),
       session: { ...emptySession(), ...presentedSession(state) },
       warnings: [...warnings, ...(trust ? [HOOKS_TRUST_TEXT[trust]] : [])],
     }

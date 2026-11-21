@@ -11,6 +11,7 @@ import {
   upgradeSession,
 } from '../../core/view/session-files'
 import { pruned } from '../../core/runtime/session-presses'
+import { memoryViewerStores } from '../../core/runtime/remote-viewers'
 import type { AnswerDoc } from '../../core/domain/earlier-answers'
 import { historyStep, recordMatches } from '../../core/runtime/history-store'
 import type { HistoryPlace } from '../../core/runtime/history-store'
@@ -60,6 +61,9 @@ export async function readState(dir: string, sessionId: string): Promise<OmpStat
   return (await readSaved(dir, sessionId)).state
 }
 
+/** The viewer leases of the Herdr looks that show a session, kept in this process and out of its saved state. */
+export const viewerLeases = memoryViewerStores()
+
 const updateTails = new Map<string, Promise<void>>()
 const exclusiveRuns = exclusiveKeys()
 const madeFolders = new Set<string>()
@@ -108,7 +112,7 @@ export async function updateState(
     const { state: current, isSaved } = await readSaved(dir, sessionId)
     const changed = await historyStep(questionHistory, sessionId, current, await change(current), Date.now())
     if (isSaved && changed === current) return current
-    const next = pruned(changed, now())
+    const next = pruned(changed, now(), viewerLeases.peek(sessionId))
     const folder = join(dir, 'sessions')
     if (!madeFolders.has(folder)) {
       await mkdir(folder, { recursive: true })

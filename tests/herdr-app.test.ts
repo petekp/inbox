@@ -12,6 +12,7 @@ import { recorded } from '../core/runtime/session-presses'
 import { TOOL_FIELDS } from '../core/domain/tool-schemas'
 import type { Closed, Session } from '../types'
 import { fakeHost } from './session-fake-host'
+import { memoryViewerStores } from '../core/runtime/remote-viewers'
 
 const SOURCE: EnvelopeSource = { host: 'omp', agent: 'omp', sessionId: 's1', terminal: 't1', writtenAt: 5 }
 
@@ -210,6 +211,7 @@ describe('pressDrainer', () => {
     const delivered: string[] = []
     const host = {
       ...fakeHost(async () => null).host,
+      viewers: memoryViewerStores().of('s1', () => undefined),
       isDeliveryHeldUntilRun,
       deliver: async (_s: Session, text: string) => {
         delivered.push(text)

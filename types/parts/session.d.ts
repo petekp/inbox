@@ -221,6 +221,9 @@ export type RemoteViewerRecord = {
   listInput?: { since: number; last: number } | null
 }
 
+/** The viewer leases a session's viewer store keeps, by viewer id. The saved session never holds them. */
+export type ViewerLeases = Record<string, RemoteViewerRecord>
+
 /** A command a remote viewer sent, and the durable receipt of what happened to it. */
 export type RemoteCommandRecord = {
   timeWasValid?: boolean
@@ -312,7 +315,6 @@ export type Session = {
   lastHerdrPress?: HerdrPressOutcome
   remoteCommands: Record<string, RemoteCommandRecord>
   remoteCommandFloor?: number
-  remoteViewers: Record<string, RemoteViewerRecord>
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**

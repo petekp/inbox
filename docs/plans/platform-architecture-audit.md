@@ -60,7 +60,7 @@ existing worker and submission paths.
 
 | Concern | Current owner and behavior |
 | --- | --- |
-| Saved state locks | `codex/src/state.ts` publishes a prepared owner through an atomic symlink to a missing child. Recovery canonicalizes paths and checks process start and boot identity when available. Release and recovery claim a generation before unlinking it. Live writers retain ownership regardless of elapsed time. |
+| Saved state locks | `codex/src/lock.ts` publishes a prepared owner through an atomic symlink to a missing child. Recovery canonicalizes paths and checks process start and boot identity when available. Release and recovery claim a generation before unlinking it. Live writers retain ownership regardless of elapsed time. |
 | Delivery | Both hosts keep sent-prompt records and a local delivery ID for each press. Shared reducers acknowledge every row of a bulk press. Late failures preserve newer actions and drafts. Concurrent mod presses retain the newer action by press order. |
 | Delivery feedback | `core/view/view.ts` shows Queued after one second. Delivery unconfirmed appears immediately, including in settled rows and Closed folds, with no success mark. |
 | PR-opening help | `core/domain/pr-fetch.ts:itemPrSteps` supplies both view construction and press validation. |

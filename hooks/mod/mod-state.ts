@@ -4,6 +4,7 @@ import type { DemoSent } from '../../core/runtime/press-effects'
 import type { ModLook } from '../../core/view/rows'
 import type { HerdrAsk } from '../../core/remote/herdr-ask'
 import type { UiState } from '../../core/view/ui-controller-types'
+import { memoryViewerStores } from '../../core/runtime/remote-viewers'
 
 class PaneState {
   /** The shared controller's events run one batch at a time, each on the state the last batch saved. */
@@ -116,3 +117,6 @@ class ModState {
 }
 
 export const mod = new ModState()
+
+/** The viewer leases of the Herdr looks that show a session this process publishes, kept out of the saved session. */
+export const viewerLeases = memoryViewerStores()
