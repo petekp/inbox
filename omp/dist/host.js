@@ -472,7 +472,8 @@ var CLAUDE_CODE = {
       reason: "Only the fullscreen terminal lets a plugin scroll the conversation, so the classic terminal and the Claude app draw no Show explanation."
     },
     "done-press-age": { kind: "full" },
-    "delegate-asks": { kind: "full" }
+    "delegate-asks": { kind: "full" },
+    "record-earlier-answers": { kind: "full" }
   }
 };
 
@@ -634,7 +635,8 @@ var CODEX = {
       reason: "Codex gives a plugin no call that scrolls its conversation."
     },
     "done-press-age": { kind: "full" },
-    "delegate-asks": { kind: "full" }
+    "delegate-asks": { kind: "full" },
+    "record-earlier-answers": { kind: "full" }
   }
 };
 
@@ -745,7 +747,8 @@ var OMP = {
       reason: "omp's conversation is the terminal's own scrollback, which no extension can scroll."
     },
     "done-press-age": { kind: "full" },
-    "delegate-asks": { kind: "full" }
+    "delegate-asks": { kind: "full" },
+    "record-earlier-answers": { kind: "full" }
   }
 };
 
@@ -7061,6 +7064,116 @@ function approvalText(item, canSend) {
   return isApproval(item) && item.helps.length === 0 && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
 }
 
+// ../hooks/earlier-answers.ts
+var K1 = 1.2;
+var B = 0.75;
+var RELATIVE_FLOOR = 0.22;
+var EARLIER_TEXT_CHARS = 200;
+var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/));
+function searchTerms(text) {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => !STOP_WORDS2.has(w) && (w.length > 1 || /\d/.test(w)));
+}
+function answerIndex(docs) {
+  const postings = new Map;
+  const lengths = docs.map((d, n) => {
+    const terms = searchTerms(`${d.ask} ${d.answer}`);
+    const counts = new Map;
+    for (const t of terms)
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const [t, count] of counts) {
+      const list = postings.get(t);
+      if (list)
+        list.push([n, count]);
+      else
+        postings.set(t, [[n, count]]);
+    }
+    return terms.length;
+  });
+  const total = lengths.reduce((sum, l) => sum + l, 0);
+  return { docs, lengths, postings, averageLength: docs.length > 0 ? total / docs.length : 0 };
+}
+function rankedEarlier(index, question, skip, top) {
+  const n = index.docs.length;
+  const scores = new Map;
+  let reachable = 0;
+  for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
+    const posted = index.postings.get(term);
+    if (!posted)
+      continue;
+    const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
+    reachable += weight * (K1 + 1);
+    for (const [doc, count] of posted) {
+      const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
+      scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
+    }
+  }
+  if (reachable === 0)
+    return [];
+  return [...scores].flatMap(([i, score]) => {
+    const doc = index.docs[i];
+    return doc && doc.key !== skip ? [{ doc, score: score / reachable }] : [];
+  }).toSorted((a, b) => b.score - a.score).slice(0, top).filter((match) => match.score >= RELATIVE_FLOOR);
+}
+function bestEarlier(index, question, skip) {
+  return rankedEarlier(index, question, skip, 1)[0] ?? null;
+}
+function earlierOf(match, isShown) {
+  const { doc } = match;
+  return {
+    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
+    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    at: doc.at,
+    repo: doc.repo,
+    score: Math.round(match.score * 1000) / 1000,
+    isShown
+  };
+}
+var DAY_MS2 = 24 * 60 * 60000;
+function agoText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60)
+    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24)
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  const days = Math.round(ms / DAY_MS2);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+function earlierLineOf(earlier, now) {
+  if (!earlier?.isShown)
+    return null;
+  const where = earlier.repo ? `, in ${earlier.repo},` : "";
+  return {
+    lead: "You answered ",
+    answer: earlier.answer,
+    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
+  };
+}
+function earlierLineText(line) {
+  return `${line.lead}${line.answer}${line.rest}`;
+}
+
+// ../hooks/record-matches.ts
+var MATCH_TEXT_CHARS = 200;
+function earlierAnswersText(id, earlier, now) {
+  if (earlier.length === 0)
+    return "";
+  const lines = earlier.map((doc) => {
+    const where = doc.repo ? `, in ${doc.repo}` : "";
+    return `- ${agoText(now - doc.at)}${where}: "${clipLabel(doc.ask, MATCH_TEXT_CHARS)}" They answered "${clipLabel(doc.answer, MATCH_TEXT_CHARS)}".`;
+  });
+  return [
+    ` Its id is ${id}.`,
+    `The user answered similar questions before. If one settles this exact question, close ${id} with the reason "answered before: <their answer>" and act on that answer. If it answers an earlier step or a different case, or put the decision off, leave ${id} open.`,
+    ...lines
+  ].join(`
+`);
+}
+
 // ../hooks/tool-schemas.ts
 var RECORD_SCHEMA = {
   type: "object",
@@ -7184,12 +7297,12 @@ function delegateRefusal(delegate) {
   const starter = delegate.parent ? `the session in Herdr terminal ${delegate.parent}` : "the session that started this one";
   return `Not recorded: this is a delegate session, so the user's inbox does not take its questions or tasks. Write this one in your REPORT.md, or message ${starter}. That session asks the user what only they can decide. Findings are still recorded.`;
 }
-function toolAnswer(host, ledger, tool, input, now, presses, fields, delegate) {
+function toolAnswer(host, ledger, tool, input, now, presses, fields, delegate, earlier = []) {
   switch (tool) {
     case "record":
       if (delegate && (input.kind === "question" || input.kind === "task"))
         return unchanged(ledger, delegateRefusal(delegate));
-      return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields);
+      return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields, earlier);
     case "close":
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
@@ -7210,7 +7323,7 @@ function list(value, max, each) {
 function unchanged(ledger, result) {
   return { ledger, result, personLine: null };
 }
-function recordItem(host, ledger, input, now, fields) {
+function recordItem(host, ledger, input, now, fields, earlier = []) {
   if (input.kind === "finding")
     return recordFinding(host, ledger, input, now);
   if (input.kind !== "question" && input.kind !== "task")
@@ -7258,7 +7371,7 @@ function recordItem(host, ledger, input, now, fields) {
   }
   return {
     ledger: recorded,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "") + earlierAnswersText(r.id, earlier, now),
     personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
   };
 }
@@ -7759,101 +7872,6 @@ function actionLines(keys, more, { width, gap, separator }) {
       place(keys.length + i, size, i === 0 ? gap + separator : gap);
   });
   return { lines, isFollowUpLineNew };
-}
-
-// ../hooks/earlier-answers.ts
-var K1 = 1.2;
-var B = 0.75;
-var RELATIVE_FLOOR = 0.22;
-var EARLIER_TEXT_CHARS = 200;
-var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
-those i you we he she they me my your our their them as if then than so do does did done can could should would will
-shall may might must not no yes now still also just again already instead yet any all some each per via up out over
-about after before when while which what who whom why how where whether there here let lets get got have has had
-pr prs`.split(/\s+/));
-function searchTerms(text) {
-  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => !STOP_WORDS2.has(w) && (w.length > 1 || /\d/.test(w)));
-}
-function answerIndex(docs) {
-  const postings = new Map;
-  const lengths = docs.map((d, n) => {
-    const terms = searchTerms(`${d.ask} ${d.answer}`);
-    const counts = new Map;
-    for (const t of terms)
-      counts.set(t, (counts.get(t) ?? 0) + 1);
-    for (const [t, count] of counts) {
-      const list = postings.get(t);
-      if (list)
-        list.push([n, count]);
-      else
-        postings.set(t, [[n, count]]);
-    }
-    return terms.length;
-  });
-  const total = lengths.reduce((sum, l) => sum + l, 0);
-  return { docs, lengths, postings, averageLength: docs.length > 0 ? total / docs.length : 0 };
-}
-function bestEarlier(index, question, skip) {
-  const n = index.docs.length;
-  const scores = new Map;
-  let reachable = 0;
-  for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
-    const posted = index.postings.get(term);
-    if (!posted)
-      continue;
-    const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
-    reachable += weight * (K1 + 1);
-    for (const [doc, count] of posted) {
-      const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
-      scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
-    }
-  }
-  let best = null;
-  for (const [doc, score] of scores) {
-    const d = index.docs[doc];
-    if (d.key === skip || best && score <= best.score)
-      continue;
-    best = { doc: d, score };
-  }
-  if (!best || reachable === 0)
-    return null;
-  const relative = best.score / reachable;
-  return relative >= RELATIVE_FLOOR ? { doc: best.doc, score: relative } : null;
-}
-function earlierOf(match, isShown) {
-  const { doc } = match;
-  return {
-    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
-    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
-    at: doc.at,
-    repo: doc.repo,
-    score: Math.round(match.score * 1000) / 1000,
-    isShown
-  };
-}
-var DAY_MS2 = 24 * 60 * 60000;
-function agoText(ms) {
-  const minutes = Math.max(1, Math.round(ms / 60000));
-  if (minutes < 60)
-    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24)
-    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
-  const days = Math.round(ms / DAY_MS2);
-  return days === 1 ? "yesterday" : `${days} days ago`;
-}
-function earlierLineOf(earlier, now) {
-  if (!earlier?.isShown)
-    return null;
-  const where = earlier.repo ? `, in ${earlier.repo},` : "";
-  return {
-    lead: "You answered ",
-    answer: earlier.answer,
-    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
-  };
-}
-function earlierLineText(line) {
-  return `${line.lead}${line.answer}${line.rest}`;
 }
 
 // ../hooks/view.ts
@@ -8416,9 +8434,9 @@ function completedAttempt(state, deliveryId, outcome) {
     } : s)
   };
 }
-function recorded(host, s, tool, args, now, fields, delegate) {
+function recorded(host, s, tool, args, now, fields, delegate, earlier = []) {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt };
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields, delegate);
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields, delegate, earlier);
   const ledger = withOrderStatuses(r.ledger, s.prViews.views);
   const state = linkDialogs({ ...s, ledger }, now);
   const answered = ledger.items.find((i) => !state.ledger.items.some((o) => o.id === i.id));
@@ -12128,6 +12146,7 @@ var HISTORY_VERSION = 1;
 var DAY_MS3 = 24 * 60 * 60000;
 var HISTORY_KEEP_MS = 180 * DAY_MS3;
 var BASELINE_MS = 7 * DAY_MS3;
+var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
 var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
 function historyFileName(host, session) {
   return `${host}-${session.replace(/[^\w.-]/g, "_")}.json`;
@@ -12347,6 +12366,21 @@ async function withEarlier(place, id, s, added, now) {
     return s;
   const items = s.ledger.items.map((i) => matches.has(i.id) ? { ...i, earlier: matches.get(i.id) } : i);
   return { ...s, ledger: { ...s.ledger, items } };
+}
+var RECORD_MATCHES = 3;
+async function recordMatches(place, input, now) {
+  const ask = typeof input.ask === "string" ? input.ask.trim() : "";
+  if (!place || input.kind !== "question" || ask === "")
+    return [];
+  const options = Array.isArray(input.options) ? input.options.filter((o) => typeof o === "string") : [];
+  try {
+    const files = await readHistory(place);
+    if (now - historyStart(files, now) < ROW_MEASUREMENT_MS)
+      return [];
+    return rankedEarlier(indexOf(place, files, now), { ask, options }, "", RECORD_MATCHES).map((m) => m.doc);
+  } catch {
+    return [];
+  }
 }
 
 // ../hooks/model-text.ts
@@ -13625,6 +13659,9 @@ function inTurn(key, fn) {
 var questionHistory2 = null;
 function useQuestionHistory(place) {
   questionHistory2 = place;
+}
+function recordMatchesNow(input, now) {
+  return recordMatches(questionHistory2, input, now);
 }
 async function updateState(dir, sessionId, change, now = Date.now) {
   const path = statePath(dir, sessionId);
@@ -16760,8 +16797,10 @@ function createInbox(pi, deps = defaultDeps) {
           return { content: [{ type: "text", text: "The inbox is not shown in this session." }] };
         let answer = { result: "", personLine: null };
         const delegate = await context.delegate();
+        const input = args;
+        const earlier = name === "record" ? await recordMatchesNow(input, deps.now()) : [];
         await change(sessionIdOf(ctx), (s) => {
-          const r = recorded(OMP2, s, name, args, deps.now(), TOOL_FIELDS, delegate);
+          const r = recorded(OMP2, s, name, input, deps.now(), TOOL_FIELDS, delegate, earlier);
           answer = r;
           return r.state;
         });

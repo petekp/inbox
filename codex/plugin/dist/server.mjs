@@ -612,6 +612,16 @@ var PR_READ_FIRST_LABELS = {
   "thread-address": "Address"
 };
 
+// ../hooks/earlier-answers.ts
+var STOP_WORDS = new Set(
+  `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/)
+);
+var DAY_MS2 = 24 * 60 * 6e4;
+
 // ../hooks/tool-schemas.ts
 var RECORD_SCHEMA = {
   type: "object",
@@ -717,16 +727,6 @@ var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 // ../hooks/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 
-// ../hooks/earlier-answers.ts
-var STOP_WORDS = new Set(
-  `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
-those i you we he she they me my your our their them as if then than so do does did done can could should would will
-shall may might must not no yes now still also just again already instead yet any all some each per via up out over
-about after before when while which what who whom why how where whether there here let lets get got have has had
-pr prs`.split(/\s+/)
-);
-var DAY_MS2 = 24 * 60 * 6e4;
-
 // ../hooks/view.ts
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
@@ -749,6 +749,7 @@ import { dirname, join as join3 } from "node:path";
 var DAY_MS3 = 24 * 60 * 6e4;
 var HISTORY_KEEP_MS = 180 * DAY_MS3;
 var BASELINE_MS = 7 * DAY_MS3;
+var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
 var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
 
 // ../hooks/history-store.ts
