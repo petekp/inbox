@@ -42,6 +42,23 @@ test('under a goal, the Now line stays while the working subject it repeats is b
   expect(p.goal?.now).toBe('Now: Making CSV import ready to demo')
 })
 
+test('under a goal, the Now line hides while it repeats a working subject drawn in its milestone’s place', () => {
+  const started = after(
+    null,
+    'HEAD: Architecture plan | Sorting hooks code into layered folders\nNEW: working | Hooks layers | moving files',
+    10,
+  )
+  const goal = after(
+    started,
+    'GOAL: Architecture cleaned up | working Hooks layers moved; queued Session data split',
+    20,
+  )
+  const p = page(after(goal, 'SERVES: s1 | m1', 30), 40)
+
+  expect(p.goal?.milestones.find(m => m.subject !== null)).toMatchObject({ id: 's1', name: 'Hooks layers' })
+  expect(p.goal?.now).toBeNull()
+})
+
 test('a milestone whose only subject is named alike, with no ask naming the milestone, draws the subject in its place with its name, text, ask and rows, and lists the subject among the page’s rows', () => {
   const linked = after(withGoal(), 'SERVES: s2 | m3\nLINK: i1 | s2', 30, new Set(['i1']))
   const child = {
