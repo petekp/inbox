@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Compares, in the question history, the share of matched questions answered with their earlier answer when the row
 // drew the line and when it did not, as "What shows it works" in docs/plans/repeated-questions.md sets out. It counts
-// questions asked in the history's first 21 days only. The interval resamples sessions. Run: node scripts/earlier-answers-report.mjs [history folder]
+// questions asked in the history's first 21 days only. The interval resamples sessions.
+// Run: node scripts/earlier-answers-report.mjs [history folder]
 import { readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -26,7 +27,7 @@ const files = readdirSync(folder)
     }
   })
 
-const historyStart = Math.min(...files.map(file => file.created))
+const historyStart = Math.min(...files.map(file => file.created).filter(Number.isFinite))
 const matchedOf = file =>
   file.questions.filter(q => q.earlier && (q.askedAt ?? q.answeredAt) < historyStart + MEASURED_MS)
 

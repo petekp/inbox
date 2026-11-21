@@ -14,6 +14,7 @@
     "prompt": "Task: add caching to the product API in shop-api. Before you build it, the cache has to be chosen: Redis or an in-process memory cache. The choice is mine to make. Once the cache is chosen, tell me which one you will build with. Building it is a later step, and the shop-api code is not in this workspace.",
     "checks": [
       { "calls": "record", "kind": "question", "count": 1 },
+      { "calls": "record", "kind": "question", "result": "answered similar questions" },
       { "calls": "close", "match": { "reason": "answered before" }, "count": 1 },
       { "reply": "memory" },
       { "noIds": true }
@@ -21,7 +22,7 @@
   },
   {
     "name": "earlier-answer-covered",
-    "about": "The record answer lists an earlier answer that set a rule for this kind of question. The record answer tells the agent to leave a different case open, so the agent leaves the question open.",
+    "about": "The record answer lists an earlier rule that covers this question. The person asks for the question anyway, and the record answer closes only a question an earlier answer settles exactly, so the agent leaves it open.",
     "history": [
       {
         "ask": "Should I ask you each time two queue jobs could run in either order?",
@@ -33,6 +34,7 @@
     "prompt": "Task: two queue jobs in billing, the invoice export job and the ledger cleanup job, could run in either order tonight. Record a question asking me which queue job runs first, with both as options, then reply to me. The billing code is not in this workspace, and this step does not need it.",
     "checks": [
       { "calls": "record", "kind": "question", "count": 1 },
+      { "calls": "record", "kind": "question", "result": "answered similar questions" },
       { "calls": "close", "count": 0 },
       { "noIds": true }
     ]
@@ -51,6 +53,7 @@
     "prompt": "Task: the product API in shop-api now uses an in-process memory cache. Its size has to be chosen: 64 MB or 256 MB. Record that question for me with both options, then ask me in your reply.",
     "checks": [
       { "calls": "record", "kind": "question", "count": 1 },
+      { "calls": "record", "kind": "question", "result": "answered similar questions" },
       { "calls": "close", "count": 0 },
       { "reply": "\\?" },
       { "noIds": true }
@@ -70,6 +73,7 @@
     "prompt": "Task: the holiday release of storefront shipped yesterday. The new checkout flow could now turn on for all users. Record a question asking me whether to turn it on for all users, with yes and no as options, then ask me in your reply.",
     "checks": [
       { "calls": "record", "kind": "question", "count": 1 },
+      { "calls": "record", "kind": "question", "result": "answered similar questions" },
       { "calls": "close", "count": 0 },
       { "reply": "\\?" },
       { "noIds": true }

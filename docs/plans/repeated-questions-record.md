@@ -2,6 +2,8 @@
 
 This extends [repeated-questions.md](repeated-questions.md), which shows the person's earlier answer on a question's row.
 
+Status: built. The `record` answer lists earlier answers once 21 days have passed since the question history began.
+
 Decided by the owner on 11-19 and 11-20: when an agent records a question, the `record` answer also lists the person's up to 3 earlier answers most like it. The agent can then close the question with the reason "answered before: …" and act on that answer, instead of asking again. This starts once 21 days have passed since the history began, after the row's measurement, so agents' closes do not change the weeks `scripts/earlier-answers-report.mjs` compares. The report counts only questions asked in those 21 days.
 
 The question is always recorded first, and the answer then adds its id and the matches:
@@ -14,7 +16,7 @@ The user answered similar questions before. If one settles this exact question, 
 
 Holding the question until the agent confirms it is new would lose a real ask whenever the agent misjudges a near miss, unseen. A recorded question the agent closes stays reachable as a closed row. Only questions get matches, since the history holds only answers to questions. A record that updates an open item lists none.
 
-The search is the row's: `rankedEarlier` in `hooks/earlier-answers.ts` over the same history, with the same query of ask and options and the same `RELATIVE_FLOOR`. Each host searches before it applies the call, through `recordMatches` in `hooks/history-store.ts`, and passes the matches to `toolAnswer`. `hooks/record-matches.ts` writes the lines. The feature has the `FeatureId` `record-earlier-answers`.
+The search is the row's: `rankedEarlier` in `hooks/earlier-answers.ts` over the same history, with the same `RELATIVE_FLOOR`. Its query is the ask and options as the call gives them. The row's query uses them as recorded, which cuts a long ask or option, so the two differ only for long text. Each host searches before it applies the call, through `recordMatches` in `hooks/history-store.ts`, and passes the matches to `toolAnswer`. `hooks/record-matches.ts` writes the lines. The feature has the `FeatureId` `record-earlier-answers`.
 
 ## The floor
 
