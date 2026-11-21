@@ -474,7 +474,8 @@ var CLAUDE_CODE = {
     "done-press-age": { kind: "full" },
     "delegate-asks": { kind: "full" },
     "record-earlier-answers": { kind: "full" },
-    "session-registry": { kind: "full" }
+    "session-registry": { kind: "full" },
+    "press-preconditions": { kind: "full" }
   }
 };
 
@@ -641,7 +642,8 @@ var CODEX = {
     "session-registry": {
       kind: "different",
       reason: "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process."
-    }
+    },
+    "press-preconditions": { kind: "full" }
   }
 };
 
@@ -754,7 +756,8 @@ var OMP = {
     "done-press-age": { kind: "full" },
     "delegate-asks": { kind: "full" },
     "record-earlier-answers": { kind: "full" },
-    "session-registry": { kind: "full" }
+    "session-registry": { kind: "full" },
+    "press-preconditions": { kind: "full" }
   }
 };
 
@@ -1172,7 +1175,7 @@ function stepEffects(item, step) {
 // ../core/domain/pr-query.ts
 var PRS_PER_QUERY = 50;
 var PR_FIELDS = `fragment PrFields on PullRequest {
-  number title url isDraft state baseRefName mergeable reviewDecision
+  number title url isDraft state baseRefName mergeable reviewDecision headRefOid
   author { login }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { contexts(first: 100) { nodes {
     __typename
@@ -1291,6 +1294,7 @@ function readPrNode(ref, node, viewer, previous, threadsError) {
     base: String(node.baseRefName ?? ""),
     mergeable: String(node.mergeable ?? "UNKNOWN"),
     reviewDecision: String(node.reviewDecision ?? ""),
+    ...typeof node.headRefOid === "string" && { headSha: node.headRefOid },
     checks: checksOf(node),
     threads: threadsError === null ? threadsOf(node, viewer) : previous?.threads ?? [],
     isYours: viewer === undefined || node.author === undefined ? null : node.author?.login === viewer,
@@ -8267,6 +8271,98 @@ function withReadFailed(sync) {
   return { ...sync, ledger: { is: "unavailable", why: "read-failed" } };
 }
 
+// ../core/domain/preconditions.ts
+var PRESS_LIFETIME_MS = 24 * 60 * 60000;
+var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+function canonical(value) {
+  if (Array.isArray(value))
+    return `[${value.map((v) => v === undefined ? "null" : canonical(v)).join(",")}]`;
+  if (!isRecord(value))
+    return JSON.stringify(value) ?? "null";
+  const fields = Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`);
+  return `{${fields.join(",")}}`;
+}
+function hash(text) {
+  let h1 = 3735928559;
+  let h2 = 1103547991;
+  for (let i = 0;i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ h1 >>> 16, 2246822507) ^ Math.imul(h2 ^ h2 >>> 13, 3266489909);
+  h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+function rowVersion(s, id) {
+  const l = s.ledger;
+  if (id === "goal") {
+    const o = l.overview;
+    return hash(canonical([o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null]));
+  }
+  const item = l.items.find((row) => row.id === id);
+  return hash(canonical([
+    item ? { ...item, dialog: undefined } : null,
+    l.findings.find((row) => row.id === id) ?? null,
+    l.closed.findLast((row) => row.id === id) ?? null,
+    l.closedFindings.findLast((row) => row.id === id) ?? null
+  ]));
+}
+function refusal(s, when, now, treeHash) {
+  for (const c of when ?? []) {
+    if (c.kind === "row-version" && rowVersion(s, c.row) !== c.version)
+      return "This changed before your press. Nothing was sent.";
+    if (c.kind === "pr-head-sha") {
+      const pr = s.prViews.views[c.ref];
+      if (pr?.headSha !== undefined && pr.headSha !== c.sha)
+        return `PR #${pr.number} has new commits since you pressed. Nothing was sent.`;
+    }
+    if (c.kind === "expires-at" && now >= c.at)
+      return "This press is too old to run. Nothing was sent.";
+    if (c.kind === "git-tree-hash" && (treeHash?.(c.cwd) ?? null) !== c.hash)
+      return "Files changed since you pressed. Nothing was run.";
+  }
+  return null;
+}
+var isText = (x) => typeof x === "string" && x.length <= 1000;
+function isPrecondition(x) {
+  if (!isRecord(x))
+    return false;
+  switch (x.kind) {
+    case "row-version":
+      return isText(x.row) && isText(x.version);
+    case "pr-head-sha":
+      return isText(x.ref) && isText(x.sha);
+    case "git-tree-hash":
+      return isText(x.cwd) && isText(x.hash);
+    case "expires-at":
+      return typeof x.at === "number" && Number.isFinite(x.at);
+    default:
+      return false;
+  }
+}
+function preconditionsOf(raw) {
+  if (raw === undefined)
+    return [];
+  return Array.isArray(raw) && raw.length <= 16 && raw.every(isPrecondition) ? raw : null;
+}
+
+// ../core/view/press-preconditions.ts
+function drawnVersions(s, rowIds, prs) {
+  return {
+    rows: Object.fromEntries(rowIds.map((id) => [id, rowVersion(s, id)])),
+    prHeads: Object.fromEntries(prs.flatMap((pr) => pr.headSha === undefined ? [] : [[pr.ref, pr.headSha]]))
+  };
+}
+function drawnPreconditions(view, p) {
+  if (isPrPress(p)) {
+    const sha = "ref" in p && p.action === "pr-merge" ? view.drawnVersions.prHeads[p.ref] : undefined;
+    return "ref" in p && sha !== undefined ? [{ kind: "pr-head-sha", ref: p.ref, sha }] : [];
+  }
+  const version = view.drawnVersions.rows[p.id];
+  return version === undefined ? [] : [{ kind: "row-version", row: p.id, version }];
+}
+
 // ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
@@ -8481,13 +8577,16 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     collapsed: collapsedRows(s),
     canScrollConversation
   });
+  const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
+  const rowIds = [...allRows(inbox).map((r) => r.id), GOAL_KEYS_ID];
   return {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh),
+    prs,
     statusPage: statusPage(s, now, sync.turn),
-    sync
+    sync,
+    drawnVersions: drawnVersions(s, rowIds, prs.drawn.map((d) => d.pr))
   };
 }
 function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
@@ -9125,7 +9224,7 @@ function press(ui, view, p, by, now) {
     if (index >= 0)
       next = withCursor(next, tab, { id: rowId, index, guard: null });
   }
-  return withCommands(next, { kind: "press", pressId, press: p, holds });
+  return withCommands(next, { kind: "press", pressId, press: p, holds, when: drawnPreconditions(view, p) });
 }
 function settledAt(view, id) {
   const row = allRows(view).find((r) => r.id === id)?.state;
@@ -11533,7 +11632,7 @@ function createPanel(deps) {
   }
   function run(c) {
     if (c.kind === "press")
-      runPress(c.pressId, c.press, c.holds);
+      runPress(c.pressId, c.press, c.holds, c.when);
     else if (c.kind === "save-collapse")
       source.collapse(c.id, c.isCollapsed).then(() => refresh());
     else if (c.kind === "read")
@@ -11543,8 +11642,8 @@ function createPanel(deps) {
     else if (c.kind === "demo-reply")
       source.demoReply?.(c.pressId);
   }
-  async function runPress(pressId, p, holds) {
-    const outcome = await source.press(p, holds, pressId).catch((err) => ({ error: errorText(err), note: null, isUnconfirmed: false }));
+  async function runPress(pressId, p, holds, when) {
+    const outcome = await source.press(p, holds, pressId, when).catch((err) => ({ error: errorText(err), note: null, isUnconfirmed: false }));
     settled.push({ type: "press-settled", pressId, outcome });
     await refresh();
   }
@@ -15157,10 +15256,10 @@ var PRESS_TARGETS = {
   "pr-refresh": null,
   "pr-clear-finished": null
 };
-var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
-var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");
+var isRecord2 = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var isTimes = (x) => isRecord2(x) && Object.values(x).every((at) => typeof at === "number");
 function pressProblem(press) {
-  if (!isRecord(press) || typeof press.action !== "string")
+  if (!isRecord2(press) || typeof press.action !== "string")
     return "press has no action";
   if (!Object.hasOwn(PRESS_TARGETS, press.action))
     return `unknown action ${press.action}`;
@@ -15168,7 +15267,7 @@ function pressProblem(press) {
   return target === null || typeof press[target] === "string" ? null : `${press.action} has no ${target}`;
 }
 function holdsProblem(holds) {
-  if (!isRecord(holds))
+  if (!isRecord2(holds))
     return "no holds";
   if (!isTimes(holds.replies) || !isTimes(holds.discarded))
     return "holds without replies or discarded times";
@@ -15177,11 +15276,11 @@ function holdsProblem(holds) {
 function resultProblem(result) {
   if (result === undefined)
     return null;
-  return isRecord(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
+  return isRecord2(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
 }
 var isTime = (x) => typeof x === "number" && Number.isFinite(x);
 function lookProblem(look) {
-  if (!isRecord(look) || !isTime(look.startedAt) || !isTime(look.endedAt))
+  if (!isRecord2(look) || !isTime(look.startedAt) || !isTime(look.endedAt))
     return "look without its times";
   if (look.endedAt < look.startedAt)
     return "look ends before it starts";
@@ -15196,7 +15295,7 @@ function pressFile(text) {
   } catch {
     return { ok: false, reason: "not JSON" };
   }
-  if (!isRecord(file))
+  if (!isRecord2(file))
     return { ok: false, reason: "not an object" };
   if (file.format === 2 && file.kind === "viewer") {
     const ids = (value) => Array.isArray(value) && value.length <= 256 && value.every((id) => typeof id === "string" && /^[\w-]{1,100}$/.test(id));
@@ -15205,8 +15304,8 @@ function pressFile(text) {
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
   }
   if (file.format === 2 && file.kind === "command") {
-    const isGoalPress = isRecord(file.press) && file.press.id === "goal";
-    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8000 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8000 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "compare", "issue", "discard"]).includes(String(file.press.action)));
+    const isGoalPress = isRecord2(file.press) && file.press.id === "goal";
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && pressProblem(file.press) === null && isRecord2(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8000 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8000 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "compare", "issue", "discard"]).includes(String(file.press.action)));
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
   }
   if (file.format !== HERDR_FORMAT)
@@ -15218,16 +15317,16 @@ function pressFile(text) {
     return reason ? { ok: false, reason } : { ok: true, file };
   }
   if ("prsShown" in file) {
-    return isRecord(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
+    return isRecord2(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
   }
   if ("collapse" in file) {
     const c = file.collapse;
-    const isCollapse = isRecord(c) && typeof c.row === "string" && typeof c.isCollapsed === "boolean" && isTime(c.at);
+    const isCollapse = isRecord2(c) && typeof c.row === "string" && typeof c.isCollapsed === "boolean" && isTime(c.at);
     return isCollapse ? { ok: true, file } : { ok: false, reason: "collapse without row or time" };
   }
   if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: "no pressedAt" };
-  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
+  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result) ?? (preconditionsOf(file.when) === null ? "when is not a list of known checks" : null);
   if (reason)
     return { ok: false, reason };
   const read = file;
@@ -15463,7 +15562,21 @@ async function checkPrFirst(host, p, rowId, pressId, holds) {
   });
   return isRead ? check : "unread";
 }
-async function startPress(host, p, isStale, holds, commandId) {
+var refusedPress = (why) => ({
+  effects: null,
+  finish: async () => ({
+    copy: null,
+    error: why,
+    note: null,
+    isUnconfirmed: false,
+    isRowFailed: false,
+    wakesAfterSettle: false
+  })
+});
+async function startPress(host, p, isStale, holds, commandId, when = []) {
+  const early = isStale || when.length === 0 ? null : refusal(await host.read(), when, await host.now());
+  if (early)
+    return refusedPress(early);
   const rowId = pressRowId(p);
   const isSecondPressOnHeld = !isPrPress(p) && p.action !== "undo" && isHeldSend((await host.read()).lastActions[rowId]);
   if (isSecondPressOnHeld && !isStale)
@@ -15521,7 +15634,7 @@ async function startPress(host, p, isStale, holds, commandId) {
   const isReadFirst = async () => {
     if (!isPrPress(p))
       return false;
-    if (isPrReadFirstPress(p))
+    if (isPrReadFirstPress(p) || when.some((c) => c.kind === "pr-head-sha"))
       return true;
     if (!isPrStaleReadPress(p))
       return false;
@@ -15551,6 +15664,9 @@ async function startPress(host, p, isStale, holds, commandId) {
     if (note)
       return s;
     const at = await host.now();
+    error = refusal(s, when, at);
+    if (error)
+      return s;
     const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host, localPressId);
     if ("stale" in r) {
       note = "stale";
@@ -15627,12 +15743,12 @@ async function startPress(host, p, isStale, holds, commandId) {
     }
   };
 }
-async function press2(host, p, isStale, holds, commandId) {
-  return (await startPress(host, p, isStale, holds, commandId)).finish();
+async function press2(host, p, isStale, holds, commandId, when = []) {
+  return (await startPress(host, p, isStale, holds, commandId, when)).finish();
 }
 
 // ../core/remote/remote-commands.ts
-var LIFETIME_MS = 24 * 60 * 60000;
+var LIFETIME_MS = PRESS_LIFETIME_MS;
 var MAX_COMMANDS = 128;
 var MAX_COMMAND_BYTES = 128000;
 var OUTCOME_RESERVE_BYTES = 4096;
@@ -15863,7 +15979,9 @@ async function startRemoteCommand(host, command, sessionId) {
     }
   };
   const failed = (error) => rejected(error instanceof Error ? error.message : "Command outcome is uncertain.");
-  const started = await startPress(stamped, command.press, false, { ...NO_HOLDS, shownSince: now }, command.id).catch((error) => failed(error));
+  const expires = { kind: "expires-at", at: command.issuedAt + LIFETIME_MS };
+  const holds = { ...NO_HOLDS, shownSince: now };
+  const started = await startPress(stamped, command.press, false, holds, command.id, [expires]).catch((error) => failed(error));
   if (!("finish" in started))
     return done(await settled(host, store, command, started));
   const finish = async () => settled(host, store, command, await started.finish().catch(failed));
@@ -16100,11 +16218,15 @@ async function startHerdrFile(host, file, sessionId = "") {
     return finished(LOOK_OUTCOME);
   }
   const { result } = file;
-  const started = await startPress(result ? { ...host, perform: async () => result.error } : host, file.press, false, file.holds);
-  const saveLast = (outcome) => host.update((s) => ({
-    ...s,
-    lastHerdrPress: { id: file.id, outcome: outcome?.note === "stale" ? "stale" : "applied" }
-  }));
+  const expires = { kind: "expires-at", at: file.pressedAt + PRESS_LIFETIME_MS };
+  const started = await startPress(result ? { ...host, perform: async () => result.error } : host, file.press, false, file.holds, undefined, result ? [] : [...file.when ?? [], expires]);
+  const lastOf = (outcome) => {
+    if (outcome?.note === "stale")
+      return { id: file.id, outcome: "stale" };
+    const why = started.effects === null ? outcome?.error : null;
+    return why ? { id: file.id, outcome: "refused", why } : { id: file.id, outcome: "applied" };
+  };
+  const saveLast = (outcome) => host.update((s) => ({ ...s, lastHerdrPress: lastOf(outcome) }));
   const isQueuedOnSave = host.isDeliveryHeldUntilRun === true && (started.effects?.some((e) => e.kind === "send") ?? false);
   if (!isQueuedOnSave) {
     const outcome = await started.finish();
@@ -16482,8 +16604,8 @@ function panelCalls(context, sessions, herdrAsk) {
       listeners.set(id, set);
       return () => void set.delete(listener);
     },
-    press: async (ctx, p, holds) => {
-      const outcome = await press2(hostFor(ctx), p, false, holds);
+    press: async (ctx, p, holds, when) => {
+      const outcome = await press2(hostFor(ctx), p, false, holds, undefined, when);
       if (outcome.wakesAfterSettle)
         wakeLater(ctx);
       return outcome;
@@ -16501,8 +16623,8 @@ function panelCalls(context, sessions, herdrAsk) {
   };
   const liveSource = (ctx) => ({
     screen: (holds, notes) => inbox.screen(ctx, holds, notes),
-    press: async (p, holds) => {
-      const outcome = await inbox.press(ctx, p, holds);
+    press: async (p, holds, _pressId, when) => {
+      const outcome = await inbox.press(ctx, p, holds, when);
       return {
         error: outcome.error,
         note: outcome.note,

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-21T18:16:54.192Z. 341978 characters follow.
+// Built at 2026-11-21T19:28:26.197Z. 344959 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -3754,6 +3754,60 @@ function viewSync(s, now, inputs) {
   };
 }
 
+// ../core/domain/preconditions.ts
+var PRESS_LIFETIME_MS = 24 * 60 * 60000;
+var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+function canonical(value) {
+  if (Array.isArray(value))
+    return `[${value.map((v) => v === undefined ? "null" : canonical(v)).join(",")}]`;
+  if (!isRecord(value))
+    return JSON.stringify(value) ?? "null";
+  const fields = Object.keys(value).filter((key) => value[key] !== undefined).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`);
+  return `{${fields.join(",")}}`;
+}
+function hash(text) {
+  let h1 = 3735928559;
+  let h2 = 1103547991;
+  for (let i = 0;i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ h1 >>> 16, 2246822507) ^ Math.imul(h2 ^ h2 >>> 13, 3266489909);
+  h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+function rowVersion(s, id) {
+  const l = s.ledger;
+  if (id === "goal") {
+    const o = l.overview;
+    return hash(canonical([o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null]));
+  }
+  const item = l.items.find((row) => row.id === id);
+  return hash(canonical([
+    item ? { ...item, dialog: undefined } : null,
+    l.findings.find((row) => row.id === id) ?? null,
+    l.closed.findLast((row) => row.id === id) ?? null,
+    l.closedFindings.findLast((row) => row.id === id) ?? null
+  ]));
+}
+
+// ../core/view/press-preconditions.ts
+function drawnVersions(s, rowIds, prs) {
+  return {
+    rows: Object.fromEntries(rowIds.map((id) => [id, rowVersion(s, id)])),
+    prHeads: Object.fromEntries(prs.flatMap((pr) => pr.headSha === undefined ? [] : [[pr.ref, pr.headSha]]))
+  };
+}
+function drawnPreconditions(view, p) {
+  if (isPrPress(p)) {
+    const sha = "ref" in p && p.action === "pr-merge" ? view.drawnVersions.prHeads[p.ref] : undefined;
+    return "ref" in p && sha !== undefined ? [{ kind: "pr-head-sha", ref: p.ref, sha }] : [];
+  }
+  const version = view.drawnVersions.rows[p.id];
+  return version === undefined ? [] : [{ kind: "row-version", row: p.id, version }];
+}
+
 // ../core/view/collapse.ts
 var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
 function newsByRow({ ledger, prViews, lastActions }) {
@@ -3990,13 +4044,16 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     collapsed: collapsedRows(s),
     canScrollConversation
   });
+  const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
+  const rowIds = [...allRows(inbox).map((r) => r.id), GOAL_KEYS_ID];
   return {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh),
+    prs,
     statusPage: statusPage(s, now, sync.turn),
-    sync
+    sync,
+    drawnVersions: drawnVersions(s, rowIds, prs.drawn.map((d) => d.pr))
   };
 }
 function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
@@ -4395,7 +4452,7 @@ function press(ui, view, p, by, now) {
     if (index >= 0)
       next = withCursor(next, tab, { id: rowId, index, guard: null });
   }
-  return withCommands(next, { kind: "press", pressId, press: p, holds });
+  return withCommands(next, { kind: "press", pressId, press: p, holds, when: drawnPreconditions(view, p) });
 }
 function settledAt(view, id) {
   const row = allRows(view).find((r) => r.id === id)?.state;
@@ -4954,6 +5011,7 @@ function pressSending(c, b, at, view) {
     terminal: read.envelope.terminal,
     view,
     holds: c.holds,
+    when: c.when,
     projectFolder: read.projectFolder
   } : null;
   const p = c.press;
@@ -4984,11 +5042,13 @@ function isSessionChange(changed, appHome, sessionId) {
   const file = publishedSessionPath(appHome, sessionId);
   return changed.some((p) => p === file || p === folder || p === `${folder}/`);
 }
-var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var isRecord2 = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var SOURCE_FIELDS = ["host", "agent", "sessionId", "terminal"];
 function lastPressOf2(x) {
-  if (!isRecord(x) || typeof x.id !== "string")
+  if (!isRecord2(x) || typeof x.id !== "string")
     return null;
+  if (x.outcome === "refused")
+    return typeof x.why === "string" ? { id: x.id, outcome: "refused", why: x.why } : null;
   return x.outcome === "applied" || x.outcome === "stale" ? { id: x.id, outcome: x.outcome } : null;
 }
 function readSession(text) {
@@ -5000,7 +5060,7 @@ function readSession(text) {
   } catch {
     return { is: "torn" };
   }
-  if (!isRecord(file))
+  if (!isRecord2(file))
     return { is: "refused", reason: "not an object" };
   const { format } = file;
   if (typeof format === "number" && format > HERDR_FORMAT)
@@ -5012,7 +5072,7 @@ function readSession(text) {
     return { is: "refused", reason: `no ${missing}` };
   if (typeof file.writtenAt !== "number")
     return { is: "refused", reason: "no writtenAt" };
-  if (!isRecord(file.session))
+  if (!isRecord2(file.session))
     return { is: "refused", reason: "no session" };
   const envelope = file;
   return {
@@ -5140,7 +5200,7 @@ var isFieldDrawn = (typing, isHelpShown) => typing !== null && !isHelpShown;
 // src/press-file.ts
 var pressPath = (appHome, sessionId, pressId) => `${pressFolder(appHome, sessionId)}/${pressId}.json`;
 var newPressId = (now, random) => `${now.toString(36)}-${Math.floor(random * 36 ** 6).toString(36)}`;
-function pressFileText(id, pressedAt, press, holds, result = null) {
+function pressFileText(id, pressedAt, press, holds, result = null, when = []) {
   const { replies, discarded, shownSince, listInput } = holds;
   return JSON.stringify({
     format: HERDR_FORMAT,
@@ -5148,7 +5208,8 @@ function pressFileText(id, pressedAt, press, holds, result = null) {
     pressedAt,
     press,
     holds: { replies, discarded, shownSince, listInput },
-    ...result ? { result } : {}
+    ...result ? { result } : {},
+    ...when.length > 0 ? { when } : {}
   });
 }
 
@@ -6703,6 +6764,11 @@ function notSentLine(reason) {
   return { text: feedbackText(source, "herdr"), tone: "error", source };
 }
 var notAppliedLine = (out, agent) => out.result ? resultLine(out.result) : notAppliedText(`${agent}'s inbox did not answer.`);
+var refusedLine = (why) => ({
+  text: why,
+  tone: "error",
+  source: { is: "notSent", reason: why, retry: null }
+});
 var notAppliedText = (why) => ({
   text: `Not applied: ${why}`,
   tone: "error",
@@ -6722,6 +6788,11 @@ function settleOuts(outs, view, lastPress, now) {
   const settled = { outs: [], lines: {}, ended: [], toClaim: [] };
   const end = (out, outcome) => settled.ended.push({ uiPressId: out.uiPressId, outcome });
   for (const out of outs) {
+    if (lastPress?.id === out.pressId && lastPress.outcome === "refused") {
+      settled.lines[out.rowId] = refusedLine(lastPress.why);
+      end(out, { error: lastPress.why, note: null, isUnconfirmed: false });
+      continue;
+    }
     if (lastPress?.id === out.pressId) {
       end(out, lastPress.outcome === "stale" ? STALE : appliedOutcome(view, out.rowId));
       continue;
@@ -6858,7 +6929,7 @@ class PressQueue {
       ran();
     }
     const local = out.result ? { error: firstError(out.result) } : null;
-    const text = pressFileText(out.pressId, pressedAt, press, target.holds, local);
+    const text = pressFileText(out.pressId, pressedAt, press, target.holds, local, target.when);
     const failed = await this.io.write(out.path, text);
     if (failed !== null) {
       this.outs = this.outs.filter((o) => o !== out);

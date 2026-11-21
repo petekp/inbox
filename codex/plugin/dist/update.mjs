@@ -1415,6 +1415,9 @@ function goalPage(o, items) {
   };
 }
 
+// ../core/view/status-keys.ts
+var GOAL_KEYS_ID = "goal";
+
 // ../core/view/pressed.ts
 function offersUndo(c) {
   return c.how === "done" || c.how === "dismissed";
@@ -1699,6 +1702,9 @@ var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
 var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
 function isSendMoving(delivery) {
   return delivery === "sending" || delivery === "queued";
+}
+function allRows(v) {
+  return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
 }
 function replyLine(words3) {
   return words3.replace(/\s+/g, " ").trim();
@@ -3414,6 +3420,52 @@ function viewSync(s, now, inputs) {
   };
 }
 
+// ../core/domain/preconditions.ts
+var PRESS_LIFETIME_MS = 24 * 60 * 6e4;
+var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map((v) => v === void 0 ? "null" : canonical(v)).join(",")}]`;
+  if (!isRecord(value)) return JSON.stringify(value) ?? "null";
+  const fields2 = Object.keys(value).filter((key) => value[key] !== void 0).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`);
+  return `{${fields2.join(",")}}`;
+}
+function hash(text2) {
+  let h1 = 3735928559;
+  let h2 = 1103547991;
+  for (let i = 0; i < text2.length; i++) {
+    const c = text2.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ h1 >>> 16, 2246822507) ^ Math.imul(h2 ^ h2 >>> 13, 3266489909);
+  h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+function rowVersion(s, id) {
+  const l = s.ledger;
+  if (id === "goal") {
+    const o = l.overview;
+    return hash(canonical([o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null]));
+  }
+  const item = l.items.find((row) => row.id === id);
+  return hash(
+    canonical([
+      item ? { ...item, dialog: void 0 } : null,
+      l.findings.find((row) => row.id === id) ?? null,
+      l.closed.findLast((row) => row.id === id) ?? null,
+      l.closedFindings.findLast((row) => row.id === id) ?? null
+    ])
+  );
+}
+
+// ../core/view/press-preconditions.ts
+function drawnVersions(s, rowIds, prs) {
+  return {
+    rows: Object.fromEntries(rowIds.map((id) => [id, rowVersion(s, id)])),
+    prHeads: Object.fromEntries(prs.flatMap((pr) => pr.headSha === void 0 ? [] : [[pr.ref, pr.headSha]]))
+  };
+}
+
 // ../core/domain/status-children.ts
 var NOT_SEEN = "not seen yet";
 function isChildRunning(c, now) {
@@ -3686,13 +3738,20 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     collapsed: collapsedRows(s),
     canScrollConversation
   });
+  const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
+  const rowIds = [...allRows(inbox).map((r) => r.id), GOAL_KEYS_ID];
   return {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh),
+    prs,
     statusPage: statusPage(s, now, sync.turn),
-    sync
+    sync,
+    drawnVersions: drawnVersions(
+      s,
+      rowIds,
+      prs.drawn.map((d) => d.pr)
+    )
   };
 }
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs, gh) {
@@ -3761,7 +3820,6 @@ function pruned(s, now = Date.now(), viewers = {}) {
 var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
 
 // ../core/remote/remote-commands.ts
-var LIFETIME_MS = 24 * 60 * 6e4;
 var REMOTE_ACTIONS = [
   "type",
   "answer",

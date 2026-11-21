@@ -237,6 +237,30 @@ function herdrTarget(env) {
 }
 var HERDR_FORMAT = 1;
 
+// ../core/domain/preconditions.ts
+var PRESS_LIFETIME_MS = 24 * 60 * 6e4;
+var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var isText = (x) => typeof x === "string" && x.length <= 1e3;
+function isPrecondition(x) {
+  if (!isRecord(x)) return false;
+  switch (x.kind) {
+    case "row-version":
+      return isText(x.row) && isText(x.version);
+    case "pr-head-sha":
+      return isText(x.ref) && isText(x.sha);
+    case "git-tree-hash":
+      return isText(x.cwd) && isText(x.hash);
+    case "expires-at":
+      return typeof x.at === "number" && Number.isFinite(x.at);
+    default:
+      return false;
+  }
+}
+function preconditionsOf(raw) {
+  if (raw === void 0) return [];
+  return Array.isArray(raw) && raw.length <= 16 && raw.every(isPrecondition) ? raw : null;
+}
+
 // ../core/remote/herdr-press-file.ts
 var PRESS_TARGETS = {
   answer: "id",
@@ -272,26 +296,26 @@ var PRESS_TARGETS = {
   "pr-refresh": null,
   "pr-clear-finished": null
 };
-var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
-var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");
+var isRecord2 = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+var isTimes = (x) => isRecord2(x) && Object.values(x).every((at) => typeof at === "number");
 function pressProblem(press) {
-  if (!isRecord(press) || typeof press.action !== "string") return "press has no action";
+  if (!isRecord2(press) || typeof press.action !== "string") return "press has no action";
   if (!Object.hasOwn(PRESS_TARGETS, press.action)) return `unknown action ${press.action}`;
   const target = PRESS_TARGETS[press.action];
   return target === null || typeof press[target] === "string" ? null : `${press.action} has no ${target}`;
 }
 function holdsProblem(holds) {
-  if (!isRecord(holds)) return "no holds";
+  if (!isRecord2(holds)) return "no holds";
   if (!isTimes(holds.replies) || !isTimes(holds.discarded)) return "holds without replies or discarded times";
   return holds.shownSince === null || typeof holds.shownSince === "number" ? null : "holds without shownSince";
 }
 function resultProblem(result) {
   if (result === void 0) return null;
-  return isRecord(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
+  return isRecord2(result) && (result.error === null || typeof result.error === "string") ? null : "result without error";
 }
 var isTime = (x) => typeof x === "number" && Number.isFinite(x);
 function lookProblem(look) {
-  if (!isRecord(look) || !isTime(look.startedAt) || !isTime(look.endedAt)) return "look without its times";
+  if (!isRecord2(look) || !isTime(look.startedAt) || !isTime(look.endedAt)) return "look without its times";
   if (look.endedAt < look.startedAt) return "look ends before it starts";
   if (!isTime(look.drawnWrittenAt)) return "look without when its Status was written";
   return isTimes(look.shown) ? null : "look without shown rows";
@@ -303,7 +327,7 @@ function pressFile(text) {
   } catch {
     return { ok: false, reason: "not JSON" };
   }
-  if (!isRecord(file)) return { ok: false, reason: "not an object" };
+  if (!isRecord2(file)) return { ok: false, reason: "not an object" };
   if (file.format === 2 && file.kind === "viewer") {
     const ids = (value) => Array.isArray(value) && value.length <= 256 && value.every((id) => typeof id === "string" && /^[\w-]{1,100}$/.test(id));
     const integer = (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -311,8 +335,8 @@ function pressFile(text) {
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
   }
   if (file.format === 2 && file.kind === "command") {
-    const isGoalPress = isRecord(file.press) && file.press.id === "goal";
-    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16e3 && pressProblem(file.press) === null && isRecord(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8e3 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8e3 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "compare", "issue", "discard"]).includes(String(file.press.action)));
+    const isGoalPress = isRecord2(file.press) && file.press.id === "goal";
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16e3 && pressProblem(file.press) === null && isRecord2(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8e3 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8e3 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "compare", "issue", "discard"]).includes(String(file.press.action)));
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
   }
   if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` };
@@ -322,16 +346,16 @@ function pressFile(text) {
     return reason2 ? { ok: false, reason: reason2 } : { ok: true, file };
   }
   if ("prsShown" in file) {
-    return isRecord(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
+    return isRecord2(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
   }
   if ("collapse" in file) {
     const c = file.collapse;
-    const isCollapse = isRecord(c) && typeof c.row === "string" && typeof c.isCollapsed === "boolean" && isTime(c.at);
+    const isCollapse = isRecord2(c) && typeof c.row === "string" && typeof c.isCollapsed === "boolean" && isTime(c.at);
     return isCollapse ? { ok: true, file } : { ok: false, reason: "collapse without row or time" };
   }
   if (typeof file.pressedAt !== "number" || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: "no pressedAt" };
-  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result);
+  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result) ?? (preconditionsOf(file.when) === null ? "when is not a list of known checks" : null);
   if (reason) return { ok: false, reason };
   const read = file;
   return { ok: true, file: { ...read, holds: { ...read.holds, listInput: listInputOf(read.holds.listInput) } } };
