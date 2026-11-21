@@ -37,6 +37,7 @@ import { styleOf } from './theme'
 import type { OmpState } from './state'
 import { recordMatchesNow, useQuestionHistory } from './state'
 import { questionHistoryPlace } from './question-history'
+import { registryFolder } from '../../core/runtime/session-registry'
 import type { HistoryPlace } from '../../core/runtime/history-store'
 import { OMP, TOOL_LABELS } from './texts'
 import { activityHandlers } from './host-activity'
@@ -88,6 +89,8 @@ export type HostDeps = {
   herdrTarget: HerdrTarget | null
   /** The question history for the sessions saved in `dir`. A host without one saves no history. */
   questionHistory?: (dir: string) => HistoryPlace | null
+  /** The session registry folder, from `registryFolder`. A host without one writes no registry entry. */
+  registryFolder?: string | null
 }
 
 async function defaultComplete(
@@ -135,6 +138,7 @@ const defaultDeps: HostDeps = {
   isUsageLimit: isUsageLimitOutcome,
   herdrTarget: herdrTarget(process.env),
   questionHistory: dir => questionHistoryPlace(process.env, dir),
+  registryFolder: registryFolder(process.env),
 }
 
 /** Orders models newest first by the `major.minor.patch` revision omp classifies from each id. */

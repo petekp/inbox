@@ -76,6 +76,7 @@ export type FeatureId =
   | 'done-press-age'
   | 'delegate-asks'
   | 'record-earlier-answers'
+  | 'session-registry'
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */
 export type ClientId = 'claude-code' | 'codex' | 'omp'

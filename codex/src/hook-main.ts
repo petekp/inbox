@@ -2,7 +2,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { detachedUpdate, STATUS_REFRESH } from './detached-update'
+import { ancestorCodex } from './cli'
 import { herdrOnWrite } from './host'
+import { eachOnWrite, registryOnWrite } from './registry'
 import { herdrLog } from './herdr-log'
 import { withoutSharedTerminal } from './shared-daemon'
 import { handleHook } from './hook'
@@ -20,13 +22,19 @@ async function main() {
   await withoutSharedTerminal(process.env, run, process.ppid, herdrLog(dir))
   useQuestionHistory(questionHistoryPlace(process.env, dir))
   const startUpdate = detachedUpdate(dir, process.env, join(dist, 'update.mjs'))
-  const out = await handleHook(JSON.parse(raw) as HookInput, {
+  const input = JSON.parse(raw) as HookInput
+  const codexPid =
+    input.hook_event_name === 'SessionStart' ? ((await ancestorCodex(run, process.ppid))?.pid ?? null) : null
+  const out = await handleHook(input, {
     dir,
     env: process.env,
     now: Date.now,
     startUpdate: id => startUpdate(id),
     startStatusRefresh: id => startUpdate(id, STATUS_REFRESH),
-    onWrite: herdrOnWrite(process.env, run, dir, Date.now),
+    onWrite: eachOnWrite(
+      herdrOnWrite(process.env, run, dir, Date.now),
+      registryOnWrite(process.env, dir, Date.now, codexPid),
+    ),
     run,
     parentPid: process.ppid,
   })

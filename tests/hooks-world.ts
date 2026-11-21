@@ -194,7 +194,7 @@ async function gh(argv: readonly string[]) {
   const hit = w.ghAnswers.find(a => a.match(argv))
   if (isPrsQuery(argv) && (!hit || isThreadsAnswer(hit))) return prsQueryAnswer(argv)
   await hit?.hold?.()
-  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc'))
+  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc' || argv[0] === 'mkdir'))
     return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
   return answerOf(hit)
@@ -387,7 +387,9 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     w.copied.push(e.text)
     return { value: { isCopied: true as const } }
   })
-  on('fs.exists', (_$, e) => ({ value: w.folders.includes(e.path) || w.files.some(f => e.path.endsWith(f)) }))
+  on('fs.exists', (_$, e) => ({
+    value: w.folders.includes(e.path) || e.path in w.written || w.files.some(f => e.path.endsWith(f)),
+  }))
   on('fs.list', (_$, e) => {
     const written = Object.keys(w.written).filter(path => path.startsWith(`${e.path}/`))
     if (written.length > 0)

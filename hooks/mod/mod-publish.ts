@@ -6,6 +6,7 @@ import { publishToHerdr } from './mod-herdr'
 import type { Mod } from './mod-ports'
 import { wakeAfterSettle } from './mod-press-run'
 import { pollPrs } from './mod-prs'
+import { removeModRegistry, writeModRegistry } from './mod-registry'
 import { readRemoteState } from './mod-saves'
 import { conversation, currentOwner } from './mod-sessions'
 import { viewerLeases } from './mod-state'
@@ -29,30 +30,42 @@ type PublishCalls = Pick<
   | 'fetchPrs'
 >
 
-export function publishStatus(m: PublishCalls, isEnding = false, isExit = false): Promise<boolean> {
-  return publishToHerdr(
-    m.herdr,
-    isEnding ? conversation.id : null,
-    async () => {
-      const [session, dialogs, unreadable] = await Promise.all([
-        m.atoms.session.read(),
-        m.atoms.dialogs.read(),
-        m.atoms.unreadable.read(),
-      ])
+export async function publishStatus(m: PublishCalls, isEnding = false, isExit = false): Promise<boolean> {
+  const id = conversation.id
+  const registry = isEnding
+    ? removeModRegistry(m, id)
+    : writeModRegistry(m, id, async () => {
+        const [session, root] = await Promise.all([m.atoms.session.read(), sessionFolder(m.commands)])
+        return { root: root ?? '', session }
+      })
+  const [isTaken] = await Promise.all([
+    publishToHerdr(
+      m.herdr,
+      isEnding ? conversation.id : null,
+      async () => {
+        const [session, dialogs, unreadable] = await Promise.all([
+          m.atoms.session.read(),
+          m.atoms.dialogs.read(),
+          m.atoms.unreadable.read(),
+        ])
 
-      const root = (await sessionFolder(m.commands)) ?? ''
+        const root = (await sessionFolder(m.commands)) ?? ''
 
-      return {
-        id: conversation.id,
-        root,
-        session,
-        dialogs,
-        ...(await readRemoteState(m.saves, conversation.id, session, viewerLeases.peek(conversation.id))),
-        isUnread: unreadable === conversation.id,
-      }
-    },
-    isExit,
-  )
+        return {
+          id: conversation.id,
+          root,
+          session,
+          dialogs,
+          ...(await readRemoteState(m.saves, conversation.id, session, viewerLeases.peek(conversation.id))),
+          isUnread: unreadable === conversation.id,
+        }
+      },
+      isExit,
+    ),
+    registry,
+  ])
+
+  return isTaken
 }
 
 /** Applies a Herdr look's press, and gives what waits for the agent's turn. Null when it is for another conversation. */

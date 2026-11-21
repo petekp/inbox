@@ -3,6 +3,8 @@ import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
 import type { ViewerStore } from '../../core/runtime/remote-viewers'
 import { commandsOf, remoteReceipts } from '../../core/runtime/remote-command-state'
 import { ompCommandStore } from './command-log'
+import { registryFiles } from './registry'
+import { registryHerdr, removeRegistryEntry, writeRegistryEntry } from '../../core/runtime/session-registry'
 import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -136,8 +138,10 @@ export function sessionCalls(context: HostContext) {
    * session only once its file is written. `left` is a session omp no longer shows, whose file that turn removes first.
    */
   function reportCounts(id: string, left?: string): void {
+    if (id !== memory.shownId) return
+    deps.background(reportRegistry(id, left))
     const target = deps.herdrTarget
-    if (!target || id !== memory.shownId) return
+    if (!target) return
     const appHome = target.kind === 'terminal' ? target.appHome : null
     deps.background(
       reportToHerdr(
@@ -180,21 +184,66 @@ export function sessionCalls(context: HostContext) {
     )
   }
 
-  /** Removes the session's published file and clears every token and label, as omp shuts down. */
-  function reportEnded(id: string): Promise<boolean> {
+  /**
+   * The registry writes and removals, one after another, so a removal is never overtaken by a write before it. A
+   * failure is logged, and the ones after it still run.
+   */
+  let registryWork: Promise<void> = Promise.resolve()
+  const inRegistryOrder = (work: () => Promise<void>) =>
+    (registryWork = registryWork
+      .then(work)
+      .catch((error: unknown) =>
+        context.logHerdr(
+          `inbox: the session registry could not be updated: ${error instanceof Error ? error.message : error}`,
+        ),
+      ))
+
+  /** Writes the session registry entry of the session omp shows, after removing that of `left`. */
+  const reportRegistry = (id: string, left?: string) =>
+    inRegistryOrder(async () => {
+      const folder = deps.registryFolder
+      if (!folder) return
+      const files = registryFiles(context.logHerdr)
+      if (left) await removeRegistryEntry(files, folder, 'omp', left)
+      const s = await readState(dir, id)
+      const now = deps.now()
+      const source = {
+        host: 'omp' as const,
+        sessionId: id,
+        agent: OMP.agent,
+        projectFolder: memory.shownCwd?.() ?? null,
+        version,
+        herdr: registryHerdr(deps.herdrTarget),
+      }
+      await writeRegistryEntry(files, folder, source, s, sessionView(s, now, deps.settleWindowMs), now, process.pid)
+    })
+
+  /** Removes the session's registry entry and published file, and clears every token and label, as omp shuts down. */
+  async function reportEnded(id: string): Promise<boolean> {
+    const folder = deps.registryFolder
+    const removal = folder
+      ? inRegistryOrder(() => removeRegistryEntry(registryFiles(context.logHerdr), folder, 'omp', id))
+      : Promise.resolve()
     const target = deps.herdrTarget
-    if (!target) return Promise.resolve(false)
+    if (!target) {
+      await removal
+      return false
+    }
     const appHome = target.kind === 'terminal' ? target.appHome : null
+    const [, isTaken] = await Promise.all([
+      removal,
+      reportToHerdr(
+        run,
+        async () => {
+          if (appHome) await unpublishSession(publishFiles, appHome, id).catch(() => undefined)
 
-    return reportToHerdr(
-      run,
-      async () => {
-        if (appHome) await unpublishSession(publishFiles, appHome, id).catch(() => undefined)
+          return { target, tokens: CLEARED_TOKENS, session: null }
+        },
+        deps.after,
+      ),
+    ])
 
-        return { target, tokens: CLEARED_TOKENS, session: null }
-      },
-      deps.after,
-    )
+    return isTaken
   }
 
   /** The sessions whose results calls run one after another. They hold no lock, so a ledger call never waits for one. */

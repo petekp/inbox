@@ -47,6 +47,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/data-dir.ts` | Codex host. The data folder and the dev build, which the loader reads. It imports no shared module, so a shared-module change leaves the loader's bundle unchanged. |
 | `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `types/index.d.ts`. |
 | `codex/src/lock.ts` | Codex host. `withLock` and `tryWithLock`: a lock on a file path that the hook, update and MCP server processes share, which a lock of a process that ended gives up. |
+| `codex/src/registry.ts` | Codex host. `registryOnWrite`: writes the session registry entry after each state written, from the hook, update and server processes. A SessionStart hook gives the Codex process above it as the entry's pid, and the server gives its parent. `eachOnWrite` runs it beside the Herdr report. |
+| `codex/src/pid.ts` | Codex host. `isPidRunning`, which the command log and the session registry use to tell whether a process runs. |
 | `codex/src/command-log.ts` | Codex host. `codexCommandStore`: a session's command log, in `<id>.commands.json` beside its state, under the file's lock, since the hook, update and server processes can all change it. |
 | `codex/src/herdr-log.ts` | Codex host. `herdrLog`, the log in `herdr.log` of why a Herdr report, press or command log change failed. |
 | `codex/src/viewers.ts` | Codex host. A session's viewer leases, in `<id>.viewers.json` beside its state, so a heartbeat leaves the state file alone. |
@@ -80,7 +82,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/delegate-calls.ts` | Codex host. Keeps each `herdr agent` command's delegate rows as they were before the command, and puts them back when the command did not run. |
 | `codex/src/run.ts` | Codex host. Runs a command with Node. |
 | `codex/src/shared-daemon.ts` | Codex host. `withoutSharedTerminal` removes `HC_TERMINAL_ID` from a hook's or server's environment when it runs under the Codex app server that no terminal owns, which every Codex CLI started without `--no-daemon` shares. The terminal the environment names is then the one that started the daemon, so the process reports to no terminal and logs why. |
-| `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs. The hooks, the server and the update process share it. |
+| `codex/src/cli.ts` | Codex host. Finds the codex binary the app runs, and `ancestorCodex`, the Codex process above a hook. The hooks, the server and the update process share it. |
 | `codex/src/dialogs.ts` | Codex host. Notes the dialogs a Codex turn opened, and words an inbox answer in the dialog's reply form. |
 | `codex/src/history.ts` | Codex host. On the first sight of a session, takes a forked chat's ledger from its parent, or marks a session with earlier turns `behind`. At each later hook, marks it `behind` when the rollout holds turns that ended after `coveredTurn`, the newest turn the inbox covered. |
 | `codex/src/hook-trust.ts` | Codex host. Whether Codex trusts the inbox's hooks, from the hooks Codex lists. |

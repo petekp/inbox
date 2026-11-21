@@ -30,12 +30,8 @@ function sessionFileOf(text: string): SessionFile | null {
  * When no file names this process's conversation, the folder is not what this reads, so the answer is null.
  */
 export async function runningSessions(f: SessionsFolder): Promise<ReadonlySet<string> | null> {
-  const config = await f.configFolder()
-  if (!config) return null
-  const folder = `${config}/sessions`
-  const names = (await f.list(folder)).filter(entry => entry.kind === 'file' && PID_FILE.test(entry.name))
-  const read = await Promise.all(names.map(entry => f.read(`${folder}/${entry.name}`).then(sessionFileOf, () => null)))
-  const files = read.filter((file): file is SessionFile => file !== null)
+  const files = await sessionFiles(f)
+  if (!files) return null
   const ownId = await f.sessionId()
   const own = files.find(file => file.sessionId === ownId)
   if (!own) return null
@@ -49,8 +45,27 @@ export async function runningSessions(f: SessionsFolder): Promise<ReadonlySet<st
   return new Set(files.filter(file => !isLiveKnown || live!.has(file.pid)).map(file => file.sessionId))
 }
 
+/** The session files in Claude Code's configuration folder, or null when the folder is not known. */
+async function sessionFiles(f: Pick<SessionsFolder, 'configFolder' | 'list' | 'read'>): Promise<SessionFile[] | null> {
+  const config = await f.configFolder()
+  if (!config) return null
+  const folder = `${config}/sessions`
+  const names = (await f.list(folder)).filter(entry => entry.kind === 'file' && PID_FILE.test(entry.name))
+  const read = await Promise.all(names.map(entry => f.read(`${folder}/${entry.name}`).then(sessionFileOf, () => null)))
+
+  return read.filter((file): file is SessionFile => file !== null)
+}
+
+/** The pid of the Claude Code process that runs conversation `sessionId` now, by its session file, or null. */
+export async function sessionPid(
+  f: Pick<SessionsFolder, 'configFolder' | 'list' | 'read'>,
+  sessionId: string,
+): Promise<number | null> {
+  return (await sessionFiles(f))?.find(file => file.sessionId === sessionId)?.pid ?? null
+}
+
 /** The pids among `pids` whose process runs, by one `ps`. Null when `ps` cannot run. */
-async function livePids(f: SessionsFolder, pids: number[]): Promise<ReadonlySet<number> | null> {
+export async function livePids(f: Pick<SessionsFolder, 'run'>, pids: number[]): Promise<ReadonlySet<number> | null> {
   try {
     const r = await f.run(['ps', '-p', pids.join(','), '-o', 'pid='], { cwd: '/', timeoutMs: PS_TIMEOUT_MS })
 
