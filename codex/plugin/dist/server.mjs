@@ -95,7 +95,6 @@ var UNSTARTABLE_CODE = -1;
 var TIMED_OUT_CODE = -2;
 
 // ../core/domain/pr-fetch.ts
-var MAX_ORDERED_PRS = 30;
 var CLOSED_PR_REFRESH_MS = 60 * 6e4;
 var LIMIT_RETRY_MS = 5 * 6e4;
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
@@ -206,7 +205,6 @@ var DAY_MS = 24 * 60 * 6e4;
 var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
 
 // ../core/view/timing.ts
-var SETTLED_MS = 5120;
 var COMPARE_LIMIT_MS = 30 * 6e4;
 function listInputOf(raw) {
   if (typeof raw !== "object" || raw === null) return null;
@@ -252,8 +250,8 @@ function emptySession() {
     pending: [],
     sent: [],
     lastActions: {},
-    remoteCommands: {},
     remoteCommandFloor: 0,
+    commandWrite: null,
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -274,7 +272,7 @@ var isSessionFile = (name) => SESSION_FILE.test(name);
 
 // ../core/view/session-presentation.ts
 var SESSION_FIELDS = Object.keys(emptySession()).filter(
-  (field) => field !== "remoteCommands" && field !== "remoteCommandFloor" && field !== "lastAnswers"
+  (field) => field !== "remoteCommandFloor" && field !== "commandWrite" && field !== "lastAnswers"
 );
 
 // ../core/remote/herdr.ts
@@ -343,11 +341,11 @@ var PRESS_TARGETS = {
 };
 var isRecord = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var isTimes = (x) => isRecord(x) && Object.values(x).every((at) => typeof at === "number");
-function pressProblem(press2) {
-  if (!isRecord(press2) || typeof press2.action !== "string") return "press has no action";
-  if (!Object.hasOwn(PRESS_TARGETS, press2.action)) return `unknown action ${press2.action}`;
-  const target = PRESS_TARGETS[press2.action];
-  return target === null || typeof press2[target] === "string" ? null : `${press2.action} has no ${target}`;
+function pressProblem(press) {
+  if (!isRecord(press) || typeof press.action !== "string") return "press has no action";
+  if (!Object.hasOwn(PRESS_TARGETS, press.action)) return `unknown action ${press.action}`;
+  const target = PRESS_TARGETS[press.action];
+  return target === null || typeof press[target] === "string" ? null : `${press.action} has no ${target}`;
 }
 function holdsProblem(holds) {
   if (!isRecord(holds)) return "no holds";
@@ -558,7 +556,7 @@ async function startCompanion(dir2, handler, log) {
 
 // src/server-main.ts
 import { readdir, stat as stat2 } from "node:fs/promises";
-import { dirname as dirname2, join as join4 } from "node:path";
+import { dirname, join as join4 } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -597,181 +595,9 @@ function detachedUpdate(dir2, env, script) {
   };
 }
 
-// ../core/view/pr-press.ts
-var RERUN_LABEL = "Re-run";
-var PR_FIX_LABELS = {
-  "pr-conflicts": "Resolve conflicts",
-  "check-fix": "Fix"
-};
-var PR_READ_FIRST_LABELS = {
-  ...PR_FIX_LABELS,
-  "check-rerun": RERUN_LABEL,
-  "pr-address-all": "Address all",
-  "pr-merge": "Merge",
-  "thread-address": "Address"
-};
-
-// ../core/domain/earlier-answers.ts
-var STOP_WORDS = new Set(
-  `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
-those i you we he she they me my your our their them as if then than so do does did done can could should would will
-shall may might must not no yes now still also just again already instead yet any all some each per via up out over
-about after before when while which what who whom why how where whether there here let lets get got have has had
-pr prs`.split(/\s+/)
-);
-var DAY_MS2 = 24 * 60 * 6e4;
-
-// ../core/domain/tool-schemas.ts
-var RECORD_SCHEMA = {
-  type: "object",
-  properties: {
-    kind: {
-      type: "string",
-      enum: ["question", "task", "finding"],
-      description: "question: a decision only the user can make. task: a step only the user can do. finding: something outside the current task that deserves their attention."
-    },
-    ask: {
-      type: "string",
-      description: "For a question or task: what you need from the user, in at most 12 plain words, readable without your reply."
-    },
-    context: {
-      type: "string",
-      description: "For a question: why it came up, in at most 20 plain words, so the user can answer without reading back through the conversation."
-    },
-    options: {
-      type: "array",
-      items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one."
-    },
-    option_notes: {
-      type: "array",
-      items: { type: "string" },
-      description: "For a question: one note for each option, in the order of options, saying what picking it does, in at most 12 words each."
-    },
-    rec: {
-      type: "string",
-      description: "For a question: the option you recommend, copied from options. Leave it out when you recommend none."
-    },
-    why: {
-      type: "string",
-      description: 'For a question with rec: why you recommend it, as a short clause of at most 12 words, such as "it keeps the old API".'
-    },
-    steps: {
-      type: "array",
-      items: { type: "string" },
-      description: "For a task: up to 3 things the user can do in one press, each written bare as a command, a file path or an https link. For a question: up to 3 files or https links that help the user decide, such as a page comparing the options, each file as an absolute path."
-    },
-    design_choice: {
-      type: "boolean",
-      description: "For a question: true when its options are designs or approaches you could try and show side by side, such as two layouts or two ways to build a feature. The user can then ask you to compare them. Leave it out for a fact, an approval or a preference."
-    },
-    finding_kind: {
-      type: "string",
-      enum: ["issue", "opportunity"],
-      description: "For a finding. issue: something wrong or risky. opportunity: something that could be better."
-    },
-    title: { type: "string", description: "For a finding: what it is, in at most 12 plain words." },
-    detail: {
-      type: "string",
-      description: "For a finding: why it matters and what you would do, in one or two sentences."
-    },
-    path: { type: "string", description: "For a finding: the file it is about, if one." }
-  },
-  required: ["kind"]
-};
-var CLOSE_SCHEMA = {
-  type: "object",
-  properties: {
-    id: { type: "string", description: "The id of the open item or finding, such as i35 or f32." },
-    answer: {
-      type: "string",
-      description: `The user's answer, at most 8 words, when their own message answered it. Use their words, but when they picked by position or pointing, as "the second one", give the option they picked.`
-    },
-    reason: {
-      type: "string",
-      description: 'Otherwise, why it is closed, in at most 8 words, such as "no longer applies: Inbox kept".'
-    }
-  },
-  required: ["id"]
-};
-var ORDER_SCHEMA = {
-  type: "object",
-  properties: {
-    repo: { type: "string", description: "The repository, as owner/name." },
-    numbers: {
-      type: "array",
-      items: { type: "integer" },
-      description: `The PR numbers, first to last, at most ${MAX_ORDERED_PRS}. Give an empty list to clear the order.`
-    },
-    label: {
-      type: "string",
-      description: 'What the user does with the order, in at most 4 words, such as "Merge in this order" or "Review in this order". Required to set an order.'
-    },
-    why: {
-      type: "string",
-      description: "The reason for this order, in one sentence, such as a PR that waits on another. Not a summary of each PR. Required to set an order."
-    }
-  },
-  required: ["numbers"]
-};
-var TOOL_FIELDS = {
-  record: Object.keys(RECORD_SCHEMA.properties),
-  close: Object.keys(CLOSE_SCHEMA.properties),
-  order_prs: Object.keys(ORDER_SCHEMA.properties)
-};
-
-// ../core/view/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-
-// ../core/view/action-plan.ts
-var CHOICE_KEYS = [..."abcfghilm"];
-
-// ../core/view/view.ts
-var NEXT_TRY = " It tries again after the next reply.";
-var FAILED_UPDATE_TEXT = {
-  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
-  "failed-again": `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
-  unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
-};
-
-// ../core/runtime/host-prs.ts
-var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
-
-// ../core/remote/remote-commands.ts
-var LIFETIME_MS = 24 * 60 * 6e4;
-
-// src/host.ts
-import { appendFile, mkdir as mkdir2, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join as join3 } from "node:path";
-
-// ../core/domain/question-history.ts
-var DAY_MS3 = 24 * 60 * 6e4;
-var HISTORY_KEEP_MS = 180 * DAY_MS3;
-var BASELINE_MS = 7 * DAY_MS3;
-var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
-var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
-
-// ../core/runtime/history-store.ts
-var DAY_MS4 = 24 * 60 * 6e4;
-
-// src/diagnostics.ts
-var TIME = String.raw`^(?:\[[^\]]*\]\s*)?(?:\d{4}-\d\d-\d\dT\S*\s+)?`;
-var DIAGNOSTIC = new RegExp(
-  `${TIME}(?:(?:ERROR|WARNING|error|warning):|(?:ERROR|WARN)\\s|Unknown feature flag: |[\\w ]*stream error:)`
-);
-
-// ../core/runtime/session-status.ts
-var STATUS_REFRESH_MS = 10 * 6e4;
-
-// src/settle.ts
-var POLL_MS = 3e3;
-var SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS;
-
-// ../core/remote/herdr-app.ts
-var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
-var PUBLISH_LIMIT_BYTES = 1024 * 1024;
-
-// src/host.ts
+// src/herdr-log.ts
+import { appendFile, mkdir as mkdir2, stat, writeFile } from "node:fs/promises";
+import { join as join3 } from "node:path";
 var HERDR_LOG_BYTES = 64 * 1024;
 function herdrLog(dir2) {
   const path = join3(dir2, "herdr.log");
@@ -857,8 +683,8 @@ async function withoutSharedTerminal(env, run2, pid, log) {
 }
 
 // src/server-main.ts
-var here = dirname2(fileURLToPath(import.meta.url));
-var pluginRoot = dirname2(here);
+var here = dirname(fileURLToPath(import.meta.url));
+var pluginRoot = dirname(here);
 var dir = dataDir(process.env, pluginRoot);
 var BUNDLE = join4("dist", "server-handler.mjs");
 await withoutSharedTerminal(process.env, run, process.ppid, herdrLog(dir));
@@ -878,9 +704,9 @@ function compareVersions(a, b) {
 async function installedBundle() {
   const own = join4(pluginRoot, BUNDLE);
   if (await exists(own)) return own;
-  const versions = (await readdir(dirname2(pluginRoot)).catch(() => [])).filter((name) => /^\d/.test(name));
+  const versions = (await readdir(dirname(pluginRoot)).catch(() => [])).filter((name) => /^\d/.test(name));
   for (const version of versions.sort(compareVersions).reverse()) {
-    const bundle = join4(dirname2(pluginRoot), version, BUNDLE);
+    const bundle = join4(dirname(pluginRoot), version, BUNDLE);
     if (await exists(bundle)) return bundle;
   }
   return null;
@@ -921,7 +747,7 @@ async function currentHandler() {
   isPluginFolderGone = path === null;
   if (path === null) {
     if (lastLoaded) return lastLoaded;
-    throw new Error(`no ${BUNDLE} in ${dirname2(pluginRoot)}`);
+    throw new Error(`no ${BUNDLE} in ${dirname(pluginRoot)}`);
   }
   const { mtimeMs } = await stat2(path).catch(() => ({ mtimeMs: -1 }));
   const key = `${pathToFileURL(path).href}?v=${mtimeMs}`;

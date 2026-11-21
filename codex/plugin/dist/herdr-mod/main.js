@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-21T08:11:31.460Z. 337876 characters follow.
+// Built at 2026-11-21T09:32:03.363Z. 337945 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -2339,8 +2339,8 @@ function emptySession() {
     pending: [],
     sent: [],
     lastActions: {},
-    remoteCommands: {},
     remoteCommandFloor: 0,
+    commandWrite: null,
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -2395,8 +2395,9 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
-    remoteCommands: saved.remoteCommands ?? {},
+    ...saved.remoteCommands && { remoteCommands: saved.remoteCommands },
     remoteCommandFloor: saved.remoteCommandFloor ?? 0,
+    commandWrite: saved.commandWrite ?? null,
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     collapsed: saved.collapsed ?? {},
@@ -2433,7 +2434,7 @@ function sessionFields(saved, views) {
 }
 
 // ../core/view/session-presentation.ts
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteCommandFloor" && field !== "lastAnswers");
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommandFloor" && field !== "commandWrite" && field !== "lastAnswers");
 
 // ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";

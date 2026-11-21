@@ -1540,9 +1540,9 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 
 // src/host.ts
 import { existsSync } from "fs";
-import { stat as stat5 } from "fs/promises";
+import { stat as stat6 } from "fs/promises";
 import { homedir } from "os";
-import { dirname as dirname4, join as join5 } from "path";
+import { dirname as dirname5, join as join7 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
 var version = "0.6.0";
@@ -5127,8 +5127,8 @@ function emptySession() {
     pending: [],
     sent: [],
     lastActions: {},
-    remoteCommands: {},
     remoteCommandFloor: 0,
+    commandWrite: null,
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -5192,8 +5192,9 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
-    remoteCommands: saved.remoteCommands ?? {},
+    ...saved.remoteCommands && { remoteCommands: saved.remoteCommands },
     remoteCommandFloor: saved.remoteCommandFloor ?? 0,
+    commandWrite: saved.commandWrite ?? null,
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     collapsed: saved.collapsed ?? {},
@@ -5230,7 +5231,7 @@ function sessionFields(saved, views) {
 }
 
 // ../core/view/session-presentation.ts
-var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteCommandFloor" && field !== "lastAnswers");
+var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommandFloor" && field !== "commandWrite" && field !== "lastAnswers");
 function presentedSession(session) {
   return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
 }
@@ -5835,22 +5836,31 @@ function reopenOnFailure(ledger, id, at) {
 }
 
 // ../core/runtime/remote-command-state.ts
-function remoteCommandArrival(s, deliveryId) {
-  if (!deliveryId)
-    return s;
-  const matches = Object.entries(s.remoteCommands).filter(([, c]) => c.deliveryId === deliveryId);
-  if (matches.length === 0)
-    return s;
-  return {
-    ...s,
-    remoteCommands: {
-      ...s.remoteCommands,
-      ...Object.fromEntries(matches.map(([id, c]) => [id, { ...c, delivered: true, pendingDelivery: false }]))
-    }
-  };
+var EMPTY_LOG = { version: 1, writtenAt: 0, floor: 0, commands: {} };
+function withLegacy(log, s) {
+  const legacy = s.remoteCommands ?? {};
+  const isSessionFloorKept = s.remoteCommands !== undefined || log.writtenAt === 0;
+  const floor = isSessionFloorKept ? Math.max(log.floor, s.remoteCommandFloor ?? 0) : log.floor;
+  const further = Object.entries(legacy).filter(([id, c]) => {
+    const kept = log.commands[id];
+    return !kept || kept.state === "accepted" && c.state !== "accepted";
+  });
+  if (further.length === 0 && floor === log.floor)
+    return log;
+  return { ...log, floor, commands: { ...log.commands, ...Object.fromEntries(further) } };
 }
-function remoteCommandState(s) {
-  let commands = s.remoteCommands;
+function withoutLegacy(s) {
+  if (!s.remoteCommands)
+    return s;
+  const { remoteCommands: _moved, ...rest } = s;
+  return rest;
+}
+var withRecord = (log, id, record) => ({
+  ...log,
+  commands: { ...log.commands, [id]: record }
+});
+function remoteCommandState(log, s) {
+  let commands = log.commands;
   for (const [row, last] of Object.entries(s.lastActions)) {
     const id = last.commandId;
     const command = id && commands[id];
@@ -5876,34 +5886,81 @@ function remoteCommandState(s) {
     if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
       commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
   }
-  return commands === s.remoteCommands ? s : { ...s, remoteCommands: commands };
+  return commands === log.commands ? log : { ...log, commands };
+}
+async function commandsOf(store, s) {
+  return remoteCommandState(withLegacy(store ? await store.read() : EMPTY_LOG, s), s);
+}
+async function appliedCommands(store, s) {
+  const { commands } = await commandsOf(store, s);
+  return new Set(Object.entries(commands).flatMap(([id, c]) => c.state === "applied" ? [id] : []));
+}
+function hasCommandRows(s) {
+  return Object.values(s.lastActions).some((last) => last.commandId !== undefined) || s.ledger.closed.some((c) => c.commandId !== undefined);
+}
+function pendingCommandRows(s) {
+  const rows = Object.entries(s.lastActions).flatMap(([row, last]) => {
+    const delivery = last.delivery;
+    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === undefined || last.action === "done" && !delivery;
+    return last.commandId && isWaiting ? [row] : [];
+  });
+  const closed = s.ledger.closed.flatMap((c) => c.commandId && !c.doneNotification ? [c.id] : []);
+  return [...rows, ...closed];
 }
 async function confirmRemoteDelivery(host, state, deliveryId) {
   const attempt = state.sent.find((send) => send.deliveryId === deliveryId);
   const commandIds = attempt?.commandIds ?? [];
   if (commandIds.length === 0)
     return;
-  if (!host.readDurable)
+  if (!host.readDurable || !host.commands)
     throw new Error("This host cannot confirm saved delivery attempts.");
   const saved = await host.readDurable();
   const durable = saved.sent.find((send) => send.deliveryId === deliveryId);
   const isSaved = attempt && durable && JSON.stringify(attempt) === JSON.stringify(durable);
-  const commandsSaved = commandIds.every((id) => saved.remoteCommands[id]?.deliveryId === deliveryId);
-  if (!isSaved || !commandsSaved)
+  if (!isSaved)
+    throw new Error("The delivery attempt could not be confirmed saved. Nothing was sent.");
+  const log = await host.commands.update((log) => remoteCommandState(withLegacy(log, saved), saved));
+  if (!commandIds.every((id) => log.commands[id]?.deliveryId === deliveryId))
     throw new Error("The delivery attempt could not be confirmed saved. Nothing was sent.");
 }
-function cancelRemoteCommand(s, row) {
-  const id = s.ledger.closed.find((c) => c.id === row && c.how === "done")?.commandId ?? s.lastActions[row]?.commandId;
-  const command = id && s.remoteCommands[id];
-  if (!id || !command || command.deliveryId || command.delivered)
-    return s;
-  return {
-    ...s,
-    remoteCommands: { ...s.remoteCommands, [id]: { ...command, state: "cancelled", pendingDelivery: false } }
-  };
+function undoneCommand(s, row) {
+  return s.ledger.closed.find((c) => c.id === row && c.how === "done")?.commandId ?? s.lastActions[row]?.commandId;
 }
-function remoteReceipts(s) {
-  return Object.fromEntries(Object.entries(remoteCommandState(s).remoteCommands).map(([id, c]) => [
+function cancelledCommand(log, id) {
+  const command = log.commands[id];
+  if (!command || command.deliveryId || command.delivered)
+    return log;
+  return withRecord(log, id, { ...command, state: "cancelled", pendingDelivery: false });
+}
+async function saveDeliveryOutcome(store, carried, deliveryId, outcome) {
+  if (!store || carried.ids.length === 0)
+    return;
+  await store.update((log) => carried.ids.reduce((next, id) => {
+    const c = next.commands[id];
+    if (!c)
+      return next;
+    const delivered = c.delivered || carried.arrived;
+    return withRecord(next, id, {
+      ...c,
+      deliveryId,
+      state: outcome.state === "rejected" ? "failed" : c.state,
+      delivered,
+      pendingDelivery: outcome.state !== "rejected" && !delivered,
+      error: outcome.reason?.slice(0, 256) ?? c.error
+    });
+  }, log)).catch(() => {
+    return;
+  });
+}
+async function markArrived(store, deliveryId) {
+  if (!store || !deliveryId)
+    return;
+  await store.update((log) => Object.entries(log.commands).reduce((next, [id, c]) => c.deliveryId === deliveryId && !c.delivered ? withRecord(next, id, { ...c, delivered: true, pendingDelivery: false }) : next, log)).catch(() => {
+    return;
+  });
+}
+function remoteReceipts(log) {
+  return Object.fromEntries(Object.entries(log.commands).map(([id, c]) => [
     id,
     {
       state: c.state,
@@ -5915,42 +5972,63 @@ function remoteReceipts(s) {
     }
   ]));
 }
-function remoteDeliveryOutcome(s, deliveryId, outcome, arrived = false) {
-  const ids = s.sent.find((send) => send.deliveryId === deliveryId)?.commandIds ?? [];
-  let commands = s.remoteCommands;
-  for (const id of ids) {
-    const c = commands[id];
-    if (!c)
-      continue;
-    commands = {
-      ...commands,
-      [id]: {
-        ...c,
-        deliveryId,
-        state: outcome.state === "rejected" ? "failed" : c.state,
-        delivered: c.delivered || arrived,
-        pendingDelivery: outcome.state !== "rejected" && !c.delivered && !arrived,
-        error: outcome.reason?.slice(0, 256) ?? c.error
-      }
-    };
-  }
-  return commands === s.remoteCommands ? s : { ...s, remoteCommands: commands };
+function unsentMessage(s, delivery) {
+  if (delivery?.state !== "queued" && delivery?.state !== "unconfirmed")
+    return null;
+  const id = delivery.id;
+  if (!id)
+    return { id: null };
+  return s.sent.find((x) => x.deliveryId === id)?.phase === "attempting" ? { id } : null;
 }
-function blockRemoteDeferred(s, id, reason) {
-  const command = s.remoteCommands[id];
-  if (!command)
+function blockRemoteDeferred(s, id, row, reason) {
+  const last = s.lastActions[row];
+  const delivery = last?.commandId === id ? last.delivery : undefined;
+  const unsent = unsentMessage(s, delivery);
+  const isRowBlocked = delivery?.state === "held" || unsent !== null;
+  const unsentDone = unsent?.id ?? null;
+  const isDoneBlocked = (c) => c.commandId === id && (!c.doneNotification || c.how === "done" && c.doneNotification.id === unsentDone && c.doneNotification.error === undefined);
+  if (!isRowBlocked && !s.ledger.closed.some(isDoneBlocked))
     return s;
-  const last = s.lastActions[command.row];
-  const held = last?.commandId === id && last.delivery?.state === "held";
-  const ledger = held && last.kind === "mark" ? reopenOnFailure(s.ledger, command.row, last.at) : s.ledger;
+  const reopened = isRowBlocked && last?.kind === "mark" ? reopenOnFailure(s.ledger, row, last.at) : s.ledger;
+  const ledger = unsentDone ? refuseDoneNotification(reopened, unsentDone, reason) : reopened;
   return {
     ...s,
-    lastActions: held ? { ...s.lastActions, [command.row]: { ...last, delivery: { state: "failed", reason } } } : s.lastActions,
+    lastActions: isRowBlocked && last ? { ...s.lastActions, [row]: { ...last, delivery: { state: "failed", reason } } } : s.lastActions,
     ledger: {
       ...ledger,
       closed: ledger.closed.map((c) => c.commandId === id && !c.doneNotification ? { ...c, doneNotification: { id: `${id}:blocked`, error: reason } } : c)
     }
   };
+}
+function commandRows(s) {
+  return [
+    ...Object.entries(s.lastActions).flatMap(([row, a]) => a.commandId ? [[a.commandId, row]] : []),
+    ...s.ledger.closed.flatMap((c) => c.commandId ? [[c.commandId, c.id]] : [])
+  ];
+}
+async function recoverStrandedCommands(host) {
+  const store = host.commands;
+  if (!store)
+    return;
+  const reason = "This action was interrupted, so it may not have run.";
+  const s = await host.read();
+  const log = await store.read();
+  const stranded = [];
+  for (const [id, c] of Object.entries(log.commands))
+    if (c.state === "attempting" && c.runner && !await store.isRunning(c.runner))
+      stranded.push([id, c]);
+  const known = withLegacy(log, s).commands;
+  const unknown = commandRows(s).filter(([id, row]) => !(id in known) && blockRemoteDeferred(s, id, row, reason) !== s);
+  if (stranded.length === 0 && unknown.length === 0)
+    return;
+  const blocked = [...stranded.map(([id, c]) => [id, c.row]), ...unknown];
+  await host.update((x) => blocked.reduce((y, [id, row]) => blockRemoteDeferred(y, id, row, reason), x));
+  if (stranded.length === 0)
+    return;
+  await store.update((current) => stranded.reduce((next, [id]) => {
+    const c = next.commands[id];
+    return c?.state === "attempting" ? withRecord(next, id, { ...c, state: "uncertain", error: reason, runner: null }) : next;
+  }, current));
 }
 
 // ../core/domain/catch-up-text.ts
@@ -8415,12 +8493,21 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
     ...r.reopenedId ? { reopenedId: r.reopenedId } : {}
   };
 }
+function attemptCommands(state, deliveryId, outcome) {
+  const index = state.sent.findIndex((s) => s.deliveryId === deliveryId);
+  const attempt = state.sent[index];
+  if (!attempt)
+    return { ids: [], arrived: false };
+  const text = outcome.state === "accepted" ? outcome.entered ?? attempt.text : attempt.text;
+  const earlierUnknown = state.sent.slice(0, index).some((s) => s.text === text && (s.phase === "attempting" || s.phase === "uncertain"));
+  return {
+    ids: attempt.commandIds ?? [],
+    arrived: outcome.state === "accepted" && outcome.isInTurn === true && !earlierUnknown
+  };
+}
 function completedAttempt(state, deliveryId, outcome) {
   if (outcome.state === "rejected")
-    return {
-      ...remoteDeliveryOutcome(state, deliveryId, outcome),
-      sent: state.sent.filter((s) => s.deliveryId !== deliveryId)
-    };
+    return { ...state, sent: state.sent.filter((s) => s.deliveryId !== deliveryId) };
   const index = state.sent.findIndex((s) => s.deliveryId === deliveryId);
   const attempt = state.sent[index];
   if (!attempt)
@@ -8429,7 +8516,6 @@ function completedAttempt(state, deliveryId, outcome) {
   const delivered = Object.entries(state.lastActions).filter(([_id, action]) => action.delivery && ("id" in action.delivery) && action.delivery.id === deliveryId);
   let lastActions = text === attempt.text ? state.lastActions : delivered.reduce((actions, [id, action]) => withRewrite(actions, [id], action.at, attempt.text, text, deliveryId), state.lastActions);
   const earlierUnknown = state.sent.slice(0, index).some((s) => s.text === text && (s.phase === "attempting" || s.phase === "uncertain"));
-  state = remoteDeliveryOutcome(state, deliveryId, outcome, outcome.state === "accepted" && outcome.isInTurn === true && !earlierUnknown);
   if (outcome.state === "accepted" && !earlierUnknown) {
     lastActions = outcome.isInTurn ? withArrival(lastActions, text, undefined, deliveryId) : delivered.reduce((actions, [id, action]) => withAcceptedSend(actions, [id], action.at, text, deliveryId), lastActions);
   }
@@ -8469,11 +8555,9 @@ function rowsInPlace(s, now = Date.now(), viewers = {}) {
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const pending = Object.values(s.remoteCommands).filter((c) => c.pendingDelivery && !c.deliveryId).map((c) => c.row);
-  return new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pending, ...since]);
+  return new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pendingCommandRows(s), ...since]);
 }
 function pruned(s, now = Date.now(), viewers = {}) {
-  s = remoteCommandState(s);
   const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return settledCollapses({
@@ -12156,249 +12240,112 @@ async function runSends(host, effects, rowId, rows, at) {
 }
 
 // src/state.ts
-import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "fs/promises";
-import { join } from "path";
+import { mkdir as mkdir3, readdir, readFile as readFile2, rename as rename2, stat as stat2, unlink, writeFile as writeFile3 } from "fs/promises";
+import { join as join3 } from "path";
 
-// ../core/domain/question-history.ts
-var HISTORY_VERSION = 1;
-var DAY_MS3 = 24 * 60 * 60000;
-var HISTORY_KEEP_MS = 180 * DAY_MS3;
-var BASELINE_MS = 7 * DAY_MS3;
-var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
-var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
-function historyFileName(host, session) {
-  return `${host}-${session.replace(/[^\w.-]/g, "_")}.json`;
+// ../core/runtime/command-store.ts
+function commandLogPath(folder, sessionId) {
+  return `${folder}/${sessionFile(sessionId).replace(/\.json$/, ".commands.json")}`;
 }
-function isAnswer(c) {
-  if (c.kind !== "question")
-    return false;
-  if (c.how === "answered")
-    return true;
-  return c.how === "update" && !NOT_AN_ANSWER2.test(c.outcome.trim());
+function isLog(value) {
+  const log = value;
+  return log?.version === 1 && typeof log.writtenAt === "number" && typeof log.floor === "number" && Number.isSafeInteger(log.floor) && log.floor >= 0 && typeof log.commands === "object" && log.commands !== null;
 }
-var keyOf2 = (q) => `${q.id}@${q.askedAt ?? ""}`;
-var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
-function questionHistory(previous, s, place, now) {
-  const answered = s.ledger.closed.filter(isAnswer).map((c) => ({
-    id: c.id,
-    ask: c.ask,
-    options: c.item?.options ?? [],
-    askedAt: c.item?.at ?? null,
-    answer: c.outcome,
-    answeredAt: c.at,
-    how: c.how,
-    isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
-    earlier: c.item?.earlier ?? null,
-    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
-  }));
-  const open = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
-  const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));
-  for (const q of answered)
-    byKey.set(keyOf2(q), q);
-  const questions = [...byKey.values()].filter((q) => !open.has(keyOf2(q)) && now - q.answeredAt <= HISTORY_KEEP_MS).sort((a, b) => a.answeredAt - b.answeredAt);
+function parsedLog(text, now) {
+  if (text === null)
+    return { log: EMPTY_LOG, isUnreadable: false };
+  const value = (() => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return null;
+    }
+  })();
+  return isLog(value) ? { log: value, isUnreadable: false } : { log: { ...EMPTY_LOG, floor: now }, isUnreadable: true };
+}
+var tmpCount = 0;
+function fileCommandStore(files, path, process2, opts) {
   return {
-    version: HISTORY_VERSION,
-    host: place.host,
-    session: place.session,
-    repo: place.repo ?? previous?.repo ?? null,
-    created: previous?.created ?? now,
-    savedAt: now,
-    questions
+    runner: process2.runner,
+    isRunning: (runner) => process2.isRunning(runner),
+    read: async () => parsedLog(await files.read(path), await opts.now()).log,
+    update: async (change) => {
+      const result = await files.lock(path, async () => {
+        const now = await opts.now();
+        const { log, isUnreadable } = parsedLog(await files.read(path), now);
+        if (isUnreadable) {
+          const aside = `${path}.unreadable-${now}`;
+          await files.move(path, aside);
+          opts.log(`inbox: moved an unreadable command log aside to ${aside}`);
+        }
+        const next = await change(log);
+        if (next === log && !isUnreadable)
+          return { log, isChanged: false };
+        const saved = { ...next, writtenAt: Math.max(now, log.writtenAt + 1) };
+        const text = JSON.stringify(saved);
+        const tmp = `${path}.${now.toString(36)}-${++tmpCount}.tmp`;
+        await files.write(tmp, text);
+        await files.move(tmp, path);
+        if (await files.read(path) !== text)
+          throw new Error("The command log could not be confirmed saved.");
+        return { log: saved, isChanged: true };
+      });
+      if (result.isChanged)
+        await Promise.resolve(opts.onChange?.()).catch(() => {
+          return;
+        });
+      return result.log;
+    }
   };
 }
-function isHistoryChanged(previous, next) {
-  if (!previous)
-    return next.questions.length > 0;
-  const said = (f) => JSON.stringify([f.repo, f.questions]);
-  return said(previous) !== said(next);
+async function movedLegacyCommands(store, s, log) {
+  if (!s.remoteCommands)
+    return s;
+  try {
+    await store.update((current) => withLegacy(current, s));
+  } catch (err) {
+    log(`inbox: the command log could not take the session's commands: ${err instanceof Error ? err.message : err}`);
+    return s;
+  }
+  return withoutLegacy(s);
 }
-function upgradeHistoryFile(raw) {
-  if (!raw || typeof raw !== "object")
-    return null;
-  const f = raw;
-  if (f.version !== HISTORY_VERSION || !Array.isArray(f.questions) || typeof f.session !== "string")
-    return null;
-  return f;
-}
-function historyDocs(files, now) {
-  return files.flatMap((f) => f.questions.filter((q) => now - q.answeredAt <= HISTORY_KEEP_MS).map((q) => ({
-    key: answerKey(f.host, f.session, q.id),
-    ask: q.ask,
-    answer: q.answer,
-    at: q.answeredAt,
-    repo: f.repo
-  })));
-}
-function answerKey(host, session, id) {
-  return `${host}:${session}:${id}`;
-}
-function historyStart(files, now) {
-  return files.reduce((start, f) => Math.min(start, f.created), now);
-}
-function isEarlierShown(start, now) {
-  return now - start >= BASELINE_MS;
-}
-function historyFolder(env) {
-  const state = env.XDG_STATE_HOME?.trim() || (env.HOME?.trim() ? `${env.HOME.trim()}/.local/state` : "");
-  return state ? `${state.replace(/\/+$/, "")}/inbox/questions` : null;
+var followed = new Map;
+async function followCommandRows(store, key, s, log) {
+  if (!hasCommandRows(s))
+    return;
+  const facts = JSON.stringify([
+    Object.entries(s.lastActions).flatMap(([row, a]) => a.commandId ? [[row, a.commandId, a.action, a.delivery]] : []),
+    s.ledger.closed.flatMap((c) => c.commandId ? [[c.id, c.commandId, c.doneNotification]] : [])
+  ]);
+  if (followed.get(key) === facts)
+    return;
+  try {
+    await store.update((current) => remoteCommandState(current, s));
+    followed.set(key, facts);
+  } catch (err) {
+    log(`inbox: the command log could not follow the session: ${err instanceof Error ? err.message : err}`);
+  }
 }
 
-// ../core/runtime/history-store.ts
-var caches = new Map;
-var repos = new Map;
-function cacheOf(folder) {
-  const known = caches.get(folder);
-  if (known)
-    return known;
-  const made = { files: new Map, index: null, isSeeded: false };
-  caches.set(folder, made);
-  return made;
-}
-var parsed = (text) => {
-  try {
-    return upgradeHistoryFile(JSON.parse(text));
-  } catch {
-    return null;
-  }
-};
-async function readHistory(place) {
-  const cache = cacheOf(place.folder);
-  const listed = (await place.fs.list(place.folder)).filter((e) => e.name.endsWith(".json"));
-  const names = new Set(listed.map((e) => e.name));
-  for (const name of cache.files.keys())
-    if (!names.has(name))
-      cache.files.delete(name);
-  await Promise.all(listed.map(async (e) => {
-    if (cache.files.get(e.name)?.mtimeMs === e.mtimeMs)
-      return;
-    const text = await place.fs.read(`${place.folder}/${e.name}`).catch(() => null);
-    cache.files.set(e.name, { mtimeMs: e.mtimeMs, file: text === null ? null : parsed(text) });
-  }));
-  return [...cache.files.values()].flatMap((x) => x.file ? [x.file] : []);
-}
-var DAY_MS4 = 24 * 60 * 60000;
-function indexOf(place, files, now) {
-  const cache = cacheOf(place.folder);
-  const fileTimes = [...cache.files.entries()].map(([name, x]) => `${name}@${x.mtimeMs}`);
-  const said = [Math.floor(now / DAY_MS4), ...fileTimes].join("|");
-  if (cache.index?.said === said)
-    return cache.index.index;
-  const index = answerIndex(historyDocs(files, now));
-  cache.index = { said, index };
-  return index;
-}
-var parentOf = (path) => path.replace(/\/+[^/]*\/*$/, "") || "/";
-var baseName2 = (path) => path.replace(/\/+$/, "").split("/").pop() ?? "";
-function resolved(from, to) {
-  if (to.startsWith("/"))
-    return to;
-  const parts = from.split("/");
-  for (const part of to.split("/")) {
-    if (part === "..")
-      parts.pop();
-    else if (part && part !== ".")
-      parts.push(part);
-  }
-  return parts.join("/") || "/";
-}
-function repoName(fs, folder) {
-  const known = repos.get(folder);
-  if (known)
-    return known;
-  const found = findRepo(fs, folder).catch(() => null);
-  repos.set(folder, found);
-  return found;
-}
-async function findRepo(fs, folder) {
-  let dir = folder.replace(/\/+$/, "");
-  for (let depth = 0;depth < 40 && dir; depth++) {
-    const link = await fs.read(`${dir}/.git`).catch(() => null);
-    const gitdir = link?.match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
-    if (gitdir) {
-      const linked = resolved(dir, gitdir);
-      const common = await fs.read(`${linked}/commondir`).catch(() => null);
-      const root = common ? resolved(linked, common.trim()) : linked;
-      return baseName2(root) === ".git" ? baseName2(parentOf(root)) : baseName2(root).replace(/\.git$/, "");
-    }
-    if (await fs.read(`${dir}/.git/HEAD`).catch(() => null) !== null)
-      return baseName2(dir);
-    const up = parentOf(dir);
-    if (up === dir)
-      break;
-    dir = up;
-  }
-  return null;
-}
-async function writeHistory(place, id, s, now) {
-  const path = `${place.folder}/${historyFileName(place.host, id)}`;
-  const previous = parsed(await place.fs.read(path).catch(() => ""));
-  const isNothingToWrite = !previous && !s.ledger.closed.some((c) => c.item?.kind === "question");
-  if (isNothingToWrite)
-    return;
-  const repo = s.place?.folder ? await repoName(place.fs, s.place.folder) : null;
-  const next = questionHistory(previous, s, { host: place.host, session: id, repo }, now);
-  if (isHistoryChanged(previous, next))
-    await place.fs.write(path, JSON.stringify(next));
-}
-async function seeded(place, now) {
-  const cache = cacheOf(place.folder);
-  if (cache.isSeeded)
-    return;
-  const listed = await place.fs.list(place.folder);
-  if (!listed.some((e) => e.name.startsWith(`${place.host}-`)))
-    for (const { id, session } of await place.keptSessions())
-      await writeHistory(place, id, session, now);
-  cache.isSeeded = true;
-}
-function addedQuestions(before, after) {
-  const known = new Set([...before.ledger.items, ...before.ledger.closed].map((x) => x.id));
-  return after.ledger.items.filter((i) => i.kind === "question" && !i.earlier && !known.has(i.id));
-}
-function isHistoryStepNeeded(before, after) {
-  return before.ledger.closed !== after.ledger.closed || addedQuestions(before, after).length > 0;
-}
-async function historyStep(place, id, before, after, now) {
-  if (!place || !isHistoryStepNeeded(before, after))
-    return after;
-  const added = addedQuestions(before, after);
-  const isClosedChanged = before.ledger.closed !== after.ledger.closed;
-  await seeded(place, now).catch(() => {
+// src/command-log.ts
+import { mkdir as mkdir2, readFile, rename, rm, writeFile as writeFile2 } from "fs/promises";
+import { dirname, join as join2 } from "path";
+
+// src/herdr-log.ts
+import { appendFile, mkdir, stat, writeFile } from "fs/promises";
+import { join } from "path";
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join(dir, "herdr.log");
+  return (text) => void (async () => {
+    const size = await stat(path).then((s) => s.size, () => 0);
+    const line = `${new Date().toISOString()} ${text}
+`;
+    await mkdir(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile(path, line) : appendFile(path, line));
+  })().catch(() => {
     return;
   });
-  const tagged = added.length > 0 ? await withEarlier(place, id, after, added, now).catch(() => after) : after;
-  if (isClosedChanged)
-    await writeHistory(place, id, tagged, now).catch(() => {
-      return;
-    });
-  return tagged;
-}
-async function withEarlier(place, id, s, added, now) {
-  const files = await readHistory(place);
-  const index = indexOf(place, files, now);
-  const isShown = isEarlierShown(historyStart(files, now), now);
-  const matches = new Map(added.flatMap((item) => {
-    const match = bestEarlier(index, item, answerKey(place.host, id, item.id));
-    return match ? [[item.id, earlierOf(match, isShown)]] : [];
-  }));
-  if (matches.size === 0)
-    return s;
-  const items = s.ledger.items.map((i) => matches.has(i.id) ? { ...i, earlier: matches.get(i.id) } : i);
-  return { ...s, ledger: { ...s.ledger, items } };
-}
-var RECORD_MATCHES = 3;
-async function recordMatches(place, input, now) {
-  const ask = typeof input.ask === "string" ? input.ask.trim() : "";
-  if (!place || input.kind !== "question" || ask === "")
-    return [];
-  const options = Array.isArray(input.options) ? input.options.filter((o) => typeof o === "string") : [];
-  try {
-    const files = await readHistory(place);
-    if (now - historyStart(files, now) < ROW_MEASUREMENT_MS)
-      return [];
-    return rankedEarlier(indexOf(place, files, now), { ask, options }, "", RECORD_MATCHES).map((m) => m.doc);
-  } catch {
-    return [];
-  }
 }
 
 // ../core/domain/model-text.ts
@@ -12450,11 +12397,11 @@ function matchSent(s, text) {
   const lastActions = s.sent.slice(matchingAt + 1).reduce((actions, later) => sameText(later.text) && later.row !== null ? withUnconfirmed(actions, later.text, later.pressedAt ?? undefined, later.deliveryId) : actions, arrived);
   return {
     state: {
-      ...remoteCommandArrival(s, sent?.deliveryId ?? null),
+      ...s,
       lastActions,
       sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent
     },
-    sentBy: sent ? { press: sent.press } : null
+    sentBy: sent ? { press: sent.press, deliveryId: sent.deliveryId } : null
   };
 }
 function turnStarted(s, at) {
@@ -13633,6 +13580,289 @@ async function runUpdates(host) {
 }
 var NO_CONVERSATION_SCROLL = "this app does not let the inbox scroll its conversation";
 
+// src/command-log.ts
+var changes = orderedKeys();
+var RUNNER = { id: String(process.pid), startedAt: Date.now() };
+async function isRunning(runner) {
+  const pid = Number(runner.id);
+  if (!Number.isSafeInteger(pid) || pid <= 0)
+    return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code !== "ESRCH";
+  }
+}
+function commandsPath(dir, sessionId) {
+  return commandLogPath(join2(dir, "sessions"), sessionId);
+}
+var files = {
+  read: (path) => readFile(path, "utf8").catch(missingAsNull),
+  write: async (path, text) => {
+    await mkdir2(dirname(path), { recursive: true });
+    await writeFile2(path, text);
+  },
+  move: (from, to) => rename(from, to),
+  lock: (path, fn) => changes.run(path, fn)
+};
+function ompCommandStore(dir, sessionId, now, onChange) {
+  return fileCommandStore(files, commandsPath(dir, sessionId), { runner: RUNNER, isRunning }, {
+    now,
+    log: herdrLog(dir),
+    onChange
+  });
+}
+function removeCommands(dir, sessionId) {
+  return rm(commandsPath(dir, sessionId), { force: true });
+}
+
+// ../core/domain/question-history.ts
+var HISTORY_VERSION = 1;
+var DAY_MS3 = 24 * 60 * 60000;
+var HISTORY_KEEP_MS = 180 * DAY_MS3;
+var BASELINE_MS = 7 * DAY_MS3;
+var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
+var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
+function historyFileName(host, session) {
+  return `${host}-${session.replace(/[^\w.-]/g, "_")}.json`;
+}
+function isAnswer(c) {
+  if (c.kind !== "question")
+    return false;
+  if (c.how === "answered")
+    return true;
+  return c.how === "update" && !NOT_AN_ANSWER2.test(c.outcome.trim());
+}
+var keyOf2 = (q) => `${q.id}@${q.askedAt ?? ""}`;
+var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+function questionHistory(previous, s, place, now) {
+  const answered = s.ledger.closed.filter(isAnswer).map((c) => ({
+    id: c.id,
+    ask: c.ask,
+    options: c.item?.options ?? [],
+    askedAt: c.item?.at ?? null,
+    answer: c.outcome,
+    answeredAt: c.at,
+    how: c.how,
+    isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
+    earlier: c.item?.earlier ?? null,
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
+  }));
+  const open = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
+  const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));
+  for (const q of answered)
+    byKey.set(keyOf2(q), q);
+  const questions = [...byKey.values()].filter((q) => !open.has(keyOf2(q)) && now - q.answeredAt <= HISTORY_KEEP_MS).sort((a, b) => a.answeredAt - b.answeredAt);
+  return {
+    version: HISTORY_VERSION,
+    host: place.host,
+    session: place.session,
+    repo: place.repo ?? previous?.repo ?? null,
+    created: previous?.created ?? now,
+    savedAt: now,
+    questions
+  };
+}
+function isHistoryChanged(previous, next) {
+  if (!previous)
+    return next.questions.length > 0;
+  const said = (f) => JSON.stringify([f.repo, f.questions]);
+  return said(previous) !== said(next);
+}
+function upgradeHistoryFile(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const f = raw;
+  if (f.version !== HISTORY_VERSION || !Array.isArray(f.questions) || typeof f.session !== "string")
+    return null;
+  return f;
+}
+function historyDocs(files, now) {
+  return files.flatMap((f) => f.questions.filter((q) => now - q.answeredAt <= HISTORY_KEEP_MS).map((q) => ({
+    key: answerKey(f.host, f.session, q.id),
+    ask: q.ask,
+    answer: q.answer,
+    at: q.answeredAt,
+    repo: f.repo
+  })));
+}
+function answerKey(host, session, id) {
+  return `${host}:${session}:${id}`;
+}
+function historyStart(files, now) {
+  return files.reduce((start, f) => Math.min(start, f.created), now);
+}
+function isEarlierShown(start, now) {
+  return now - start >= BASELINE_MS;
+}
+function inboxStateFolder(env) {
+  const state = env.XDG_STATE_HOME?.trim() || (env.HOME?.trim() ? `${env.HOME.trim()}/.local/state` : "");
+  return state ? `${state.replace(/\/+$/, "")}/inbox` : null;
+}
+function historyFolder(env) {
+  const inbox = inboxStateFolder(env);
+  return inbox ? `${inbox}/questions` : null;
+}
+
+// ../core/runtime/history-store.ts
+var caches = new Map;
+var repos = new Map;
+function cacheOf(folder) {
+  const known = caches.get(folder);
+  if (known)
+    return known;
+  const made = { files: new Map, index: null, isSeeded: false };
+  caches.set(folder, made);
+  return made;
+}
+var parsed = (text) => {
+  try {
+    return upgradeHistoryFile(JSON.parse(text));
+  } catch {
+    return null;
+  }
+};
+async function readHistory(place) {
+  const cache = cacheOf(place.folder);
+  const listed = (await place.fs.list(place.folder)).filter((e) => e.name.endsWith(".json"));
+  const names = new Set(listed.map((e) => e.name));
+  for (const name of cache.files.keys())
+    if (!names.has(name))
+      cache.files.delete(name);
+  await Promise.all(listed.map(async (e) => {
+    if (cache.files.get(e.name)?.mtimeMs === e.mtimeMs)
+      return;
+    const text = await place.fs.read(`${place.folder}/${e.name}`).catch(() => null);
+    cache.files.set(e.name, { mtimeMs: e.mtimeMs, file: text === null ? null : parsed(text) });
+  }));
+  return [...cache.files.values()].flatMap((x) => x.file ? [x.file] : []);
+}
+var DAY_MS4 = 24 * 60 * 60000;
+function indexOf(place, files, now) {
+  const cache = cacheOf(place.folder);
+  const fileTimes = [...cache.files.entries()].map(([name, x]) => `${name}@${x.mtimeMs}`);
+  const said = [Math.floor(now / DAY_MS4), ...fileTimes].join("|");
+  if (cache.index?.said === said)
+    return cache.index.index;
+  const index = answerIndex(historyDocs(files, now));
+  cache.index = { said, index };
+  return index;
+}
+var parentOf = (path) => path.replace(/\/+[^/]*\/*$/, "") || "/";
+var baseName2 = (path) => path.replace(/\/+$/, "").split("/").pop() ?? "";
+function resolved(from, to) {
+  if (to.startsWith("/"))
+    return to;
+  const parts = from.split("/");
+  for (const part of to.split("/")) {
+    if (part === "..")
+      parts.pop();
+    else if (part && part !== ".")
+      parts.push(part);
+  }
+  return parts.join("/") || "/";
+}
+function repoName(fs, folder) {
+  const known = repos.get(folder);
+  if (known)
+    return known;
+  const found = findRepo(fs, folder).catch(() => null);
+  repos.set(folder, found);
+  return found;
+}
+async function findRepo(fs, folder) {
+  let dir = folder.replace(/\/+$/, "");
+  for (let depth = 0;depth < 40 && dir; depth++) {
+    const link = await fs.read(`${dir}/.git`).catch(() => null);
+    const gitdir = link?.match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+    if (gitdir) {
+      const linked = resolved(dir, gitdir);
+      const common = await fs.read(`${linked}/commondir`).catch(() => null);
+      const root = common ? resolved(linked, common.trim()) : linked;
+      return baseName2(root) === ".git" ? baseName2(parentOf(root)) : baseName2(root).replace(/\.git$/, "");
+    }
+    if (await fs.read(`${dir}/.git/HEAD`).catch(() => null) !== null)
+      return baseName2(dir);
+    const up = parentOf(dir);
+    if (up === dir)
+      break;
+    dir = up;
+  }
+  return null;
+}
+async function writeHistory(place, id, s, now) {
+  const path = `${place.folder}/${historyFileName(place.host, id)}`;
+  const previous = parsed(await place.fs.read(path).catch(() => ""));
+  const isNothingToWrite = !previous && !s.ledger.closed.some((c) => c.item?.kind === "question");
+  if (isNothingToWrite)
+    return;
+  const repo = s.place?.folder ? await repoName(place.fs, s.place.folder) : null;
+  const next = questionHistory(previous, s, { host: place.host, session: id, repo }, now);
+  if (isHistoryChanged(previous, next))
+    await place.fs.write(path, JSON.stringify(next));
+}
+async function seeded(place, now) {
+  const cache = cacheOf(place.folder);
+  if (cache.isSeeded)
+    return;
+  const listed = await place.fs.list(place.folder);
+  if (!listed.some((e) => e.name.startsWith(`${place.host}-`)))
+    for (const { id, session } of await place.keptSessions())
+      await writeHistory(place, id, session, now);
+  cache.isSeeded = true;
+}
+function addedQuestions(before, after) {
+  const known = new Set([...before.ledger.items, ...before.ledger.closed].map((x) => x.id));
+  return after.ledger.items.filter((i) => i.kind === "question" && !i.earlier && !known.has(i.id));
+}
+function isHistoryStepNeeded(before, after) {
+  return before.ledger.closed !== after.ledger.closed || addedQuestions(before, after).length > 0;
+}
+async function historyStep(place, id, before, after, now) {
+  if (!place || !isHistoryStepNeeded(before, after))
+    return after;
+  const added = addedQuestions(before, after);
+  const isClosedChanged = before.ledger.closed !== after.ledger.closed;
+  await seeded(place, now).catch(() => {
+    return;
+  });
+  const tagged = added.length > 0 ? await withEarlier(place, id, after, added, now).catch(() => after) : after;
+  if (isClosedChanged)
+    await writeHistory(place, id, tagged, now).catch(() => {
+      return;
+    });
+  return tagged;
+}
+async function withEarlier(place, id, s, added, now) {
+  const files = await readHistory(place);
+  const index = indexOf(place, files, now);
+  const isShown = isEarlierShown(historyStart(files, now), now);
+  const matches = new Map(added.flatMap((item) => {
+    const match = bestEarlier(index, item, answerKey(place.host, id, item.id));
+    return match ? [[item.id, earlierOf(match, isShown)]] : [];
+  }));
+  if (matches.size === 0)
+    return s;
+  const items = s.ledger.items.map((i) => matches.has(i.id) ? { ...i, earlier: matches.get(i.id) } : i);
+  return { ...s, ledger: { ...s.ledger, items } };
+}
+var RECORD_MATCHES = 3;
+async function recordMatches(place, input, now) {
+  const ask = typeof input.ask === "string" ? input.ask.trim() : "";
+  if (!place || input.kind !== "question" || ask === "")
+    return [];
+  const options = Array.isArray(input.options) ? input.options.filter((o) => typeof o === "string") : [];
+  try {
+    const files = await readHistory(place);
+    if (now - historyStart(files, now) < ROW_MEASUREMENT_MS)
+      return [];
+    return rankedEarlier(indexOf(place, files, now), { ask, options }, "", RECORD_MATCHES).map((m) => m.doc);
+  } catch {
+    return [];
+  }
+}
+
 // ../core/domain/session-version.ts
 var SESSION_VERSION = 1;
 function checkVersion(saved) {
@@ -13646,7 +13876,7 @@ function emptyState(sessionId) {
   return { version: SESSION_VERSION, sessionId, ...emptySession(), ui: null };
 }
 function statePath(dir, sessionId) {
-  return join(dir, "sessions", sessionFile(sessionId));
+  return join3(dir, "sessions", sessionFile(sessionId));
 }
 function upgraded(saved, sessionId) {
   checkVersion(saved);
@@ -13654,7 +13884,7 @@ function upgraded(saved, sessionId) {
   return { version: SESSION_VERSION, sessionId, ...upgradeSession(saved), ui };
 }
 async function readSaved(dir, sessionId) {
-  const saved = await readFile(statePath(dir, sessionId), "utf8").catch(missingAsNull);
+  const saved = await readFile2(statePath(dir, sessionId), "utf8").catch(missingAsNull);
   return saved === null ? { state: emptyState(sessionId), isSaved: false } : { state: upgraded(JSON.parse(saved), sessionId), isSaved: true };
 }
 async function readState(dir, sessionId) {
@@ -13664,7 +13894,7 @@ var viewerLeases = memoryViewerStores();
 var updateTails = new Map;
 var exclusiveRuns = exclusiveKeys();
 var madeFolders = new Set;
-var tmpCount = 0;
+var tmpCount2 = 0;
 function inTurn(key, fn) {
   const run = (updateTails.get(key) ?? Promise.resolve()).then(fn);
   const tail = run.then(() => {}, () => {});
@@ -13689,15 +13919,18 @@ async function updateState(dir, sessionId, change, now = Date.now) {
     const changed = await historyStep(questionHistory2, sessionId, current, await change(current), Date.now());
     if (isSaved && changed === current)
       return current;
-    const next = pruned(changed, now(), viewerLeases.peek(sessionId));
-    const folder = join(dir, "sessions");
+    const commands = ompCommandStore(dir, sessionId, now);
+    const log = herdrLog(dir);
+    const next = await movedLegacyCommands(commands, pruned(changed, now(), viewerLeases.peek(sessionId)), log);
+    const folder = join3(dir, "sessions");
     if (!madeFolders.has(folder)) {
-      await mkdir(folder, { recursive: true });
+      await mkdir3(folder, { recursive: true });
       madeFolders.add(folder);
     }
-    const tmp = `${path}.${process.pid}-${++tmpCount}.tmp`;
-    await writeFile(tmp, JSON.stringify(next));
-    await rename(tmp, path);
+    const tmp = `${path}.${process.pid}-${++tmpCount2}.tmp`;
+    await writeFile3(tmp, JSON.stringify(next));
+    await rename2(tmp, path);
+    await followCommandRows(commands, commandsPath(dir, sessionId), next, log);
     return next;
   });
 }
@@ -13705,15 +13938,15 @@ function exclusiveRun(dir, sessionId, fn) {
   return exclusiveRuns.run(statePath(dir, sessionId), fn);
 }
 async function pruneSessions(dir, keep) {
-  const folder = join(dir, "sessions");
+  const folder = join3(dir, "sessions");
   const names = (await readdir(folder).catch(() => [])).filter(isSessionFile);
   if (names.length <= KEPT_SESSIONS)
     return;
   const readable = await Promise.all(names.map(async (name) => {
-    const path = join(folder, name);
+    const path = join3(folder, name);
     try {
-      const { mtimeMs } = await stat(path);
-      upgraded(JSON.parse(await readFile(path, "utf8")), name.slice(0, -".json".length));
+      const { mtimeMs } = await stat2(path);
+      upgraded(JSON.parse(await readFile2(path, "utf8")), name.slice(0, -".json".length));
       return { name, path, mtimeMs };
     } catch {
       return null;
@@ -13723,8 +13956,10 @@ async function pruneSessions(dir, keep) {
     if (updateTails.has(path) || exclusiveRuns.isHeld(path))
       continue;
     try {
-      if ((await stat(path)).mtimeMs === mtimeMs)
-        await unlink(path);
+      if ((await stat2(path)).mtimeMs !== mtimeMs)
+        continue;
+      await unlink(path);
+      await removeCommands(dir, path.slice(folder.length + 1, -".json".length));
     } catch {
       continue;
     }
@@ -13897,23 +14132,23 @@ function styleOf(theme) {
 }
 
 // src/question-history.ts
-import { mkdir as mkdir2, readdir as readdir2, readFile as readFile2, rename as rename2, stat as stat2, writeFile as writeFile2 } from "fs/promises";
-import { dirname, join as join2 } from "path";
+import { mkdir as mkdir4, readdir as readdir2, readFile as readFile3, rename as rename3, stat as stat3, writeFile as writeFile4 } from "fs/promises";
+import { dirname as dirname2, join as join4 } from "path";
 var nodeFs = {
   list: async (folder) => {
     const names = await readdir2(folder).catch(() => []);
     const listed = await Promise.all(names.map(async (name) => {
-      const info = await stat2(join2(folder, name)).catch(() => null);
+      const info = await stat3(join4(folder, name)).catch(() => null);
       return info?.isFile() ? { name, mtimeMs: info.mtimeMs } : null;
     }));
     return listed.filter((x) => x !== null);
   },
-  read: (path) => readFile2(path, "utf8"),
+  read: (path) => readFile3(path, "utf8"),
   write: async (path, text) => {
-    await mkdir2(dirname(path), { recursive: true });
+    await mkdir4(dirname2(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile2(tmp, text);
-    await rename2(tmp, path);
+    await writeFile4(tmp, text);
+    await rename3(tmp, path);
   }
 };
 function questionHistoryPlace(env, dir) {
@@ -13925,7 +14160,7 @@ function questionHistoryPlace(env, dir) {
     folder,
     host: "omp",
     keptSessions: async () => {
-      const names = (await readdir2(join2(dir, "sessions")).catch(() => [])).filter(isSessionFile);
+      const names = (await readdir2(join4(dir, "sessions")).catch(() => [])).filter(isSessionFile);
       const read = await Promise.all(names.map(async (name) => {
         const id = name.slice(0, -".json".length);
         const session = await readState(dir, id).catch(() => null);
@@ -14713,8 +14948,8 @@ function activityHandlers(context, sessions) {
 
 // src/host-presses.ts
 import { watch } from "fs";
-import { appendFile, lstat, mkdir as mkdir3, readdir as readdir3, readFile as readFile3, rename as rename3, rm, stat as stat3, writeFile as writeFile3 } from "fs/promises";
-import { dirname as dirname2, join as join3 } from "path";
+import { lstat, mkdir as mkdir5, readdir as readdir3, readFile as readFile4, rename as rename4, rm as rm2, stat as stat4, writeFile as writeFile5 } from "fs/promises";
+import { dirname as dirname3, join as join5 } from "path";
 import { fileURLToPath } from "url";
 
 // ../core/remote/herdr-press-file.ts
@@ -14834,11 +15069,15 @@ function pressFile(text) {
 }
 
 // ../core/runtime/held-sends.ts
-function dueRows(s, now) {
-  return Object.entries(s.lastActions).filter(([, a]) => a.delivery?.state === "held" && a.delivery.until <= now && (!a.commandId || s.remoteCommands[a.commandId]?.state === "applied")).map(([id]) => id);
+async function appliedIn(host, s) {
+  return hasCommandRows(s) ? appliedCommands(host.commands, s) : new Set;
+}
+function dueRows(s, now, applied) {
+  return Object.entries(s.lastActions).filter(([, a]) => a.delivery?.state === "held" && a.delivery.until <= now && (!a.commandId || applied.has(a.commandId))).map(([id]) => id);
 }
 async function releaseHeldSends(host, current) {
-  const due = dueRows(current ?? await host.read(), await host.now());
+  const s = current ?? await host.read();
+  const due = dueRows(s, await host.now(), await appliedIn(host, s));
   for (const id of due)
     await releaseOne(host, id, false);
 }
@@ -14859,6 +15098,7 @@ async function releaseOne(host, id, isEarly) {
   let attempt = null;
   const attemptId = host.newId();
   let startedState;
+  const applied = await appliedIn(host, await host.read());
   const started = host.update(async (s) => {
     attempt = null;
     const last = s.lastActions[id];
@@ -14866,7 +15106,7 @@ async function releaseOne(host, id, isEarly) {
     const now = await host.now();
     if (!last || held?.state !== "held" || held.until > now && !isEarly)
       return s;
-    if (last.commandId && s.remoteCommands[last.commandId]?.state !== "applied")
+    if (last.commandId && !applied.has(last.commandId))
       return s;
     await host.prepare?.(s);
     const deliveryId = last.commandId ? `${last.commandId}:send` : attemptId;
@@ -14909,7 +15149,9 @@ async function releaseOne(host, id, isEarly) {
     return;
   await confirmRemoteDelivery(host, startedState, sending.deliveryId);
   const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId).catch((err) => ({ state: "unconfirmed", reason: err instanceof Error ? err.message : String(err) }));
+  let carried = { ids: [], arrived: false };
   await host.update((s) => {
+    carried = attemptCommands(s, sending.deliveryId, outcome);
     const after = completedAttempt(s, sending.deliveryId, outcome);
     if (outcome.state === "unconfirmed")
       return { ...after, lastActions: withUnconfirmed(after.lastActions, sending.text, sending.at, sending.deliveryId) };
@@ -14924,23 +15166,25 @@ async function releaseOne(host, id, isEarly) {
       ledger: isRowFailed && last.kind === "mark" ? reopenOnFailure(after.ledger, id, sending.at) : after.ledger
     };
   });
+  await saveDeliveryOutcome(host.commands, carried, sending.deliveryId, outcome);
 }
 
 // ../core/runtime/host-press.ts
 async function wakeAfterSettle(host, current) {
+  if (hasCommandRows(current ?? await host.read()))
+    await recoverStrandedCommands(host);
   await releaseHeldSends(host, current);
   await wakeForDone(host);
 }
 async function wakeForDone(host, current) {
-  const check = async (s) => doneWake({
-    ...s.ledger,
-    closed: s.ledger.closed.filter((c) => !c.commandId || s.remoteCommands[c.commandId]?.state === "applied")
-  }, {
+  const first = current ?? await host.read();
+  const applied = hasCommandRows(first) ? await appliedCommands(host.commands, first) : new Set;
+  const check = async (s) => doneWake({ ...s.ledger, closed: s.ledger.closed.filter((c) => !c.commandId || applied.has(c.commandId)) }, {
     now: await host.now(),
     windowMs: host.settleWindowMs,
     isTurnRunning: s.presence.isTurnRunning
   });
-  if (!await check(current ?? await host.read()))
+  if (!await check(first))
     return;
   let attempt = null;
   const attemptId = host.newId();
@@ -14996,7 +15240,9 @@ async function wakeForDone(host, current) {
     return;
   await confirmRemoteDelivery(host, startedState, sending.deliveryId);
   const outcome = await host.deliver(await host.read(), sending.text, sending.deliveryId).catch((err) => ({ state: "unconfirmed", reason: err instanceof Error ? err.message : String(err) }));
+  let carried = { ids: [], arrived: false };
   await host.update((s) => {
+    carried = attemptCommands(s, sending.deliveryId, outcome);
     const after = completedAttempt(s, sending.deliveryId, outcome);
     if (outcome.state === "unconfirmed")
       return { ...after, lastActions: withUnconfirmed(after.lastActions, sending.text, undefined, sending.deliveryId) };
@@ -15006,6 +15252,7 @@ async function wakeForDone(host, current) {
     const lastActions = woken.reduce((actions, c) => withFailure(actions, [c.id], c.at, outcome.reason, sending.deliveryId), after.lastActions);
     return { ...after, lastActions, ledger: refuseDoneNotification(after.ledger, sending.deliveryId, outcome.reason) };
   });
+  await saveDeliveryOutcome(host.commands, carried, sending.deliveryId, outcome);
 }
 function withoutCheck(s, check) {
   const result = check ? s.lastActions[check.rowId]?.result : undefined;
@@ -15085,7 +15332,12 @@ async function startPress(host, p, isStale, holds, commandId) {
     send: async (e, deliveryId) => {
       try {
         const outcome = await host.deliver(await host.read(), e.text, deliveryId);
-        await host.update((s) => completedAttempt(s, deliveryId, outcome));
+        let carried = { ids: [], arrived: false };
+        await host.update((s) => {
+          carried = attemptCommands(s, deliveryId, outcome);
+          return completedAttempt(s, deliveryId, outcome);
+        });
+        await saveDeliveryOutcome(host.commands, carried, deliveryId, outcome);
         return outcome.state === "accepted" ? { state: "accepted" } : outcome;
       } catch (err) {
         return { state: "unconfirmed", reason: err instanceof Error ? err.message : String(err) };
@@ -15128,7 +15380,7 @@ async function startPress(host, p, isStale, holds, commandId) {
     };
   await host.update(async (saved) => {
     note = isStale ? "stale" : null;
-    Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined });
+    Object.assign(pressed, { r: undefined, at: undefined, deliveryId: undefined, undone: undefined });
     const s = withoutCheck(withHolds(saved, holds), check);
     if (note)
       return s;
@@ -15141,9 +15393,9 @@ async function startPress(host, p, isStale, holds, commandId) {
     const firstSend = r.effects.find((e) => e.kind === "send");
     const deliveryId = firstSend ? commandId ? `${commandId}:send` : host.newId() : undefined;
     const pressLasts = firstSend && deliveryId ? withDeliveryId(r.lasts, Object.keys(r.lasts), at, firstSend.text, deliveryId) : r.lasts;
-    const undone = !isPrPress(p) && p.action === "undo" ? cancelRemoteCommand(s, rowId) : s;
+    const undoneId = !isPrPress(p) && p.action === "undo" ? undoneCommand(s, rowId) : undefined;
     const next = {
-      ...undone,
+      ...s,
       ledger: commandId && p.action === "done" ? {
         ...r.ledger,
         closed: r.ledger.closed.map((c) => c.id === rowId && c.at === at ? { ...c, commandId } : c)
@@ -15151,7 +15403,7 @@ async function startPress(host, p, isStale, holds, commandId) {
       lastActions: withLasts(s.lastActions, commandId ? Object.fromEntries(Object.entries(pressLasts).map(([id, last]) => [id, { ...last, commandId }])) : pressLasts, r.drop),
       told: r.reopenedId ? { ...s.told, closed: s.told.closed.filter((id) => id !== r.reopenedId) } : s.told
     };
-    Object.assign(pressed, { r, at, deliveryId });
+    Object.assign(pressed, { r, at, deliveryId, undone: undoneId && { id: undoneId, before: s } });
     if (!firstSend || !deliveryId)
       return next;
     return {
@@ -15178,6 +15430,11 @@ async function startPress(host, p, isStale, holds, commandId) {
   });
   const r = pressed.r;
   const at = pressed.at;
+  const undone = pressed.undone;
+  if (r && undone && host.commands)
+    await host.commands.update((log) => cancelledCommand(remoteCommandState(log, undone.before), undone.id)).catch(() => {
+      return;
+    });
   if (!r || at === undefined)
     return {
       effects: null,
@@ -15213,12 +15470,6 @@ var LIFETIME_MS = 24 * 60 * 60000;
 var MAX_COMMANDS = 128;
 var MAX_COMMAND_BYTES = 128000;
 var OUTCOME_RESERVE_BYTES = 4096;
-function newRevision(host) {
-  const id = host.newId();
-  if (!/^[\w-]{1,128}$/.test(id))
-    throw new Error("The command revision is invalid.");
-  return id;
-}
 function remoteRowVersion(s, id) {
   if (id === "goal") {
     const overview = s.ledger.overview;
@@ -15256,12 +15507,11 @@ async function remoteRowDigest(s, id) {
 async function matchesRow(s, command) {
   return command.expected === remoteRowVersion(s, command.press.id) || command.expected === await remoteRowDigest(s, command.press.id);
 }
-async function requireDurableCommand(host, id, expected, floor) {
+async function requireDurableWrite(host, seq, issuedAt) {
   if (!host.readDurable)
     throw new Error("This host cannot confirm saved commands.");
   const durable = await host.readDurable();
-  const saved = durable.remoteCommands[id];
-  if (!saved || JSON.stringify(saved) !== JSON.stringify(expected) || (durable.remoteCommandFloor ?? 0) < floor)
+  if ((durable.commandWrite?.seq ?? 0) < seq || (durable.remoteCommandFloor ?? 0) < issuedAt)
     throw new Error("The command could not be confirmed saved. Nothing was sent.");
 }
 var rejected = (error) => ({
@@ -15304,11 +15554,29 @@ function fits(commands) {
   const count = Object.keys(commands).length;
   return count <= MAX_COMMANDS && new TextEncoder().encode(JSON.stringify(commands)).byteLength + count * OUTCOME_RESERVE_BYTES <= MAX_COMMAND_BYTES;
 }
-async function applyRemoteCommand(host, command, sessionId) {
+var done = (outcome) => ({ is: "done", outcome });
+async function settled(host, store, command, outcome) {
+  if (outcome.error || outcome.isUnconfirmed)
+    await host.update((s) => blockRemoteDeferred(s, command.id, command.press.id, "This action could not be confirmed saved.")).catch(() => {
+      return;
+    });
+  const s = await host.read();
+  await store.update((log) => {
+    const c = log.commands[command.id];
+    if (!c)
+      return log;
+    const state = outcome.isUnconfirmed ? "uncertain" : outcome.error ? "failed" : outcome.note === "stale" ? "stale" : "applied";
+    return remoteCommandState(withRecord(log, command.id, { ...c, state, error: outcome.error?.slice(0, 256) ?? null, runner: null }), s);
+  });
+  return outcome;
+}
+async function startRemoteCommand(host, command, sessionId) {
   if (!Number.isSafeInteger(command.issuedAt) || command.issuedAt < 0 || !/^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(command.id))
-    return rejected("The command identity or time is invalid.");
-  if (!host.readDurable || command.session !== sessionId)
-    return rejected("This command belongs to another session or cannot be saved.");
+    return done(rejected("The command identity or time is invalid."));
+  const store = host.commands;
+  if (!host.readDurable || !store || command.session !== sessionId)
+    return done(rejected("This command belongs to another session or cannot be saved."));
+  await recoverStrandedCommands(host);
   const now = await host.now();
   const time = Number.parseInt(command.id.split("-")[0], 36);
   const validTime = time === command.issuedAt && command.issuedAt <= now + 30000 && now - command.issuedAt < LIFETIME_MS;
@@ -15316,32 +15584,31 @@ async function applyRemoteCommand(host, command, sessionId) {
   const fields = Object.fromEntries(Object.entries(command.press).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
   const canonical = JSON.stringify([command.session, command.issuedAt, command.expected, fields]);
   const payload = `sha256-v1:${await digestText(canonical)}`;
-  const revision = newRevision(host);
   let admitted = false;
   let conflict = null;
-  const claimed = await host.update(async (s) => {
+  const s = await host.read();
+  const claimed = await store.update(async (saved) => {
     admitted = false;
     conflict = null;
-    const existing = s.remoteCommands[command.id];
+    const log = remoteCommandState(withLegacy(saved, s), s);
+    const existing = log.commands[command.id];
     if (existing) {
       const same = existing.payload === payload || existing.payload === rawPayload;
       if (!same)
         conflict = "This command identity already names a different action.";
       if (same && existing.state === "accepted" && !validTime)
-        return {
-          ...s,
-          remoteCommands: {
-            ...s.remoteCommands,
-            [command.id]: { ...existing, state: "expired", error: "This request expired before execution.", revision }
-          }
-        };
+        return withRecord(log, command.id, {
+          ...existing,
+          state: "expired",
+          error: "This request expired before execution."
+        });
       admitted = same && existing.state === "accepted";
-      return s;
+      return log;
     }
-    let floor = s.remoteCommandFloor ?? 0;
+    let floor = log.floor;
     if (!Number.isSafeInteger(floor) || floor < 0)
       throw new Error("The saved command cutoff is invalid.");
-    const kept = { ...s.remoteCommands };
+    const kept = { ...log.commands };
     const drop = (id) => {
       const record = kept[id];
       const at = issuedAt(id, record);
@@ -15362,7 +15629,6 @@ async function applyRemoteCommand(host, command, sessionId) {
       timeWasValid: validTime,
       issuedAt: command.issuedAt,
       acceptedAt: now,
-      revision,
       state: expired ? "expired" : !supported ? "refused" : stale ? "stale" : "accepted",
       error: expired ? "This request is outside retained history. Delivery cannot be confirmed." : !supported ? "This remote action is not supported." : stale ? "This item changed before the action." : null,
       row: command.press.id,
@@ -15384,81 +15650,59 @@ async function applyRemoteCommand(host, command, sessionId) {
         throw new Error("The refusal cannot fit the reserved receipt slot.");
     }
     admitted = record.state === "accepted";
-    return { ...s, remoteCommandFloor: floor, remoteCommands: { ...kept, [command.id]: record } };
+    return { ...log, floor, commands: { ...kept, [command.id]: record } };
   });
   if (conflict)
-    return rejected(conflict);
-  const record = claimed.remoteCommands[command.id];
+    return done(rejected(conflict));
+  const record = claimed.commands[command.id];
   if (!record)
-    return rejected("The command was not accepted.");
-  await requireDurableCommand(host, command.id, record, claimed.remoteCommandFloor ?? 0);
+    return done(rejected("The command was not accepted."));
   if (!admitted)
-    return {
+    return done({
       ...rejected(record.error ?? "This command was already accepted; its outcome is retained."),
       note: record.state === "stale" ? "stale" : null
-    };
-  const executionRevision = newRevision(host);
+    });
   let executing = false;
-  const execution = await host.update((s) => {
-    executing = s.remoteCommands[command.id]?.state === "accepted";
-    if (!executing)
-      return s;
-    return {
-      ...s,
-      remoteCommands: {
-        ...s.remoteCommands,
-        [command.id]: { ...s.remoteCommands[command.id], revision: executionRevision, state: "attempting" }
-      }
-    };
+  await store.update((log) => {
+    const c = log.commands[command.id];
+    executing = c?.state === "accepted";
+    return c && executing ? withRecord(log, command.id, { ...c, state: "attempting", runner: store.runner }) : log;
   });
   if (!executing)
-    return rejected("This command is already running or has an uncertain outcome.");
-  await requireDurableCommand(host, command.id, execution.remoteCommands[command.id], execution.remoteCommandFloor ?? 0);
-  let started = false;
-  const durableHost = {
+    return done(rejected("This command is already running or has an uncertain outcome."));
+  let isStarted = false;
+  const stamped = {
     ...host,
     update: async (change) => {
-      const nextRevision = newRevision(host);
+      let seq = 0;
       const changed = await host.update(async (s) => {
-        if (!started && !await matchesRow(s, command))
+        if (!isStarted && !await matchesRow(s, command))
           throw new Error("This item changed before the action.");
-        const next = await change(s);
+        const next = withoutLegacy(await change(s));
+        seq = (s.commandWrite?.seq ?? 0) + 1;
         return {
           ...next,
           heldRows: s.heldRows,
           shownSince: s.shownSince,
-          remoteCommands: {
-            ...next.remoteCommands,
-            [command.id]: { ...next.remoteCommands[command.id], revision: nextRevision, state: "attempting" }
-          }
+          commandWrite: { id: command.id, seq },
+          remoteCommandFloor: Math.max(next.remoteCommandFloor ?? 0, command.issuedAt)
         };
       });
-      await requireDurableCommand(host, command.id, changed.remoteCommands[command.id], changed.remoteCommandFloor ?? 0);
-      started = true;
+      await requireDurableWrite(host, seq, command.issuedAt);
+      for (const send of changed.sent)
+        if (send.phase === "attempting" && send.deliveryId && send.commandIds?.includes(command.id))
+          await confirmRemoteDelivery({ readDurable: host.readDurable, commands: store }, changed, send.deliveryId);
+      isStarted = true;
       return changed;
     }
   };
-  let outcome;
-  try {
-    outcome = await press2(durableHost, command.press, false, { ...NO_HOLDS, shownSince: now }, command.id);
-  } catch (error) {
-    outcome = rejected(error instanceof Error ? error.message : "Command outcome is uncertain.");
-  }
-  const finalRevision = newRevision(host);
-  const result = await host.update((s) => ({
-    ...outcome.error || outcome.isUnconfirmed ? blockRemoteDeferred(s, command.id, "This action could not be confirmed saved.") : s,
-    remoteCommands: {
-      ...s.remoteCommands,
-      [command.id]: {
-        ...s.remoteCommands[command.id],
-        revision: finalRevision,
-        state: outcome.isUnconfirmed ? "uncertain" : outcome.error ? "failed" : outcome.note === "stale" ? "stale" : "applied",
-        error: outcome.error?.slice(0, 256) ?? null
-      }
-    }
-  }));
-  await requireDurableCommand(host, command.id, result.remoteCommands[command.id], result.remoteCommandFloor ?? 0);
-  return outcome;
+  const failed = (error) => rejected(error instanceof Error ? error.message : "Command outcome is uncertain.");
+  const started = await startPress(stamped, command.press, false, { ...NO_HOLDS, shownSince: now }, command.id).catch((error) => failed(error));
+  if (!("finish" in started))
+    return done(await settled(host, store, command, started));
+  const finish = async () => settled(host, store, command, await started.finish().catch(failed));
+  const isHeldUntilRun = host.isDeliveryHeldUntilRun === true && (started.effects?.some((e) => e.kind === "send") ?? false);
+  return isHeldUntilRun ? { is: "waiting", finish } : done(await finish());
 }
 
 // ../core/remote/herdr-app.ts
@@ -15670,7 +15914,7 @@ async function applyViewerUpdate(host, file) {
 async function startHerdrFile(host, file, sessionId = "") {
   if (file.format === 2) {
     if (file.kind === "command")
-      return finished(await applyRemoteCommand(host, file, sessionId));
+      return startRemoteCommand(host, file, sessionId);
     if (file.session !== sessionId)
       return finished(LOOK_OUTCOME);
     await applyViewerUpdate(host, file);
@@ -15822,41 +16066,28 @@ async function startInHerdrApp(run, files, target, bundledFolder, now, log) {
 }
 
 // src/host-presses.ts
-var HERDR_LOG_BYTES = 64 * 1024;
-function herdrLog(dir) {
-  const path = join3(dir, "herdr.log");
-  return (text) => void (async () => {
-    const size = await stat3(path).then((s) => s.size, () => 0);
-    const line = `${new Date().toISOString()} ${text}
-`;
-    await mkdir3(dir, { recursive: true });
-    await (size > HERDR_LOG_BYTES ? writeFile3(path, line) : appendFile(path, line));
-  })().catch(() => {
-    return;
-  });
-}
 var pressFiles = {
   list: (folder) => readdir3(folder),
   read: async (path) => {
-    const problem = pressFileProblem(await stat3(path));
+    const problem = pressFileProblem(await stat4(path));
     if (problem)
       throw new Error(problem);
-    return readFile3(path, "utf8");
+    return readFile4(path, "utf8");
   },
-  move: (from, to) => rename3(from, to),
-  remove: (path) => rm(path, { force: true })
+  move: (from, to) => rename4(from, to),
+  remove: (path) => rm2(path, { force: true })
 };
 var startFiles = {
   kind: (path) => lstat(path).then((s) => s.isSymbolicLink() ? "link" : s.isDirectory() ? "folder" : s.isFile() ? "file" : "other", () => null),
-  read: (path) => readFile3(path, "utf8"),
+  read: (path) => readFile4(path, "utf8"),
   write: async (path, text) => {
-    await mkdir3(dirname2(path), { recursive: true });
-    await writeFile3(path, text);
+    await mkdir5(dirname3(path), { recursive: true });
+    await writeFile5(path, text);
   },
-  makeFolder: async (path) => void await mkdir3(path, { recursive: true }),
-  move: (from, to) => rename3(from, to),
-  remove: (path) => rm(path, { force: true }),
-  removeFolder: (path) => rm(path, { recursive: true, force: true }),
+  makeFolder: async (path) => void await mkdir5(path, { recursive: true }),
+  move: (from, to) => rename4(from, to),
+  remove: (path) => rm2(path, { force: true }),
+  removeFolder: (path) => rm2(path, { recursive: true, force: true }),
   list: async (folder) => (await readdir3(folder, { withFileTypes: true })).filter((e) => e.isFile() || e.isDirectory()).map((e) => e.name)
 };
 async function startOmpInHerdrApp(target, run, log) {
@@ -15864,7 +16095,7 @@ async function startOmpInHerdrApp(target, run, log) {
     return null;
   return startInHerdrApp(run, startFiles, target, bundledHerdrMod(), Date.now(), log);
 }
-var bundledHerdrMod = () => join3(dirname2(fileURLToPath(import.meta.url)), "herdr-mod");
+var bundledHerdrMod = () => join5(dirname3(fileURLToPath(import.meta.url)), "herdr-mod");
 var message4 = (err) => err instanceof Error ? err.message : String(err);
 function ompPresses(target, apply, log) {
   let stopFollowing = null;
@@ -15885,11 +16116,11 @@ function ompPresses(target, apply, log) {
       } catch (err) {
         return log(`Herdr presses not read: ${message4(err)}`);
       }
-      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile3(path, "utf8"), appHome, sessionId, "omp", terminal), (_id, file) => apply(ctx, file), log);
+      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile4(path, "utf8"), appHome, sessionId, "omp", terminal), (_id, file) => apply(ctx, file), log);
       const watchFolder = (wake) => {
         let isStopped = false;
         let watcher = null;
-        mkdir3(folder, { recursive: true }).then(() => {
+        mkdir5(folder, { recursive: true }).then(() => {
           if (isStopped)
             return;
           watcher = watch(folder, () => wake());
@@ -16128,8 +16359,8 @@ function panelCalls(context, sessions, herdrAsk) {
 }
 
 // src/host-sessions.ts
-import { mkdir as mkdir4, readdir as readdir4, rename as rename4, rm as rm2, rmdir, writeFile as writeFile4 } from "fs/promises";
-import { dirname as dirname3, join as join4 } from "path";
+import { mkdir as mkdir6, readdir as readdir4, rename as rename5, rm as rm3, rmdir, writeFile as writeFile6 } from "fs/promises";
+import { dirname as dirname4, join as join6 } from "path";
 
 // ../core/domain/conversation.ts
 var NL7 = `
@@ -16166,10 +16397,10 @@ function flattenConversation(turns) {
 
 // src/commands.ts
 import { constants } from "fs";
-import { access, stat as stat4 } from "fs/promises";
+import { access, stat as stat5 } from "fs/promises";
 function openTarget2(run, target, root, home) {
   return openTarget(run, {
-    stat: (path) => stat4(path).catch(() => null),
+    stat: (path) => stat5(path).catch(() => null),
     isExecutable: (path) => access(path, constants.X_OK).then(() => true, () => false)
   }, target, root, home);
 }
@@ -16181,27 +16412,27 @@ function sessionIdInFile(file) {
 }
 var publishFiles = {
   write: async (path, text) => {
-    await mkdir4(dirname3(path), { recursive: true });
-    await writeFile4(path, text);
+    await mkdir6(dirname4(path), { recursive: true });
+    await writeFile6(path, text);
   },
-  move: (from, to) => rename4(from, to),
-  remove: (path) => rm2(path, { force: true }),
-  removeFolder: (path) => rm2(path, { recursive: true, force: true })
+  move: (from, to) => rename5(from, to),
+  remove: (path) => rm3(path, { force: true }),
+  removeFolder: (path) => rm3(path, { recursive: true, force: true })
 };
 var recordFiles = {
   write: async (path, text) => {
-    await mkdir4(dirname3(path), { recursive: true });
+    await mkdir6(dirname4(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile4(tmp, text);
-    await rename4(tmp, path);
+    await writeFile6(tmp, text);
+    await rename5(tmp, path);
   },
   list: (folder) => readdir4(folder).catch(() => []),
-  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm2(p, { force: true }))),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm3(p, { force: true }))),
   removeFolder: (path) => rmdir(path)
 };
 var statusRecords = (dir, sessionId) => ({
   host: "omp",
-  folder: join4(dir, "overview-calls"),
+  folder: join6(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
@@ -16245,13 +16476,14 @@ function sessionCalls(context) {
           return;
         });
       const s = await readState(dir, id);
+      const commands = await commandsOf(ompCommandStore(dir, id, deps.now), s);
       const now = deps.now();
       const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, {
-        receipts: remoteReceipts(s),
+        receipts: remoteReceipts(commands),
         viewers: remoteViewerReceipts(viewerLeases.peek(id)),
         remoteProtocol: 2,
         remoteActions: REMOTE_ACTIONS,
-        remoteHistoryAfter: s.remoteCommandFloor ?? 0,
+        remoteHistoryAfter: commands.floor,
         host: "omp",
         agent: OMP2.agent,
         sessionId: id,
@@ -16285,6 +16517,7 @@ function sessionCalls(context) {
     return {
       now: deps.now,
       viewers: viewerLeases.of(id, () => reportCounts(id)),
+      commands: ompCommandStore(dir, id, deps.now, () => reportCounts(id)),
       read: () => readState(dir, id),
       readDurable: () => readState(dir, id),
       update: (fn) => change(id, fn),
@@ -16420,12 +16653,15 @@ function turnHandlers(context, sessions) {
     const at = deps.now();
     const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch());
     let notes = [];
+    let arrival;
     const written = await change(id, (s) => {
       const before = finishedReply === null ? s : turnStarted(endedTurn(id, s, finishedReply, at, { hostTasks }), at);
       const r = notePrompt(OMP2, before, text, openPanels.has(id));
       notes = r.notes;
+      arrival = r.sentBy?.deliveryId;
       return r.state;
     });
+    await markArrived(ompCommandStore(dir, id, deps.now, () => reportCounts(id)), arrival);
     if (finishedReply !== null && needsUpdate(written))
       deps.background(runUpdates(updateHostFor(ctx)));
     return notes;
@@ -16643,13 +16879,13 @@ async function copyToClipboard(text) {
   return noClipboardCommand(commands);
 }
 var defaultDeps = {
-  stateDir: (pi) => join5(pi.pi.getAgentDir(), "inbox"),
+  stateDir: (pi) => join7(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
-  isNextBuild: existsSync(join5(dirname4(dirname4(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
-  comparePage: join5(dirname4(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
+  isNextBuild: existsSync(join7(dirname5(dirname5(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join7(dirname5(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -16922,7 +17158,7 @@ function createInbox(pi, deps = defaultDeps) {
     }
   }
   const openHerdrPanel = herdrPanelOpener();
-  const isFile = (path) => stat5(path).then((s) => s.isFile());
+  const isFile = (path) => stat6(path).then((s) => s.isFile());
   pi.registerCommand("inbox", {
     description: INBOX_COMMAND_TEXT,
     handler: async (args, ctx) => {

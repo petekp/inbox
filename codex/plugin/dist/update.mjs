@@ -3,7 +3,7 @@
 // src/update-main.ts
 import { existsSync as existsSync3 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname6, join as join9 } from "node:path";
+import { dirname as dirname7, join as join11 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/cli.ts
@@ -1237,9 +1237,9 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const under = c.running.filter((ch) => ch.subjectId === x.id);
     const shownUnder = under.slice(0, CHILD_ROWS);
     const isMore = under.length > CHILD_ROWS;
-    const isRunning = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
-    const isIdle = x.status === "working" && !isRunning;
-    const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
+    const isRunning2 = x.status === "working" && !c.isHeld(x) && (c.isTurnRunning || under.some(isChildWorking));
+    const isIdle = x.status === "working" && !isRunning2;
+    const isWorkRunning = isRunning2 || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
     const waitsOn = askWords(c.items, c.oldestAskOf(x));
@@ -1249,7 +1249,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       id: x.id,
       depth,
       ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
-      isRunning,
+      isRunning: isRunning2,
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? textBeyondName(x.name, x.text) : null,
@@ -1444,8 +1444,25 @@ function isHeldSend(last) {
 }
 
 // ../core/runtime/remote-command-state.ts
-function remoteCommandState(s) {
-  let commands = s.remoteCommands;
+var EMPTY_LOG = { version: 1, writtenAt: 0, floor: 0, commands: {} };
+function withLegacy(log, s) {
+  const legacy = s.remoteCommands ?? {};
+  const isSessionFloorKept = s.remoteCommands !== void 0 || log.writtenAt === 0;
+  const floor = isSessionFloorKept ? Math.max(log.floor, s.remoteCommandFloor ?? 0) : log.floor;
+  const further = Object.entries(legacy).filter(([id, c]) => {
+    const kept = log.commands[id];
+    return !kept || kept.state === "accepted" && c.state !== "accepted";
+  });
+  if (further.length === 0 && floor === log.floor) return log;
+  return { ...log, floor, commands: { ...log.commands, ...Object.fromEntries(further) } };
+}
+function withoutLegacy(s) {
+  if (!s.remoteCommands) return s;
+  const { remoteCommands: _moved, ...rest } = s;
+  return rest;
+}
+function remoteCommandState(log, s) {
+  let commands = log.commands;
   for (const [row, last] of Object.entries(s.lastActions)) {
     const id = last.commandId;
     const command = id && commands[id];
@@ -1470,11 +1487,26 @@ function remoteCommandState(s) {
     if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
       commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
   }
-  return commands === s.remoteCommands ? s : { ...s, remoteCommands: commands };
+  return commands === log.commands ? log : { ...log, commands };
 }
-function remoteReceipts(s) {
+async function commandsOf(store, s) {
+  return remoteCommandState(withLegacy(store ? await store.read() : EMPTY_LOG, s), s);
+}
+function hasCommandRows(s) {
+  return Object.values(s.lastActions).some((last) => last.commandId !== void 0) || s.ledger.closed.some((c) => c.commandId !== void 0);
+}
+function pendingCommandRows(s) {
+  const rows = Object.entries(s.lastActions).flatMap(([row, last]) => {
+    const delivery = last.delivery;
+    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === void 0 || last.action === "done" && !delivery;
+    return last.commandId && isWaiting ? [row] : [];
+  });
+  const closed = s.ledger.closed.flatMap((c) => c.commandId && !c.doneNotification ? [c.id] : []);
+  return [...rows, ...closed];
+}
+function remoteReceipts(log) {
   return Object.fromEntries(
-    Object.entries(remoteCommandState(s).remoteCommands).map(([id, c]) => [
+    Object.entries(log.commands).map(([id, c]) => [
       id,
       {
         state: c.state,
@@ -2634,8 +2666,8 @@ var SENT_PRESS_KINDS = {
   done: "mark"
 };
 function applyExchangeUpdate(ledger, update, exchange, now, promptAt) {
-  const press2 = exchange.press;
-  const talkedAboutId = press2 && SENT_PRESS_KINDS[press2.action] === "talk" ? press2.id : null;
+  const press = exchange.press;
+  const talkedAboutId = press && SENT_PRESS_KINDS[press.action] === "talk" ? press.id : null;
   return applyUpdate(
     ledger,
     { ...update, closed: update.closed.filter((c) => c.id !== talkedAboutId) },
@@ -3012,19 +3044,19 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
   const out = outAction(last, feedback);
   const isFirstExplanationOut = last?.explanation?.isFirstReply === true && pressing === "explain";
   const isExplanationShown = canScrollConversation && last?.explanation?.replyId !== void 0 && !isFirstExplanationOut;
-  const action = (press2, label, kind, flags = {}) => {
-    const pressAction = actionId(press2);
+  const action = (press, label, kind, flags = {}) => {
+    const pressAction = actionId(press);
     return {
-      press: press2,
-      label: press2.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
+      press,
+      label: press.action !== "type" && isAgain(last, pressAction, pressing === pressAction) ? `${label} again` : label,
       kind,
-      emphasis: flags.isPrimary || press2.action === "address" ? "primary" : press2.action === "type" || press2.action === "discuss" || press2.action === "explain" || press2.action === "show-explanation" || press2.action === "compare" || press2.action === "dismiss" || press2.action === "discard" ? "quiet" : "normal",
-      ...press2.action === "done" ? { icon: "done" } : press2.action === "step" && stepIconKind(steps2[press2.step]) ? { icon: stepIconKind(steps2[press2.step]) } : {},
+      emphasis: flags.isPrimary || press.action === "address" ? "primary" : press.action === "type" || press.action === "discuss" || press.action === "explain" || press.action === "show-explanation" || press.action === "compare" || press.action === "dismiss" || press.action === "discard" ? "quiet" : "normal",
+      ...press.action === "done" ? { icon: "done" } : press.action === "step" && stepIconKind(steps2[press.step]) ? { icon: stepIconKind(steps2[press.step]) } : {},
       isPrimary: flags.isPrimary ?? false,
       isFolded: flags.isFolded ?? false,
-      isFollowUp: FOLLOW_UPS.has(press2.action),
-      ...ACTION_KEYS[press2.action] ? { hotkey: ACTION_KEYS[press2.action] } : {},
-      isOut: out === pressAction || press2.action === "undo" && isUndoOut
+      isFollowUp: FOLLOW_UPS.has(press.action),
+      ...ACTION_KEYS[press.action] ? { hotkey: ACTION_KEYS[press.action] } : {},
+      isOut: out === pressAction || press.action === "undo" && isUndoOut
     };
   };
   if (state.is === "settled")
@@ -3647,11 +3679,9 @@ function rowsInPlace(s, now = Date.now(), viewers = {}) {
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map((c) => ({ id: c.id, at: closedAt(c) }))
   ].flatMap((x) => isShownSince(x.at, s.shownSince) ? [x.id] : []);
-  const pending = Object.values(s.remoteCommands).filter((c) => c.pendingDelivery && !c.deliveryId).map((c) => c.row);
-  return /* @__PURE__ */ new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pending, ...since]);
+  return /* @__PURE__ */ new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pendingCommandRows(s), ...since]);
 }
 function pruned(s, now = Date.now(), viewers = {}) {
-  s = remoteCommandState(s);
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
       ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
@@ -4114,8 +4144,8 @@ function emptySession() {
     pending: [],
     sent: [],
     lastActions: {},
-    remoteCommands: {},
     remoteCommandFloor: 0,
+    commandWrite: null,
     heldRows: [],
     collapsed: {},
     shownSince: null,
@@ -4173,8 +4203,9 @@ function sessionFields(saved, views) {
       phase: x.phase ?? "accepted"
     })),
     lastActions: upgradeLastActions(saved.lastActions ?? {}),
-    remoteCommands: saved.remoteCommands ?? {},
+    ...saved.remoteCommands && { remoteCommands: saved.remoteCommands },
     remoteCommandFloor: saved.remoteCommandFloor ?? 0,
+    commandWrite: saved.commandWrite ?? null,
     ...saved.lastHerdrPress && { lastHerdrPress: saved.lastHerdrPress },
     heldRows: saved.heldRows ?? [],
     collapsed: saved.collapsed ?? {},
@@ -4376,16 +4407,152 @@ async function readViewers(dir, sessionId) {
   return isSaved ? saved : NO_LEASES;
 }
 
-// src/host.ts
-import { appendFile, mkdir as mkdir2, rename as rename4, rm as rm2, stat as stat2, writeFile as writeFile3 } from "node:fs/promises";
-import { existsSync as existsSync2 } from "node:fs";
+// src/command-log.ts
+import { mkdir as mkdir3, readFile as readFile2, rename as rename3, rm as rm2, writeFile as writeFile3 } from "node:fs/promises";
 import { dirname as dirname2, join as join5 } from "node:path";
+
+// ../core/runtime/command-store.ts
+function commandLogPath(folder, sessionId) {
+  return `${folder}/${sessionFile(sessionId).replace(/\.json$/, ".commands.json")}`;
+}
+function isLog(value) {
+  const log = value;
+  return log?.version === 1 && typeof log.writtenAt === "number" && typeof log.floor === "number" && Number.isSafeInteger(log.floor) && log.floor >= 0 && typeof log.commands === "object" && log.commands !== null;
+}
+function parsedLog(text2, now) {
+  if (text2 === null) return { log: EMPTY_LOG, isUnreadable: false };
+  const value = (() => {
+    try {
+      return JSON.parse(text2);
+    } catch {
+      return null;
+    }
+  })();
+  return isLog(value) ? { log: value, isUnreadable: false } : { log: { ...EMPTY_LOG, floor: now }, isUnreadable: true };
+}
+var tmpCount = 0;
+function fileCommandStore(files2, path, process2, opts) {
+  return {
+    runner: process2.runner,
+    isRunning: (runner) => process2.isRunning(runner),
+    read: async () => parsedLog(await files2.read(path), await opts.now()).log,
+    update: async (change) => {
+      const result = await files2.lock(path, async () => {
+        const now = await opts.now();
+        const { log, isUnreadable } = parsedLog(await files2.read(path), now);
+        if (isUnreadable) {
+          const aside = `${path}.unreadable-${now}`;
+          await files2.move(path, aside);
+          opts.log(`inbox: moved an unreadable command log aside to ${aside}`);
+        }
+        const next = await change(log);
+        if (next === log && !isUnreadable) return { log, isChanged: false };
+        const saved = { ...next, writtenAt: Math.max(now, log.writtenAt + 1) };
+        const text2 = JSON.stringify(saved);
+        const tmp = `${path}.${now.toString(36)}-${++tmpCount}.tmp`;
+        await files2.write(tmp, text2);
+        await files2.move(tmp, path);
+        if (await files2.read(path) !== text2) throw new Error("The command log could not be confirmed saved.");
+        return { log: saved, isChanged: true };
+      });
+      if (result.isChanged) await Promise.resolve(opts.onChange?.()).catch(() => void 0);
+      return result.log;
+    }
+  };
+}
+async function movedLegacyCommands(store, s, log) {
+  if (!s.remoteCommands) return s;
+  try {
+    await store.update((current) => withLegacy(current, s));
+  } catch (err) {
+    log(`inbox: the command log could not take the session's commands: ${err instanceof Error ? err.message : err}`);
+    return s;
+  }
+  return withoutLegacy(s);
+}
+var followed = /* @__PURE__ */ new Map();
+async function followCommandRows(store, key, s, log) {
+  if (!hasCommandRows(s)) return;
+  const facts = JSON.stringify([
+    Object.entries(s.lastActions).flatMap(
+      ([row, a]) => a.commandId ? [[row, a.commandId, a.action, a.delivery]] : []
+    ),
+    s.ledger.closed.flatMap((c) => c.commandId ? [[c.id, c.commandId, c.doneNotification]] : [])
+  ]);
+  if (followed.get(key) === facts) return;
+  try {
+    await store.update((current) => remoteCommandState(current, s));
+    followed.set(key, facts);
+  } catch (err) {
+    log(`inbox: the command log could not follow the session: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+// src/herdr-log.ts
+import { appendFile, mkdir as mkdir2, stat, writeFile as writeFile2 } from "node:fs/promises";
+import { join as join4 } from "node:path";
+var HERDR_LOG_BYTES = 64 * 1024;
+function herdrLog(dir) {
+  const path = join4(dir, "herdr.log");
+  return (text2) => void (async () => {
+    const size = await stat(path).then(
+      (s) => s.size,
+      () => 0
+    );
+    const line = `${(/* @__PURE__ */ new Date()).toISOString()} ${text2}
+`;
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
+  })().catch(() => void 0);
+}
+
+// src/command-log.ts
+var RUNNER = { id: String(process.pid), startedAt: Date.now() };
+async function isRunning(runner) {
+  const pid = Number(runner.id);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err.code !== "ESRCH";
+  }
+}
+function commandsPath(dir, sessionId) {
+  return commandLogPath(join5(dir, "sessions"), sessionId);
+}
+var files = {
+  read: (path) => readFile2(path, "utf8").catch(missingAsNull),
+  write: async (path, text2) => {
+    await mkdir3(dirname2(path), { recursive: true });
+    await writeFile3(path, text2);
+  },
+  move: (from, to) => rename3(from, to),
+  lock: (path, fn) => withLock(`${path}.lock`, fn)
+};
+function codexCommandStore(dir, sessionId, now, onChange) {
+  return fileCommandStore(
+    files,
+    commandsPath(dir, sessionId),
+    { runner: RUNNER, isRunning },
+    {
+      now,
+      log: herdrLog(dir),
+      onChange
+    }
+  );
+}
+
+// src/host.ts
+import { mkdir as mkdir4, rename as rename5, rm as rm3, writeFile as writeFile5 } from "node:fs/promises";
+import { existsSync as existsSync2 } from "node:fs";
+import { dirname as dirname3, join as join7 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/state.ts
-import { readFile as readFile2, readdir as readdir2, rename as rename3, stat, unlink as unlink2, writeFile as writeFile2 } from "node:fs/promises";
+import { readFile as readFile3, readdir as readdir2, rename as rename4, stat as stat2, unlink as unlink2, writeFile as writeFile4 } from "node:fs/promises";
 import { homedir as homedir2 } from "node:os";
-import { join as join4 } from "node:path";
+import { join as join6 } from "node:path";
 
 // ../core/domain/session-version.ts
 var SESSION_VERSION = 1;
@@ -4449,8 +4616,8 @@ function upgradeHistoryFile(raw) {
   if (f.version !== HISTORY_VERSION || !Array.isArray(f.questions) || typeof f.session !== "string") return null;
   return f;
 }
-function historyDocs(files, now) {
-  return files.flatMap(
+function historyDocs(files2, now) {
+  return files2.flatMap(
     (f) => f.questions.filter((q) => now - q.answeredAt <= HISTORY_KEEP_MS).map((q) => ({
       key: answerKey(f.host, f.session, q.id),
       ask: q.ask,
@@ -4463,15 +4630,19 @@ function historyDocs(files, now) {
 function answerKey(host, session, id) {
   return `${host}:${session}:${id}`;
 }
-function historyStart(files, now) {
-  return files.reduce((start, f) => Math.min(start, f.created), now);
+function historyStart(files2, now) {
+  return files2.reduce((start, f) => Math.min(start, f.created), now);
 }
 function isEarlierShown(start, now) {
   return now - start >= BASELINE_MS;
 }
-function historyFolder(env) {
+function inboxStateFolder(env) {
   const state = env.XDG_STATE_HOME?.trim() || (env.HOME?.trim() ? `${env.HOME.trim()}/.local/state` : "");
-  return state ? `${state.replace(/\/+$/, "")}/inbox/questions` : null;
+  return state ? `${state.replace(/\/+$/, "")}/inbox` : null;
+}
+function historyFolder(env) {
+  const inbox = inboxStateFolder(env);
+  return inbox ? `${inbox}/questions` : null;
 }
 
 // ../core/runtime/history-store.ts
@@ -4506,12 +4677,12 @@ async function readHistory(place) {
   return [...cache.files.values()].flatMap((x) => x.file ? [x.file] : []);
 }
 var DAY_MS4 = 24 * 60 * 6e4;
-function indexOf(place, files, now) {
+function indexOf(place, files2, now) {
   const cache = cacheOf(place.folder);
   const fileTimes = [...cache.files.entries()].map(([name, x]) => `${name}@${x.mtimeMs}`);
   const said = [Math.floor(now / DAY_MS4), ...fileTimes].join("|");
   if (cache.index?.said === said) return cache.index.index;
-  const index = answerIndex(historyDocs(files, now));
+  const index = answerIndex(historyDocs(files2, now));
   cache.index = { said, index };
   return index;
 }
@@ -4585,9 +4756,9 @@ async function historyStep(place, id, before, after, now) {
   return tagged;
 }
 async function withEarlier(place, id, s, added, now) {
-  const files = await readHistory(place);
-  const index = indexOf(place, files, now);
-  const isShown = isEarlierShown(historyStart(files, now), now);
+  const files2 = await readHistory(place);
+  const index = indexOf(place, files2, now);
+  const isShown = isEarlierShown(historyStart(files2, now), now);
   const matches = new Map(
     added.flatMap((item) => {
       const match = bestEarlier(index, item, answerKey(place.host, id, item.id));
@@ -4677,7 +4848,7 @@ function isPrFetchRunning(s) {
   }
 }
 function statePath(dir, sessionId) {
-  return join4(dir, "sessions", sessionFile(sessionId));
+  return join6(dir, "sessions", sessionFile(sessionId));
 }
 function upgraded(saved, sessionId) {
   checkVersion(saved);
@@ -4718,7 +4889,7 @@ function coveredBefore(heard, person) {
   return heard.promptTurns.at(person === null ? -1 : -2) ?? null;
 }
 async function readSaved(dir, sessionId) {
-  const saved = await readFile2(statePath(dir, sessionId), "utf8").catch(missingAsNull);
+  const saved = await readFile3(statePath(dir, sessionId), "utf8").catch(missingAsNull);
   return saved === null ? { state: emptyState(sessionId), isSaved: false } : { state: upgraded(JSON.parse(saved), sessionId), isSaved: true };
 }
 async function readState(dir, sessionId) {
@@ -4734,10 +4905,17 @@ async function updateState(dir, sessionId, change, now = Date.now) {
     const { state: current, isSaved } = await readSaved(dir, sessionId);
     const changed = await historyStep(questionHistory2, sessionId, current, await change(current), Date.now());
     if (isSaved && changed === current) return current;
-    const next = pruned(changed, now(), (await readViewers(dir, sessionId)).leases);
+    const commands = codexCommandStore(dir, sessionId, now);
+    const log = herdrLog(dir);
+    const next = await movedLegacyCommands(
+      commands,
+      pruned(changed, now(), (await readViewers(dir, sessionId)).leases),
+      log
+    );
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile2(tmp, JSON.stringify(next));
-    await rename3(tmp, path);
+    await writeFile4(tmp, JSON.stringify(next));
+    await rename4(tmp, path);
+    await followCommandRows(commands, commandsPath(dir, sessionId), next, log);
     return next;
   });
 }
@@ -5138,7 +5316,7 @@ var SESSION_LABEL = "inbox.session";
 
 // ../core/view/session-presentation.ts
 var SESSION_FIELDS = Object.keys(emptySession()).filter(
-  (field) => field !== "remoteCommands" && field !== "remoteCommandFloor" && field !== "lastAnswers"
+  (field) => field !== "remoteCommandFloor" && field !== "commandWrite" && field !== "lastAnswers"
 );
 function presentedSession(session) {
   return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
@@ -5377,20 +5555,20 @@ function publishedText(source, session, log) {
     log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
   return trimmed;
 }
-async function publishSession(files, appHome, source, session, log) {
+async function publishSession(files2, appHome, source, session, log) {
   const path = publishedSessionPath(appHome, source.sessionId);
   const temporary = `${path}.${source.writtenAt}-${Math.random().toString(36).slice(2)}.tmp`;
   try {
-    await files.write(temporary, publishedText(source, session, log));
-    await files.move(temporary, path);
+    await files2.write(temporary, publishedText(source, session, log));
+    await files2.move(temporary, path);
   } catch (err) {
-    await files.remove(temporary).catch(() => void 0);
+    await files2.remove(temporary).catch(() => void 0);
     throw err;
   }
 }
-function publishedSession(files, appHome, source, session, log) {
+function publishedSession(files2, appHome, source, session, log) {
   if (!appHome) return Promise.resolve(false);
-  return publishSession(files, appHome, source, session, log).then(
+  return publishSession(files2, appHome, source, session, log).then(
     () => true,
     (err) => {
       log(`Herdr publish failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -5420,27 +5598,13 @@ function codexStore(dir, sessionId, now, onWrite) {
 }
 var publishFiles = {
   write: async (path, text2) => {
-    await mkdir2(dirname2(path), { recursive: true });
-    await writeFile3(path, text2);
+    await mkdir4(dirname3(path), { recursive: true });
+    await writeFile5(path, text2);
   },
-  move: (from, to) => rename4(from, to),
-  remove: (path) => rm2(path, { force: true }),
-  removeFolder: (path) => rm2(path, { recursive: true, force: true })
+  move: (from, to) => rename5(from, to),
+  remove: (path) => rm3(path, { force: true }),
+  removeFolder: (path) => rm3(path, { recursive: true, force: true })
 };
-var HERDR_LOG_BYTES = 64 * 1024;
-function herdrLog(dir) {
-  const path = join5(dir, "herdr.log");
-  return (text2) => void (async () => {
-    const size = await stat2(path).then(
-      (s) => s.size,
-      () => 0
-    );
-    const line = `${(/* @__PURE__ */ new Date()).toISOString()} ${text2}
-`;
-    await mkdir2(dir, { recursive: true });
-    await (size > HERDR_LOG_BYTES ? writeFile3(path, line) : appendFile(path, line));
-  })().catch(() => void 0);
-}
 function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
   const target = herdrTarget(env);
   if (!target) return void 0;
@@ -5449,26 +5613,27 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
     const id = written.sessionId;
     await withLock(`${statePath(dir, id)}.herdr`, async () => {
       const [s, viewers] = await Promise.all([readState(dir, id), readViewers(dir, id)]);
+      const commands = await commandsOf(codexCommandStore(dir, id, now), s);
       const at = now();
       const seq = s.writtenAt ?? at;
       const isPublished = target.kind === "terminal" && await publishedSession(
         publishFiles,
         target.appHome,
         {
-          receipts: remoteReceipts(s),
+          receipts: remoteReceipts(commands),
           viewers: remoteViewerReceipts(viewers.leases),
           remoteProtocol: 2,
           remoteActions: REMOTE_ACTIONS,
-          remoteHistoryAfter: s.remoteCommandFloor ?? 0,
+          remoteHistoryAfter: commands.floor,
           host: "codex",
           agent: CODEX2.agent,
           sessionId: id,
           terminal: target.terminal,
-          writtenAt: Math.max(seq, viewers.writtenAt),
+          writtenAt: Math.max(seq, viewers.writtenAt, commands.writtenAt),
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
           version: "0.6.0",
-          isNextBuild: existsSync2(join5(dirname2(dirname2(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
+          isNextBuild: existsSync2(join7(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
         log
@@ -5484,25 +5649,25 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
 }
 
 // src/question-history.ts
-import { mkdir as mkdir3, readdir as readdir3, readFile as readFile3, rename as rename5, stat as stat3, writeFile as writeFile4 } from "node:fs/promises";
-import { dirname as dirname3, join as join6 } from "node:path";
+import { mkdir as mkdir5, readdir as readdir3, readFile as readFile4, rename as rename6, stat as stat3, writeFile as writeFile6 } from "node:fs/promises";
+import { dirname as dirname4, join as join8 } from "node:path";
 var nodeFs = {
   list: async (folder) => {
     const names = await readdir3(folder).catch(() => []);
     const listed = await Promise.all(
       names.map(async (name) => {
-        const info = await stat3(join6(folder, name)).catch(() => null);
+        const info = await stat3(join8(folder, name)).catch(() => null);
         return info?.isFile() ? { name, mtimeMs: info.mtimeMs } : null;
       })
     );
     return listed.filter((x) => x !== null);
   },
-  read: (path) => readFile3(path, "utf8"),
+  read: (path) => readFile4(path, "utf8"),
   write: async (path, text2) => {
-    await mkdir3(dirname3(path), { recursive: true });
+    await mkdir5(dirname4(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile4(tmp, text2);
-    await rename5(tmp, path);
+    await writeFile6(tmp, text2);
+    await rename6(tmp, path);
   }
 };
 function questionHistoryPlace(env, dir) {
@@ -5513,7 +5678,7 @@ function questionHistoryPlace(env, dir) {
     folder,
     host: "codex",
     keptSessions: async () => {
-      const names = (await readdir3(join6(dir, "sessions")).catch(() => [])).filter(isSessionFile);
+      const names = (await readdir3(join8(dir, "sessions")).catch(() => [])).filter(isSessionFile);
       const read = await Promise.all(
         names.map(async (name) => {
           const id = name.slice(0, -".json".length);
@@ -5573,18 +5738,18 @@ import {
   access,
   copyFile,
   lstat as lstat2,
-  mkdir as mkdir4,
+  mkdir as mkdir6,
   readdir as readdir5,
-  readFile as readFile4,
+  readFile as readFile5,
   readlink as readlink2,
-  rename as rename6,
-  rm as rm3,
+  rename as rename7,
+  rm as rm4,
   rmdir as rmdir2,
   stat as stat6,
   symlink as symlink2,
-  writeFile as writeFile5
+  writeFile as writeFile7
 } from "node:fs/promises";
-import { dirname as dirname5, join as join8 } from "node:path";
+import { dirname as dirname6, join as join10 } from "node:path";
 
 // ../core/domain/status.ts
 var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES|NEXT|SUGGEST)\s*(?::\s*(.*))?$/i;
@@ -6035,23 +6200,23 @@ function recordFileName(at, kind) {
   return `${String(at).padStart(13, "0")}-${kind}.jsonl`;
 }
 async function writeStatusRecord(records, record2) {
-  const { files, folder } = records;
+  const { files: files2, folder } = records;
   const own = `${folder}/${recordsFolderName(records.session)}`;
-  await files.write(`${own}/${recordFileName(record2.at, record2.exchange.kind)}`, `${JSON.stringify(record2)}
+  await files2.write(`${own}/${recordFileName(record2.at, record2.exchange.kind)}`, `${JSON.stringify(record2)}
 `);
-  const names = (await files.list(own)).filter((n) => RECORD_NAME.test(n)).sort();
+  const names = (await files2.list(own)).filter((n) => RECORD_NAME.test(n)).sort();
   const past = names.slice(0, Math.max(0, names.length - RECORDS_PER_SESSION));
-  if (past.length > 0) await files.removeFiles(past.map((n) => `${own}/${n}`));
+  if (past.length > 0) await files2.removeFiles(past.map((n) => `${own}/${n}`));
   if (record2.at - (sweptAt.get(folder) ?? -Infinity) < RECORDS_SWEEP_MS) return;
   sweptAt.set(folder, record2.at);
-  for (const session of await files.list(folder)) {
+  for (const session of await files2.list(folder)) {
     const theirs = `${folder}/${session}`;
     if (theirs === own) continue;
-    const kept = (await files.list(theirs)).filter((n) => RECORD_NAME.test(n));
+    const kept = (await files2.list(theirs)).filter((n) => RECORD_NAME.test(n));
     const lastAt = Math.max(...kept.map((n) => Number(RECORD_NAME.exec(n)[1])));
     if (record2.at - lastAt < RECORDS_KEPT_MS) continue;
-    if (kept.length > 0) await files.removeFiles(kept.map((n) => `${theirs}/${n}`));
-    await files.removeFolder(theirs).catch(() => void 0);
+    if (kept.length > 0) await files2.removeFiles(kept.map((n) => `${theirs}/${n}`));
+    await files2.removeFolder(theirs).catch(() => void 0);
   }
 }
 function attemptOf({ text: text2, report, thrown, ms }, prompt) {
@@ -6256,7 +6421,7 @@ async function runUpdates(host) {
 
 // src/transcript.ts
 import { readdir as readdir4, stat as stat5 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname4, join as join7 } from "node:path";
+import { basename as basename2, dirname as dirname5, join as join9 } from "node:path";
 
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
@@ -6445,17 +6610,17 @@ var shellLines = (command) => {
   return line ? [line] : [];
 };
 var editLines = (patch, cwd) => patchFiles(patch).map((file) => `edited ${resolve2(cwd || "/", file)}`);
-function callLines(p, hasCommandRows, cwd) {
+function callLines(p, hasCommandRows2, cwd) {
   const name = textOf(p.name);
-  if (p.type === "local_shell_call") return hasCommandRows ? [] : shellLines(callCommand(p));
+  if (p.type === "local_shell_call") return hasCommandRows2 ? [] : shellLines(callCommand(p));
   if (p.type === "custom_tool_call" && name === "exec") {
     const input = textOf(p.input);
     const patch = literalValue(PATCH_ARGUMENT.exec(input)?.[1]);
     const command = scriptCommand(input);
-    return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows ? shellLines(command) : []];
+    return [...patch ? editLines(patch, cwd) : [], ...command && !hasCommandRows2 ? shellLines(command) : []];
   }
   if (p.type !== "function_call") return [];
-  if (SHELL_CALLS.has(name)) return hasCommandRows ? [] : shellLines(callCommand(p));
+  if (SHELL_CALLS.has(name)) return hasCommandRows2 ? [] : shellLines(callCommand(p));
   const args = jsonRecord(p.arguments);
   if (name === "apply_patch") return editLines(textOf(args.input ?? args.patch ?? args.command), cwd);
   if (name === "spawn_agent") {
@@ -6592,7 +6757,7 @@ function turnEventOfRow(row) {
 var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
 function turnsOf(rows, cwd) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
-  const hasCommandRows = rows.some((row) => isItem(row, "CommandExecution"));
+  const hasCommandRows2 = rows.some((row) => isItem(row, "CommandExecution"));
   const unran = new Set(unranCalls(rows).lines);
   const turns = [];
   const agentTurn = () => {
@@ -6621,7 +6786,7 @@ function turnsOf(rows, cwd) {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
         turns.push({ role: "agent", text: contentText(p.content), activity: [] });
-      else act(callLines(p, hasCommandRows, cwd));
+      else act(callLines(p, hasCommandRows2, cwd));
     }
   }
   return turns;
@@ -6666,23 +6831,23 @@ async function rolloutsIn(folder, isWanted) {
   return names.sort(byNewest);
 }
 async function newestRollout(codexHome, isWanted) {
-  const sessions = join7(codexHome, "sessions");
+  const sessions = join9(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
-    for (const month of await namesIn(join7(sessions, year), /^\d{2}$/))
-      for (const day of await namesIn(join7(sessions, year, month), /^\d{2}$/)) {
-        const folder = join7(sessions, year, month, day);
+    for (const month of await namesIn(join9(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join9(sessions, year, month), /^\d{2}$/)) {
+        const folder = join9(sessions, year, month, day);
         const [name] = await rolloutsIn(folder, isWanted);
-        if (name !== void 0) return join7(folder, name);
+        if (name !== void 0) return join9(folder, name);
       }
-  const archive = join7(codexHome, "archived_sessions");
+  const archive = join9(codexHome, "archived_sessions");
   const [archived] = await rolloutsIn(archive, isWanted);
-  return archived === void 0 ? null : join7(archive, archived);
+  return archived === void 0 ? null : join9(archive, archived);
 }
 function codexHomeOf(path) {
-  const folder = dirname4(path);
-  if (basename2(folder) === "archived_sessions") return dirname4(folder);
-  const sessions = dirname4(dirname4(dirname4(folder)));
-  return basename2(sessions) === "sessions" ? dirname4(sessions) : null;
+  const folder = dirname5(path);
+  if (basename2(folder) === "archived_sessions") return dirname5(folder);
+  const sessions = dirname5(dirname5(dirname5(folder)));
+  return basename2(sessions) === "sessions" ? dirname5(sessions) : null;
 }
 async function rolloutFor(codexHome, threadId) {
   if (threadId === "") return null;
@@ -6777,22 +6942,22 @@ var OFF = [
   "personality"
 ];
 async function modelHome(dir, personHome) {
-  const auth = join8(personHome, "auth.json");
+  const auth = join10(personHome, "auth.json");
   const hasSignInFile = await access(auth).then(
     () => true,
     () => false
   );
   if (!hasSignInFile) return null;
-  const home = join8(dir, "model-home");
-  const link = join8(home, "auth.json");
+  const home = join10(dir, "model-home");
+  const link = join10(home, "auth.json");
   try {
-    await mkdir4(home, { recursive: true });
+    await mkdir6(home, { recursive: true });
     const isLinked = await readlink2(link).catch(() => null) === auth;
     if (isLinked) return home;
     await keepNewerSignIn(link, auth);
     const made = `${link}.${randomUUID2()}`;
     await symlink2(auth, made);
-    await rename6(made, link);
+    await rename7(made, link);
     return home;
   } catch {
     return null;
@@ -6806,15 +6971,15 @@ async function keepNewerSignIn(link, auth) {
 }
 function codexAsk(exec, cli, dir, personHome) {
   return async (prompt, instructions, _kind, report) => {
-    const work = join8(dir, "exec");
-    const system = join8(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
-    const out = join8(work, `reply-${randomUUID2()}.txt`);
-    await mkdir4(work, { recursive: true });
+    const work = join10(dir, "exec");
+    const system = join10(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
+    const out = join10(work, `reply-${randomUUID2()}.txt`);
+    await mkdir6(work, { recursive: true });
     const home = await modelHome(dir, personHome);
-    if (await readFile4(system, "utf8").catch(() => "") !== instructions) await writeFile5(system, instructions);
+    if (await readFile5(system, "utf8").catch(() => "") !== instructions) await writeFile7(system, instructions);
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
-      await rm3(out, { force: true });
+      await rm4(out, { force: true });
       const r = await exec(
         [
           cli,
@@ -6848,8 +7013,8 @@ function codexAsk(exec, cli, dir, personHome) {
         off = off.filter((f) => f !== unknown);
         continue;
       }
-      const text2 = r.code === 0 ? await readFile4(out, "utf8").catch(() => null) : null;
-      await rm3(out, { force: true });
+      const text2 = r.code === 0 ? await readFile5(out, "utf8").catch(() => null) : null;
+      await rm4(out, { force: true });
       if (text2 !== null) {
         report?.({ model: MODEL });
         return text2;
@@ -6885,18 +7050,18 @@ var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
 );
 var recordFiles = {
   write: async (path, text2) => {
-    await mkdir4(dirname5(path), { recursive: true });
+    await mkdir6(dirname6(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile5(tmp, text2);
-    await rename6(tmp, path);
+    await writeFile7(tmp, text2);
+    await rename7(tmp, path);
   },
   list: (folder) => readdir5(folder).catch(() => []),
-  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm3(p, { force: true }))),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm4(p, { force: true }))),
   removeFolder: (path) => rmdir2(path)
 };
 var statusRecords = (dir, sessionId) => ({
   host: "codex",
-  folder: join8(dir, "overview-calls"),
+  folder: join10(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
@@ -6937,15 +7102,15 @@ var STATUS_REFRESH = "status-refresh";
 async function main() {
   const sessionId = process.argv[2] ?? "";
   const isStatusRefresh = process.argv[3] === STATUS_REFRESH;
-  const pluginRoot = dirname6(dirname6(fileURLToPath2(import.meta.url)));
+  const pluginRoot = dirname7(dirname7(fileURLToPath2(import.meta.url)));
   const dir = dataDir(process.env, pluginRoot);
   useQuestionHistory(questionHistoryPlace(process.env, dir));
   const { cliPath } = await readState(dir, sessionId);
   const cli = cliPath ?? await findCli(process.env, run, process.ppid);
-  const personHome = process.env.CODEX_HOME || join9(homedir3(), ".codex");
+  const personHome = process.env.CODEX_HOME || join11(homedir3(), ".codex");
   const ask = codexAsk(run, cli, dir, personHome);
   const onWrite = herdrOnWrite(process.env, run, dir, Date.now);
-  const records = existsSync3(join9(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
+  const records = existsSync3(join11(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
   else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records, delegateReader(herdrTarget(process.env), run));
 }
