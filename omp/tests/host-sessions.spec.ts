@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { createInbox } from '../src/host'
@@ -264,4 +265,27 @@ test('the folder and branch show from the session’s start, and a checkout duri
   await endAgent('Switched.')
   await settle()
   expect(state().place).toEqual({ folder: '/work', branch: 'feature' })
+})
+
+test('the session omp shows has a registry entry with its counts, which moves to the next session shown and goes at shutdown', async () => {
+  const folder = join(w.dir, 'registry')
+  createInbox(pi(), { ...deps(), registryFolder: folder })
+  await call('session_start', { type: 'session_start' })
+  await record({ kind: 'question', ask: 'Ship it?', options: ['yes', 'no'] })
+  await settle()
+  expect(JSON.parse(readFileSync(join(folder, 'omp-s1.json'), 'utf8'))).toMatchObject({
+    host: 'omp',
+    sessionId: 's1',
+    pid: process.pid,
+    title: null,
+    herdr: null,
+    counts: { needsYou: 1 },
+  })
+
+  await call('session_switch', { type: 'session_switch', reason: 'resume' }, makeCtx('s2'))
+  await settle()
+  expect(readdirSync(folder)).toEqual(['omp-s2.json'])
+
+  await call('session_shutdown', { type: 'session_shutdown' }, makeCtx('s2'))
+  expect(readdirSync(folder)).toEqual([])
 })

@@ -17,23 +17,29 @@ export const BUNDLED_CLI = '/Applications/ChatGPT.app/Contents/Resources/codex-c
 const MAX_ANCESTORS = 8
 
 /**
- * The codex binary that is `startPid` or one of its ancestors, by its full path, or null. A hook's own parent can be a
- * shell or a node process, and Codex 0.169 runs threads in a daemon that outlives the CLI that started it, so the
- * running codex can sit a few levels up.
+ * The codex process that is `startPid` or one of its ancestors, with its binary's full path, or null. A hook's own
+ * parent can be a shell or a node process, and Codex 0.169 runs threads in a daemon that outlives the CLI that started
+ * it, so the running codex can sit a few levels up.
  */
-export async function ancestorCli(exec: Run, startPid: number): Promise<string | null> {
+export async function ancestorCodex(exec: Run, startPid: number): Promise<{ pid: number; cli: string } | null> {
   let pid = startPid
   for (let level = 0; level < MAX_ANCESTORS && pid > 1; level++) {
     const r = await exec(['ps', '-o', 'ppid=,comm=', '-p', String(pid)], { cwd: '/', timeoutMs: 5000 }).catch(
       () => null,
     )
     const match = r && r.code === 0 ? /^\s*(\d+)\s+(.+?)\s*$/.exec(r.stdout) : null
-    if (!match) return null
-    if (/^\/(.*\/)?codex$/.test(match[2]!)) return match[2]!
-    pid = Number(match[1])
+    const [, parent, command] = match ?? []
+    if (!parent || !command) return null
+    if (/^\/(.*\/)?codex$/.test(command)) return { pid, cli: command }
+    pid = Number(parent)
   }
 
   return null
+}
+
+/** The codex binary that is `startPid` or one of its ancestors, by its full path, or null. */
+export async function ancestorCli(exec: Run, startPid: number): Promise<string | null> {
+  return (await ancestorCodex(exec, startPid))?.cli ?? null
 }
 
 /**

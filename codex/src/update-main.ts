@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { findCli } from './cli'
 import { dataDir } from './data-dir'
 import { herdrOnWrite } from './host'
+import { eachOnWrite, registryOnWrite } from './registry'
 import { readState, useQuestionHistory } from './state'
 import { questionHistoryPlace } from './question-history'
 import { run } from './run'
@@ -25,7 +26,10 @@ async function main() {
   const cli = cliPath ?? (await findCli(process.env, run, process.ppid))
   const personHome = process.env.CODEX_HOME || join(homedir(), '.codex')
   const ask = codexAsk(run, cli, dir, personHome)
-  const onWrite = herdrOnWrite(process.env, run, dir, Date.now)
+  const onWrite = eachOnWrite(
+    herdrOnWrite(process.env, run, dir, Date.now),
+    registryOnWrite(process.env, dir, Date.now, null),
+  )
   const records = existsSync(join(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : undefined
   if (isStatusRefresh) await refreshStatus(dir, sessionId, ask, Date.now, onWrite, records)
   else await runUpdates(dir, sessionId, ask, Date.now, onWrite, records, delegateReader(herdrTarget(process.env), run))

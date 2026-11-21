@@ -89,3 +89,33 @@ test('a full store makes room by deleting ended sessions’ saves oldest first, 
   expect(w.stored.get('s:session-1')).toContain('Retry loop never backs off')
   expect(['running-1', 'ended-1', 'ended-2'].filter(id => w.stored.has(`s:${id}`))).toEqual(['running-1', 'ended-2'])
 })
+
+test('each publish writes the conversation’s registry entry with its pid and removes those of Claude Code processes that ended, and the end removes it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { XDG_STATE_HOME: '/state' })
+  w.sessionFiles = filesOf(['other'])
+  w.endedPids = [200]
+  const folder = '/state/inbox/registry'
+  const ended = JSON.stringify({ format: 1, pid: 200, startedAt: 1 })
+  w.written[`${folder}/claude-code-other.json`] = ended
+  w.written[`${folder}/omp-other.json`] = ended
+
+  await firstSave($, clock)
+  expect(JSON.parse(w.written[`${folder}/claude-code-session-1.json`] ?? 'null')).toMatchObject({
+    host: 'claude-code',
+    sessionId: 'session-1',
+    pid: 100,
+    projectFolder: '/tmp/project',
+    title: null,
+    herdr: null,
+  })
+  expect(
+    Object.keys(w.written)
+      .filter(path => path.startsWith(folder))
+      .sort(),
+  ).toEqual([`${folder}/claude-code-session-1.json`, `${folder}/omp-other.json`])
+
+  await $.session.end({ reason: 'other', sessionId: 'session-1' } as never)
+  await clock.settle()
+  expect(Object.keys(w.written).filter(path => path.startsWith(folder))).toEqual([`${folder}/omp-other.json`])
+})

@@ -6,6 +6,7 @@ import type { CommandFiles } from '../../core/runtime/command-store'
 import type { CommandRunner, CommandStore } from '../../core/runtime/remote-command-state'
 import { missingAsNull } from '../../core/view/session-files'
 import { herdrLog } from './herdr-log'
+import { isPidRunning } from './pid'
 import { orderedKeys } from '../../core/runtime/session-host'
 
 /** omp saves each session in one process, so a change to its log waits only for the changes before it here. */
@@ -14,17 +15,8 @@ const changes = orderedKeys()
 /** This process, as the runner of a command. */
 const RUNNER: CommandRunner = { id: String(process.pid), startedAt: Date.now() }
 
-/** Whether the process a runner names still runs. A process this one may not signal still runs. */
-async function isRunning(runner: CommandRunner): Promise<boolean> {
-  const pid = Number(runner.id)
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code !== 'ESRCH'
-  }
-}
+/** Whether the process a runner names still runs. */
+const isRunning = async (runner: CommandRunner) => isPidRunning(Number(runner.id))
 
 /** Where a session's command log is kept: beside its state. */
 export function commandsPath(dir: string, sessionId: string): string {

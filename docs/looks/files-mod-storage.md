@@ -1,0 +1,13 @@
+# Files: the mod's saves, logs and sessions
+
+Part of [the look map](../looks.md#files).
+
+| File | Role |
+| --- | --- |
+| `hooks/mod/mod-command-log.ts` | Mod only. `modCommandStore`: a session's command log in `<state folder>/claude-code/<id>.commands.json`, with changes ordered in process. `mod-saves.ts` deletes it with the conversation's saved session. |
+| `hooks/mod/mod-saves.ts` | Mod only. Saves to the engine store and reads of saved sessions. A save retries while another process holds the store's lock. When a write to a conversation off screen meets the lock through every retry, the changed session is held in memory and tried again in the background, for up to 10 minutes. Later writes and reads of that session start from it, until a newer save of the conversation lands. Every session of the mod shares one store, which the engine caps at 4 MiB of JSON. A saved session keeps at most `SAVED_PR_VIEWS_MAX` characters of PR views: merged and closed PRs go first, then the open PRs read longest ago. The first save of each conversation keeps every running conversation's saved session, and the newest `KEPT_SESSIONS` of the rest. A write the store refuses as full drops the shared PR views no fetch reads and tries again. When it is still full, it deletes the saved sessions of ended conversations, oldest first, and tries once more. A save of the drawn session that still does not fit is logged, and `isLastSaveRefused` tells the `record`, `close` and `order_prs` answers to say the change is not saved. |
+| `hooks/mod/mod-history.ts` | Mod only. The mod's way into the question history, through `$.fs`, `$.env` and the engine store. `withHistory` wraps a change to a saved session in `historyStep`. |
+| `hooks/mod/running-sessions.ts` | Mod only. Which Claude Code conversations run: the `sessions/<pid>.json` files in Claude Code's configuration folder whose process `ps` lists, and `sessionPid`, the one running process whose file names a conversation. |
+| `hooks/mod/mod-store.ts` | Mod only. The engine store's errors: a held lock, which `whileLockHeld` waits out, and a full store. |
+| `hooks/mod/mod-sessions.ts` | Mod only. Which conversation a session write belongs to, and the per-conversation queues for updates and Status calls. The tool fields of the conversation it loads, and the tool answers that use them. |
+| `hooks/mod/mod-registry.ts` | Mod only. The conversation's session registry entry: `writeModRegistry` writes it on each publish, inside Herdr or not, with this process's pid from its `sessions/<pid>.json` file, and `removeModRegistry` removes it as the conversation ends. The engine has no call that moves or removes a file, or makes a folder, so those run `mv`, `rm` and `mkdir`. |

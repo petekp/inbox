@@ -10,7 +10,7 @@ Shared modules are in `core/`. Every host consumes them, directly or through a b
 
 - `core/domain/`: the ledger, the Status, PRs, presses and their messages, the model's prompts and the parsers of its answers, and the client record. It draws nothing and runs no effects.
 - `core/view/`: what the looks draw and the code that decides it: rows, tabs, banners, the Status page, PR blocks, the shared UI controller, timing and motion. The press reducer, the demo session and the saved session's form sit here too, because they read rows and PR blocks.
-- `core/runtime/`: what a host runs through its `SessionHost`: turns, presses, PR fetches, the agent's tools, the Status call records, the question history store, a session's command log, and its viewer leases. The command log holds each remote command a host admitted for the session, by id, with its outcome. Each host keeps it in a file outside the saved session: the mod under the question history's state folder, Codex and omp beside the session's state. A viewer lease is a Herdr look's or companion's report of what it shows a session, renewed by each heartbeat. Each host keeps the leases out of the saved session, so a heartbeat never rewrites it: the mod and omp in process memory, Codex in a file beside the session's state.
+- `core/runtime/`: what a host runs through its `SessionHost`: turns, presses, PR fetches, the agent's tools, the Status call records, the question history store, a session's command log, and its viewer leases. The command log holds each remote command a host admitted for the session, by id, with its outcome. Each host keeps it in a file outside the saved session: the mod under the question history's state folder, Codex and omp beside the session's state. A viewer lease is a Herdr look's or companion's report of what it shows a session, renewed by each heartbeat. Each host keeps the leases out of the saved session, so a heartbeat never rewrites it: the mod and omp in process memory, Codex in a file beside the session's state. The session registry holds one file per running session, `<host>-<id>.json` in `registry/` under the question history's state folder, so another program can find each session without asking its host.
 - `core/remote/`: publishing a session to the Herdr look, the remote commands it delivers, and starting and finding Herdr terminals.
 
 A type-only import may name a type from any layer, since it loads no code. Code in `core/` imports only `core/` and `types/`, type imports included. The Claude Code mod is in `hooks/`: `hooks/register.tsx` wires the engine's events, `hooks/mod/` holds the mod's runtime, and `hooks/pane/` draws the terminal and desktop looks. Codex, omp and the Herdr look never import `hooks/`, and the mod never imports their code. `scripts/structure/imports.mjs` checks these rules. Codex and omp type checking need no generated Claude engine types.
@@ -22,6 +22,7 @@ Every source file in `core/`, `hooks/`, `codex/src`, `omp/src` and `herdr/src` n
 - [Shared modules for Herdr](looks/files-shared-herdr.md)
 - [The shared UI controller](looks/files-shared-controller.md)
 - [The mod](looks/files-mod.md)
+- [The mod's saves, logs and sessions](looks/files-mod-storage.md)
 - [Codex](looks/files-codex.md)
 - [omp](looks/files-omp.md)
 - [The Herdr look](looks/files-herdr.md)
