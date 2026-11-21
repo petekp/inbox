@@ -50,8 +50,8 @@ export function paneRowKeys(
     unlessGuarded,
     sendDraft,
     discardReply,
-    updateTyping,
-  }: Pick<PaneHandlers, 'unlessGuarded' | 'sendDraft' | 'discardReply' | 'updateTyping'>,
+    closeField,
+  }: Pick<PaneHandlers, 'unlessGuarded' | 'sendDraft' | 'discardReply' | 'closeField'>,
 ) {
   const shownLabel = (a: Pick<KeyAction, 'label' | 'variant'>) =>
     actionLabel({ label: a.label, isPrimary: a.variant === 'primary' })
@@ -246,7 +246,7 @@ export function paneRowKeys(
           key: `cancel-${row.id}`,
           label: ROW_COPY.cancel,
           kind: 'view',
-          onPress: () => void updateTyping(t => (t === row.id ? null : t)),
+          onPress: () => void closeField(row.id),
         },
   ]
 

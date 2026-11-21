@@ -4,9 +4,14 @@ import { SETTLED_MS } from '../hooks/timing'
 import { w, world } from './hooks-world'
 import { PANE, SAVED_SESSION } from './hooks-helpers'
 
-test('/clear and /resume switch the inbox to the other conversation, and each keeps its saved items', async ($, on) => {
+test('/clear and /resume switch the inbox to the other conversation, and each keeps its saved items, and the pane does not tint the open question a resume brings back as new', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  let savedUi: { newRows: Record<string, unknown> } | undefined
+  on('state.set', { plugin: 'inbox', key: 'ui' } as const, (_$, e, next) => {
+    savedUi = e.value as typeof savedUi
+    return next(e)
+  })
   const turn = async (text: string) => {
     await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
     await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: text, reason: 'answer' })
@@ -17,6 +22,7 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await turn('add a greeting cli')
   expect(w.stored.has('p:/tmp/project')).toBe(false)
+  w.paneState = { isShown: true, isFocused: true }
   const pane = await $.ui.mount(PANE)
   await pane.press({ key: 'answer-i1-0' })
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
@@ -32,6 +38,7 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
 
   expect(await pane.find({ text: /Name the command greet\?/ })).toBeDefined()
   expect(await pane.find({ text: /Pin the Node version\?/ })).toBeUndefined()
+  expect(savedUi?.newRows).not.toHaveProperty('i2')
 
   await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'resume', session_id: 'session-2' })

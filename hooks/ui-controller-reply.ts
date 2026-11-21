@@ -86,7 +86,7 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
   if (isRepeat || isBlank || isGuardedPress(ui, ui.tab, rowId, by, now)) return withCommands(ui)
   const holds = holdsOf(ui, now)
   const pressId = ui.nextPressId
-  const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now }
+  const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now, by }
   const { [rowId]: _error, ...errors } = ui.errors
   const { [rowId]: _note, ...notes } = ui.notes
   let next: UiState = {
@@ -148,13 +148,15 @@ export function undoKey(ui: UiState, view: SessionView, now: number): UiStep {
 }
 
 /**
- * Whether the person has not moved since `out`: the same tab shows, no field is open, and no input of theirs came after
- * the press. A cursor the controller moved meanwhile, as when the host saved the reply's row as answered, does not count.
+ * Whether the person has not moved since `out`: the same tab shows, no field is open, and no input or press of theirs
+ * came after it, even within the same millisecond. A cursor the controller moved meanwhile, as when the host saved the
+ * reply's row as answered, does not count.
  */
 function hasNotMoved(ui: UiState, out: PressOut): boolean {
   const isQuiet = ui.listInput === null || ui.listInput.last <= out.at
+  const isLastPress = ui.nextPressId === out.pressId + 1
 
-  return ui.tab === out.tab && ui.typing === null && isQuiet
+  return ui.tab === out.tab && ui.typing === null && isQuiet && isLastPress
 }
 
 const isNotSentShown = (view: SessionView, id: string) =>
@@ -191,8 +193,8 @@ export function pressSettled(
     const { [row]: _sent, ...rest } = next.sentReplies
     next = { ...next, sentReplies: isRefused ? rest : { ...rest, [row]: { ...sent, isConfirmed } } }
   }
-  if (out.action === 'undo' && isConfirmed) next = { ...next, restoring: { id: row, at: now } }
-  const restored = selectRestored(next, view)
+  if (out.action === 'undo' && isConfirmed) next = { ...next, restoring: { id: row, at: now, by: out.by } }
+  const restored = selectRestored(next, view, now)
   next = restored.ui
   if (outcome.isDemoSent)
     next = { ...next, demoReplies: [...next.demoReplies, { pressId, dueAt: now + DEMO_REPLY_MS }] }

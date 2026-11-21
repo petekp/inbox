@@ -144,9 +144,14 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect(await pane.find({ key: 'close-pane' })).toBeUndefined()
 })
 
-test('on desktop, the pointer moving over an open row keeps a closed row from folding without selecting that row, until it has been still for FOLD_QUIET_MS', async ($, on) => {
+test('on desktop, the pointer moving over an open row keeps a closed row from folding without selecting that row or saving the pane, until it has been still for FOLD_QUIET_MS', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  let uiWrites = 0
+  on('state.set', { plugin: 'inbox', key: 'ui' } as const, (_$, e, next) => {
+    uiWrites++
+    return next(e)
+  })
   w.surfaces = ['desktop']
   w.ledgerReply = `${LEDGER_REPLY}\nNEW: decide | 3 | Add a --shout flag? | - | no`
   await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
@@ -172,7 +177,10 @@ test('on desktop, the pointer moving over an open row keeps a closed row from fo
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
 
   await clock.advance(SETTLED_MS - 100)
+  const writesBefore = uiWrites
   await pane.pointer({ type: 'enter', x: 5, y: 0, in: 'select-i3' })
+  await clock.settle()
+  expect(uiWrites).toBe(writesBefore)
   await clock.advance(200)
   expect(await pane.find({ key: 'settled-i2' })).toBeDefined()
   expect((await pane.find({ key: 'select-i3' }))?.type).toBe('Client')

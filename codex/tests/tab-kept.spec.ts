@@ -50,7 +50,9 @@ test('what a page keeps reads in a 0.6.0 page as the same tab, cursors, draft an
     statusUnfolded: ['s1'],
     undoSeen: { i1: NOW - 2_000 },
     errors: { i3: { text: 'Could not send.', at: NOW - 100 } },
-    pressesOut: { 4: { pressId: 4, rowId: 'i3', tab: 'needsYou', action: 'explain', at: NOW - 50, isReply: false } },
+    pressesOut: {
+      4: { pressId: 4, rowId: 'i3', tab: 'needsYou', action: 'explain', at: NOW - 50, isReply: false, by: 'click' },
+    },
   }
   const kept = JSON.parse(JSON.stringify(keptOf(ui, false))) as Kept
   assert.ok(kept.version === 1 || kept.version === 2)

@@ -1,17 +1,37 @@
 import type { Timer } from 'claude-code'
-import type { Tab } from '../types'
-import type { ClosedSeen, NewRows, RowRecord } from './arrivals'
 import type { PendingUndoScroll } from './pane-selection'
+import type { DemoSent } from './press-effects'
 import type { ModLook } from './rows'
-import type { ListInput } from './timing'
 import type { HerdrAsk } from './herdr-ask'
+import type { UiState } from './ui-controller-types'
 
 class PaneState {
-  recordedRows: { isDemo: boolean; ids: RowRecord<Tab> } | null = null
-  newRows: NewRows = new Map()
-  closedSeen: ClosedSeen = new Map()
-  /** Counts each time the row record starts over, so a record begun before that records nothing. */
-  rowRecordCount = 0
+  /** The shared controller's events run one batch at a time, each on the state the last batch saved. */
+  uiQueue: Promise<void> = Promise.resolve()
+  /** The one timer the controller asks for. `isRead` when the view changes then, not only a drawn frame. */
+  uiWake: { at: number; isRead: boolean; timer: Timer } | null = null
+  /** The terminal look draws the pane, so the timer keeps its frames and steps while desktop draws beside it. */
+  drawsTerminal = false
+  /** The terminal drew the last frame. A frame due before then waits for that render, so no frame supersedes it. */
+  isTerminalFrameLanded = false
+  /** The pane was asked to open and the controller has not heard yet, so a render draws the open's move. */
+  isOpenUnheard = false
+  /** The load revision of a conversation still loading. Until it ends, the controller sees the pane closed. */
+  loadingRevision: number | null = null
+  /** The last list input, kept out of the saved state so a pointer move writes nothing and redraws nothing. */
+  listInput: UiState['listInput'] = null
+  /**
+   * The lowest id the next press may take. `$.state` starts over on `/clear`, `/resume` and `/branch`, and this does
+   * not, so a late answer from the conversation left never matches a press in the next.
+   */
+  nextPressId = 1
+  /**
+   * The states of other conversations this process showed that hold a draft or a sent reply, by conversation id. The
+   * engine keeps plugin state per session, and `/clear` starts a new one, so they live here.
+   */
+  keptUi: Record<string, { ui: UiState; shownAt: number }> = {}
+  /** The sample's sent messages, by the controller's press id, which the stand-in agent answers when it is due. */
+  demoSends = new Map<number, DemoSent>()
   isInlinePane = false
   isInlineTerminalPane = false
   terminalInlineSize: string | null = null
@@ -25,15 +45,6 @@ class PaneState {
   paneClosesOnEscape = true
   /** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
   fieldWithoutKeys: string | null = null
-  /** The ends of the Undos whose end work has yet to run. */
-  undoEnds = new Set<number>()
-  isUndoLoopRunning = false
-  timedRedrawAt: number | null = null
-  /** The end of the title tint the desktop look last scheduled a redraw for. */
-  tintRedrawAt: number | null = null
-  /** The person's latest run of input on the pane's list, which keeps a row due to fold in place. */
-  listInput: ListInput | null = null
-  foldRedrawAt: number | null = null
   herdrCheckTimer: Timer | null = null
 }
 

@@ -57,7 +57,7 @@ export function panePrRows(
   >,
   { runPress }: Pick<PaneHandlers, 'runPress'>,
 ) {
-  const prPress = (p: PrPress) => (press: UiPressArgument) => runPress(p, press.surface)
+  const prPress = (p: PrPress) => (press: UiPressArgument) => runPress(p, press)
   const prKeyAction = (a: PrAction, row: string): KeyAction => {
     // A failed send's Try again repeats its button's press, so it needs a key of its own.
     const isResend = a.isRetry === true

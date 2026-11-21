@@ -2,13 +2,13 @@ import type { UiPressArgument } from 'claude-code'
 import { rowKeyPlan } from './action-plan'
 import type { AnswerRow, PlannedKey, PlannedOption } from './action-plan'
 import { ACTION_GLYPHS } from './pane-keys'
-import type { KeyAction } from './pane-keys'
+import type { KeyAction, PressVia } from './pane-keys'
 import type { RowPress } from './presses'
 import type { RowView } from './rows'
 
 /** What a row's key actions do when pressed; the mod's engine supplies each. */
 type RowKeyEffects = {
-  runPress: (press: RowPress, surface: UiPressArgument['surface']) => Promise<void>
+  runPress: (press: RowPress, via: PressVia) => Promise<void>
   startTyping: (id: string) => Promise<void>
   discardReply: (id: string) => Promise<void>
   showAllOptions: (id: string) => void
@@ -29,7 +29,7 @@ export function rowKeyActions(
           icon: ACTION_GLYPHS[k.icon],
           emphasis: k.emphasis,
           kind: k.kind,
-          onPress: press => fx.runPress(k.press, press.surface),
+          onPress: press => fx.runPress(k.press, press),
         }
       case 'allOptions':
         return {
@@ -49,7 +49,7 @@ export function rowKeyActions(
           emphasis: a.emphasis,
           isOut: a.isOut,
           ...(hotkey ? { hotkey } : {}),
-          onPress: (press: UiPressArgument) => fx.runPress(p, press.surface),
+          onPress: (press: UiPressArgument) => fx.runPress(p, press),
           ...(icon ? { icon } : {}),
           key: `help-${id}-${p.step}`,
         }
@@ -82,7 +82,7 @@ export function rowKeyActions(
           key: p.action === 'dismiss' && finding ? `drop-${id}` : `${p.action}-${id}`,
           hotkey,
           ...presentation,
-          onPress: press => fx.runPress(p, press.surface),
+          onPress: press => fx.runPress(p, press),
         }
       }
     }
@@ -98,7 +98,7 @@ export function rowKeyActions(
     ...(note ? { note } : {}),
     ...(a.isPrimary ? { variant: 'primary' as const } : {}),
     key: `answer-${id}-${(item?.options ?? []).indexOf(a.press.option)}`,
-    onPress: press => fx.runPress(a.press, press.surface),
+    onPress: press => fx.runPress(a.press, press),
   })
 
   return {

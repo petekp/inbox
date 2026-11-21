@@ -176,7 +176,7 @@ test('the terminal tabs show their words down to the narrowest pane they fit, do
   }
 })
 
-test('a PR that arrives while the Asks tab is empty moves the pane to the PRs tab', async ($, on) => {
+test('a PR that arrives with a failing check while the Asks tab is empty moves the pane to the PRs tab', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -203,7 +203,15 @@ test('a PR that arrives while the Asks tab is empty moves the pane to the PRs ta
         baseRefName: 'main',
         mergeable: 'MERGEABLE',
         reviewDecision: 'REVIEW_REQUIRED',
-        statusCheckRollup: [],
+        statusCheckRollup: [
+          {
+            __typename: 'CheckRun',
+            name: 'test',
+            status: 'COMPLETED',
+            conclusion: 'FAILURE',
+            detailsUrl: 'https://github.com/acme/greet/actions/runs/7/job/1',
+          },
+        ],
       }),
       hold: () => new Promise(r => (release = r)),
     },

@@ -101,6 +101,7 @@ test('a query without a tool_use_id never arms the permission row', async ($, on
   const calls = permissionCalls($)
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
   const lines = sidebarLines().length
   await calls.ask(null)
   await clock.advance(PERMISSION_FALLBACK_DELAY_MS * 2)

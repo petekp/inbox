@@ -3,7 +3,7 @@ import { test } from './test-with-timeout'
 import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/timing'
 import { RUNNING_FRAMES } from '../hooks/help'
 import { w, arrive, arriveFirst, world } from './hooks-world'
-import { BAND, PANE, selectRow, replyKey } from './hooks-helpers'
+import { BAND, PANE, selectRow, replyField, replyKey } from './hooks-helpers'
 
 test('a press whose submit stays pending through a turn reads Queued instead of Not confirmed until the message runs', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -34,14 +34,14 @@ test('a press whose submit stays pending through a turn reads Queued instead of 
   expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
 })
 
-test('a press during a turn reads Queued until its prompt enters, and one that will not enter is undone with Not sent and [Try again]', async ($, on) => {
+test('a press during a turn reads Queued until its prompt enters, a refused reply reopens its field with its words, and a press that will not enter is undone with Not sent and [Try again]', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []
   world($, on, prompts)
   on('ui.focus', () => ({}))
   let drafts: unknown = null
-  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, (_$, e, next) => {
-    drafts = e.value
+  on('state.set', { plugin: 'inbox', key: 'ui' } as const, (_$, e, next) => {
+    drafts = e.value?.drafts ?? null
     return next(e)
   })
 
@@ -86,6 +86,9 @@ test('a press during a turn reads Queued until its prompt enters, and one that w
   expect(w.sent.at(-1)).toBe('Re "Use Node or Python?": Deno, actually')
   expect(await pane.find({ key: 'row-i1' })).toBeDefined()
   expect(drafts).toEqual({ i1: { text: 'Deno, actually', since: expect.any(Number) } })
+  expect(await replyField(pane, 'i1')).toBeDefined()
+  await pane.press({ key: 'cancel-i1' })
+  await clock.settle()
   await pane.press({ key: 'answer-i1-0' })
   await clock.advance(SETTLED_MS)
   expect(w.sent.at(-1)).toBe('Re "Use Node or Python?": Node')
@@ -113,8 +116,8 @@ test('a reply another plugin rewrote to the text of a pending press reads Not co
   world($, on, [])
   on('ui.focus', () => ({}))
   let drafts: unknown = null
-  on('state.set', { plugin: 'inbox', key: 'drafts' } as const, (_$, e, next) => {
-    drafts = e.value
+  on('state.set', { plugin: 'inbox', key: 'ui' } as const, (_$, e, next) => {
+    drafts = e.value?.drafts ?? null
     return next(e)
   })
 

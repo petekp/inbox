@@ -61,11 +61,6 @@ export function pendingDeliveryAt(
   return isQueuedAt(last, now) ? 'queued' : 'sending'
 }
 
-/** 0 means no click opened it, so nothing is guarded. */
-export function isGuarded(openedAt: number, now: number): boolean {
-  return openedAt > 0 && now - openedAt < PRESS_GUARD_MS
-}
-
 /** How long the list stays in use after the person's last press, key, click or pointer move on it. */
 export const FOLD_QUIET_MS = 1000
 

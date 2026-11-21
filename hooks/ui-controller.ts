@@ -117,7 +117,7 @@ function read(ui: UiState, view: SessionView, host: UiState['host'], now: number
     withCommands(start),
     next => readCursors(next, view, recorded.added, now),
     next => readTabs(next, view, recorded.added, now),
-    next => selectRestored(next, view),
+    next => selectRestored(next, view, now),
   )
 }
 

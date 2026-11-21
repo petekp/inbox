@@ -1,5 +1,5 @@
 import type { RenderSurface, UiCopyResult, UiPressArgument } from 'claude-code'
-import type { Draft, PressKind } from '../types'
+import type { Draft, InputKind, PressKind } from '../types'
 import type { PrPress } from './pr-press'
 import { ROW_COPY } from './rows'
 import type { ActionEmphasis, ActionIcon } from './rows'
@@ -10,6 +10,15 @@ export function focusHintFor(element: string): string | null {
   return element.startsWith('typekey-') ? `type-${element.slice('typekey-'.length)}` : null
 }
 export const followUpPresses = new Map<string, (press: UiPressArgument) => void>()
+
+/** The ending of a hidden Button's key that only its hotkey presses. The terminal draws its visible Buttons with no hotkey. */
+export const KEY_BINDING_SUFFIX = '-key'
+
+/** Which press reached an action's Button: the element and surface the engine's press argument names. */
+export type PressVia = Pick<UiPressArgument, 'element' | 'surface'>
+
+/** Whether a press came from a key, through a hidden key binding, or from a click on a drawn Button. */
+export const pressedBy = (via: PressVia): InputKind => (via.element.endsWith(KEY_BINDING_SUFFIX) ? 'key' : 'click')
 
 export function focusKeys(node: unknown, keys = new Set<string>()): Set<string> {
   if (Array.isArray(node)) for (const child of node) focusKeys(child, keys)

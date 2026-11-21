@@ -12,7 +12,7 @@ import type { AnswerRow, DrawnEntry, DrawnLists } from './action-plan'
 import type { statusSelected } from './status-keys'
 import type { PressState } from './feedback'
 import type { helpKeys } from './help'
-import type { Action, KeyAction } from './pane-keys'
+import type { Action, KeyAction, PressVia } from './pane-keys'
 import type { settledLayoutId } from './pane-selection'
 import type { RowPress } from './presses'
 import type { PrPress } from './pr-press'
@@ -20,6 +20,7 @@ import type { prBlockRows, threadSentIn } from './pr-rows'
 import type { RowPart } from './row-parts'
 import type { ModLook, NEEDS_YOU_GROUPS, RowView } from './rows'
 import type { SessionView } from './session-view'
+import type { UiState } from './ui-controller-types'
 import type { ShownTab, shownTabs } from './tabs'
 import type { TerminalSpan } from './terminal-text'
 import type { paletteFor, Tone } from './palettes'
@@ -69,6 +70,8 @@ export type Entry = DrawnEntry<Row>
 /** What the Pane render computed before it draws. */
 export type PaneBase = {
   e: RenderInput<'Pane'>
+  /** The shared controller's state for the drawn conversation. */
+  ui: UiState
   Box: PaneElements['Box']
   Button: PaneElements['Button']
   Text: PaneElements['Text']
@@ -131,7 +134,8 @@ export type PaneBase = {
   isOpenGuarded: boolean
   statusKeyRow: ReturnType<typeof statusSelected>
   shownError: string | null
-  lineNote: RowNote | undefined
+  /** The line under the tabs for a press whose row is gone, while it shows. */
+  notice: { text: string; isError: boolean } | null
   keyList: ReturnType<typeof helpKeys>
   keyColumn: number
 }
@@ -148,20 +152,21 @@ export type PaneHandlers = {
   startTyping: (id: string, seed?: string) => Promise<void>
   selectStatusRow: (id: string, focusKey?: string) => Promise<void>
   sendTyped: (id: string, text: string, surface: UiPressArgument['surface']) => Promise<void>
-  select: (tab: Tab, id: string, index: number) => Promise<void>
   /** A click on a row's title: it opens a closed row, and collapses or expands the open one. */
   pressTitle: (id: string) => Promise<void>
   showTab: (tab: ShownTab) => Promise<void>
-  runPress: (p: RowPress | PrPress, surface: UiPressArgument['surface']) => Promise<void>
+  runPress: (p: RowPress | PrPress, via: PressVia) => Promise<void>
   readAgain: () => Promise<void>
   resume: () => Promise<void>
   showAsk: (askId: string) => Promise<void>
-  updateTyping: (fn: (typing: string | null) => string | null) => Promise<unknown>
-  updateDrafts: (fn: (drafts: Record<string, Draft>) => Record<string, Draft>) => Promise<unknown>
-  updateHelpShown: (fn: (isShown: boolean) => boolean) => Promise<unknown>
-  updateUnfolded: (fn: (unfolded: FoldKind[]) => FoldKind[]) => Promise<unknown>
-  updateStatusUnfolded: (fn: (unfolded: string[]) => string[]) => Promise<unknown>
+  /** Closes row `id`'s field and keeps its draft, as Cancel does. */
+  closeField: (id: string) => Promise<void>
+  editDraft: (id: string, text: string) => Promise<void>
+  toggleHelp: () => Promise<void>
+  setFold: (kind: FoldKind, isOpen: boolean) => Promise<void>
+  /** Opens the Closed fold `kind`'s earlier lines. */
+  showEarlier: (kind: FoldKind) => Promise<void>
+  setStatusFold: (id: string, isOpen: boolean) => Promise<void>
   /** Folds the Status parent `id` by its name, or opens it. */
-  toggleParent: (id: string) => Promise<unknown>
-  updateClosedAll: (fn: (closedAll: FoldKind[]) => FoldKind[]) => Promise<unknown>
+  toggleParent: (id: string) => Promise<void>
 }

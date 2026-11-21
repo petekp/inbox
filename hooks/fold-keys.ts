@@ -20,11 +20,6 @@ export function foldOf(key: string): FoldRef | null {
   return kind === undefined ? null : { kind }
 }
 
-/** `list` with `value` in it while `isUnfolded`, and without it otherwise. */
-export function withFold<T>(list: T[], value: T, isUnfolded: boolean): T[] {
-  return list.includes(value) === isUnfolded ? list : isUnfolded ? [...list, value] : list.filter(k => k !== value)
-}
-
 /** Old builds saved the group kinds as `decide` and `do`, and the Finds tab's one fold as `finding`, now one per kind. */
 export function upgradedUnfolded(saved: string[]): FoldKind[] {
   return saved.flatMap((k): FoldKind[] =>

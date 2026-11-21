@@ -1,51 +1,32 @@
 import type { UiScrollBlock } from 'claude-code'
-import type { Closed, Cursor, FoldKind, LastAction, PrView, RowNote, Tab } from '../types'
-import type { SessionView } from './session-view'
+import type { Closed, FoldKind, LastAction, PrView, RowNote, Tab } from '../types'
 import { prRowWaits } from './pr-rows'
 import type { DrawnPr } from './pr-views'
-import { allRows, NEEDS_YOU_GROUPS, type ResultMark, type settledLabel } from './rows'
-import { drawnLists, listWaits, type RowWait } from './action-plan'
+import { NEEDS_YOU_GROUPS, type ResultMark, type settledLabel } from './rows'
+import { drawnLists } from './action-plan'
 import { type InboxView } from './view'
 import { SETTLED_MS } from './timing'
-import { type ShownTab } from './tabs'
-import { addNewRows, listedRowIds, prRowIds, recordRows } from './arrivals'
-import { paneState } from './mod-state'
 
-/** The tab the pane shows, whether it shows the sample, and since when. */
-export type Shown = { tab: ShownTab; isDemo: boolean; since: number }
-export const NO_CURSOR: Cursor = { id: null, index: 0, openedAt: 0 }
-export const NO_SELECTION: Record<Tab, Cursor> = { needsYou: NO_CURSOR, findings: NO_CURSOR, prs: NO_CURSOR }
-/** How many times the terminal pane redraws while Undo's fill drains, two for each cell of the fill. */
-export const UNDO_REDRAW_STEPS = 24
 export const RESIZE_SCROLL_MS = 100
 export const FOLD_KINDS: FoldKind[] = [...NEEDS_YOU_GROUPS.map(g => g.kind), 'issue', 'opportunity']
+/**
+ * The Undo the inline terminal keeps in view after a press closed row `rowId`. Its block follows where the cursor went:
+ * below the closed row scrolls the Undo to the top, above it to the bottom.
+ */
 export type PendingUndoScroll = {
   key: string
+  rowId: string
   tab: Tab
-  cursor: Cursor
-  block: UiScrollBlock
   expiresAt: number
   sessionId: string
   revealUndo: boolean
 }
 
-/** When the last Undo the view offers ends, or null when it offers none. */
-export function lastUndoEnd(view: SessionView): number | null {
-  const ends = [...allRows(view).map(r => r.state), ...view.prs.drawn.map(d => d.state)].flatMap(state =>
-    state.is === 'settled' && state.canUndo ? [state.at + SETTLED_MS] : [],
-  )
+/** Where to scroll the Undo of the row `closedId` when the cursor is on `openId`. */
+export function undoBlockOf(ids: string[], closedId: string, openId: string | null): UiScrollBlock {
+  const [open, closed] = [ids.indexOf(openId ?? ''), ids.indexOf(closedId)]
 
-  return ends.length > 0 ? Math.max(...ends) : null
-}
-
-/**
- * What a caller knows about the showing: `isOpen` when it knows whether the pane shows, and `since` when a showing
- * starts then even on the same tab, as when another conversation loads.
- */
-export type Showing = { isOpen?: boolean; since?: number }
-
-export function sameCursor(a: Cursor, b: Cursor): boolean {
-  return a.id === b.id && a.index === b.index && a.openedAt === b.openedAt
+  return open < 0 || closed < 0 ? 'nearest' : open > closed ? 'start' : 'end'
 }
 
 export function settledLayoutId(
@@ -79,30 +60,6 @@ export function settledScrollKey(key: string, layout: string): string {
   return `scroll-${key}-${layout}`
 }
 
-export function selectedIndex(
-  ids: string[],
-  cursor: Cursor,
-  top: string | null,
-  isSettled: (id: string) => boolean,
-): number {
-  if (cursor.id !== null) {
-    const at = ids.indexOf(cursor.id)
-    if (at >= 0 || isSettled(cursor.id)) return at
-    return ids.length === 0 ? -1 : Math.min(cursor.index, ids.length - 1)
-  }
-
-  return cursor.openedAt === 0 && top !== null ? ids.indexOf(top) : -1
-}
-
-export function tabWaits(
-  tab: Tab,
-  view: InboxView,
-  prViews: PrView[],
-  lastActions: Record<string, LastAction>,
-): RowWait[] {
-  return tab === 'prs' ? prRowWaits(prViews, lastActions, view.collapsed) : listWaits(view)[tab]
-}
-
 export function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, string[]> {
   const listed = drawnLists(
     view,
@@ -117,43 +74,4 @@ export type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how'> & {
   outcomeLabel: string
   delivery: Parameters<typeof settledLabel>[1]
   mark: ResultMark
-}
-
-const NO_ROWS: Record<Tab, string[]> = { needsYou: [], findings: [], prs: [] }
-
-/**
- * A record of the rows in a view read from now on. It records each tab's rows, and returns by tab the rows the last
- * record did not have. It records nothing when the record started over since `rowRecorder` was called, as when a
- * conversation loaded while the view was read, since that view's row ids may name another conversation's rows.
- */
-export function rowRecorder() {
-  const count = paneState.rowRecordCount
-
-  return (args: RowRecordArgs, isShown: boolean) =>
-    count === paneState.rowRecordCount ? newRows(args, isShown) : NO_ROWS
-}
-
-type RowRecordArgs = { isDemo: boolean; view: SessionView; isPrsFetching: boolean; isOpening: boolean }
-
-/**
- * The PRs tab records nothing while `isPrsFetching`. Only rows that arrive while the pane `isShown` get a new row's title tint.
- * An opening, and a switch between the demo and the inbox, start the record over.
- */
-function newRows({ isDemo, view, isPrsFetching, isOpening }: RowRecordArgs, isShown: boolean): Record<Tab, string[]> {
-  if (isOpening || (paneState.recordedRows !== null && paneState.recordedRows.isDemo !== isDemo)) forgetRows()
-  const current = { ...listedRowIds(view), prs: isPrsFetching ? null : prRowIds(view.prs.drawn) }
-  const { seen, added } = recordRows(paneState.recordedRows?.ids ?? {}, current)
-  paneState.recordedRows = { isDemo, ids: seen }
-  if (isShown) paneState.newRows = addNewRows(paneState.newRows, added)
-
-  return added
-}
-
-/** Starts the row record over, as the pane opens or loads a conversation, whose row ids can name other rows. */
-export function forgetRows() {
-  paneState.recordedRows = null
-  paneState.newRows = new Map()
-  paneState.closedSeen = new Map()
-  paneState.tintRedrawAt = null
-  paneState.rowRecordCount++
 }

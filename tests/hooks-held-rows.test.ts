@@ -149,6 +149,9 @@ test('Discard ends a held row’s reply and folds it into Closed at once, and a 
 
   expect(await replyField(pane, 'i2')).toBeUndefined()
   expect((await pane.find({ key: 'row-i2' }))?.text).toMatch(/Closed\sby\sClaude:\ssettled\sin\schat/)
+  expect(await pane.find({ key: 'discard-i2' })).toBeUndefined()
+  await selectRow(pane, 'i2')
+  await clock.advance(PRESS_GUARD_MS)
   await pane.press({ key: 'discard-i2' })
   await clock.settle()
   expect(await pane.find({ key: 'row-i2' })).toBeUndefined()

@@ -3,7 +3,7 @@ import { test } from './test-with-timeout'
 
 import { withCollapse } from '../hooks/collapse'
 import { FOLD_QUIET_MS, PRESS_GUARD_MS } from '../hooks/timing'
-import { collapsedOf, openRowOf, selectedOf } from '../hooks/ui-controller-selection'
+import { collapsedOf, isGuardedPress, openRowOf, selectedOf } from '../hooks/ui-controller-selection'
 import { COLLAPSE_WAIT_MS } from '../hooks/ui-controller-types'
 import {
   closedByAgent,
@@ -104,6 +104,19 @@ test('a row the person’s own press closed moves the cursor at once, even while
   expect(run.ui.selection.needsYou.id).toBe('i3')
 })
 
+test('a click that closes its row guards the row the cursor moves to against a second click, and a key press does not', () => {
+  const { ui } = openOn(THREE)
+  const closedBy = (by: 'click' | 'key') => {
+    const pressed = send(ui, THREE, { type: 'press', press: answer('i1'), by }, T0 + 10 + PRESS_GUARD_MS)
+    return read(pressed.ui, closedByAgent(THREE, 'i1', T0 + 20 + PRESS_GUARD_MS), T0 + 20 + PRESS_GUARD_MS).ui
+  }
+  const clicked = closedBy('click')
+  expect(clicked.selection.needsYou.id).toBe('i2')
+  expect(isGuardedPress(clicked, 'needsYou', 'i2', 'click', T0 + 30 + PRESS_GUARD_MS)).toBe(true)
+  expect(isGuardedPress(clicked, 'needsYou', 'i2', 'click', T0 + 20 + 2 * PRESS_GUARD_MS)).toBe(false)
+  expect(closedBy('key').selection.needsYou.guard).toBe(null)
+})
+
 test('a row with its field open keeps the cursor when the agent closes it', () => {
   const { ui } = openOn(THREE)
   const picked = send(ui, THREE, { type: 'select', tab: 'needsYou', id: 'i2', by: 'key' }, T0 + 10)
@@ -171,6 +184,14 @@ test('a row that arrives opens when the picked row is collapsed, and not when it
   expect(read(picked.ui, four, T0 + 20).ui.selection.needsYou.id).toBe('i2')
   const collapsed = send(picked.ui, THREE, { type: 'collapse', id: 'i2', isCollapsed: true }, T0 + 15)
   expect(read(collapsed.ui, four, T0 + 20).ui.selection.needsYou.id).toBe('i4')
+})
+
+test('with no row picked, rows that arrive keep the open row while the look shows, and leave the cursor unpicked while it is closed', () => {
+  const { ui } = openOn(THREE)
+  const four = withItems(THREE, [question('i4'), question('i1'), question('i2'), question('i3')])
+  expect(read(ui, four, T0 + 20).ui.selection.needsYou.id).toBe('i1')
+  const closed = send(ui, THREE, { type: 'closed' }, T0 + 10)
+  expect(read(closed.ui, four, T0 + 20).ui.selection.needsYou.id).toBe(null)
 })
 
 test('the cursor follows its row’s place when rows above it leave', () => {

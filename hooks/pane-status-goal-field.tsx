@@ -26,13 +26,12 @@ export function paneGoalField(
     Input,
     drafts,
     listColumns,
-    now,
     statusMarkAt,
     keyRow,
-  }: Pick<PaneBase, 'e' | 'look' | 'Box' | 'Input' | 'drafts' | 'listColumns' | 'now'> &
+  }: Pick<PaneBase, 'e' | 'look' | 'Box' | 'Input' | 'drafts' | 'listColumns'> &
     Pick<PaneStatusLines, 'statusMarkAt'> &
     Pick<PaneRowKeys, 'keyRow'>,
-  { updateDrafts, updateTyping, sendTyped }: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
+  { editDraft, closeField, sendTyped }: Pick<PaneHandlers, 'editDraft' | 'closeField' | 'sendTyped'>,
   muted: (key: string, text: string) => Drawn,
 ) {
   /** Closes the field and keeps its draft. A suggested goal the field was opened from shows again. */
@@ -40,7 +39,7 @@ export function paneGoalField(
     key: `cancel-${GOAL_KEYS_ID}`,
     label: 'Cancel',
     kind: 'view',
-    onPress: () => void updateTyping(t => (t === GOAL_KEYS_ID ? null : t)),
+    onPress: () => void closeField(GOAL_KEYS_ID),
   }
   const submitLabel = (page: StatusPage) =>
     look === 'desktop' ? goalSubmitLabel(page) : goalSubmitLabel(page).toLowerCase()
@@ -62,12 +61,7 @@ export function paneGoalField(
       submitLabel={label}
       autoFocus
       rows={fieldRowCount(drafts[GOAL_KEYS_ID]?.text ?? openFields.get(GOAL_KEYS_ID)?.seed ?? '', inset, label)}
-      onInput={(value: string) =>
-        void updateDrafts(d => ({
-          ...d,
-          [GOAL_KEYS_ID]: { text: value, since: d[GOAL_KEYS_ID]?.since ?? now },
-        }))
-      }
+      onInput={(value: string) => void editDraft(GOAL_KEYS_ID, value)}
       onSubmit={(value: string, submit: { surface: UiPressArgument['surface'] }) =>
         sendTyped(GOAL_KEYS_ID, value, submit.surface)
       }

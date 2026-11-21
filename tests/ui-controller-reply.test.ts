@@ -145,6 +145,16 @@ test('a refused reply shows its error on the row and reopens its field when the 
   expect(late.commands).toEqual([])
 })
 
+test('a refused reply leaves its field closed once the person pressed something after it, in the same millisecond too', () => {
+  const run = sent()
+  const answer = { action: 'answer', id: 'i1', option: 'Yes' } as const
+  const pressed = send(run.ui, S, { type: 'press', press: answer, by: 'click' }, T0 + 30)
+  const refused = send(pressed.ui, S, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 30)
+  expect(refused.ui.typing).toBe(null)
+  expect(refused.commands).toEqual([])
+  expect(refused.ui.drafts.i1?.text).toBe('Use Node')
+})
+
 test('a refused reply reopens its field on its row when only the controller moved the cursor, as when the host saved the row as answered first', () => {
   const run = sent()
   const answered = dismissedByPerson(S, 'i1', T0 + 31)
@@ -228,17 +238,21 @@ test('discarding a field deletes the draft and its sent reply, and keeps the row
   expect(discarded.commands).toEqual([{ kind: 'read' }])
 })
 
-test('a confirmed Undo selects the row it brought back once a tab lists it', () => {
+test('a confirmed Undo selects the row it brought back once a tab lists it, guarded against a second click when Undo was clicked', () => {
   const closed = dismissedByPerson(S, 'i2', T0 + 5)
   const { ui } = openOn(closed)
-  const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by: 'key' }, T0 + 10)
-  expect(pressed.commands[0]).toMatchObject({ kind: 'press', holds: { undoOut: [] } })
-  const settled = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: OK }, T0 + 20)
-  expect(settled.ui.restoring).toEqual({ id: 'i2', at: T0 + 20 })
-  const back = read(settled.ui, S, T0 + 30)
-  expect(back.ui.selection.needsYou.id).toBe('i2')
+  const undone = (by: 'click' | 'key') => {
+    const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by }, T0 + 10)
+    expect(pressed.commands[0]).toMatchObject({ kind: 'press', holds: { undoOut: [] } })
+    const settled = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: OK }, T0 + 20)
+    expect(settled.ui.restoring).toEqual({ id: 'i2', at: T0 + 20, by })
+    return read(settled.ui, S, T0 + 30)
+  }
+  const back = undone('key')
+  expect(back.ui.selection.needsYou).toMatchObject({ id: 'i2', guard: null })
   expect(back.ui.restoring).toBe(null)
   expect(back.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i2', closedId: null })
+  expect(undone('click').ui.selection.needsYou.guard).toEqual({ by: 'click', at: T0 + 30 })
 })
 
 test('a refused Undo whose row’s Undo time ended while it was out reports under the tabs, since its row folds', () => {

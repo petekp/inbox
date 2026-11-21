@@ -1,5 +1,4 @@
 import { bannerOf, type BannerView, tabBarBanners } from './banners'
-import { feedbackText } from './feedback'
 import { HELP_COPY } from './help'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from './layout'
 import { HERDR_ASK_BUTTONS, herdrAskBanner } from './herdr-ask'
@@ -36,7 +35,7 @@ export function paneFrame(
     isNarrowDesktop,
     Box,
     shownError,
-    lineNote,
+    notice,
     tabText,
     termProgram,
     Button,
@@ -60,7 +59,7 @@ export function paneFrame(
       | 'isNarrowDesktop'
       | 'Box'
       | 'shownError'
-      | 'lineNote'
+      | 'notice'
       | 'tabText'
       | 'termProgram'
       | 'Button'
@@ -71,7 +70,7 @@ export function paneFrame(
       | 'hasRail'
       | 'isHelpShown'
     >,
-  { showTab, updateHelpShown }: Pick<PaneHandlers, 'showTab' | 'updateHelpShown'>,
+  { showTab, toggleHelp: toggleHelpShown }: Pick<PaneHandlers, 'showTab' | 'toggleHelp'>,
 ) {
   const tabColumns = e.props.bodyColumns - 2
   const isTabSelected = (id: ShownTab) => !isHelpShown && id === shownTab
@@ -87,7 +86,7 @@ export function paneFrame(
     tabColumns,
   )
   const helpWidth = tabSizes.widths.at(-1)!
-  const toggleHelp = () => void updateHelpShown(shown => !shown)
+  const toggleHelp = () => void toggleHelpShown()
   const tabProps: TabsProps | null = hasClient
     ? {
         tabs: tabList.map((t, n) => ({
@@ -192,9 +191,7 @@ export function paneFrame(
       ...[herdrAskBanner(mod.herdrAsk)].filter(b => b !== null),
     ],
     shownError,
-    lineNote
-      ? { text: feedbackText({ is: 'note', note: lineNote.note, at: lineNote.at }, look), isError: false }
-      : null,
+    notice,
   ).map(b => (b.kind === 'herdr-mod-ask' ? banner(b, { isBodyBelow: true, extra: herdrAskButtons() }) : banner(b)))
   const namesWidth = (naming: TabNaming) =>
     tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)

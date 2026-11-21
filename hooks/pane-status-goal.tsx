@@ -53,7 +53,6 @@ export function paneStatusGoal(
     typing,
     drafts,
     listColumns,
-    now,
     statusKeyRow,
     statusMarkAt,
     statusNameLine,
@@ -67,7 +66,7 @@ export function paneStatusGoal(
     desktopFrame,
   }: Pick<
     PaneBase,
-    'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'now' | 'statusKeyRow'
+    'e' | 'look' | 'Box' | 'Text' | 'pal' | 'Input' | 'typing' | 'drafts' | 'listColumns' | 'statusKeyRow'
   > &
     Pick<
       PaneStatusLines,
@@ -76,7 +75,7 @@ export function paneStatusGoal(
     Pick<PaneRowLines, 'markGlyph' | 'markWidth'> &
     Pick<PaneRowKeys, 'keyRow' | 'terminalKeyCells'> &
     Pick<PaneRowFrame, 'desktopFrame'>,
-  handlers: Pick<PaneHandlers, 'updateDrafts' | 'updateTyping' | 'sendTyped'>,
+  handlers: Pick<PaneHandlers, 'editDraft' | 'closeField' | 'sendTyped'>,
   {
     statusRowLine,
     drawRows,
@@ -148,11 +147,7 @@ export function paneStatusGoal(
     )
   const keysLine = (target: StatusKeyTarget) => keysRow(target, blockWidth)
   const isSelected = (id: string) => look === 'terminal' && !isTypingGoal && statusKeyRow?.id === id
-  const { field } = paneGoalField(
-    { e, look, Box, Input, drafts, listColumns, now, statusMarkAt, keyRow },
-    handlers,
-    muted,
-  )
+  const { field } = paneGoalField({ e, look, Box, Input, drafts, listColumns, statusMarkAt, keyRow }, handlers, muted)
   /**
    * The suggested goal's offer in the goal text's place, drawn as the goal's text is, with its buttons
    * inline after it. When they do not fit on the offer's line, they sit on a line under it.
