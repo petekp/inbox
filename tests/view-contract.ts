@@ -157,8 +157,8 @@ const PAGE_FIELDS: Rules<StatusPage> = {
   isEmpty: notText('It picks the empty tab’s text in place of the page.'),
   head: notText('Its words show as the goal’s `now` or as the first `part` row, whose rules check them.'),
   rows: NESTED,
-  error: text(p => [p.error]),
-  stale: text(p => [p.error === null ? p.stale : null]),
+  sync: notText('Its state picks the status line, whose words are `syncText`.'),
+  syncText: text(p => [p.syncText]),
 }
 
 type FieldName =

@@ -1,6 +1,6 @@
 import type { Session } from '../../types'
 import { HERDR_FORMAT, publishedSessionPath, publishedSessionsFolder } from '../../core/remote/herdr'
-import type { HerdrEnvelope } from '../../core/remote/herdr'
+import type { HerdrEnvelope } from '../../core/remote/herdr-envelope'
 import { upgradeSession } from '../../core/view/session-files'
 import type { SavedSession } from '../../core/view/session-files'
 
@@ -23,6 +23,8 @@ export function isSessionChange(changed: readonly string[], appHome: string, ses
  * `lastPress`: the last press file the host handled, and whether it applied or found its row already changed.
  * `projectFolder`: the absolute folder the host opens a relative path against, or null when the host gave none.
  * `isFetchingPrs`: the host had a PR fetch running. A file from a host that does not say reads as not fetching.
+ * `isReadFailed`: the host could not read the saved inbox. A file from a host that does not say reads as read.
+ * `turnReadFailedAt`: when Codex first failed to read whether the running turn still runs, or null.
  * `savesCollapses`: the session carries `collapsed`, so its host saves the collapses the look writes. An older host
  * deletes a collapse file unread.
  */
@@ -36,6 +38,8 @@ export type ReadSession =
       lastPress: LastPress | null
       projectFolder: string | null
       isFetchingPrs: boolean
+      isReadFailed: boolean
+      turnReadFailedAt: number | null
     }
   | { is: 'missing' }
   | { is: 'torn' }
@@ -82,6 +86,8 @@ export function readSession(text: string | null): ReadSession {
     projectFolder:
       typeof file.projectFolder === 'string' && file.projectFolder.startsWith('/') ? file.projectFolder : null,
     isFetchingPrs: file.isFetchingPrs === true,
+    isReadFailed: file.isReadFailed === true,
+    turnReadFailedAt: typeof file.turnReadFailedAt === 'number' ? file.turnReadFailedAt : null,
   }
 }
 

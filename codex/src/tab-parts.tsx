@@ -1,7 +1,7 @@
 import type { ComponentChildren, ComponentProps } from 'preact'
 import { TitleTint } from './tab-title-tint'
 import { ActionButton, Icon, inputOf } from './row-actions'
-import { NEEDS_YOU_MARKS } from '../../core/view/help'
+import { NEEDS_YOU_MARKS, RUNNING_MARK } from '../../core/view/help'
 import { markShape, mutedMarkShape } from '../../core/view/marks'
 import { DOT, rowMark } from '../../core/view/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../core/view/feedback'
@@ -22,10 +22,25 @@ import type { Tone, Key, Row } from './tab-state'
 export function EmptyState({ empty, children }: { empty: EmptyTab; children?: ComponentChildren }) {
   return (
     <div class="empty">
-      <div class="title">{empty.title}</div>
+      <div class="title">
+        {empty.title}
+        {empty.titleMark ? <TitleMark isRunning={empty.titleMark.isRunning} /> : null}
+      </div>
       {empty.hint ? <div class="muted">{empty.hint}</div> : null}
       {children}
     </div>
+  )
+}
+
+/** The running mark after an empty tab's title while an update checks the asks. Its place stays while it is hidden. */
+function TitleMark({ isRunning }: { isRunning: boolean }) {
+  return (
+    <span
+      class={isRunning ? 'title-mark mark running' : 'title-mark mark hidden'}
+      ref={isRunning ? pulseInStep : undefined}
+    >
+      {RUNNING_MARK}
+    </span>
   )
 }
 

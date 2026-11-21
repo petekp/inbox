@@ -22,6 +22,11 @@ export const MAX_ORDERED_PRS = 30
 /** How long a view read by any session of the host stands in for a fresh read, in a fetch no press asked for. */
 export const PR_SHARED_MS = 120_000
 
+/** How old the PRs may get while the PRs tab is shown. */
+export const PRS_REFRESH_MS = 120_000
+/** How often a host asks `isPrFetchDue`. Far under `PRS_REFRESH_MS`, since that counts from when the last fetch ended, after the tick that started it. */
+export const PR_POLL_MS = 15_000
+
 /** How often a closed PR is read again, since one can be reopened, but rarely and never in a hurry. */
 export const CLOSED_PR_REFRESH_MS = 60 * 60_000
 

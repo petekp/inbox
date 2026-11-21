@@ -12,11 +12,13 @@ import {
   took,
   waitingThreads,
   checkKey,
+  readiness,
 } from '../domain/prs'
 import type { IsThreadSent } from '../domain/prs'
 import { DOT } from './rows'
 import { PR_MARKS, RUNNING_MARK } from './help'
 import type { BannerKind } from './banners'
+import type { GhSync, PrSync, ViewSync } from './sync-state'
 import type { RowWait } from './action-plan'
 
 export function prThreadId(pr: PrView, t: PrThread): string {
@@ -78,17 +80,37 @@ export function fetchFailureNotice(f: PrFetchFailure): string {
  * Why the PRs cannot be read, as the PRs tab says it once at the top, or null when nothing stops it. A missing gh
  * comes first, then a sign-in, then the cause that stopped the last fetch, such as GitHub's limit.
  */
-export function ghNoticeOf(gh: {
-  isGhMissing: boolean
-  isGhSignedOut: boolean
-  failure?: PrFetchFailure | null
-}): { kind: Extract<BannerKind, 'gh-missing' | 'gh-signed-out' | 'gh-limited' | 'gh-failed'>; text: string } | null {
-  if (gh.isGhMissing) return { kind: 'gh-missing', text: GH_MISSING_TEXT }
-  if (gh.isGhSignedOut) return { kind: 'gh-signed-out', text: GH_SIGNED_OUT_TEXT }
-  if (gh.failure)
-    return { kind: gh.failure.kind === 'limit' ? 'gh-limited' : 'gh-failed', text: fetchFailureNotice(gh.failure) }
+export function ghNoticeOf(
+  gh: GhSync,
+): { kind: Extract<BannerKind, 'gh-missing' | 'gh-signed-out' | 'gh-limited' | 'gh-failed'>; text: string } | null {
+  if (gh.is === 'unavailable')
+    return gh.why === 'gh-missing'
+      ? { kind: 'gh-missing', text: GH_MISSING_TEXT }
+      : { kind: 'gh-signed-out', text: GH_SIGNED_OUT_TEXT }
+  if (gh.is !== 'stale') return null
+  const { failure } = gh.why
 
-  return null
+  return { kind: failure.kind === 'limit' ? 'gh-limited' : 'gh-failed', text: fetchFailureNotice(failure) }
+}
+
+/** A PR's sync state; a PR the view has no read of is unavailable. */
+export function prSyncOf(sync: Pick<ViewSync, 'prs'>, ref: string): PrSync {
+  return sync.prs[ref] ?? { is: 'unavailable', why: 'dropped' }
+}
+
+/**
+ * A PR block's status line, as `readiness` gives it, or null while the PR reads ready from a view that is not fresh.
+ * "Ready to merge" shows only from a current read, so the block draws no status line until a fetch reads the PR.
+ */
+export function shownReadiness(
+  pr: PrView,
+  sync: PrSync,
+  isSent: IsThreadSent,
+  agent: string,
+): ReturnType<typeof readiness> | null {
+  const shown = readiness(pr, isSent, agent)
+
+  return shown.status === 'ready' && sync.is !== 'fresh' ? null : shown
 }
 
 /** The line a PR block shows when its last refresh failed. */

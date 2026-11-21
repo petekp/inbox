@@ -2,7 +2,9 @@ import type { Child, Item, Ledger, Session, Subject } from '../../types'
 import { isChildRunning, isChildSettled, isChildShown, isSubjectSeen } from '../domain/status-children'
 import { isOpen, OPEN_SUBJECTS } from '../domain/status-limits'
 import { cutAtPhrase } from '../domain/text'
-import { statusPageLine } from '../domain/status-freshness'
+import { statusSyncText } from '../domain/status-freshness'
+import { statusSync } from './sync-state'
+import type { StatusSync, TurnSync } from './sync-state'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
@@ -127,10 +129,10 @@ export type StatusPage = GoalParts & {
    * linked to a milestone comes first, then Other work.
    */
   rows: StatusRow[]
-  /** The status line's error while the last Status call wrote nothing. */
-  error: string | null
-  /** The status line while the Status changed nothing through several exchanges with agent activity. */
-  stale: string | null
+  /** Whether the page is current. */
+  sync: StatusSync
+  /** The status line that says why the page is stale, or null while it is current. */
+  syncText: string | null
 }
 
 const OTHER_WORK = 'Other work'
@@ -175,8 +177,10 @@ export function statusPage(
     overviewFailure?: Session['overviewFailure']
   },
   now: number,
+  turn: TurnSync = { is: 'fresh' },
 ): StatusPage {
   const o = s.ledger.overview
+  const sync = statusSync(s)
   const look = o?.lastLookAt ?? null
   const subjects = (o?.subjects ?? []).filter(x => x.into === null)
   const isNew = (x: Subject) => o === null || !isSubjectSeen(o, x)
@@ -254,7 +258,7 @@ export function statusPage(
     oldestAskOf,
     items: s.ledger.items,
     running,
-    isTurnRunning: s.presence.isTurnRunning,
+    isTurnRunning: s.presence.isTurnRunning && turn.is === 'fresh',
     now,
   }
   /** A done fold's rows draw no child, since a child of a subject that is not shown draws with no subject above it. */
@@ -419,7 +423,8 @@ export function statusPage(
     ...goalParts,
     goal,
     rows,
-    ...statusPageLine(s, now),
+    sync,
+    syncText: statusSyncText(sync, now),
   }
 }
 

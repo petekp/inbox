@@ -23,11 +23,11 @@ export function stopText(stop: Stop): string {
     case 'usage-limit':
       return 'usage limit reached'
     default:
-      return stop.detail === 'rate_limit'
+      return stop.apiError?.cause === 'rate-limit'
         ? 'the API is limiting requests'
-        : stop.detail === 'overloaded'
+        : stop.apiError?.cause === 'overloaded'
           ? 'the API is overloaded'
-          : `API error (${stop.detail})`
+          : `API error (${stop.apiError?.text ?? 'unknown'})`
   }
 }
 

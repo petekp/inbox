@@ -1,5 +1,6 @@
+import type { Session } from '../../types'
 import { demoSession } from '../../core/view/demo'
-import { herdrEnvelope } from '../../core/remote/herdr'
+import { herdrEnvelope } from '../../core/remote/herdr-envelope'
 import { sessionView } from '../../core/view/session-view'
 import { SETTLED_MS } from '../../core/view/timing'
 import type { ShownTab } from '../../core/view/tabs'
@@ -20,9 +21,16 @@ export const demoEnvelopeText = (overrides: Record<string, unknown> = {}) =>
     ...overrides,
   })
 
-export function demoScreen(): LookScreen {
+function readSample(): Session {
+  const s = demoSession(NOW, AGENT)
+  const views = Object.fromEntries(Object.entries(s.prViews.views).map(([ref, v]) => [ref, { ...v, fetchedAt: NOW }]))
+
+  return { ...s, prViews: { ...s.prViews, views } }
+}
+
+export function demoScreen(sample = readSample()): LookScreen {
   const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
-  const view = sessionView(demoSession(NOW, AGENT), NOW, SETTLED_MS, holds)
+  const view = sessionView(sample, NOW, SETTLED_MS, holds)
 
   return { view, agent: AGENT, now: NOW, shownSince: NOW, isGhMissing: false, isFetchingPrs: false }
 }
@@ -39,7 +47,7 @@ export const uiOn = (tab: ShownTab, changes: Partial<LookUi> = {}): LookUi => ({
 })
 
 export function finishedScreen(states: Record<string, 'MERGED' | 'CLOSED'>): LookScreen {
-  const s = demoSession(NOW, AGENT)
+  const s = readSample()
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).map(([ref, v]) => [ref, states[ref] ? { ...v, state: states[ref] } : v]),
   )
@@ -48,8 +56,7 @@ export function finishedScreen(states: Record<string, 'MERGED' | 'CLOSED'>): Loo
   return { ...demoScreen(), view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, holds) }
 }
 
-export function dismissedPr(ref: string, at = NOW - 500, undoOut: string[] = []) {
-  const s = demoSession(NOW, AGENT)
+export function dismissedPr(ref: string, at = NOW - 500, undoOut: string[] = [], s = readSample()) {
   const r = applyPrPress(
     s.ledger,
     s.prViews,
@@ -67,7 +74,7 @@ export function dismissedPr(ref: string, at = NOW - 500, undoOut: string[] = [])
     SETTLED_MS,
     holds,
   )
-  return { view, blocks: tabBlocks({ ...demoScreen(), view, shownSince }, uiOn('prs')) }
+  return { view, blocks: tabBlocks({ ...demoScreen(s), view, shownSince }, uiOn('prs')) }
 }
 
 export function dismissedSession(id: string, at: number) {

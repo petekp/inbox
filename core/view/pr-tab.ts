@@ -6,7 +6,17 @@ import type { PrActionId } from '../domain/presses'
 import { checkKey, inPrOrder, parseRef, prompts, rankOf, readiness, threadsOnYou } from '../domain/prs'
 import type { IsThreadSent } from '../domain/prs'
 import type { PressState } from './feedback'
-import { prCheckId, prMarkId, PR_REFRESH_ID, prThreadId, RANK_AGAIN_ID, threadRowId, threadSentIn } from './pr-rows'
+import {
+  prCheckId,
+  prMarkId,
+  PR_REFRESH_ID,
+  prThreadId,
+  RANK_AGAIN_ID,
+  shownReadiness,
+  threadRowId,
+  threadSentIn,
+} from './pr-rows'
+import type { PrSync } from './sync-state'
 import { PR_REFRESH_LABEL } from './pr-refresh'
 import { isTracked, PR_CLOSED_LABEL, PR_DISMISSED_LABEL, PR_MERGED_LABEL } from './pr-views'
 import { splitLinked, tabPrs } from '../domain/pr-fetch'
@@ -116,19 +126,21 @@ export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAct
 }
 
 /**
- * The branch's own PR has no Dismiss, since the PRs tab shows it while the branch has it.
+ * The branch's own PR has no Dismiss, since the PRs tab shows it while the branch has it. Merge shows only while the
+ * block reads "Ready to merge", from a fresh read.
  */
 export function prBlockActions(
   pr: PrView,
   isThreadSent: IsThreadSent,
   branchRef: string | null,
   presses: PressState,
+  sync: PrSync,
 ): PrAction[] {
   const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt)
-  const { status } = readiness(pr, isThreadSent)
+  const isReadyShown = shownReadiness(pr, sync, isThreadSent, 'Claude')?.status === 'ready'
   const waitingOn = threadsOnYou(pr, isThreadSent).length
   const moves: Omit<PlannedPrAction, 'emphasis'>[] = [
-    ...(status === 'ready'
+    ...(isReadyShown
       ? [
           {
             press: { action: 'pr-merge' as const, ref: pr.ref },

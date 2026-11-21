@@ -14,6 +14,7 @@ import type { SendOutcome } from '../../core/runtime/session-presses'
 import { fetchPrs, prFetchTracker } from '../../core/runtime/host-prs'
 import type { Background } from './background'
 import { NO_PR_SHARED } from '../../core/domain/pr-fetch'
+import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import type { PrShared } from '../../core/domain/pr-fetch'
 import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../core/runtime/host-press'
 import type { PressOutcome } from '../../core/runtime/host-press'
@@ -158,20 +159,29 @@ export function makeSessionHost(
    * It first finds a rollout Codex moved again, so the reads after it use the path it saves.
    */
   async function syncTurn(id: string): Promise<SessionState> {
-    return updateState(
+    let isFailureChanged = false
+    const synced = await updateState(
       dir,
       id,
       async saved => {
-        const s = await withRolloutArrivals(await currentRollout(saved), now())
-        const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
-        if (newest !== null) newestTurns.set(id, newest.id)
-        const isRunning = newest === null ? null : newest.kind === 'started'
-        if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
+        const arrived = await withRolloutArrivals(await currentRollout(saved), now())
+        const newest = arrived.transcriptPath === null ? null : await newestTurnEvent(arrived.transcriptPath)
+        const isTurnUnread = newest === 'unread' && arrived.presence.isTurnRunning
+        isFailureChanged = isTurnUnread !== (arrived.turnReadFailedAt !== undefined)
+        const { turnReadFailedAt: _failedAt, ...read } = arrived
+        const s: SessionState = isTurnUnread ? { ...read, turnReadFailedAt: arrived.turnReadFailedAt ?? now() } : read
+        if (newest === 'unread' || newest === null) return isFailureChanged ? s : arrived
+        newestTurns.set(id, newest.id)
+        const isRunning = newest.kind === 'started'
+        if (isRunning === s.presence.isTurnRunning) return isFailureChanged ? s : arrived
 
         return isRunning ? turnStarted(s, null) : turnEnded(s, null, now())
       },
       now,
     )
+    if (isFailureChanged) await deps.onWrite?.(synced)
+
+    return synced
   }
 
   const wakeAfterSettle = async (id: string) => {
@@ -191,6 +201,12 @@ export function makeSessionHost(
       { ...current, prViews: { ...current.prViews, isGhMissing: !isDemo && isGhMissing } },
       now(),
       holds,
+      {
+        ...NO_SYNC_INPUTS,
+        isFetchingPrs: !isDemo && prFetches.isFetching(id),
+        turnReadFailedAt: isDemo ? null : (current.turnReadFailedAt ?? null),
+        isDemo,
+      },
     )
     const trust = isDemo ? null : hooksTrustNow(current, id)
     const herdrAsk = isDemo ? null : await deps.herdrAsk?.view().catch(() => null)

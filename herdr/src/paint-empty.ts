@@ -5,7 +5,8 @@ import { EMPTY_STATE_MAX_WIDTH_PT } from '../../core/view/layout'
 import type { Block } from './blocks'
 import { CONTROL_GAP, END_SPACE, INSIDE_GAP, colorOf } from './paint-theme'
 import type { Paint } from './paint-theme'
-import { buttonEl } from './paint-parts'
+import { buttonEl, markEl } from './paint-parts'
+import { RUNNING_MARK } from '../../core/view/help'
 import { fieldEl } from './paint-field'
 import { fitEl, sizeEl } from './paint-space'
 
@@ -60,6 +61,17 @@ function controlsEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boo
     )
 }
 
+/** The title with the running mark after it while the inbox checks the asks. Its place stays while it is hidden. */
+function titleWithMarkEl(title: string, isRunning: boolean, p: Paint): Element {
+  const mark = { text: isRunning ? RUNNING_MARK : '', tone: null, isRunning }
+
+  return h_flex()
+    .justify_center()
+    .gap(CONTROL_GAP)
+    .child(div().text_center().whitespace_normal().text_color(p.t.foreground).font_semibold().child(title))
+    .child(markEl(mark, p.t))
+}
+
 function emptyContentEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const { empty, under } = b
@@ -70,7 +82,7 @@ function emptyContentEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert:
     .items_center()
     .max_w(EMPTY_STATE_MAX_WIDTH_PT)
     .gap(INSIDE_GAP)
-    .child(centred(empty.title).font_semibold())
+    .child(b.titleMark ? titleWithMarkEl(empty.title, b.titleMark.isRunning, p) : centred(empty.title).font_semibold())
     .when(empty.hint !== null, e => e.child(centred(empty.hint ?? '', t.muted)))
     .when(under?.text != null, e => e.child(centred(under?.text ?? '').pt(CONTROL_GAP)))
     .when((under?.buttons.length ?? 0) > 0 || under?.field != null, e => e.child(controlsEl(b, p, isInert)))

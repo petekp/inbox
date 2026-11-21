@@ -2,6 +2,7 @@ import type { BannerView } from '../../core/view/banners'
 import { READING_TEXT } from '../../core/view/banners'
 import { helpVersionText } from '../../core/view/help'
 import { sessionView } from '../../core/view/session-view'
+import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import type { SessionView } from '../../core/view/session-view'
 import { SETTLED_MS } from '../../core/view/timing'
 import type { Holds } from '../../core/view/timing'
@@ -77,7 +78,13 @@ export const readView = (
   now: number,
   holds: Holds,
   notes: Record<string, RowNote>,
-): SessionView => sessionView(read.session, now, SETTLED_MS, holds, notes)
+): SessionView =>
+  sessionView(read.session, now, SETTLED_MS, holds, notes, false, {
+    ...NO_SYNC_INPUTS,
+    isReadFailed: read.isReadFailed,
+    isFetchingPrs: read.isFetchingPrs,
+    turnReadFailedAt: read.turnReadFailedAt,
+  })
 
 /**
  * What the look holds besides the session: rows held in place, the notes its presses left, the collapses it drew

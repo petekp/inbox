@@ -513,10 +513,18 @@ export type Ledger = {
   updates: number
 }
 
+/** Why an API error stopped a turn. `text` holds the error's own word or code when the cause is `other`. */
+export type ApiError = { cause: 'rate-limit' | 'overloaded' | 'other'; text: string | null }
+
 /** Why the session halted outside the conversation, from the error Claude Code classified it with. */
 export type Stop = {
   kind: 'sign-in' | 'billing' | 'usage-limit' | 'api-error'
-  /** Claude Code's word for the error, such as `authentication_failed`. */
+  /** Set on an `api-error` stop, and null on the others. */
+  apiError: ApiError | null
+  /**
+   * The host's word for the error, such as `authentication_failed`. Readers use `apiError`. It is still written so a
+   * build from before `apiError` draws the stop as it did.
+   */
   detail: string
   /** When a usage limit resets, as Claude Code said it: "7:33pm". */
   resets: string | null

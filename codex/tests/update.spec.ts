@@ -72,7 +72,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
   const prompts: string[] = []
   const answers = ['NEW: decide | - | Deploy the API now? | Yes / No | Yes', null]
   const ask = async (p: string) => (prompts.push(p), answers.shift() ?? null)
-  assert.deepEqual(viewOf(await readState(dir, 's1'), 4).status, { isRetrying: false, error: null })
+  assert.deepEqual(viewOf(await readState(dir, 's1'), 4).sync.ledger, { is: 'fresh' })
   await runUpdates(dir, 's1', ask, () => 5)
 
   const kept = await readState(dir, 's1')
@@ -108,10 +108,7 @@ test('pending exchanges reach the ledger in order, a failed one waits for the ne
     dir,
     's1',
     async prompt => {
-      assert.deepEqual(viewOf(await readState(dir, 's1'), 6).status, {
-        isRetrying: true,
-        error: null,
-      })
+      assert.deepEqual(viewOf(await readState(dir, 's1'), 6).sync.ledger, { is: 'stale', since: null, why: 'retrying' })
       return ask(prompt)
     },
     () => 6,
@@ -298,6 +295,6 @@ test('view polls preserve live worker activity and reconcile a killed worker wit
   assert.equal(calls, 2)
   assert.deepEqual((await readState(dir, 's1')).pending, [])
   await updateState(dir, 's1', s => ({ ...s, presence: { ...s.presence, isUpdating: true, ledgerState: 'current' } }))
-  assert.deepEqual((await poll()).status, { isRetrying: false, error: null })
+  assert.deepEqual((await poll()).sync.ledger, { is: 'fresh' })
   assert.equal((await readState(dir, 's1')).presence.isUpdating, false)
 })

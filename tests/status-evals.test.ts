@@ -224,7 +224,7 @@ test('an answer past the host limit is dropped as the host drops it, and the pag
   )
 
   expect(step!.isStatusFailed).toBe(true)
-  expect(step!.page.error).not.toBeNull()
+  expect(step!.page.syncText).not.toBeNull()
   expect(step!.calls[0]!.overLimit).toMatch(/2000 tokens/)
 })
 

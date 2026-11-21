@@ -23,7 +23,7 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
     turns,
     extraSteps: {},
     settleWindowMs: SETTLED_MS,
-    status: perTurnStatus('none'),
+    status: perTurnStatus({ is: 'fresh' }),
     now: 1_000_000,
     replies: {},
     discarded: {},

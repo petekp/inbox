@@ -13,6 +13,8 @@ import {
   CLEAR_FINISHED_ID,
   checkRowText,
   ghNoticeOf,
+  prSyncOf,
+  shownReadiness,
   isBlockPressShown,
   prBlockRows,
   prCheckId,
@@ -27,7 +29,7 @@ import type { PrRowMark } from '../../core/view/pr-rows'
 import { checkActions, prBlockActions, threadActions } from '../../core/view/pr-tab'
 import { isDismissed } from '../../core/view/pr-views'
 import type { DrawnPr } from '../../core/view/pr-views'
-import { checkKey, commentParts, readableComment, readiness, threadWhere } from '../../core/domain/prs'
+import { checkKey, commentParts, readableComment, threadWhere } from '../../core/domain/prs'
 import { bannerOf } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
 import type { PrRefreshView } from '../../core/view/pr-refresh'
@@ -174,8 +176,9 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
   const { pr } = d
   const { lastActions } = screen.view
   const isSent = threadSentIn(lastActions)
-  const { status, head, unlisted } = readiness(pr, isSent, screen.agent)
-  const tone = PR_TONES[status]
+  const sync = prSyncOf(screen.view.sync, pr.ref)
+  const shown = shownReadiness(pr, sync, isSent, screen.agent)
+  const tone = shown ? PR_TONES[shown.status] : null
   const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
   const groups = prBlockRows(pr, false, {
     thread: t => threadRow(screen, pr, t, presses),
@@ -214,10 +217,10 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
       id: prMarkId(pr.ref),
       number: `#${pr.number}`,
       title: pr.title,
-      status: { text: head, tone: tone ? PR_TONE[tone] : 'muted' },
-      unlisted,
+      status: shown && { text: shown.head, tone: tone ? PR_TONE[tone] : 'muted' },
+      unlisted: shown?.unlisted ?? [],
       error: pr.error ? prRefreshFailedText(pr.error) : null,
-      buttons: prBlockActions(pr, isSent, screen.view.prs.branchRef, presses).map((a, n) =>
+      buttons: prBlockActions(pr, isSent, screen.view.prs.branchRef, presses, sync).map((a, n) =>
         prButton(pr, a, `${pr.ref} ${n}`),
       ),
       feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null,
@@ -301,13 +304,11 @@ const ruleBetween = (ref: string): Block => ({ kind: 'rule', id: `rule ${ref}`, 
 export function prTabBlocks(screen: LookScreen, selected: string | null): Block[] {
   const { view } = screen
   const prs = view.prs
-  const gh = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure }
   const empty = emptyTab(view, {
     tab: 'prs',
     place: PLACE,
     drawn: prs.drawn.length,
     isFetchingPrs: screen.isFetchingPrs,
-    isGhMissing: screen.isGhMissing,
   })
   if (empty) {
     const refresh = empty.under?.is === 'pr-refresh' ? refreshParts(screen, empty.under.refresh) : null
@@ -315,7 +316,7 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
     return [emptyBlock('prs', empty, refresh && { id: PR_REFRESH_ID, ...refresh, field: null })]
   }
   const presses: PressState = { lastActions: view.lastActions, turns: view.turns, now: screen.now }
-  const notice = ghNoticeOf(gh)
+  const notice = ghNoticeOf(prs.gh)
   const othersStart = otherPrsStart(prs.drawn)
   const caption: Block = { kind: 'caption', id: 'other prs', text: OTHER_PRS_TEXT }
   const above = (d: DrawnPr, n: number): Block[] => [

@@ -7,7 +7,7 @@ import { CLOSED_PR_REFRESH_MS, fetchTracked, LIMIT_RETRY_MS, NO_PR_SHARED, PR_SH
 import type { PrShared } from '../core/domain/pr-fetch'
 import { runFailureOf } from '../core/domain/pr-query'
 import { PR_REFRESH_LABEL, refreshProblem } from '../core/view/pr-refresh'
-import { fetchFailureNotice, ghNoticeOf, PR_REFRESH_ID } from '../core/view/pr-rows'
+import { fetchFailureNotice, ghNoticeOf, PR_REFRESH_ID, prSyncOf } from '../core/view/pr-rows'
 import { applyPrPress, prBlockActions } from '../core/view/pr-tab'
 import { feedbackOf, feedbackText } from '../core/view/feedback'
 import { emptySession } from '../core/view/session-files'
@@ -227,7 +227,7 @@ test('a limit error stops every session’s polling until GitHub’s reset time,
   expect(state().prViews.failure).toEqual(limit)
   expect(shared().limit).toEqual(limit)
   expect(Object.values(state().prViews.views).map(v => v.error)).toEqual([null, null])
-  expect(ghNoticeOf({ isGhMissing: false, isGhSignedOut: false, failure: state().prViews.failure })).toEqual({
+  expect(ghNoticeOf(sessionView(state(), clock, 1000, NO_HOLDS).prs.gh)).toEqual({
     kind: 'gh-limited',
     text: `GitHub's limit is used up. The PRs refresh after it resets at ${clockTime(resetAt)}.`,
   })
@@ -238,11 +238,10 @@ test('a limit error stops every session’s polling until GitHub’s reset time,
     showsPress: false,
   })
   const presses = { lastActions: {}, turns: { turnsStarted: 0, turnsApplied: 0 }, now: clock }
-  expect(prBlockActions(state().prViews.views['acme/app#1']!, () => false, null, presses).map(a => a.label)).toEqual([
-    'Merge',
-    'Open PR',
-    'Dismiss',
-  ])
+  const sync = prSyncOf(sessionView(state(), clock, 1000, NO_HOLDS).sync, 'acme/app#1')
+  expect(
+    prBlockActions(state().prViews.views['acme/app#1']!, () => false, null, presses, sync).map(a => a.label),
+  ).toEqual(['Open PR', 'Dismiss'])
 
   clock += 5 * 60_000
   await fetchPrs(host, false)

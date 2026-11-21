@@ -15,7 +15,8 @@ import { feedbackOf, prTabHoldSince } from './feedback'
 import { MARK_LEGEND } from './help'
 import { earliestOf, hasRunningMark, NO_HOLDS } from './timing'
 import { inboxView, perTurnStatus } from './view'
-import type { UpdateRecovery } from './view'
+import { NO_SYNC_INPUTS, viewSync } from './sync-state'
+import type { GhSync, SyncInputs, ViewSync } from './sync-state'
 import { isRowTab } from './tabs'
 import { collapsedRows } from './collapse'
 import { statusPage } from './status-page'
@@ -23,7 +24,7 @@ import type { InboxView } from './view'
 import type { StatusPage } from './status-page'
 import type { Holds } from './timing'
 import type { ShownTab } from './tabs'
-import type { FoldKind, LastAction, PrFetchFailure, RowNote, Session, Turns } from '../../types'
+import type { FoldKind, LastAction, RowNote, Session, Turns } from '../../types'
 
 export const PRESS_TIMEOUT_MS = 60_000
 
@@ -36,10 +37,8 @@ type PrTab = {
   olderText: string | null
   /** The agent's order of the PRs, drawn above them, or null while it ranks no block the tab draws. `prOrderView`. */
   order: PrOrderView | null
-  /** Whether gh asked for a sign-in at the last fetch it answered. */
-  isGhSignedOut: boolean
-  /** Why the last fetch read none of the PRs, or null. */
-  failure: PrFetchFailure | null
+  /** Whether gh could read the PRs at the last fetch: missing, signed out, or the fetch read none of them. */
+  gh: GhSync
   /** The line at the top of the tab while a PR could not be read, with Refresh PRs, or null. `prRefreshView`. */
   refresh: PrRefreshView | null
   /** Clear merged and closed, drawn under the refresh line and above the order, or none. `prClearActions`. */
@@ -55,6 +54,8 @@ export type SessionView = InboxView & {
   turns: Turns
   prs: PrTab
   statusPage: StatusPage
+  /** Whether each source the view draws is current. Each PR's is in `sync.prs` by ref. */
+  sync: ViewSync
 }
 
 /** Drops a Local result still pending after `PRESS_TIMEOUT_MS`, whose press will not finish. */
@@ -69,20 +70,6 @@ function withoutStalePending(lastActions: Record<string, LastAction>, now: numbe
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]))
 }
 
-/**
- * Where the session's failed ledger update stands. Every host retries after the agent's next reply: a pending exchange
- * on its own, otherwise by catching up. A Codex chat saved with no rollout path gets one from that reply's Stop hook,
- * which saves it before the update starts.
- */
-function updateRecovery(s: Session): UpdateRecovery {
-  const { presence } = s
-  if (presence.ledgerState !== 'failed') return 'none'
-  if (presence.isUpdating) return 'retrying'
-  if (s.pending.length === 0 && presence.isConversationUnreadable) return 'unreadable'
-
-  return presence.failedAttempts > 1 ? 'failed-again' : 'waiting'
-}
-
 export function sessionView(
   s: Session,
   now: number,
@@ -90,9 +77,11 @@ export function sessionView(
   holds: Holds = NO_HOLDS,
   notes: Record<string, RowNote> = {},
   canScrollConversation = false,
+  inputs: SyncInputs = NO_SYNC_INPUTS,
 ): SessionView {
   const l = s.ledger
   const lastActions = withoutStalePending(s.lastActions, now)
+  const sync = viewSync(s, now, inputs)
 
   const inbox = inboxView({
     ledger: l,
@@ -101,7 +90,7 @@ export function sessionView(
     turns: s.presence,
     extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
     settleWindowMs,
-    status: perTurnStatus(updateRecovery(s)),
+    status: perTurnStatus(sync.ledger),
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
@@ -113,14 +102,15 @@ export function sessionView(
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
-    statusPage: statusPage(s, now),
+    prs: prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh),
+    statusPage: statusPage(s, now, sync.turn),
+    sync,
   }
 }
 
 /**
  * Whether a text look draws a running mark on `shown`, so the terminal and omp keep their frame timer going. Help always
- * does, since the legend's first mark runs.
+ * does, since the legend's first mark runs. A row tab does while an update checks the asks, which an empty tab marks.
  */
 export function showsRunningMark(
   v: SessionView,
@@ -132,7 +122,7 @@ export function showsRunningMark(
   if (!isRowTab(shown)) return hasRunningMark(v.statusPage)
   if (shown === 'prs') return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions)
 
-  return isRowTabRunning(v, shown, isUnfolded)
+  return isRowTabRunning(v, shown, isUnfolded) || v.sync.ledger.is === 'checking'
 }
 
 function prTabOf(
@@ -141,6 +131,7 @@ function prTabOf(
   now: number,
   { shownSince, listInput, undoShown, undoOut }: Holds,
   settleWindowMs: number,
+  gh: GhSync,
 ): PrTab {
   const pressOutSince = earliestOf(
     Object.entries(lastActions).map(([id, last]) =>
@@ -170,8 +161,7 @@ function prTabOf(
       { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
       shownSince,
     ),
-    isGhSignedOut: s.prViews.isGhSignedOut === true,
-    failure: s.prViews.failure ?? null,
+    gh,
     refresh: prRefreshView(
       { ...s.prViews, isGhMissing: s.prViews.isGhMissing === true },
       s.ledger,

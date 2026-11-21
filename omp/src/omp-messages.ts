@@ -3,6 +3,7 @@ import { dialogActivity } from '../../core/domain/catch-up-text'
 import { clip } from '../../core/domain/text'
 import { activityOf, askOutcome, askQuestions } from './tool-calls'
 import type { Stop } from '../../types'
+import { withApiError } from '../../core/domain/stops'
 import type { HostDeps } from './host'
 
 /** The text blocks of a message's content, joined. */
@@ -51,10 +52,11 @@ export async function stopOf(
   const message = typeof reply.errorMessage === 'string' ? reply.errorMessage : ''
   const status = typeof reply.errorStatus === 'number' ? reply.errorStatus : undefined
   const detail = status === undefined ? '' : String(status)
-  if (await isUsageLimit(status, message).catch(() => false)) return { kind: 'usage-limit', detail, resets: null, at }
-  if (status === 401 || status === 403) return { kind: 'sign-in', detail, resets: null, at }
+  if (await isUsageLimit(status, message).catch(() => false))
+    return { kind: 'usage-limit', apiError: null, detail, resets: null, at }
+  if (status === 401 || status === 403) return { kind: 'sign-in', apiError: null, detail, resets: null, at }
 
-  return { kind: 'api-error', detail: apiErrorDetail(status, message), resets: null, at }
+  return withApiError({ kind: 'api-error', detail: apiErrorDetail(status, message), resets: null, at })
 }
 
 /** The text of a user message. */

@@ -8,6 +8,7 @@ import { CLAUDE_CODE } from '../../core/domain/model-text'
 import { sessionView, type SessionView } from '../../core/view/session-view'
 import { screenTabOf } from '../../core/view/tabs'
 import { SETTLED_MS } from '../../core/view/timing'
+import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import { notesOf } from '../../core/view/ui-controller'
 import { holdsOf } from '../../core/view/ui-controller-reply'
 import type { UiState } from '../../core/view/ui-controller-types'
@@ -66,7 +67,11 @@ export async function drawnState(
   const isUnread = demo === null && unreadable === conversation.id
 
   const drawnFrom = drawnSession(session, drawn, demo !== null, now)
-  const view = sessionView(drawnFrom, now, SETTLED_MS, holdsOf(ui, now), notes, canScrollConversation)
+  const view = sessionView(drawnFrom, now, SETTLED_MS, holdsOf(ui, now), notes, canScrollConversation, {
+    ...NO_SYNC_INPUTS,
+    isReadFailed: isUnread,
+    isDemo: demo !== null,
+  })
 
   return {
     ...drawn,

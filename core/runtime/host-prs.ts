@@ -6,6 +6,7 @@ import {
   isLimitInForce,
   NO_PR_SHARED,
   PR_SHARED_MS,
+  PRS_REFRESH_MS,
   tabPrs,
 } from '../domain/pr-fetch'
 import { TIMED_OUT_CODE } from '../domain/gh'
@@ -15,12 +16,9 @@ import { withFetchedPrs } from './session-presses'
 import type { Session } from '../../types'
 import type { SessionHost } from './session-host'
 
-const PRS_REFRESH_MS = 120_000
 /** How old the PRs may get while the PRs tab is not shown, where they only feed the counts. */
 export const PRS_HIDDEN_REFRESH_MS = 10 * 60_000
 const NEW_PR_FETCH_MS = 15_000
-/** How often a host asks `isPrFetchDue`. Far under `PRS_REFRESH_MS`, since that counts from when the last fetch ended, after the tick that started it. */
-export const PR_POLL_MS = 15_000
 
 /** The tracked PRs no fetch has tried: those with no view and no `unread` entry. */
 function untriedPrs(s: Session): string[] {

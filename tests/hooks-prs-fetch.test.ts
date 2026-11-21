@@ -4,7 +4,8 @@ import type { TabsProps } from '../hooks/pane/tabs-client'
 import { GH_TIMEOUT_MS } from '../core/domain/gh'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
-import { PR_POLL_MS, PRS_HIDDEN_REFRESH_MS } from '../core/runtime/host-prs'
+import { PRS_HIDDEN_REFRESH_MS } from '../core/runtime/host-prs'
+import { PR_POLL_MS } from '../core/domain/pr-fetch'
 
 test('opening the PRs tab while another PR fetch runs still finds the branch’s PR', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })

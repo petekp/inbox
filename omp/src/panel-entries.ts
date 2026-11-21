@@ -17,6 +17,8 @@ import {
   prThreadId,
   threadRowText,
   threadSentIn,
+  prSyncOf,
+  shownReadiness,
 } from '../../core/view/pr-rows'
 import { isDismissed, openPrViews } from '../../core/view/pr-views'
 import { OTHER_PRS_TEXT, otherPrsStart } from '../../core/view/pr-order'
@@ -24,7 +26,8 @@ import type { PrRowMark } from '../../core/view/pr-rows'
 import type { PrCheck, PrThread } from '../../types'
 import type { PrOrderView } from '../../core/view/pr-order'
 import type { PrRefreshView } from '../../core/view/pr-refresh'
-import { commentParts, readiness } from '../../core/domain/prs'
+import { commentParts } from '../../core/domain/prs'
+import { nothingMark } from '../../core/view/band'
 import { capitalized } from '../../core/domain/press-labels'
 import { cellWidth, clipLabel } from '../../core/domain/text'
 import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../core/view/rows'
@@ -123,15 +126,17 @@ function stopEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
 }
 
 /** A tab's empty state from `emptyTab`: its title, its hint, and `under`, the drawn parts its `under` names. */
-function emptyEntries(empty: EmptyTab, under: Entry[] = []): Entry[] {
+function emptyEntries(empty: EmptyTab, now: number, under: Entry[] = []): Entry[] {
+  const mark = empty.titleMark ? nothingMark(empty.titleMark.isRunning, now) : ''
+
   return [
-    { kind: 'note', text: empty.title, isStrong: true },
+    { kind: 'note', text: empty.title + mark, isStrong: true },
     ...(empty.hint ? [{ kind: 'note' as const, text: empty.hint, isWhole: true }] : []),
     ...under,
   ]
 }
 
-function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'findings'): Entry[] {
+function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'findings', now: number): Entry[] {
   const { view } = screen
   const groups: Group[] =
     tab === 'needsYou'
@@ -157,9 +162,8 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
     agent: AGENT,
     drawn: groups.filter(g => !isGroupEmpty(g)).length,
     hasBlocker: stops.length > 0,
-    isReadFailed: screen.isReadFailed === true,
   })
-  if (empty) return emptyEntries(empty)
+  if (empty) return emptyEntries(empty, now)
   const hasRows = !groups.every(isGroupEmpty)
 
   return [...stops, ...(hasRows ? groups.flatMap(g => groupEntries(g, ui)) : [])]
@@ -176,17 +180,19 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
     tone: mark.tone ?? (mark.isRunning || !mark.text ? 'sep' : 'dim'),
   })
   const out: Entry[] = []
-  const ghState = { isGhMissing: screen.isGhMissing, isGhSignedOut: prs.isGhSignedOut, failure: prs.failure }
   const empty = emptyTab(screen.view, {
     tab: 'prs',
     place: 'session',
     drawn: prs.drawn.length,
     isFetchingPrs: screen.isFetchingPrs,
-    isGhMissing: screen.isGhMissing,
   })
   if (empty)
-    return emptyEntries(empty, empty.under?.is === 'pr-refresh' ? refreshEntries(screen, empty.under.refresh, now) : [])
-  const ghNotice = ghNoticeOf(ghState)
+    return emptyEntries(
+      empty,
+      now,
+      empty.under?.is === 'pr-refresh' ? refreshEntries(screen, empty.under.refresh, now) : [],
+    )
+  const ghNotice = ghNoticeOf(prs.gh)
   if (ghNotice) out.push({ kind: 'banner', banner: bannerOf(ghNotice.kind, ghNotice.text) })
   if (prs.refresh) out.push(...refreshEntries(screen, prs.refresh, now))
   const clearButtons = prButtons(prs.clear)
@@ -230,7 +236,8 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
       })
       continue
     }
-    const { status, head, unlisted } = readiness(pr, isSent, AGENT)
+    const sync = prSyncOf(screen.view.sync, pr.ref)
+    const shown = shownReadiness(pr, sync, isSent, AGENT)
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
     const f = isPrLastShown ? pressFeedback(screen, markId, now) : null
     out.push({
@@ -240,11 +247,15 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         lead,
         isPrHead: true,
         title: pr.title,
-        status: { text: head, tone: PR_TONES[status], rest: unlisted.map(r => ` · ${r}`).join('') },
+        status: shown && {
+          text: shown.head,
+          tone: PR_TONES[shown.status],
+          rest: shown.unlisted.map(r => ` · ${r}`).join(''),
+        },
         age: doneAt(f),
         feedback: f,
         detail: pr.error ? prRefreshFailedText(pr.error) : null,
-        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses)),
+        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync)),
         isWaiting: false,
       },
     })
@@ -352,12 +363,17 @@ function orderEntries(screen: PanelScreen, order: PrOrderView, now: number): Ent
   return out
 }
 
-function pageEntries(view: SessionView, typing: string | null, isUnfolded: (id: string) => boolean): Entry[] {
+function pageEntries(
+  view: SessionView,
+  typing: string | null,
+  isUnfolded: (id: string) => boolean,
+  now: number,
+): Entry[] {
   const isCollapsed = collapsedIn(view)
   const page = view.statusPage
   const blank: Entry = { kind: 'note', text: '' }
   const empty = emptyTab(view, { tab: 'overview', isGoalFieldOpen: typing === GOAL_KEYS_ID })
-  if (empty) return emptyEntries(empty, empty.under?.is === 'set-goal' ? setGoal(empty.under) : [])
+  if (empty) return emptyEntries(empty, now, empty.under?.is === 'set-goal' ? setGoal(empty.under) : [])
   const top = goalSection(page, typing, isUnfolded, isCollapsed)
   const rows = unfoldedRows(page.rows, isUnfolded, isCollapsed).map((row): Entry => ({ kind: 'page', row }))
   const isGapNeeded = top.length > 0 && rows.length > 0 && page.rows[0]?.kind !== 'part'
@@ -387,10 +403,10 @@ function helpEntries(screen: PanelScreen): Entry[] {
 
 export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: number): Entry[] {
   if (ui.isHelpShown && tab === ui.tab) return helpEntries(screen)
-  if (!isRowTab(tab)) return pageEntries(screen.view, ui.typing, id => ui.statusUnfolded.includes(id))
+  if (!isRowTab(tab)) return pageEntries(screen.view, ui.typing, id => ui.statusUnfolded.includes(id), now)
 
   const collapsed = new Set(screen.view.collapsed)
-  const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab)
+  const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab, now)
   // A refused press's text shows on its row in place of the row's status, as long as the controller keeps it.
   const shown = (line: Line): Line => {
     const error = rowErrorOf(ui, line.id, now)

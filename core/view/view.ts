@@ -27,11 +27,12 @@ import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
 import { doneLabel, feedbackOf, fixLabel, feedbackIn, pressUnderWaySince, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
 import type { StatusPage } from './status-page'
+import type { LedgerSync } from './sync-state'
 import { actionsOf } from './action-plan'
 import { earlierLineOf } from '../domain/earlier-answers'
 
-/** `isRetrying`: the update that runs retries a failed one. */
-type ItemStatus = { isRetrying: boolean; error: string | null }
+/** `error`: why the asks and findings may be missing some, as the line under the tabs says it, or null. */
+type ItemStatus = { error: string | null }
 
 export type ViewInput = {
   ledger: Ledger
@@ -392,31 +393,32 @@ function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
 export function footerError(
   tab: ShownTab,
   status: ItemStatus,
-  page: Pick<StatusPage, 'error' | 'stale'> | null,
+  page: Pick<StatusPage, 'sync' | 'syncText'> | null,
 ): string | null {
   if (tab === 'prs') return null
   if (tab !== 'overview') return status.error
+  const isPageFailed = page?.sync.is === 'stale' && page.sync.why === 'failed'
 
-  return page?.error ?? status.error ?? page?.stale ?? null
+  return isPageFailed ? page.syncText : (status.error ?? page?.syncText ?? null)
 }
-
-/**
- * Where a failed ledger update stands. `waiting`: the host retries after the agent's next reply. `retrying`: an
- * update runs now. `failed-again`: a retry failed too, and the host tries again. `unreadable`: the last catch-up could
- * not read the conversation, and the next update tries again.
- */
-export type UpdateRecovery = 'none' | 'waiting' | 'retrying' | 'failed-again' | 'unreadable'
 
 const NEXT_TRY = ' It tries again after the next reply.'
 
-const FAILED_UPDATE_TEXT: Record<Exclude<UpdateRecovery, 'none' | 'retrying'>, string> = {
-  waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
+/**
+ * The line for a failed ledger update. Every host retries after the agent's next reply: a pending exchange on its own,
+ * otherwise by catching up. A Codex chat saved with no rollout path gets one from that reply's Stop hook, which saves
+ * it before the update starts.
+ */
+const FAILED_UPDATE_TEXT = {
+  failed: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
   'failed-again': `The inbox couldn't update from the agent's recent replies, even on a retry. Questions, tasks and findings from them may be missing.${NEXT_TRY}`,
   unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`,
-}
+} as const
 
-export function perTurnStatus(recovery: UpdateRecovery): ItemStatus {
-  const error = recovery === 'none' || recovery === 'retrying' ? null : FAILED_UPDATE_TEXT[recovery]
+export function perTurnStatus(sync: LedgerSync): ItemStatus {
+  const why = sync.is === 'stale' || sync.is === 'unavailable' ? sync.why : null
+  const isQuiet = why === null || why === 'read-failed' || why === 'retrying'
+  const error = isQuiet ? null : FAILED_UPDATE_TEXT[why]
 
-  return { isRetrying: recovery === 'retrying', error }
+  return { error }
 }

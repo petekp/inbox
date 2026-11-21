@@ -13,12 +13,13 @@ import {
   PR_TONES,
   prMarkId,
   prRefreshFailedText,
+  prSyncOf,
+  shownReadiness,
   threadSentIn,
 } from '../../core/view/pr-rows'
 import { OTHER_PRS_TEXT, otherPrsStart } from '../../core/view/pr-order'
 import type { PrOrderView } from '../../core/view/pr-order'
 import type { PrAction } from '../../core/view/pr-press'
-import { readiness } from '../../core/domain/prs'
 import type { PrView } from '../../types'
 import type { TabView as View } from './core'
 import { tabState, drawnRows } from './tab-state'
@@ -185,8 +186,8 @@ function PrEntry({ b, v, prs, now }: { b: DrawnPrBlock; v: View; prs: DrawnPrs; 
 }
 
 function PrHead({ v, pr }: DrawnPrBlock & { v: View }) {
-  const { status, head, unlisted } = readiness(pr, threadSentIn(v.lastActions), 'Codex')
-  const tone = PR_TONES[status]
+  const shown = shownReadiness(pr, prSyncOf(v.sync, pr.ref), threadSentIn(v.lastActions), 'Codex')
+  const tone = shown ? PR_TONES[shown.status] : null
 
   return (
     <div class="pr-head">
@@ -194,11 +195,13 @@ function PrHead({ v, pr }: DrawnPrBlock & { v: View }) {
         <span class="part">
           <span class="tone-prs num">#{pr.number}</span> {pr.title}
         </span>
-        <span class={tone ? `part pr-verdict tone-${tone}` : 'part pr-verdict muted'}>
-          <Sep />
-          {head}
-        </span>
-        {unlisted.map(r => (
+        {shown ? (
+          <span class={tone ? `part pr-verdict tone-${tone}` : 'part pr-verdict muted'}>
+            <Sep />
+            {shown.head}
+          </span>
+        ) : null}
+        {(shown?.unlisted ?? []).map(r => (
           <span class="part pr-verdict muted">
             <Sep />
             {r}
@@ -224,7 +227,9 @@ function PrBody({
 }: DrawnPrBlock & { v: View; prs: DrawnPrs; now: number; tracks?: Map<string, RowTrack> }) {
   const isSent = threadSentIn(v.lastActions)
   const id = prMarkId(pr.ref)
-  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v)).map(a => prKey(id, pr, a))
+  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v), prSyncOf(v.sync, pr.ref)).map(a =>
+    prKey(id, pr, a),
+  )
 
   return (
     <>
@@ -304,14 +309,12 @@ function PrRows({
 }
 
 export function Prs({ v, prs, now }: { v: View; prs: DrawnPrs; now: number }) {
-  const ghState = { isGhMissing: v.isGhMissing, isGhSignedOut: v.prs.isGhSignedOut, failure: v.prs.failure }
-  const ghNotice = ghNoticeOf(ghState)
+  const ghNotice = ghNoticeOf(v.prs.gh)
   const empty = emptyTab(v, {
     tab: 'prs',
     place: 'chat',
     drawn: prs.blocks.length,
     isFetchingPrs: v.isFetchingPrs,
-    isGhMissing: v.isGhMissing,
   })
   if (empty)
     return (

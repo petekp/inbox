@@ -211,7 +211,8 @@ export type PrBlock = {
   id: string
   number: string
   title: string
-  status: { text: string; tone: Tone }
+  /** Null while the PR reads ready from a view that is not fresh: `shownReadiness`. */
+  status: { text: string; tone: Tone } | null
   unlisted: string[]
   error: string | null
   buttons: Button[]
@@ -232,7 +233,13 @@ type EmptyUnderParts = {
 
 /** A tab's empty state from `emptyTab`, as the one block that draws it, with its `under` drawn as `parts`. */
 export function emptyBlock(tab: ShownTab, empty: EmptyTab, parts: EmptyUnderParts | null = null): Block {
-  return { kind: 'empty', id: `empty ${tab}`, empty: { title: empty.title, hint: empty.hint }, under: parts }
+  return {
+    kind: 'empty',
+    id: `empty ${tab}`,
+    empty: { title: empty.title, hint: empty.hint },
+    titleMark: empty.titleMark,
+    under: parts,
+  }
 }
 
 /** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
@@ -262,7 +269,13 @@ export type Block =
       aside?: string
     }
   /** What a tab shows when it has nothing in it, centred: the text `emptyTab` gives, then its `under`, drawn. */
-  | { kind: 'empty'; id: string; empty: EmptyText; under: EmptyUnderParts | null }
+  | {
+      kind: 'empty'
+      id: string
+      empty: EmptyText
+      titleMark: EmptyTab['titleMark']
+      under: EmptyUnderParts | null
+    }
   | RowBlock
   | StatusLine
   | PrBlock

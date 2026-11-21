@@ -86,6 +86,6 @@ export function pageText(page: StatusPage): string {
   return [
     ...goal,
     ...(page.rows.length > 0 ? ['', ...page.rows.flatMap(rowText)] : []),
-    ...(page.error ? ['', page.error] : []),
+    ...(page.sync.is === 'stale' && page.sync.why === 'failed' && page.syncText ? ['', page.syncText] : []),
   ].join('\n')
 }

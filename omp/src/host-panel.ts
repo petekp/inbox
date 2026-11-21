@@ -9,6 +9,7 @@ import { lookEndedOn, withLook } from '../../core/runtime/session-status'
 import type { ShownRows } from '../../core/domain/status-children'
 import { withHolds } from '../../core/runtime/session-presses'
 import { sessionView } from '../../core/view/session-view'
+import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import { press, wakeAfterSettle } from '../../core/runtime/host-press'
 import type { PressOutcome } from '../../core/runtime/host-press'
 import { heldReplies, NO_HOLDS } from '../../core/view/timing'
@@ -102,6 +103,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
           deps.settleWindowMs,
           holds,
           notes,
+          false,
+          { ...NO_SYNC_INPUTS, isFetchingPrs: prFetches.isFetching(id) },
         ),
         modelName: modelNameOf(ctx),
         isGhMissing: memory.isGhMissing,

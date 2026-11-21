@@ -140,9 +140,9 @@ const TURN_ROW_BYTES = 64 * 1024
 /**
  * The rollout's newest turn event. Its turn still runs when it is a start. Stop does not run for an interrupted turn,
  * and another plugin's Stop can continue a turn after the inbox's Stop ran, so only the rollout says whether the turn
- * runs. Only the last `TURN_ROW_BYTES` are read. Null when they hold no turn event or the file cannot be read.
+ * runs. Only the last `TURN_ROW_BYTES` are read. Null when they hold no turn event, and `'unread'` when the file cannot be read.
  */
-export async function newestTurnEvent(path: string): Promise<TurnEvent | null> {
+export async function newestTurnEvent(path: string): Promise<TurnEvent | null | 'unread'> {
   try {
     for (const line of (await tailLines(path, TURN_ROW_BYTES)).reverse()) {
       const event = turnEventOf(line)
@@ -151,7 +151,7 @@ export async function newestTurnEvent(path: string): Promise<TurnEvent | null> {
 
     return null
   } catch {
-    return null
+    return 'unread'
   }
 }
 

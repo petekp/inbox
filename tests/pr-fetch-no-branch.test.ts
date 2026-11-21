@@ -8,6 +8,7 @@ import { refreshProblem } from '../core/view/pr-refresh'
 import { ghNoticeOf, PR_REFRESH_ID } from '../core/view/pr-rows'
 import { feedbackOf, feedbackText } from '../core/view/feedback'
 import { emptySession } from '../core/view/session-files'
+import { sessionView } from '../core/view/session-view'
 import { NO_HOLDS } from '../core/view/timing'
 import type { Session } from '../types'
 import type { SessionHost } from '../core/runtime/session-host'
@@ -79,7 +80,7 @@ function hostOf(prLookup: { exitCode: number; stderr: string }, start: Session =
   return { host, pressHost, state: () => state, refreshFeedback }
 }
 
-const gh = (s: Session) => ({ isGhMissing: false, isGhSignedOut: false, failure: s.prViews.failure })
+const gh = (s: Session) => sessionView(s, NOW, 0).prs.gh
 
 for (const [place, stderr] of Object.entries(NO_BRANCH_ANSWERS)) {
   test(`a session in ${place} has no branch PR, shows no notice, and Refresh PRs ends as a normal refresh`, async () => {

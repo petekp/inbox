@@ -35,7 +35,7 @@ export function task() {
     turns: { turnsStarted: 1, turnsApplied: 1 },
     extraSteps: {},
     settleWindowMs: 5120,
-    status: { isRetrying: false, error: null },
+    status: { error: null },
     now: 10,
     replies: {},
     discarded: {},

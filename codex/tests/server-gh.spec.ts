@@ -90,9 +90,14 @@ test('a view keeps the PR, says once at the top that gh timed out, and does not 
   assert.equal(next.result.structuredContent.isGhMissing, false)
   assert.equal(next.result.structuredContent.prs.drawn.length, 1)
   assert.equal(next.result.structuredContent.prs.drawn[0]?.pr.error ?? null, null)
-  assert.deepEqual(next.result.structuredContent.prs.failure, { kind: 'timed-out', at })
+  const failure = { kind: 'timed-out', at } as const
+  assert.deepEqual(next.result.structuredContent.prs.gh, {
+    is: 'stale',
+    since: at,
+    why: { kind: 'fetch-failed', failure },
+  })
   assert.equal(
-    ghNoticeOf({ isGhMissing: false, isGhSignedOut: false, failure: next.result.structuredContent.prs.failure })?.text,
+    ghNoticeOf(next.result.structuredContent.prs.gh)?.text,
     `${GH_TIMED_OUT_TEXT}. The PRs show as last read.`,
   )
 })
@@ -115,18 +120,18 @@ test('a view says gh is not signed in once GitHub refuses its token, keeps the P
     () => at,
   )
   const first = await viewAfterFetch(call)
-  assert.equal(first.result.structuredContent.prs.isGhSignedOut, false)
+  assert.notDeepEqual(first.result.structuredContent.prs.gh, { is: 'unavailable', why: 'gh-signed-out' })
   isRefused = true
   at += PRS_STALE_MS
   const refused = await viewAfterFetch(call)
-  assert.equal(refused.result.structuredContent.prs.isGhSignedOut, true)
+  assert.deepEqual(refused.result.structuredContent.prs.gh, { is: 'unavailable', why: 'gh-signed-out' })
   assert.equal(refused.result.structuredContent.isGhMissing, false)
   assert.equal(refused.result.structuredContent.prs.drawn.length, 1)
   assert.equal(refused.result.structuredContent.prs.drawn[0]?.pr.error ?? null, null)
   isRefused = false
   at += PRS_STALE_MS
   const answered = await viewAfterFetch(call)
-  assert.equal(answered.result.structuredContent.prs.isGhSignedOut, false)
+  assert.notDeepEqual(answered.result.structuredContent.prs.gh, { is: 'unavailable', why: 'gh-signed-out' })
 })
 
 test('gh is found again at another path after the first one stops starting', async () => {
@@ -163,7 +168,11 @@ test('a fetch GitHub answers with an error keeps the PRs, says so once at the to
   const { prs } = failed.result.structuredContent
   const pr = prs.drawn[0]!.pr
   assert.equal(pr.error ?? null, null)
-  assert.deepEqual(prs.failure, { kind: 'error', at, text: 'HTTP 502: Bad gateway' })
+  assert.deepEqual(prs.gh, {
+    is: 'stale',
+    since: at,
+    why: { kind: 'fetch-failed', failure: { kind: 'error', at, text: 'HTTP 502: Bad gateway' } },
+  })
   assert.deepEqual(prs.refresh?.text, null)
   assert.deepEqual(
     prs.refresh?.actions.map(a => a.label),
