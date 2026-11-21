@@ -399,7 +399,7 @@ async function once(agent: Agent, c: Case, n: number): Promise<Result> {
 
     return { reply: '', calls: [], error: String(e), model: null, raw: '' }
   })
-  const failed = o.error ? [] : failures(o, c.checks)
+  const failed = o.error ? [] : failures(o, c.checks, agent)
 
   return { ...o, ...job(agent, c, n), failed, attempts: 1, earlier: [], durationMs: 0 }
 }

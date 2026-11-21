@@ -254,8 +254,17 @@ export const prompts = {
     ].join(NL),
   merge: (pr: PrView, shown: string) =>
     [
-      `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, the inbox read "${shown}".`,
-      "Check that it is still mergeable, merge it with the repo's usual merge method, and tell me the result.",
+      ...(pr.headSha === undefined
+        ? [
+            `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, the inbox read "${shown}".`,
+            "Check that it is still mergeable, merge it with the repo's usual merge method, and tell me the result.",
+          ]
+        : [
+            `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, the inbox read "${shown}", and the PR's head commit was ${pr.headSha}.`,
+            "Check that it is still mergeable, merge only that commit with the repo's usual merge method, and tell me the result.",
+            `Pass \`--match-head-commit ${pr.headSha}\` to \`gh pr merge\`, so GitHub refuses a newer head.`,
+            'If the PR has newer commits, do not merge them. Tell me what changed instead.',
+          ]),
       'If it is not mergeable, or merging would need a bypass or a force, stop and tell me instead.',
     ].join(NL),
   fixCheck: (pr: PrView, c: PrCheck) =>

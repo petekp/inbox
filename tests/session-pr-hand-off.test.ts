@@ -206,11 +206,12 @@ test('Merge pressed on a head the PR has moved past reads the PR, then sends and
   expect((await t.host.read()).lastActions[prMarkId(FIX_REF)]).toBeUndefined()
 })
 
-test('Merge pressed on the head the PR still has, or with no head drawn, sends', async () => {
+test('Merge pressed on the head the PR still has, or with no head drawn, sends a merge of only that head', async () => {
   for (const when of [DRAWN_HEAD, []]) {
     const t = await blockedPrHost((pr, at) => ({ ...pr, fetchedAt: at }), { ...READY, headSha: 'a1', fetchedAt: 1 })
     const outcome = await press(t.host, MERGE, false, NO_HOLDS, undefined, when)
     expect([outcome.error, t.delivered.length]).toEqual([null, 1])
+    expect(t.delivered[0]).toContain('`--match-head-commit a1`')
   }
 })
 
