@@ -24,13 +24,13 @@ export const namesWorkingSubject = (nowText: string, subjects: readonly Subject[
   subjects.some(x => x.into === null && x.status === 'working' && holdsEveryWordOf(nowText, x.name))
 
 /**
- * The subject the page draws in a milestone's place: the one subject that serves it and was not dropped, when the two
- * are named alike and no open ask names the milestone. Null for a dropped milestone.
+ * The subject the page draws in a milestone's place: the only subject that serves it, dropped ones counted, when that
+ * subject was not dropped, the two are named alike and no open ask names the milestone. Null for a dropped milestone.
  */
 export function subjectInPlaceOf(o: SessionStatus, m: Milestone, items: readonly Item[]): Subject | null {
   if (m.status === 'dropped') return null
-  const work = o.subjects.filter(x => x.into === null && x.status !== 'dropped' && o.serves[x.id] === m.id)
-  const only = work.length === 1 ? work[0] : undefined
+  const work = o.subjects.filter(x => x.into === null && o.serves[x.id] === m.id)
+  const only = work.length === 1 && work[0]?.status !== 'dropped' ? work[0] : undefined
   const isAskedDirectly = items.some(i => o.askSubjects[i.id]?.includes(m.id))
 
   return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null
@@ -47,12 +47,12 @@ export function isTitleRepeated(title: string, subjects: readonly Subject[]): bo
 /**
  * A milestone drawn as the subject in its place, from the rows `partRows` gives that subject at depth 0: the
  * subject's row takes the milestone's place on the path, and its children sit one step in, joined to the milestone's
- * column as loose work is. `loose` is the running work linked to the milestone that no shown subject holds.
+ * column as loose work is.
  */
-export function milestoneAsSubject(m: MilestoneRow, subjectRows: StatusRow[], loose: StatusRow[]): MilestoneRow {
+export function milestoneAsSubject(m: MilestoneRow, subjectRows: StatusRow[]): MilestoneRow {
   const [row, ...under] = subjectRows
   if (row?.kind !== 'subject') return m
-  const work = [...loose, ...under.map(r => (r.kind === 'child' || r.kind === 'more' ? { ...r, branch: null } : r))]
+  const work = under.map(r => (r.kind === 'child' || r.kind === 'more' ? { ...r, branch: null } : r))
 
   return {
     ...m,
@@ -61,7 +61,7 @@ export function milestoneAsSubject(m: MilestoneRow, subjectRows: StatusRow[], lo
     tone: row.tone,
     name: row.name,
     foldId: null,
-    foldCount: work.length === 0 ? 0 : row.foldCount + loose.length,
+    foldCount: work.length === 0 ? 0 : row.foldCount,
     text: row.text,
     was: row.was,
     ask: row.ask,

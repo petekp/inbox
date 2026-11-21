@@ -136,7 +136,7 @@ export function drawnStatusRows(
 ): StatusRow[] {
   const fold = page.goal?.milestonesFold ?? null
   const milestones = fold !== null && !isUnfolded(fold.id) ? [] : (page.goal?.milestones ?? [])
-  const shown = milestones.filter(m => !isParentCollapsed(m, isCollapsed))
+  const shown = milestones.map(m => (isParentCollapsed(m, isCollapsed) ? { ...m, rows: [] } : m))
 
   return withoutCollapsed(listRows(shown, page.rows), isCollapsed)
 }

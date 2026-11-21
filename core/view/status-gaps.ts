@@ -12,7 +12,8 @@ function isOneLineStatusRow(r: StatusRow): boolean {
 
 /** A milestone that shows its name line alone, or a done milestone folded to its name. */
 export const isOneLineMilestone = (m: MilestoneRow): boolean =>
-  m.foldId !== null || (!m.text && !m.was && milestoneKeyPlan(m).length === 0)
+  m.foldId !== null ||
+  (!m.text && !m.was && !m.subject?.merged && !m.subject?.waitsOn && milestoneKeyPlan(m).length === 0)
 
 /**
  * The gap above each row of a Status list, in points, from the last line of the row above to this row's first line.

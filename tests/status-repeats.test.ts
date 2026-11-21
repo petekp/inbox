@@ -28,7 +28,7 @@ test('under a goal, the Now line hides while it holds every key word of a workin
   )
 })
 
-test('a milestone whose only subject is named alike, with no ask naming the milestone, draws the subject in its place with its name, text, ask, rows and seen tracking', () => {
+test('a milestone whose only subject is named alike, with no ask naming the milestone, draws the subject in its place with its name, text, ask and rows, and lists the subject among the page’s rows', () => {
   const linked = after(withGoal(), 'SERVES: s2 | m3\nLINK: i1 | s2', 30, new Set(['i1']))
   const child = {
     ref: 'draft',
@@ -55,13 +55,14 @@ test('a milestone whose only subject is named alike, with no ask naming the mile
   expect(statusListRows(p).map(r => r.id)).toContain('s2')
 })
 
-test('a milestone keeps its own row when an ask names it, when two subjects serve it, or when its one subject is named otherwise', () => {
+test('a milestone keeps its own row when an ask names it, when two subjects serve it, a dropped one included, or when its one subject is named otherwise', () => {
   const merges = (o: SessionStatus, asks: string[] = []) =>
     page(o, 40, {}, asks.map(askItem)).goal?.milestones.some(m => m.subject !== null)
 
   expect(merges(after(withGoal(), 'SERVES: s2 | m3', 30))).toBe(true)
   expect(merges(after(withGoal(), 'SERVES: s2 | m3\nLINK: i1 | m3', 30, new Set(['i1'])), ['i1'])).toBe(false)
   expect(merges(after(withGoal(), 'SERVES: s2 | m3\nSERVES: s3 | m3', 30))).toBe(false)
+  expect(merges(after(withGoal(), 'SERVES: s2 | m3\nSERVES: s3 | m3\nDROP: s3 | not needed', 30))).toBe(false)
   expect(merges(after(withGoal(), 'SERVES: s3 | m3', 30))).toBe(false)
 })
 

@@ -377,13 +377,9 @@ export function statusPage(
    */
   const withRows = (m: MilestoneRow, p: PartSplit): MilestoneRow => {
     const milestone = o?.milestones.find(x => x.id === m.id)
-    const inPlace = o && milestone ? subjectInPlaceOf(o, milestone, s.ledger.items) : null
-    if (inPlace)
-      return milestoneAsSubject(
-        m,
-        partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0),
-        looseRows(m.id, 1),
-      )
+    const hasLooseWork = loose.some(l => l.milestoneId === m.id)
+    const inPlace = o && milestone && !hasLooseWork ? subjectInPlaceOf(o, milestone, s.ledger.items) : null
+    if (inPlace) return milestoneAsSubject(m, partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0))
     const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)]
     const changedAt = milestone?.changedAt ?? Infinity
     const isShrunk = m.place === 'done' && look !== null && changedAt <= look && isAllSeen(m, p)

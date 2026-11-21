@@ -146,7 +146,8 @@ function justSet(now: number, agent: string): Session {
 
 function inPlace(now: number, agent: string): Session {
   const s = demoSession(now, agent)
-  const o = s.ledger.overview!
+  const o = s.ledger.overview
+  if (!o) throw new Error('the demo session has no Status')
   const names: Record<string, string> = { m3: 'Flick option chosen', m5: 'Glasses trial passed' }
 
   return {
