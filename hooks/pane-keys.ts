@@ -25,9 +25,13 @@ export function focusKeys(node: unknown, keys = new Set<string>()): Set<string> 
 export const openFields = new Map<string, { key: string; seed: string }>()
 export const paneHasKeys = new Map<RenderSurface, boolean>()
 
-export const COPY_FAILURES: Record<Extract<UiCopyResult, { isCopied: false }>['reason'], string> = {
+/** `unanswered` is named here because engine types before Claude Code 2.1.330 leave it out of the reasons. */
+type CopyFailureReason = Extract<UiCopyResult, { isCopied: false }>['reason'] | 'unanswered'
+
+export const COPY_FAILURES: Record<CopyFailureReason, string> = {
   'no-surface': 'no app is attached',
   'no-clipboard': 'the clipboard did not take it',
+  unanswered: 'no app confirmed it',
   refused: 'another plugin refused it',
 }
 
