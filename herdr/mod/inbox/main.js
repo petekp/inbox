@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-20T23:06:22.231Z. 337137 characters follow.
+// Built at 2026-11-21T04:52:17.011Z. 337622 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -4102,9 +4102,11 @@ function isClosedByPerson(ui, view, id, now) {
   const lastAt = view.lastActions[id]?.at;
   return Object.values(ui.pressesOut).some((p) => p.rowId === id) || lastAt !== undefined && lastAt >= now - SETTLED_MS;
 }
-function movedOff(ui, waits, tab, closedId, index) {
+function movedOff(ui, waits, tab, closedId, index, now) {
   const next = waitingFrom(waits, index);
-  const moved = withCursor(ui, tab, { id: next.id, index: next.index, guard: null });
+  const isClosedByClick = Object.values(ui.pressesOut).some((p) => p.rowId === closedId && p.by === "click");
+  const guard = isClosedByClick ? { by: "click", at: now } : null;
+  const moved = withCursor(ui, tab, { id: next.id, index: next.index, guard });
   const isShown = ui.tab === tab && next.id !== null;
   return withCommands(moved, ...isShown ? [{ kind: "reveal", tab, id: next.id, closedId }] : []);
 }
@@ -4126,13 +4128,15 @@ function readCursors(ui, view, added, now) {
       if (isHeld)
         next = { ...next, heldClose: { ...next.heldClose, [tab]: cursor.id } };
       else {
-        const moved = movedOff(next, waits, tab, cursor.id, isGone ? cursor.index : index);
+        const moved = movedOff(next, waits, tab, cursor.id, isGone ? cursor.index : index, now);
         next = moved.ui;
         commands = [...commands, ...moved.commands];
       }
     } else if (index >= 0 && index !== cursor.index)
       next = withCursor(next, tab, { ...cursor, index });
-    const arrived = openOnArrival(waits, next.selection[tab].id, added[tab] ?? []);
+    const picked = next.selection[tab].id;
+    const isOpenRowUnseen = picked === null && next.shownSince === null;
+    const arrived = isOpenRowUnseen ? null : openOnArrival(waits, picked, added[tab] ?? []);
     if (arrived !== null)
       next = withCursor(next, tab, { id: arrived, index: waits.findIndex((r) => r.id === arrived), guard: null });
     next = { ...next, waitingSeen: { ...next.waitingSeen, [tab]: waits.filter((r) => r.isWaiting).map((r) => r.id) } };
@@ -4158,7 +4162,7 @@ function settleHeldClose(ui, view, now) {
     if (cursor.id !== id || isStillWaiting)
       step = { ui: cleared, commands: step.commands };
     else if (index < 0 || !isListInUse(step.ui, now)) {
-      const moved = movedOff(cleared, waits, tab, id, index >= 0 ? index : cursor.index);
+      const moved = movedOff(cleared, waits, tab, id, index >= 0 ? index : cursor.index, now);
       step = { ui: moved.ui, commands: [...step.commands, ...moved.commands] };
     }
   }
@@ -4221,7 +4225,7 @@ function foldAll2(ui, view, isOpening, now) {
     return { ui: next.ui, commands: [...acc.commands, ...next.commands] };
   }, withCommands(start));
 }
-function selectRestored(ui, view) {
+function selectRestored(ui, view, now) {
   const restoring = ui.restoring;
   if (restoring === null)
     return withCommands(ui);
@@ -4232,7 +4236,8 @@ function selectRestored(ui, view) {
   if (ui.typing !== null && ui.typing !== restoring.id)
     return withCommands(cleared);
   const index = tabWaits(ui, view, tab).findIndex((r) => r.id === restoring.id);
-  const moved = withCursor(cleared, tab, { id: restoring.id, index, guard: null });
+  const guard = restoring.by === "click" ? { by: "click", at: now } : null;
+  const moved = withCursor(cleared, tab, { id: restoring.id, index, guard });
   return withCommands(moved, ...ui.tab === tab ? [{ kind: "reveal", tab, id: restoring.id, closedId: null }] : []);
 }
 
@@ -4282,7 +4287,7 @@ function press(ui, view, p, by, now) {
     return withCommands(ui);
   const holds = holdsOf(ui, now);
   const pressId = ui.nextPressId;
-  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now };
+  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, by };
   const { [rowId]: _error, ...errors } = ui.errors;
   const { [rowId]: _note, ...notes } = ui.notes;
   let next = {
@@ -4332,7 +4337,8 @@ function undoKey(ui, view, now) {
 }
 function hasNotMoved(ui, out) {
   const isQuiet = ui.listInput === null || ui.listInput.last <= out.at;
-  return ui.tab === out.tab && ui.typing === null && isQuiet;
+  const isLastPress = ui.nextPressId === out.pressId + 1;
+  return ui.tab === out.tab && ui.typing === null && isQuiet && isLastPress;
 }
 var isNotSentShown = (view, id) => allRows(view).find((r) => r.id === id)?.feedback?.is === "notSent";
 function pressSettled(ui, view, pressId, outcome, now) {
@@ -4357,8 +4363,8 @@ function pressSettled(ui, view, pressId, outcome, now) {
     next = { ...next, sentReplies: isRefused ? rest : { ...rest, [row]: { ...sent, isConfirmed } } };
   }
   if (out.action === "undo" && isConfirmed)
-    next = { ...next, restoring: { id: row, at: now } };
-  const restored = selectRestored(next, view);
+    next = { ...next, restoring: { id: row, at: now, by: out.by } };
+  const restored = selectRestored(next, view, now);
   next = restored.ui;
   if (outcome.isDemoSent)
     next = { ...next, demoReplies: [...next.demoReplies, { pressId, dueAt: now + DEMO_REPLY_MS }] };
@@ -4675,7 +4681,7 @@ function read(ui, view, host, now) {
   const recorded = recordTabs(ui, view, host, now);
   const settled = expired(releasedDrafts(expirePresses(recorded.ui, view, now), view), view, now);
   const start = { ...settled, undoSeen: seenSettled(settled, view, now) };
-  return chain(withCommands(start), (next) => readCursors(next, view, recorded.added, now), (next) => readTabs(next, view, recorded.added, now), (next) => selectRestored(next, view));
+  return chain(withCommands(start), (next) => readCursors(next, view, recorded.added, now), (next) => readTabs(next, view, recorded.added, now), (next) => selectRestored(next, view, now));
 }
 function due(step, view, now) {
   return chain({ ...step, ui: expired(expirePresses(step.ui, view, now), view, now) }, (next) => settleHeldClose(next, view, now), (next) => hasHeldArrivals(next) ? follow(next, view, {}, now) : withCommands(next), (next) => dueDemoReplies(next, now));
