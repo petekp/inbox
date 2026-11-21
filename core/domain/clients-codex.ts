@@ -181,6 +181,10 @@ export const CODEX: Client = {
     'done-press-age': { kind: 'full' },
     'delegate-asks': { kind: 'full' },
     'record-earlier-answers': { kind: 'full' },
-    'session-registry': { kind: 'full' },
+    'session-registry': {
+      kind: 'different',
+      reason:
+        "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process.",
+    },
   },
 }
