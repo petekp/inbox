@@ -7,7 +7,7 @@ import { focusOpenedField, tabShown } from './mod-pane-open'
 import { revealRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { runPress } from './mod-press-run'
-import { conversation } from './mod-sessions'
+import { conversation, isCurrent } from './mod-sessions'
 import { paneState } from './mod-state'
 import { applyUiEvents, hostFactsOf, isReadWake, undoStepAt, withPaneShown } from './mod-ui'
 import { openFields } from '../pane/pane-keys'
@@ -63,7 +63,9 @@ async function applyUi(m: UiLoopCalls, events: (UiEvent | 'read')[], surface?: U
   const host = hostFactsOf(drawn)
   const synced = withPaneShown(events, drawn.ui, isPaneOpen)
   const all = synced.map((event): UiEvent => (event === 'read' ? { type: 'read', host } : event))
-  const view = paneState.paintedVersions ? { ...drawn.view, drawnVersions: paneState.paintedVersions } : drawn.view
+  const painted = paneState.paintedVersions
+  const isPaintedHere = painted !== null && isCurrent(painted.owner)
+  const view = isPaintedHere ? { ...drawn.view, drawnVersions: painted.versions } : drawn.view
   const applied = applyUiEvents(drawn.ui, view, all, drawn.now)
   paneState.listInput = applied.ui.listInput
   paneState.nextPressId = applied.ui.nextPressId

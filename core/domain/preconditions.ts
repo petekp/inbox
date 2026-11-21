@@ -27,7 +27,7 @@ function canonical(value: unknown): string {
   return `{${fields.join(',')}}`
 }
 
-/** cyrb53, a fast 53-bit string hash, as hex. It needs no crypto, so the Codex tab's page can run it too. */
+/** cyrb53, a fast 53-bit string hash, as hex. */
 function hash(text: string): string {
   let h1 = 0xdeadbeef
   let h2 = 0x41c6ce57

@@ -213,9 +213,11 @@ export function makeServer(given: ServerDeps): Server {
         }
         const p = args.press as RowPress | PrPress
         const holds = holdsOf(args)
+        const when = preconditionsOf(args.when)
+        if (when === null) return { ...text('when is not a list of known checks'), isError: true }
         const r = await (args.demo === true
           ? onDemoPress(id, p, args.thread, holds)
-          : onPress(id, p, args.thread, holds, preconditionsOf(args.when) ?? []))
+          : onPress(id, p, args.thread, holds, when))
         return { ...text(r.error ?? (r.note ? noteText() : 'Done')), structuredContent: r }
       }
     }

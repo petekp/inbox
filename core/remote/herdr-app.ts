@@ -387,7 +387,7 @@ async function applyViewerUpdate<S extends Session>(host: HerdrFileHost<S>, file
  * saved as `withCollapse` saves it, and a report that the look shows the PRs tab makes the host read the session's PRs
  * if they are due. A press is applied, then named as the session's `lastHerdrPress`, so the next publish tells the look
  * the outcome even when the press changed nothing, and why when the host applied nothing. A press runs only within
- * `PRESS_LIFETIME_MS` of when the look made it. When the look ran the press's opens and copies, `perform` answers
+ * `PRESS_LIFETIME_MS` of when the look made it and while its `when` holds, unless the look already ran it. When the look ran the press's opens and copies, `perform` answers
  * with their result instead of running them again. A message the host holds until the agent's turn ends is saved as
  * queued, which is its row's outcome until then: that press is named once saved, and waits to run.
  */
@@ -423,7 +423,7 @@ export async function startHerdrFile<S extends Session>(
     false,
     file.holds,
     undefined,
-    [...(file.when ?? []), expires],
+    result ? [] : [...(file.when ?? []), expires],
   )
   const lastOf = (outcome: PressOutcome | null): HerdrPressOutcome => {
     if (outcome?.note === 'stale') return { id: file.id, outcome: 'stale' }

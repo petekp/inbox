@@ -261,6 +261,19 @@ type StartedPress = {
   finish(): Promise<PressOutcome>
 }
 
+/** A press refused before anything ran: it saved, sent and released nothing, and `why` is its row's error. */
+const refusedPress = (why: string): StartedPress => ({
+  effects: null,
+  finish: async () => ({
+    copy: null,
+    error: why,
+    note: null,
+    isUnconfirmed: false,
+    isRowFailed: false,
+    wakesAfterSettle: false,
+  }),
+})
+
 /**
  * Applies and saves a press. When it sends a message, the sent record is saved with it. A look can update its own
  * drawing before `finish` delivers, since a host's delivery can run the host's own handlers before it returns. `holds`
@@ -276,6 +289,8 @@ export async function startPress<S extends Session>(
   commandId?: string,
   when: readonly Precondition[] = [],
 ): Promise<StartedPress> {
+  const early = isStale || when.length === 0 ? null : refusal(await host.read(), when, await host.now())
+  if (early) return refusedPress(early)
   const rowId = pressRowId(p)
   const isSecondPressOnHeld = !isPrPress(p) && p.action !== 'undo' && isHeldSend((await host.read()).lastActions[rowId])
   if (isSecondPressOnHeld && !isStale) await releaseHeldSendEarly(host, rowId)
@@ -285,12 +300,6 @@ export async function startPress<S extends Session>(
   let copy: PressOutcome['copy'] = null
   let error: string | null = null
   let note: PressOutcome['note'] = isStale ? 'stale' : null
-  const refused = (why: string): StartedPress => ({
-    effects: null,
-    finish: async () => ({ copy, error: why, note: null, isUnconfirmed, isRowFailed, wakesAfterSettle: false }),
-  })
-  const early = isStale || when.length === 0 ? null : refusal(await host.read(), when, await host.now())
-  if (early) return refused(early)
   const pressed: { r?: Pressed; at?: number; deliveryId?: string; undone?: { id: string; before: S } } = {}
   const effectHost: EffectHost = {
     now: host.now,
