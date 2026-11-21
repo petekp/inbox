@@ -1,7 +1,6 @@
 import type { Child, Item, Ledger, Session, Subject } from '../../types'
 import { isChildRunning, isChildSettled, isChildShown, isSubjectSeen } from '../domain/status-children'
 import { isOpen, OPEN_SUBJECTS } from '../domain/status-limits'
-import { cutAtPhrase } from '../domain/text'
 import { statusSyncText } from '../domain/status-freshness'
 import { statusSync } from './sync-state'
 import type { StatusSync, TurnSync } from './sync-state'
@@ -20,6 +19,7 @@ import {
   unplacedChildren,
 } from './status-page-parts'
 import type { ListContext, PartSplit } from './status-page-parts'
+import { isTitleRepeated, milestoneAsSubject, subjectInPlaceOf, withoutRepeatedNow } from './status-repeats'
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'
@@ -77,8 +77,11 @@ export type StatusRow = {
        */
       branch: StatusBranch | null
     }
-  /** The children of a subject past `CHILD_ROWS`, as "+ 2 more running", or "+ 2 more" when one finished. It is always the last row under its subject. */
-  | { kind: 'more'; id: string; text: string; branch: 'last' }
+  /**
+   * The children of a subject past `CHILD_ROWS`, as "+ 2 more running", or "+ 2 more" when one finished. It is always
+   * the last row under its subject. Its branch is null under a subject drawn in a milestone's place, as a child's is.
+   */
+  | { kind: 'more'; id: string; text: string; branch: 'last' | null }
   /**
    * Rows folded into one line: open rows into a count, as "○ 2 more", or work that closed since the last look past the
    * rows drawn for it, named, as "✓ Done: Sync merge, Search speed".
@@ -100,9 +103,10 @@ export type StatusRow = {
   | { kind: 'done-fold'; id: string; text: string; rows: StatusRow[] }
   /**
    * Where the work the goal does not need starts, under its own rule: "Other work", or the head's title with its
-   * description under it while the head is apart from the goal (`StatusPage.head`).
+   * description under it while the head is apart from the goal (`StatusPage.head`). The text is null, and the rule
+   * draws with no label, while no goal is set and the title repeats the one open subject's name.
    */
-  | { kind: 'part'; id: string; text: string; description: string | null; isTitle: boolean }
+  | { kind: 'part'; id: string; text: string | null; description: string | null; isTitle: boolean }
   /**
    * Seen open rows of the work the goal does not need, folded into a count for each mark that is under way, as "Also
    * open: ● 5 working · ◌ 8 waiting ›". Folded queued rows get no count. It folds as the done fold does: while the person
@@ -138,7 +142,6 @@ export type StatusPage = GoalParts & {
 const OTHER_WORK = 'Other work'
 /** What a line starts with before the text it replaced: a subject's plan, a milestone's text, the goal before. */
 export const WAS_PREFIX = 'Prev: '
-const MERGED_PREFIX = 'merged in: '
 
 /** The most lines each text on a Status row wraps to: a name, where it stands, a was line. A look cuts past them with an ellipsis. */
 export const STATUS_TEXT_LINES = 3
@@ -149,26 +152,6 @@ const NEW_CLOSED_ROWS = 2
 const STATUS_PLACES = ['held', 'working', 'waits-on-other', 'queued', 'closed'] as const
 
 type StatusPlace = (typeof STATUS_PLACES)[number]
-
-/**
- * A subject's merged line, as "merged in: Sync retry", cut at a phrase to the one line `fits` allows. When its first
- * phrase does not fit, the line keeps that phrase whole and a look wraps it.
- */
-export function mergedLine(merged: string, fits: (text: string) => boolean): string {
-  return `${MERGED_PREFIX}${cutAtPhrase(merged, names => fits(`${MERGED_PREFIX}${names}`))}`
-}
-
-/**
- * A row's name as it shows before its stall word, which stays on the line of its last word. Whole when `fits` says the
- * name and the stall word fit in `STATUS_TEXT_LINES` lines, else cut at a word with an ellipsis until they do. The
- * stall word is never cut. When no cut fits, the name keeps its first word.
- */
-export function nameBeforeStall(name: string, fits: (shown: string) => boolean): string {
-  const words = name.split(' ')
-  const cuts = words.map((_, n) => (n === 0 ? name : `${words.slice(0, words.length - n).join(' ')}…`))
-
-  return cuts.find(fits) ?? cuts.at(-1)!
-}
 
 export function statusPage(
   s: {
@@ -366,9 +349,10 @@ export function statusPage(
         ]
       : []),
   ]
+  const title = head === null || (g === null && isTitleRepeated(head.title, subjects)) ? null : head.title
   const headPart: StatusRow[] =
-    isHeadApart && head
-      ? [{ kind: 'part', id: 'head', depth: 0, text: head.title, description: head.description, isTitle: true }]
+    isHeadApart && head && (title ?? head.description) !== null
+      ? [{ kind: 'part', id: 'head', depth: 0, text: title, description: head.description, isTitle: true }]
       : []
   const rows: StatusRow[] = [
     ...headPart,
@@ -392,8 +376,12 @@ export function statusPage(
    * shrinks to its name and holds its finished rows behind a fold.
    */
   const withRows = (m: MilestoneRow, p: PartSplit): MilestoneRow => {
+    const milestone = o?.milestones.find(x => x.id === m.id)
+    const hasLooseWork = loose.some(l => l.milestoneId === m.id)
+    const inPlace = o && milestone && !hasLooseWork ? subjectInPlaceOf(o, milestone, s.ledger.items) : null
+    if (inPlace) return milestoneAsSubject(m, partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0))
     const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)]
-    const changedAt = o?.milestones.find(x => x.id === m.id)?.changedAt ?? Infinity
+    const changedAt = milestone?.changedAt ?? Infinity
     const isShrunk = m.place === 'done' && look !== null && changedAt <= look && isAllSeen(m, p)
     return isShrunk
       ? {
@@ -417,15 +405,18 @@ export function statusPage(
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]!)),
   }
 
-  return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
-    head,
-    ...goalParts,
-    goal,
-    rows,
-    sync,
-    syncText: statusSyncText(sync, now),
-  }
+  return withoutRepeatedNow(
+    {
+      isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+      head,
+      ...goalParts,
+      goal,
+      rows,
+      sync,
+      syncText: statusSyncText(sync, now),
+    },
+    o,
+  )
 }
 
 /** The subjects a look counts as seen while `row` is on screen. */

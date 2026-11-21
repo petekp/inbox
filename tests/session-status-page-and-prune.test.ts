@@ -133,7 +133,7 @@ test('a sample saved without a Status is replaced, and the sample session carrie
   expect(page.head?.title).toBe('Pinch to dismiss')
   expect(page.goal?.milestones.map(m => m.rows.map(r => r.kind))).toEqual([
     ['subject'],
-    ['subject'],
+    [],
     ['subject', 'child', 'child', 'child'],
     ['subject'],
     ['subject'],

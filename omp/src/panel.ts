@@ -21,7 +21,7 @@ import { entriesOf } from './panel-entries'
 import { selectedLine, withCollapses, withShared } from './panel-keys'
 import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../core/remote/herdr-ask'
-import { drawGoalPart, goalPartId, workRowLines } from './panel-goal'
+import { drawGoalPart, goalPartId, goalPartSubjects, workRowLines } from './panel-goal'
 import { drawPageRow } from './panel-page'
 import { footer, pageWindow, pageWindowLines, scrolled, tabBar } from './panel-tabs'
 import { collapsedIn, fit, indented, spread } from './panel-text'
@@ -167,7 +167,8 @@ export function drawPanel(
       body.push(e.aside ? spread(title, `${style.dim(e.aside)} `, width) : title)
     } else if (e.kind === 'page' || e.kind === 'goal') {
       const start = body.length
-      if (e.kind === 'page') subjectAt.push(...seenSubjectIds(e.row).map(id => [id, start] as [string, number]))
+      const seen = e.kind === 'page' ? seenSubjectIds(e.row) : goalPartSubjects(e.part)
+      subjectAt.push(...seen.map(id => [id, start] as [string, number]))
       const id = e.kind === 'page' ? e.row.id : goalPartId(e.part)
       const isSelected = id !== null && id === pageSelected?.id
       body.push(

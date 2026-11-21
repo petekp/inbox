@@ -18,11 +18,12 @@ import { dispatch, errorOf, pressRow } from './tab-ui'
 import { outOn } from './tab-press'
 import { NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
-import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
+import { markClassOf, MarkGlyph, EmptyState, pulseInStep } from './tab-parts'
+import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
 import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
-import { Keys, rowPads, StatusLine } from './tab-status-line'
+import { fitMergedLine, Keys, rowPads, StatusLine } from './tab-status-line'
 import type { RowPad } from './tab-status-line'
 import {
   isOneLineMilestone,
@@ -89,8 +90,12 @@ function Offer({ text, keys }: { text: string; keys: StatusKey[] }) {
   )
 }
 
+/** A milestone's line. A subject drawn in its place adds what a subject's row draws. */
 function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: string; connector: string | null }) {
   const fold = m.foldId
+  const x = m.subject
+  const isRunning = x?.isRunning ?? false
+  const merged = x?.merged ?? null
   const classes = [
     'row milestone',
     isOneLineMilestone(m) ? '' : 'long',
@@ -100,15 +105,19 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
   const nameClass = [m.isBold ? 'bold' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
 
   return (
-    <div class={classes.filter(Boolean).join(' ')} {...lineMotion(motion)}>
-      <span class={markClassOf(m.tone, false)}>
+    <div
+      class={classes.filter(Boolean).join(' ')}
+      {...(x ? { [SUBJECTS_ATTRIBUTE]: x.id } : {})}
+      {...lineMotion(motion)}
+    >
+      <span class={markClassOf(m.tone, isRunning)} ref={isRunning ? pulseInStep : undefined}>
         <MarkGlyph text={m.mark} />
       </span>
       <div class="content tight">
         {fold === null ? (
           <div class="milestone-name">
             <ParentName id={m.id} foldCount={m.foldCount} class={nameClass}>
-              <NameLine name={m.name} stall={null} chevron={chevronOf(m)} />
+              <NameLine name={m.name} stall={x?.stall ?? null} chevron={chevronOf(m)} />
             </ParentName>
           </div>
         ) : (
@@ -122,10 +131,22 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
             <Icon name={tabState.ui.statusUnfolded.includes(fold) ? 'down' : 'right'} />
           </button>
         )}
+        {x?.waitsOn ? (
+          <div class="tone-needsYou clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
+            {x.waitsOn}
+          </div>
+        ) : null}
         {m.text ? (
           <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
             {m.text}
           </div>
+        ) : null}
+        {merged ? (
+          <div
+            class="outcome muted clamp"
+            style={{ '--lines': STATUS_TEXT_LINES }}
+            ref={el => fitMergedLine(el, merged)}
+          />
         ) : null}
         {m.was ? (
           <div class="outcome muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>

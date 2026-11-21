@@ -144,6 +144,31 @@ function justSet(now: number, agent: string): Session {
   }
 }
 
+function inPlace(now: number, agent: string): Session {
+  const s = demoSession(now, agent)
+  const o = s.ledger.overview
+  if (!o) throw new Error('the demo session has no Status')
+  const names: Record<string, string> = { m3: 'Flick option chosen', m5: 'Glasses trial passed' }
+
+  return {
+    ...s,
+    ledger: {
+      ...s.ledger,
+      overview: {
+        ...o,
+        milestones: o.milestones.map(m => ({ ...m, name: names[m.id] ?? m.name })),
+        subjects: o.subjects.map(x =>
+          x.id === 's3'
+            ? { ...x, merged: 'Swipe option', changedAt: now - MIN }
+            : x.id === 's5'
+              ? { ...x, changedAt: now - 2 * DAY }
+              : x,
+        ),
+      },
+    },
+  }
+}
+
 function distinctAges<T extends { at: number | null }>(rows: T[], now: number, used: Set<number>): T[] {
   return rows.map(row => {
     if (row.at === null) return row
@@ -203,5 +228,6 @@ export function contractSessions(now: number, agent: string): { name: string; se
     { name: 'goal under way', session: underWay(now, agent) },
     { name: 'goal met', session: met(now, agent) },
     { name: 'goal just set', session: justSet(now, agent) },
+    { name: 'subjects in milestones’ places', session: inPlace(now, agent) },
   ].map(({ name, session }) => ({ name, session: distinct(session, now) }))
 }

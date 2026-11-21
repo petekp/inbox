@@ -2,6 +2,7 @@ import { HELD_MARK } from '../core/view/help'
 import { restatesGoal } from '../core/domain/status-goal-ops'
 import { isNumberOnly, isOpen } from '../core/domain/status-limits'
 import { drawnStatusRows } from '../core/view/status-folds'
+import type { MilestoneRow } from '../core/view/status-goal-page'
 import type { StatusPage } from '../core/view/status-page'
 import type { Rule } from './status-rules'
 
@@ -33,8 +34,12 @@ function listIds(page: StatusPage, isOther: (id: string) => boolean): { main: st
  * Whether a subject belongs under Other work: the goal does not need it, or the goal shows milestones and it serves
  * none of them.
  */
+/** The id of the saved milestone a page milestone draws, which is not the row's own id when a subject is drawn in its place. */
+const savedMilestoneId = (serves: Record<string, string>, row: MilestoneRow) =>
+  row.subject ? (serves[row.id] ?? row.id) : row.id
+
 function isOtherWork(serves: Record<string, string>, page: StatusPage, id: string): boolean {
-  const shown = new Set((page.goal?.milestones ?? []).map(m => m.id))
+  const shown = new Set((page.goal?.milestones ?? []).map(m => savedMilestoneId(serves, m)))
   const to = serves[id]
 
   return to === 'none' || (shown.size > 0 && (to === undefined || !shown.has(to)))
@@ -107,7 +112,7 @@ export const HOLD_RULES: Rule[] = [
       const o = result.session.ledger.overview
       if (!o) return []
       return (result.page.goal?.milestones ?? []).flatMap(row => {
-        const m = o.milestones.find(x => x.id === row.id)
+        const m = o.milestones.find(x => x.id === savedMilestoneId(o.serves, row))
         if (!m) return [`"${row.name}" is drawn with no saved milestone`]
         const serving = Object.keys(o.serves).filter(id => o.serves[id] === m.id)
         const isHeld =

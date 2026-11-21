@@ -1,5 +1,6 @@
 import { Icon, RowActions } from './row-actions'
-import { mergedLine, seenSubjectIds, STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { seenSubjectIds, STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { mergedLine } from '../../core/view/status-page-parts'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../core/view/status-keys'
 import { COUNTS_GAP, COUNTS_LABEL, countWords, unfoldedRows } from '../../core/view/status-folds'
 import { statusRowPads } from '../../core/view/status-gaps'
@@ -19,7 +20,7 @@ import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 let measuring: CanvasRenderingContext2D | null | undefined
 
 /** Writes a subject's merged line into `el`, cut at a phrase to the one line `el` has room for. */
-function fitMergedLine(el: HTMLElement | null, merged: string) {
+export function fitMergedLine(el: HTMLElement | null, merged: string) {
   if (!el) return
   measuring ??= document.createElement('canvas').getContext('2d')
   const measure = measuring
@@ -161,7 +162,7 @@ export function StatusLine({
     )
   if (row.kind === 'more')
     return (
-      <div class={`row child branch-${row.branch}`} style={rowStyle} {...lineMotion(motion)}>
+      <div class={row.branch ? `row child branch-${row.branch}` : 'row'} style={rowStyle} {...lineMotion(motion)}>
         <span class="mark" />
         <div class="content tight muted">{row.text}</div>
       </div>

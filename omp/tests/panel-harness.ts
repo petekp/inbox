@@ -97,4 +97,4 @@ export const labelOf = (row: StatusRow) =>
     ? row.name
     : row.kind === 'counts'
       ? row.counts.map(c => c.text).join(' · ')
-      : row.text
+      : (row.text ?? '')

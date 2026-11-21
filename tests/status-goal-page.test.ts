@@ -18,7 +18,7 @@ import type { SessionStatus } from '../types'
 import { after, askItem, page, shape } from './status-helpers'
 
 const START = [
-  'HEAD: Import | Making CSV import ready to demo',
+  'HEAD: Import | Lining up the Friday demo',
   'NEW: working | CSV import | bad rows skipped',
   'NEW: queued | Error copy | not started',
   'NEW: working | Dark mode | toggle drawn',
@@ -42,7 +42,7 @@ test('a goal shows its milestones as a path, its Edit comes before its milestone
   expect(p.goal).toMatchObject({ label: 'Goal' })
   expect(p.goal?.milestones.map(m => m.place)).toEqual(['done', 'now', 'next'])
   expect(p.goal?.text).toBe('Import ready to demo')
-  expect(p.goal?.now).toBe('Now: Making CSV import ready to demo')
+  expect(p.goal?.now).toBe('Now: Lining up the Friday demo')
   expect(p.head).not.toBeNull()
   expect(p.goal?.milestones.map(m => `${m.mark} ${m.name}`)).toEqual([
     '✓ Parsing works',

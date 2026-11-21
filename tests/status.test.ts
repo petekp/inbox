@@ -3,7 +3,8 @@ import { test } from './test-with-timeout'
 
 import { asksText, isSubjectSeen, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../core/domain/status-children'
 import { EMPTY_SESSION_STATUS } from '../core/domain/status-limits'
-import { mergedLine, nameBeforeStall, seenSubjectIds } from '../core/view/status-page'
+import { seenSubjectIds } from '../core/view/status-page'
+import { mergedLine, nameBeforeStall } from '../core/view/status-page-parts'
 import { statusKeyPlan } from '../core/view/status-keys'
 import {
   IDLE_MARK,

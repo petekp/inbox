@@ -12,8 +12,8 @@ import {
   STATUS_PAD_Y,
   TREE_LINE_AT,
 } from './pane-sizes'
-import { nameBeforeStall, STATUS_TEXT_LINES, type StatusBranch, type StatusStall } from '../../core/view/status-page'
-import { STALL_GAP } from '../../core/view/status-page-parts'
+import { STATUS_TEXT_LINES, type StatusBranch, type StatusStall } from '../../core/view/status-page'
+import { nameBeforeStall, STALL_GAP } from '../../core/view/status-page-parts'
 import { desktopSpanLines, type TerminalSpan, terminalSpanLines } from './terminal-text'
 import { cellWidth } from '../../core/domain/text'
 import { paneDesktopTree } from './pane-desktop-tree'

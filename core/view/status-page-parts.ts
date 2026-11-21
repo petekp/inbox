@@ -2,7 +2,7 @@ import type { Child, Item, Subject } from '../../types'
 import { HELD_MARK, IDLE_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { IDLE_AFTER_MS, isOpen } from '../domain/status-limits'
-import { ago, duration } from '../domain/text'
+import { ago, cutAtPhrase, duration } from '../domain/text'
 import type { StatusBranch, StatusCount, StatusRow, StatusStall } from './status-page'
 
 /**
@@ -78,6 +78,28 @@ export function countsByMark(folded: Subject[]): StatusCount[] {
     const n = folded.filter(x => x.status === status).length
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }]
   })
+}
+
+const MERGED_PREFIX = 'merged in: '
+
+/**
+ * A subject's merged line, as "merged in: Sync retry", cut at a phrase to the one line `fits` allows. When its first
+ * phrase does not fit, the line keeps that phrase whole and a look wraps it.
+ */
+export function mergedLine(merged: string, fits: (text: string) => boolean): string {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, names => fits(`${MERGED_PREFIX}${names}`))}`
+}
+
+/**
+ * A row's name as it shows before its stall word, which stays on the line of its last word. Whole when `fits` says the
+ * name and the stall word fit in `STATUS_TEXT_LINES` lines, else cut at a word with an ellipsis until they do. The
+ * stall word is never cut. When no cut fits, the name keeps its first word.
+ */
+export function nameBeforeStall(name: string, fits: (shown: string) => boolean): string {
+  const words = name.split(' ')
+  const cuts = words.map((_, n) => (n === 0 ? name : `${words.slice(0, words.length - n).join(' ')}…`))
+
+  return cuts.find(fits) ?? cuts[cuts.length - 1] ?? name
 }
 
 /** What separates a row's name from its stall word. */

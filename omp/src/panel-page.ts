@@ -1,8 +1,8 @@
 import { cellWidth, cutForEllipsis } from '../../core/domain/text'
 import { statusKeyPlan } from '../../core/view/status-keys'
 import type { StatusKeyTarget } from '../../core/view/status-keys'
-import { mergedLine, nameBeforeStall, STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
-import { STALL_GAP } from '../../core/view/status-page-parts'
+import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { mergedLine, nameBeforeStall, STALL_GAP } from '../../core/view/status-page-parts'
 import type { StatusBranch, StatusRow, StatusStall } from '../../core/view/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
@@ -25,7 +25,7 @@ const TREE_ARMS: Record<StatusBranch, { first: string; rest: string }> = {
 }
 
 /** The room for a Status text after a mark at `indent`. */
-const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
+export const pageRoom = (indent: number, width: number) => Math.max(10, width - indent - 2 - 1)
 
 /** `text` wrapped to `room` cells, at most `maxLines` lines and cut with an ellipsis past them, each line painted. */
 function pageText(text: string, room: number, maxLines: number, paint: (t: string) => string): string[] {
@@ -125,9 +125,12 @@ export function pageRuleCells(width: number, textAt = PAGE_TEXT_AT): number {
   return Math.max(0, width - textAt - 1)
 }
 
-/** A section's heading, such as Goal, Later or Other work: its name at `at`, the mark column, then a solid rule. */
-export function partHeading(text: string, width: number, s: Style, at = PAGE_MARK_AT, isTitle = false): string {
-  const label = `${text} `
+/**
+ * A section's heading, such as Goal, Later or Other work: its name at `at`, the mark column, then a solid rule. With no
+ * text, the rule alone.
+ */
+export function partHeading(text: string | null, width: number, s: Style, at = PAGE_MARK_AT, isTitle = false): string {
+  const label = text === null ? '' : `${text} `
   const rule = '─'.repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)))
 
   return `${' '.repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`
@@ -212,6 +215,7 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
     return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s)
   }
   if (row.kind === 'more') {
+    if (!row.branch) return [' '.repeat(textAt) + s.dim(row.text)]
     const arm = TREE_ARMS[row.branch]
     const line = ' '.repeat(childAt(row.depth - 1) + 2) + s.dim(row.text)
 

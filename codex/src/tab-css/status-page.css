@@ -291,6 +291,9 @@
 .status-page .milestone-name .bold {
   font-weight: 600;
 }
+.status-page .milestone-name .bold .stall {
+  font-weight: 400;
+}
 /* A done milestone folded to its name: the name where other milestones' names start, its chevron after it. */
 .status-page .milestone-fold {
   display: inline-flex;
@@ -319,6 +322,7 @@
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
+  min-height: 1lh;
   gap: var(--control-gap);
   margin-left: var(--mark-x);
   color: var(--muted);

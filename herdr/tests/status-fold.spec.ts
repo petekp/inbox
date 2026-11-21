@@ -10,7 +10,10 @@ test('a Status parent draws a chevron after its name that folds its rows away an
   const rows = statusListRows(screen.view.statusPage)
   const s1 = rows.find(r => r.id === 's1')
   if (s1?.kind !== 'subject') throw new Error('no s1 subject')
-  const milestone = screen.view.statusPage.goal!.milestones.find(m => m.foldCount > 0)!
+  const milestone = screen.view.statusPage.goal?.milestones.find(
+    m => m.foldCount > 0 && !m.rows.some(r => r.id === 's1'),
+  )
+  if (!milestone) throw new Error('no folding milestone apart from the one s1 serves')
   const underS1 = rows.filter(r => r.kind === 'child' && r.id.startsWith('c') && r.depth > s1.depth).map(r => r.id)
   const open = tabBlocks(screen, uiOn('overview'))
   const folded = tabBlocks({ ...screen, view: { ...screen.view, collapsed: ['s1', milestone.id] } }, uiOn('overview'))

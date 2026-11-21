@@ -127,7 +127,10 @@ against the open and finished subjects, so it moves on when the work does,
 even across many small exchanges. When the work it names is done and nothing
 else is working, it stays. While a goal runs, it is the goal's Now line. While
 no goal is set, or once the goal is met, it is the heading of the list after the
-goal, in the place of "Other work", with its one line under it.
+goal, in the place of "Other work", with its one line under it. While no goal is
+set and the session has one open subject, a title named like that subject is left
+out, and the line under it stays. A Now line that names a working subject is left
+out too.
 
 **Subject**:
 One part of the session's work on the Status, such as a feature, a fix or a
@@ -181,6 +184,8 @@ the goal does not need sits under Other work, and so does one not linked to a
 milestone yet, while the goal shows milestones. Code closes a milestone
 once all its linked subjects are closed and one is done, and the model opens it
 again when work is left. Past 6 subjects, open or done, the model splits it by theme.
+A milestone with one subject, named like it, and no ask of its own draws that
+subject in its place.
 _Avoid_: step, phase
 
 **Child**:

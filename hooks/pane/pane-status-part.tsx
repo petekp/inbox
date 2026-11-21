@@ -41,11 +41,12 @@ export function paneStatusPart({
   }
   /**
    * Other work's line: the space above it, its name, then a solid rule to the end of the list's columns. The head's
-   * title draws in place of the name, in bold, with its description muted on the line under it, at the same column.
+   * title draws in place of the name, in bold, with its description muted on the line under it, at the same column. A
+   * part with no text draws the rule alone.
    */
   const statusPartLine = (
     id: string,
-    text: string,
+    text: string | null,
     isFirst: boolean,
     title?: { description: string | null },
     rowAbovePad = ITEM_GAP_PT / 2,
@@ -54,18 +55,22 @@ export function paneStatusPart({
     const line = oneLine(
       look === 'desktop' ? (
         <Box flexDirection="row" alignItems="center" marginLeft={desktopStatusRuleLeft} paddingY={statusFrameEdge}>
-          <Box flexShrink={0} paddingRight={1}>
-            <Text color={title ? undefined : pal.muted} bold={!!title}>
-              {text}
-            </Text>
-          </Box>
+          {text === null ? null : (
+            <Box flexShrink={0} paddingRight={1}>
+              <Text color={title ? undefined : pal.muted} bold={!!title}>
+                {text}
+              </Text>
+            </Box>
+          )}
           <Box flexGrow={1} height={DESKTOP_HAIR_LINES} backgroundColor={pal.divider} />
         </Box>
       ) : (
         <Box flexDirection="row">
           <Box width={statusRuleAt} flexShrink={0} />
-          <Text color={title ? undefined : pal.muted} bold={!!title}>{`${text} `}</Text>
-          <Text color={pal.divider}>{'─'.repeat(Math.max(4, statusRuleCells - cellWidth(text) - 1))}</Text>
+          {text === null ? null : <Text color={title ? undefined : pal.muted} bold={!!title}>{`${text} `}</Text>}
+          <Text color={pal.divider}>
+            {'─'.repeat(Math.max(4, statusRuleCells - (text === null ? 0 : cellWidth(text) + 1)))}
+          </Text>
         </Box>
       ),
       desktopEdgedLine,

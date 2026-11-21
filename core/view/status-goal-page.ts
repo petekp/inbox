@@ -10,6 +10,7 @@ import type { PathLine, PathPlace, PathStep } from './status-path'
 
 /** A milestone under the goal, in the goal's path. Its name draws bold until the milestone is done or dropped. */
 export type MilestoneRow = {
+  /** The milestone's id, or the subject's id when `subject` is drawn in its place. */
   id: string
   mark: string
   tone: StatusTone
@@ -37,6 +38,12 @@ export type MilestoneRow = {
   ask: { id: string; kind: Item['kind'] } | null
   /** The work that serves it, drawn under it one step in. `statusPage` fills it. */
   rows: StatusRow[]
+  /**
+   * The subject drawn in its place, as `subjectInPlaceOf` finds it, or null. Its id, mark, name, text, was and ask are
+   * then the subject's, its rows are the subject's children, and a look draws the rest of the subject's row on it and
+   * counts the subject seen while it shows. `statusPage` fills it.
+   */
+  subject: (StatusRow & { kind: 'subject' }) | null
 }
 
 /** The goal and where the work stands against it. */
@@ -51,7 +58,7 @@ export type GoalBlock = {
   was: string | null
   /**
    * What the session works on now, as "Now: " and the head's description, drawn under the goal's text and its was line.
-   * Null when it only names the milestone that reads "now".
+   * Null when it only names the milestone that reads "now", or holds every key word of a working subject's name.
    */
   now: string | null
   /** The line drawn in place of the milestones until the Status call writes them for this goal. */
@@ -166,6 +173,7 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
     rows: [],
+    subject: null,
   }
 }
 

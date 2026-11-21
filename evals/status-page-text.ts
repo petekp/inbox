@@ -1,7 +1,7 @@
 import { EMPTY_STATUS_TEXT } from '../core/view/empty-tab'
 import { countsText } from '../core/view/status-folds'
-import { mergedLine, WAS_PREFIX } from '../core/view/status-page'
-import { STALL_GAP } from '../core/view/status-page-parts'
+import { WAS_PREFIX } from '../core/view/status-page'
+import { mergedLine, STALL_GAP } from '../core/view/status-page-parts'
 import type { StatusPage, StatusRow, StatusStall } from '../core/view/status-page'
 import type { MilestoneRow } from '../core/view/status-goal-page'
 import { milestoneRows } from '../core/view/status-folds'
@@ -33,13 +33,13 @@ function rowText(r: StatusRow): string[] {
       return [`${branch}${r.mark} ${r.name}`]
     }
     case 'more':
-      return [`${'  '.repeat(r.depth - 1)}  └ ${r.text}`]
+      return [r.branch === null ? `  ${r.text}` : `${'  '.repeat(r.depth - 1)}  └ ${r.text}`]
     case 'fold':
       return [`${pad}${r.mark} ${r.text}`]
     case 'done-fold':
       return [`${pad}› ${r.text}`]
     case 'part':
-      return [`── ${r.text}`, ...(r.description ? [r.description] : [])]
+      return [r.text === null ? '──' : `── ${r.text}`, ...(r.description ? [r.description] : [])]
     case 'counts':
       return [`${pad}${countsText(r.counts)} ›`]
   }
@@ -54,8 +54,9 @@ function milestoneText(m: MilestoneRow): string[] {
 
   return [
     ...(m.startsLater ? [LATER_TEXT] : []),
-    `${m.mark} ${m.name}${fold}`,
+    `${m.mark} ${nameLine(m.name, m.subject?.stall ?? null)}${fold}`,
     ...(m.text ? [`  ${m.text}`] : []),
+    ...(m.subject?.merged ? [`  ${mergedLine(m.subject.merged, () => true)}`] : []),
     ...milestoneRows(m, () => false).flatMap(rowText),
   ]
 }
