@@ -26,11 +26,11 @@ import { agentTools } from '../../core/runtime/tools'
 import { TOOL_FIELDS } from '../../core/domain/tool-schemas'
 import type { AgentTool, ToolAnswer } from '../../core/runtime/tools'
 import { NEXT_BUILD_MARK } from '../../core/view/banners'
-import { NO_HOLDS, SETTLED_MS } from '../../core/view/timing'
+import { NO_HOLDS, RUNNING_FRAME_MS, SETTLED_MS } from '../../core/view/timing'
 import { INBOX_COMMAND_TEXT } from '../../core/view/tabs'
 import { createPanel } from './controller'
 import { demoSource } from './demo'
-import { bandLines } from './panel'
+import { bandLines, withScreenReadFailed } from './panel'
 import type { PanelScreen } from './panel'
 import { wrapText } from './panel-text'
 import { styleOf } from './theme'
@@ -385,18 +385,24 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
             })
             .catch(() => {
               if (mine === newestRefresh && screen && !screen.isReadFailed) {
-                screen = { ...screen, isReadFailed: true }
+                screen = withScreenReadFailed(screen)
                 tui.requestRender()
               }
             })
         }
         void refresh()
         const stop = inbox.onChange(ctx, () => void refresh())
+        const frames = setInterval(() => {
+          if (screen?.view.sync.ledger.is === 'checking') tui.requestRender()
+        }, RUNNING_FRAME_MS)
 
         return {
           render: width => (screen ? bandLines(screen, width, deps.now(), style) : []),
           invalidate: () => {},
-          dispose: stop,
+          dispose: () => {
+            clearInterval(frames)
+            stop()
+          },
         }
       },
       { placement: 'aboveEditor' },

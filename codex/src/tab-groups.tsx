@@ -184,7 +184,6 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
     agent: 'Codex',
     drawn: lists.questions.length + lists.tasks.length + closedCount,
     hasBlocker: false,
-    isReadFailed: false,
     hostText: notHeard ? { title: notHeard[0], hint: notHeard[1] ?? null } : null,
   })
   if (empty) return <EmptyState empty={empty} />
@@ -223,7 +222,6 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
     agent: 'Codex',
     drawn: lists.findings.length + closedTotal(v.findings.closed, settled),
     hasBlocker: false,
-    isReadFailed: false,
   })
   if (empty) return <EmptyState empty={empty} />
 

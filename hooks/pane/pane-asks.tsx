@@ -3,7 +3,8 @@ import { bannerOf, isResumable, READING_TEXT, stopBanner } from '../../core/view
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { EMPTY_STATE_MAX_WIDTH_PT } from '../../core/view/layout'
 import { emptyTab, type EmptyTab } from '../../core/view/empty-tab'
-import { FINDING_GROUPS } from '../../core/view/help'
+import { FINDING_GROUPS, RUNNING_MARK } from '../../core/view/help'
+import { RUNNING_SVG_CELLS } from './desktop-svg'
 import { READ_FAILED_TEXT } from '../mod/mod-sessions'
 import { sessionState } from '../mod/mod-state'
 import type { Entry, PaneBase, PaneHandlers, Row } from './pane-context'
@@ -140,6 +141,7 @@ export function paneAskTabs(
     groupEmpty,
     sections,
     banner,
+    runningDot,
   }: Pick<
     PaneBase,
     | 'listColumns'
@@ -161,7 +163,7 @@ export function paneAskTabs(
     | 'findingEntries'
     | 'lists'
   > &
-    Pick<PaneRowLines, 'divided'> &
+    Pick<PaneRowLines, 'divided' | 'runningDot'> &
     Pick<PaneRows, 'listRow' | 'isRowOpen'> &
     Pick<
       PaneRowParts,
@@ -171,7 +173,7 @@ export function paneAskTabs(
   { readAgain, resume }: Pick<PaneHandlers, 'readAgain' | 'resume'>,
 ) {
   /** A tab's empty state from `emptyTab`, centred in the docked pane, with `below`, its drawn `under`, under it. */
-  const emptyState = ({ title, hint }: EmptyTab, below: JSX.Element[] = []) => {
+  const emptyState = ({ title, hint, titleMark }: EmptyTab, below: JSX.Element[] = []) => {
     const text = hint ?? ''
     const wrap = (width: number) => {
       const lines: string[] = []
@@ -197,7 +199,14 @@ export function paneAskTabs(
     return (
       <Box flexDirection="column" flexGrow={1} justifyContent={align} alignItems={align}>
         <Box flexDirection="column" alignItems={align} paddingLeft={isInline ? 1 : 0}>
-          <Text bold>{title}</Text>
+          {titleMark ? (
+            <Box flexDirection="row" gap={1}>
+              <Text bold>{title}</Text>
+              {emptyTitleMark(titleMark.isRunning)}
+            </Box>
+          ) : (
+            <Text bold>{title}</Text>
+          )}
           {lines.length > 0 ? (
             <Box flexDirection="column" alignItems={align} marginTop={blankLine}>
               {lines.map(line => (
@@ -214,6 +223,13 @@ export function paneAskTabs(
       </Box>
     )
   }
+  /** The running mark after an empty tab's title while the inbox checks the asks, or its place while it does not. */
+  const emptyTitleMark = (isRunning: boolean) =>
+    isRunning ? (
+      runningDot('empty-title', RUNNING_MARK, pal.muted)
+    ) : (
+      <Box width={look === 'desktop' ? RUNNING_SVG_CELLS : 1} height={1} flexShrink={0} />
+    )
   /** Whether a list's last entry is a row that draws open, so the Closed fold under it takes no blank row of its own. */
   const isLastRowOpen = (entries: Entry[]) => {
     const last = entries.at(-1)
@@ -264,7 +280,7 @@ export function paneAskTabs(
         ]
       : []
     const hasBlocker = stop !== null || isUnread
-    const empty = emptyTab(view, { tab: 'needsYou', agent: 'Claude', drawn, hasBlocker, isReadFailed: isUnread })
+    const empty = emptyTab(view, { tab: 'needsYou', agent: 'Claude', drawn, hasBlocker })
     if (empty) return emptyState(empty)
     const outside = stop
       ? [
@@ -295,7 +311,7 @@ export function paneAskTabs(
   const findingsView = () => {
     const settled = settledIn(findingEntries)
     const drawn = findingEntries.length + closedTotal(view.findings.closed, settled)
-    const empty = emptyTab(view, { tab: 'findings', agent: 'Claude', drawn, hasBlocker: false, isReadFailed: isUnread })
+    const empty = emptyTab(view, { tab: 'findings', agent: 'Claude', drawn, hasBlocker: false })
     if (empty) return emptyState(empty)
     const groups = lists.findingGroups.map(g => {
       const closedOf = view.findings.closed.filter(f => f.kind === g.kind)

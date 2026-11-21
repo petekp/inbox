@@ -11,7 +11,8 @@ import {
   herdrTarget,
   herdrTokens,
 } from '../../core/remote/herdr'
-import type { EnvelopeSource, HerdrAgent, HerdrTarget } from '../../core/remote/herdr'
+import type { HerdrAgent, HerdrTarget } from '../../core/remote/herdr'
+import type { EnvelopeSource } from '../../core/remote/herdr-envelope'
 import { delegateSession, type DelegateSession } from '../../core/remote/hc-terminals'
 import { PRESS_LABEL } from '../../core/remote/herdr-labels'
 import {
@@ -33,6 +34,8 @@ import type { SweepFiles } from '../../core/remote/herdr-sweep'
 import { CLAUDE_CODE } from '../../core/domain/model-text'
 import { mod } from './mod-state'
 import { sessionView } from '../../core/view/session-view'
+import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
+import { NO_HOLDS } from '../../core/view/timing'
 import { SETTLED_MS } from '../../core/view/timing'
 
 /** The drawn conversation, as a report reads it when its turn comes. `root` is the folder its opens resolve against. */
@@ -295,6 +298,7 @@ export async function publishToHerdr(
             writtenAt: now,
             projectFolder: root,
             isFetchingPrs: session.prViews.isFetching,
+            isReadFailed: isUnread,
             ...(mod.version ? { version: mod.version, isNextBuild: mod.isNextBuild } : {}),
           },
           session,
@@ -305,8 +309,11 @@ export async function publishToHerdr(
 
         return null
       }
-      const view = sessionView(session, now, SETTLED_MS)
-      const tokens = herdrTokens(session.ledger, session.stop, view, dialogs, isUnread)
+      const view = sessionView(session, now, SETTLED_MS, NO_HOLDS, {}, false, {
+        ...NO_SYNC_INPUTS,
+        isReadFailed: isUnread,
+      })
+      const tokens = herdrTokens(session.ledger, session.stop, view, dialogs)
 
       return { target, tokens, session: isPublished ? id : null }
     },

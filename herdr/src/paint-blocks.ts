@@ -299,24 +299,17 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     .items_start()
     .child(div().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title))
     .when(!p.isNarrow, e => e.child(div().flex_none().ml(INSET).text_color(t.muted).child(b.number)))
-  const status = div()
-    .pt(INSIDE_GAP)
-    .child(
-      partedEl(
-        [
-          ...(p.isNarrow ? [div().flex_none().text_color(t.muted).child(b.number)] : []),
-          statusPartEl(b.status.text).text_color(colorOf(t, b.status.tone)),
-          ...b.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
-        ],
-        t.muted,
-      ),
-    )
+  const statusParts = [
+    ...(p.isNarrow ? [div().flex_none().text_color(t.muted).child(b.number)] : []),
+    ...(b.status ? [statusPartEl(b.status.text).text_color(colorOf(t, b.status.tone))] : []),
+    ...b.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
+  ]
 
   return v_flex()
     .pl(EDGE)
     .pr(EDGE)
     .child(title)
-    .child(status)
+    .when(statusParts.length > 0, e => e.child(div().pt(INSIDE_GAP).child(partedEl(statusParts, t.muted))))
     .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
     .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
     .when(b.feedback !== null, e => e.child(feedbackEl(b.feedback!, t)))

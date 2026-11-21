@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import type { Stop } from '../../types'
 import { SETTLED_MS } from '../../core/view/timing'
 import { sessionView } from '../../core/view/session-view'
-import { INITIAL_UI, bandLines, render } from '../src/panel'
+import { INITIAL_UI, bandLines, render, withScreenReadFailed } from '../src/panel'
 import type { PanelScreen } from '../src/panel'
 import { emptyState } from '../src/state'
 import { cursorOf, drawn, firstQuestion, keyed, NOW, onRow, screenOf, strip, style, text } from './panel-harness'
@@ -47,10 +47,11 @@ test('the band shows the counts with their labels at full brightness, and how to
   )
   const withPr = { ...empty, view: { ...empty.view, prs: { ...empty.view.prs, count: 1 } } }
   expect(strip(bandLines(withPr, 80, NOW, style)[0]!)).toContain('PRs 1')
-  const failed = { ...empty, view: { ...empty.view, status: { ...empty.view.status, error: 'failed' } } }
+  const failedLedger = { is: 'stale', since: null, why: 'failed' } as const
+  const failed = { ...empty, view: { ...empty.view, sync: { ...empty.view.sync, ledger: failedLedger } } }
   expect(strip(bandLines(failed, 80, NOW, style)[0]!)).toContain('May be out of date')
   expect(text(failed, INITIAL_UI)).toContain('May be out of date')
-  expect(strip(bandLines({ ...empty, isReadFailed: true }, 80, NOW, style)[0]!)).toContain('May be out of date')
+  expect(strip(bandLines(withScreenReadFailed(empty), 80, NOW, style)[0]!)).toContain('May be out of date')
 })
 
 test('no drawn line is wider than the panel, and a short panel keeps the selected row in view', () => {
@@ -67,7 +68,7 @@ test('no drawn line is wider than the panel, and a short panel keeps the selecte
 const stopAt = NOW - 120_000
 
 test('a stop shows above the Asks rows with its fix, and the band says it under the counts', () => {
-  const stop: Stop = { kind: 'sign-in', detail: '401', resets: null, at: stopAt }
+  const stop: Stop = { kind: 'sign-in', apiError: null, detail: '401', resets: null, at: stopAt }
   const screen = screenOf({ stop })
   const lines = text(screen, INITIAL_UI).split('\n')
   const at = lines.findIndex(l => l.includes('Stopped'))
@@ -80,7 +81,13 @@ test('a stop shows above the Asks rows with its fix, and the band says it under 
 })
 
 test('an API error stop opens on Resume, which reads Resuming… and presses once', () => {
-  const stop: Stop = { kind: 'api-error', detail: 'overloaded', resets: null, at: stopAt }
+  const stop: Stop = {
+    kind: 'api-error',
+    apiError: { cause: 'overloaded', text: null },
+    detail: 'overloaded',
+    resets: null,
+    at: stopAt,
+  }
   const screen = screenOf({ stop })
   const pressed = keyed(screen, INITIAL_UI, 'enter', NOW)
   expect(pressed.press).toEqual({ action: 'resume' })

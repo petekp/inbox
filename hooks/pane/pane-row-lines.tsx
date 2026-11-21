@@ -379,6 +379,7 @@ export function paneRowLines({
     unselectedLine,
     ToneSvg,
     svgCell,
+    runningDot,
     gutterMark,
     toned,
     sideAge,

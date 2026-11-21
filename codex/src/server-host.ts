@@ -14,6 +14,7 @@ import type { SendOutcome } from '../../core/runtime/session-presses'
 import { fetchPrs, prFetchTracker } from '../../core/runtime/host-prs'
 import type { Background } from './background'
 import { NO_PR_SHARED } from '../../core/domain/pr-fetch'
+import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import type { PrShared } from '../../core/domain/pr-fetch'
 import { press, wakeAfterSettle as wakeSessionAfterSettle } from '../../core/runtime/host-press'
 import type { PressOutcome } from '../../core/runtime/host-press'
@@ -65,6 +66,7 @@ export function makeSessionHost(
   })
   let isGhMissing = false
   let prShared: PrShared = NO_PR_SHARED
+  const turnReadFailures = new Map<string, number>()
 
   async function queueMessage(s: SessionState, message: string, resolvedCli?: string): Promise<SendOutcome> {
     let cli: string
@@ -163,10 +165,14 @@ export function makeSessionHost(
       id,
       async saved => {
         const s = await withRolloutArrivals(await currentRollout(saved), now())
-        const newest = s.transcriptPath === null ? null : await newestTurnEvent(s.transcriptPath)
-        if (newest !== null) newestTurns.set(id, newest.id)
-        const isRunning = newest === null ? null : newest.kind === 'started'
-        if (isRunning === null || isRunning === s.presence.isTurnRunning) return s
+        const newest = s.transcriptPath === null ? 'unread' : await newestTurnEvent(s.transcriptPath)
+        const isTurnUnread = newest === 'unread' && s.presence.isTurnRunning
+        if (!isTurnUnread) turnReadFailures.delete(id)
+        else if (!turnReadFailures.has(id)) turnReadFailures.set(id, now())
+        if (newest === 'unread' || newest === null) return s
+        newestTurns.set(id, newest.id)
+        const isRunning = newest.kind === 'started'
+        if (isRunning === s.presence.isTurnRunning) return s
 
         return isRunning ? turnStarted(s, null) : turnEnded(s, null, now())
       },
@@ -191,6 +197,12 @@ export function makeSessionHost(
       { ...current, prViews: { ...current.prViews, isGhMissing: !isDemo && isGhMissing } },
       now(),
       holds,
+      {
+        ...NO_SYNC_INPUTS,
+        isFetchingPrs: !isDemo && prFetches.isFetching(id),
+        turnReadFailedAt: isDemo ? null : (turnReadFailures.get(id) ?? null),
+        isDemo,
+      },
     )
     const trust = isDemo ? null : hooksTrustNow(current, id)
     const herdrAsk = isDemo ? null : await deps.herdrAsk?.view().catch(() => null)

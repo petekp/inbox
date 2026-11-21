@@ -1,6 +1,6 @@
 import type { SessionEndReason } from 'claude-code'
 
-import { PR_POLL_MS } from '../../core/runtime/host-prs'
+import { PR_POLL_MS } from '../../core/domain/pr-fetch'
 import { forgetStored } from './mod-delivery'
 import { redraw } from './mod-drawn'
 import { recordsFolder } from './mod-engine-calls'

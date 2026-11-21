@@ -359,7 +359,6 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
     agent: screen.agent,
     drawn: groups.filter(g => g.rows.length > 0 || g.closed.length > 0).length,
     hasBlocker: false,
-    isReadFailed: false,
   })
   if (empty) return [emptyBlock(tab, empty)]
 

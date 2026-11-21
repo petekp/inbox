@@ -18,6 +18,14 @@
 .empty .title {
   margin-bottom: var(--list-gap);
 }
+/* Out of the flow, so the centred title stays put as the mark comes and goes. */
+.empty .title-mark {
+  position: absolute;
+  padding-left: var(--control-gap);
+}
+.title-mark.hidden {
+  visibility: hidden;
+}
 footer {
   margin-top: auto;
   display: flex;

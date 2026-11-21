@@ -36,7 +36,7 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
     turns,
     extraSteps: {},
     settleWindowMs: SETTLED_MS,
-    status: perTurnStatus('none'),
+    status: perTurnStatus({ is: 'fresh' }),
     replies: {},
     discarded: {},
     shownSince: 1_000_000,
@@ -55,7 +55,7 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now: 1_000_000 }
   const prRows = Object.values(prViews.views).flatMap(pr => [
-    { id: `PR #${pr.number}`, actions: prBlockActions(pr, isSent, prViews.branchRef, presses) },
+    { id: `PR #${pr.number}`, actions: prBlockActions(pr, isSent, prViews.branchRef, presses, { is: 'fresh' }) },
     ...waitingThreads(pr).map(t => ({ id: prThreadId(pr, t), actions: threadActions(pr, t, presses) })),
     ...blockingChecks(pr).map(c => ({ id: prCheckId(pr, c), actions: checkActions(pr, c, presses) })),
   ])
@@ -82,7 +82,7 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
     turns,
     extraSteps: {},
     settleWindowMs: SETTLED_MS,
-    status: perTurnStatus('none'),
+    status: perTurnStatus({ is: 'fresh' }),
     now: 1_000_000,
     replies: {},
     discarded: {},
@@ -199,7 +199,7 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
     const isSent = threadSentIn(lastActions)
     const presses = { lastActions, turns, now: 1_000_000 }
     for (const pr of prs) {
-      const labels = prBlockActions(pr, isSent, prViews.branchRef, presses).map(a => a.label)
+      const labels = prBlockActions(pr, isSent, prViews.branchRef, presses, { is: 'fresh' }).map(a => a.label)
       const { buttons } = await drawn()
       expect(
         buttons.filter(b => b.key.endsWith(`-${pr.ref}`)).map(b => b.label),

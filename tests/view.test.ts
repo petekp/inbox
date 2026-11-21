@@ -243,7 +243,7 @@ test('the inbox view lists questions and tasks newest reply first, and counts ea
     turns: s.presence,
     extraSteps: {},
     settleWindowMs: SETTLED_MS,
-    status: perTurnStatus('none'),
+    status: perTurnStatus({ is: 'fresh' }),
     now: 10,
     replies: {},
     discarded: {},
@@ -257,15 +257,17 @@ test('the inbox view lists questions and tasks newest reply first, and counts ea
   expect(v.findings.count).toBe(0)
 })
 
-test('the footer shows a failed update on every tab but PRs, and on Status puts the page’s error first, then the update’s, then a stale note', () => {
-  const failed = perTurnStatus('waiting')
+test('the footer shows a failed update on every tab but PRs, and on Status puts the page’s failure first, then the update’s, then its quiet note', () => {
+  const failed = perTurnStatus({ is: 'stale', since: null, why: 'failed' })
   expect(typeof failed.error).toBe('string')
-  expect(perTurnStatus('retrying')).toEqual({ isRetrying: true, error: null })
+  expect(perTurnStatus({ is: 'checking' })).toEqual({ error: null })
+  const pageFailed = { sync: { is: 'stale', since: 1, why: 'failed' }, syncText: 'page' } as const
+  const quiet = { sync: { is: 'stale', since: 1, why: 'quiet' }, syncText: 'old' } as const
   expect(footerError('prs', failed, null)).toBe(null)
-  expect(footerError('needsYou', failed, { error: 'page', stale: 'old' })).toBe(failed.error)
-  expect(footerError('overview', failed, { error: 'page', stale: 'old' })).toBe('page')
-  expect(footerError('overview', failed, { error: null, stale: 'old' })).toBe(failed.error)
-  expect(footerError('overview', perTurnStatus('none'), { error: null, stale: 'old' })).toBe('old')
+  expect(footerError('needsYou', failed, pageFailed)).toBe(failed.error)
+  expect(footerError('overview', failed, pageFailed)).toBe('page')
+  expect(footerError('overview', failed, quiet)).toBe(failed.error)
+  expect(footerError('overview', perTurnStatus({ is: 'fresh' }), quiet)).toBe('old')
 })
 
 test('stepping through a list wraps past either end, and with nothing selected starts from the end it steps toward', () => {

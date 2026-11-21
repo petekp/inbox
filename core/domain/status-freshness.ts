@@ -1,4 +1,5 @@
-import type { Session, SessionStatus } from '../../types'
+import type { SessionStatus } from '../../types'
+import type { StatusSync } from '../view/sync-state'
 import type { StatusExchange } from '../runtime/status-records'
 import { duration } from './text'
 
@@ -41,16 +42,14 @@ export function withChangeNoted(
   return isActive ? { ...after, quietCalls: after.quietCalls + 1 } : after
 }
 
-/** The line under the tabs on the Status tab: why the page may be missing changes, or null when it is current. */
-export function statusPageLine(
-  s: { ledger: { overview: SessionStatus | null }; overviewFailure?: Session['overviewFailure'] },
-  now: number,
-): { error: string | null; stale: string | null } {
-  const o = s.ledger.overview
-  const isStale = o !== null && o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS
+/** Whether several Status calls after agent activity changed nothing on the page. */
+export function isStatusQuiet(o: SessionStatus): o is SessionStatus & { changedAt: number } {
+  return o.changedAt !== null && o.quietCalls >= STALE_AFTER_CALLS
+}
 
-  return {
-    error: s.overviewFailure ? STATUS_FAILED : null,
-    stale: isStale ? `Not updated in ${duration(now - o.changedAt!)}` : null,
-  }
+/** The line under the tabs on the Status tab: why the page may be missing changes, or null when it is current. */
+export function statusSyncText(sync: StatusSync, now: number): string | null {
+  if (sync.is !== 'stale') return null
+
+  return sync.why === 'failed' || sync.since === null ? STATUS_FAILED : `Not updated in ${duration(now - sync.since)}`
 }

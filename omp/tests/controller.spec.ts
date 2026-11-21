@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
 
 import { HERDR_CHECK_MS } from '../../core/remote/herdr'
-import { PR_POLL_MS, prFetchTracker } from '../../core/runtime/host-prs'
+import { PR_POLL_MS } from '../../core/domain/pr-fetch'
+import { prFetchTracker } from '../../core/runtime/host-prs'
 import { emptySession } from '../../core/view/session-files'
 import { COMPARE_LIMIT_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../../core/view/timing'
 import { demoOf, flush, open, sharingUi } from './controller-harness'
@@ -214,7 +215,13 @@ test('a change in the saved state redraws the panel', async () => {
 
 test('a refused Resume shows why on the stop row', async () => {
   const demo = demoOf(() => 0)
-  const stop = { kind: 'api-error' as const, detail: 'overloaded', resets: null, at: 1_700_000_000_000 }
+  const stop = {
+    kind: 'api-error' as const,
+    apiError: { cause: 'overloaded' as const, text: null },
+    detail: 'overloaded',
+    resets: null,
+    at: 1_700_000_000_000,
+  }
   const { panel } = open({
     screen: async (holds, notes) => ({ ...(await demo.screen(holds, notes)), stop }),
     resume: async () => 'no session to send to',

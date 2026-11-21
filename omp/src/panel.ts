@@ -6,8 +6,9 @@ import type { BannerTone, ToneName } from '../../core/view/tones'
 import { ago } from '../../core/domain/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../core/view/banners'
 import { shownTabs, isRowTab } from '../../core/view/tabs'
-import { bandCounts, noCountsText } from '../../core/view/band'
+import { bandCounts, nothingMark, nothingText } from '../../core/view/band'
 import { footerError } from '../../core/view/view'
+import { withReadFailed } from '../../core/view/sync-state'
 import { statusSelected } from '../../core/view/status-keys'
 import { seenSubjectIds } from '../../core/view/status-page'
 import { noticeOf } from '../../core/view/ui-controller'
@@ -265,10 +266,17 @@ export function tallestTabHeight(
   return Math.max(...heights)
 }
 
+/** The screen before a read of the session failed, with its asks and findings marked unreadable. */
+export function withScreenReadFailed(screen: PanelScreen): PanelScreen {
+  return { ...screen, isReadFailed: true, view: { ...screen.view, sync: withReadFailed(screen.view.sync) } }
+}
+
 /** The band above the prompt: the counts, and under them why the last turn stopped. */
 export function bandLines(screen: PanelScreen, width: number, now: number, style: Style): string[] {
   const counts = bandCounts(screen.view).map(c => `${c.label} ${style.tone(c.id, String(c.count))}`)
-  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : style.dim(noCountsText(screen.view, screen.isReadFailed))}`
+  const nothing = nothingText(screen.view.sync.ledger)
+  const nothingDrawn = style.dim(nothing.text) + style.dim(nothingMark(nothing.isChecking, now))
+  const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : nothingDrawn}`
   const countLine = spread(left, style.dim('/inbox to open '), width)
   const { stop } = screen
   if (!stop) return [countLine]

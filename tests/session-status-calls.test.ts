@@ -167,7 +167,7 @@ test('the Status page is empty for a new session, and while its first turn runs,
   expect(view(turnStarted(idle, 9_000)).isEmpty).toBe(true)
   expect(view(withStatus(turnStarted(idle, 9_000))).isEmpty).toBe(false)
   expect(view(withStatus(idle)).head?.title).toBe('Work offline')
-  expect(view(idle).error).toBeNull()
+  expect(view(idle).syncText).toBeNull()
 })
 
 test('a running turn claims a Status call once the wait has passed since it started and since the last call, claims it once, and an idle session never does', () => {
@@ -390,7 +390,7 @@ test('a failed Status call shows in the status line on the Status tab, in place 
   const v = sessionView(failed, 1000, 1000, NO_HOLDS)
 
   expect(v.statusPage).not.toBeNull()
-  expect(footerError('overview', v.status, v.statusPage)).toBe(v.statusPage.error)
+  expect(footerError('overview', v.status, v.statusPage)).toBe(v.statusPage.syncText)
   expect(footerError('needsYou', v.status, v.statusPage)).toBe(v.status.error)
   expect(footerError('prs', v.status, v.statusPage)).toBeNull()
 })

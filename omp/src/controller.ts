@@ -1,5 +1,5 @@
 import { HERDR_CHECK_MS } from '../../core/remote/herdr'
-import { PR_POLL_MS } from '../../core/runtime/host-prs'
+import { PR_POLL_MS } from '../../core/domain/pr-fetch'
 import type { PrPress } from '../../core/view/pr-press'
 import type { RowPress } from '../../core/domain/presses'
 import { READING_TEXT } from '../../core/view/banners'
@@ -10,7 +10,7 @@ import { holdsOf } from '../../core/view/ui-controller-reply'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
 import type { HostFacts, SettledOutcome, UiCommand, UiEvent, UiState } from '../../core/view/ui-controller-types'
 import type { RowNote } from '../../types'
-import { INITIAL_UI, NO_LOCAL, OMP_LOOK, drawPanel, sharedOf, tallestTabHeight } from './panel'
+import { INITIAL_UI, NO_LOCAL, OMP_LOOK, drawPanel, sharedOf, tallestTabHeight, withScreenReadFailed } from './panel'
 import type { LocalPress, PanelScreen, PanelUi, Style } from './panel'
 import { applyEvents, handleKey } from './panel-keys'
 import type { KeyResult } from './panel-keys'
@@ -186,7 +186,7 @@ export function createPanel(deps: PanelDeps): Panel {
     if (mine !== version || isDisposed) return
     if (next === null) {
       if (screen && !screen.isReadFailed) {
-        screen = { ...screen, isReadFailed: true }
+        screen = withScreenReadFailed(screen)
         deps.requestRender()
       }
       retryRead()

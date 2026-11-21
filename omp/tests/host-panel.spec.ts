@@ -50,13 +50,13 @@ test('opening the panel finds gh signed out, and a later fetch that gh answers w
   await settle()
   const signedOut = await inbox.screen(makeCtx())
   expect(signedOut.isGhMissing).toBe(false)
-  expect(signedOut.view.prs.isGhSignedOut).toBe(true)
+  expect(signedOut.view.prs.gh).toEqual({ is: 'unavailable', why: 'gh-signed-out' })
 
   w.execResults.set('gh', { code: 1, stderr: 'no pull requests found for branch "main"' })
   w.clock += 130_000
   inbox.fetchPrsWhenDue(makeCtx(), true)
   await settle()
-  expect((await inbox.screen(makeCtx())).view.prs.isGhSignedOut).toBe(false)
+  expect((await inbox.screen(makeCtx())).view.prs.gh).not.toEqual({ is: 'unavailable', why: 'gh-signed-out' })
 })
 
 test('opening the panel finds gh and fetches PRs again only after the refresh interval, which the hidden PRs tab does not reach at 2 minutes', async () => {

@@ -3,7 +3,8 @@ import { TOLD_NOTHING } from '../domain/inbox-text'
 import { upgradeLastActions } from '../domain/last-actions'
 import { upgradeHostTasks } from '../domain/host-tasks'
 import { withCheckKeys } from './saved-check-keys'
-import type { PrView, PrViews, Session, Told, ToolFields, TurnDialogQuestion } from '../../types'
+import { withApiError } from '../domain/stops'
+import type { ApiError, PrView, PrViews, Session, Stop, Told, ToolFields, TurnDialogQuestion } from '../../types'
 
 const NO_PRS: PrViews = { views: {}, branchRef: null, isFetching: false }
 
@@ -83,9 +84,11 @@ export function staleSessionFiles<F extends { name: string; mtimeMs: number }>(f
 
 /** A session's shared fields as any earlier build saved them, each possibly missing. */
 export type SavedSession = Partial<
-  Omit<Session, 'turn' | 'told' | 'presence' | 'sent' | 'prViews' | 'dialogQuestions'>
+  Omit<Session, 'turn' | 'told' | 'presence' | 'sent' | 'prViews' | 'dialogQuestions' | 'stop'>
 > & {
   turn?: Partial<Session['turn']>
+  /** Stops saved before `apiError` have none. */
+  stop?: (Omit<Stop, 'apiError'> & { apiError?: ApiError | null }) | null
   /** Codex saved its dialog questions with no descriptions. */
   dialogQuestions?: (Omit<TurnDialogQuestion, 'descriptions'> & Partial<Pick<TurnDialogQuestion, 'descriptions'>>)[]
   told?: Partial<Told>
@@ -173,7 +176,7 @@ function sessionFields(saved: SavedSession, views: Record<string, PrView>): Sess
       ),
       isFetching: false,
     },
-    stop: saved.stop ?? null,
+    stop: saved.stop ? withApiError(saved.stop) : null,
     overviewFailure: saved.overviewFailure ?? null,
     callFailures: { ...NO_CALL_FAILURES, ...saved.callFailures },
     lastAnswers: { ...NO_ANSWERS, ...saved.lastAnswers },

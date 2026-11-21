@@ -5,6 +5,7 @@ import { sessionView } from '../../core/view/session-view'
 import type { SentBy } from '../../core/runtime/session-turns'
 import type { SessionView } from '../../core/view/session-view'
 import { NO_HOLDS } from '../../core/view/timing'
+import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import { screenTabOf } from '../../core/view/tabs'
 import type { Holds } from '../../core/view/timing'
 import { SETTLE_WINDOW_MS } from './settle'
@@ -147,6 +148,6 @@ export type TabView = View & {
   isGhMissing: boolean
 }
 
-export function viewOf(s: SessionState, now: number, holds: Holds = NO_HOLDS): View {
-  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now }
+export function viewOf(s: SessionState, now: number, holds: Holds = NO_HOLDS, inputs = NO_SYNC_INPUTS): View {
+  return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds, {}, false, inputs), heard: heardState(s.heard), at: now }
 }

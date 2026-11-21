@@ -1,7 +1,7 @@
 import type { Timer } from 'claude-code'
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import type { EnvelopeSource } from '../core/remote/herdr'
+import type { EnvelopeSource } from '../core/remote/herdr-envelope'
 import { pressDrainer, publishedText, PUBLISH_LIMIT_BYTES, startedFile, startHerdrFile } from '../core/remote/herdr-app'
 import type { PressFiles } from '../core/remote/herdr-app'
 import { listenForHerdrPresses } from '../hooks/mod/mod-herdr'

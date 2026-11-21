@@ -1,5 +1,5 @@
-import { isMaybeStale } from './band'
-import { MAYBE_STALE_TEXT, NOTHING_NEEDED_TEXT } from './banners'
+import { nothingText } from './band'
+import { NOTHING_NEEDED_TEXT } from './banners'
 import { ghNoticeOf } from './pr-rows'
 import type { PrRefreshView } from './pr-refresh'
 import type { SessionView } from './session-view'
@@ -25,7 +25,11 @@ type EmptyUnder =
   | { is: 'pr-refresh'; refresh: PrRefreshView }
   | { is: 'set-goal'; keys: StatusKey[]; offerKeys: StatusKey[]; isFieldOpen: boolean; suggestion: string | null }
 
-export type EmptyTab = EmptyText & { under: EmptyUnder | null }
+/**
+ * `titleMark`: the place after an empty Asks or Findings tab's title for the running mark `nothingText` asks for while
+ * an update checks the asks. The look keeps the place while no mark shows, so the title stays put. Null on other tabs.
+ */
+export type EmptyTab = EmptyText & { under: EmptyUnder | null; titleMark: { isRunning: boolean } | null }
 
 /** What a look knows about a tab that the shared view does not. */
 type EmptyTabLook =
@@ -37,8 +41,6 @@ type EmptyTabLook =
       drawn: number
       /** Whether the look draws something in the tab's place that waits on the person, such as a stop or a failed read. */
       hasBlocker: boolean
-      /** Whether the look could not read the saved inbox, so the tab may be missing rows. */
-      isReadFailed: boolean
       /** The host's own text in place of the Asks tab's, such as Codex's while it has not heard from its hooks. */
       hostText?: EmptyText | null
     }
@@ -49,7 +51,6 @@ type EmptyTabLook =
       /** More than 0 while the look draws a PR block. */
       drawn: number
       isFetchingPrs: boolean
-      isGhMissing: boolean
     }
   | { tab: 'overview'; isGoalFieldOpen: boolean }
 
@@ -82,26 +83,27 @@ export function emptyTab(view: SessionView, look: EmptyTabLook): EmptyTab | null
         isFieldOpen: look.isGoalFieldOpen,
         suggestion: page.suggestedGoal,
       },
+      titleMark: null,
     }
   }
   if (look.tab === 'prs') {
     if (look.drawn > 0) return null
-    const gh = { isGhMissing: look.isGhMissing, isGhSignedOut: view.prs.isGhSignedOut, failure: view.prs.failure }
     const { refresh } = view.prs
 
     return {
       title: look.isFetchingPrs ? EMPTY_TITLES.prsFetching : EMPTY_TITLES.prs,
-      hint: ghNoticeOf(gh)?.text ?? prsEmptyHint(look.place),
+      hint: ghNoticeOf(view.prs.gh)?.text ?? prsEmptyHint(look.place),
       under: refresh ? { is: 'pr-refresh', refresh } : null,
+      titleMark: null,
     }
   }
   if (look.drawn > 0 || look.hasBlocker) return null
-  if (look.tab === 'needsYou' && look.hostText) return { ...look.hostText, under: null }
+  if (look.tab === 'needsYou' && look.hostText) return { ...look.hostText, under: null, titleMark: null }
   const hint =
     look.tab === 'needsYou'
       ? `${look.agent}'s questions and the tasks only you can do show up here.`
       : `${look.agent} flags issues and opportunities it spots beyond your task.`
-  const title = isMaybeStale(view, look.isReadFailed) ? MAYBE_STALE_TEXT : EMPTY_TITLES[look.tab]
+  const { text, isChecking } = nothingText(view.sync.ledger, EMPTY_TITLES[look.tab])
 
-  return { title, hint, under: null }
+  return { title: text, hint, under: null, titleMark: { isRunning: isChecking } }
 }

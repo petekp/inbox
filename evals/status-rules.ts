@@ -347,7 +347,7 @@ const FIXED_RULES: Rule[] = [
     property: 13,
     text: 'While the last Status call wrote nothing, the status line says so.',
     failures: ({ result }) =>
-      result.isStatusFailed && result.page.error === null ? ['the call failed, and the page does not say so'] : [],
+      result.isStatusFailed && result.page.syncText === null ? ['the call failed, and the page does not say so'] : [],
   },
   {
     id: 'finished-named',

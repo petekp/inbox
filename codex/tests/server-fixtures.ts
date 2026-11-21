@@ -4,7 +4,7 @@ import { updateState } from '../src/state'
 import { fakeRunner, tempDir } from './helpers'
 import { prNodeOf, prsAnswerOf } from '../../tests/gh-answers'
 import type { ThreadsJson, ViewJson } from '../../tests/gh-answers'
-import type { PrFetchFailure } from '../../types'
+import type { GhSync } from '../../core/view/sync-state'
 
 export async function setup(
   queueCode: number,
@@ -109,8 +109,7 @@ export type PrView = {
       isRanked: boolean
     }[]
     count: number
-    isGhSignedOut: boolean
-    failure: PrFetchFailure | null
+    gh: GhSync
     refresh: { text: string | null; actions: { label: string }[]; showsPress: boolean } | null
     clear: { label: string }[]
     order: {

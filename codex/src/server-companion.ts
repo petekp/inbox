@@ -51,7 +51,7 @@ export function makeCompanion(
           const view = sessionView(state, deps.now(), SETTLE_WINDOW_MS)
           sessions.push({
             available: true,
-            fresh: !isMaybeStale(view),
+            fresh: !isMaybeStale(view.sync.ledger),
             error: '',
             id: entry.id,
             name: entry.name || basename(state.root) || 'Codex chat',

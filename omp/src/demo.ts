@@ -4,6 +4,7 @@ import { demoAfterPress, demoReplied, demoSent } from '../../core/runtime/press-
 import { pressOn } from '../../core/runtime/session-presses'
 import { withCollapse } from '../../core/view/collapse'
 import { sessionView } from '../../core/view/session-view'
+import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import type { PanelSource } from './controller'
 import { emptyState } from './state'
 import type { OmpState } from './state'
@@ -31,7 +32,10 @@ export function demoSource(deps: {
 
   return {
     screen: async (holds, notes) => ({
-      view: sessionView(state, deps.now(), deps.settleWindowMs, holds, notes),
+      view: sessionView(state, deps.now(), deps.settleWindowMs, holds, notes, false, {
+        ...NO_SYNC_INPUTS,
+        isDemo: true,
+      }),
       modelName: deps.modelName,
       isGhMissing: false,
       isFetchingPrs: false,

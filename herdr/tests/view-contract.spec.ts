@@ -1,6 +1,6 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
-import { herdrEnvelope } from '../../core/remote/herdr'
+import { herdrEnvelope } from '../../core/remote/herdr-envelope'
 import { NO_HOLDS } from '../../core/view/timing'
 import type { Session } from '../../types'
 import { contractSessions } from '../../tests/view-contract-sessions'

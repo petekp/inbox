@@ -269,15 +269,16 @@ test('the PRs tab opens on the first thread that waits, and its press goes throu
 })
 
 test('the PRs tab says when gh is missing, when gh is not signed in, and when there are no PRs', () => {
-  const screen = screenOf({ isGhMissing: true })
-  const ui = { ...INITIAL_UI, tab: 'prs' as const }
-  expect(text(screen, ui)).toContain(GH_MISSING_TEXT)
-  const signedOut = (s: PanelScreen): PanelScreen => ({
+  const withGh = (s: PanelScreen, gh: PanelScreen['view']['prs']['gh']): PanelScreen => ({
     ...s,
-    view: { ...s.view, prs: { ...s.view.prs, isGhSignedOut: true } },
+    view: { ...s.view, prs: { ...s.view.prs, gh } },
   })
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  expect(text(withGh(screenOf({ isGhMissing: true }), { is: 'unavailable', why: 'gh-missing' }), ui)).toContain(
+    GH_MISSING_TEXT,
+  )
+  const signedOut = (s: PanelScreen) => withGh(s, { is: 'unavailable', why: 'gh-signed-out' })
   expect(text(signedOut(screenOf()), ui)).toContain(GH_SIGNED_OUT_TEXT)
-  expect(text(signedOut(screen), ui)).not.toContain(GH_SIGNED_OUT_TEXT)
   const empty = { ...screenOf(), view: sessionView(emptyState('s'), NOW, SETTLED_MS) }
   expect(text(empty, ui)).toContain('No PRs')
   expect(text(empty, ui)).toContain(prsEmptyHint('session'))

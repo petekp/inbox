@@ -15,6 +15,7 @@ import { emptySession } from '../core/view/session-files'
 import { sessionView } from '../core/view/session-view'
 import { agentTools } from '../core/runtime/tools'
 import type { Dialog, Ledger, Stop } from '../types'
+import { withApiError } from '../core/domain/stops'
 import { REPLY } from './ledger-helpers'
 
 describe('answerNote', () => {
@@ -191,7 +192,12 @@ describe('the Herdr status line', () => {
     expect(
       statusOf(
         waiting,
-        { kind: stopKindOf('authentication_failed', ''), detail: 'authentication_failed', resets: null, at: 1 },
+        withApiError({
+          kind: stopKindOf('authentication_failed', ''),
+          detail: 'authentication_failed',
+          resets: null,
+          at: 1,
+        }),
         [dialog],
       ),
     ).toBe('! Signed out: /login')
@@ -201,7 +207,7 @@ describe('the Herdr status line', () => {
     const waiting = applyUpdate(EMPTY, parseReply(REPLY)!, 1, 1)
     const head = { title: 'PDF export', description: 'Lay out the PDF export' }
     const described = { ...waiting, overview: { ...EMPTY_SESSION_STATUS, head } }
-    const stop = { kind: 'sign-in' as const, detail: 'authentication_failed', resets: null, at: 1 }
+    const stop = { kind: 'sign-in' as const, apiError: null, detail: 'authentication_failed', resets: null, at: 1 }
     const focusOf = (ledger: Ledger, s: Stop | null) =>
       herdrTokens(ledger, s, sessionView({ ...emptySession(), ledger }, 3, 0), [])['inbox-focus']
 
@@ -213,9 +219,14 @@ describe('the Herdr status line', () => {
   test('tells a reached usage limit, with its reset time, from a busy server', () => {
     const limit = "You've hit your weekly limit · resets 7:33pm (America/Los_Angeles)"
     expect(stopKindOf('rate_limit', limit)).toBe('usage-limit')
-    expect(statusOf(EMPTY, { kind: 'usage-limit', detail: 'rate_limit', resets: resetTime(limit), at: 1 }, [])).toBe(
-      '! Limit: resets 7:33pm',
-    )
+    const usageLimit = {
+      kind: 'usage-limit' as const,
+      apiError: null,
+      detail: 'rate_limit',
+      resets: resetTime(limit),
+      at: 1,
+    }
+    expect(statusOf(EMPTY, usageLimit, [])).toBe('! Limit: resets 7:33pm')
     expect(stopKindOf('rate_limit', 'API Error: Server is temporarily limiting requests (not your usage limit)')).toBe(
       'api-error',
     )

@@ -105,7 +105,7 @@ test('a failed Status call shows in place of the stale line, and no tab but Stat
   const s = await host.read()
 
   expect(stale).not.toBeNull()
-  expect(footerError('overview', v(failed(s)).status, v(failed(s)).statusPage)).toBe(v(failed(s)).statusPage.error)
+  expect(footerError('overview', v(failed(s)).status, v(failed(s)).statusPage)).toBe(v(failed(s)).statusPage.syncText)
   expect(footerError('needsYou', v(s).status, v(s).statusPage)).toBeNull()
 })
 

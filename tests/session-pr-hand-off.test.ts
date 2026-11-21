@@ -48,7 +48,9 @@ type Kind = {
 const presses = (s: Session, now: number) => ({ lastActions: s.lastActions, turns: s.presence, now })
 const blockAction = (action: string) => (s: Session, now: number) => {
   const pr = s.prViews.views[FIX_REF]!
-  const found = prBlockActions(pr, () => false, null, presses(s, now)).find(a => a.press.action === action)
+  const found = prBlockActions(pr, () => false, null, presses(s, now), { is: 'fresh' }).find(
+    a => a.press.action === action,
+  )
 
   return found ? { label: found.label, isOut: found.isOut } : null
 }
@@ -151,7 +153,9 @@ test('a hand-off whose turn ended with no answer stops reading as working, and i
 
   await t.host.update(fetchedAfter({}, (await t.host.now()) + 100))
   const s = await t.host.read()
-  const conflicts = prBlockActions(s.prViews.views[FIX_REF]!, () => false, null, presses(s, await t.host.now()))
+  const conflicts = prBlockActions(s.prViews.views[FIX_REF]!, () => false, null, presses(s, await t.host.now()), {
+    is: 'fresh',
+  })
   expect(conflicts.find(a => a.press.action === 'pr-conflicts')?.label).toBe('Resolve conflicts again')
 })
 
@@ -163,7 +167,7 @@ test('a hand-off button waits for a fetch only until PR_READ_WAIT_MS after the r
   const s = await t.host.read()
   const at = s.lastActions[prMarkId(FIX_REF)]!.repliedAt!
   const conflicts = (now: number) =>
-    prBlockActions(s.prViews.views[FIX_REF]!, () => false, null, presses(s, now)).find(
+    prBlockActions(s.prViews.views[FIX_REF]!, () => false, null, presses(s, now), { is: 'fresh' }).find(
       a => a.press.action === 'pr-conflicts',
     )
   expect(conflicts(at + PR_READ_WAIT_MS - 1)?.isOut).toBe(true)

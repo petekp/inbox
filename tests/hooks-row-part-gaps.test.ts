@@ -121,7 +121,7 @@ function rowsOf({ ledger, lastActions }: Seeded, now: number): RowView[] {
     turns: { turnsStarted: 0, turnsApplied: 0 },
     extraSteps: {},
     settleWindowMs: SETTLED_MS,
-    status: perTurnStatus('none'),
+    status: perTurnStatus({ is: 'fresh' }),
     now,
     replies: {},
     discarded: {},

@@ -4,6 +4,7 @@ import type { Stop } from '../../types'
 import { RESUME_TEXT } from '../../core/view/banners'
 import { delegatesSettled, subagentsSettled } from '../../core/domain/children'
 import { resetTime, stopKindOf, stopOfMessage } from './claude'
+import { withApiError } from '../../core/domain/stops'
 import { withReplyWaitEnded } from './explanation-reply'
 import { isPrFetchDue } from '../../core/runtime/host-prs'
 import { closeDialogs } from './mod-dialogs'
@@ -40,7 +41,7 @@ export async function setStop(m: Mod, stop: Stop | null) {
 async function setStopFromLastReply(m: Mod) {
   const last = (await m.conversation.messages().catch(() => [])).at(-1)
   const message = last?.role === 'assistant' ? last.text : ''
-  await setStop(m, { ...stopOfMessage(message), at: await m.clock.now() })
+  await setStop(m, withApiError({ ...stopOfMessage(message), at: await m.clock.now() }))
 }
 
 export async function resume(m: Mod) {
@@ -85,12 +86,15 @@ export async function noteStopFailure(m: Mod, e: StopFailureEvent) {
   if (!mod.isOn || e.agent_id) return
   sessionState.hasStopFromError = true
   const message = e.last_assistant_message ?? ''
-  await setStop(m, {
-    kind: stopKindOf(String(e.error), message),
-    detail: String(e.error),
-    resets: resetTime(message),
-    at: await m.clock.now(),
-  })
+  await setStop(
+    m,
+    withApiError({
+      kind: stopKindOf(String(e.error), message),
+      detail: String(e.error),
+      resets: resetTime(message),
+      at: await m.clock.now(),
+    }),
+  )
 }
 
 /** The main agent's turn ended: its children settle, and an answered turn runs the inbox model's update. */

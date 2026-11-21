@@ -22,7 +22,9 @@ import {
   prCheckId,
   prMarkId,
   prRefreshFailedText,
+  prSyncOf,
   prThreadId,
+  shownReadiness,
   PR_REFRESH_ID,
   RANK_AGAIN_ID,
   CLEAR_FINISHED_ID,
@@ -32,7 +34,7 @@ import {
 } from '../../core/view/pr-rows'
 import { checkActions, prBlockActions, threadActions } from '../../core/view/pr-tab'
 import { type DrawnPr, isDismissed } from '../../core/view/pr-views'
-import { checkKey, commentLine, commentParts, readableComment, readiness, threadWhere } from '../../core/domain/prs'
+import { checkKey, commentLine, commentParts, readableComment, threadWhere } from '../../core/domain/prs'
 import { DOT, settledLabel, settledMark, type SettledState } from '../../core/view/rows'
 import { desktopTextPt } from './desktop-metrics'
 import { glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } from './terminal-text'
@@ -286,17 +288,24 @@ export function panePrBlocks({
   const prBlock = (b: DrawnPr & { rows: Row[]; checks: Row[]; cancelled: Row[]; threads: Row[] }) => {
     if (b.state.is === 'settled') return settledPrBlock(b.pr, b.state)
     const { pr, checks, cancelled, threads } = b
-    const { status, head: statusHead, unlisted } = readiness(pr, isThreadSent, 'Claude')
-    const tone = PR_TONES[status]
+    const sync = prSyncOf(view.sync, pr.ref)
+    const shown = shownReadiness(pr, sync, isThreadSent, 'Claude')
+    const statusHead = shown?.head ?? ''
+    const tone = shown ? PR_TONES[shown.status] : null
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
     const prLast = isPrLastShown ? lastActionText(prMarkId(pr.ref)) : null
-    const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses).map(a => prKeyAction(a, pr.ref))
+    const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses, sync).map(a =>
+      prKeyAction(a, pr.ref),
+    )
 
     const fits = (text: string) =>
       look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : cellWidth(text) <= listColumns - 2
-    const statusParts = [statusHead, ...unlisted]
-    const isStatusBeside = fits(`#${pr.number}\u2002${pr.title}\u2002${statusParts.join(DOT)}`)
-    const statusLines = isStatusBeside ? [statusParts.join(glued(DOT))] : partedLines(statusParts, fits)
+    const statusParts = shown ? [shown.head, ...shown.unlisted] : []
+    const isStatusBeside =
+      statusParts.length > 0 && fits(`#${pr.number}\u2002${pr.title}\u2002${statusParts.join(DOT)}`)
+    const statusLines =
+      statusParts.length === 0 ? [] : isStatusBeside ? [statusParts.join(glued(DOT))] : partedLines(statusParts, fits)
+    const besideLine = isStatusBeside ? statusLines[0] : undefined
     const statusText = (line: string, n: number) => [
       <Text color={tone ? (pal.tone[tone] ?? pal.mark[tone]) : pal.muted}>
         {n === 0 ? line.slice(0, statusHead.length) : ''}
@@ -308,7 +317,7 @@ export function panePrBlocks({
         <Text wrap="wrap">
           <Text color={look === 'desktop' ? pal.mark.prs : pal.tone.prs}>{`#${pr.number}\u2002`}</Text>
           <Text bold>{pr.title}</Text>
-          {isStatusBeside ? ['\u2002', ...statusText(statusLines[0]!, 0)] : null}
+          {besideLine === undefined ? null : ['\u2002', ...statusText(besideLine, 0)]}
         </Text>
         {isStatusBeside ? null : statusLines.map((line, n) => <Text wrap="wrap">{statusText(line, n)}</Text>)}
       </Box>
@@ -367,12 +376,7 @@ export function panePrBlocks({
       ...prRowGroup(PR_GROUP_TITLES.cancelled, cancelled, `${pr.ref}-cancelled`),
     ])
   }
-  const ghState = {
-    isGhMissing: Boolean(prState.isGhMissing),
-    isGhSignedOut: Boolean(prState.isGhSignedOut),
-    failure: prState.failure ?? null,
-  }
-  const ghNotice = ghNoticeOf(ghState)
+  const ghNotice = ghNoticeOf(view.prs.gh)
   const prTabLine = (key: string, content: JSX.Element) => [
     section(
       look === 'desktop' ? desktopFrame({ key, padY: 0, children: content }) : <Box paddingLeft={1}>{content}</Box>,
@@ -468,7 +472,6 @@ export function panePrBlocks({
     place: 'session',
     drawn: prGroups.length,
     isFetchingPrs: prState.isFetching,
-    isGhMissing: ghState.isGhMissing,
   })
   const prsView = () =>
     emptyPrs ? (

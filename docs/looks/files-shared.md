@@ -69,7 +69,6 @@ Part of [the look map](../looks.md#files).
 | `core/domain/pr-query.ts` | Shared module. The one GraphQL query that reads every tracked PR, `prsQuery`, and how its answer is read: `readPrsAnswer` finds each PR's node or its own error, `readPrNode` makes a view of a node, `runFailureOf` says why a whole gh run gave no PRs, and `limitResetOf` reads when GitHub's limit resets. |
 | `core/view/pr-refresh.ts` | Shared module. The top of the PRs tab after a fetch that could not read every PR: `refreshProblem`, why the PRs are not all current, and `prRefreshView`, the line with Refresh PRs and its press status. |
 | `core/domain/gh.ts` | Shared module. `ghFinder` finds a gh that starts, and `ghIn` runs it, over a host's command runner. `branchIn` reads a folder's git branch over the same runner. |
-| `core/view/band.ts` | Shared module. The band's counts, whether the rows may be missing some, and what the band reads with no counts: "Nothing needed" or "May be out of date". |
 | `core/domain/text.ts` | Shared module. Clipping, code-block formatting, relative ages and a turn's reply. |
 | `core/domain/prs.ts` | Shared module. PR parsing, readiness and prompts. |
 | `core/domain/pr-checks.ts` | Shared module. Which checks fail, which were cancelled, the GitHub Actions run a check belongs to, the failing check that cancelled another, and `blockingChecks`, the checks that wait on the person. |

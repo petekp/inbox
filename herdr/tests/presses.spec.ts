@@ -2,12 +2,12 @@ import { expect, test } from 'bun:test'
 
 import type { Delivery } from '../../types'
 import { isPressFile, pressFile } from '../../core/remote/herdr-press-file'
-import { prCheckId, prMarkId, prThreadId, splitFollowUps, threadSentIn } from '../../core/view/pr-rows'
+import { prCheckId, prMarkId, prSyncOf, prThreadId, splitFollowUps, threadSentIn } from '../../core/view/pr-rows'
 import { checkActions, prBlockActions, threadActions } from '../../core/view/pr-tab'
 import { isStatusUnderActions } from '../../core/view/feedback'
 import { pendingResult } from '../../core/view/pressed'
 import { demoSession } from '../../core/view/demo'
-import { herdrEnvelope } from '../../core/remote/herdr'
+import { herdrEnvelope } from '../../core/remote/herdr-envelope'
 import { sessionView } from '../../core/view/session-view'
 import { NO_HOLDS, QUEUED_AFTER_MS, SETTLED_MS } from '../../core/view/timing'
 import type { ListInput } from '../../core/view/timing'
@@ -25,8 +25,6 @@ import { pressFileText } from '../src/press-file'
 import { readSession } from '../src/files'
 import { screenOf } from '../src/screen'
 import { timeLeftDraws, timeLeftShare } from '../src/time-left'
-import { isRunHere, runHere } from '../src/run-here'
-import type { HereIo } from '../src/run-here'
 import { AGENT, NOW, demoScreen, dismissedPr, uiOn } from './fixtures'
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
@@ -150,7 +148,9 @@ test('the PRs tab draws each PR’s and each selected row’s buttons in the sha
   const blocks = tabBlocks(screen, uiOn('prs'))
   for (const pr of open) {
     const drawn = blocks.find(b => b.kind === 'pr' && b.id === prMarkId(pr.ref))
-    const planned = prBlockActions(pr, isSent, view.prs.branchRef, presses).map(a => a.label)
+    const planned = prBlockActions(pr, isSent, view.prs.branchRef, presses, prSyncOf(view.sync, pr.ref)).map(
+      a => a.label,
+    )
     expect(drawn?.kind === 'pr' && drawn.buttons.map(b => b.label)).toEqual(planned)
   }
   const selectable = rowsOf(blocks).filter(r => r.isSelectable)
@@ -365,24 +365,4 @@ test('while a field is open, keys type into it and escape closes it, keeping its
     is: 'event',
     event: { type: 'close-field', id: first!.id, isDiscard: false },
   })
-})
-
-test('a relative open runs in the look against the session’s project folder, and goes to the host without one', async () => {
-  const open = [{ kind: 'open', target: 'docs/plan.md', name: 'plan.md' }] as const
-  expect(isRunHere([...open], null)).toBe(false)
-  expect(isRunHere([...open], '/work/app')).toBe(true)
-  expect(isRunHere([{ kind: 'open', target: 'https://example.com', name: 'example.com' }], null)).toBe(true)
-  const ran: string[][] = []
-  const io: HereIo = {
-    run: async argv => {
-      ran.push(argv)
-      return { code: 0, stdout: '', stderr: '' }
-    },
-    probe: { stat: async () => ({ isFile: () => true }), isExecutable: async () => false },
-    home: '/home/me',
-    projectFolder: '/work/app',
-    copy: () => undefined,
-  }
-  expect((await runHere([...open], pendingResult([...open], NOW), io)).state).toBe('done')
-  expect(ran.flat()).toContain('/work/app/docs/plan.md')
 })

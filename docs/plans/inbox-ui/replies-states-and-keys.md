@@ -21,7 +21,7 @@ The UI reads one status record for items. It shows errors only, under the tabs. 
 
 `core/view/view.ts:footerError` picks the error for the shown tab in every look. The PRs tab shows none. While polls fail, the Codex tab shows `Last read 1m ago · retrying` at the footer's right, muted, and red after a minute.
 
-The UI names the result, not the model call or tool. `updateRecovery` in `core/view/session-view.ts` reads where a failed ledger stands from saved state, and `perTurnStatus` in `core/view/view.ts` gives its text:
+The UI names the result, not the model call or tool. `viewSync` in `core/view/sync-state.ts` reads where a failed ledger stands from saved state, and `perTurnStatus` in `core/view/view.ts` gives its text:
 
 | State | When | Text |
 | --- | --- | --- |

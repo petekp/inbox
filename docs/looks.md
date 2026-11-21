@@ -2,7 +2,7 @@
 
 Status: current. Read this before you change the UI or a business rule.
 
-The inbox has five looks: `terminal`, `desktop`, `codex`, `omp` and `herdr`. A look is one way the inbox is drawn, and `GLOSSARY.md` defines it with host, shared module, adapter and difference on purpose. The rule is that shared modules decide and adapters draw. If a rule decides what a row says, which action leads, when a tab counts as empty or what text appears, it lives in a shared module. An adapter decides only how its look draws that. The plan for finishing this split is `docs/plans/three-looks.md`.
+The inbox has five looks: `terminal`, `desktop`, `codex`, `omp` and `herdr`. A look is one way the inbox is drawn, and `GLOSSARY-LOOKS.md` defines it with host, shared module, adapter and difference on purpose. The rule is that shared modules decide and adapters draw. If a rule decides what a row says, which action leads, when a tab counts as empty or what text appears, it lives in a shared module. An adapter decides only how its look draws that. The plan for finishing this split is `docs/plans/three-looks.md`.
 
 ## Files
 
@@ -20,6 +20,7 @@ Every source file in `core/`, `hooks/`, `codex/src`, `omp/src` and `herdr/src` n
 - [Shared modules](looks/files-shared.md)
 - [Shared modules for the Status](looks/files-shared-status.md)
 - [Shared modules for Herdr](looks/files-shared-herdr.md)
+- [Shared modules for the band and sync state](looks/files-shared-sync.md)
 - [The shared UI controller](looks/files-shared-controller.md)
 - [The mod](looks/files-mod.md)
 - [The mod's saves, logs and sessions](looks/files-mod-storage.md)
