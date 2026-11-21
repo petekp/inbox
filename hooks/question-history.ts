@@ -41,6 +41,12 @@ const DAY_MS = 24 * 60 * 60_000
 const HISTORY_KEEP_MS = 180 * DAY_MS
 /** How long after the history began the rows draw no earlier answer: the week that gives the baseline. */
 export const BASELINE_MS = 7 * DAY_MS
+/**
+ * How long after the history began the `record` answer lists no earlier answers: the baseline week and the two weeks
+ * that `scripts/earlier-answers-report.mjs` measures the row's line over. An agent that closes a repeat before it
+ * reaches a row would change those weeks.
+ */
+export const ROW_MEASUREMENT_MS = 21 * DAY_MS
 
 /** An update close that is not an answer: the forms the ledger prompt gives a close of work done or overtaken. */
 const NOT_AN_ANSWER = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, 'i')

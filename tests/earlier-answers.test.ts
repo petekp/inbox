@@ -5,17 +5,19 @@ import type { Earlier, Item, Session } from '../types'
 import { demoSession } from '../hooks/demo'
 import { answerIndex, bestEarlier, earlierLineOf, earlierLineText } from '../hooks/earlier-answers'
 import type { AnswerDoc } from '../hooks/earlier-answers'
-import { historyStep } from '../hooks/history-store'
+import { historyStep, recordMatches } from '../hooks/history-store'
 import type { HistoryPlace } from '../hooks/history-store'
 import { inboxText } from '../hooks/inbox-text'
 import { EMPTY } from '../hooks/ledger'
 import { closeItem } from '../hooks/ledger-close'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { BASELINE_MS, historyFileName, questionHistory } from '../hooks/question-history'
+import { BASELINE_MS, historyFileName, questionHistory, ROW_MEASUREMENT_MS } from '../hooks/question-history'
 import type { HistoryFile } from '../hooks/question-history'
 import { emptySession } from '../hooks/session-files'
 import { sessionView } from '../hooks/session-view'
 import { SETTLED_MS } from '../hooks/timing'
+import { TOOL_FIELDS } from '../hooks/tool-schemas'
+import { recordItem } from '../hooks/tools'
 
 const DAY = 24 * 60 * 60_000
 const NOW = 400 * DAY
@@ -210,7 +212,7 @@ describe('the earlier answer on a row', () => {
     expect(earlierLineOf(earlier('Yes', false), NOW)).toBeNull()
   })
 
-  test('stays out of the text the agent reads', () => {
+  test('stays out of the inbox text the agent reads', () => {
     const ledger = { ...EMPTY, items: [question('i1', 'Lock the kiosk?', ['Yes', 'No'], earlier('After five'))] }
     expect(inboxText(CLAUDE_CODE, ledger, true)).not.toContain('After five')
   })
@@ -218,5 +220,28 @@ describe('the earlier answer on a row', () => {
   test('the demo shows it', () => {
     const view = sessionView(demoSession(NOW, 'Claude'), NOW, SETTLED_MS)
     expect(view.needsYou.questions.some(r => r.earlierLine?.answer === 'Flick')).toBe(true)
+  })
+})
+
+describe('earlier answers in the record answer', () => {
+  const lockAsk = { kind: 'question', ask: 'Lock the kiosk after idle minutes?', options: ['Five', 'Ten'] }
+
+  test('lists nothing until the row’s measurement ends, then the matching answer, and never for a task', async () => {
+    const during = seededPlace(NOW - ROW_MEASUREMENT_MS + DAY)
+    expect(await recordMatches(during, lockAsk, NOW)).toEqual([])
+    const after = seededPlace(NOW - ROW_MEASUREMENT_MS - DAY)
+    expect((await recordMatches(after, lockAsk, NOW)).map(d => d.answer)).toEqual(['Yes, after five'])
+    expect(await recordMatches(after, { ...lockAsk, kind: 'task' }, NOW)).toEqual([])
+  })
+
+  test('follow a new question with its id, and leave a record that updates an open one alone', () => {
+    const found = [doc('b', 'Should the kiosk lock after five idle minutes?', 'Yes, after five')]
+    const added = recordItem(CLAUDE_CODE, EMPTY, lockAsk, NOW, TOOL_FIELDS, found)
+    expect(added.result).toContain('close i1 with the reason "answered before: <their answer>"')
+    expect(added.result).toContain(
+      '- 3 days ago, in kiosk: "Should the kiosk lock after five idle minutes?" They answered "Yes, after five".',
+    )
+    const again = recordItem(CLAUDE_CODE, added.ledger, lockAsk, NOW, TOOL_FIELDS, found)
+    expect(again.result).not.toContain('Yes, after five')
   })
 })

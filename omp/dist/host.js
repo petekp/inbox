@@ -186,6 +186,13 @@ function stems(text) {
 function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
+function findSubject(subjects, ref) {
+  const key = nameKey(clipWords(ref, NAME_KEPT));
+  return subjects.find((s) => s.id === ref) ?? subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
+}
+function isUnderWay(s) {
+  return s.status === "working" || s.status === "waits-on-other";
+}
 
 // ../hooks/ask-match.ts
 function words2(text) {
@@ -465,7 +472,8 @@ var CLAUDE_CODE = {
       reason: "Only the fullscreen terminal lets a plugin scroll the conversation, so the classic terminal and the Claude app draw no Show explanation."
     },
     "done-press-age": { kind: "full" },
-    "delegate-asks": { kind: "full" }
+    "delegate-asks": { kind: "full" },
+    "record-earlier-answers": { kind: "full" }
   }
 };
 
@@ -627,7 +635,8 @@ var CODEX = {
       reason: "Codex gives a plugin no call that scrolls its conversation."
     },
     "done-press-age": { kind: "full" },
-    "delegate-asks": { kind: "full" }
+    "delegate-asks": { kind: "full" },
+    "record-earlier-answers": { kind: "full" }
   }
 };
 
@@ -738,7 +747,8 @@ var OMP = {
       reason: "omp's conversation is the terminal's own scrollback, which no extension can scroll."
     },
     "done-press-age": { kind: "full" },
-    "delegate-asks": { kind: "full" }
+    "delegate-asks": { kind: "full" },
+    "record-earlier-answers": { kind: "full" }
   }
 };
 
@@ -1762,10 +1772,10 @@ function subjectsText(o, now) {
 function idleSubjects(o, asks, now) {
   const held = new Set(asks.flatMap((a) => o?.askSubjects[a.id] ?? []));
   const isWorkedOn = (s) => (o?.children ?? []).some((c) => c.subjectId === s.id && isChildRunning(c, now));
-  return (o?.subjects ?? []).filter((s) => s.status === "working" && now - s.changedAt >= IDLE_AFTER_MS && !held.has(s.id) && !isWorkedOn(s));
+  return (o?.subjects ?? []).filter((s) => isUnderWay(s) && now - Math.max(s.changedAt, s.keptAt ?? 0) >= IDLE_AFTER_MS && !held.has(s.id) && !isWorkedOn(s));
 }
 function idleText(o, asks, now) {
-  return idleSubjects(o, asks, now).map((s) => `${s.id} | ${s.name} | ${duration(now - s.changedAt)}`).join(NL);
+  return idleSubjects(o, asks, now).map((s) => `${s.id} | ${s.status} | ${s.name} | ${duration(now - s.changedAt)}`).join(NL);
 }
 function servesText(o, subjectId) {
   const to = o.serves[subjectId];
@@ -2694,7 +2704,8 @@ function goalFields(o, subjects) {
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
     goalRefused: goalRefusedOf(o.goalRefused),
-    suggestedGoal: nonEmpty(o.suggestedGoal)
+    suggestedGoal: nonEmpty(o.suggestedGoal),
+    ...typeof o.noGoalFor === "string" ? { noGoalFor: o.noGoalFor } : {}
   };
 }
 
@@ -2719,6 +2730,7 @@ function subjectOf(saved) {
   const s = saved;
   const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
   const changedAt = time2(s?.changedAt);
+  const keptAt = time2(s?.keptAt);
   if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null)
     return null;
   return {
@@ -2730,6 +2742,7 @@ function subjectOf(saved) {
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
     closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
+    ...keptAt === null ? {} : { keptAt },
     into: typeof s.into === "string" ? s.into : null
   };
 }
@@ -3710,6 +3723,17 @@ function setTypedGoal(o, text, now) {
 // ../hooks/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 var isNextGoalAsked = (o) => o === null || !hasRunningGoal(o) && o.suggestedGoal === null;
+function nextGoalWork(o, askIds) {
+  const goal = o.goal ? `${o.goal.text} ${o.goal.metAt === null ? "running" : "met"}` : "none";
+  const open = o.subjects.filter(isOpen).map((s) => `${s.id} ${s.status}`);
+  return [goal, open.sort().join(", "), [...askIds].sort().join(", ")].join(" | ");
+}
+var isNextGoalDeclined = (o, askIds) => o.noGoalFor === nextGoalWork(o, askIds);
+function withNoGoalNoted(o, answer, askIds) {
+  const line = answer.kind === "ops" ? answer.ops.findLast((op) => op.kind === "suggest") : undefined;
+  const isDeclined = line?.kind === "suggest" && line.text === null && isNextGoalAsked(o);
+  return isDeclined ? { ...o, noGoalFor: nextGoalWork(o, askIds) } : o;
+}
 var answersNextGoal = (answer) => answer.kind === "ops" && answer.ops.some((op) => op.kind === "goal" || op.kind === "suggest");
 function restatesKnownGoal(o, text) {
   const known = [o.goal?.text, o.goal?.was, ...o.removedGoals].filter((t) => typeof t === "string");
@@ -7040,6 +7064,116 @@ function approvalText(item, canSend) {
   return isApproval(item) && item.helps.length === 0 && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
 }
 
+// ../hooks/earlier-answers.ts
+var K1 = 1.2;
+var B = 0.75;
+var RELATIVE_FLOOR = 0.22;
+var EARLIER_TEXT_CHARS = 200;
+var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
+those i you we he she they me my your our their them as if then than so do does did done can could should would will
+shall may might must not no yes now still also just again already instead yet any all some each per via up out over
+about after before when while which what who whom why how where whether there here let lets get got have has had
+pr prs`.split(/\s+/));
+function searchTerms(text) {
+  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => !STOP_WORDS2.has(w) && (w.length > 1 || /\d/.test(w)));
+}
+function answerIndex(docs) {
+  const postings = new Map;
+  const lengths = docs.map((d, n) => {
+    const terms = searchTerms(`${d.ask} ${d.answer}`);
+    const counts = new Map;
+    for (const t of terms)
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const [t, count] of counts) {
+      const list = postings.get(t);
+      if (list)
+        list.push([n, count]);
+      else
+        postings.set(t, [[n, count]]);
+    }
+    return terms.length;
+  });
+  const total = lengths.reduce((sum, l) => sum + l, 0);
+  return { docs, lengths, postings, averageLength: docs.length > 0 ? total / docs.length : 0 };
+}
+function rankedEarlier(index, question, skip, top) {
+  const n = index.docs.length;
+  const scores = new Map;
+  let reachable = 0;
+  for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
+    const posted = index.postings.get(term);
+    if (!posted)
+      continue;
+    const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
+    reachable += weight * (K1 + 1);
+    for (const [doc, count] of posted) {
+      const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
+      scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
+    }
+  }
+  if (reachable === 0)
+    return [];
+  return [...scores].flatMap(([i, score]) => {
+    const doc = index.docs[i];
+    return doc && doc.key !== skip ? [{ doc, score: score / reachable }] : [];
+  }).toSorted((a, b) => b.score - a.score).slice(0, top).filter((match) => match.score >= RELATIVE_FLOOR);
+}
+function bestEarlier(index, question, skip) {
+  return rankedEarlier(index, question, skip, 1)[0] ?? null;
+}
+function earlierOf(match, isShown) {
+  const { doc } = match;
+  return {
+    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
+    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    at: doc.at,
+    repo: doc.repo,
+    score: Math.round(match.score * 1000) / 1000,
+    isShown
+  };
+}
+var DAY_MS2 = 24 * 60 * 60000;
+function agoText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60000));
+  if (minutes < 60)
+    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24)
+    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
+  const days = Math.round(ms / DAY_MS2);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+function earlierLineOf(earlier, now) {
+  if (!earlier?.isShown)
+    return null;
+  const where = earlier.repo ? `, in ${earlier.repo},` : "";
+  return {
+    lead: "You answered ",
+    answer: earlier.answer,
+    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
+  };
+}
+function earlierLineText(line) {
+  return `${line.lead}${line.answer}${line.rest}`;
+}
+
+// ../hooks/record-matches.ts
+var MATCH_TEXT_CHARS = 200;
+function earlierAnswersText(id, earlier, now) {
+  if (earlier.length === 0)
+    return "";
+  const lines = earlier.map((doc) => {
+    const where = doc.repo ? `, in ${doc.repo}` : "";
+    return `- ${agoText(now - doc.at)}${where}: "${clipLabel(doc.ask, MATCH_TEXT_CHARS)}" They answered "${clipLabel(doc.answer, MATCH_TEXT_CHARS)}".`;
+  });
+  return [
+    ` Its id is ${id}.`,
+    `The user answered similar questions before. If one settles this exact question, close ${id} with the reason "answered before: <their answer>" and act on that answer. If it answers an earlier step or a different case, or put the decision off, leave ${id} open.`,
+    ...lines
+  ].join(`
+`);
+}
+
 // ../hooks/tool-schemas.ts
 var RECORD_SCHEMA = {
   type: "object",
@@ -7163,12 +7297,12 @@ function delegateRefusal(delegate) {
   const starter = delegate.parent ? `the session in Herdr terminal ${delegate.parent}` : "the session that started this one";
   return `Not recorded: this is a delegate session, so the user's inbox does not take its questions or tasks. Write this one in your REPORT.md, or message ${starter}. That session asks the user what only they can decide. Findings are still recorded.`;
 }
-function toolAnswer(host, ledger, tool, input, now, presses, fields, delegate) {
+function toolAnswer(host, ledger, tool, input, now, presses, fields, delegate, earlier = []) {
   switch (tool) {
     case "record":
       if (delegate && (input.kind === "question" || input.kind === "task"))
         return unchanged(ledger, delegateRefusal(delegate));
-      return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields);
+      return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields, earlier);
     case "close":
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
@@ -7189,7 +7323,7 @@ function list(value, max, each) {
 function unchanged(ledger, result) {
   return { ledger, result, personLine: null };
 }
-function recordItem(host, ledger, input, now, fields) {
+function recordItem(host, ledger, input, now, fields, earlier = []) {
   if (input.kind === "finding")
     return recordFinding(host, ledger, input, now);
   if (input.kind !== "question" && input.kind !== "task")
@@ -7237,7 +7371,7 @@ function recordItem(host, ledger, input, now, fields) {
   }
   return {
     ledger: recorded,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ""),
+    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "") + earlierAnswersText(r.id, earlier, now),
     personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
   };
 }
@@ -7738,101 +7872,6 @@ function actionLines(keys, more, { width, gap, separator }) {
       place(keys.length + i, size, i === 0 ? gap + separator : gap);
   });
   return { lines, isFollowUpLineNew };
-}
-
-// ../hooks/earlier-answers.ts
-var K1 = 1.2;
-var B = 0.75;
-var RELATIVE_FLOOR = 0.22;
-var EARLIER_TEXT_CHARS = 200;
-var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
-those i you we he she they me my your our their them as if then than so do does did done can could should would will
-shall may might must not no yes now still also just again already instead yet any all some each per via up out over
-about after before when while which what who whom why how where whether there here let lets get got have has had
-pr prs`.split(/\s+/));
-function searchTerms(text) {
-  return (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((w) => !STOP_WORDS2.has(w) && (w.length > 1 || /\d/.test(w)));
-}
-function answerIndex(docs) {
-  const postings = new Map;
-  const lengths = docs.map((d, n) => {
-    const terms = searchTerms(`${d.ask} ${d.answer}`);
-    const counts = new Map;
-    for (const t of terms)
-      counts.set(t, (counts.get(t) ?? 0) + 1);
-    for (const [t, count] of counts) {
-      const list = postings.get(t);
-      if (list)
-        list.push([n, count]);
-      else
-        postings.set(t, [[n, count]]);
-    }
-    return terms.length;
-  });
-  const total = lengths.reduce((sum, l) => sum + l, 0);
-  return { docs, lengths, postings, averageLength: docs.length > 0 ? total / docs.length : 0 };
-}
-function bestEarlier(index, question, skip) {
-  const n = index.docs.length;
-  const scores = new Map;
-  let reachable = 0;
-  for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
-    const posted = index.postings.get(term);
-    if (!posted)
-      continue;
-    const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
-    reachable += weight * (K1 + 1);
-    for (const [doc, count] of posted) {
-      const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
-      scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
-    }
-  }
-  let best = null;
-  for (const [doc, score] of scores) {
-    const d = index.docs[doc];
-    if (d.key === skip || best && score <= best.score)
-      continue;
-    best = { doc: d, score };
-  }
-  if (!best || reachable === 0)
-    return null;
-  const relative = best.score / reachable;
-  return relative >= RELATIVE_FLOOR ? { doc: best.doc, score: relative } : null;
-}
-function earlierOf(match, isShown) {
-  const { doc } = match;
-  return {
-    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
-    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
-    at: doc.at,
-    repo: doc.repo,
-    score: Math.round(match.score * 1000) / 1000,
-    isShown
-  };
-}
-var DAY_MS2 = 24 * 60 * 60000;
-function agoText(ms) {
-  const minutes = Math.max(1, Math.round(ms / 60000));
-  if (minutes < 60)
-    return minutes === 1 ? "a minute ago" : `${minutes} minutes ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24)
-    return hours === 1 ? "an hour ago" : `${hours} hours ago`;
-  const days = Math.round(ms / DAY_MS2);
-  return days === 1 ? "yesterday" : `${days} days ago`;
-}
-function earlierLineOf(earlier, now) {
-  if (!earlier?.isShown)
-    return null;
-  const where = earlier.repo ? `, in ${earlier.repo},` : "";
-  return {
-    lead: "You answered ",
-    answer: earlier.answer,
-    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
-  };
-}
-function earlierLineText(line) {
-  return `${line.lead}${line.answer}${line.rest}`;
 }
 
 // ../hooks/view.ts
@@ -8395,9 +8434,9 @@ function completedAttempt(state, deliveryId, outcome) {
     } : s)
   };
 }
-function recorded(host, s, tool, args, now, fields, delegate) {
+function recorded(host, s, tool, args, now, fields, delegate, earlier = []) {
   const presses = { lastActions: s.lastActions, turnStartedAt: s.presence.turnStartedAt };
-  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields, delegate);
+  const r = toolAnswer(host, s.ledger, tool, args, now, presses, fields, delegate, earlier);
   const ledger = withOrderStatuses(r.ledger, s.prViews.views);
   const state = linkDialogs({ ...s, ledger }, now);
   const answered = ledger.items.find((i) => !state.ledger.items.some((o) => o.id === i.id));
@@ -12107,6 +12146,7 @@ var HISTORY_VERSION = 1;
 var DAY_MS3 = 24 * 60 * 60000;
 var HISTORY_KEEP_MS = 180 * DAY_MS3;
 var BASELINE_MS = 7 * DAY_MS3;
+var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
 var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
 function historyFileName(host, session) {
   return `${host}-${session.replace(/[^\w.-]/g, "_")}.json`;
@@ -12327,6 +12367,21 @@ async function withEarlier(place, id, s, added, now) {
   const items = s.ledger.items.map((i) => matches.has(i.id) ? { ...i, earlier: matches.get(i.id) } : i);
   return { ...s, ledger: { ...s.ledger, items } };
 }
+var RECORD_MATCHES = 3;
+async function recordMatches(place, input, now) {
+  const ask = typeof input.ask === "string" ? input.ask.trim() : "";
+  if (!place || input.kind !== "question" || ask === "")
+    return [];
+  const options = Array.isArray(input.options) ? input.options.filter((o) => typeof o === "string") : [];
+  try {
+    const files = await readHistory(place);
+    if (now - historyStart(files, now) < ROW_MEASUREMENT_MS)
+      return [];
+    return rankedEarlier(indexOf(place, files, now), { ask, options }, "", RECORD_MATCHES).map((m) => m.doc);
+  } catch {
+    return [];
+  }
+}
 
 // ../hooks/model-text.ts
 function guidanceText(host) {
@@ -12509,9 +12564,6 @@ function applied(s, parsed, now, promptAt, isDelegate) {
 }
 
 // ../hooks/status-ops.ts
-function isUnderWay(s) {
-  return s.status === "working" || s.status === "waits-on-other";
-}
 function namesAny(subjects, description) {
   const said = words(description);
   return subjects.some((s) => {
@@ -12597,10 +12649,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     goalRefused: null
   };
   const closedHere = new Set;
-  const find = (ref) => {
-    const key = nameKey(clipWords(ref, NAME_KEPT));
-    return o.subjects.find((s) => s.id === ref) ?? o.subjects.find((s) => isOpen(s) && nameKey(s.name) === key) ?? null;
-  };
+  const find = (ref) => findSubject(o.subjects, ref);
   const closedUnseen = (name) => {
     const key = nameKey(clipWords(name, NAME_KEPT));
     return o.subjects.findLast((s) => !isOpen(s) && !closedHere.has(s.id) && !isSubjectSeen(o, s) && nameKey(s.name) === key) ?? null;
@@ -12619,9 +12668,13 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   };
   const set = (s, status, text) => {
     const isUnchanged = s.status === status && hasSameWords(s.text, text);
-    const isWorkResumed = status === "working" && now - s.changedAt >= IDLE_AFTER_MS;
-    if (isUnchanged && !isWorkResumed)
+    const isIdle = now - s.changedAt >= IDLE_AFTER_MS;
+    const isWorkResumed = status === "working" && isIdle;
+    if (isUnchanged && !isWorkResumed) {
+      if (isIdle && isUnderWay(s))
+        s.keptAt = now;
       return;
+    }
     s.status = status;
     s.text = clipWords(text, TEXT_KEPT);
     s.closedAt = null;
@@ -12746,7 +12799,8 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
     return null;
   const settled = changes ? o : settleGoal(o, now, readSetAt, new Map);
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
-  return settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
+  const kept = settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
+  return withNoGoalNoted(kept, answer, askIds);
 }
 
 // ../hooks/session-status.ts
@@ -12927,11 +12981,11 @@ function parseStatus(text) {
   const ops = afterRetractions(all);
   return ops.length === 0 ? { kind: "unchanged" } : { kind: "ops", ops };
 }
-function withNextGoal(first, retry) {
-  const goalOps = retry?.kind === "ops" ? retry.ops.filter((o) => o.kind === "goal" || o.kind === "suggest") : [];
-  if (goalOps.length === 0)
+function withRetryLines(first, retry, keeps) {
+  const added = retry?.kind === "ops" ? retry.ops.filter(keeps) : [];
+  if (added.length === 0)
     return first;
-  return { kind: "ops", ops: [...first.kind === "ops" ? first.ops : [], ...goalOps] };
+  return { kind: "ops", ops: [...first.kind === "ops" ? first.ops : [], ...added] };
 }
 async function askStatus(ask, retryFor = () => null) {
   const first = await ask(null);
@@ -12945,8 +12999,8 @@ async function askStatus(ask, retryFor = () => null) {
   const retry = retryFor(answer, first.text);
   if (retry === null)
     return { answer, last: first };
-  const again = await ask(retry);
-  return { answer: withNextGoal(answer, parseStatus(again.text)), last: again };
+  const again = await ask(retry.prompt);
+  return { answer: withRetryLines(answer, parseStatus(again.text), retry.keeps), last: again };
 }
 
 // ../hooks/status-prompt-goal.ts
@@ -12954,7 +13008,11 @@ var NO_WORK_LINKED = "no work linked";
 var NO_TEXT = "no text";
 var NEXT_MARK = "next";
 var tooBigMark = (count, room) => `too big, ${count} subjects, room for ${room}`;
-var NEXT_GOAL_ASK = `No goal runs and none is suggested. What is the work for next? Write GOAL when the goal is clear. Else judge only the subjects open after this exchange, and SUGGEST an outcome they clearly lead to: one open fix leads to shipping it. Write SUGGEST: - when no subject is open, when the open subjects are unrelated pieces with no shared outcome, or when no outcome is clear.`;
+function nextGoalAsk(o) {
+  if (o?.goal?.metAt == null)
+    return `No goal runs and none is suggested. What is the work for next? Write GOAL when the goal is clear. Else judge only the subjects open after this exchange, and SUGGEST an outcome they clearly lead to: one open fix leads to shipping it. Write SUGGEST: - when no subject is open, when the open subjects are unrelated pieces with no shared outcome, or when no outcome is clear.`;
+  return `The goal is met, and no next goal is suggested. What is the work for next? Write GOAL when the next goal is clear. Else SUGGEST the next outcome with a finish line: shipping or releasing what the met goal built, when that is still to come, or the outcome the subjects open after this exchange, or the next step an item in <asks> offers, clearly lead to: one open fix leads to shipping it. Write SUGGEST: - when no such outcome is clear.`;
+}
 var GOAL_LINES = `GOAL: outcome | status name: where it stands; status name: where it stands
 RETIRE: why the goal no longer fits the work
 SUGGEST: outcome, or - for none
@@ -12977,7 +13035,7 @@ var GOAL_PARTS = {
   "goal-typed-kept": `A goal marked (typed) is the person's. Never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when the release it names shipped or the feature it names merged, write DONE for each milestone still open, with where it ended, so the goal is met, and GOAL when the next goal is clear. Never leave a milestone open for an outcome that already happened, and never RETIRE a goal whose outcome happened: RETIRE is for a goal the work left.`,
   "goal-work-left": `When the session's work no longer moves a goal that is not typed forward, as when the person moved on to other work and the goal's open subjects went stale, close those subjects with DONE or DROP, then write GOAL for the outcome the work is for now, or RETIRE when none is clear. When the line in <goal> ends with (no work for a time), the work has left the goal, whatever its milestones say: write RETIRE for it in the same answer as the subject lines, or GOAL when the work shows the next goal. Never replace a goal while its work is still open, unless the person says its outcome changed, as when they cut part of it. Then write GOAL for the new outcome, and name again in the same words each milestone it keeps, so that milestone's work moves with it. Write SERVES to - for the work of each milestone it leaves out. When a milestone is cut and the goal's text still holds, write DROP for that milestone instead. New work or an added outcome is a MILESTONE line, never a new goal.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". The milestones cover every outcome the goal names, a release or version included: "Offline sync in 3.1" needs a milestone for offline sync and one for 3.1 published. Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed or it is marked ${NO_TEXT}: then write SET with where it stands, from the work that serves it. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. A done subject stays done unless <finished> marks it ${NOT_SEEN}: new work on the same outcome is a NEW subject, never that one set working again. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". The milestones cover every outcome the goal names, a release or version included: "Offline sync in 3.1" needs a milestone for offline sync and one for 3.1 published. Never name a milestone after a subject. Its name is a label of at most ${NAME_WORDS} words, and where it stands is at most ${TEXT_WORDS} words, with the same rules as a subject's. Move a milestone by its id with SET, DONE, DROP and WAS, as you move a subject, and only when where it stands changed or it is marked ${NO_TEXT}: then write SET with where it stands, from the work that serves it. Code closes a milestone once all the work linked to it is done: when part of it still has work left, write SET to open it again, and NEW for that work. Write MILESTONE for an outcome the goal now needs that no milestone covers. Never write a count: code counts what is done.`,
   "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next. Name a milestone this answer adds by its name, since it has no id yet. Leave it out when the milestone marked ${NEXT_MARK} in <milestones> is right.`,
   "milestone-split": `A milestone marked too big holds more work than the person can read as one outcome: split it by theme. Write MILESTONE for each outcome its open subjects are for, named by theme, such as "Status page polish" or "Herdr drawing fixed", and never more than the room the mark gives: code drops a MILESTONE line past it. Then write SERVES to move each of its open subjects to the new milestone its work is part of, or to - when the goal does not need it. Its done subjects stay with it and get no SERVES line. When the split leaves none of its subjects open, write DONE for it in the same answer, with where it ended, or DROP with why when none of them is done. A split changes milestones only, so it applies to a goal marked (typed) too, and the goal's words stay.`,
   "milestone-no-work": `A milestone marked ${NO_WORK_LINKED} has no subject serving it. Write SERVES for a subject whose work is part of its outcome, one under - included, DONE when the exchange shows it done, or DROP when the goal no longer needs it. When no open subject is part of it, link nothing: an empty milestone is never a reason to link other work to it.`,
@@ -13028,7 +13086,7 @@ function tooBigMilestones(o) {
   }));
 }
 function goalBlocks(o, now) {
-  const ask = isNextGoalAsked(o) ? [`<next-goal>${NL5}${NEXT_GOAL_ASK}${NL5}</next-goal>`] : [];
+  const ask = isNextGoalAsked(o) ? [`<next-goal>${NL5}${nextGoalAsk(o)}${NL5}</next-goal>`] : [];
   if (o === null)
     return ask;
   const g = o.goal;
@@ -13083,7 +13141,7 @@ Input:
 - <finished>: subjects already done or dropped, one per line: id | done or dropped | name, then | ${NOT_SEEN} when it closed since the person last looked. Do not add them again.
 - <running>: work apart from the turn, such as a subagent, a background task, a workflow or a delegate session, that runs, or that finished since you last read the list, one per line: id | kind | name | the subject it belongs to, or - when it has none yet | running, blocked at a question or an approval, or finished
 - <asks>: the open questions and tasks the inbox shows the person, one per line: id | the ask | the subjects it holds up, or - when it has none yet | why the agent asked it, when it said
-- <idle>: the working subjects that have not changed for a day or more and that no item in <asks> or <running> holds up, one per line: id | name | how long since it changed
+- <idle>: the subjects working or waiting on something that have not changed for a day or more and that no item in <asks> or <running> holds up, one per line: id | status | name | how long since it changed
 - <tasks>: the agent's own task list, when it keeps one. It is evidence, not the list: write each subject at the level of the feature. A pending task for another part of the product, one the person would name on its own, is a queued subject.
 ${GOAL_INPUT}
 - <person>: what the person just sent
@@ -13115,13 +13173,15 @@ Status is one of: working, queued, waits-on-other.
 - working: being worked on now, in this session or in a session it handed the work to, or stopped until the person answers an ask.${ownChildren} When the work stopped for another reason, it is queued, waits on something, or is done.
 - queued: planned, not started.
 - waits-on-other: it waits on something other than the person, such as a build, a review or another session.
+Nothing waits on the person unless an item in <asks> holds it up. Never write that a subject waits on the person, their check or their answer: when the work needs them, the agent asks, and the inbox shows the ask.
 
 Rules:
 - Change a subject by its id. Write NEW only when no subject in <subjects> covers it: first check each one for the same work under another name, such as the bug a fix is for. When the same work in <finished> marked ${NOT_SEEN} turns out not done or breaks again, as a fixed bug that breaks again, SET its id to reopen it. A new target or a higher bar for finished work is a NEW subject. Every other finished subject stays finished: work on it that comes back, new work on the same outcome, a follow-up or a release is a NEW subject, never that one set working again.
 - When work started and finished in this exchange, write NEW for it, then DONE with its name.
+- When <reply> says work is finished, merged, pushed to the main branch, published or shipped, even in passing or at the end of a long reply, write DONE for each open subject and milestone that work finishes, by its id, and HEAD when the head's description names that work. When it says nothing waits on the person, no subject waits on them. NO CHANGE is wrong then.
 - Write SET only when where a subject stands changed. Never reword a subject that did not change.
 - Write DONE when a subject is finished, and DROP when it is abandoned or no longer true, with the reason. A subject is finished when all the work its name names is done. Work that goes through PRs is done once its last PR merges, not when its delegate finishes, its review comes back clean or its checks pass. A release is done when it is published. Work its name does not cover, such as a release or another change, is a NEW subject with a name that does not repeat the finished one's.
-- Answer for each subject in <idle>. When this exchange works on it, SET it with where it stands now. Otherwise it has ended or been left behind: write DONE when where it stands says it works or is fixed, else DROP with why, such as "work moved on".
+- Answer for each subject in <idle> with one line. Write DONE when its work is finished, as the exchange or where it stands says. Write DROP with why, such as "work moved on", when it was left behind. Write SET to keep it: working with where it stands now when this exchange works on it, or waits-on-other with what it waits on when it still waits on something outside the session, such as a vendor or a review.
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
@@ -13183,12 +13243,42 @@ function statusCatchUpPrompt(input, transcript) {
     `<conversation>${NL5}${numberBlocks(transcript)}${NL5}</conversation>`
   ].join(NL5);
 }
-function nextGoalRetry(last, prompt) {
-  return (answer, text) => !isNextGoalAsked(last) || answersNextGoal(answer) ? null : [
-    prompt,
-    `<your-answer>${NL5}${text}${NL5}</your-answer>`,
-    "Your answer has no GOAL or SUGGEST line, and <next-goal> asks for one. Your other lines stand. Answer with only that line: GOAL when the goal is clear, SUGGEST with an outcome the subjects open after this exchange clearly lead to, or SUGGEST: - when none is open, they share no outcome, or no outcome is clear."
-  ].join(NL5);
+
+// ../hooks/status-retry.ts
+function isLineFor(op, s, last, askIds, now) {
+  const names = (ref) => findSubject(last?.subjects ?? [], ref)?.id === s.id;
+  if (op.kind === "set" || op.kind === "done" || op.kind === "drop" || op.kind === "was")
+    return names(op.ref);
+  if (op.kind === "new")
+    return names(op.name);
+  const isLinkable = (ref) => askIds.has(ref) || (last?.children ?? []).some((c) => c.id === ref && isChildRunning(c, now));
+  if (op.kind === "link")
+    return isLinkable(op.ref) && names(op.subject);
+  return false;
+}
+function statusRetry(input, prompt) {
+  return (answer, text) => {
+    const ops = answer.kind === "ops" ? answer.ops : [];
+    const askIds = new Set(input.asks.map((a) => a.id));
+    const isAnswered = (s) => ops.some((op) => isLineFor(op, s, input.last, askIds, input.now));
+    const unanswered = idleSubjects(input.last, input.asks, input.now).filter((s) => !isAnswered(s));
+    const after = applyStatus(input.last, answer, input.now, askIds);
+    const isNextGoalMissing = after !== null && isNextGoalAsked(after) && !answersNextGoal(answer) && !isNextGoalDeclined(after, askIds);
+    if (unanswered.length === 0 && !isNextGoalMissing)
+      return null;
+    const idleAsk = `Your answer has no line for these subjects in <idle>: ${unanswered.map((s) => `${s.id} ${s.name}`).join(", ")}. Write one line for each: DONE when its work is finished, DROP with why when it was left behind, or SET to keep it, working when this exchange works on it, or waits-on-other with what it still waits on outside the session.`;
+    const goalAsk = `After your answer no goal runs and none is suggested, and your answer has no GOAL or SUGGEST line. ${nextGoalAsk(after)}`;
+    return {
+      prompt: [
+        prompt,
+        `<your-answer>${NL5}${text}${NL5}</your-answer>`,
+        ...unanswered.length > 0 ? [idleAsk] : [],
+        ...isNextGoalMissing ? [goalAsk] : [],
+        "Your other lines stand. Answer with only the lines asked for here."
+      ].join(NL5),
+      keeps: (op) => isNextGoalMissing && (op.kind === "goal" || op.kind === "suggest") || unanswered.some((s) => isLineFor(op, s, input.last, askIds, input.now))
+    };
+  };
 }
 
 // ../hooks/call-record.ts
@@ -13327,7 +13417,7 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
     const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now());
     heards.push({ kind, heard, retry });
     return heard;
-  }, nextGoalRetry(input.last, prompt));
+  }, statusRetry(input, prompt));
   const attempts = heards.map((h) => attemptOf(h.heard, h.retry));
   let before = null;
   let isWritten = false;
@@ -13569,6 +13659,9 @@ function inTurn(key, fn) {
 var questionHistory2 = null;
 function useQuestionHistory(place) {
   questionHistory2 = place;
+}
+function recordMatchesNow(input, now) {
+  return recordMatches(questionHistory2, input, now);
 }
 async function updateState(dir, sessionId, change, now = Date.now) {
   const path = statePath(dir, sessionId);
@@ -16704,8 +16797,10 @@ function createInbox(pi, deps = defaultDeps) {
           return { content: [{ type: "text", text: "The inbox is not shown in this session." }] };
         let answer = { result: "", personLine: null };
         const delegate = await context.delegate();
+        const input = args;
+        const earlier = name === "record" ? await recordMatchesNow(input, deps.now()) : [];
         await change(sessionIdOf(ctx), (s) => {
-          const r = recorded(OMP2, s, name, args, deps.now(), TOOL_FIELDS, delegate);
+          const r = recorded(OMP2, s, name, input, deps.now(), TOOL_FIELDS, delegate, earlier);
           answer = r;
           return r.state;
         });

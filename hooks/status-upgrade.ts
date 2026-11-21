@@ -40,6 +40,7 @@ function subjectOf(saved: unknown): Subject | null {
   const s = saved as Partial<Record<keyof Subject, unknown>> | null
   const status = STATUSES.find(x => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)]
   const changedAt = time(s?.changedAt)
+  const keptAt = time(s?.keptAt)
   if (!s || typeof s.id !== 'string' || typeof s.name !== 'string' || !status || changedAt === null) return null
 
   return {
@@ -51,6 +52,7 @@ function subjectOf(saved: unknown): Subject | null {
     createdAt: time(s.createdAt) ?? changedAt,
     changedAt,
     closedAt: time(s.closedAt) ?? (status === 'done' || status === 'dropped' ? changedAt : null),
+    ...(keptAt === null ? {} : { keptAt }),
     into: typeof s.into === 'string' ? s.into : null,
   }
 }

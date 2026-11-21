@@ -7,6 +7,7 @@ import type { AgentTool } from '../hooks/tools'
 import type { DelegateSession } from '../hooks/hc-terminals'
 import { OMP } from '../omp/src/texts'
 import type { LastAction, Ledger } from '../types'
+import { caseEarlier, type CaseAnswer } from './case-history'
 import { ompNotes, probeTools, type CaseTools } from './probe-tools'
 
 /**
@@ -16,9 +17,11 @@ import { ompNotes, probeTools, type CaseTools } from './probe-tools'
  * `ompNotes` calls `promptNotes`, the function host.ts reaches through `notePrompt`. The real host's state, panel and
  * band are not loaded.
  *
- * The runner passes the case through the environment. INBOX_EVAL_STATE holds `{ shown, ledger, lastActions, tools }`: the inbox the
- * agent is shown, the inbox the tools answer from, the person's latest press on each row, and the case's tools. INBOX_EVAL_LOG is the file each call is appended to. INBOX_EVAL_TOOLS is
- * the file where the probe writes the tools the session offers, which the runner checks. INBOX_EVAL_NO_GUIDANCE=1
+ * The runner passes the case through the environment. INBOX_EVAL_STATE holds
+ * `{ shown, ledger, lastActions, tools, delegate, history }`: the inbox the agent is shown, the inbox the tools answer
+ * from, the person's latest press on each row, the case's tools, whether the session is a delegate, and the earlier
+ * answers the `record` answer searches. INBOX_EVAL_LOG is the file each call is appended to. INBOX_EVAL_TOOLS is the
+ * file where the probe writes the tools the session offers, which the runner checks. INBOX_EVAL_NO_GUIDANCE=1
  * leaves the guidance out, for the control run.
  */
 const MESSAGE_TYPE = 'inbox'
@@ -29,6 +32,7 @@ type State = {
   lastActions: Record<string, LastAction>
   tools: CaseTools | null
   delegate: DelegateSession | null
+  history: CaseAnswer[]
 }
 
 function required(name: string): string {
@@ -98,16 +102,10 @@ export default function (pi: Pi): void {
       loadMode: 'essential',
       approval: 'read',
       execute: async (_toolCallId, args) => {
-        const r = toolAnswer(
-          OMP,
-          ledger,
-          name,
-          args as Record<string, unknown>,
-          Date.now(),
-          presses,
-          offered.fields,
-          state.delegate,
-        )
+        const input = args as Record<string, unknown>
+        const now = Date.now()
+        const earlier = name === 'record' ? caseEarlier(state.history ?? [], input, now) : []
+        const r = toolAnswer(OMP, ledger, name, input, now, presses, offered.fields, state.delegate, earlier)
         ledger = r.ledger
         appendFileSync(logPath, `${JSON.stringify({ tool: name, args, result: r.result })}\n`)
 

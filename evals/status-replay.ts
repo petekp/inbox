@@ -5,7 +5,8 @@ import { applyExchangeUpdate } from '../hooks/ledger-update'
 import { parseReply } from '../hooks/reply-parse'
 import { buildPrompt, systemText } from '../hooks/ledger-prompt'
 import { CLAUDE_CODE } from '../hooks/model-text'
-import { hostStatusSystem, nextGoalRetry } from '../hooks/status-prompt'
+import { hostStatusSystem } from '../hooks/status-prompt'
+import { statusRetry } from '../hooks/status-retry'
 import { screenText } from '../hooks/inbox-text'
 import type { StatusCallInput } from '../hooks/status-prompt'
 import { askStatus } from '../hooks/status'
@@ -251,7 +252,7 @@ async function statusCall(
       logs.push(answer.log)
       return answer
     },
-    nextGoalRetry(input.last, prompt),
+    statusRetry(input, prompt),
   )
   const log = {
     ...logs[logs.length - 1]!,

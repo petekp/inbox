@@ -1,6 +1,7 @@
 import type { DelegateSession } from '../hooks/hc-terminals'
 import type { AgentTool } from '../hooks/tools'
 import type { LastAction, Ledger } from '../types'
+import type { CaseAnswer } from './case-history'
 import type { CaseTools } from './probe-tools'
 
 export type Agent = 'claude' | 'codex' | 'omp'
@@ -51,6 +52,8 @@ export type Case = {
   tools?: CaseTools
   /** The delegate session the agent runs as, which the tools answer for. Without it, the agent runs as no delegate. */
   delegate?: DelegateSession
+  /** Answers the person gave before, which the `record` answer lists for a question like them. */
+  history?: CaseAnswer[]
 }
 
 export type Call = { tool: string; args: Record<string, unknown>; result: string }

@@ -2,6 +2,8 @@
 
 What the repo's automated checks cover. [The look map](looks.md) lists owners and differences.
 
+`./scripts/test-files.sh tests/pr-fetch.test.ts tests/status-idle.test.ts` runs only the named mod test files with `claude plugin test` and exits with its status, so a session need not run the whole suite or build its own test folder.
+
 `scripts/check-structure.mjs` checks the parity record in `hooks/clients.ts` against "Differences on purpose", as described there. It also parses imports and resolves their targets. It follows local import chains, including type bridges. Shared modules retain their shared-only restriction through those chains, and Codex cannot reach nonshared hooks through another local module. It includes build-shared tones and type imports. Shared modules and Codex reject computed targets. The only exception is a direct `import(url)` in the top-level `codex/src/server-main.ts:load` function. Nested functions do not inherit that exception. That function selects installed or dev handler URLs for hot reload.
 
 The script also checks that omp's files import only shared modules, and that only `omp/src/host.ts` imports omp's packages. It checks plan status lines, file references and links. Its owner-symbol check only verifies that a word occurs in the referenced file. It does not establish a definition or semantic freshness.

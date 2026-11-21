@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-20T22:44:30.409Z. 336983 characters follow.
+// Built at 2026-11-20T23:06:22.231Z. 337137 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -549,7 +549,8 @@ function goalFields(o, subjects) {
     nextMilestoneId: Math.max(time(o.nextMilestoneId) ?? 1, milestones.length + 1),
     serves,
     goalRefused: goalRefusedOf(o.goalRefused),
-    suggestedGoal: nonEmpty(o.suggestedGoal)
+    suggestedGoal: nonEmpty(o.suggestedGoal),
+    ...typeof o.noGoalFor === "string" ? { noGoalFor: o.noGoalFor } : {}
   };
 }
 
@@ -574,6 +575,7 @@ function subjectOf(saved) {
   const s = saved;
   const status = STATUSES.find((x) => x === s?.status) ?? DROPPED_STATUSES[String(s?.status)];
   const changedAt = time2(s?.changedAt);
+  const keptAt = time2(s?.keptAt);
   if (!s || typeof s.id !== "string" || typeof s.name !== "string" || !status || changedAt === null)
     return null;
   return {
@@ -585,6 +587,7 @@ function subjectOf(saved) {
     createdAt: time2(s.createdAt) ?? changedAt,
     changedAt,
     closedAt: time2(s.closedAt) ?? (status === "done" || status === "dropped" ? changedAt : null),
+    ...keptAt === null ? {} : { keptAt },
     into: typeof s.into === "string" ? s.into : null
   };
 }
@@ -5082,7 +5085,7 @@ function emptyBlock(tab, empty, parts = null) {
 var NO_LINES_ABOVE = new Map;
 var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
 var isStatusUnder = (r) => r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)));
-var isUnderWay = (f) => f?.is === "queued" || pressUnderWaySince(f) !== null;
+var isUnderWay2 = (f) => f?.is === "queued" || pressUnderWaySince(f) !== null;
 var lineOf = (f) => ({
   text: f.text,
   tone: f.tone,
@@ -5102,7 +5105,7 @@ function holdLinesAbove(blocks, held, now) {
     const kept = held.get(b.id);
     const f = b.feedback;
     if (!hasActions(b)) {
-      if (kept !== undefined && isUnderWay(f?.source ?? null))
+      if (kept !== undefined && isUnderWay2(f?.source ?? null))
         next.set(b.id, kept);
       return b;
     }
@@ -5118,7 +5121,7 @@ function holdLinesAbove(blocks, held, now) {
       return kept === null ? { ...b, isStatusHeldUnder: true } : b;
     }
     if (kept === undefined) {
-      if (isUnderWay(f.source))
+      if (isUnderWay2(f.source))
         next.set(b.id, null);
       return b;
     }

@@ -11,7 +11,8 @@ import {
   upgradeSession,
 } from '../../hooks/session-files'
 import { pruned } from '../../hooks/session-presses'
-import { historyStep } from '../../hooks/history-store'
+import type { AnswerDoc } from '../../hooks/earlier-answers'
+import { historyStep, recordMatches } from '../../hooks/history-store'
 import type { HistoryPlace } from '../../hooks/history-store'
 import type { Session } from '../../types'
 import type { SavedSession } from '../../hooks/session-files'
@@ -87,6 +88,11 @@ let questionHistory: HistoryPlace | null = null
  */
 export function useQuestionHistory(place: HistoryPlace | null): void {
   questionHistory = place
+}
+
+/** The earlier answers the `record` answer lists for a call, from this process's question history. */
+export function recordMatchesNow(input: Record<string, unknown>, now: number): Promise<AnswerDoc[]> {
+  return recordMatches(questionHistory, input, now)
 }
 
 /** Changes a session in turn with every other change to it in this process. Every save prunes it with `pruned`. */

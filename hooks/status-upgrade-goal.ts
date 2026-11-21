@@ -11,6 +11,7 @@ type GoalFields = Pick<
   | 'serves'
   | 'goalRefused'
   | 'suggestedGoal'
+  | 'noGoalFor'
 >
 
 const REFUSAL_LINES: readonly GoalRefusal['line'][] = ['goal', 'retire']
@@ -157,5 +158,6 @@ export function goalFields(o: Record<string, unknown>, subjects: readonly Subjec
     serves,
     goalRefused: goalRefusedOf(o.goalRefused),
     suggestedGoal: nonEmpty(o.suggestedGoal),
+    ...(typeof o.noGoalFor === 'string' ? { noGoalFor: o.noGoalFor } : {}),
   }
 }

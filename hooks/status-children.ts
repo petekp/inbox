@@ -8,6 +8,7 @@ import {
   FINISHED_READ,
   IDLE_AFTER_MS,
   isOpen,
+  isUnderWay,
   NL,
 } from './status-limits'
 import { ago, duration } from './text'
@@ -115,22 +116,24 @@ export function subjectsText(o: SessionStatus | null, now: number): { open: stri
 }
 
 /**
- * The working subjects that have not changed for `IDLE_AFTER_MS` or more at `now`, that no ask in `asks` holds up and
- * that no running child works for. The Status call reads them to say whether each is done or dropped.
+ * The subjects under way, working or waiting on something, that have not changed for `IDLE_AFTER_MS` or more at `now`,
+ * that no ask in `asks` holds up and that no running child works for. The Status call reads them to close each, or to
+ * say it still goes on.
  */
 export function idleSubjects(o: SessionStatus | null, asks: readonly Pick<Item, 'id'>[], now: number): Subject[] {
   const held = new Set(asks.flatMap(a => o?.askSubjects[a.id] ?? []))
   const isWorkedOn = (s: Subject) => (o?.children ?? []).some(c => c.subjectId === s.id && isChildRunning(c, now))
 
   return (o?.subjects ?? []).filter(
-    s => s.status === 'working' && now - s.changedAt >= IDLE_AFTER_MS && !held.has(s.id) && !isWorkedOn(s),
+    s =>
+      isUnderWay(s) && now - Math.max(s.changedAt, s.keptAt ?? 0) >= IDLE_AFTER_MS && !held.has(s.id) && !isWorkedOn(s),
   )
 }
 
 /** The idle subjects as the call reads them: each with how long it has gone without a change. */
 export function idleText(o: SessionStatus | null, asks: readonly Pick<Item, 'id'>[], now: number): string {
   return idleSubjects(o, asks, now)
-    .map(s => `${s.id} | ${s.name} | ${duration(now - s.changedAt)}`)
+    .map(s => `${s.id} | ${s.status} | ${s.name} | ${duration(now - s.changedAt)}`)
     .join(NL)
 }
 

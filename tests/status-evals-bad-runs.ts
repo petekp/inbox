@@ -167,5 +167,10 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
       'SET: s2 | working | syncs on reconnect, merging clashing edits left\nSET: m2 | working | syncs on reconnect\nSET: m3 | queued | not started',
     breaks: 'head-follows',
   },
+  'finished-pass': {
+    at: 1,
+    answer: 'SET: s1 | waits-on-other | Page text done, screenshots needed\nSUGGEST: Website notes page live',
+    breaks: 'goal-suggested',
+  },
   'head-after-done': { at: 2, answer: 'HEAD: Greet flags | Adding options to greet', breaks: 'head-follows' },
 }

@@ -107,5 +107,6 @@ export const CLAUDE_CODE: Client = {
     },
     'done-press-age': { kind: 'full' },
     'delegate-asks': { kind: 'full' },
+    'record-earlier-answers': { kind: 'full' },
   },
 }

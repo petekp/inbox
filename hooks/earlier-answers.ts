@@ -15,9 +15,9 @@ export type AnswerIndex = {
 const K1 = 1.2
 const B = 0.75
 /**
- * The least share of the best score a question could reach that its top match needs before the row shows it. Set on
- * the measurement behind docs/plans/repeated-questions.md, where it shows the line on about a quarter of question rows
- * whether the history is weeks or days old.
+ * The least share of the best score a question could reach that a match needs before the row or the `record` answer
+ * shows it. Set on the measurement behind docs/plans/repeated-questions.md, where it shows the line on about a quarter
+ * of question rows whether the history is weeks or days old.
  */
 const RELATIVE_FLOOR = 0.22
 /** The most characters an earlier ask or answer keeps on an item, since closed records copy the item. */
@@ -56,15 +56,16 @@ export function answerIndex(docs: AnswerDoc[]): AnswerIndex {
 }
 
 /**
- * The earlier answer that best matches `question`'s ask and options, with its score as a share of the best score the
- * question could reach: each of its terms the history holds at full weight. Null when nothing reaches
- * `RELATIVE_FLOOR`. `skip` is the key of the question itself, whose own answer never counts.
+ * The earlier answers that best match `question`'s ask and options, best first, at most `top`, each with its score as
+ * a share of the best score the question could reach: each of its terms the history holds at full weight. Only matches
+ * that reach `RELATIVE_FLOOR` count. `skip` is the key of the question itself, whose own answer never counts.
  */
-export function bestEarlier(
+export function rankedEarlier(
   index: AnswerIndex,
   question: Pick<Item, 'ask' | 'options'>,
   skip: string,
-): { doc: AnswerDoc; score: number } | null {
+  top: number,
+): { doc: AnswerDoc; score: number }[] {
   const n = index.docs.length
   const scores = new Map<number, number>()
   let reachable = 0
@@ -78,16 +79,25 @@ export function bestEarlier(
       scores.set(doc, (scores.get(doc) ?? 0) + (weight * count * (K1 + 1)) / (count + K1 * norm))
     }
   }
-  let best: { doc: AnswerDoc; score: number } | null = null
-  for (const [doc, score] of scores) {
-    const d = index.docs[doc]!
-    if (d.key === skip || (best && score <= best.score)) continue
-    best = { doc: d, score }
-  }
-  if (!best || reachable === 0) return null
-  const relative = best.score / reachable
+  if (reachable === 0) return []
 
-  return relative >= RELATIVE_FLOOR ? { doc: best.doc, score: relative } : null
+  return [...scores]
+    .flatMap(([i, score]) => {
+      const doc = index.docs[i]
+      return doc && doc.key !== skip ? [{ doc, score: score / reachable }] : []
+    })
+    .toSorted((a, b) => b.score - a.score)
+    .slice(0, top)
+    .filter(match => match.score >= RELATIVE_FLOOR)
+}
+
+/** The best of `rankedEarlier`, or null when none reaches the floor. */
+export function bestEarlier(
+  index: AnswerIndex,
+  question: Pick<Item, 'ask' | 'options'>,
+  skip: string,
+): { doc: AnswerDoc; score: number } | null {
+  return rankedEarlier(index, question, skip, 1)[0] ?? null
 }
 
 /** The match as an item keeps it. */
@@ -106,7 +116,7 @@ export function earlierOf(match: { doc: AnswerDoc; score: number }, isShown: boo
 
 const DAY_MS = 24 * 60 * 60_000
 
-function agoText(ms: number): string {
+export function agoText(ms: number): string {
   const minutes = Math.max(1, Math.round(ms / 60_000))
   if (minutes < 60) return minutes === 1 ? 'a minute ago' : `${minutes} minutes ago`
   const hours = Math.round(minutes / 60)

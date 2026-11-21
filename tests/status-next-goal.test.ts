@@ -4,7 +4,7 @@ import { test } from './test-with-timeout'
 import { askStatus, parseStatus } from '../hooks/status'
 import { applyStatus } from '../hooks/status-ops'
 import { goalBlocks } from '../hooks/status-prompt-goal'
-import { nextGoalRetry } from '../hooks/status-prompt'
+import { statusRetry } from '../hooks/status-retry'
 import type { SessionStatus } from '../types'
 import { after, MIN } from './status-helpers'
 
@@ -22,7 +22,7 @@ async function asked(last: SessionStatus | null, answers: string[]) {
       prompts.push(retry ?? PROMPT)
       return { text: answers.shift() ?? null }
     },
-    nextGoalRetry(last, PROMPT),
+    statusRetry({ last, asks: [], tasks: [], now: 30 * MIN }, PROMPT),
   )
 
   return { prompts, applied }
@@ -72,9 +72,40 @@ test('an answer that gives the next goal, or SUGGEST -, is asked once, and a sec
   })
 })
 
-test('an answer of only SUGGEST - while nothing is suggested changes nothing, as NO CHANGE does', () => {
+test('an answer that meets the goal with no GOAL or SUGGEST line is asked once more for the next goal', async () => {
+  const running = after(
+    null,
+    `${WORK}\nGOAL: Import ready to demo | working Import works; queued Error messages`,
+    20 * MIN,
+  )
+  const meets = 'DONE: Import works | shipped\nDONE: Error messages | clear'
+  const { prompts, applied } = await asked(running, [meets, 'SUGGEST: Import shipped to the store'])
+
+  expect(prompts).toHaveLength(2)
+  expect(prompts[1]).toContain('The goal is met, and no next goal is suggested.')
+  expect(applied?.kind === 'ops' && applied.ops.at(-1)).toEqual({
+    kind: 'suggest',
+    text: 'Import shipped to the store',
+  })
+  expect((await asked(running, ['DONE: Import works | shipped'])).prompts).toHaveLength(1)
+})
+
+test('an answer of only SUGGEST - while nothing is suggested changes nothing but the note of the work it judged', () => {
   const none = parseStatus('NO CHANGE\nSUGGEST: -')!
 
   expect(applyStatus(null, none, 30 * MIN, new Set())).toBeNull()
-  expect(applyStatus(met(), none, 30 * MIN, new Set())).toEqual(met())
+  expect(applyStatus(met(), none, 30 * MIN, new Set())).toEqual({ ...met(), noGoalFor: expect.any(String) })
+})
+
+test('after SUGGEST: -, an answer with no goal line is asked once more only when the goal, the open subjects or the asks changed', async () => {
+  const declined = applyStatus(met(), { kind: 'ops', ops: [{ kind: 'suggest', text: null }] }, 22 * MIN, new Set())
+  const moved = declined && after(declined, 'NEW: working | Search | started', 25 * MIN)
+
+  expect((await asked(declined, ['NO CHANGE'])).prompts).toHaveLength(1)
+  expect((await asked(moved, ['NO CHANGE', 'SUGGEST: -'])).prompts).toHaveLength(2)
+})
+
+test('while the Status holds nothing, an answer that adds no subject is not asked for the next goal, and one that adds a subject is', async () => {
+  expect((await asked(null, ['NO CHANGE', 'SUGGEST: -'])).prompts).toHaveLength(1)
+  expect((await asked(null, ['NEW: working | Search | started', 'SUGGEST: -'])).prompts).toHaveLength(2)
 })

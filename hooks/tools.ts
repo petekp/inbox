@@ -1,4 +1,5 @@
 import { isQuestionBack, recommendedOption, rewordedQuestion } from './ask-match'
+import type { AnswerDoc } from './earlier-answers'
 import { closeByAgent, reopenItem } from './ledger-close'
 import { addAgentItem, addFinding } from './ledger-update'
 import { stepHelp } from './reply-parse'
@@ -7,6 +8,7 @@ import type { Host } from './model-text'
 import { MAX_ORDERED_PRS, tabPrs } from './pr-fetch'
 import { isDismissed } from './pr-views'
 import { bodyChanges, missingText, questionBody, withBody } from './question-checks'
+import { earlierAnswersText } from './record-matches'
 import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA } from './tool-schemas'
 import type { Closed, Help, Item, LastAction, Ledger, ToolFields } from '../types'
 
@@ -63,7 +65,8 @@ function delegateRefusal(delegate: DelegateSession): string {
 /**
  * The answer to a call of one of `agentTools`. `fields` are the input fields of the tools the agent has, which can be
  * an older build's, so the answer never asks for a field the agent cannot send. In a delegate session, `record` refuses
- * a question or a task as `delegateRefusal` says.
+ * a question or a task as `delegateRefusal` says. `earlier` are the person's earlier answers most like the question a
+ * `record` call asks, as `hooks/history-store.ts:recordMatches` finds them, which the answer lists after a new question.
  */
 export function toolAnswer(
   host: Host,
@@ -74,6 +77,7 @@ export function toolAnswer(
   presses: Presses,
   fields: ToolFields,
   delegate: DelegateSession | null,
+  earlier: readonly AnswerDoc[] = [],
 ): ToolAnswer {
   switch (tool) {
     case 'record':
@@ -81,7 +85,8 @@ export function toolAnswer(
         return unchanged(ledger, delegateRefusal(delegate))
 
       return (
-        recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields)
+        recordAfterCompare(host, ledger, input, now, presses, fields) ??
+        recordItem(host, ledger, input, now, fields, earlier)
       )
     case 'close':
       return recordClose(host, ledger, input, now, presses)
@@ -128,6 +133,7 @@ export function recordItem(
   input: Record<string, unknown>,
   now: number,
   fields: ToolFields,
+  earlier: readonly AnswerDoc[] = [],
 ): ToolAnswer {
   if (input.kind === 'finding') return recordFinding(host, ledger, input, now)
   if (input.kind !== 'question' && input.kind !== 'task')
@@ -194,7 +200,8 @@ export function recordItem(
       `Recorded. The user sees it in ${host.surface}.` +
       leftOut +
       missingText(after, fields.record) +
-      (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : ''),
+      (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : '') +
+      earlierAnswersText(r.id, earlier, now),
     personLine: `${input.kind === 'question' ? 'Question' : 'Task'}: ${ask}`,
   }
 }
