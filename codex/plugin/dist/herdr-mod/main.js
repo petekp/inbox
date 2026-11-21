@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-21T19:28:26.197Z. 344959 characters follow.
+// Built at 2026-11-21T23:51:51.476Z. 347890 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -872,6 +872,10 @@ function countsByMark(folded) {
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
 }
+var MERGED_PREFIX = "merged in: ";
+function mergedLine(merged, fits) {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
+}
 var STALL_GAP = " · ";
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
@@ -1027,7 +1031,7 @@ function milestoneRows(m, isUnfolded, isCollapsed = NONE_COLLAPSED) {
   return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed);
 }
 var listRows = (milestones, rows) => [
-  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
+  ...milestones.flatMap((m) => [...m.subject ? [m.subject] : [], ...m.foldId === null ? m.rows : []]),
   ...rows
 ];
 function statusListRows(page) {
@@ -1134,7 +1138,8 @@ function milestoneRow(step, o, items) {
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
-    rows: []
+    rows: [],
+    subject: null
   };
 }
 function goalPage(o, items) {
@@ -3836,15 +3841,65 @@ function collapsedRows(s) {
   return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
 }
 
+// ../core/view/status-repeats.ts
+function holdsEveryWordOf(text, name) {
+  const said = stems(text);
+  const words = stems(name);
+  return words.size > 0 && [...words].every((w) => said.has(w));
+}
+function isNamedAlike(a, b) {
+  const [x, y] = [stems(a), stems(b)];
+  const [short, long] = x.size <= y.size ? [x, y] : [y, x];
+  return short.size > 0 && [...short].every((w) => long.has(w));
+}
+function withoutRepeatedNow(page, o) {
+  const g = page.goal;
+  const nowText = o?.head ? o.head.description || o.head.title : null;
+  if (g === null || g.now === null || o === null || nowText === null)
+    return page;
+  const drawnIds = new Set(statusListRows(page).flatMap((r) => r.kind === "subject" ? [r.id] : []));
+  const isRepeated = o.subjects.some((x) => drawnIds.has(x.id) && x.status === "working" && holdsEveryWordOf(nowText, x.name));
+  return isRepeated ? { ...page, goal: { ...g, now: null } } : page;
+}
+function subjectInPlaceOf(o, m, items) {
+  if (m.status === "dropped")
+    return null;
+  const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
+  const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : undefined;
+  const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
+  return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+}
+function isTitleRepeated(title, subjects) {
+  const open = subjects.filter((x) => x.into === null && isOpen(x));
+  const only = open.length === 1 ? open[0] : undefined;
+  return only !== undefined && isNamedAlike(title, only.name);
+}
+function milestoneAsSubject(m, subjectRows) {
+  const [row, ...under] = subjectRows;
+  if (row?.kind !== "subject")
+    return m;
+  const work = under.map((r) => r.kind === "child" || r.kind === "more" ? { ...r, branch: null } : r);
+  return {
+    ...m,
+    id: row.id,
+    mark: row.mark,
+    tone: row.tone,
+    name: row.name,
+    foldId: null,
+    foldCount: work.length === 0 ? 0 : row.foldCount,
+    text: row.text,
+    was: row.was,
+    ask: row.ask,
+    rows: work,
+    subject: row
+  };
+}
+
 // ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
-var MERGED_PREFIX = "merged in: ";
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function mergedLine(merged, fits) {
-  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
-}
 function statusPage(s, now, turn = { is: "fresh" }) {
   const o = s.ledger.overview;
   const sync = statusSync(s);
@@ -3972,7 +4027,8 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const title = head === null || g === null && isTitleRepeated(head.title, subjects) ? null : head.title;
+  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
   const rows = [
     ...headPart,
     ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
@@ -3981,8 +4037,13 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
   const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
+    const milestone = o?.milestones.find((x) => x.id === m.id);
+    const hasLooseWork = loose.some((l) => l.milestoneId === m.id);
+    const inPlace = o && milestone && !hasLooseWork ? subjectInPlaceOf(o, milestone, s.ledger.items) : null;
+    if (inPlace)
+      return milestoneAsSubject(m, partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0));
     const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
-    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const changedAt = milestone?.changedAt ?? Infinity;
     const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
       ...m,
@@ -4001,7 +4062,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
-  return {
+  return withoutRepeatedNow({
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
@@ -4009,7 +4070,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     rows,
     sync,
     syncText: statusSyncText(sync, now)
-  };
+  }, o);
 }
 function seenSubjectIds(row) {
   return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
@@ -7409,11 +7470,17 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
       }
     ];
   if (row.kind === "more")
-    return [{ ...note2(row.id, row.text, "muted"), depth: row.depth, tree: [{ depth: row.depth - 1, is: row.branch }] }];
+    return [
+      {
+        ...note2(row.id, row.text, "muted"),
+        depth: row.depth,
+        ...row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}
+      }
+    ];
   if (row.kind === "part")
     return [
       { kind: "gap", id: `gap ${row.id}` },
-      { kind: "rule", id: row.id, text: row.text, ...row.isTitle ? { isTitle: true } : {} },
+      { kind: "rule", id: row.id, text: row.text, ...row.isTitle && row.text ? { isTitle: true } : {} },
       ...row.description ? [{ ...note2(`${row.id} description`, row.description, "muted"), isAtEdge: true }] : []
     ];
   if (row.kind === "done-fold" || row.kind === "counts")
@@ -7454,7 +7521,8 @@ function listBlocks(rows, isUnfolded, isCollapsed) {
   return rows.map((r, n) => rowBlocks(r, isUnfolded, isCollapsed).map((b, k) => k === 0 ? withGap(b, gaps[n]) : b));
 }
 function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
-  const mark = markOf2(m.mark, m.tone, false);
+  const x = m.subject;
+  const mark = markOf2(m.mark, m.tone, x?.isRunning ?? false);
   const path = { is: "milestone", above: lineAbove, below: m.line };
   const tree = hasWork && m.line === null ? { tree: [{ depth: 0, is: "down" }] } : {};
   if (m.foldId !== null)
@@ -7477,8 +7545,13 @@ function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
     name: m.name,
     isBold: m.isBold,
     isMuted: m.isMuted,
-    stall: null,
-    under: [m.text, m.was ? `${WAS_PREFIX}${m.was}` : null].filter((l) => l !== null),
+    stall: x?.stall ?? null,
+    ...x?.waitsOn ? { waitsOn: x.waitsOn } : {},
+    under: [
+      m.text,
+      x?.merged ? mergedLine(x.merged, (t) => cellWidth(t) <= MERGED_CELLS) : null,
+      m.was ? `${WAS_PREFIX}${m.was}` : null
+    ].filter((l) => l !== null),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
     ...foldOf(m, isCollapsed),
     path,

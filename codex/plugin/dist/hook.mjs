@@ -762,6 +762,13 @@ function waitingUnderParents(ledger) {
   ]);
 }
 var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
+var listRows = (milestones, rows) => [
+  ...milestones.flatMap((m) => [...m.subject ? [m.subject] : [], ...m.foldId === null ? m.rows : []]),
+  ...rows
+];
+function statusListRows(page) {
+  return listRows(page.goal?.milestones ?? [], page.rows);
+}
 
 // ../core/view/status-path.ts
 function milestonePath(shown) {
@@ -839,7 +846,8 @@ function milestoneRow(step, o, items) {
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
-    rows: []
+    rows: [],
+    subject: null
   };
 }
 function goalPage(o, items) {
@@ -2738,6 +2746,59 @@ function isSubjectSeen(o, s) {
   return seenAt !== null && s.changedAt <= seenAt;
 }
 
+// ../core/view/status-repeats.ts
+function holdsEveryWordOf(text2, name) {
+  const said = stems(text2);
+  const words3 = stems(name);
+  return words3.size > 0 && [...words3].every((w) => said.has(w));
+}
+function isNamedAlike(a, b) {
+  const [x, y] = [stems(a), stems(b)];
+  const [short, long] = x.size <= y.size ? [x, y] : [y, x];
+  return short.size > 0 && [...short].every((w) => long.has(w));
+}
+function withoutRepeatedNow(page, o) {
+  const g = page.goal;
+  const nowText = o?.head ? o.head.description || o.head.title : null;
+  if (g === null || g.now === null || o === null || nowText === null) return page;
+  const drawnIds = new Set(statusListRows(page).flatMap((r) => r.kind === "subject" ? [r.id] : []));
+  const isRepeated = o.subjects.some(
+    (x) => drawnIds.has(x.id) && x.status === "working" && holdsEveryWordOf(nowText, x.name)
+  );
+  return isRepeated ? { ...page, goal: { ...g, now: null } } : page;
+}
+function subjectInPlaceOf(o, m, items) {
+  if (m.status === "dropped") return null;
+  const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
+  const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : void 0;
+  const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
+  return only !== void 0 && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+}
+function isTitleRepeated(title, subjects) {
+  const open2 = subjects.filter((x) => x.into === null && isOpen(x));
+  const only = open2.length === 1 ? open2[0] : void 0;
+  return only !== void 0 && isNamedAlike(title, only.name);
+}
+function milestoneAsSubject(m, subjectRows) {
+  const [row, ...under] = subjectRows;
+  if (row?.kind !== "subject") return m;
+  const work = under.map((r) => r.kind === "child" || r.kind === "more" ? { ...r, branch: null } : r);
+  return {
+    ...m,
+    id: row.id,
+    mark: row.mark,
+    tone: row.tone,
+    name: row.name,
+    foldId: null,
+    foldCount: work.length === 0 ? 0 : row.foldCount,
+    text: row.text,
+    was: row.was,
+    ask: row.ask,
+    rows: work,
+    subject: row
+  };
+}
+
 // ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
@@ -2876,7 +2937,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
   const isHeadApart = head !== null && (g === null || g.isMet);
-  const listRows = [
+  const listRows2 = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
     ...otherRows.length > 0 ? [
@@ -2884,10 +2945,11 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const title = head === null || g === null && isTitleRepeated(head.title, subjects) ? null : head.title;
+  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
   const rows = [
     ...headPart,
-    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
+    ...headPart.length > 0 && listRows2[0]?.id === "other" ? listRows2.slice(1) : listRows2
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some(
     (c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id))
@@ -2895,8 +2957,12 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
   const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
+    const milestone = o?.milestones.find((x) => x.id === m.id);
+    const hasLooseWork = loose.some((l) => l.milestoneId === m.id);
+    const inPlace = o && milestone && !hasLooseWork ? subjectInPlaceOf(o, milestone, s.ledger.items) : null;
+    if (inPlace) return milestoneAsSubject(m, partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0));
     const rows2 = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
-    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const changedAt = milestone?.changedAt ?? Infinity;
     const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
       ...m,
@@ -2915,15 +2981,18 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
-  return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
-    head,
-    ...goalParts,
-    goal,
-    rows,
-    sync,
-    syncText: statusSyncText(sync, now)
-  };
+  return withoutRepeatedNow(
+    {
+      isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+      head,
+      ...goalParts,
+      goal,
+      rows,
+      sync,
+      syncText: statusSyncText(sync, now)
+    },
+    o
+  );
 }
 
 // ../core/view/session-view.ts

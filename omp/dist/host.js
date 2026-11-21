@@ -2522,6 +2522,15 @@ function countsByMark(folded) {
     return n === 0 ? [] : [{ ...SUBJECT_MARKS[status], text: `${n} ${COUNT_WORDS[status]}` }];
   });
 }
+var MERGED_PREFIX = "merged in: ";
+function mergedLine(merged, fits) {
+  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
+}
+function nameBeforeStall(name, fits) {
+  const words = name.split(" ");
+  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
+  return cuts.find(fits) ?? cuts[cuts.length - 1] ?? name;
+}
 var STALL_GAP = " \xB7 ";
 var DAY_MS = 24 * 60 * 60000;
 function subjectStall(x, isHeld, isWorkRunning, now) {
@@ -2678,7 +2687,7 @@ function milestoneRows(m, isUnfolded, isCollapsed = NONE_COLLAPSED) {
   return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed);
 }
 var listRows = (milestones, rows) => [
-  ...milestones.flatMap((m) => m.foldId === null ? m.rows : []),
+  ...milestones.flatMap((m) => [...m.subject ? [m.subject] : [], ...m.foldId === null ? m.rows : []]),
   ...rows
 ];
 function statusListRows(page) {
@@ -2785,7 +2794,8 @@ function milestoneRow(step, o, items) {
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
     ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
-    rows: []
+    rows: [],
+    subject: null
   };
 }
 function goalPage(o, items) {
@@ -8370,21 +8380,66 @@ function drawnPreconditions(view, p) {
   return version === undefined ? [] : [{ kind: "row-version", row: p.id, version }];
 }
 
+// ../core/view/status-repeats.ts
+function holdsEveryWordOf(text, name) {
+  const said = stems(text);
+  const words = stems(name);
+  return words.size > 0 && [...words].every((w) => said.has(w));
+}
+function isNamedAlike(a, b) {
+  const [x, y] = [stems(a), stems(b)];
+  const [short, long] = x.size <= y.size ? [x, y] : [y, x];
+  return short.size > 0 && [...short].every((w) => long.has(w));
+}
+function withoutRepeatedNow(page, o) {
+  const g = page.goal;
+  const nowText = o?.head ? o.head.description || o.head.title : null;
+  if (g === null || g.now === null || o === null || nowText === null)
+    return page;
+  const drawnIds = new Set(statusListRows(page).flatMap((r) => r.kind === "subject" ? [r.id] : []));
+  const isRepeated = o.subjects.some((x) => drawnIds.has(x.id) && x.status === "working" && holdsEveryWordOf(nowText, x.name));
+  return isRepeated ? { ...page, goal: { ...g, now: null } } : page;
+}
+function subjectInPlaceOf(o, m, items) {
+  if (m.status === "dropped")
+    return null;
+  const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
+  const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : undefined;
+  const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
+  return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+}
+function isTitleRepeated(title, subjects) {
+  const open = subjects.filter((x) => x.into === null && isOpen(x));
+  const only = open.length === 1 ? open[0] : undefined;
+  return only !== undefined && isNamedAlike(title, only.name);
+}
+function milestoneAsSubject(m, subjectRows) {
+  const [row, ...under] = subjectRows;
+  if (row?.kind !== "subject")
+    return m;
+  const work = under.map((r) => r.kind === "child" || r.kind === "more" ? { ...r, branch: null } : r);
+  return {
+    ...m,
+    id: row.id,
+    mark: row.mark,
+    tone: row.tone,
+    name: row.name,
+    foldId: null,
+    foldCount: work.length === 0 ? 0 : row.foldCount,
+    text: row.text,
+    was: row.was,
+    ask: row.ask,
+    rows: work,
+    subject: row
+  };
+}
+
 // ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
-var MERGED_PREFIX = "merged in: ";
 var STATUS_TEXT_LINES = 3;
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function mergedLine(merged, fits) {
-  return `${MERGED_PREFIX}${cutAtPhrase(merged, (names) => fits(`${MERGED_PREFIX}${names}`))}`;
-}
-function nameBeforeStall(name, fits) {
-  const words = name.split(" ");
-  const cuts = words.map((_, n) => n === 0 ? name : `${words.slice(0, words.length - n).join(" ")}\u2026`);
-  return cuts.find(fits) ?? cuts.at(-1);
-}
 function statusPage(s, now, turn = { is: "fresh" }) {
   const o = s.ledger.overview;
   const sync = statusSync(s);
@@ -8512,7 +8567,8 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const headPart = isHeadApart && head ? [{ kind: "part", id: "head", depth: 0, text: head.title, description: head.description, isTitle: true }] : [];
+  const title = head === null || g === null && isTitleRepeated(head.title, subjects) ? null : head.title;
+  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
   const rows = [
     ...headPart,
     ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
@@ -8521,8 +8577,13 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
   const isAllSeen = (m, p) => p.shown.length + p.named.length + p.foldedOpen.length === 0 && !loose.some((l) => l.milestoneId === m.id);
   const withRows = (m, p) => {
+    const milestone = o?.milestones.find((x) => x.id === m.id);
+    const hasLooseWork = loose.some((l) => l.milestoneId === m.id);
+    const inPlace = o && milestone && !hasLooseWork ? subjectInPlaceOf(o, milestone, s.ledger.items) : null;
+    if (inPlace)
+      return milestoneAsSubject(m, partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0));
     const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
-    const changedAt = o?.milestones.find((x) => x.id === m.id)?.changedAt ?? Infinity;
+    const changedAt = milestone?.changedAt ?? Infinity;
     const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
       ...m,
@@ -8541,7 +8602,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     milestonesFold: o?.goal ? metMilestonesFold(o.goal, g.milestones, (m) => isWorkClosed(m, underMilestones[g.milestones.indexOf(m)])) : null,
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
-  return {
+  return withoutRepeatedNow({
     isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
@@ -8549,7 +8610,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     rows,
     sync,
     syncText: statusSyncText(sync, now)
-  };
+  }, o);
 }
 function seenSubjectIds(row) {
   return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
@@ -10356,7 +10417,7 @@ function pageRuleCells(width, textAt = PAGE_TEXT_AT) {
   return Math.max(0, width - textAt - 1);
 }
 function partHeading(text, width, s, at = PAGE_MARK_AT, isTitle = false) {
-  const label = `${text} `;
+  const label = text === null ? "" : `${text} `;
   const rule = "\u2500".repeat(Math.max(4, pageRuleCells(width, at) - cellWidth(label)));
   return `${" ".repeat(at)}${isTitle ? s.bold(label) + s.dim(rule) : s.dim(label + rule)}`;
 }
@@ -10411,6 +10472,8 @@ function drawPageRow(row, d, isSelected = false) {
     return withTree(out, markAt(row.depth - 1), TREE_ARMS[row.branch].first, TREE_ARMS[row.branch].rest, s);
   }
   if (row.kind === "more") {
+    if (!row.branch)
+      return [" ".repeat(textAt) + s.dim(row.text)];
     const arm = TREE_ARMS[row.branch];
     const line = " ".repeat(childAt(row.depth - 1) + 2) + s.dim(row.text);
     return withTree([line], markAt(row.depth - 1), arm.first, arm.rest, s);
@@ -10470,6 +10533,7 @@ function goalPartId(part) {
     return part.suggestion ? GOAL_KEYS_ID : null;
   return part.is === "keys" || part.is === "suggestion" ? GOAL_KEYS_ID : null;
 }
+var goalPartSubjects = (part) => part.is === "milestone" && part.row.subject ? [part.row.subject.id] : [];
 var goalEntry = (part) => ({ kind: "goal", part });
 function goalSection(page, typing, isUnfolded, isCollapsed) {
   const isTyping = typing === GOAL_KEYS_ID;
@@ -10568,7 +10632,8 @@ function foldedNameLines(d, mark, name, foldId, isSelected) {
 }
 function milestoneLines(m, d, isSelected) {
   const { width, now, style: s } = d;
-  const mark = paintMark({ ...m, isRunning: false }, now, s);
+  const x = m.subject;
+  const mark = paintMark({ ...m, isRunning: x?.isRunning ?? false }, now, s);
   const isCollapsed = collapsedIn(d.screen.view);
   const hasWork = milestoneRows(m, (id) => d.ui.statusUnfolded.includes(id), isCollapsed).length > 0;
   const column = m.line ?? (hasWork ? "continues" : null);
@@ -10578,9 +10643,15 @@ function milestoneLines(m, d, isSelected) {
   }
   const chevron = foldChevron(m, d, isSelected);
   const namePaint = (t) => (m.isMuted ? s.dim : (u) => u)(m.isBold || chevron && isSelected ? s.bold(t) : t);
-  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, { text: m.text, chevron });
+  const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, {
+    text: m.text,
+    chevron,
+    stall: x?.stall ?? null,
+    waitsOn: x?.waitsOn ?? null
+  });
+  const merged = x?.merged ? indented(mergedLine(x.merged, (t) => cellWidth(t) <= pageRoom(PAGE_MARK_AT, width)), PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
-  const after = [...rest, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
+  const after = [...rest, ...merged, ...was, ...pageButtonLines({ id: m.id, keys: milestoneKeyPlan(m) }, d, isSelected)];
   return [first, ...withPathLine(after, column, s)];
 }
 function headingLines(part, d, isSelected) {
@@ -11498,8 +11569,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
       body.push(e.aside ? spread(title, `${style.dim(e.aside)} `, width) : title);
     } else if (e.kind === "page" || e.kind === "goal") {
       const start = body.length;
-      if (e.kind === "page")
-        subjectAt.push(...seenSubjectIds(e.row).map((id) => [id, start]));
+      const seen = e.kind === "page" ? seenSubjectIds(e.row) : goalPartSubjects(e.part);
+      subjectAt.push(...seen.map((id) => [id, start]));
       const id = e.kind === "page" ? e.row.id : goalPartId(e.part);
       const isSelected = id !== null && id === pageSelected?.id;
       body.push(...e.kind === "page" ? e.joint ? workRowLines((w) => drawPageRow(e.row, { ...d, width: w }, isSelected), e.joint, d) : drawPageRow(e.row, d, isSelected) : drawGoalPart(e.part, d, isSelected));
