@@ -1,9 +1,9 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { parseStatus } from '../hooks/status'
-import { lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
-import { applyOps, applyStatus } from '../hooks/status-ops'
+import { parseStatus } from '../core/domain/status'
+import { lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../core/domain/status-children'
+import { applyOps, applyStatus } from '../core/domain/status-ops'
 import { opsOf, NO_ASKS, after, page } from './status-helpers'
 
 test('NO CHANGE keeps the list, an answer with no operation cannot be read, and a mixed answer keeps its operations', () => {

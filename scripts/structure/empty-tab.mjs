@@ -3,14 +3,14 @@ import { join } from 'node:path'
 
 import { API, isFunction, nameOf, propertyOf, ts } from './ts.mjs'
 
-const OWNER = 'hooks/empty-tab.ts'
-const TITLES_HOME = 'hooks/banners.ts'
-const LOOK_DIRS = ['hooks', 'codex/src', 'omp/src', 'herdr/src']
+const OWNER = 'core/view/empty-tab.ts'
+const TITLES_HOME = 'core/view/banners.ts'
+const LOOK_DIRS = ['core', 'hooks', 'codex/src', 'omp/src', 'herdr/src']
 /** The empty texts, each with the source files besides the owner that may import it. Tests sit outside these folders. */
 const OWNED_TEXTS = { EMPTY_TITLES: [], EMPTY_STATUS_TEXT: [], prsEmptyHint: [] }
 const SHARED_TEXTS = {
-  NOTHING_NEEDED_TEXT: [OWNER, 'hooks/band.ts'],
-  MAYBE_STALE_TEXT: [OWNER, 'hooks/band.ts', 'hooks/herdr.ts'],
+  NOTHING_NEEDED_TEXT: [OWNER, 'core/view/band.ts'],
+  MAYBE_STALE_TEXT: [OWNER, 'core/view/band.ts', 'core/remote/herdr.ts'],
 }
 /**
  * Each look's one empty drawer, the folder it lives in, and which call argument or JSX attribute takes the `emptyTab`
@@ -18,7 +18,7 @@ const SHARED_TEXTS = {
  * `emptyState`.
  */
 const DRAWERS = [
-  { name: 'emptyState', dir: 'hooks', argument: 0 },
+  { name: 'emptyState', dir: 'hooks/pane', argument: 0 },
   { name: 'EmptyState', dir: 'codex/src', attribute: 'empty' },
   { name: 'emptyEntries', dir: 'omp/src', argument: 0 },
   { name: 'emptyBlock', dir: 'herdr/src', argument: 1 },
@@ -29,7 +29,7 @@ function lookFiles(root, dir) {
   if (!existsSync(join(root, dir))) return []
   return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(entry => {
     const path = `${dir}/${entry.name}`
-    if (entry.isDirectory()) return dir === 'hooks' ? [] : lookFiles(root, path)
+    if (entry.isDirectory()) return lookFiles(root, path)
     return /\.tsx?$/.test(entry.name) && !/\.d\.ts$/.test(entry.name) ? [path] : []
   })
 }
@@ -143,7 +143,7 @@ function checkDrawer(drawer, sources, errors) {
 }
 
 /**
- * Each tab's empty state comes from `emptyTab` in `hooks/empty-tab.ts`, and each look draws it with one drawer. The
+ * Each tab's empty state comes from `emptyTab` in `core/view/empty-tab.ts`, and each look draws it with one drawer. The
  * check fails when a look imports the empty texts, holds an empty title as literal text, defines a second drawer, or
  * gives a drawer anything but an `emptyTab` result. It cannot see a look that draws empty text as plain lines of its own,
  * holds a hint as literal text, or decides on its own when to call `emptyTab`.

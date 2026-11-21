@@ -24,7 +24,7 @@ The helper currently pins one session. It validates the Core socket, terminal, s
 
 The milestone 3 integration passed the full repository gate before its final launcher adjustments. Live acceptance is being repeated on the integrated host and the AppDrop-installed iPhone build. Physical touch and accessibility remain later acceptance requirements.
 
-The reference is the current Codex implementation and shared rules, not a screenshot alone. Start from [the look map](../looks.md), [Codex's file map](../looks/files-codex.md), [the feature record](../../hooks/clients.ts), and [the prototype](../../prototypes/exact-inbox/README.md). The inspected repository base is `3701e97c14f6dfe571a42121d49749f2e8793cdb`; the prototype is working-copy code. Refresh the reference when implementation starts and track subsequent changes explicitly.
+The reference is the current Codex implementation and shared rules, not a screenshot alone. Start from [the look map](../looks.md), [Codex's file map](../looks/files-codex.md), [the feature record](../../core/domain/clients.ts), and [the prototype](../../prototypes/exact-inbox/README.md). The inspected repository base is `3701e97c14f6dfe571a42121d49749f2e8793cdb`; the prototype is working-copy code. Refresh the reference when implementation starts and track subsequent changes explicitly.
 
 Private installation remains a product constraint. Agent state, model credentials and GitHub credentials stay on their owning computer. Tailscale supplies private connectivity. The helper exposes Inbox operations, not Core's unrestricted terminal API.
 

@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
 
-import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
-import { goalKeyPlan, statusKeyRows } from '../../hooks/status-keys'
-import { countsText } from '../../hooks/status-folds'
-import { sessionView } from '../../hooks/session-view'
+import { SETTLED_MS, NO_HOLDS } from '../../core/view/timing'
+import { goalKeyPlan, statusKeyRows } from '../../core/view/status-keys'
+import { countsText } from '../../core/view/status-folds'
+import { sessionView } from '../../core/view/session-view'
 import type { SessionStatus } from '../../types'
 import { demoState } from '../src/demo'
 import { drawPanel } from '../src/panel'

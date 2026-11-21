@@ -3,13 +3,13 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { EMPTY, upgradeLedger } from '../hooks/ledger'
-import { applyExchangeUpdate, applyUpdate } from '../hooks/ledger-update'
-import { parseReply } from '../hooks/reply-parse'
-import { buildPrompt, systemText } from '../hooks/ledger-prompt'
-import { CLAUDE_CODE } from '../hooks/model-text'
-import { screenText } from '../hooks/inbox-text'
-import { transcriptCatchUpPrompt } from '../hooks/catch-up-text'
+import { EMPTY, upgradeLedger } from '../core/domain/ledger'
+import { applyExchangeUpdate, applyUpdate } from '../core/domain/ledger-update'
+import { parseReply } from '../core/domain/reply-parse'
+import { buildPrompt, systemText } from '../core/domain/ledger-prompt'
+import { CLAUDE_CODE } from '../core/domain/model-text'
+import { screenText } from '../core/domain/inbox-text'
+import { transcriptCatchUpPrompt } from '../core/domain/catch-up-text'
 import { CODEX } from '../codex/src/texts'
 import type { Exchange, Ledger } from '../types'
 import { run } from '../codex/src/run'
@@ -201,7 +201,7 @@ const jobs: Job<Result>[] = agents.flatMap(a =>
 const { results, stopped } = await runJobs(jobs, so => writeResults(path, about, so))
 writeResults(path, about, results, stopped)
 const judged = [...firstRuns, ...results]
-const GRADING = ['hooks/reply-parse.ts', 'hooks/ledger-update.ts', 'evals/model-checks.ts'].map(repoFile)
+const GRADING = ['core/domain/reply-parse.ts', 'core/domain/ledger-update.ts', 'evals/model-checks.ts'].map(repoFile)
 const CALL: Record<Agent, string> = { claude: repoFile('evals/claude-model.ts'), codex: MODEL }
 const stamps: Stamps = Object.fromEntries(
   agents.flatMap(a =>

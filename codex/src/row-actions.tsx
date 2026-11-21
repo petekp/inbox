@@ -1,11 +1,11 @@
-import type { ActionEmphasis, ActionIcon, RowView } from '../../hooks/rows'
-import { actionId } from '../../hooks/press-labels'
-import type { RowPress } from '../../hooks/presses'
+import type { ActionEmphasis, ActionIcon, RowView } from '../../core/view/rows'
+import { actionId } from '../../core/domain/press-labels'
+import type { RowPress } from '../../core/domain/presses'
 import type { PressKind } from '../../types'
-import type { InputKind } from '../../hooks/ui-controller-types'
-import { actionLabel, ROW_COPY } from '../../hooks/rows'
-import { rowKeyPlan } from '../../hooks/action-plan'
-import type { AnswerRow } from '../../hooks/action-plan'
+import type { InputKind } from '../../core/view/ui-controller-types'
+import { actionLabel, ROW_COPY } from '../../core/view/rows'
+import { rowKeyPlan } from '../../core/view/action-plan'
+import type { AnswerRow } from '../../core/view/action-plan'
 
 /** The input a click event came from: a key pressed on a focused button sends a click with no clicks counted. */
 export const inputOf = (e: MouseEvent): InputKind => (e.detail === 0 ? 'key' : 'click')

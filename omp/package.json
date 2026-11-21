@@ -3,7 +3,7 @@
   "version": "0.6.0",
   "private": true,
   "type": "module",
-  "description": "The inbox extension for omp, built on the mod's shared modules in ../hooks",
+  "description": "The inbox extension for omp, built on the shared modules in ../core",
   "omp": {
     "extensions": [
       "dist/host.js"

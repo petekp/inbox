@@ -19,9 +19,9 @@ The UI reads one status record for items. It shows errors only, under the tabs. 
 |---|---|
 | `error`, optional, with the source's own text | The text in red, under the tabs |
 
-`hooks/view.ts:footerError` picks the error for the shown tab in every look. The PRs tab shows none. While polls fail, the Codex tab shows `Last read 1m ago · retrying` at the footer's right, muted, and red after a minute.
+`core/view/view.ts:footerError` picks the error for the shown tab in every look. The PRs tab shows none. While polls fail, the Codex tab shows `Last read 1m ago · retrying` at the footer's right, muted, and red after a minute.
 
-The UI names the result, not the model call or tool. `updateRecovery` in `hooks/session-view.ts` reads where a failed ledger stands from saved state, and `perTurnStatus` in `hooks/view.ts` gives its text:
+The UI names the result, not the model call or tool. `updateRecovery` in `core/view/session-view.ts` reads where a failed ledger stands from saved state, and `perTurnStatus` in `core/view/view.ts` gives its text:
 
 | State | When | Text |
 | --- | --- | --- |
@@ -69,6 +69,6 @@ Keys supplement clickable actions, except Explain: it is key-only in terminal an
 
 `/inbox demo` in the mod shows sample entries. The Codex tab offers [Show demo] in dev builds and builds made with `INBOX_DEMO_BUTTON=1` or `INBOX_DEMO_RECORDING=1`.
 
-The normal demo shows `DEMO_NOTICE` from `hooks/view.ts` at the top: `Sample entries. Buttons here send nothing.` with a [Hide demo] button. The band starts its counts with `Demo:` and also has [Hide demo]. A press on a sample action shows on its row what a real press shows, such as "✓ Explained" or "✓ Copied x", and sends nothing.
+The normal demo shows `DEMO_NOTICE` from `core/view/view.ts` at the top: `Sample entries. Buttons here send nothing.` with a [Hide demo] button. The band starts its counts with `Demo:` and also has [Hide demo]. A press on a sample action shows on its row what a real press shows, such as "✓ Explained" or "✓ Copied x", and sends nothing.
 
 For a recording, `/inbox demo recording` hides those notices, the band's `Demo:` prefix and Hide demo. A Codex build made with `INBOX_DEMO_RECORDING=1` also hides the demo notice and Hide demo. Recording demos still use sample entries and send nothing.

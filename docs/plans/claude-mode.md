@@ -25,7 +25,7 @@ Rows, actions and states follow inbox-ui.md section 2 except in these points:
 - **Terminal help steps.** The note reads `✓ Copied gh auth login. Run it in Terminal.`
 - **Typing.** There is no text field. See the design section.
 - **Not hearing from the chat.** Nothing to miss: the card exists only because Claude called the inbox. The `as of` age covers staleness.
-- **Item source seam.** Claude-recorded questions and tasks go through the `record` and `close` tools in `hooks/tools.ts`, and write the same ledger through `hooks/ledger.ts`. The UI reads the same rows from either source.
+- **Item source seam.** Claude-recorded questions and tasks go through the `record` and `close` tools in `core/runtime/tools.ts`, and write the same ledger through `core/domain/ledger.ts`. The UI reads the same rows from either source.
 - **Renderers.** One HTML view module would serve Codex and Claude mode, with a host adapter for three things: identity (thread id or chat key), the send route (`codex queue`, `ui/message` or `updateModelContext`), and the layout (tab, card or full view). The view declares `availableDisplayModes`. `scripts/check.sh` would cover the server's bundle.
 - **Server checks.** HTML presses carry a server-checked target: the chat key and card sequence.
 - **Mod guard.** The mod would gain a guard against the server's tools in Code mode.

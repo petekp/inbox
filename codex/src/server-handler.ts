@@ -15,10 +15,10 @@ import { questionHistoryPlace } from './question-history'
 import { listHooksTrust } from './hook-trust'
 import { herdrLog, herdrOnWrite } from './host'
 import { codexHerdrAsk, followCodexPresses, startCodexInHerdrApp } from './server-herdr'
-import { COMPARE_PAGE_FILE } from '../../hooks/press-messages'
-import { NEXT_BUILD_MARK } from '../../hooks/banners'
-import { delegateReader } from '../../hooks/hc-terminals'
-import { herdrTarget } from '../../hooks/herdr'
+import { COMPARE_PAGE_FILE } from '../../core/domain/press-messages'
+import { NEXT_BUILD_MARK } from '../../core/view/banners'
+import { delegateReader } from '../../core/remote/hc-terminals'
+import { herdrTarget } from '../../core/remote/herdr'
 
 function devPageIn(dir: string): () => Promise<string | null> {
   let cached: { path: string; mtimeMs: number; html: string } | null = null

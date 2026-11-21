@@ -1,5 +1,5 @@
-import type { DelegateSession } from '../hooks/hc-terminals'
-import type { AgentTool } from '../hooks/tools'
+import type { DelegateSession } from '../core/remote/hc-terminals'
+import type { AgentTool } from '../core/runtime/tools'
 import type { LastAction, Ledger } from '../types'
 import type { CaseAnswer } from './case-history'
 import type { CaseTools } from './probe-tools'

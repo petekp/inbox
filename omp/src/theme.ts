@@ -6,7 +6,7 @@ import {
   LIGHT_TONES,
   MUTED_TEXT,
   THEME_TEXT,
-} from '../../hooks/tones'
+} from '../../core/view/tones'
 import type { Style, Tone } from './panel'
 
 /** The slice of omp's theme the panel's style uses. */
@@ -32,7 +32,7 @@ function truecolorFill(hex: string, text: string): string {
   return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`
 }
 
-/** Maps the panel's styles onto omp's theme. The separator and the accent follow the theme; the tones follow `hooks/tones.ts`. */
+/** Maps the panel's styles onto omp's theme. The separator and the accent follow the theme; the tones follow `core/view/tones.ts`. */
 export function styleOf(theme: OmpTheme): Style {
   const tones = theme.isLight ? LIGHT_TONES : DARK_TONES
   const mode = theme.isLight ? 'light' : 'dark'

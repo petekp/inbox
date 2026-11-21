@@ -1,7 +1,7 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
-import { LEAVE_FADE_MS } from '../../hooks/row-motion'
-import { FRAME_MS } from '../../hooks/springs'
+import { LEAVE_FADE_MS } from '../../core/view/row-motion'
+import { FRAME_MS } from '../../core/view/springs'
 
 const { framesOf, jumpsOf } = await import('./frames')
 type Step = import('./frames').Step

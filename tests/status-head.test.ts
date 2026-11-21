@@ -1,7 +1,7 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { applyOps } from '../hooks/status-ops'
+import { applyOps } from '../core/domain/status-ops'
 import { opsOf, NO_ASKS, after } from './status-helpers'
 
 test('a HEAD that keeps the title keeps its wording and takes the new description, and one that comes with work finished from under way and none left keeps the title and loses the description', () => {

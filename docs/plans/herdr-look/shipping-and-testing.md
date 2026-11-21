@@ -47,7 +47,7 @@ In `herdr/tests/`, with `bun test`, as omp does. The files are named `*.spec.ts`
 - `follow`: each focus case in [the look](look.md#following-the-focused-pane), from fixed `focused()`, `panes()` and `terminals()` values.
 - `files`: an envelope from each host's state type reads back, an older `format` upgrades, a newer one is refused, and a press file round-trips with its holds.
 - `draw`: the buttons of every plan come out in the plan's order, as `tests/hooks.test.ts` checks for the terminal and desktop looks and `omp/tests/panel.spec.ts` checks for the panel.
-- `hooks/text.ts`: the fallback cuts text as `Intl.Segmenter` does for combining marks and joined emoji, run with `Intl.Segmenter` hidden.
+- `core/domain/text.ts`: the fallback cuts text as `Intl.Segmenter` does for combining marks and joined emoji, run with `Intl.Segmenter` hidden.
 
 ### Host tests
 
@@ -95,7 +95,7 @@ In the `inbox-ui` VM, with Herdr installed only there, as the spike did:
 
 Nothing merges into code before 0.3.0 ships. After that, each step merges on its own and leaves every look working:
 
-1. **Shared code.** The `Intl.Segmenter` fallback, `Look` gains `'herdr'`, the row machine moves to `hooks/row-motion.ts`, and `hooks/herdr.ts` gains the app target, labels, envelope and press file.
+1. **Shared code.** The `Intl.Segmenter` fallback, `Look` gains `'herdr'`, the row machine moves to `core/view/row-motion.ts`, and `core/remote/herdr.ts` gains the app target, labels, envelope and press file.
 2. **Counts.** All three hosts set the labels in Herdr app terminals. This is useful on its own once Herdr's sidebar draws them.
 3. **The look, read-only.** `herdr/` draws the Asks, Finds and Status of the focused session from the published files.
 4. **Presses from Claude Code**, with the wake label, and the press follow-ups moved out of `runPress`.

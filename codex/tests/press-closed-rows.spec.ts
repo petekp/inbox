@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { applyPress } from '../../hooks/press-reducer'
-import { recordClose, recordItem } from '../../hooks/tools'
-import { closedShown } from '../../hooks/rows'
-import { firstWaiting, keptOpen, listWaits, openOnArrival, rowAfterClose } from '../../hooks/action-plan'
-import { QUEUED_AFTER_MS, NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
-import type { RowWait } from '../../hooks/action-plan'
+import { applyPress } from '../../core/view/press-reducer'
+import { recordClose, recordItem } from '../../core/runtime/tools'
+import { closedShown } from '../../core/view/rows'
+import { firstWaiting, keptOpen, listWaits, openOnArrival, rowAfterClose } from '../../core/view/action-plan'
+import { QUEUED_AFTER_MS, NO_HOLDS, SETTLED_MS } from '../../core/view/timing'
+import type { RowWait } from '../../core/view/action-plan'
 import { viewOf } from '../src/core'
-import { ROW_STATE_MS } from '../../hooks/row-motion'
+import { ROW_STATE_MS } from '../../core/view/row-motion'
 import { drawnSettled, SETTLE_WINDOW_MS } from '../src/settle'
 import { CODEX } from '../src/texts'
 import { after, withItems } from './press-fixtures'
-import { TOOL_FIELDS } from '../../hooks/tool-schemas'
+import { TOOL_FIELDS } from '../../core/domain/tool-schemas'
 
 test('the tab draws a settled row while it shows the tab the row closed in, and lists it in the Closed fold once the person switches tab', () => {
   const s = withItems()

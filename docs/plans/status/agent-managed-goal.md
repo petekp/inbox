@@ -72,7 +72,7 @@ The rule the call reads: "Code closes a milestone once all its linked work is do
 
 ## What code does
 
-`OP_ORDER` in `hooks/status-ops.ts` sorts an answer's lines before applying them. Today GOAL, MILESTONE and the subject lines share the first rank, so a GOAL line can apply before the DONE lines that close the old goal's work. The build ranks them:
+`OP_ORDER` in `core/domain/status-ops.ts` sorts an answer's lines before applying them. Today GOAL, MILESTONE and the subject lines share the first rank, so a GOAL line can apply before the DONE lines that close the old goal's work. The build ranks them:
 
 1. Subject lines: NEW, SET, DONE, DROP.
 2. GOAL and RETIRE, with the guard below reading the subjects as these lines left them.
@@ -80,7 +80,7 @@ The rule the call reads: "Code closes a milestone once all its linked work is do
 4. HEAD and WAS, as today.
 5. SERVES and LINK.
 
-`applyGoalOp` in `hooks/status-goal-ops.ts` applies GOAL directly, in place of setting `proposedGoal`. It applies a GOAL or RETIRE line only when one of these holds:
+`applyGoalOp` in `core/domain/status-goal-ops.ts` applies GOAL directly, in place of setting `proposedGoal`. It applies a GOAL or RETIRE line only when one of these holds:
 
 - No goal is set (GOAL only).
 - The goal is met (GOAL only). RETIRE never clears a met goal: it stays until the next one is set.
@@ -116,7 +116,7 @@ The person removes a goal with a new Remove button beside Edit. The goal and its
 
 Remove offers Undo in its place, beside New. Undo brings back the goal, its milestones and their links, and takes the goal out of `removedGoals`. `goalRemoved` holds them until a goal is set or the answer of a Status call that did not read the removed goal applies. Row Undos last a few seconds. This one lasts until the call moves on, so no look needs a timer, and a slip of the `r` key is never final before the person sees it.
 
-Saving the field empty does not work as a removal. In every look an empty field refuses to submit today: `sendTyped` in `hooks/mod-pane-input.ts` (terminal and desktop) refocuses the field, the Codex tab's form returns, and `handleKey` in `omp/src/panel-keys.ts` ignores enter. Changing that in four looks also makes an accidental empty enter delete the goal.
+Saving the field empty does not work as a removal. In every look an empty field refuses to submit today: `sendTyped` in `hooks/mod/mod-pane-input.ts` (terminal and desktop) refocuses the field, the Codex tab's form returns, and `handleKey` in `omp/src/panel-keys.ts` ignores enter. Changing that in four looks also makes an accidental empty enter delete the goal.
 
 A goal the call retires does not join `removedGoals`: the work left it, the person did not reject it.
 
@@ -145,7 +145,7 @@ Each new rule is its own `GOAL_PARTS` entry, so the ablation can run without it.
 
 ## Saved state from older versions
 
-The goal lives in the shared `SessionStatus`. Every host loads it through `upgradeSession` in `hooks/session-files.ts`, which runs `upgradeLedger` and `hooks/status-upgrade-goal.ts`. On load:
+The goal lives in the shared `SessionStatus`. Every host loads it through `upgradeSession` in `core/view/session-files.ts`, which runs `upgradeLedger` and `core/domain/status-upgrade-goal.ts`. On load:
 
 - A saved `proposedGoal` is dropped. If the goal is still clear, the next call sets it.
 - `declinedGoals` moves into `removedGoals`. A declined proposal is the closest old thing to a removed goal.
@@ -154,9 +154,9 @@ The goal lives in the shared `SessionStatus`. Every host loads it through `upgra
 
 ## Each look
 
-All four looks draw the goal from `goalPage` in `hooks/status-goal-page.ts` and its buttons from `goalKeyPlan` and `proposalKeyPlan` in `hooks/status-keys.ts`. The change is in those shared owners: `proposalKeyPlan` goes, and `goalKeyPlan` adds Remove goal. Each look then deletes its proposal drawing and draws the new button:
+All four looks draw the goal from `goalPage` in `core/view/status-goal-page.ts` and its buttons from `goalKeyPlan` and `proposalKeyPlan` in `core/view/status-keys.ts`. The change is in those shared owners: `proposalKeyPlan` goes, and `goalKeyPlan` adds Remove goal. Each look then deletes its proposal drawing and draws the new button:
 
-- **Claude Code terminal and Claude desktop pane** (`hooks/pane-status-goal.tsx`, `hooks/pane-status.tsx`): delete the proposal block and `answerProposal`.
+- **Claude Code terminal and Claude desktop pane** (`hooks/pane/pane-status-goal.tsx`, `hooks/pane/pane-status.tsx`): delete the proposal block and `answerProposal`.
 - **Codex tab** (`codex/src/tab-status.tsx`): delete the proposal block and its keys. Rebuild the bundle.
 - **omp panel** (`omp/src/panel-goal.ts`, `omp/src/panel-keys.ts`): delete the proposal entries and the s and x keys. Rebuild the bundle.
 
@@ -168,31 +168,7 @@ Checks per look: an inferred goal appearing, a met goal, a replaced goal with it
 
 ## Evals
 
-Replays to add, each with synthetic content:
-
-| Replay | Steps | Checks |
-| --- | --- | --- |
-| `milestone-work-done` | 1. A milestone whose two subjects are done, still working. A second with one done and one working subject. A subject wrongly under Other work that serves the second. An exchange that names neither milestone. | The first milestone is done. The second is not. The stray subject links to the second. |
-| `goal-met-next` | 1. The last milestone's work finishes. 2. The person asks for the next release, with a finish line and several pieces. | Step 1: goal met. Step 2: a new goal is set, with no press, and the old one is its was line. |
-| `goal-from-work` | 1. No goal. The person says "keep going". The agent's reply plans three pieces toward one outcome with a finish line, and starts the first. | A goal is set from the work, with no words from the person naming it. |
-| `goal-wait` | 1. A met goal. The person asks for two small unrelated fixes. | No new goal. The met goal stays. |
-| `no-goal-yet` | From no goal: 1. One small bug fix. 2. Chit-chat about the code. 3. A coordinator's unrelated items. | No goal at any step. |
-| `goal-work-left` | 1. An inferred goal A whose work is all done. The person starts work B with a finish line. 2. Parked: a goal B with queued work, and the person asks for a side fix. 3. The person resumes B. | Step 1: B replaces A. Step 2: B stays. Step 3: B stays, with its milestone ids and links. |
-| `typed-goal-kept` | 1. A typed goal with its work queued. The person starts different work with a finish line. | The typed goal stays. |
-
-Replays to change, since what they expect changes:
-
-- `declined-goal` becomes `removed-goal`: the person presses Remove goal, then asks for the same outcome in other words. No goal.
-- `coordinator-day` (Replay A): step 3 sets 2.5 at once, so its Press step goes. Step 13 sets nothing. Step 14 stays a typed goal.
-- `single-task` (Replay B): step 1 sets the goal, so its Press step goes.
-- `long-turn` (Replay C): step 4 sets the goal.
-- `goal-awaiting-milestones` stays as it is. It checks that `withRestatedGoalAsMilestones` still works.
-
-Eval rules: `proposal-only-when-stated` and `proposal-when-stated` become `goal-only-when-clear` and `goal-when-clear`. A new `typed-goal-kept` rule checks a typed goal survives. Every step that sets a goal targets `milestones-shape`, and a new rule fails a milestone named the same as a subject. That is where a GOAL with SERVES in one answer tempts the model.
-
-Docs to update with the build: `GLOSSARY.md` gains goal, milestone, linked subject, inferred goal, typed goal and removed goal. `docs/plans/status/judging.md` and `docs/status-replays.md` gain the new rules and replays.
-
-Pass bar, written before the run: every new replay passes on Sonnet and Codex. Each rule that both builds share, such as `milestones-true`, `serves-linked`, `milestones-shape` and `answer-readable`, does no worse than on a baseline run of `origin/next` beyond its noise. The changed replays' new expectations have no baseline, so they are judged by the bar alone.
+The replays this change adds are in [agent-managed-goal-evals.md](agent-managed-goal-evals.md).
 
 ## Decisions
 

@@ -1,7 +1,7 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { countsText, countsUnits } from '../hooks/status-folds'
-import Fold, { type FoldProps } from '../hooks/fold-client'
+import { countsText, countsUnits } from '../core/view/status-folds'
+import Fold, { type FoldProps } from '../hooks/pane/fold-client'
 
 type Node = { texts?: string[]; width?: number; children?: unknown }
 

@@ -1,5 +1,5 @@
-import { parseStatus } from '../hooks/status'
-import { isOpen } from '../hooks/status-limits'
+import { parseStatus } from '../core/domain/status'
+import { isOpen } from '../core/domain/status-limits'
 import type { Milestone, SessionStatus, Subject } from '../types'
 import type { Facts, Piece } from './status-facts'
 import type { StepResult } from './status-replay'

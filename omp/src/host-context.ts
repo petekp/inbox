@@ -1,12 +1,12 @@
-import type { herdrReporter } from '../../hooks/herdr'
-import type { HerdrAsk } from '../../hooks/herdr-ask'
-import type { PrShared } from '../../hooks/pr-fetch'
-import type { Run } from '../../hooks/gh'
-import type { DelegateSession } from '../../hooks/hc-terminals'
-import type { SessionHost } from '../../hooks/session-host'
-import type { prFetchTracker } from '../../hooks/host-prs'
-import type { ShownTab } from '../../hooks/tabs'
-import type { UiState } from '../../hooks/ui-controller-types'
+import type { herdrReporter } from '../../core/remote/herdr'
+import type { HerdrAsk } from '../../core/remote/herdr-ask'
+import type { PrShared } from '../../core/domain/pr-fetch'
+import type { Run } from '../../core/domain/gh'
+import type { DelegateSession } from '../../core/remote/hc-terminals'
+import type { SessionHost } from '../../core/runtime/session-host'
+import type { prFetchTracker } from '../../core/runtime/host-prs'
+import type { ShownTab } from '../../core/view/tabs'
+import type { UiState } from '../../core/view/ui-controller-types'
 import type { OmpState } from './state'
 import type { HostDeps } from './host'
 import type { OmpPresses } from './host-presses'
@@ -51,7 +51,7 @@ export type HostContext = {
   /** Follows the presses the Herdr look writes for the session omp shows. */
   presses: OmpPresses
   run: Run
-  /** The delegate session omp runs as, as `hooks/hc-terminals.ts:delegateSession` reads it, or null. */
+  /** The delegate session omp runs as, as `core/remote/hc-terminals.ts:delegateSession` reads it, or null. */
   delegate(): Promise<DelegateSession | null>
   memory: Memory
   sendToAgent(ctx: OmpContext, text: string): Promise<string | null>

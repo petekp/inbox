@@ -1,18 +1,18 @@
 import { makeCompanion } from './server-companion'
 import type { CompanionHandler } from './companion-protocol'
-import { delegatesSettled } from '../../hooks/children'
+import { delegatesSettled } from '../../core/domain/children'
 import type { RunWithInput } from './run'
-import { delegatesInHerdr, herdrCheckGate } from '../../hooks/herdr'
-import type { DelegateSession } from '../../hooks/hc-terminals'
-import type { PrPress } from '../../hooks/pr-press'
-import { noteText } from '../../hooks/press-reducer'
-import type { RowPress } from '../../hooks/presses'
-import { statusChanged } from '../../hooks/session-status'
-import { recorded, withHolds } from '../../hooks/session-presses'
+import { delegatesInHerdr, herdrCheckGate } from '../../core/remote/herdr'
+import type { DelegateSession } from '../../core/remote/hc-terminals'
+import type { PrPress } from '../../core/view/pr-press'
+import { noteText } from '../../core/view/press-reducer'
+import type { RowPress } from '../../core/domain/presses'
+import { statusChanged } from '../../core/runtime/session-status'
+import { recorded, withHolds } from '../../core/runtime/session-presses'
 import type { RowNote } from '../../types'
-import type { HerdrFile } from '../../hooks/herdr-press-file'
-import type { StartedFile } from '../../hooks/herdr-app'
-import { withCollapse } from '../../hooks/collapse'
+import type { HerdrFile } from '../../core/remote/herdr-press-file'
+import type { StartedFile } from '../../core/remote/herdr-app'
+import { withCollapse } from '../../core/view/collapse'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
 import type { HooksTrust } from './hook-trust'
@@ -79,7 +79,7 @@ export type ServerDeps = {
   followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>) => void
   /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
   herdrAsk?: CodexHerdrAsk
-  /** The delegate session Codex runs as, as `hooks/hc-terminals.ts:delegateSession` reads it. Without it, none. */
+  /** The delegate session Codex runs as, as `core/remote/hc-terminals.ts:delegateSession` reads it. Without it, none. */
   delegate?: () => Promise<DelegateSession | null>
 }
 

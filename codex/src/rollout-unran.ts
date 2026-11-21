@@ -1,8 +1,8 @@
 // Finds the tool calls of a turn that did not run, so their activity lines and delegate rows can be taken back. Codex's
 // PreToolUse hook adds a call's line and rows before the person approves the call, and before other hooks can block it.
 
-import { toolActivity } from '../../hooks/catch-up-text'
-import { delegateRefs } from '../../hooks/children'
+import { toolActivity } from '../../core/domain/catch-up-text'
+import { delegateRefs } from '../../core/domain/children'
 import { callCommand, commandText, outputText, scriptCommands, shellLines } from './rollout-commands'
 import { record, textOf } from './rollout-rows'
 import type { RolloutRow } from './rollout-rows'

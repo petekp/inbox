@@ -1,7 +1,7 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import type { PromptOrigin } from 'claude-code'
-import { DARK_TONES } from '../hooks/tones'
+import { DARK_TONES } from '../core/view/tones'
 import { w, world } from './hooks-world'
 import { BAND, PANE, SAVED_SESSION, openTitle } from './hooks-helpers'
 

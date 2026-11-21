@@ -4,7 +4,7 @@ Status: building
 
 The controller is built (PR 2.1). PRs 2.2 to 2.5 move the looks onto it, one look per PR. omp, Herdr and the Codex tab run on it, and PR 2.5 moves the terminal and desktop onto it.
 
-Each look decides for itself which tab it shows, where its cursor goes, when a draft is deleted and when it redraws. The five looks have drifted apart on these rules. `hooks/ui-controller.ts` holds one copy of them as pure code. It does no IO, imports no host and sets no timers. [The files table](../looks/files-shared-controller.md) lists its files.
+Each look decides for itself which tab it shows, where its cursor goes, when a draft is deleted and when it redraws. The five looks have drifted apart on these rules. `core/view/ui-controller.ts` holds one copy of them as pure code. It does no IO, imports no host and sets no timers. [The files table](../looks/files-shared-controller.md) lists its files.
 
 ## How a host uses it
 
@@ -89,7 +89,7 @@ Row motion and the leaving-row wait stay in the look. `Kept` goes to version 3 a
 
 ### Terminal and desktop (PR 2.5)
 
-`PluginState.inbox` saves the controller's state in place of the mod's tab, page, selection, Status selection, typing, drafts, discards, shown time, notes, folds, Help and shown options. `upgradeState` in `hooks/mod-upgrade.ts` converts the old fields once. One timer replaces the Undo-end, fold, timed-change, guard and Queued timers. Its `LookConfig`: the terminal draws running marks as frames and the title tint in steps, desktop pulses the marks and draws the tint once at its end, and both time Undo from the session's close. What changes:
+`PluginState.inbox` saves the controller's state in place of the mod's tab, page, selection, Status selection, typing, drafts, discards, shown time, notes, folds, Help and shown options. `upgradeState` in `hooks/mod/mod-upgrade.ts` converts the old fields once. One timer replaces the Undo-end, fold, timed-change, guard and Queued timers. Its `LookConfig`: the terminal draws running marks as frames and the title tint in steps, desktop pulses the marks and draws the tint once at its end, and both time Undo from the session's close. What changes:
 
 - `/inbox` shows Asks when a row waits there. The band's Open inbox no longer leaves the Status page.
 - When the cursor's row leaves or stops waiting, including a close by the agent, the cursor goes to the next waiting row from that place, never to a handled row.
@@ -113,7 +113,7 @@ Row motion and the leaving-row wait stay in the look. `Kept` goes to version 3 a
 
 ### Exact web and iOS
 
-The private Exact clients are one TypeScript app, built for web and for iOS. When their Milestones 4–5 UI starts, they call `reduceUi` directly, with their own `LookConfig`. They take the reserved `exact-web` and `exact-ios` parity slots, which join `PUBLISHED_LOOKS` in `hooks/clients.ts` as [the look map](../looks.md) describes. Their first step is to check that the iOS build can bundle an import from `hooks/`.
+The private Exact clients are one TypeScript app, built for web and for iOS. When their Milestones 4–5 UI starts, they call `reduceUi` directly, with their own `LookConfig`. They take the reserved `exact-web` and `exact-ios` parity slots, which join `PUBLISHED_LOOKS` in `core/domain/clients.ts` as [the look map](../looks.md) describes. Their first step is to check that the iOS build can bundle an import from `hooks/`.
 
 ## Other sessions' state
 

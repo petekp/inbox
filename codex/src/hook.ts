@@ -7,13 +7,13 @@ import {
   delegatesSettled,
   delegateSteps,
   delegateWaitsEnded,
-} from '../../hooks/children'
-import { branchIn } from '../../hooks/gh'
-import type { Run } from '../../hooks/gh'
-import { delegatesInHerdr, herdrTarget } from '../../hooks/herdr'
-import { dialogActivity, toolActivity } from '../../hooks/catch-up-text'
-import { childEnded } from '../../hooks/status-children'
-import { turnReply } from '../../hooks/text'
+} from '../../core/domain/children'
+import { branchIn } from '../../core/domain/gh'
+import type { Run } from '../../core/domain/gh'
+import { delegatesInHerdr, herdrTarget } from '../../core/remote/herdr'
+import { dialogActivity, toolActivity } from '../../core/domain/catch-up-text'
+import { childEnded } from '../../core/domain/status-children'
+import { turnReply } from '../../core/domain/text'
 import {
   cleared,
   messageTyped,
@@ -23,8 +23,8 @@ import {
   startContext,
   turnEnded,
   turnStarted,
-} from '../../hooks/session-turns'
-import { claimedStatusRefresh, needsUpdate, statusChanged } from '../../hooks/session-status'
+} from '../../core/runtime/session-turns'
+import { claimedStatusRefresh, needsUpdate, statusChanged } from '../../core/runtime/session-status'
 import { ancestorCli, namedCli } from './cli'
 import { endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
 import { noteDialogs } from './dialogs'

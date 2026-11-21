@@ -4,7 +4,7 @@ Status: built
 
 A milestone can collect far more work than one outcome. One session's "Fixes merged" held 16 done fixes and 4 open features, so the Status page drew 20 rows under one name. This doc says how the Status call splits such a milestone. [agent-managed-goal.md](agent-managed-goal.md) describes the goal and milestones it builds on.
 
-The mark `too big, N subjects, room for R` goes on an open milestone that more than `MILESTONE_SUBJECTS` subjects serve, open or done, when two or more of them are open and the goal has room for another milestone. `tooBigMilestones` in `hooks/status-prompt-goal.ts` decides it, and R is how many more milestones the goal can hold.
+The mark `too big, N subjects, room for R` goes on an open milestone that more than `MILESTONE_SUBJECTS` subjects serve, open or done, when two or more of them are open and the goal has room for another milestone. `tooBigMilestones` in `core/domain/status-prompt-goal.ts` decides it, and R is how many more milestones the goal can hold.
 
 - The limit is 6, as many as the open subjects the page keeps (`OPEN_SUBJECTS`). Past it, the milestone collects whatever work comes along instead of naming one outcome.
 - Done subjects count, since a catch-all milestone grows by collecting finished work. The page folds the done ones the person has seen into one "N done" row, but the milestone still names no single outcome.

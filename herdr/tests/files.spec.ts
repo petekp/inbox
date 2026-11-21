@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { HERDR_FORMAT } from '../../hooks/herdr'
+import { HERDR_FORMAT } from '../../core/remote/herdr'
 import { writeCollapse } from '../src/collapse'
 import { isSessionChange, readSession } from '../src/files'
 import { AGENT, demoEnvelopeText } from './fixtures'

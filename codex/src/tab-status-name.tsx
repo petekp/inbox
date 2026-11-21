@@ -1,8 +1,8 @@
 import { Icon } from './row-actions'
 import type { ParentChevron } from './tab-status-fold'
-import { nameBeforeStall, STATUS_TEXT_LINES } from '../../hooks/status-page'
-import { STALL_GAP } from '../../hooks/status-page-parts'
-import type { StatusStall } from '../../hooks/status-page'
+import { nameBeforeStall, STATUS_TEXT_LINES } from '../../core/view/status-page'
+import { STALL_GAP } from '../../core/view/status-page-parts'
+import type { StatusStall } from '../../core/view/status-page'
 
 /** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */
 function nameParts(name: string): { head: string; last: string } {

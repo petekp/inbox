@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 
-import { EMPTY, upgradeLedger } from '../hooks/ledger'
+import { EMPTY, upgradeLedger } from '../core/domain/ledger'
 import type { Ledger } from '../types'
 import { readCases } from './harness'
 

@@ -12,12 +12,12 @@ import {
   runningText,
   subjectsText,
   withChild,
-} from '../hooks/status-children'
-import { delegatesSettled, delegatesStarted, nameInWords } from '../hooks/children'
-import { delegatesInHerdr } from '../hooks/herdr'
-import type { HerdrAgent, HerdrStatus } from '../hooks/herdr'
-import type { Run } from '../hooks/gh'
-import { CHILD_ROWS } from '../hooks/status-page-parts'
+} from '../core/domain/status-children'
+import { delegatesSettled, delegatesStarted, nameInWords } from '../core/domain/children'
+import { delegatesInHerdr } from '../core/remote/herdr'
+import type { HerdrAgent, HerdrStatus } from '../core/remote/herdr'
+import type { Run } from '../core/domain/gh'
+import { CHILD_ROWS } from '../core/view/status-page-parts'
 import type { Child, SessionStatus } from '../types'
 import { MIN, after, askItem, page, shape } from './status-helpers'
 

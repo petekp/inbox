@@ -1,4 +1,4 @@
-import { checkActions, prBlockActions, threadActions } from '../../hooks/pr-tab'
+import { checkActions, prBlockActions, threadActions } from '../../core/view/pr-tab'
 import {
   ghNoticeOf,
   prRefreshFailedText,
@@ -17,30 +17,30 @@ import {
   prThreadId,
   threadRowText,
   threadSentIn,
-} from '../../hooks/pr-rows'
-import { isDismissed, openPrViews } from '../../hooks/pr-views'
-import { OTHER_PRS_TEXT, otherPrsStart } from '../../hooks/pr-order'
-import type { PrRowMark } from '../../hooks/pr-rows'
+} from '../../core/view/pr-rows'
+import { isDismissed, openPrViews } from '../../core/view/pr-views'
+import { OTHER_PRS_TEXT, otherPrsStart } from '../../core/view/pr-order'
+import type { PrRowMark } from '../../core/view/pr-rows'
 import type { PrCheck, PrThread } from '../../types'
-import type { PrOrderView } from '../../hooks/pr-order'
-import type { PrRefreshView } from '../../hooks/pr-refresh'
-import { commentParts, readiness } from '../../hooks/prs'
-import { capitalized } from '../../hooks/press-labels'
-import { cellWidth, clipLabel } from '../../hooks/text'
-import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../hooks/rows'
-import { bannerOf, isResumable, stopFix, stopText } from '../../hooks/banners'
-import { emptyTab, type EmptyTab } from '../../hooks/empty-tab'
-import { FINDING_GROUPS, HELP_COPY, helpKeys, helpVersionText, MARK_LEGEND } from '../../hooks/help'
-import { isDrawnInPlace, runningMark } from '../../hooks/timing'
-import { isRowTab } from '../../hooks/tabs'
-import { GOAL_KEYS_ID } from '../../hooks/status-keys'
-import type { SessionView } from '../../hooks/session-view'
+import type { PrOrderView } from '../../core/view/pr-order'
+import type { PrRefreshView } from '../../core/view/pr-refresh'
+import { commentParts, readiness } from '../../core/domain/prs'
+import { capitalized } from '../../core/domain/press-labels'
+import { cellWidth, clipLabel } from '../../core/domain/text'
+import { settledTone, NEEDS_YOU_GROUPS, settledMark, settledLabel, resumeLabel } from '../../core/view/rows'
+import { bannerOf, isResumable, stopFix, stopText } from '../../core/view/banners'
+import { emptyTab, type EmptyTab } from '../../core/view/empty-tab'
+import { FINDING_GROUPS, HELP_COPY, helpKeys, helpVersionText, MARK_LEGEND } from '../../core/view/help'
+import { isDrawnInPlace, runningMark } from '../../core/view/timing'
+import { isRowTab } from '../../core/view/tabs'
+import { GOAL_KEYS_ID } from '../../core/view/status-keys'
+import type { SessionView } from '../../core/view/session-view'
 import { goalSection, setGoal } from './panel-goal'
 import { PAGE_TEXT_AT } from './panel-page'
 import { collapsedIn } from './panel-text'
-import { unfoldedRows } from '../../hooks/status-folds'
-import type { ShownTab } from '../../hooks/tabs'
-import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../hooks/herdr-ask'
+import { unfoldedRows } from '../../core/view/status-folds'
+import type { ShownTab } from '../../core/view/tabs'
+import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../core/remote/herdr-ask'
 import {
   AGENT,
   HERDR_ASK_ID,
@@ -54,7 +54,7 @@ import {
   pressFeedback,
 } from './panel-lines'
 import type { Button, Entry, Group, Lead, Line } from './panel-lines'
-import { rowErrorOf } from '../../hooks/ui-controller'
+import { rowErrorOf } from '../../core/view/ui-controller'
 import type { PanelScreen, PanelUi } from './panel'
 
 /** The question before omp installs the inbox's Herdr mod, as a row its buttons can focus, while it shows. */

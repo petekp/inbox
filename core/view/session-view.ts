@@ -1,0 +1,184 @@
+import { isRowTabRunning } from './arrivals'
+import { drawnPrs, openPrViews } from './pr-views'
+import { isPrTabRunning, threadSentIn } from './pr-rows'
+import { itemPrSteps, olderPrsText, tabPrs } from '../domain/pr-fetch'
+import { prOrderView } from './pr-order'
+import type { DrawnPr } from './pr-views'
+import type { PrOrderView } from './pr-order'
+import { prRefreshView } from './pr-refresh'
+import type { PrRefreshView } from './pr-refresh'
+import { prClearActions } from './pr-tab'
+import type { PrAction } from './pr-press'
+import { prNeedsYou } from '../domain/prs'
+import { isPrRowId } from '../domain/presses'
+import { feedbackOf, prTabHoldSince } from './feedback'
+import { MARK_LEGEND } from './help'
+import { earliestOf, hasRunningMark, NO_HOLDS } from './timing'
+import { inboxView, perTurnStatus } from './view'
+import type { UpdateRecovery } from './view'
+import { isRowTab } from './tabs'
+import { collapsedRows } from './collapse'
+import { statusPage } from './status-page'
+import type { InboxView } from './view'
+import type { StatusPage } from './status-page'
+import type { Holds } from './timing'
+import type { ShownTab } from './tabs'
+import type { FoldKind, LastAction, PrFetchFailure, RowNote, Session, Turns } from '../../types'
+
+export const PRESS_TIMEOUT_MS = 60_000
+
+type PrTab = {
+  drawn: DrawnPr[]
+  branchRef: string | null
+  /** How many open PRs wait on the person. */
+  count: number
+  /** Names the linked PRs too old for the tab to show, or null. */
+  olderText: string | null
+  /** The agent's order of the PRs, drawn above them, or null while it ranks no block the tab draws. `prOrderView`. */
+  order: PrOrderView | null
+  /** Whether gh asked for a sign-in at the last fetch it answered. */
+  isGhSignedOut: boolean
+  /** Why the last fetch read none of the PRs, or null. */
+  failure: PrFetchFailure | null
+  /** The line at the top of the tab while a PR could not be read, with Refresh PRs, or null. `prRefreshView`. */
+  refresh: PrRefreshView | null
+  /** Clear merged and closed, drawn under the refresh line and above the order, or none. `prClearActions`. */
+  clear: PrAction[]
+  /** When the oldest press still under way on a PR row began, or null. A settled PR block that was in place then waits for it. */
+  pressOutSince: number | null
+}
+
+export type SessionView = InboxView & {
+  /** Each row's last press, by row id, which a look reads for its PR rows and blocks. */
+  lastActions: Record<string, LastAction>
+  /** The turn counts each row's feedback reads, as "Explaining…" until the reply to its press. */
+  turns: Turns
+  prs: PrTab
+  statusPage: StatusPage
+}
+
+/** Drops a Local result still pending after `PRESS_TIMEOUT_MS`, whose press will not finish. */
+function withoutStaleResult(last: LastAction, now: number): LastAction {
+  if (last.result?.state !== 'pending' || now - last.result.at <= PRESS_TIMEOUT_MS) return last
+  const { result: _result, ...rest } = last
+
+  return rest
+}
+
+function withoutStalePending(lastActions: Record<string, LastAction>, now: number): Record<string, LastAction> {
+  return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]))
+}
+
+/**
+ * Where the session's failed ledger update stands. Every host retries after the agent's next reply: a pending exchange
+ * on its own, otherwise by catching up. A Codex chat saved with no rollout path gets one from that reply's Stop hook,
+ * which saves it before the update starts.
+ */
+function updateRecovery(s: Session): UpdateRecovery {
+  const { presence } = s
+  if (presence.ledgerState !== 'failed') return 'none'
+  if (presence.isUpdating) return 'retrying'
+  if (s.pending.length === 0 && presence.isConversationUnreadable) return 'unreadable'
+
+  return presence.failedAttempts > 1 ? 'failed-again' : 'waiting'
+}
+
+export function sessionView(
+  s: Session,
+  now: number,
+  settleWindowMs: number,
+  holds: Holds = NO_HOLDS,
+  notes: Record<string, RowNote> = {},
+  canScrollConversation = false,
+): SessionView {
+  const l = s.ledger
+  const lastActions = withoutStalePending(s.lastActions, now)
+
+  const inbox = inboxView({
+    ledger: l,
+    lastActions,
+    notes,
+    turns: s.presence,
+    extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
+    settleWindowMs,
+    status: perTurnStatus(updateRecovery(s)),
+    now,
+    ...holds,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    collapsed: collapsedRows(s),
+    canScrollConversation,
+  })
+
+  return {
+    ...inbox,
+    lastActions,
+    turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
+    prs: prTabOf(s, lastActions, now, holds, settleWindowMs),
+    statusPage: statusPage(s, now),
+  }
+}
+
+/**
+ * Whether a text look draws a running mark on `shown`, so the terminal and omp keep their frame timer going. Help always
+ * does, since the legend's first mark runs.
+ */
+export function showsRunningMark(
+  v: SessionView,
+  shown: ShownTab,
+  isHelpShown: boolean,
+  isUnfolded: (kind: FoldKind) => boolean,
+): boolean {
+  if (isHelpShown) return MARK_LEGEND.some(m => m.isRunning)
+  if (!isRowTab(shown)) return hasRunningMark(v.statusPage)
+  if (shown === 'prs') return isPrTabRunning(openPrViews(v.prs.drawn), v.lastActions)
+
+  return isRowTabRunning(v, shown, isUnfolded)
+}
+
+function prTabOf(
+  s: Session,
+  lastActions: Record<string, LastAction>,
+  now: number,
+  { shownSince, listInput, undoShown, undoOut }: Holds,
+  settleWindowMs: number,
+): PrTab {
+  const pressOutSince = earliestOf(
+    Object.entries(lastActions).map(([id, last]) =>
+      isPrRowId(id) ? prTabHoldSince(feedbackOf(id, last, undefined, s.presence, now)) : null,
+    ),
+  )
+  const drawn = drawnPrs(s.prViews, s.ledger, lastActions, {
+    shownSince,
+    lastTypedMessageAt: s.presence.lastTypedMessageAt,
+    listInput,
+    now,
+    settleWindowMs,
+    undoShown,
+    undoOut,
+    pressOutSince,
+  })
+  const isSent = threadSentIn(lastActions)
+
+  return {
+    drawn,
+    branchRef: s.prViews.branchRef,
+    count: drawn.filter(d => d.state.is === 'open' && prNeedsYou(d.pr, isSent)).length,
+    olderText: olderPrsText(s.prViews, s.ledger),
+    order: prOrderView(
+      s.ledger.prOrder,
+      drawn,
+      { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
+      shownSince,
+    ),
+    isGhSignedOut: s.prViews.isGhSignedOut === true,
+    failure: s.prViews.failure ?? null,
+    refresh: prRefreshView(
+      { ...s.prViews, isGhMissing: s.prViews.isGhMissing === true },
+      s.ledger,
+      { lastActions, turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied }, now },
+      shownSince,
+    ),
+    clear: prClearActions(s.prViews, s.ledger),
+    pressOutSince,
+  }
+}

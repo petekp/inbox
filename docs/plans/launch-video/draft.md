@@ -14,7 +14,7 @@ The draft is 81.5 seconds. Renders made before the project moved to `videos/` ar
 - **Beats 7 to 10** replay one session take in Claude Code, clicked with `act.py`.
 - **Beat 11** replays three side-by-side takes, clicked with `drive.py`. In each app, every result shows within about 0.15 s after the drawn click.
 - **Watch the render, not Studio.** Studio's preview in the terminal browser draws the takes black. The same browser plays each clip when it is opened on its own.
-- **The takes show main's inbox at `f75d5c4`,** which isn't released yet, with the AR demo rows from `hooks/demo.ts` in the `video-ar` worktree. All four takes were recorded on 2026-10-15 with that build in all three apps, its files checked by hash.
+- **The takes show main's inbox at `f75d5c4`,** which isn't released yet, with the AR demo rows from `core/view/demo.ts` in the `video-ar` worktree. All four takes were recorded on 2026-10-15 with that build in all three apps, its files checked by hash.
 
 ### How it is made
 

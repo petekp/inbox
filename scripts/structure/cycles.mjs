@@ -4,7 +4,7 @@ import { join, relative } from 'node:path'
 import { importTarget } from './imports.mjs'
 import { API, ts } from './ts.mjs'
 
-const DIRS = ['hooks', 'codex/src', 'omp/src', 'herdr/src']
+const DIRS = ['core', 'hooks', 'codex/src', 'omp/src', 'herdr/src']
 
 function sourceFiles(root, dir) {
   return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(entry => {

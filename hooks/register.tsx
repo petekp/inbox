@@ -2,36 +2,36 @@ import { atom, type EngineInterface, read, type Register, update } from 'claude-
 
 import type { DemoCopy, Dialog } from '../types'
 
-import { band } from './mod-band'
-import { runOf } from './mod-commands'
-import { endWaitFor, permissionAsked, waitForPermission } from './mod-dialogs'
-import { configFolder, type EngineCalls } from './mod-engine-calls'
-import type { HerdrCalls } from './mod-herdr'
-import type { HistoryEngine } from './mod-history'
-import { hostOf } from './mod-host'
-import { conversationSwitched, sessionMoved } from './mod-load'
-import { paneClosed, paneMessaged, panePressed, paneScrolled } from './mod-pane-events'
-import { syncLook } from './mod-pane-open'
-import { paneTree } from './mod-pane-render'
-import { type Mod, PANE } from './mod-ports'
-import { commandRowStored, ownMessageStored, promptSubmitted, replyStored } from './mod-prompts'
-import { fetchPrs } from './mod-prs'
-import { publishStatus } from './mod-publish'
-import { noteRanCall } from './mod-records'
-import type { SaveEngine } from './mod-saves'
-import { commit } from './mod-session-write'
-import { NO_SESSION, PRESENT } from './mod-sessions'
-import { inboxCommand } from './mod-command'
-import { ensureOn, registerInboxCommand, sessionEnded, sessionStarted } from './mod-lifecycle'
-import { nextBuildMarkPath } from './mod-plugin-files'
-import { cancelUndoScroll, mod, sessionState } from './mod-state'
-import { agentSpawned, runTool, toolCalled } from './mod-tool-calls'
-import { noteStopFailure, noteTurnEnd, noteTurnStart } from './mod-turns'
-import { sendUi } from './mod-ui-loop'
-import type { UiState } from './ui-controller-types'
-import { CLAUDE_CODE, guidedCloseDescription } from './model-text'
-import { runningSessions } from './running-sessions'
-import { INBOX_COMMAND_TEXT } from './tabs'
+import { band } from './mod/mod-band'
+import { runOf } from './mod/mod-commands'
+import { endWaitFor, permissionAsked, waitForPermission } from './mod/mod-dialogs'
+import { configFolder, type EngineCalls } from './mod/mod-engine-calls'
+import type { HerdrCalls } from './mod/mod-herdr'
+import type { HistoryEngine } from './mod/mod-history'
+import { hostOf } from './mod/mod-host'
+import { conversationSwitched, sessionMoved } from './mod/mod-load'
+import { paneClosed, paneMessaged, panePressed, paneScrolled } from './mod/mod-pane-events'
+import { syncLook } from './mod/mod-pane-open'
+import { paneTree } from './mod/mod-pane-render'
+import { type Mod, PANE } from './mod/mod-ports'
+import { commandRowStored, ownMessageStored, promptSubmitted, replyStored } from './mod/mod-prompts'
+import { fetchPrs } from './mod/mod-prs'
+import { publishStatus } from './mod/mod-publish'
+import { noteRanCall } from './mod/mod-records'
+import type { SaveEngine } from './mod/mod-saves'
+import { commit } from './mod/mod-session-write'
+import { NO_SESSION, PRESENT } from './mod/mod-sessions'
+import { inboxCommand } from './mod/mod-command'
+import { ensureOn, registerInboxCommand, sessionEnded, sessionStarted } from './mod/mod-lifecycle'
+import { nextBuildMarkPath } from './mod/mod-plugin-files'
+import { cancelUndoScroll, mod, sessionState } from './mod/mod-state'
+import { agentSpawned, runTool, toolCalled } from './mod/mod-tool-calls'
+import { noteStopFailure, noteTurnEnd, noteTurnStart } from './mod/mod-turns'
+import { sendUi } from './mod/mod-ui-loop'
+import type { UiState } from '../core/view/ui-controller-types'
+import { CLAUDE_CODE, guidedCloseDescription } from '../core/domain/model-text'
+import { runningSessions } from './mod/running-sessions'
+import { INBOX_COMMAND_TEXT } from '../core/view/tabs'
 
 // The plugin directory accepts `$` passed only to a function declared at the top of this file, so the functions
 // below bind the engine calls the mod's modules make, and each hook hands them over in `modOf($)`.
@@ -71,7 +71,7 @@ function commandCalls($: EngineInterface): EngineCalls {
   }
 }
 
-/** The store, clock, debug log and running-conversation calls that `hooks/mod-saves.ts` makes. */
+/** The store, clock, debug log and running-conversation calls that `hooks/mod/mod-saves.ts` makes. */
 function saveEngine($: EngineInterface, commands: EngineCalls): SaveEngine {
   return {
     store: {

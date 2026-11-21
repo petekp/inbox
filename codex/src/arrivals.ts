@@ -1,4 +1,4 @@
-import type { ListedTab } from '../../hooks/arrivals'
+import type { ListedTab } from '../../core/view/arrivals'
 
 export type Group = 'question' | 'task' | 'finding'
 export type FoldGroup = 'question' | 'task' | 'issue' | 'opportunity'

@@ -1,8 +1,8 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { TAB_HEIGHT, tabLinesOf, type TabsProps } from '../hooks/tabs-client'
-import { cellWidth } from '../hooks/text'
-import { shownTabs } from '../hooks/tabs'
+import { TAB_HEIGHT, tabLinesOf, type TabsProps } from '../hooks/pane/tabs-client'
+import { cellWidth } from '../core/domain/text'
+import { shownTabs } from '../core/view/tabs'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

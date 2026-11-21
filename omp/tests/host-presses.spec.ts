@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { isSubjectSeen } from '../../hooks/status-children'
-import { NO_HOLDS } from '../../hooks/timing'
+import { isSubjectSeen } from '../../core/domain/status-children'
+import { NO_HOLDS } from '../../core/view/timing'
 import { createInbox } from '../src/host'
 import {
   call,

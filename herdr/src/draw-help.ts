@@ -1,4 +1,4 @@
-import { HELP_COPY, helpKeys, MARK_LEGEND } from '../../hooks/help'
+import { HELP_COPY, helpKeys, MARK_LEGEND } from '../../core/view/help'
 import type { Block } from './blocks'
 
 /**

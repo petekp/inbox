@@ -1,7 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
-import { EMPTY_STATE_MAX_WIDTH_PT } from '../../hooks/layout'
+import { EMPTY_STATE_MAX_WIDTH_PT } from '../../core/view/layout'
 import type { Block } from './blocks'
 import { CONTROL_GAP, END_SPACE, INSIDE_GAP, colorOf } from './paint-theme'
 import type { Paint } from './paint-theme'

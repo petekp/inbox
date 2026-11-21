@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "The inbox's look in the Herdr app: a Herdr app mod built on the shared modules in ../hooks",
+  "description": "The inbox's look in the Herdr app: a Herdr app mod built on the shared modules in ../core",
   "scripts": {
     "build": "bun build.ts",
     "check": "bun build.ts --check",

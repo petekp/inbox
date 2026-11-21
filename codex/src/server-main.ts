@@ -1,5 +1,5 @@
 import { startCompanion } from './companion-listener'
-import { herdrTarget } from '../../hooks/herdr'
+import { herdrTarget } from '../../core/remote/herdr'
 // Codex starts this process once per app launch and keeps it. So it only reads lines and passes each to the
 // handler module, which it imports again whenever that module's file changes: a reinstalled plugin, an update, or
 // the build `npm --prefix codex run dev` keeps while it runs. A change to this file itself still needs Codex restarted.

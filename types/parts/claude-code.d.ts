@@ -50,7 +50,7 @@ export type SentReply = {
   isConfirmed: boolean
 }
 
-/** A look's interaction state, which the shared controller in `hooks/ui-controller.ts` keeps. */
+/** A look's interaction state, which the shared controller in `core/view/ui-controller.ts` keeps. */
 export type UiState = {
   config: LookConfig
   host: HostFacts

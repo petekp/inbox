@@ -16,19 +16,19 @@ import {
 } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
-import { screenText } from '../../hooks/inbox-text'
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../core/domain/gh'
+import { screenText } from '../../core/domain/inbox-text'
 import {
   askOverConversation,
   orderedKeys,
   reconcileUpdateStatus as reconcileStatus,
   runUpdates as runSessionUpdates,
-} from '../../hooks/session-host'
-import type { DelegateSession } from '../../hooks/hc-terminals'
-import type { Ask } from '../../hooks/session-host'
-import { refreshStatus as refreshSessionStatus } from '../../hooks/status-records'
-import type { StatusRecords, RecordFiles } from '../../hooks/status-records'
-import { screenTabOf } from '../../hooks/tabs'
+} from '../../core/runtime/session-host'
+import type { DelegateSession } from '../../core/remote/hc-terminals'
+import type { Ask } from '../../core/runtime/session-host'
+import { refreshStatus as refreshSessionStatus } from '../../core/runtime/status-records'
+import type { StatusRecords, RecordFiles } from '../../core/runtime/status-records'
+import { screenTabOf } from '../../core/view/tabs'
 import { isTabOpen } from './core'
 import { codexStore } from './host'
 import type { OnWrite } from './host'

@@ -30,6 +30,12 @@ ${ids.map(id => `| Topic (\`${id}\`) | a | b |`).join('\n')}
 `
 }
 
+function sourcesIn(root: string, dir: string): string[] {
+  return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(entry =>
+    entry.isDirectory() ? sourcesIn(root, `${dir}/${entry.name}`) : [`${dir}/${entry.name}`],
+  )
+}
+
 export const unsupported = "{ kind: 'unsupported', reason: 'Not built yet.' }"
 
 export function fixture(t: TestContext) {
@@ -40,21 +46,20 @@ export function fixture(t: TestContext) {
     writeFileSync(join(root, path), text)
   }
   cpSync(join(ROOT, 'scripts'), join(root, 'scripts'), { recursive: true })
-  for (const file of readdirSync(join(ROOT, 'hooks')).filter(f => f.endsWith('.ts')))
-    write(`hooks/${file}`, 'export const value = 1\n')
-  write(
-    'hooks/empty-tab.ts',
-    'const EMPTY_TITLES = {}\nexport const emptyTab = () => EMPTY_TITLES, emptyState = () => null\n',
-  )
+  for (const dir of ['core', 'hooks'])
+    for (const path of sourcesIn(ROOT, dir).filter(path => path.endsWith('.ts')))
+      write(path, 'export const value = 1\n')
+  write('core/view/empty-tab.ts', 'const EMPTY_TITLES = {}\nexport const emptyTab = () => EMPTY_TITLES\n')
+  write('hooks/pane/pane-asks.tsx', 'export const emptyState = () => null\n')
   write('codex/src/tab-parts.ts', 'export const EmptyState = () => null\n')
   write('hooks/register.tsx', 'export const value = 1\n')
-  write('hooks/row-client.tsx', 'export const value = 1\n')
+  write('hooks/pane/row-client.tsx', 'export const value = 1\n')
   write('types/index.d.ts', 'export interface Value {}\n')
   write('codex/src/host.ts', 'export const value = 1\n')
   write('codex/tests/.keep', '')
   write('codex/package.json', '{"type":"module"}\n')
   symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')
-  write('hooks/clients.ts', clientsSource())
+  write('core/domain/clients.ts', clientsSource())
   write('docs/looks.md', '# Looks\n')
   const looks = (main: string[] = [], omp: string[] = []) => {
     write('docs/looks/differences-main.md', differencesSource('Terminal', main))
@@ -64,15 +69,19 @@ export function fixture(t: TestContext) {
   write(
     'tsconfig.json',
     JSON.stringify({
-      compilerOptions: { module: 'esnext', moduleResolution: 'bundler', paths: { '@hooks/*': ['./hooks/*'] } },
-      include: ['hooks', 'types', 'codex/src', 'codex/tests'],
+      compilerOptions: {
+        module: 'esnext',
+        moduleResolution: 'bundler',
+        paths: { '@core/*': ['./core/*'], '@hooks/*': ['./hooks/*'] },
+      },
+      include: ['core', 'hooks', 'types', 'codex/src', 'codex/tests'],
     }),
   )
 
   const withFileRows = (unmapped: string[]) => {
-    const files = ['hooks', 'codex/src', 'omp/src']
+    const files = ['core', 'hooks', 'codex/src', 'omp/src']
       .filter(dir => existsSync(join(root, dir)))
-      .flatMap(dir => readdirSync(join(root, dir)).map(entry => `${dir}/${entry}`))
+      .flatMap(dir => sourcesIn(root, dir))
       .filter(path => /\.(?:ts|tsx|html)$/.test(path) && !path.endsWith('.d.ts') && !unmapped.includes(path))
     write(
       'docs/looks/files-all.md',

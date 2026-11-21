@@ -43,7 +43,7 @@ Sources: [R#render-sites; IF#change-what-claude-code-already-draws; T: render-si
   - `Pane.title`: with one pane open, "the engine draws no title". `Pane.view` and `AbovePrompt.view` name the transcript on screen (main or one agent's); a switch re-runs the hook. [T: `Pane`]
   - On a remote surface such as desktop, a cell is "the pane's width and height over the advance and line height of its code font". "a change of height alone re-draws nothing". [T: `RenderViewport`]
   - `isFullscreen`: "A remote surface that reports it places panes (`$.ui.open` is placed there); the mobile app reports `false`." It is false "on the main screen (`CLAUDE_CODE_NO_FLICKER=0`, tmux by default) and headless". [T: `RenderViewport`; `CommandPresentation`]
-- The repo already sizes to `bodyColumns` and `maxRows` (`hooks/mod-band.tsx:band` and `hooks/mod-pane-render.tsx:paneTree`).
+- The repo already sizes to `bodyColumns` and `maxRows` (`hooks/mod/mod-band.tsx:band` and `hooks/mod/mod-pane-render.tsx:paneTree`).
 - No doc shows where the desktop app puts the band or a pane, or whether it docks. Unknown.
 
 ### Opening a pane
@@ -88,5 +88,5 @@ Sources: [R#render-sites; IF#change-what-claude-code-already-draws; T: render-si
 | `pane:close` | ctrl+x x (also in `PaneField`) |
 
 - "`ctrl+x b`, `ctrl+x ctrl+a`, and `ctrl+x tab` require v2.1.260 or later." Chord keys must come within 3 seconds. Reserved: ctrl+c, ctrl+d, ctrl+m, ctrl+[, ctrl+i, ctrl+h, Caps Lock. [KB#unbind-default-shortcuts; KB#chords; KB#reserved-shortcuts]
-- Inference: users can rebind these keys, so the inbox's Help text ("ctrl+x tab", `hooks/help.ts:helpKeys`) can go stale. Whether desktop reads `keybindings.json` is undocumented.
+- Inference: users can rebind these keys, so the inbox's Help text ("ctrl+x tab", `core/view/help.ts:helpKeys`) can go stale. Whether desktop reads `keybindings.json` is undocumented.
 - The pane's hotkeys: 1, 2, 3, j, k, v, a, t, e, x, o, r, d (repo). Tab, arrows, Enter and Esc belong to the engine.

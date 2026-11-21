@@ -1,10 +1,10 @@
-import { parseStatus } from '../hooks/status'
-import type { Op } from '../hooks/status'
-import { applyOps } from '../hooks/status-ops'
-import { emptySession } from '../hooks/session-files'
-import { countsText } from '../hooks/status-folds'
-import { statusPage } from '../hooks/status-page'
-import type { StatusRow } from '../hooks/status-page'
+import { parseStatus } from '../core/domain/status'
+import type { Op } from '../core/domain/status'
+import { applyOps } from '../core/domain/status-ops'
+import { emptySession } from '../core/view/session-files'
+import { countsText } from '../core/view/status-folds'
+import { statusPage } from '../core/view/status-page'
+import type { StatusRow } from '../core/view/status-page'
 import type { Item, SessionStatus, Session } from '../types'
 
 export const MIN = 60_000

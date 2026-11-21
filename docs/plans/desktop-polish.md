@@ -50,7 +50,7 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
    Address, Address all, Resolve conflicts, Done, the options, Draft reply and every follow-up have none.
 
    The Codex tab draws real outline icons, stroked in the button's text color at 14 px, in the style of Codex's own. There copy, open and play mark steps, a check marks Done, a turning arrow Try again, and a back arrow Undo. Answers and follow-ups have none. Reason: an icon tells the person what a press will do to their machine before they press it, and the rest only answer or talk. The glyph is added when the button is drawn, never to a saved label, so feedback still reads "✓ Copy theme command". The app has no icon prop, and Text inside a Button draws no dimmer than the label, so the glyph is part of the label.
-   **Follow-ups are plain text in every client.** Reply, Explain, Discuss and Dismiss are muted text that takes the text color under the pointer, with no fill, padding or icon. Reason: they are secondary, so they should not compete with the answers and the main action. In the Claude app a Button is always the app's native button, so the follow-ups are drawn in a Client (`hooks/links-client.tsx`) that posts the clicked key to the hooks module.
+   **Follow-ups are plain text in every client.** Reply, Explain, Discuss and Dismiss are muted text that takes the text color under the pointer, with no fill, padding or icon. Reason: they are secondary, so they should not compete with the answers and the main action. In the Claude app a Button is always the app's native button, so the follow-ups are drawn in a Client (`hooks/pane/links-client.tsx`) that posts the clicked key to the hooks module.
 9. **A PR block reads title first.** In the Claude app:
    - The title is bold. "#31" before it is muted and not bold.
    - The status starts at the title's column, with no ◇ or ✓ mark. Its first word, as "Blocked", "Ready to merge" or "Merged", takes the status color. The reasons after it are muted.
@@ -61,7 +61,7 @@ Captured on 2026-10-09 in the Claude app's demo pane and the Codex tab:
 
 ## Not changing
 
-- The cards and the palettes (`paletteFor` in `hooks/palettes.ts`). Rules 7 and 9 change only which text takes which palette color.
+- The cards and the palettes (`paletteFor` in `hooks/pane/palettes.ts`). Rules 7 and 9 change only which text takes which palette color.
 - The terminal's look.
 - Any wording, except Send's capital S.
 

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 
-import { applyPress } from '../../hooks/press-reducer'
-import type { PressResult } from '../../hooks/press-reducer'
-import type { RowPress } from '../../hooks/presses'
-import { NO_HOLDS } from '../../hooks/timing'
+import { applyPress } from '../../core/view/press-reducer'
+import type { PressResult } from '../../core/view/press-reducer'
+import type { RowPress } from '../../core/domain/presses'
+import { NO_HOLDS } from '../../core/view/timing'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
 

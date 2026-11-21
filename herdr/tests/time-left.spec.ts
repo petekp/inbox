@@ -1,6 +1,6 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
-import { SETTLED_MS } from '../../hooks/timing'
+import { SETTLED_MS } from '../../core/view/timing'
 import { button } from '../src/blocks'
 import type { Block, RowBlock } from '../src/blocks'
 import type { TimeLeft } from '../src/time-left'

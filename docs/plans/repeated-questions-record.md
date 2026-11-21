@@ -16,7 +16,7 @@ The user answered similar questions before. If one settles this exact question, 
 
 Holding the question until the agent confirms it is new would lose a real ask whenever the agent misjudges a near miss, unseen. A recorded question the agent closes stays reachable as a closed row. Only questions get matches, since the history holds only answers to questions. A record that updates an open item lists none.
 
-The search is the row's: `rankedEarlier` in `hooks/earlier-answers.ts` over the same history, with the same `RELATIVE_FLOOR`. Its query is the ask and options as the call gives them. The row's query uses them as recorded, which cuts a long ask or option, so the two differ only for long text. Each host searches before it applies the call, through `recordMatches` in `hooks/history-store.ts`, and passes the matches to `toolAnswer`. `hooks/record-matches.ts` writes the lines. The feature has the `FeatureId` `record-earlier-answers`.
+The search is the row's: `rankedEarlier` in `core/domain/earlier-answers.ts` over the same history, with the same `RELATIVE_FLOOR`. Its query is the ask and options as the call gives them. The row's query uses them as recorded, which cuts a long ask or option, so the two differ only for long text. Each host searches before it applies the call, through `recordMatches` in `core/runtime/history-store.ts`, and passes the matches to `toolAnswer`. `core/domain/record-matches.ts` writes the lines. The feature has the `FeatureId` `record-earlier-answers`.
 
 ## The floor
 

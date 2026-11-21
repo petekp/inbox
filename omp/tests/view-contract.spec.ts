@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import { sessionView } from '../../hooks/session-view'
-import { NO_HOLDS, SETTLED_MS } from '../../hooks/timing'
+import { sessionView } from '../../core/view/session-view'
+import { NO_HOLDS, SETTLED_MS } from '../../core/view/timing'
 import type { Session } from '../../types'
 import { contractSessions } from '../../tests/view-contract-sessions'
 import { drawnGaps, missingTexts, rowTexts, statusFoldIds, statusTexts } from '../../tests/view-contract'

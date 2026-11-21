@@ -1,6 +1,6 @@
-import { REMOTE_ACTIONS } from '../../hooks/remote-commands'
-import { remoteViewerReceipts } from '../../hooks/remote-viewers'
-import { remoteReceipts } from '../../hooks/remote-command-state'
+import { REMOTE_ACTIONS } from '../../core/remote/remote-commands'
+import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
+import { remoteReceipts } from '../../core/runtime/remote-command-state'
 import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -10,12 +10,12 @@ import { isPrFetchRunning, statePath, readState, tryWithLock, updateState, withL
 import type { SessionState } from './state'
 import { viewOf } from './core'
 import { CODEX } from './texts'
-import type { Run } from '../../hooks/gh'
-import { NEXT_BUILD_MARK } from '../../hooks/banners'
-import { herdrReporter, herdrReportKey, herdrTarget, herdrTokens } from '../../hooks/herdr'
-import { publishedSession } from '../../hooks/herdr-app'
-import type { PublishFiles } from '../../hooks/herdr-app'
-import type { SessionHost } from '../../hooks/session-host'
+import type { Run } from '../../core/domain/gh'
+import { NEXT_BUILD_MARK } from '../../core/view/banners'
+import { herdrReporter, herdrReportKey, herdrTarget, herdrTokens } from '../../core/remote/herdr'
+import { publishedSession } from '../../core/remote/herdr-app'
+import type { PublishFiles } from '../../core/remote/herdr-app'
+import type { SessionHost } from '../../core/runtime/session-host'
 
 /** Reports each state written to the session's Herdr pane, from `herdrOnWrite`. */
 export type OnWrite = (s: SessionState) => Promise<void>

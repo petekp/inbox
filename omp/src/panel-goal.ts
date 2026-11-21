@@ -1,4 +1,4 @@
-import { foldGlyph } from '../../hooks/fold-chevron'
+import { foldGlyph } from '../../core/view/fold-chevron'
 import {
   GOAL_FIELD,
   GOAL_KEYS_ID,
@@ -6,15 +6,15 @@ import {
   goalKeys,
   milestoneKeyPlan,
   type StatusKey,
-} from '../../hooks/status-keys'
-import type { GoalBlock, MilestoneRow } from '../../hooks/status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../hooks/status-goal-page'
-import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
-import type { StatusPage } from '../../hooks/status-page'
-import { milestoneRows } from '../../hooks/status-folds'
-import type { IsCollapsed } from '../../hooks/status-folds'
-import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
-import type { PathLine, WorkJoint } from '../../hooks/status-path'
+} from '../../core/view/status-keys'
+import type { GoalBlock, MilestoneRow } from '../../core/view/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
+import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import type { StatusPage } from '../../core/view/status-page'
+import { milestoneRows } from '../../core/view/status-folds'
+import type { IsCollapsed } from '../../core/view/status-folds'
+import { isSpacedAbove, LATER_TEXT, workJoints } from '../../core/view/status-path'
+import type { PathLine, WorkJoint } from '../../core/view/status-path'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import type { ButtonFace, Entry } from './panel-lines'
@@ -30,7 +30,7 @@ import {
 } from './panel-page'
 import { collapsedIn, indented, visibleLength, wrapText } from './panel-text'
 import type { Style } from './panel'
-import { cellWidth } from '../../hooks/text'
+import { cellWidth } from '../../core/domain/text'
 
 /**
  * A part of the goal's section on the Status page: its heading row with the goal's buttons, the goal's text with its

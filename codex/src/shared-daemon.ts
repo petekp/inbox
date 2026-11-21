@@ -1,4 +1,4 @@
-import type { Run } from '../../hooks/gh'
+import type { Run } from '../../core/domain/gh'
 
 const PS_TIMEOUT_MS = 5000
 

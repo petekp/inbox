@@ -1,9 +1,9 @@
-import { closeFinding, closeItem } from '../hooks/ledger-close'
-import { emptySession } from '../hooks/session-files'
-import { sessionView, type SessionView } from '../hooks/session-view'
-import { SETTLED_MS } from '../hooks/timing'
-import { notesOf, reduceUi } from '../hooks/ui-controller'
-import { holdsOf } from '../hooks/ui-controller-reply'
+import { closeFinding, closeItem } from '../core/domain/ledger-close'
+import { emptySession } from '../core/view/session-files'
+import { sessionView, type SessionView } from '../core/view/session-view'
+import { SETTLED_MS } from '../core/view/timing'
+import { notesOf, reduceUi } from '../core/view/ui-controller'
+import { holdsOf } from '../core/view/ui-controller-reply'
 import {
   freshUi,
   type HostFacts,
@@ -11,7 +11,7 @@ import {
   type UiCommand,
   type UiEvent,
   type UiState,
-} from '../hooks/ui-controller-types'
+} from '../core/view/ui-controller-types'
 import type { Finding, Item, LastAction, Session } from '../types'
 
 export const LOOK: LookConfig = { runningMarks: 'pulse', titleTint: 'self', undoClock: 'session' }

@@ -1,12 +1,12 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { closeItem } from '../hooks/ledger-close'
-import { PRESS_TIMEOUT_MS } from '../hooks/session-view'
-import { SETTLED_MS } from '../hooks/timing'
-import { noticeOf, rowErrorOf } from '../hooks/ui-controller'
-import { holdsOf } from '../hooks/ui-controller-reply'
-import { DEMO_REPLY_MS, type SettledOutcome } from '../hooks/ui-controller-types'
+import { closeItem } from '../core/domain/ledger-close'
+import { PRESS_TIMEOUT_MS } from '../core/view/session-view'
+import { SETTLED_MS } from '../core/view/timing'
+import { noticeOf, rowErrorOf } from '../core/view/ui-controller'
+import { holdsOf } from '../core/view/ui-controller-reply'
+import { DEMO_REPLY_MS, type SettledOutcome } from '../core/view/ui-controller-types'
 import type { Session } from '../types'
 import {
   kinds,

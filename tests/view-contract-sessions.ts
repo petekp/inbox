@@ -1,5 +1,5 @@
 import type { Child, Closed, LastAction, Session, Subject } from '../types'
-import { demoSession } from '../hooks/demo'
+import { demoSession } from '../core/view/demo'
 
 const MIN = 60_000
 const DAY = 24 * 60 * MIN

@@ -7,8 +7,8 @@ const CODEX_SRC = 'codex/src'
 const CODEX_CSS = 'codex/src/tab-css'
 /** The types whose members are the tone words that classes carry. */
 const TONE_TYPES = [
-  { name: 'ToneName', file: 'hooks/tones.ts' },
-  { name: 'StatusTone', file: 'hooks/help.ts' },
+  { name: 'ToneName', file: 'core/view/tones.ts' },
+  { name: 'StatusTone', file: 'core/view/help.ts' },
 ]
 
 function walk(node, visit) {

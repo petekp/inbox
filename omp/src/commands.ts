@@ -1,8 +1,8 @@
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 
-import type { Run } from '../../hooks/gh'
-import { openTarget as openWith } from '../../hooks/open-targets'
+import type { Run } from '../../core/domain/gh'
+import { openTarget as openWith } from '../../core/domain/open-targets'
 
 /** Opens a link, or a path as `openCommands` decides. Returns why it could not, or null. */
 export function openTarget(run: Run, target: string, root: string, home: string): Promise<string | null> {

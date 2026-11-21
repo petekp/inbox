@@ -78,7 +78,7 @@ async function buildTabScript(build) {
 async function toneVars() {
   const out = await esbuild.build({
     absWorkingDir: here,
-    entryPoints: ['../hooks/tones.ts'],
+    entryPoints: ['../core/view/tones.ts'],
     bundle: true,
     format: 'esm',
     platform: 'neutral',
@@ -204,12 +204,12 @@ if (mode === '--dev') {
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
   let timer
-  for (const dir of [join(here, 'src'), join(here, '..', 'hooks')])
+  for (const dir of [join(here, 'src'), join(here, '..', 'core')])
     watch(dir, { recursive: true }, () => {
       clearTimeout(timer)
       timer = setTimeout(write, 100)
     })
-  console.log('Watching codex/src and hooks. Open Inbox tabs and the server update after each save. Ctrl-C stops.')
+  console.log('Watching codex/src and core. Open Inbox tabs and the server update after each save. Ctrl-C stops.')
 } else if (mode === '--tests') {
   const tests = readdirSync(join(here, 'tests')).filter(f => f.endsWith('.spec.ts'))
   await esbuild.build({
@@ -227,7 +227,7 @@ if (mode === '--dev') {
     entryPoints: entries,
     outdir: 'plugin/dist',
     outExtension: { '.js': '.mjs' },
-    banner: { js: '// Built by codex/build.mjs from codex/src and hooks/. Do not edit.' },
+    banner: { js: '// Built by codex/build.mjs from codex/src and core/. Do not edit.' },
     write: mode !== '--check',
   })
   const page = { path: join(here, 'plugin', 'dist', 'compare-page.html'), text: comparePage() }

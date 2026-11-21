@@ -2,7 +2,7 @@ import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import { w, world } from './hooks-world'
 import { BAND, PANE, SAVED_SESSION } from './hooks-helpers'
-import { TOOL_FIELDS } from '../hooks/tool-schemas'
+import { TOOL_FIELDS } from '../core/domain/tool-schemas'
 
 test('the guidance reaches Claude in the close tool’s description and nowhere else, and every inbox tool loads with the session', async ($, on) => {
   mock.clock(on, { now: 1_000_000 })

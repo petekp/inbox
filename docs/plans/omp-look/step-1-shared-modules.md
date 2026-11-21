@@ -8,7 +8,7 @@ Status: built. Merged to main in #5.
 
 ### The session modules
 
-Shared modules holding a session's state and the pure changes to it. `Session` is in `types/index.d.ts`. The changes are in `hooks/session-files.ts`, `hooks/session-turns.ts`, `hooks/session-status.ts`, `hooks/session-presses.ts` and `hooks/session-view.ts`.
+Shared modules holding a session's state and the pure changes to it. `Session` is in `types/index.d.ts`. The changes are in `core/view/session-files.ts`, `core/runtime/session-turns.ts`, `core/runtime/session-status.ts`, `core/runtime/session-presses.ts` and `core/view/session-view.ts`.
 
 `Session` holds the fields of `SessionState` in `codex/src/state.ts` that do not depend on Codex:
 
@@ -44,7 +44,7 @@ These functions move from the Codex host, and take the host's `Host` names where
 
 Whether a look is open is a host fact, so `notePrompt`, `endTurn` and `viewOf` take it as an argument. Codex passes `isTabOpen`.
 
-### `hooks/session-host.ts`
+### `core/runtime/session-host.ts`
 
 A shared module holding the `SessionHost` type and the async work that runs through it. `SessionHost` is everything a host supplies to run one session. Each function takes only the members it uses. The `Host` names and whether the inbox is open are arguments to the functions in the session modules, not members:
 

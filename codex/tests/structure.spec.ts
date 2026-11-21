@@ -3,23 +3,23 @@ import { test } from 'node:test'
 
 import { clientsSource, fixture, type Fixture, unsupported } from './structure-fixtures'
 
-test('the structure gate accepts shared imports by their resolved target, including renamed bindings, aliases and types', t => {
+test('the structure gate accepts core imports by their resolved target, including renamed bindings, aliases and types', t => {
   const f = fixture(t)
   f.write(
-    'hooks/view.ts',
-    `import { value as renamed } from './ledger.ts'
-export { value as exported } from './folder/../presses.js'
-import type { Value } from '../types/index.d.ts'
-const loaded = import('./ledger')
-const text = 'import("./register")'
+    'core/view/view.ts',
+    `import { value as renamed } from '../domain/ledger.ts'
+export { value as exported } from './folder/../../domain/presses.js'
+import type { Value } from '../../types/index.d.ts'
+const loaded = import('../domain/ledger')
+const text = 'import("../../hooks/register")'
 export const value = renamed
 `,
   )
   f.write(
     'codex/src/nested/consumer.ts',
-    `import { value } from '../../../hooks/view.ts'
-export { value as other } from '@hooks/presses'
-const loaded = import('../../../hooks/tones.js')
+    `import { value } from '../../../core/view/view.ts'
+export { value as other } from '@core/domain/presses'
+const loaded = import('../../../core/view/tones.js')
 export type Value = import('../../../types').Value
 `,
   )
@@ -27,12 +27,44 @@ export type Value = import('../../../types').Value
   assert.equal(result.status, 0, result.stdout + result.stderr)
 })
 
+test('the structure gate accepts a type-only import from a later core layer', t => {
+  const f = fixture(t)
+  f.write(
+    'core/domain/ledger.ts',
+    `import type { Value } from '../view/view'
+import { type Other } from '../remote/herdr'
+export type { Third } from '../runtime/tools'
+export type Shape = import('../view/tones').Value
+export const value = 1
+`,
+  )
+  const result = f.check()
+  assert.equal(result.status, 0, result.stdout + result.stderr)
+})
+
+test('the structure gate rejects a source file directly in core/', t => {
+  const f = fixture(t)
+  f.write('core/loose.ts', 'export const value = 1\n')
+  const result = f.check()
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.ok(result.stdout.includes('core/loose.ts is in no layer'), result.stdout + result.stderr)
+})
+
 const forbidden = [
-  { path: 'hooks/view.ts', text: "import { value } from './register'", target: './register' },
-  { path: 'hooks/view.ts', text: "const host = import('./register.tsx')", target: './register.tsx' },
-  { path: 'hooks/view.ts', text: 'const target = "./register"; const host = import(target)', target: 'computed' },
-  { path: 'hooks/view.ts', text: "export { value as other } from '../codex/src/host'", target: '../codex/src/host' },
-  { path: 'hooks/tones.ts', text: "import { value } from './register'", target: './register' },
+  { path: 'core/view/view.ts', text: "import { value } from '../../hooks/register'", target: './register' },
+  { path: 'core/view/view.ts', text: "const host = import('../../hooks/register.tsx')", target: './register.tsx' },
+  { path: 'core/view/view.ts', text: 'const target = "./register"; const host = import(target)', target: 'computed' },
+  {
+    path: 'core/view/view.ts',
+    text: "export { value as other } from '../../codex/src/host'",
+    target: '../codex/src/host',
+  },
+  { path: 'core/view/tones.ts', text: "import { value } from '../../hooks/register'", target: './register' },
+  { path: 'core/domain/ledger.ts', text: "import { value } from '../view/view'", target: 'core/view' },
+  { path: 'core/domain/ledger.ts', text: "import { value, type Value } from '../view/view'", target: 'core/view' },
+  { path: 'core/view/view.ts', text: "export { value } from '../runtime/tools'", target: 'core/runtime' },
+  { path: 'core/runtime/tools.ts', text: "const remote = import('../remote/herdr')", target: 'core/remote' },
+  { path: 'hooks/mod/claude.ts', text: "import { value } from '../../codex/src/host'", target: '../codex/src/host' },
   {
     path: 'codex/src/consumer.ts',
     text: "import { value } from '../../hooks/register.tsx'",
@@ -61,8 +93,8 @@ const forbidden = [
   },
   {
     path: 'codex/tests/nested/consumer.ts',
-    text: "export { value } from '../../../hooks/row-client.tsx'",
-    target: '../../../hooks/row-client.tsx',
+    text: "export { value } from '../../../hooks/pane/row-client.tsx'",
+    target: '../../../hooks/pane/row-client.tsx',
   },
   {
     path: 'codex/src/consumer.ts',
@@ -90,9 +122,13 @@ const forbidden = [
     target: 'computed',
   },
   { path: 'codex/src/consumer.ts', text: "import { value } from '@hooks/register'", target: '@hooks/register' },
-  { path: 'hooks/view.ts', text: "import type { SessionMessage } from 'claude-code'", target: 'claude-code' },
-  { path: 'hooks/ledger.ts', text: "import type { SessionMessage } from 'claude-code'", target: 'claude-code' },
-  { path: 'codex/src/consumer.ts', text: "import { value } from '../../hooks/claude'", target: '../../hooks/claude' },
+  { path: 'core/view/view.ts', text: "import type { SessionMessage } from 'claude-code'", target: 'claude-code' },
+  { path: 'core/domain/ledger.ts', text: "import type { SessionMessage } from 'claude-code'", target: 'claude-code' },
+  {
+    path: 'codex/src/consumer.ts',
+    text: "import { value } from '../../hooks/mod/claude'",
+    target: '../../hooks/mod/claude',
+  },
 ]
 
 for (const { path, text, target } of forbidden)
@@ -110,52 +146,52 @@ for (const { path, text, target } of forbidden)
     assert.ok(result.stdout.includes(name), result.stdout + result.stderr)
   })
 
-test('the structure gate rejects an existing JavaScript file that shadows a shared TypeScript module', t => {
+test('the structure gate checks an existing JavaScript file that shadows a core TypeScript module as core code', t => {
   const f = fixture(t)
-  f.write('hooks/view.js', 'export const value = 1\n')
-  f.write('codex/src/consumer.ts', "import { value } from '../../hooks/view.js'\n")
+  f.write('core/view/view.js', "export { value } from '../../hooks/register.tsx'\n")
+  f.write('codex/src/consumer.ts', "import { value } from '../../core/view/view.js'\n")
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
-  assert.ok(result.stdout.includes('codex/src/consumer.ts'), result.stdout + result.stderr)
-  assert.ok(result.stdout.includes('../../hooks/view.js'), result.stdout + result.stderr)
+  assert.ok(result.stdout.includes('core/view/view.js'), result.stdout + result.stderr)
+  assert.ok(result.stdout.includes('../../hooks/register.tsx'), result.stdout + result.stderr)
 })
 
-test('the structure gate follows local bridges from Codex and shared type imports', t => {
+test('the structure gate follows local bridges from Codex and core type imports', t => {
   for (const [entry, bridge, imported, mode, expected] of [
-    ['codex/src/consumer.ts', 'evals/bridge.ts', "import '../hooks/claude'", 'Codex', 'hooks/claude'],
+    ['codex/src/consumer.ts', 'evals/bridge.ts', "import '../hooks/mod/claude'", 'Codex', 'hooks/mod/claude'],
     [
-      'hooks/view.ts',
+      'core/view/view.ts',
       'types/bridge.d.ts',
-      "import type { Host } from '../hooks/claude'",
-      'shared type',
-      'hooks/claude',
+      "import type { Host } from '../hooks/mod/claude'",
+      'core type',
+      'hooks/mod/claude',
     ],
     [
-      'hooks/view.ts',
+      'core/view/view.ts',
       'types/bridge.ts',
       "export type Host = import('../codex/src/host').Value",
-      'shared source',
+      'core source',
       'codex/src/host',
     ],
   ] as const) {
     const f = fixture(t)
     f.write(
       entry,
-      entry.startsWith('codex/') ? "import '../../evals/bridge'\n" : "import type { Host } from '../types/bridge'\n",
+      entry.startsWith('codex/') ? "import '../../evals/bridge'\n" : "import type { Host } from '../../types/bridge'\n",
     )
     f.write(bridge, imported + '\n')
-    f.write('hooks/claude.ts', 'export interface Host {}\n')
+    f.write('hooks/mod/claude.ts', 'export interface Host {}\n')
     const result = f.check()
     assert.equal(result.status, 1, result.stdout + result.stderr)
     assert.ok(result.stdout.includes(expected), `${mode}: ${result.stdout}`)
   }
 })
 
-test('the structure gate accepts transitive shared imports through local source and type bridges', t => {
+test('the structure gate accepts transitive core imports through local source and type bridges', t => {
   const f = fixture(t)
-  f.write('hooks/view.ts', "import type { Value } from '../types/bridge'\n")
-  f.write('types/bridge.d.ts', "import type { Value } from '../hooks/ledger'\nexport type Bridge = Value\n")
-  f.write('evals/bridge.ts', "export { value } from '../hooks/view'\n")
+  f.write('core/view/view.ts', "import type { Value } from '../../types/bridge'\n")
+  f.write('types/bridge.d.ts', "import type { Value } from '../core/domain/ledger'\nexport type Bridge = Value\n")
+  f.write('evals/bridge.ts', "export { value } from '../core/view/view'\n")
   f.write('codex/src/nested/consumer.ts', "import { value } from '../../../evals/bridge'\n")
   const result = f.check()
   assert.equal(result.status, 0, result.stdout + result.stderr)
@@ -179,7 +215,7 @@ test('the structure gate rejects a source file that has no Files row in docs/loo
 test('the structure gate accepts a feature that is not full when each table that covers the host names it', t => {
   const f = fixture(t)
   f.write(
-    'hooks/clients.ts',
+    'core/domain/clients.ts',
     clientsSource(undefined, [
       ['codex', 'catch-up', unsupported],
       ['omp', 'catch-up', unsupported],
@@ -192,7 +228,7 @@ test('the structure gate accepts a feature that is not full when each table that
 
 test('the structure gate rejects a feature that is not full and has no row', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['codex', 'catch-up', unsupported]]))
+  f.write('core/domain/clients.ts', clientsSource(undefined, [['codex', 'catch-up', unsupported]]))
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
   assert.ok(result.stdout.includes('`catch-up`'), result.stdout + result.stderr)
@@ -201,7 +237,7 @@ test('the structure gate rejects a feature that is not full and has no row', t =
 
 test('the structure gate rejects an omp gap that only the main table names', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['omp', 'catch-up', unsupported]]))
+  f.write('core/domain/clients.ts', clientsSource(undefined, [['omp', 'catch-up', unsupported]]))
   f.looks(['catch-up'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
@@ -218,7 +254,10 @@ test('the structure gate rejects a row that names an unknown feature id', t => {
 
 test('the structure gate rejects an entry that is not full and gives no reason', t => {
   const f = fixture(t)
-  f.write('hooks/clients.ts', clientsSource(undefined, [['codex', 'catch-up', "{ kind: 'different', reason: '' }"]]))
+  f.write(
+    'core/domain/clients.ts',
+    clientsSource(undefined, [['codex', 'catch-up', "{ kind: 'different', reason: '' }"]]),
+  )
   f.looks(['catch-up'])
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
@@ -228,7 +267,7 @@ test('the structure gate rejects an entry that is not full and gives no reason',
 for (const id of ['catchUp', 'catch_up', 'Catch-up', 'catch--up', 'catch-up-2'])
   test(`the structure gate rejects the feature id ${id}`, t => {
     const f = fixture(t)
-    f.write('hooks/clients.ts', clientsSource([id]))
+    f.write('core/domain/clients.ts', clientsSource([id]))
     const result = f.check()
     assert.equal(result.status, 1, result.stdout + result.stderr)
     assert.ok(result.stdout.includes(`'${id}'`), result.stdout + result.stderr)
@@ -236,7 +275,7 @@ for (const id of ['catchUp', 'catch_up', 'Catch-up', 'catch--up', 'catch-up-2'])
 
 function hooksModule(body: string, top = '') {
   return `import { read, update } from 'claude-code'
-import { value } from './view'
+import { value } from '../core/view/view'
 ${top}
 function save($: unknown) {
   return update($, value)

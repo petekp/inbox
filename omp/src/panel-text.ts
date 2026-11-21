@@ -1,5 +1,5 @@
-import type { IsCollapsed } from '../../hooks/status-folds'
-import { cellWidth, cutForEllipsis, cutToCells } from '../../hooks/text'
+import type { IsCollapsed } from '../../core/view/status-folds'
+import { cellWidth, cutForEllipsis, cutToCells } from '../../core/domain/text'
 
 const ANSI = /\x1b\[[0-9;]*m/g
 export const visibleLength = (s: string): number => cellWidth(s.replace(ANSI, ''))

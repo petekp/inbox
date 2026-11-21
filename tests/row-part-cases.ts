@@ -1,5 +1,5 @@
-import type { Feedback } from '../hooks/feedback'
-import type { RowView } from '../hooks/rows'
+import type { Feedback } from '../core/view/feedback'
+import type { RowView } from '../core/view/rows'
 
 export type RowKind = 'question' | 'task' | 'finding'
 type FeedbackPlace = 'none' | 'above' | 'under'

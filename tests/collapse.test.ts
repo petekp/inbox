@@ -1,10 +1,10 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { collapsedRows, withCollapse } from '../hooks/collapse'
-import { closeFinding, closeItem } from '../hooks/ledger-close'
-import { prCheckId, prThreadId } from '../hooks/pr-rows'
-import { emptySession, upgradeSession } from '../hooks/session-files'
+import { collapsedRows, withCollapse } from '../core/view/collapse'
+import { closeFinding, closeItem } from '../core/domain/ledger-close'
+import { prCheckId, prThreadId } from '../core/view/pr-rows'
+import { emptySession, upgradeSession } from '../core/view/session-files'
 import type { Item, PrCheck, PrThread, PrView, Session } from '../types'
 import { BLOCKED_PR, FIX_REF } from './session-helpers'
 

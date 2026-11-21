@@ -3,11 +3,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { KEPT_SESSIONS } from '../../hooks/ledger'
-import { SESSION_VERSION } from '../../hooks/session-version'
+import { KEPT_SESSIONS } from '../../core/domain/ledger'
+import { SESSION_VERSION } from '../../core/domain/session-version'
 import { exclusiveRun, pruneSessions, readState, statePath, updateState } from '../src/state'
 import type { OmpState } from '../src/state'
-import { freshUi } from '../../hooks/ui-controller-types'
+import { freshUi } from '../../core/view/ui-controller-types'
 import { OMP_LOOK } from '../src/panel'
 
 const dirs: string[] = []

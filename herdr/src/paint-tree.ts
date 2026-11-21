@@ -1,7 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Color, Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
-import { answersFitLine } from '../../hooks/action-plan'
+import { answersFitLine } from '../../core/view/action-plan'
 import type { Button, RowBlock } from './blocks'
 import { CONTROL_GAP, EDGE, MARK_W, NEST, SMALL_GAP } from './paint-theme'
 import { buttonEl } from './paint-parts'

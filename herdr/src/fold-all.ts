@@ -1,4 +1,4 @@
-import type { UiState } from '../../hooks/ui-controller-types'
+import type { UiState } from '../../core/view/ui-controller-types'
 import type { Does } from './blocks'
 
 /**

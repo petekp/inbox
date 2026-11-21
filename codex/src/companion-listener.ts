@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 import net from 'node:net'
 import { chmod, lstat, mkdir, readFile, unlink, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
-import { isSessionFile } from '../../hooks/session-files'
-import { pressFile } from '../../hooks/herdr-press-file'
+import { isSessionFile } from '../../core/view/session-files'
+import { pressFile } from '../../core/remote/herdr-press-file'
 import type { CompanionHandler, CompanionRequest, CompanionSession } from './companion-protocol'
 
 async function scope(dir: string): Promise<CompanionSession[]> {

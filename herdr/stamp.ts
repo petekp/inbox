@@ -1,4 +1,4 @@
-import { builtAtLine, modBuiltAt } from '../hooks/herdr-install'
+import { builtAtLine, modBuiltAt } from '../core/remote/herdr-install'
 
 /** The line the bundler's banner leaves for the build time, which `stampedBundle` fills in. */
 export const BUILT_AT_LINE = '// Built at BUILT_AT'

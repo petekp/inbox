@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyPress } from '../../hooks/press-reducer'
-import type { RowPress } from '../../hooks/presses'
-import { FOLD_QUIET_MS, PRESS_GUARD_MS, SETTLED_MS } from '../../hooks/timing'
-import type { Holds } from '../../hooks/timing'
-import { recordClose, recordItem } from '../../hooks/tools'
+import { applyPress } from '../../core/view/press-reducer'
+import type { RowPress } from '../../core/domain/presses'
+import { FOLD_QUIET_MS, PRESS_GUARD_MS, SETTLED_MS } from '../../core/view/timing'
+import type { Holds } from '../../core/view/timing'
+import { recordClose, recordItem } from '../../core/runtime/tools'
 import { CODEX } from '../src/texts'
 import { emptyState } from '../src/state'
 import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { buttons, named, task, window } from './row-actions-fixtures'
-import { TOOL_FIELDS } from '../../hooks/tool-schemas'
+import { TOOL_FIELDS } from '../../core/domain/tool-schemas'
 
 test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, keeps a done row in place past its Undo while the pointer moves on the list, folds it once the pointer rests, and folds a done row at once on a tab switch', async () => {
   const state = emptyState('renderer')

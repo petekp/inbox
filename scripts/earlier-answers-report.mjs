@@ -10,7 +10,7 @@ import { join } from 'node:path'
 const RESAMPLES = 2000
 const WORKS_RISE = 0.03
 const FAILS_BELOW = 0.01
-// ROW_MEASUREMENT_MS in hooks/question-history.ts: after it, the record answer lists earlier answers too.
+// ROW_MEASUREMENT_MS in core/domain/question-history.ts: after it, the record answer lists earlier answers too.
 const MEASURED_MS = 21 * 24 * 60 * 60_000
 
 const folder =

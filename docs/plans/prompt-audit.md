@@ -57,15 +57,15 @@ The saved records do not say whether an answer came from a press or from the age
 
 | Text | Where | Reader | Result |
 | --- | --- | --- | --- |
-| The guidance | `hooks/model-text.ts:guidanceText` | Claude, Codex | Themes 1, 6, 7 |
-| `record` and `close`, their fields and results | `hooks/tools.ts` | Claude, Codex | Themes 3, 6 |
-| The inbox model's instructions and input | `hooks/ledger-prompt.ts:systemText`, `hooks/ledger-prompt.ts:buildPrompt` | Inbox model | Themes 2, 4, 5, 7 |
-| The catch-up prompts | `hooks/catch-up-text.ts:catchUpPrompt`, `hooks/catch-up-text.ts:transcriptCatchUpPrompt` | Inbox model or a fork | Theme 5 |
-| `inbox:` texts beside a prompt | `hooks/inbox-text.ts:inboxText`, `hooks/inbox-text.ts:closedText`, `hooks/inbox-text.ts:answerNote` | Claude, Codex | Themes 3, 6 |
-| The start and compaction block | `hooks/inbox-text.ts:carryText` | Claude, Codex | No issue |
-| Activity and screen lines | `toolActivity`, `dialogActivity` and `screenText` in `hooks/model-text.ts` | Inbox model | No issue |
-| Row press messages | `hooks/press-messages.ts:messages` | Claude, Codex | Themes 2, 6 |
-| PR press messages | `hooks/prs.ts:prompts` | Claude | Read, no issue found |
+| The guidance | `core/domain/model-text.ts:guidanceText` | Claude, Codex | Themes 1, 6, 7 |
+| `record` and `close`, their fields and results | `core/runtime/tools.ts` | Claude, Codex | Themes 3, 6 |
+| The inbox model's instructions and input | `core/domain/ledger-prompt.ts:systemText`, `core/domain/ledger-prompt.ts:buildPrompt` | Inbox model | Themes 2, 4, 5, 7 |
+| The catch-up prompts | `core/domain/catch-up-text.ts:catchUpPrompt`, `core/domain/catch-up-text.ts:transcriptCatchUpPrompt` | Inbox model or a fork | Theme 5 |
+| `inbox:` texts beside a prompt | `core/domain/inbox-text.ts:inboxText`, `core/domain/inbox-text.ts:closedText`, `core/domain/inbox-text.ts:answerNote` | Claude, Codex | Themes 3, 6 |
+| The start and compaction block | `core/domain/inbox-text.ts:carryText` | Claude, Codex | No issue |
+| Activity and screen lines | `toolActivity`, `dialogActivity` and `screenText` in `core/domain/model-text.ts` | Inbox model | No issue |
+| Row press messages | `core/domain/press-messages.ts:messages` | Claude, Codex | Themes 2, 6 |
+| PR press messages | `core/domain/prs.ts:prompts` | Claude | Read, no issue found |
 | Codex tool texts | `codex/src/texts.ts` | Codex | Theme 8 |
 | Codex hook context | `codex/src/hook.ts` | Codex | No issue. It passes the shared texts through. |
 

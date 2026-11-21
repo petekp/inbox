@@ -1,10 +1,21 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const SOURCE_DIRS = ['hooks', 'herdr/src', 'omp/src', 'codex/src']
+const SOURCE_DIRS = [
+  'core/domain',
+  'core/view',
+  'core/runtime',
+  'core/remote',
+  'hooks',
+  'hooks/mod',
+  'hooks/pane',
+  'codex/src',
+  'omp/src',
+  'herdr/src',
+]
 const OTHER_CHEVRONS = /[▸▾▴▿▹⌄˅]/
 
-/** Every fold draws one chevron, so a source file names no other disclosure glyph. `hooks/fold-chevron.ts` owns the text looks' glyphs. */
+/** Every fold draws one chevron, so a source file names no other disclosure glyph. `core/view/fold-chevron.ts` owns the text looks' glyphs. */
 export function checkChevrons(root, errors) {
   for (const dir of SOURCE_DIRS) {
     if (!existsSync(join(root, dir))) continue

@@ -318,7 +318,7 @@ export type Session = {
   /**
    * The rows the person collapsed, each with when, by row id: rows of the Asks, Finds and PRs tabs, and Status parents
    * folded by their name. A row stays collapsed until something new arrives on it, as
-   * `hooks/collapse.ts:collapsedRows` decides.
+   * `core/view/collapse.ts:collapsedRows` decides.
    */
   collapsed: Record<string, RowCollapse>
   /**

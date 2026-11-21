@@ -24,7 +24,7 @@ omp and pi change their extension API often. Keeping every omp import in `host.t
 | --- | --- |
 | Guidance in the system prompt | `before_agent_start`, returning `systemPrompt` with `guidanceText(OMP)` added |
 | The `inbox:` text beside each prompt | `before_agent_start`, returning a hidden custom message (`display: false`) with `notePrompt`'s notes. The message stays in the session, as the inbox text does in Claude Code and Codex. |
-| `record` and `close` | `pi.registerTool`, with the descriptions, schemas and answers from `hooks/tools.ts` |
+| `record` and `close` | `pi.registerTool`, with the descriptions, schemas and answers from `core/runtime/tools.ts` |
 | Turn activity | `tool_execution_start` events, through `toolActivity`. Not `tool_call`, which omp waits on before every tool runs |
 | Turn end | `agent_end`, then `endTurn` and `runUpdates` |
 | Send a press's message | `pi.sendUserMessage`, delivered as a follow-up while a turn runs |

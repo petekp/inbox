@@ -1,5 +1,5 @@
-import { NO_TURN } from '../../hooks/session-files'
-import { forkedFrom, hasLedger, isUnseen } from '../../hooks/session-status'
+import { NO_TURN } from '../../core/view/session-files'
+import { forkedFrom, hasLedger, isUnseen } from '../../core/runtime/session-status'
 import { heardState, isTurnHeard } from './core'
 import { readState } from './state'
 import type { SessionState } from './state'

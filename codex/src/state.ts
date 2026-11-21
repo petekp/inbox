@@ -18,9 +18,9 @@ import {
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 
-import { KEPT_SESSIONS } from '../../hooks/ledger'
+import { KEPT_SESSIONS } from '../../core/domain/ledger'
 import type { CallFailure, CallKind, Child, Exchange, Session } from '../../types'
-import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
+import { checkVersion, SESSION_VERSION } from '../../core/domain/session-version'
 import {
   emptySession,
   isSessionFile,
@@ -29,14 +29,14 @@ import {
   staleSessionFiles,
   upgradeSession,
   NO_CALL_FAILURES,
-} from '../../hooks/session-files'
-import { pruned } from '../../hooks/session-presses'
-import type { AnswerDoc } from '../../hooks/earlier-answers'
-import { historyStep, recordMatches } from '../../hooks/history-store'
-import type { HistoryPlace } from '../../hooks/history-store'
+} from '../../core/view/session-files'
+import { pruned } from '../../core/runtime/session-presses'
+import type { AnswerDoc } from '../../core/domain/earlier-answers'
+import { historyStep, recordMatches } from '../../core/runtime/history-store'
+import type { HistoryPlace } from '../../core/runtime/history-store'
 import { diagnosticLines } from './diagnostics'
-import { isShownTab } from '../../hooks/tabs'
-import type { ShownTab } from '../../hooks/tabs'
+import { isShownTab } from '../../core/view/tabs'
+import type { ShownTab } from '../../core/view/tabs'
 
 /** A failed `codex exec` call as builds before `callFailures` saved it, with the fields each build added. */
 type SavedModelFailure = {

@@ -1,8 +1,8 @@
-import { HELD_MARK } from '../hooks/help'
-import { restatesGoal } from '../hooks/status-goal-ops'
-import { isNumberOnly, isOpen } from '../hooks/status-limits'
-import { drawnStatusRows } from '../hooks/status-folds'
-import type { StatusPage } from '../hooks/status-page'
+import { HELD_MARK } from '../core/view/help'
+import { restatesGoal } from '../core/domain/status-goal-ops'
+import { isNumberOnly, isOpen } from '../core/domain/status-limits'
+import { drawnStatusRows } from '../core/view/status-folds'
+import type { StatusPage } from '../core/view/status-page'
 import type { Rule } from './status-rules'
 
 /** A hold the code keeps. It reads the page and the saved Status at every step, and counts toward no rate. */

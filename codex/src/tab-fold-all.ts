@@ -1,5 +1,5 @@
-import { isMilestonesFold } from '../../hooks/status-goal-page'
-import type { UiEvent, UiState } from '../../hooks/ui-controller-types'
+import { isMilestonesFold } from '../../core/view/status-goal-page'
+import type { UiEvent, UiState } from '../../core/view/ui-controller-types'
 import type { FoldKind } from '../../types'
 import { foldMove } from './tab-motion'
 import { tabState } from './tab-state'

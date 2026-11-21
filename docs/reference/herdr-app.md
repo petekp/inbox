@@ -4,7 +4,7 @@ Facts about the Herdr app that the inbox relies on, with how each was checked. T
 
 ## `terminal.list` through `hc connect`
 
-Checked live on 2026-11-11 by sending the request `hooks/herdr-sweep.ts:labelledSessions` sends, `{"jsonrpc":"2.0","id":1,"method":"terminal.list","params":{}}` and a newline, to `hc connect` on its standard input.
+Checked live on 2026-11-11 by sending the request `core/remote/herdr-sweep.ts:labelledSessions` sends, `{"jsonrpc":"2.0","id":1,"method":"terminal.list","params":{}}` and a newline, to `hc connect` on its standard input.
 
 - `hc connect` answered and exited 0 at the end of its input. It does not stay open.
 - The answer is one line: `{"id": …, "jsonrpc": "2.0", "result": {"hidden_finished": …, "terminals": [...]}}`.

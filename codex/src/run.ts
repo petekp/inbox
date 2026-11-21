@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process'
 import type { ExecFileException } from 'node:child_process'
 
-import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
-import type { Run } from '../../hooks/gh'
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../core/domain/gh'
+import type { Run } from '../../core/domain/gh'
 
 /** A `Run` that also writes `input` to the command's stdin. */
 export type RunWithInput = (args: string[], opts: Parameters<Run>[1] & { input?: string }) => ReturnType<Run>

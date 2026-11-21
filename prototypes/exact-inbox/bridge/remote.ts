@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve, isAbsolute } from 'node:path'
 import { runtimeRoot } from '../tools/paths'
-import { publishedSessionPath } from '../../../hooks/herdr'
+import { publishedSessionPath } from '../../../core/remote/herdr'
 import { coreRequest } from './core'
 import type { SessionBinding } from './binding'
 

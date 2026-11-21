@@ -1,5 +1,5 @@
-import { allRows } from '../../hooks/rows'
-import type { SettledState } from '../../hooks/rows'
+import { allRows } from '../../core/view/rows'
+import type { SettledState } from '../../core/view/rows'
 import {
   earliestOf,
   isDrawnInPlace,
@@ -7,9 +7,9 @@ import {
   isPressOutSince,
   isSendOnItsWay,
   SETTLED_MS,
-} from '../../hooks/timing'
-import type { ListInput } from '../../hooks/timing'
-import type { InboxView } from '../../hooks/view'
+} from '../../core/view/timing'
+import type { ListInput } from '../../core/view/timing'
+import type { InboxView } from '../../core/view/view'
 
 export const POLL_MS = 3000
 
@@ -28,7 +28,7 @@ type TabPlacing = {
 /**
  * Whether a settled row the tab first listed at `seenAt` has not outlasted its fold time: `SETTLED_MS`, as long as Undo
  * lasts, and then while a press begun before that is still out or the person has been using the list since before it,
- * as `hooks/timing.ts:isSettledInPlace` says. A press or input begun after it folded leaves it folded.
+ * as `core/view/timing.ts:isSettledInPlace` says. A press or input begun after it folded leaves it folded.
  */
 function isSeenInPlace(seenAt: number, { input, now, pressOutSince }: TabPlacing): boolean {
   const dueAt = seenAt + SETTLED_MS
@@ -37,7 +37,7 @@ function isSeenInPlace(seenAt: number, { input, now, pressOutSince }: TabPlacing
 }
 
 /**
- * Whether the tab keeps a settled row or PR block in place: the rule of `hooks/timing.ts:isSettledInPlace`, timed from
+ * Whether the tab keeps a settled row or PR block in place: the rule of `core/view/timing.ts:isSettledInPlace`, timed from
  * the first view that listed it, less any that settled before the tab showed its tab.
  */
 export function isTabInPlace(id: string, state: SettledState, p: TabPlacing): boolean {

@@ -1,11 +1,11 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { inPrOrder, commentLine, prRefs, prNeedsYou, prompts, readableComment, readiness } from '../hooks/prs'
-import { readPrNode } from '../hooks/pr-query'
+import { inPrOrder, commentLine, prRefs, prNeedsYou, prompts, readableComment, readiness } from '../core/domain/prs'
+import { readPrNode } from '../core/domain/pr-query'
 import { prNodeOf } from './gh-answers'
-import { checkActions } from '../hooks/pr-tab'
-import { checkRowText } from '../hooks/pr-rows'
+import { checkActions } from '../core/view/pr-tab'
+import { checkRowText } from '../core/view/pr-rows'
 
 const VIEW = JSON.stringify({
   number: 12,

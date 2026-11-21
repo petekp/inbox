@@ -1,8 +1,8 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { RUNNING_FRAME_MS, SETTLED_MS, runningMark } from '../hooks/timing'
-import { IDLE_MARK, RUNNING_FRAMES } from '../hooks/help'
-import { NEW_FADE_MS, NEW_HOLD_MS } from '../hooks/arrivals'
+import { RUNNING_FRAME_MS, SETTLED_MS, runningMark } from '../core/view/timing'
+import { IDLE_MARK, RUNNING_FRAMES } from '../core/view/help'
+import { NEW_FADE_MS, NEW_HOLD_MS } from '../core/view/arrivals'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

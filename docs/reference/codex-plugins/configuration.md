@@ -143,7 +143,7 @@ Whether the person sees which plugin was affected is [unknown].
 - **`non_prefixed_mcp_tool_names`**: "Expose MCP model-visible namespaces
   without the legacy `mcp__` prefix" (lib.rs:1563-1568). [inference] If it
   also changes hook `tool_name`, the matcher `mcp__.*` and the tool names in
-  the inbox's guidance (hooks/model-text.ts:guidanceText) break.
+  the inbox's guidance (core/domain/model-text.ts:guidanceText) break.
 - **Code mode.** L/config-reference calls `features.code_mode.enabled` "under
   development and off by default", yet the desktop app runs shell commands
   through code mode [live] (docs/plans/codex-plugin/step-0-and-results.md:106). [inference] The

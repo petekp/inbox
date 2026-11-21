@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { zstdCompressSync } from 'node:zlib'
 
 import type { HookDeps, HookInput } from '../src/hook'
-import type { Run } from '../../hooks/gh'
-import { PARTS_STATUS_SYSTEM } from '../../hooks/status-prompt'
-import type { Ask } from '../../hooks/session-host'
+import type { Run } from '../../core/domain/gh'
+import { PARTS_STATUS_SYSTEM } from '../../core/domain/status-prompt'
+import type { Ask } from '../../core/runtime/session-host'
 import type { Server } from '../src/server'
 
 export function tempDir(): string {

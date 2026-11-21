@@ -8,7 +8,7 @@ The Herdr panel spaced its Status rows too loosely, and the looks had drifted ap
 
 - In Herdr, a title and its detail line sat 24 pt apart, 4 pt more than a line of text. Two one-line items sat 28 pt apart.
 - The Codex tab spaced Status items 9.5 px apart and put no space between a title and its detail. Its marks and text started 2 and 4 px right of Herdr's.
-- The desktop pane drew Status row padding at half the size `hooks/layout.ts` stated, because a Box draws padding at half the written value.
+- The desktop pane drew Status row padding at half the size `core/view/layout.ts` stated, because a Box draws padding at half the written value.
 - The terminal left no space between Status items.
 
 ## The rule
@@ -21,7 +21,7 @@ Space shows what belongs together. Each distance is one of a few named steps, an
 4. Two top-level items when either has more than one line: `item`, 12.
 5. Two groups or sections, with any rule halfway between them: `section`, 24, twice `item`.
 
-A top-level item is a row with the rows nested under it, so a parent with nested rows counts as more than one line. `statusGaps` in `hooks/status-gaps.ts` picks each gap from the rows' data, and every look reads it, so the looks space the same pairs alike.
+A top-level item is a row with the rows nested under it, so a parent with nested rows counts as more than one line. `statusGaps` in `core/view/status-gaps.ts` picks each gap from the rows' data, and every look reads it, so the looks space the same pairs alike.
 
 On the goal's path, a milestone's work sits `head` under the milestone, as items sit under a heading. A milestone that stands apart sits `item` under the row above it. The Later label sits `section / 2` under the row above, as a rule does, and `head` over its milestone.
 
@@ -29,7 +29,7 @@ A heading sits `head` (8) above its first item, less than `item`, so the heading
 
 Every gap, padding and line height comes from these steps. A row's padding counts toward the gap. A Status row pads half the gap above it and half the gap below it. A closed Asks row pads `list / 2` above and below, and an open row, whose box shows, pads `item / 2`. Text lines are 20 pt, five units. Headings that take a taller line, such as Herdr's `HEAD_LINE` and the Codex tab's page title, take 24.
 
-The scale lives in `hooks/layout.ts`: `SPACE_UNIT` and one constant per step, from `INSIDE_GAP_PT` to `MARK_PT`.
+The scale lives in `core/view/layout.ts`: `SPACE_UNIT` and one constant per step, from `INSIDE_GAP_PT` to `MARK_PT`.
 
 ## How each look draws it
 
@@ -53,4 +53,4 @@ Closed one-line rows now pad 2 instead of 8. In Herdr, the Codex tab and the des
 
 ## A check that keeps new values on the scale
 
-A script would read the padding, margin, gap and line-height values in `herdr/src/paint-*.ts`, `codex/src/tab-css/*.css` and the `hooks/pane-*.tsx` files. It would fail on a number that is not a named step, a sum or multiple of `SPACE_UNIT`, or an entry in a short allowlist that gives its reason, such as a tree line's offset or an icon's size. `./scripts/check.sh` would run it. It is proposed, not built.
+A script would read the padding, margin, gap and line-height values in `herdr/src/paint-*.ts`, `codex/src/tab-css/*.css` and the `hooks/pane/pane-*.tsx` files. It would fail on a number that is not a named step, a sum or multiple of `SPACE_UNIT`, or an entry in a short allowlist that gives its reason, such as a tree line's offset or an icon's size. `./scripts/check.sh` would run it. It is proposed, not built.

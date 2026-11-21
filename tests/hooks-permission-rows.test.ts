@@ -1,7 +1,7 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import type { Engine } from 'claude-code/testing'
-import { PERMISSION_FALLBACK_DELAY_MS } from '../hooks/timing'
+import { PERMISSION_FALLBACK_DELAY_MS } from '../core/view/timing'
 import { w, world } from './hooks-world'
 import { sidebarLines } from './hooks-helpers'
 

@@ -6,10 +6,10 @@ import {
   LEAVE_FADE_MS,
   ROW_STATE_MS,
   turnBackFades,
-} from '../../hooks/row-motion'
-import type { RowState } from '../../hooks/row-motion'
-import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../hooks/springs'
-import type { SpringState } from '../../hooks/springs'
+} from '../../core/view/row-motion'
+import type { RowState } from '../../core/view/row-motion'
+import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../core/view/springs'
+import type { SpringState } from '../../core/view/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
 import { later, cancelTimer } from './tab-host'
 import { atEndLines, closeTitle, openTitle, releaseLine, LINE } from './tab-title-motion'

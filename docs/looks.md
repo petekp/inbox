@@ -6,9 +6,16 @@ The inbox has five looks: `terminal`, `desktop`, `codex`, `omp` and `herdr`. A l
 
 ## Files
 
-Shared modules are in `hooks/`. Every host consumes them, directly or through a build. They import only shared modules and shared types. `scripts/check-structure.mjs` checks those boundaries, including type imports. Codex and omp type checking need no generated Claude engine types.
+Shared modules are in `core/`. Every host consumes them, directly or through a build. Each one sits in the folder of its layer. A layer loads code only from its own folder and the layers listed above it:
 
-Every source file in `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
+- `core/domain/`: the ledger, the Status, PRs, presses and their messages, the model's prompts and the parsers of its answers, and the client record. It draws nothing and runs no effects.
+- `core/view/`: what the looks draw and the code that decides it: rows, tabs, banners, the Status page, PR blocks, the shared UI controller, timing and motion. The press reducer, the demo session and the saved session's form sit here too, because they read rows and PR blocks.
+- `core/runtime/`: what a host runs through its `SessionHost`: turns, presses, PR fetches, the agent's tools, the Status call records, the question history store, and the remote command journal and viewer leases a session keeps.
+- `core/remote/`: publishing a session to the Herdr look, the remote commands it delivers, and starting and finding Herdr terminals.
+
+A type-only import may name a type from any layer, since it loads no code. Code in `core/` imports only `core/` and `types/`, type imports included. The Claude Code mod is in `hooks/`: `hooks/register.tsx` wires the engine's events, `hooks/mod/` holds the mod's runtime, and `hooks/pane/` draws the terminal and desktop looks. Codex, omp and the Herdr look import only `core/` and `types/` of the inbox's code. `scripts/structure/imports.mjs` checks these rules. Codex and omp type checking need no generated Claude engine types.
+
+Every source file in `core/`, `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
 
 - [Shared modules](looks/files-shared.md)
 - [Shared modules for the Status](looks/files-shared-status.md)
@@ -32,21 +39,23 @@ Change a rule in its owner. Do not change it in a reader.
 - [The Status call](looks/owners-status-call.md)
 - [The ledger, sessions and model-read texts](looks/owners-ledger-and-sessions.md)
 - [PRs](looks/owners-prs.md)
+- [The PR order and Rank again](looks/owners-pr-order.md)
 - [Rules still written in two places](looks/owners-written-twice.md)
 
 ## Differences on purpose
 
 A difference is on purpose when a look cannot do something or the product decided it. Anything not listed here is drift.
 
-A row that covers a host difference names its feature id in backticks in the first column. `hooks/clients.ts` is the parity record. `CLIENTS` classifies every feature as `full`, `different` or `unsupported` for each host (`claude-code` for the terminal and desktop looks, `codex`, `omp`). `PUBLISHED_LOOKS` does the same for each look that draws a session a host publishes, today only `herdr`. A published look's entry can also be `host`: the publishing host does all of the feature, so the host's own entry says what the person gets. `scripts/check-structure.mjs` fails when a feature that is not `full` or `host` has no row in the table that covers its host or look, and when a row names an id the record lacks. The main table covers `claude-code` and `codex`. The omp table covers `omp`. Each published look has its own table, in the parts named `differences-<look id>`.
+A row that covers a host difference names its feature id in backticks in the first column. `core/domain/clients.ts` is the parity record. `CLIENTS` classifies every feature as `full`, `different` or `unsupported` for each host (`claude-code` for the terminal and desktop looks, `codex`, `omp`). `PUBLISHED_LOOKS` does the same for each look that draws a session a host publishes, today only `herdr`. A published look's entry can also be `host`: the publishing host does all of the feature, so the host's own entry says what the person gets. `scripts/check-structure.mjs` fails when a feature that is not `full` or `host` has no row in the table that covers its host or look, and when a row names an id the record lacks. The main table covers `claude-code` and `codex`. The omp table covers `omp`. Each published look has its own table, in the parts named `differences-<look id>`.
 
-A published look gets its own list, apart from `CLIENTS`, because a `ClientId` names the host that publishes a session: the Herdr publish code, the Status call's hosts and the press messages all read it that way. Exact's web and iOS clients will join `PUBLISHED_LOOKS` as `exact-web` and `exact-ios`, each with its own `hooks/clients-<id>.ts` and `differences-<id>` parts.
+A published look gets its own list, apart from `CLIENTS`, because a `ClientId` names the host that publishes a session: the Herdr publish code, the Status call's hosts and the press messages all read it that way. Exact's web and iOS clients will join `PUBLISHED_LOOKS` as `exact-web` and `exact-ios`, each with its own `core/domain/clients-<id>.ts` and `differences-<id>` parts.
 
 Each look's contract test also fails when the look leaves out a field of the shared row or Status page. `tests/view-contract.ts` gives every field's rule, and a new `RowView` or `StatusPage` field fails the type check until it has one. A field a look leaves out on purpose goes in `LOOK_GAPS` in `tests/view-contract.ts`, with a feature that is not `full` or `host` for that look.
 
 The parts below hold the main table, split by subject. The omp table is in the parts under omp, whose file names start with `differences-omp`. The structure check tells the two tables apart by that name.
 
 - [Keys, clicks and replies](looks/differences-input.md)
+- [The Status goal's buttons and field](looks/differences-input-goal.md)
 - [Rows, tabs, banners and motion](looks/differences-drawing.md)
 - [The Status page and marks](looks/differences-status-and-marks.md)
 - [Spacing](looks/differences-spacing.md)

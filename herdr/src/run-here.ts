@@ -1,9 +1,9 @@
-import type { Feedback } from '../../hooks/feedback'
-import type { Run } from '../../hooks/gh'
-import { openTarget } from '../../hooks/open-targets'
-import type { PathProbe } from '../../hooks/open-targets'
-import type { Effect } from '../../hooks/press-reducer'
-import { pendingResult } from '../../hooks/pressed'
+import type { Feedback } from '../../core/view/feedback'
+import type { Run } from '../../core/domain/gh'
+import { openTarget } from '../../core/domain/open-targets'
+import type { PathProbe } from '../../core/domain/open-targets'
+import type { Effect } from '../../core/view/press-reducer'
+import { pendingResult } from '../../core/view/pressed'
 import type { LocalResult } from '../../types'
 
 /** An open or a copy, the effects the look can run itself. */

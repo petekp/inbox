@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test'
 
-import { HERDR_CHECK_MS } from '../../hooks/herdr'
-import { PR_POLL_MS, prFetchTracker } from '../../hooks/host-prs'
-import { emptySession } from '../../hooks/session-files'
-import { COMPARE_LIMIT_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../../hooks/timing'
+import { HERDR_CHECK_MS } from '../../core/remote/herdr'
+import { PR_POLL_MS, prFetchTracker } from '../../core/runtime/host-prs'
+import { emptySession } from '../../core/view/session-files'
+import { COMPARE_LIMIT_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../../core/view/timing'
 import { demoOf, flush, open, sharingUi } from './controller-harness'
 
 test('the panel shows a loading line until the first screen arrives', async () => {

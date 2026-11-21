@@ -50,13 +50,13 @@ There is no `-p` flag and no `--plugin-dir` on the command line. It is still a h
 - "Desktop is interactive only" (https://code.claude.com/docs/en/desktop, Markdown line 979). This describes the person's experience, not the engine's `isInteractive` flag.
 - The changelog treats the app as an SDK host that resumes sessions: entries at 2.1.208, 2.1.260 and 2.1.282. Entry 2.1.269 adds a fix "(once Desktop bundles this CLI version)".
 
-**How the inbox handles it now** (`hooks/register.tsx`, `hooks/mod-lifecycle.ts` and `hooks/mod-load.ts`):
+**How the inbox handles it now** (`hooks/register.tsx`, `hooks/mod/mod-lifecycle.ts` and `hooks/mod/mod-load.ts`):
 
 - `session.start` calls `registerInboxCommand` before `next(e)`, so `/inbox` is registered before the first prompt. Registration retries when Inbox activates.
 - An interactive start, a start in a process the app started, or a desktop attach activates Inbox. Only a start is sure to register the tools before the first prompt: see "A reopened session's first prompt". A shared initialization promise prevents concurrent handlers from loading it twice.
 - `command.run` waits for initialization. While Inbox is inactive, only an engine-stamped `composer` origin can activate it; SDK and plugin command calls leave it inactive.
 - `classic.SessionStart` with source `clear`, `resume` or `fork` loads the conversation the event names.
-- Every command reads the session's folder from `$.session.root()` when it runs, and runs in `/` when that folder is gone (`hooks/mod-commands.ts:sessionFolder`). `classic.SessionStart` with source `startup` in a session whose folder changed saves the new folder and branch, and fetches the PRs again. See "A new session's folder".
+- Every command reads the session's folder from `$.session.root()` when it runs, and runs in `/` when that folder is gone (`hooks/mod/mod-commands.ts:sessionFolder`). `classic.SessionStart` with source `startup` in a session whose folder changed saves the new folder and branch, and fetches the PRs again. See "A new session's folder".
 - Prompt bookkeeping skips Inbox's own plugin prompts and counts origins `composer`, `bridge`, or `plugin` with `asUser` as the person's words.
 
 **App tools passed into each session (live):** `mcp__ccd_session__*` (`list_sessions`, `send_message`, `spawn_task`, `dismiss_task`), `mcp__ccd_session_mgmt__*`, `mcp__ccd_view__*` (`show_pane`, `close_pane`), `mcp__ccd_window__*`, `mcp__ccd_sidebar__*`, `mcp__ccd_pr__get_status`, `mcp__ccd_connectors__*` and `mcp__ccd_settings__get_settings`. They are not documented publicly.

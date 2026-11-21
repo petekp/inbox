@@ -1,14 +1,14 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { EMPTY } from '../hooks/ledger'
-import { withChild } from '../hooks/status-children'
-import { applyStatus } from '../hooks/status-ops'
-import { CLAUDE_CODE } from '../hooks/model-text'
-import { STATUS_SYSTEM } from '../hooks/status-prompt'
-import { parseStatus } from '../hooks/status'
-import { emptySession } from '../hooks/session-files'
-import { cleared, noteActivity, notePrompt, turnEnded, turnStarted } from '../hooks/session-turns'
+import { EMPTY } from '../core/domain/ledger'
+import { withChild } from '../core/domain/status-children'
+import { applyStatus } from '../core/domain/status-ops'
+import { CLAUDE_CODE } from '../core/domain/model-text'
+import { STATUS_SYSTEM } from '../core/domain/status-prompt'
+import { parseStatus } from '../core/domain/status'
+import { emptySession } from '../core/view/session-files'
+import { cleared, noteActivity, notePrompt, turnEnded, turnStarted } from '../core/runtime/session-turns'
 import {
   appliedStatus,
   claimedStatusRefresh,
@@ -17,10 +17,10 @@ import {
   hasLedger,
   isUnseen,
   STATUS_REFRESH_MS,
-} from '../hooks/session-status'
-import { sessionView } from '../hooks/session-view'
+} from '../core/runtime/session-status'
+import { sessionView } from '../core/view/session-view'
 import type { Session } from '../types'
-import { runUpdates } from '../hooks/session-host'
+import { runUpdates } from '../core/runtime/session-host'
 import {
   STATUS_RECORD_VERSION,
   statusCallPrompt,
@@ -29,10 +29,10 @@ import {
   recordFileName,
   refreshStatus,
   writeStatusRecord,
-} from '../hooks/status-records'
-import type { StatusRecord, RecordFiles } from '../hooks/status-records'
-import { footerError } from '../hooks/view'
-import { NO_HOLDS } from '../hooks/timing'
+} from '../core/runtime/status-records'
+import type { StatusRecord, RecordFiles } from '../core/runtime/status-records'
+import { footerError } from '../core/view/view'
+import { NO_HOLDS } from '../core/view/timing'
 import { fakeHost } from './session-fake-host'
 import { LEDGER_REPLY, finishTurn, answer } from './session-helpers'
 

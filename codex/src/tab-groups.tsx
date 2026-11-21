@@ -8,13 +8,13 @@ import {
   waitingCount,
   settledLabel,
   shortAgo,
-} from '../../hooks/rows'
-import { groupEmptyText } from '../../hooks/banners'
-import { LEAVE_FADE_MS } from '../../hooks/row-motion'
-import { emptyTab } from '../../hooks/empty-tab'
-import { entryId, settledIn } from '../../hooks/action-plan'
-import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../hooks/help'
-import type { ResultMark } from '../../hooks/rows'
+} from '../../core/view/rows'
+import { groupEmptyText } from '../../core/view/banners'
+import { LEAVE_FADE_MS } from '../../core/view/row-motion'
+import { emptyTab } from '../../core/view/empty-tab'
+import { entryId, settledIn } from '../../core/view/action-plan'
+import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../core/view/help'
+import type { ResultMark } from '../../core/view/rows'
 import type { Finding } from '../../types'
 import type { FoldGroup } from './arrivals'
 import type { TabView as View } from './core'

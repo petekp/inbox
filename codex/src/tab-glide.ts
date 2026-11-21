@@ -1,6 +1,6 @@
-import { enterDelayMs, slideOffset } from '../../hooks/row-motion'
-import { FRAME_MS, springFrames, springStep } from '../../hooks/springs'
-import type { SpringState } from '../../hooks/springs'
+import { enterDelayMs, slideOffset } from '../../core/view/row-motion'
+import { FRAME_MS, springFrames, springStep } from '../../core/view/springs'
+import type { SpringState } from '../../core/view/springs'
 import { tabState, animations } from './tab-state'
 
 export const FADE_EASING = 'ease-out'

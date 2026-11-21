@@ -1,7 +1,7 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import type { Engine } from 'claude-code/testing'
-import type { TabsProps } from '../hooks/tabs-client'
+import type { TabsProps } from '../hooks/pane/tabs-client'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

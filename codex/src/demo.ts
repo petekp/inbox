@@ -1,4 +1,4 @@
-import { demoSession } from '../../hooks/demo'
+import { demoSession } from '../../core/view/demo'
 import { emptyState } from './state'
 import type { SessionState } from './state'
 import { CODEX } from './texts'

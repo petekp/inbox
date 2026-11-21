@@ -151,7 +151,7 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
     form, as it sends any press: into the running turn through the app's IPC
     socket when it can, else through `codex queue` ([app-socket.md](app-socket.md);
     `codex/src/dialogs.ts:dialogReply`,
-    `hooks/dialogs.ts:linkDialogs`). An answer press first links the
+    `core/domain/dialogs.ts:linkDialogs`). An answer press first links the
     dialogs of the rollout's newest turn, so an answer pressed while the
     dialog's turn runs is linked too (`codex/src/server-host.ts:linkRunningDialogs`).
   - [live 2026-10-25, ChatGPT app in the inbox-ui VM, GPT-6.1 Sol] An inbox

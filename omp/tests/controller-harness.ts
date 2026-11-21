@@ -1,5 +1,5 @@
-import { SETTLED_MS } from '../../hooks/timing'
-import type { UiState } from '../../hooks/ui-controller-types'
+import { SETTLED_MS } from '../../core/view/timing'
+import type { UiState } from '../../core/view/ui-controller-types'
 import type { Draft } from '../../types'
 import { createPanel } from '../src/controller'
 import type { PanelSource } from '../src/controller'

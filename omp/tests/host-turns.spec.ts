@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { NO_HOLDS } from '../../hooks/timing'
+import { NO_HOLDS } from '../../core/view/timing'
 import { createInbox } from '../src/host'
 import { stopOf } from '../src/omp-messages'
 import { reportedLabels, reportedTokens } from '../../tests/session-script'

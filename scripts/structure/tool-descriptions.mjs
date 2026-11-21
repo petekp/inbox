@@ -11,8 +11,8 @@ const esbuild = require('esbuild')
  * (omp/src/host.ts), which imports omp's packages, so its list is built here from the same call.
  */
 const ENTRY = `
-import { agentTools } from './hooks/tools'
-import { CLAUDE_CODE, guidedCloseDescription, MAX_TOOL_DESCRIPTION } from './hooks/model-text'
+import { agentTools } from './core/runtime/tools'
+import { CLAUDE_CODE, guidedCloseDescription, MAX_TOOL_DESCRIPTION } from './core/domain/model-text'
 import { TOOLS } from './codex/src/server-tools'
 import { OMP } from './omp/src/texts'
 
@@ -51,6 +51,6 @@ export async function checkToolDescriptions(root, errors) {
     for (const { name, description } of tools)
       if (description.length > limit)
         errors.push(
-          `${host}'s ${name} tool description is ${description.length} characters, over the ${limit} Claude Code passes to the model (MAX_TOOL_DESCRIPTION in hooks/model-text.ts). Shorten it, and run ./scripts/eval.sh --suite agent.`,
+          `${host}'s ${name} tool description is ${description.length} characters, over the ${limit} Claude Code passes to the model (MAX_TOOL_DESCRIPTION in core/domain/model-text.ts). Shorten it, and run ./scripts/eval.sh --suite agent.`,
         )
 }

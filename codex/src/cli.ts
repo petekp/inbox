@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 
-import type { Run } from '../../hooks/gh'
+import type { Run } from '../../core/domain/gh'
 
 /**
  * The codex binary the environment names, or null. The ChatGPT app sets `CODEX_APP_RUNTIME_CLI_PATH` on the

@@ -10,9 +10,9 @@ const DIFFERENCE_TABLES = { 'claude-code': 'main', codex: 'main', omp: 'omp' }
 const HOST_KINDS = ['full', 'different', 'unsupported']
 const LOOK_KINDS = [...HOST_KINDS, 'host']
 
-const RECORD_ENTRY = 'hooks/clients.ts'
+const RECORD_ENTRY = 'core/domain/clients.ts'
 
-/** The record's files: `hooks/clients.ts` and every local file it imports, followed through their own imports. */
+/** The record's files: `core/domain/clients.ts` and every local file it imports, followed through their own imports. */
 function recordFiles(root) {
   const files = []
   const queue = [RECORD_ENTRY]
@@ -69,7 +69,9 @@ function parityRecord(root) {
       const named = ts.isIdentifier(client.initializer) ? declared.get(client.initializer.text) : null
       const table = named ? named.initializer : client.initializer
       if (!table)
-        throw new Error(`hooks/clients.ts gives client '${nameOf(client.name)}' a table that no record file declares.`)
+        throw new Error(
+          `core/domain/clients.ts gives client '${nameOf(client.name)}' a table that no record file declares.`,
+        )
       const support = new Map()
       for (const entry of propertiesOf(propertyOf(table, 'support') ?? table)) {
         const kind = propertyOf(entry.initializer, 'kind')
@@ -119,11 +121,11 @@ function differenceRows(root, table, looks) {
 
 export function checkClients(root, errors) {
   const record = parityRecord(root)
-  if (!record) return void errors.push('hooks/clients.ts is missing.')
+  if (!record) return void errors.push('core/domain/clients.ts is missing.')
   const known = new Set(record.features)
   for (const id of record.features)
     if (!FEATURE_ID.test(id))
-      errors.push(`hooks/client-features.ts has feature id '${id}'. Use lowercase words joined by hyphens.`)
+      errors.push(`core/domain/client-features.ts has feature id '${id}'. Use lowercase words joined by hyphens.`)
   const tables = tableParts(record.looks)
   const named = {}
   for (const table of Object.keys(tables)) {
@@ -132,7 +134,7 @@ export function checkClients(root, errors) {
     for (const { id, part } of rows)
       if (!known.has(id))
         errors.push(
-          `${part} names '${id}' in a Differences on purpose row, and hooks/client-features.ts has no such feature.`,
+          `${part} names '${id}' in a Differences on purpose row, and core/domain/client-features.ts has no such feature.`,
         )
   }
   for (const [client, support] of record.clients) {

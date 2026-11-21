@@ -4,7 +4,7 @@ import { test } from './test-with-timeout'
 import type { Engine } from 'claude-code/testing'
 import { w, world } from './hooks-world'
 import { PANE, replyField, replyKey } from './hooks-helpers'
-import { NO_GOAL_TEXT } from '../hooks/status-goal-page'
+import { NO_GOAL_TEXT } from '../core/view/status-goal-page'
 
 const INFERRING = [
   'HEAD: Pilot | Shipping the pilot',

@@ -4,7 +4,7 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 
 ## What a host supplies
 
-`SessionHost` in `hooks/session-host.ts` is everything a host provides to run one session. Each shared function takes only the members it uses.
+`SessionHost` in `core/runtime/session-host.ts` is everything a host provides to run one session. Each shared function takes only the members it uses.
 
 | Member | What the host does |
 | --- | --- |
@@ -12,8 +12,8 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 | `read`, `update` | Read the session, and change it under a lock. An external effect, such as a delivery, runs outside the change. |
 | `exclusive` | Runs the per-reply update unless another run holds the session. |
 | `catchUp` | Optional, on the update host. Has the inbox model read the whole conversation and returns its ledger answer and the Status call to make, the conversation it reads and the `ask` that sends it, which `runUpdates` runs once the catch-up has applied, or says the conversation is unreadable. Without it, a host only runs the pending exchanges. The mod forks the conversation, and Codex and omp pass their conversation text to `askOverConversation`. |
-| `ask` | Calls the inbox model with a prompt, the system text for it and the `CallKind` that names the call, and returns null when it fails. It tells its optional `report` the model it asked for, the model that answered when the host knows, and why a call gave no answer: its `error`, its `cause`, and for a call run as a process, the `process`. `hooks/call-record.ts:withCall` saves a call with no usable answer in its call's record in `callFailures`, and `withAnswer` saves each call's latest answer text in `lastAnswers`, skipping a Status call that is no longer current. `runUpdates` calls it twice for a reply, one after the other: the ledger call with `systemText` and `buildPrompt`, whose update applies at once, then the Status call with the system text `hostStatusSystem` picks for the host and `statusPrompt`, whose answer `hooks/session-status.ts:appliedStatus` writes to the ledger. |
-| `inOrder` | Required on the update host. Runs a Status call after the earlier ones for the session have finished, so each reads the Status the one before wrote. The mod and omp chain them in process. Codex chains calls in process, then takes a `.results` file lock, which waits up to 8 minutes. The lock does not queue across processes, so Status calls waiting in two update processes can run in either order. That needs a second update process to start while the first still waits on its Status calls. `isStatusCallCurrent` in `hooks/session-status.ts` keeps the newer one: a Status call made for fewer applied turns than the call that last wrote, or failed, writes nothing. No ledger call and no lock waits on it. |
+| `ask` | Calls the inbox model with a prompt, the system text for it and the `CallKind` that names the call, and returns null when it fails. It tells its optional `report` the model it asked for, the model that answered when the host knows, and why a call gave no answer: its `error`, its `cause`, and for a call run as a process, the `process`. `core/runtime/call-record.ts:withCall` saves a call with no usable answer in its call's record in `callFailures`, and `withAnswer` saves each call's latest answer text in `lastAnswers`, skipping a Status call that is no longer current. `runUpdates` calls it twice for a reply, one after the other: the ledger call with `systemText` and `buildPrompt`, whose update applies at once, then the Status call with the system text `hostStatusSystem` picks for the host and `statusPrompt`, whose answer `core/runtime/session-status.ts:appliedStatus` writes to the ledger. |
+| `inOrder` | Required on the update host. Runs a Status call after the earlier ones for the session have finished, so each reads the Status the one before wrote. The mod and omp chain them in process. Codex chains calls in process, then takes a `.results` file lock, which waits up to 8 minutes. The lock does not queue across processes, so Status calls waiting in two update processes can run in either order. That needs a second update process to start while the first still waits on its Status calls. `isStatusCallCurrent` in `core/runtime/session-status.ts` keeps the newer one: a Status call made for fewer applied turns than the call that last wrote, or failed, writes nothing. No ledger call and no lock waits on it. |
 | `background` | Optional, on the update host. Keeps Status calls running after `runUpdates` returns, so the next ledger update starts at once. The mod and omp pass it. Codex omits it, so its detached update process stays until the calls end. |
 | `records` | Optional, on the update host. Where a next build keeps its Status call records: the host, the folder, the session, and the file calls that write, list and remove them. A release build passes none. |
 | `deliver` | Sends a message to the agent as if the person typed it. |
@@ -26,7 +26,7 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 | `answerMessage` | Optional. Builds the message an answer press sends when the agent reads answers in its own form. Codex sets it for a question linked to an open dialog. |
 | `comparePage` | The absolute path of the host's copy of the comparison page template, which the Compare message names. |
 
-A host reports a running turn by calling `hooks/session-turns.ts:turnStarted` and `turnEnded`, which set `presence.isTurnRunning`. A running turn holds a Done message back and moves a working subject's mark on the Status.
+A host reports a running turn by calling `core/runtime/session-turns.ts:turnStarted` and `turnEnded`, which set `presence.isTurnRunning`. A running turn holds a Done message back and moves a working subject's mark on the Status.
 
 The host's state type extends `Session` from `types/index.d.ts`. It adds its own fields, and upgrades a state saved by an earlier build, as `omp/src/state.ts:upgraded` does.
 
@@ -34,19 +34,19 @@ The host's state type extends `Session` from `types/index.d.ts`. It adds its own
 
 | Event | Shared function |
 | --- | --- |
-| Session start or resume | `hooks/session-turns.ts:startContext` gives the guidance and carried items. `hooks/session-turns.ts:cleared` empties a session after a clear. A session with turns the inbox never recorded (`hooks/session-status.ts:isUnseen`) is marked `behind`, and its first update catches up. |
-| A prompt reaches the agent | `hooks/session-turns.ts:notePrompt` records it, matches a press's message, and returns the notes to add beside the prompt. |
-| The person sends a message they typed | `hooks/session-turns.ts:messageTyped` saves its time, and the rows that settled before it fold. A host never calls it for a message a press sent. |
-| The agent uses a tool | `hooks/catch-up-text.ts:toolActivity` and `hooks/session-turns.ts:noteActivity` add a line of turn activity. |
-| The agent calls `record` or `close` | `hooks/session-presses.ts:recorded`, with the answer from `hooks/tools.ts`: the text the agent reads, and the person's line, which the host draws under the call. |
-| A turn ends | `hooks/session-turns.ts:endTurn` queues the exchange. Then `hooks/session-host.ts:runUpdates` runs the inbox model on it, or catches up when `needsCatchUp` says the ledger may have missed a turn, and `hooks/host-press.ts:wakeAfterSettle` sends the answers and Fixes held for Undo and tells the agent about rows closed with Done. |
-| The person presses a button | `hooks/host-press.ts:press` applies it, saves a sent record before delivery, delivers, and runs local effects. |
-| The PRs tab opens | `hooks/host-prs.ts:fetchPrs` fetches through the host's gh. |
-| A look draws | `hooks/session-view.ts:sessionView` builds the view. |
+| Session start or resume | `core/runtime/session-turns.ts:startContext` gives the guidance and carried items. `core/runtime/session-turns.ts:cleared` empties a session after a clear. A session with turns the inbox never recorded (`core/runtime/session-status.ts:isUnseen`) is marked `behind`, and its first update catches up. |
+| A prompt reaches the agent | `core/runtime/session-turns.ts:notePrompt` records it, matches a press's message, and returns the notes to add beside the prompt. |
+| The person sends a message they typed | `core/runtime/session-turns.ts:messageTyped` saves its time, and the rows that settled before it fold. A host never calls it for a message a press sent. |
+| The agent uses a tool | `core/domain/catch-up-text.ts:toolActivity` and `core/runtime/session-turns.ts:noteActivity` add a line of turn activity. |
+| The agent calls `record` or `close` | `core/runtime/session-presses.ts:recorded`, with the answer from `core/runtime/tools.ts`: the text the agent reads, and the person's line, which the host draws under the call. |
+| A turn ends | `core/runtime/session-turns.ts:endTurn` queues the exchange. Then `core/runtime/session-host.ts:runUpdates` runs the inbox model on it, or catches up when `needsCatchUp` says the ledger may have missed a turn, and `core/runtime/host-press.ts:wakeAfterSettle` sends the answers and Fixes held for Undo and tells the agent about rows closed with Done. |
+| The person presses a button | `core/runtime/host-press.ts:press` applies it, saves a sent record before delivery, delivers, and runs local effects. |
+| The PRs tab opens | `core/runtime/host-prs.ts:fetchPrs` fetches through the host's gh. |
+| A look draws | `core/view/session-view.ts:sessionView` builds the view. |
 
 ## The Host names
 
-`Host` in `hooks/model-text.ts` names the agent, the surface the person sees, the band if there is one, where findings show, and the tools the agent calls, `recordTool` and `closeTool`. Its `intro` is the first paragraph of `guidanceText`. omp's is `omp/src/texts.ts:OMP`, and its tools are `record` and `close`. The Claude Code mod's are `mcp__inbox__record` and `mcp__inbox__close`, since an MCP server's name prefixes its tools.
+`Host` in `core/domain/model-text.ts` names the agent, the surface the person sees, the band if there is one, where findings show, and the tools the agent calls, `recordTool` and `closeTool`. Its `intro` is the first paragraph of `guidanceText`. omp's is `omp/src/texts.ts:OMP`, and its tools are `record` and `close`. The Claude Code mod's are `mcp__inbox__record` and `mcp__inbox__close`, since an MCP server's name prefixes its tools.
 
 ## Files to add
 
@@ -63,10 +63,10 @@ The host's state type extends `Session` from `types/index.d.ts`. It adds its own
 
 ## Where else to register a host
 
-1. `Look` in `hooks/rows.ts` gains the new value. Name the places that branch on it, as `isTerminalLike` does for the terminal's handles.
+1. `Look` in `core/view/rows.ts` gains the new value. Name the places that branch on it, as `isTerminalLike` does for the terminal's handles.
 2. `scripts/check-structure.mjs` checks the host's imports. omp's rule is that its files import only shared modules, and that one file imports the agent's packages.
 3. `scripts/check.sh` runs the host's bundle check, type check and tests.
 4. `evals/agent.ts` gains the agent, with a stand-in for the inbox that uses the real tool descriptions, as `evals/omp-probe.ts` does for omp. `scripts/eval.sh` passes it through.
 5. The tests run `tests/session-script.ts` against the host's `SessionHost`, as `omp/tests/session.spec.ts` does. The script drives a prompt, a `record` call, a turn end, the inbox model's answer, a press that sends, its arrival, Done and Undo. It calls the shared functions directly, so the host's event wiring needs its own tests.
-6. `ClientId` in `hooks/client-features.ts` gains the host, and `CLIENTS` in `hooks/clients.ts` gains its table, `hooks/clients-<host>.ts`. Classify every `FeatureId` for it as `full`, `different` or `unsupported`, check each against the host's code, and give each `different` or `unsupported` entry a reason that is a real host limit or a product decision. Add the host to `DIFFERENCE_TABLES` in `scripts/structure/clients.mjs`, with a table in "Differences on purpose" in [the look map](looks.md) that has a row for each of those features. A look that draws a session a host publishes, and runs no host of its own, goes in `PUBLISHED_LOOKS` instead, as the Herdr look does. See "Differences on purpose" in the look map.
+6. `ClientId` in `core/domain/client-features.ts` gains the host, and `CLIENTS` in `core/domain/clients.ts` gains its table, `core/domain/clients-<host>.ts`. Classify every `FeatureId` for it as `full`, `different` or `unsupported`, check each against the host's code, and give each `different` or `unsupported` entry a reason that is a real host limit or a product decision. Add the host to `DIFFERENCE_TABLES` in `scripts/structure/clients.mjs`, with a table in "Differences on purpose" in [the look map](looks.md) that has a row for each of those features. A look that draws a session a host publishes, and runs no host of its own, goes in `PUBLISHED_LOOKS` instead, as the Herdr look does. See "Differences on purpose" in the look map.
 7. The docs rows: the look map's Files table, owners table, Differences on purpose and "After you change X"; `GLOSSARY.md`; `AGENTS.md`; the README's install steps; and `docs/release.md` for the version field and the build.

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { after } from 'node:test'
 import { Window } from 'happy-dom'
-import { EMPTY } from '../../hooks/ledger'
+import { EMPTY } from '../../core/domain/ledger'
 import type { Ledger } from '../../types'
-import { inboxView } from '../../hooks/view'
+import { inboxView } from '../../core/view/view'
 
 export const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })

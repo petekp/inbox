@@ -1,4 +1,4 @@
-// Writes types/parts/tool-inputs.d.ts from the schemas of the agent's tools in hooks/tools.ts, so that
+// Writes types/parts/tool-inputs.d.ts from the schemas of the agent's tools in core/runtime/tools.ts, so that
 // `e.tool === 'mcp__inbox__record'` narrows to the arguments the tool takes. Claude Code also writes these inputs, in
 // .claude-plugin/types/claude-code-mcp/, but from whatever MCP tools the session that last loaded the mod had
 // connected, so tsconfig.json leaves that folder out.
@@ -6,7 +6,7 @@
 // Usage: node scripts/build-tool-inputs.mjs [--check]
 //
 // With --check, writes nothing and exits 1 when the part differs from what the schemas build. Needs the esbuild that
-// the root package.json pins, to load hooks/tools.ts.
+// the root package.json pins, to load core/runtime/tools.ts.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -18,7 +18,8 @@ const { build } = await import('esbuild')
 
 const bundle = await build({
   stdin: {
-    contents: "export { agentTools } from './hooks/tools'\nexport { CLAUDE_CODE } from './hooks/model-text'\n",
+    contents:
+      "export { agentTools } from './core/runtime/tools'\nexport { CLAUDE_CODE } from './core/domain/model-text'\n",
     resolveDir: ROOT,
     loader: 'ts',
   },
@@ -53,13 +54,13 @@ const serverPrefix = CLAUDE_CODE.recordTool.replace(/record$/, '')
 const entries = agentTools(CLAUDE_CODE).map(
   tool => `    ${serverPrefix}${tool.name}: ${inputType(tool.inputSchema, tool.name)}`,
 )
-const part = `// Built by scripts/build-tool-inputs.mjs from the schemas in hooks/tools.ts. Edit a schema, then run it and
+const part = `// Built by scripts/build-tool-inputs.mjs from the schemas in core/runtime/tools.ts. Edit a schema, then run it and
 // scripts/build-types.mjs.
 
 export {}
 
 declare module 'claude-code' {
-  /** The arguments of the agent's tools, as their schemas in \`hooks/tools.ts\` give them. */
+  /** The arguments of the agent's tools, as their schemas in \`core/runtime/tools.ts\` give them. */
   interface McpToolInputs {
 ${entries.join('\n')}
   }
@@ -69,7 +70,7 @@ ${entries.join('\n')}
 if (process.argv.includes('--check')) {
   if (readFileSync(PART, 'utf8') !== part) {
     console.error(
-      'types/parts/tool-inputs.d.ts differs from the schemas in hooks/tools.ts. Run: node scripts/build-tool-inputs.mjs && node scripts/build-types.mjs',
+      'types/parts/tool-inputs.d.ts differs from the schemas in core/runtime/tools.ts. Run: node scripts/build-tool-inputs.mjs && node scripts/build-types.mjs',
     )
     process.exit(1)
   }

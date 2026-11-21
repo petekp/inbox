@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import * as withSegmenter from '../../hooks/text'
+import * as withSegmenter from '../../core/domain/text'
 
 const SAMPLES = [
   'Fix the login flow',
@@ -25,7 +25,7 @@ async function loadWithoutIntl(): Promise<typeof withSegmenter> {
   Reflect.deleteProperty(globalThis, 'Intl')
   try {
     // @ts-expect-error
-    return (await import('../../hooks/text.ts?without-intl')) as typeof withSegmenter
+    return (await import('../../core/domain/text.ts?without-intl')) as typeof withSegmenter
   } finally {
     globalThis.Intl = intl
   }

@@ -1,6 +1,6 @@
-import { titleSwapMs } from '../../hooks/row-motion'
-import { FRAME_MS } from '../../hooks/springs'
-import type { SpringState } from '../../hooks/springs'
+import { titleSwapMs } from '../../core/view/row-motion'
+import { FRAME_MS } from '../../core/view/springs'
+import type { SpringState } from '../../core/view/springs'
 import { fade, fadeShown, glide, glides, isRunning, springOf, stopFadeOut } from './tab-glide'
 
 /**

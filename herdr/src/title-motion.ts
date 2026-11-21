@@ -1,7 +1,7 @@
-import { LINE_PT } from '../../hooks/layout'
-import { titleSwapMs } from '../../hooks/row-motion'
-import { FRAME_MS, HEIGHT_SETTLE_MS, springStep } from '../../hooks/springs'
-import type { SpringState } from '../../hooks/springs'
+import { LINE_PT } from '../../core/view/layout'
+import { titleSwapMs } from '../../core/view/row-motion'
+import { FRAME_MS, HEIGHT_SETTLE_MS, springStep } from '../../core/view/springs'
+import type { SpringState } from '../../core/view/springs'
 
 /**
  * How a row's title moves between its one-line form, cut with an ellipsis, and its wrapped form, while it moves. Both

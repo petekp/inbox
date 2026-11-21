@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 
 import type { Stop } from '../../types'
-import { SETTLED_MS } from '../../hooks/timing'
-import { sessionView } from '../../hooks/session-view'
+import { SETTLED_MS } from '../../core/view/timing'
+import { sessionView } from '../../core/view/session-view'
 import { INITIAL_UI, bandLines, render } from '../src/panel'
 import type { PanelScreen } from '../src/panel'
 import { emptyState } from '../src/state'

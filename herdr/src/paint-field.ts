@@ -1,7 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { Input, v_flex } from 'gpui-base'
-import { ENTER_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import type { Field } from './blocks'
 import { BOX_RADIUS, BUTTON_H, INSET, SMALL_GAP } from './paint-theme'
 import type { Paint } from './paint-theme'

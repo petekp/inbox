@@ -1,7 +1,7 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { statusPrompt } from '../hooks/status-prompt'
+import { statusPrompt } from '../core/domain/status-prompt'
 import type { SessionStatus } from '../types'
 import { after, page } from './status-helpers'
 

@@ -1,4 +1,4 @@
-import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, enterDelayMs } from '../../hooks/row-motion'
+import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, enterDelayMs } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import { NEXT_FRAME_MS } from './block-glide'

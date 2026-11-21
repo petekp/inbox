@@ -1,8 +1,8 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
-import { upgradeStatus } from '../hooks/status-upgrade'
+import { EMPTY_SESSION_STATUS } from '../core/domain/status-limits'
+import { upgradeStatus } from '../core/domain/status-upgrade'
 import { after } from './status-helpers'
 
 test('a Status saved before subjects keeps its open work, dated at the last look, and its headline as the head', () => {

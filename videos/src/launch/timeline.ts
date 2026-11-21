@@ -1,8 +1,8 @@
 // The launch video's beats, from the shot list in docs/plans/launch-video.md: each beat's length, its caption,
 // and what the screen shows from which second.
 
-import { ROW_STATE_MS } from '../../../hooks/row-motion'
-import { SETTLED_MS } from '../../../hooks/timing'
+import { ROW_STATE_MS } from '../../../core/view/row-motion'
+import { SETTLED_MS } from '../../../core/view/timing'
 import type { RowLines } from '../shared/EndCard'
 import type { CameraMove, Point, Rect } from '../shared/geometry'
 import type { Segment } from '../shared/Footage'
@@ -315,7 +315,7 @@ const DEFAULT_LEAD = 0.1
 
 /**
  * drive.py clicks each app at these times. Done comes 0.9 s after the task opens, because an open row ignores
- * presses for PRESS_GUARD_MS in hooks/timing.ts. It also comes before the answered row leaves, at answer + SETTLE, so
+ * presses for PRESS_GUARD_MS in core/view/timing.ts. It also comes before the answered row leaves, at answer + SETTLE, so
  * the rows don't move under the click, and the finished task leaves before the end card starts.
  */
 function sideBySide(): SideBySideBeat {

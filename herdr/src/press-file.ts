@@ -1,7 +1,7 @@
-import { HERDR_FORMAT, pressFolder } from '../../hooks/herdr'
-import type { PrPress } from '../../hooks/pr-press'
-import type { RowPress } from '../../hooks/presses'
-import type { Holds } from '../../hooks/timing'
+import { HERDR_FORMAT, pressFolder } from '../../core/remote/herdr'
+import type { PrPress } from '../../core/view/pr-press'
+import type { RowPress } from '../../core/domain/presses'
+import type { Holds } from '../../core/view/timing'
 
 /** Where the look writes a press for the host that publishes the session. A host reads only names ending in `.json`. */
 export const pressPath = (appHome: string, sessionId: string, pressId: string) =>
@@ -17,7 +17,7 @@ export const newPressId = (now: number, random: number) =>
  */
 type LocalOutcome = { error: string | null }
 
-/** The text of a press file, in the format `hooks/herdr-press-file.ts:pressFile` reads. */
+/** The text of a press file, in the format `core/remote/herdr-press-file.ts:pressFile` reads. */
 export function pressFileText(
   id: string,
   pressedAt: number,

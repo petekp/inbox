@@ -1,7 +1,7 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { FRAME_MS, springFrames, springStep } from '../hooks/springs'
+import { FRAME_MS, springFrames, springStep } from '../core/view/springs'
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000
 

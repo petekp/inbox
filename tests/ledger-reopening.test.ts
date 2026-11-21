@@ -1,12 +1,19 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { CLAUDE_CODE } from '../hooks/model-text'
-import { EMPTY } from '../hooks/ledger'
-import { closeByAgent, closeFinding, closeItem, pruneClosed, reopenFinding, reopenItem } from '../hooks/ledger-close'
-import { addAgentItem, addFinding, applyUpdate } from '../hooks/ledger-update'
-import { parseReply } from '../hooks/reply-parse'
-import { recordClose } from '../hooks/tools'
+import { CLAUDE_CODE } from '../core/domain/model-text'
+import { EMPTY } from '../core/domain/ledger'
+import {
+  closeByAgent,
+  closeFinding,
+  closeItem,
+  pruneClosed,
+  reopenFinding,
+  reopenItem,
+} from '../core/domain/ledger-close'
+import { addAgentItem, addFinding, applyUpdate } from '../core/domain/ledger-update'
+import { parseReply } from '../core/domain/reply-parse'
+import { recordClose } from '../core/runtime/tools'
 import type { Item } from '../types'
 
 describe('reopening', () => {

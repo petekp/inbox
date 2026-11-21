@@ -64,7 +64,7 @@ Inference: the UI must not assume the inbox runs in every session on a machine.
 - Project and local `env` apply "after you trust the workspace, or at startup in `-p` mode". [SETR#when-claude-code-applies-env-values]
 - The list of variables project `env` cannot set "include[s]" `CLAUDE_CONFIG_DIR` and plugin cache variables. It does not name `CLAUDE_CODE_PLUGIN_DIRS`, and the list is not exhaustive. [SETR#variables-claude-code-ignores-in-env] Whether a repository can sideload a plugin folder this way is undocumented.
 - `CLAUDE_CONFIG_DIR`: "Set it in your shell, user settings, or managed settings. In a settings file, write the absolute path." [ENVV]
-- Inference: `HERDR_PANE_ID` (`hooks/mod-publish.ts:publishStatus`) and `GH_TOKEN` may differ in desktop sessions. The debug log shows which settings values were ignored.
+- Inference: `HERDR_PANE_ID` (`hooks/mod/mod-publish.ts:publishStatus`) and `GH_TOKEN` may differ in desktop sessions. The debug log shows which settings values were ignored.
 
 ### Environment variables that matter
 

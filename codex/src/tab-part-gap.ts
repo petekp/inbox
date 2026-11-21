@@ -1,5 +1,5 @@
-import { partPt } from '../../hooks/row-parts'
-import type { RowPart } from '../../hooks/row-parts'
+import { partPt } from '../../core/view/row-parts'
+import type { RowPart } from '../../core/view/row-parts'
 
 /**
  * The attributes of a part of an open row drawn `partGap` under the part `above`: its name, and that gap as its top

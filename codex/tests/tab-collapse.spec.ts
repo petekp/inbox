@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { Window } from 'happy-dom'
-import { PRESS_GUARD_MS } from '../../hooks/timing'
+import { PRESS_GUARD_MS } from '../../core/view/timing'
 import { updateState } from '../src/state'
 import { makeServer } from '../src/server'
 import { POLL_MS } from '../src/settle'

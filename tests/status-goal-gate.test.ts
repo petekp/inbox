@@ -1,12 +1,12 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { parseStatus } from '../hooks/status'
-import { setTypedGoal } from '../hooks/status-goal-ops'
-import { GOAL_LEFT_MS, namesOtherVersion } from '../hooks/status-limits'
-import { applyStatus } from '../hooks/status-ops'
-import { statusPrompt } from '../hooks/status-prompt'
-import { upgradeStatus } from '../hooks/status-upgrade'
+import { parseStatus } from '../core/domain/status'
+import { setTypedGoal } from '../core/domain/status-goal-ops'
+import { GOAL_LEFT_MS, namesOtherVersion } from '../core/domain/status-limits'
+import { applyStatus } from '../core/domain/status-ops'
+import { statusPrompt } from '../core/domain/status-prompt'
+import { upgradeStatus } from '../core/domain/status-upgrade'
 import type { SessionStatus } from '../types'
 import { after, NO_ASKS } from './status-helpers'
 

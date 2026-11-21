@@ -2,7 +2,7 @@
   "name": "inbox-codex",
   "private": true,
   "type": "module",
-  "description": "Builds the inbox Codex plugin in ./plugin from ./src and the mod's shared modules in ../hooks",
+  "description": "Builds the inbox Codex plugin in ./plugin from ./src and the shared modules in ../core",
   "scripts": {
     "build": "node build.mjs",
     "dev": "node build.mjs --dev",

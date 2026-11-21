@@ -1,6 +1,6 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { HERDR_CHECK_MS } from '../hooks/herdr'
+import { HERDR_CHECK_MS } from '../core/remote/herdr'
 import { w, world } from './hooks-world'
 import { PANE, childrenOf, notice } from './hooks-helpers'
 import { page, shape } from './status-helpers'

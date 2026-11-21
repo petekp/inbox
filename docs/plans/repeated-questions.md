@@ -57,17 +57,17 @@ A line on every question would be noise. In the measurement, every question had 
 
 A related answer is a repeat, a follow-up or a changed question, as labelled. A follow-up builds on an earlier answer. A changed question asks again because the earlier answer put it off or the situation moved. For those, the earlier answer is useful context even when it does not settle the question. The related share counts a labelled match anywhere in the candidates, not only the top one, so it is an upper bound.
 
-A raw floor assumes a full history. Raw BM25 scores grow with the history, so a fixed floor of 18 would show the line on fewer rows at first. The review of this plan found that a history started at build would show it on about 16% of rows, catching 40 repeats instead of 67. So the floor is relative: the top match's score divided by the best score the query could reach. That best score adds, for each of the query's terms the history holds, the term's weight times K1 + 1, which is what a match on that term alone can add. The build sets the floor, `RELATIVE_FLOOR` in `hooks/earlier-answers.ts`, at 0.22. On the measurement it shows the line on 28% of question rows with the full history and 31% with a history started on 11-07. Its top match is the labelled earlier answer for 45% of repeats with the full history, and 60% with the younger one. About 22% of the rows that show a line are repeats with their earlier answer on top.
+A raw floor assumes a full history. Raw BM25 scores grow with the history, so a fixed floor of 18 would show the line on fewer rows at first. The review of this plan found that a history started at build would show it on about 16% of rows, catching 40 repeats instead of 67. So the floor is relative: the top match's score divided by the best score the query could reach. That best score adds, for each of the query's terms the history holds, the term's weight times K1 + 1, which is what a match on that term alone can add. The build sets the floor, `RELATIVE_FLOOR` in `core/domain/earlier-answers.ts`, at 0.22. On the measurement it shows the line on 28% of question rows with the full history and 31% with a history started on 11-07. Its top match is the labelled earlier answer for 45% of repeats with the full history, and 60% with the younger one. About 22% of the rows that show a line are repeats with their earlier answer on top.
 
 Terms the history does not hold add nothing to the best score. So a question that shares one word with one earlier answer can reach the floor with that word alone. Counting each such term at the highest weight instead gives about the same repeats at the same share of rows. But the share of rows it shows moves more as the history grows.
 
 ## Where it runs
 
-The search runs once, when a question is added to the ledger, whatever added it: an agent's `record` call, the ledger call's update after a reply, or a press. Each host runs one shared step, `historyStep` in `hooks/history-store.ts`, on every session it is about to save, before it prunes the session. The step finds the questions the change added, ranks the history for each with `hooks/earlier-answers.ts`, and stores the top match on the item as `earlier`. When the change closed or reopened a question, it writes the session's history file. A change that does neither makes no file call. A failure leaves the session as it was changed, so the history never stops a save. The view never searches. It reads `earlier` from the item, so a row's line never changes under the person, and every look shows the same match.
+The search runs once, when a question is added to the ledger, whatever added it: an agent's `record` call, the ledger call's update after a reply, or a press. Each host runs one shared step, `historyStep` in `core/runtime/history-store.ts`, on every session it is about to save, before it prunes the session. The step finds the questions the change added, ranks the history for each with `core/domain/earlier-answers.ts`, and stores the top match on the item as `earlier`. When the change closed or reopened a question, it writes the session's history file. A change that does neither makes no file call. A failure leaves the session as it was changed, so the history never stops a save. The view never searches. It reads `earlier` from the item, so a row's line never changes under the person, and every look shows the same match.
 
 | Host | Runs the step in | Reads and writes the history with |
 | --- | --- | --- |
-| The mod, for the terminal and desktop looks | `changeSession` in `hooks/mod-session-write.ts`, through `withHistory` in `hooks/mod-history.ts`, and so `changeSaved` too | `$.fs.list`, `$.fs.read` and `$.fs.write` |
+| The mod, for the terminal and desktop looks | `changeSession` in `hooks/mod/mod-session-write.ts`, through `withHistory` in `hooks/mod/mod-history.ts`, and so `changeSaved` too | `$.fs.list`, `$.fs.read` and `$.fs.write` |
 | Codex | `updateState` in `codex/src/state.ts`, under the session lock, in its hook, update and MCP server processes | `node:fs`, from `codex/src/question-history.ts` |
 | omp | `updateState` in `omp/src/state.ts` | `node:fs`, from `omp/src/question-history.ts` |
 
@@ -77,22 +77,22 @@ An entry point turns the history on. Codex's are `hook-main.ts`, `update-main.ts
 
 ## Each look
 
-`hooks/view.ts` adds the line to `RowView`, on open rows only, as it does `contextLine`. Each look draws the line where it draws an open question's context today, in its ask tree.
+`core/view/view.ts` adds the line to `RowView`, on open rows only, as it does `contextLine`. Each look draws the line where it draws an open question's context today, in its ask tree.
 
 | Look | Draws the line in |
 | --- | --- |
-| Terminal and desktop | `hooks/pane-ask-tree.tsx` |
+| Terminal and desktop | `hooks/pane/pane-ask-tree.tsx` |
 | Codex tab | `codex/src/tab-ask-tree.tsx` |
 | omp panel | `omp/src/panel-ask-tree.ts` |
 | Herdr | `herdr/src/draw.ts`, from the rows a host publishes |
 
-The feature has the `FeatureId` `earlier-answers` in `hooks/clients.ts`, marked `full` for `claude-code`, `codex` and `omp`. The `FeatureId` union moved to `hooks/client-features.ts` to keep `hooks/clients.ts` under its limit. Herdr draws the line in one muted tone, since gpui-kit has no inline text span to draw the answer bold. The demo in `hooks/demo.ts` gets a question with an earlier answer, so each look's demo shows the line.
+The feature has the `FeatureId` `earlier-answers` in `core/domain/clients.ts`, marked `full` for `claude-code`, `codex` and `omp`. The `FeatureId` union moved to `core/domain/client-features.ts` to keep `core/domain/clients.ts` under its limit. Herdr draws the line in one muted tone, since gpui-kit has no inline text span to draw the answer bold. The demo in `core/view/demo.ts` gets a question with an earlier answer, so each look's demo shows the line.
 
 ## What it searches
 
 ### The question history
 
-Today no store reaches far enough. Each session keeps its 12 newest closed items (`MAX_CLOSED` in `hooks/ledger-close.ts`). Each host keeps its 40 newest sessions (`KEPT_SESSIONS` in `hooks/ledger.ts`). The three hosts keep their stores in three places, and the mod's store is the engine's own file.
+Today no store reaches far enough. Each session keeps its 12 newest closed items (`MAX_CLOSED` in `core/domain/ledger-close.ts`). Each host keeps its 40 newest sessions (`KEPT_SESSIONS` in `core/domain/ledger.ts`). The three hosts keep their stores in three places, and the mod's store is the engine's own file.
 
 So the plan adds one folder all three hosts share, `$XDG_STATE_HOME/inbox/questions/`, defaulting to `~/.local/state/inbox/questions/`. It holds one file per session, named by host and session id. Only that session's host writes it, so the files need no lock. The mod can write whole files but not append, and one file per session needs neither.
 
@@ -104,7 +104,7 @@ Only answers the person gave count as earlier answers. Today's closes do not mar
 - A typed reply leaves the item open. The inbox model closes it later with `how: 'update'`, and its outcome holds the answer. An update close can also mean the question no longer applies.
 - An agent's `close` with an answer is also stored as `answered`. The guidance tells agents to pass the person's answer, but a coordinator may pass its own decision.
 
-So the history keeps answered and update closes, and stores each one's `how`, with a mark when the close followed a typed reply. The ledger prompt has the inbox model write a close that is not an answer as "done: …" or "no longer applies: …", so update closes in those forms are left out, as the measurement's extract left them out. So are the other overtaken forms `hooks/ledger-close.ts` knows, "replaced", "superseded" and "moot", and "fix sent for …", which closes a question when the person presses Fix on the finding it asked about. Done, dismissed, expired and agent closes with a reason are left out too. The measurement did not record `how`, so how much this set differs from the measured answers is unknown. "What shows it works" splits its counts by `how`, so a later change can drop a kind that misleads.
+So the history keeps answered and update closes, and stores each one's `how`, with a mark when the close followed a typed reply. The ledger prompt has the inbox model write a close that is not an answer as "done: …" or "no longer applies: …", so update closes in those forms are left out, as the measurement's extract left them out. So are the other overtaken forms `core/domain/ledger-close.ts` knows, "replaced", "superseded" and "moot", and "fix sent for …", which closes a question when the person presses Fix on the finding it asked about. Done, dismissed, expired and agent closes with a reason are left out too. The measurement did not record `how`, so how much this set differs from the measured answers is unknown. "What shows it works" splits its counts by `how`, so a later change can drop a kind that misleads.
 
 A shared function, `questionHistory(previous, session)`, merges the ledger's closed questions into the session's file. Each host calls it whenever a save changes the ledger's closed list, and drops an answer whose question was reopened. Codex writes session state from both its MCP server and its update process, so it writes the history under the same session lock. On its first step in a process, a host that has no files in the folder yet seeds it from the sessions it already keeps, so the history starts with up to 12 answers from each of 40 sessions.
 
@@ -122,7 +122,7 @@ The owner decided that earlier answers may cross sessions, projects and hosts. T
 
 The search is BM25 over each earlier question's ask and answer, as measured. The query is the new question's ask and options. Each earlier answer counts once. An answer to the same item never counts.
 
-`restates`, `matchOpen` and `repeatsSettled` in `hooks/ask-match.ts` stay as they are. Within a session, they still merge or refuse a repeat before the search runs.
+`restates`, `matchOpen` and `repeatsSettled` in `core/domain/ask-match.ts` stay as they are. Within a session, they still merge or refuse a repeat before the search runs.
 
 ## Cost
 

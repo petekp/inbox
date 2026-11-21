@@ -11,7 +11,7 @@ claude --plugin-dir /path/to/inbox
 
 The session reloads the mod when you change one of its files.
 
-The Codex plugin shares the rules in `hooks/` with the mod. To try a change
+The Codex plugin shares the rules in `core/` with the mod. To try a change
 to either in Codex, rebuild its bundles:
 
 ```sh
@@ -21,7 +21,7 @@ npm --prefix codex run build
 
 [codex/README.md](../codex/README.md) covers trying a build in Codex.
 
-The omp extension in `omp/` shares the rules in `hooks/` too. It runs on Bun,
+The omp extension in `omp/` shares the rules in `core/` too. It runs on Bun,
 and omp installs it from a bundle, so to try a change to `omp/src` or the
 shared modules in omp, rebuild the bundle:
 

@@ -52,8 +52,7 @@ includes, plus its own prompt. The earlier single call came to about 16,000.
 ## Working on it
 
 The source is in `src/`, and the plugin Codex installs is `plugin/`. The
-plugin shares the modules `docs/looks.md` lists as shared with the Claude Code
-mod in `../hooks`, and esbuild bundles them into `plugin/dist`. The bundles
+plugin shares the modules in `../core` with the Claude Code mod, and esbuild bundles them into `plugin/dist`. The bundles
 are committed, since an install copies the folder and runs no build.
 
 ```sh

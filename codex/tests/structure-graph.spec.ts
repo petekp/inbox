@@ -19,13 +19,16 @@ test('the structure gate rejects value imports that form a cycle', t => {
 
 function writeToolLists(f: Fixture, lengths: { claudeClose: number; codexView: number }) {
   f.write(
-    'hooks/model-text.ts',
+    'core/domain/model-text.ts',
     `export const CLAUDE_CODE = { guidance: 'g'.repeat(${lengths.claudeClose - 5}) }
 export const MAX_TOOL_DESCRIPTION = 4096
 export const guidedCloseDescription = (host: { guidance?: string }, description: string) => description + (host.guidance ?? '')
 `,
   )
-  f.write('hooks/tools.ts', "export const agentTools = (host: object) => [{ name: 'close', description: 'close' }]\n")
+  f.write(
+    'core/runtime/tools.ts',
+    "export const agentTools = (host: object) => [{ name: 'close', description: 'close' }]\n",
+  )
   f.write(
     'codex/src/server-tools.ts',
     `export const TOOLS = [{ name: 'inbox_view', description: 'v'.repeat(${lengths.codexView}) }]\n`,
@@ -75,12 +78,17 @@ export const b = (value: A, same: Same) => [value, same, later]
 
 test('the structure gate rejects a look-map event the named file does not subscribe to', t => {
   const f = fixture(t)
-  f.write('hooks/view.ts', "export const wire = (on: (event: string) => void) => on('turn.end')\n")
-  f.write('docs/looks/owners-events.md', "`hooks/view.ts:on('turn.end')` and `hooks/view.ts:on('turn.start')`\n")
+  f.write('core/view/view.ts', "export const wire = (on: (event: string) => void) => on('turn.end')\n")
+  f.write(
+    'docs/looks/owners-events.md',
+    "`core/view/view.ts:on('turn.end')` and `core/view/view.ts:on('turn.start')`\n",
+  )
   const result = f.check()
   assert.equal(result.status, 1, result.stdout + result.stderr)
   assert.ok(
-    result.stdout.includes("hooks/view.ts:on('turn.start'), and hooks/view.ts subscribes to no 'turn.start' event"),
+    result.stdout.includes(
+      "core/view/view.ts:on('turn.start'), and core/view/view.ts subscribes to no 'turn.start' event",
+    ),
     result.stdout + result.stderr,
   )
   assert.ok(!result.stdout.includes("'turn.end' event"), result.stdout + result.stderr)

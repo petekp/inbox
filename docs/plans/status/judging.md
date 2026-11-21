@@ -35,7 +35,7 @@ Decision 16 sets the method. The evals run at each release, and after a change t
 
 - **A case comes from a real failure,** or from a behavior a new design sets out to give. The sources are the failures seen in real sessions, what the person hits in use, and the record of Status calls.
 - **A case from a real failure joins when it reproduces its failure.** It must fail on the prompt before the fix, at the step and property it targets. A step that does not reproduce its failure stays as a check, marked as not reproduced. A failure owned by code joins as a known failing case.
-- **A step that tests a new design joins when an ablation shows it can fail.** It runs against a copy of the system text without the rule it targets, which `--without` builds from the named parts in `hooks/status-prompt-goal.ts`. It joins when that copy fails its target in at least 3 of 5 runs.
+- **A step that tests a new design joins when an ablation shows it can fail.** It runs against a copy of the system text without the rule it targets, which `--without` builds from the named parts in `core/domain/status-prompt-goal.ts`. It joins when that copy fails its target in at least 3 of 5 runs.
 - **A failure counts only when the property it targets fails.** An answer that is unreadable, or that breaks another property, is reported but does not count as reproducing the failure.
 
 ### The case format
@@ -133,4 +133,4 @@ These make no model calls.
 | The judge's check on both page sets, 24 pages | 0 | 0 | 24 |
 | **Total** | **232** | **54** | **82** |
 
-An answer with no operation is asked once more. So is an answer that leaves a subject in `<idle>` with no line, or leaves no goal running and none suggested with no GOAL or SUGGEST line, as `hooks/status-retry.ts` asks. A call that fails outside the model is tried again. The table lists the cases the suite started with. [The Status replays](../../status-replays.md) lists them all. With all of them, one model's run plans 248 Status calls before re-asks and retries. Each model stops a quarter past the planned calls of the replays a run selects, or 10 past them when that is more, 310 for all of them, so one `--agent both` run grades both models. `STATUS_CALLS_MAX` in `evals/status-run.ts` sets it.
+An answer with no operation is asked once more. So is an answer that leaves a subject in `<idle>` with no line, or leaves no goal running and none suggested with no GOAL or SUGGEST line, as `core/domain/status-retry.ts` asks. A call that fails outside the model is tried again. The table lists the cases the suite started with. [The Status replays](../../status-replays.md) lists them all. With all of them, one model's run plans 248 Status calls before re-asks and retries. Each model stops a quarter past the planned calls of the replays a run selects, or 10 past them when that is more, 310 for all of them, so one `--agent both` run grades both models. `STATUS_CALLS_MAX` in `evals/status-run.ts` sets it.

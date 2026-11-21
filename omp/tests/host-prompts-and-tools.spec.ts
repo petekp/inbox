@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { guidanceText } from '../../hooks/model-text'
+import { guidanceText } from '../../core/domain/model-text'
 import { createInbox } from '../src/host'
 import { OMP } from '../src/texts'
 import { call, deps, endWorld, makeCtx, pi, prompt, record, startWorld, state, w } from './host-harness'
