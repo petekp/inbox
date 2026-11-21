@@ -86,236 +86,314 @@
     "claude unrelated-progress-keeps-questions": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "141f6a10e0f239553f65c378a2c40a802f01d165355d45300a72d9253149ea04",
+      "read": "9866c57eeadb98fb92e2305bdd245a7fcff24519ed3580dab62ca7346dd04bcc",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude dismissed-question-stays-closed": {
-      "passed": 17,
+      "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "f9aaae8054531dcdb90c3f970694c9fcbe52487a8ef903f5c248d4f86743d71a",
+      "read": "88a5357c573470f97c875e8ff0b03af3946e0a62068a5ac659d1b5377a224f40",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude old-dismissed-question-stays-closed": {
-      "passed": 14,
+      "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "c5ae78328ec2aa68795be40d63c53c9f101837cf558b7aa4de15b1ee409ffca2",
+      "read": "6ab54e551c468d559f4713d35472fdaf4751706a45c26cdbf43cee872497f8cd",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude device-command-is-terminal": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "3a1af68f5ad3274c242804f1e3c4a713ee810950ccdec2f61fa1f2446597abf1",
+      "read": "80762da8dc83de7c336b76f6d4a6539bdea2996c486b6325d887c4350cac01db",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude task-about-finding-replaces-it": {
-      "passed": 16,
+      "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "12700e2b3a45f9e9802037ad2ea5ea83216df93bcfa4a61fbbf9edb61d9c945e",
+      "read": "eb77c1498a28fa19e7932530efae35fe5e932b611b6f4f76e19e27bf3180be0d",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude done-message-blocked-task": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "057aa66ae70396e8ee4914a6c6206673a5e90ba632b2c14a6245a6b7e922da3d",
+      "read": "1edce1cc972b6f803dfad9f89186fa7659667d40869fbc20c56824f0e84abaee",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude done-message-independent-task": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "7bc5c3964219204e698c16d084588fd19e4cecb1c6a0f15af59c1ac5062929f9",
+      "read": "da59d7acac54a342281518277a71510423e748090bcf7e6fa4ad65497b96ebe1",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude dialog-dismissed-question-waits": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "afb95f3f29a662b8baf670f504f6e64c9828dbff5099204e140ca4b1229674b7",
+      "read": "1ce53b4d712eda41c0fe26de982608bc98073f63e4f47b7139004fc5eb1909ea",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude dialog-escaped-no-reply": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "3b7a1db069644c1701027bf95a00b3ff0efe3bcd9c840df04f9e186367036188",
+      "read": "0d111fa303c2c897bc2f78d5e95c07af9b10a8099e9b3a648c2d25f9ceda3423",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude dialog-about-finding-escaped": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "1dda9758a7b7b1774667391b392f065d72d2dcb91b0916acde6ba795dc8cfffd",
+      "read": "e2558627cf3b553feca2f29be7796da206489a87b5235c2ef373b6cb5e36de13",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude codex-open-dialog-is-question": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "f93a8543298d85cc20260081431d71105be991f77ab2876ddfcb4dd3107bb5a8",
+      "read": "756d49f949b02351989336438c58735daf32a0ed8289796e37b6cc99a885781c",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "claude answered-question-follow-up-added": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "562423e2b0260f3458285d9c8f0bb5aec7148d97e7340e495a6076298b130bbb",
+      "read": "69787ca7f993dec2a886183c72f54eb75d77da587247f38944b4468f15ff1e6a",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "codex unrelated-progress-keeps-questions": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "141f6a10e0f239553f65c378a2c40a802f01d165355d45300a72d9253149ea04",
+      "read": "0a756b2823907430faa5c3b4c88709b30a869f345caa5fcf8aae412aa33b57e4",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex dismissed-question-stays-closed": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "f9aaae8054531dcdb90c3f970694c9fcbe52487a8ef903f5c248d4f86743d71a",
+      "read": "8c22f49d301518f45d43b32566a43675b0cfd7cf063c37b6ead93293bd2310d3",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex old-dismissed-question-stays-closed": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "c5ae78328ec2aa68795be40d63c53c9f101837cf558b7aa4de15b1ee409ffca2",
+      "read": "c78b41efecbf877e7e6b92de64d80861cd12b50149f4f1b8593e58ffab314cf6",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex device-command-is-terminal": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "3a1af68f5ad3274c242804f1e3c4a713ee810950ccdec2f61fa1f2446597abf1",
+      "read": "bdccebb0526764f3a3e00cc6b98727c66bd07d136cf7e972f7e32de018d077ec",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex task-about-finding-replaces-it": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "12700e2b3a45f9e9802037ad2ea5ea83216df93bcfa4a61fbbf9edb61d9c945e",
+      "read": "07382eaf936d2973f10a1dcf53fce28aa784fd9f7d0f5bb751412fd6fcc361e8",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex done-message-blocked-task": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "057aa66ae70396e8ee4914a6c6206673a5e90ba632b2c14a6245a6b7e922da3d",
+      "read": "c214ebc3d200cd76db265dd2d45d66106a6f6123f3bf58d4ec75cb4d693a224f",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex done-message-independent-task": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "7bc5c3964219204e698c16d084588fd19e4cecb1c6a0f15af59c1ac5062929f9",
+      "read": "d5ff190438be56c665962c568b7eafd09691c51e9ebac8e2502370631f2dcfa0",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex dialog-dismissed-question-waits": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "afb95f3f29a662b8baf670f504f6e64c9828dbff5099204e140ca4b1229674b7",
+      "read": "9850df6cf4c2dc3316685022db2910d9c62e04ce052745d16c65f5564b636c68",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex dialog-escaped-no-reply": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "3b7a1db069644c1701027bf95a00b3ff0efe3bcd9c840df04f9e186367036188",
+      "read": "138618312625da5bc8cf9442eba11e6ed45ca8d076041bdfa9692af2f2f79182",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex dialog-about-finding-escaped": {
-      "passed": 19,
+      "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "1dda9758a7b7b1774667391b392f065d72d2dcb91b0916acde6ba795dc8cfffd",
+      "read": "dcad28bac89400032ffb40776f27625afffd8ce3682f8b0648d627c298631a3c",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex codex-open-dialog-is-question": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "f93a8543298d85cc20260081431d71105be991f77ab2876ddfcb4dd3107bb5a8",
+      "read": "5d9de29404d6039a4294b669ea19627b625fc25524476297fcccc6659f08472d",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "codex answered-question-follow-up-added": {
       "passed": 20,
       "runs": 20,
-      "commit": "44f3e56410bbd1e7003ee39807981f0a6a5892a1",
-      "date": "2026-10-21T15:09:47.710Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "562423e2b0260f3458285d9c8f0bb5aec7148d97e7340e495a6076298b130bbb",
+      "read": "9b502f767bc325009c285fa59fdf04ac40dd139a559e487d547ed72c54b265e4",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     },
     "claude browser-agent-cannot-drive-is-task": {
       "passed": 20,
       "runs": 20,
-      "commit": "db1d169bd8766f67d31119caa653b65e21a341db",
-      "date": "2026-10-21T22:55:26.392Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "claude-sonnet-5-5"
-      ]
+      ],
+      "case": "67cd6767a838bfeb6b3341cd0313efef390ba3875090243094ff83b250f3fe2b",
+      "read": "96c2994a7b6673f0c5b6439f777336a0581aaaa257292190a2ea32690e4ee180",
+      "grade": "d6f443a7f5700f5ff2e230b97deb283becf2730220816a9e062866020ad63c10"
     },
     "codex browser-agent-cannot-drive-is-task": {
       "passed": 20,
       "runs": 20,
-      "commit": "db1d169bd8766f67d31119caa653b65e21a341db",
-      "date": "2026-10-21T22:55:26.392Z",
+      "commit": "29c4b530682118b9b416319e3e041f13e592e1d0",
+      "date": "2026-11-21T20:19:47.352Z",
       "models": [
         "gpt-6.1-sol (requested)"
-      ]
+      ],
+      "case": "67cd6767a838bfeb6b3341cd0313efef390ba3875090243094ff83b250f3fe2b",
+      "read": "9a775fbd7eb67a38aeb43e8365911060a1bc80806eab1e4656b8a55d8a69f2db",
+      "grade": "cc595614366cdec5a01cddff25c2af18d13a6b42769182cfd73ef0ccc6e0b842"
     }
   }
 }
