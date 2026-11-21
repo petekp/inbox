@@ -1,112 +1,112 @@
 {
   "agent": {
     "claude no-finding-user-only": {
-      "passed": 19,
+      "passed": 20,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "claude-opus-5-5"
       ],
       "case": "0ad7d33d381bd04f305e82d88034dcbcf574a70ed10b47eb3156468676e23f27",
       "read": "f7c03dcf512df4e38100b1cfcf637b663f5fe8fee10bc738ec1010fdf198e26e",
-      "grade": "4018baa71395eb0538cd11dd2b3ae72c62b61dc3bec1df78be9e48729c62ca61"
+      "grade": "918b2446137d92e8623327e2135e1bdad08c1cc8b777961e23064b34174011bb"
     },
     "claude record-question": {
       "passed": 20,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "claude-opus-5-5"
       ],
       "case": "799dad6a61a603fd8fb5aa4b94467ccda81a42e8282ad8aa4294bf6eb57359aa",
       "read": "d4ab08734b9a96eeb71786cc5be74b4ca0634f3e961dfdf934f1f72dc2628229",
-      "grade": "4018baa71395eb0538cd11dd2b3ae72c62b61dc3bec1df78be9e48729c62ca61"
+      "grade": "918b2446137d92e8623327e2135e1bdad08c1cc8b777961e23064b34174011bb"
     },
     "claude close-answered-says-answer": {
       "passed": 20,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "claude-opus-5-5"
       ],
       "case": "1b5a0f47342afcab3c6e4086cb8f7577d9e4e1219baedc13d60dc1607a873cb8",
       "read": "8f84181fdcb732a2fd3b73cb71131704225bcdd5e6c28fc676843d152acabe43",
-      "grade": "4018baa71395eb0538cd11dd2b3ae72c62b61dc3bec1df78be9e48729c62ca61"
+      "grade": "918b2446137d92e8623327e2135e1bdad08c1cc8b777961e23064b34174011bb"
     },
     "codex no-finding-user-only": {
       "passed": 20,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "gpt-6.1-sol (requested)"
       ],
       "case": "0ad7d33d381bd04f305e82d88034dcbcf574a70ed10b47eb3156468676e23f27",
       "read": "ce33fbbe2f502635bfa4312ef3c6eee41efc3161e4918bdb3f75cc2fa072bc38",
-      "grade": "fe12866f5c21626e097a8042c8260195725adc2f1f250eee9fc697e9c1ce6939"
+      "grade": "20123dbf5bf42c39111c4e9e966ae3bc49a53344b4214dd32e042b810bb156c6"
     },
     "codex record-question": {
       "passed": 20,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "gpt-6.1-sol (requested)"
       ],
       "case": "799dad6a61a603fd8fb5aa4b94467ccda81a42e8282ad8aa4294bf6eb57359aa",
       "read": "fdc85d17ec8c1724a4c42f2bfeb4580964477cebdbe75a96508a1d7a2ec85b40",
-      "grade": "fe12866f5c21626e097a8042c8260195725adc2f1f250eee9fc697e9c1ce6939"
+      "grade": "20123dbf5bf42c39111c4e9e966ae3bc49a53344b4214dd32e042b810bb156c6"
     },
     "codex close-answered-says-answer": {
       "passed": 20,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "gpt-6.1-sol (requested)"
       ],
       "case": "1b5a0f47342afcab3c6e4086cb8f7577d9e4e1219baedc13d60dc1607a873cb8",
       "read": "b03072e28fa34fbef44e8f00c896087d9e3cfc71ba261abbdcb14690ae0bcb5b",
-      "grade": "fe12866f5c21626e097a8042c8260195725adc2f1f250eee9fc697e9c1ce6939"
+      "grade": "20123dbf5bf42c39111c4e9e966ae3bc49a53344b4214dd32e042b810bb156c6"
     },
     "omp no-finding-user-only": {
       "passed": 20,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "claude-opus-5-5"
       ],
       "case": "0ad7d33d381bd04f305e82d88034dcbcf574a70ed10b47eb3156468676e23f27",
       "read": "4c7ecc663cadb368c15e7f013e1e37e788b21bda41346095a75b2bfe2372265c",
-      "grade": "b450d770df86275c5d90fc5030065fee6553e8464ba27fc500fd2afc26bd14fc"
+      "grade": "eeb300f8714cf8cadc9466d8e8f8dd9510753cadb00cc9df685dee18410767c6"
     },
     "omp record-question": {
       "passed": 20,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "claude-opus-5-5"
       ],
       "case": "799dad6a61a603fd8fb5aa4b94467ccda81a42e8282ad8aa4294bf6eb57359aa",
       "read": "66041575d011159583b609ce42d08b90411456c50243a62396ea0838de703eec",
-      "grade": "b450d770df86275c5d90fc5030065fee6553e8464ba27fc500fd2afc26bd14fc"
+      "grade": "eeb300f8714cf8cadc9466d8e8f8dd9510753cadb00cc9df685dee18410767c6"
     },
     "omp close-answered-says-answer": {
-      "passed": 20,
+      "passed": 19,
       "runs": 20,
-      "commit": "cdfc6fb811a46bdf1dd9ceb8b99482428b0be819",
-      "date": "2026-11-21T20:26:31.793Z",
+      "commit": "dd2a81de85432f29d9d05df2a2a4a35911bae060",
+      "date": "2026-11-21T21:23:52.931Z",
       "models": [
         "claude-opus-5-5"
       ],
       "case": "1b5a0f47342afcab3c6e4086cb8f7577d9e4e1219baedc13d60dc1607a873cb8",
       "read": "33a7d112464439e09dcdf33907b17894870082b1324540f44bc6f36d2e2fdc06",
-      "grade": "b450d770df86275c5d90fc5030065fee6553e8464ba27fc500fd2afc26bd14fc"
+      "grade": "eeb300f8714cf8cadc9466d8e8f8dd9510753cadb00cc9df685dee18410767c6"
     }
   },
   "model": {
