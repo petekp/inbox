@@ -3,20 +3,10 @@ import { dirname, join, resolve, sep } from 'node:path'
 
 import { API, isFunction, ts } from './ts.mjs'
 
-const isTypeOnlyClause = clause =>
-  clause.isTypeOnly ||
-  (!clause.name &&
-    clause.namedBindings &&
-    ts.isNamedImports(clause.namedBindings) &&
-    clause.namedBindings.elements.length > 0 &&
-    clause.namedBindings.elements.every(element => element.isTypeOnly))
+/** Only `import type` and `export type` load nothing. Under `verbatimModuleSyntax`, TypeScript emits `import { type X } from 'm'` as `import {} from 'm'`, which still loads `m`. */
+const isTypeOnlyClause = clause => clause.isTypeOnly
 
-const isTypeOnlyExport = statement =>
-  statement.isTypeOnly ||
-  (statement.exportClause &&
-    ts.isNamedExports(statement.exportClause) &&
-    statement.exportClause.elements.length > 0 &&
-    statement.exportClause.elements.every(element => element.isTypeOnly))
+const isTypeOnlyExport = statement => statement.isTypeOnly
 
 function importsOf(source) {
   const found = []

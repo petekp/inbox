@@ -32,7 +32,7 @@ test('the structure gate accepts a type-only import from a later core layer', t 
   f.write(
     'core/domain/ledger.ts',
     `import type { Value } from '../view/view'
-import { type Other } from '../remote/herdr'
+import type { Other } from '../remote/herdr'
 export type { Third } from '../runtime/tools'
 export type Shape = import('../view/tones').Value
 export const value = 1
@@ -145,6 +145,8 @@ for (const { path, text, target } of forbidden)
 const laterLayerLoads = [
   { path: 'core/domain/ledger.ts', text: "import { value } from '../view/view'", layer: 'core/view' },
   { path: 'core/domain/ledger.ts', text: "import { value, type Value } from '../view/view'", layer: 'core/view' },
+  { path: 'core/domain/ledger.ts', text: "import { type Value } from '../view/view'", layer: 'core/view' },
+  { path: 'core/domain/ledger.ts', text: "export { type Value } from '../view/view'", layer: 'core/view' },
   { path: 'core/view/view.ts', text: "export { value } from '../runtime/tools'", layer: 'core/runtime' },
   { path: 'core/runtime/tools.ts', text: "const remote = import('../remote/herdr')", layer: 'core/remote' },
 ]
