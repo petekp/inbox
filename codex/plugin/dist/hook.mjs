@@ -1,4 +1,4 @@
-// Built by codex/build.mjs from codex/src and hooks/. Do not edit.
+// Built by codex/build.mjs from codex/src and core/. Do not edit.
 
 // src/hook-main.ts
 import { dirname as dirname5, join as join6 } from "node:path";
@@ -18,7 +18,7 @@ function detachedUpdate(dir, env, script) {
   };
 }
 
-// ../hooks/status-limits.ts
+// ../core/domain/status-limits.ts
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
@@ -105,7 +105,7 @@ function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
 
-// ../hooks/ask-match.ts
+// ../core/domain/ask-match.ts
 function words2(text2) {
   return text2.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -163,7 +163,7 @@ function sameAsk(a, b) {
   return norm(a) !== "" && norm(a) === norm(b);
 }
 
-// ../hooks/ledger-close.ts
+// ../core/domain/ledger-close.ts
 var MAX_CLOSED = 12;
 function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
@@ -235,12 +235,12 @@ function isLapsed(d) {
   return closedState(d) !== "handled";
 }
 
-// ../hooks/open-targets.ts
+// ../core/domain/open-targets.ts
 function baseName(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? path;
 }
 
-// ../hooks/pr-checks.ts
+// ../core/domain/pr-checks.ts
 function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
 }
@@ -263,7 +263,7 @@ function blockingChecks(pr) {
   return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
 }
 
-// ../hooks/text.ts
+// ../core/domain/text.ts
 var NL = "\n";
 function turnReply(texts, final = "") {
   const written = texts.filter((text2) => text2.trim() !== "");
@@ -304,7 +304,7 @@ function clockTime(ms) {
   return new Date(ms).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" });
 }
 
-// ../hooks/prs.ts
+// ../core/domain/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 function prRefs(text2) {
   return [...new Set([...text2.matchAll(PR_URL)].map((m) => `${m[1]}#${m[2]}`))];
@@ -412,7 +412,7 @@ function inPrOrder(prs, ranked = []) {
   );
 }
 
-// ../hooks/help-steps.ts
+// ../core/domain/help-steps.ts
 var COMMAND_LABEL_CHARS = 64;
 var commandLabel = (command) => clipLabel(command, COMMAND_LABEL_CHARS);
 function helpLabel(help) {
@@ -446,7 +446,7 @@ function stepIconKind(step) {
   return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
 }
 
-// ../hooks/press-labels.ts
+// ../core/domain/press-labels.ts
 function actionId(p) {
   return p.action === "step" ? `step-${p.step}` : p.action;
 }
@@ -456,7 +456,7 @@ function capitalized(text2) {
 var ISSUE_LABEL = "File issue";
 var SHOW_EXPLANATION_LABEL = "Show explanation";
 
-// ../hooks/status-freshness.ts
+// ../core/domain/status-freshness.ts
 var STALE_AFTER_CALLS = 5;
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 function statusPageLine(s, now) {
@@ -468,14 +468,14 @@ function statusPageLine(s, now) {
   };
 }
 
-// ../hooks/status-suggest.ts
+// ../core/domain/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 
-// ../hooks/banners.ts
+// ../core/view/banners.ts
 var NEXT_BUILD_MARK = ".next-build";
 var MAYBE_STALE_TEXT = "May be out of date";
 
-// ../hooks/tabs.ts
+// ../core/view/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
   { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
@@ -495,7 +495,7 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 
-// ../hooks/help.ts
+// ../core/view/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
@@ -578,7 +578,7 @@ var MARK_LEGEND = [
   }
 ];
 
-// ../hooks/status-page-parts.ts
+// ../core/view/status-page-parts.ts
 var LISTED_NAMES = 2;
 var namedFoldMore = (n) => `+${n} more`;
 function namedList(names) {
@@ -722,7 +722,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   return rows;
 }
 
-// ../hooks/status-folds.ts
+// ../core/view/status-folds.ts
 function waitingUnderParents(ledger) {
   const o = ledger.overview;
   if (!o) return /* @__PURE__ */ new Map();
@@ -741,7 +741,7 @@ function waitingUnderParents(ledger) {
 }
 var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
 
-// ../hooks/status-path.ts
+// ../core/view/status-path.ts
 function milestonePath(shown) {
   const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
   const underWay = shown.filter((m) => m.status === "working" || m.status === "waits-on-other");
@@ -771,7 +771,7 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
   });
 }
 
-// ../hooks/status-goal-page.ts
+// ../core/view/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
@@ -853,7 +853,7 @@ function goalPage(o, items) {
   };
 }
 
-// ../hooks/pressed.ts
+// ../core/view/pressed.ts
 function offersUndo(c) {
   return c.how === "done" || c.how === "dismissed";
 }
@@ -884,7 +884,7 @@ function isHeldSend(last) {
   return last?.delivery?.state === "held";
 }
 
-// ../hooks/press-reducer.ts
+// ../core/view/press-reducer.ts
 function withArrival(lastActions, message, pressedAt, deliveryId) {
   const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message;
   const waiting = Object.values(lastActions).filter(
@@ -908,7 +908,7 @@ function withUnconfirmed(lastActions, message, pressedAt, deliveryId) {
   );
 }
 
-// ../hooks/remote-command-state.ts
+// ../core/runtime/remote-command-state.ts
 function remoteCommandArrival(s, deliveryId) {
   if (!deliveryId) return s;
   const matches = Object.entries(s.remoteCommands).filter(([, c]) => c.deliveryId === deliveryId);
@@ -965,12 +965,12 @@ function remoteReceipts(s) {
   );
 }
 
-// ../hooks/presses.ts
+// ../core/domain/presses.ts
 function isPrRowId(id) {
   return id.startsWith("pr:") || id.includes(" ");
 }
 
-// ../hooks/last-actions.ts
+// ../core/domain/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
   return pressed2 !== void 0 && pressed2 <= turns.turnsStarted && turns.turnsApplied <= pressed2;
@@ -1040,7 +1040,7 @@ function upgradeLastActions(saved) {
   );
 }
 
-// ../hooks/timing.ts
+// ../core/view/timing.ts
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
 var COMPARE_LIMIT_MS = 30 * 6e4;
@@ -1095,7 +1095,7 @@ function canUndoClose(closed, at, now, settleWindowMs) {
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 
-// ../hooks/rows.ts
+// ../core/view/rows.ts
 var OPTIONS_FOLD_AT = 5;
 var DOT = "\u2007\xB7\u2002";
 var NEEDS_YOU_GROUPS = [
@@ -1184,7 +1184,7 @@ function outcomeLabel(c) {
   return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
 }
 
-// ../hooks/feedback.ts
+// ../core/view/feedback.ts
 function pressUnderWaySince(f) {
   if (f?.is === "working" || f?.is === "sending") return f.at;
   if (f?.is !== "local") return null;
@@ -1296,7 +1296,7 @@ function isAgain(last, action, isOut) {
   return isRepeatOf(last, action) && (!isOut || last?.isRepeat === true);
 }
 
-// ../hooks/gh.ts
+// ../core/domain/gh.ts
 var GH_TIMEOUT_MS = 2e4;
 var UNSTARTABLE_CODE = -1;
 var TIMED_OUT_CODE = -2;
@@ -1306,7 +1306,7 @@ async function branchIn(run2, folder) {
   return r.code === 0 ? r.stdout.trim() || null : null;
 }
 
-// ../hooks/pr-fetch.ts
+// ../core/domain/pr-fetch.ts
 var MAX_PRS = 12;
 var MAX_ORDERED_PRS = 30;
 var CLOSED_PR_REFRESH_MS = 60 * 6e4;
@@ -1357,7 +1357,7 @@ function fetchFailureWords(f) {
 }
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
 
-// ../hooks/pr-rows.ts
+// ../core/view/pr-rows.ts
 function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
 }
@@ -1382,7 +1382,7 @@ function threadSentIn(lastActions) {
   };
 }
 
-// ../hooks/pr-press.ts
+// ../core/view/pr-press.ts
 var RERUN_LABEL = "Re-run";
 var PR_FIX_LABELS = {
   "pr-conflicts": "Resolve conflicts",
@@ -1413,7 +1413,7 @@ function withOut(row, actions) {
   return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
 }
 
-// ../hooks/collapse.ts
+// ../core/view/collapse.ts
 var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
 function newsByRow({ ledger, prViews, lastActions }) {
   const pressed2 = (id) => lastActions[id]?.at;
@@ -1465,7 +1465,7 @@ function settledCollapses(s) {
   return isChanged ? { ...s, collapsed: Object.fromEntries(kept) } : s;
 }
 
-// ../hooks/remote-viewers.ts
+// ../core/runtime/remote-viewers.ts
 function remoteHeldRows(s, now) {
   return Object.values(s.remoteViewers).flatMap((viewer) => {
     if (viewer.released || viewer.expiresAt <= now) return [];
@@ -1492,7 +1492,7 @@ function remoteViewerReceipts(s) {
   );
 }
 
-// ../hooks/ledger-prompt.ts
+// ../core/domain/ledger-prompt.ts
 var NL3 = "\n";
 function outcomeText(d) {
   if (d.how === "dismissed") return "dismissed by the user";
@@ -1500,7 +1500,7 @@ function outcomeText(d) {
   return d.outcome;
 }
 
-// ../hooks/catch-up-text.ts
+// ../core/domain/catch-up-text.ts
 var MAX_ACTIVITY = 40;
 function addActivity(activity, line) {
   if (!line || activity[activity.length - 1] === line) return activity;
@@ -1578,7 +1578,7 @@ function dialogActivity(questions, outcome) {
   }
 }
 
-// ../hooks/dialogs.ts
+// ../core/domain/dialogs.ts
 var OPTION_LABEL = /^\s*\(?(?:[a-z]|\d{1,2})\s*(?:[.):]|[—–-])\s+/i;
 function optionKey(option) {
   return option.replace(RECOMMENDED_SUFFIX, "").replace(OPTION_LABEL, "").trim().toLowerCase();
@@ -1650,7 +1650,7 @@ function noteDialog(s, callId, questions) {
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
 }
 
-// ../hooks/pr-refresh.ts
+// ../core/view/pr-refresh.ts
 var PR_REFRESH_LABEL = "Refresh PRs";
 function tabWideProblem(prs) {
   if (prs.isGhMissing) return "gh was not found";
@@ -1698,7 +1698,7 @@ function prRefreshActions(row) {
   ]);
 }
 
-// ../hooks/pr-views.ts
+// ../core/view/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
 var PR_MERGED_LABEL = "Merged";
 var PR_CLOSED_LABEL = "Closed";
@@ -1743,7 +1743,7 @@ function drawnPrs(prState, links, lastActions, placing) {
   return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
 }
 
-// ../hooks/pr-order.ts
+// ../core/view/pr-order.ts
 var RANK_AGAIN_LABEL = "Rank again";
 function prOrderText(order, drawn, now) {
   const isRanking = drawn.some((d) => d.isRanked);
@@ -1799,7 +1799,7 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/pr-tab.ts
+// ../core/view/pr-tab.ts
 function finishedTabPrs(prState, links) {
   return splitLinked(prState, links).tracked.filter((ref) => {
     const view = prState.views[ref];
@@ -1820,7 +1820,7 @@ function prClearActions(prState, links) {
   ];
 }
 
-// ../hooks/ask-subject.ts
+// ../core/domain/ask-subject.ts
 var EMPTY_WORDS = new Set(
   `a about above after again ahead all already also an and any anything are as at back be been before being below both
 but by can could did do does doing done each either else every everything first for from get go going had has have
@@ -1838,16 +1838,16 @@ code problem stuff part green current new old latest previous mentioned proposed
   )
 );
 
-// ../hooks/reply-parse.ts
+// ../core/domain/reply-parse.ts
 function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
 }
 
-// ../hooks/ledger-update.ts
+// ../core/domain/ledger-update.ts
 var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
-// ../hooks/earlier-answers.ts
+// ../core/domain/earlier-answers.ts
 var K1 = 1.2;
 var B = 0.75;
 var RELATIVE_FLOOR = 0.22;
@@ -1933,7 +1933,7 @@ function earlierLineOf(earlier, now) {
   };
 }
 
-// ../hooks/tool-schemas.ts
+// ../core/domain/tool-schemas.ts
 var RECORD_SCHEMA = {
   type: "object",
   properties: {
@@ -2032,10 +2032,10 @@ var TOOL_FIELDS = {
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
-// ../hooks/arrivals.ts
+// ../core/view/arrivals.ts
 var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
-// ../hooks/inbox-text.ts
+// ../core/domain/inbox-text.ts
 var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
@@ -2182,7 +2182,7 @@ function promptNotes(host, ledger, prompt, told) {
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
-// ../hooks/action-plan.ts
+// ../core/view/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 function showsCompare(item) {
   return item.kind === "question" && item.isDesignChoice === true && item.options.length >= 2;
@@ -2278,7 +2278,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
   ];
 }
 
-// ../hooks/view.ts
+// ../core/view/view.ts
 var HOLDS_UP_TEXT = "Holds up";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -2521,7 +2521,7 @@ function perTurnStatus(recovery) {
   return { isRetrying: recovery === "retrying", error };
 }
 
-// ../hooks/status-children.ts
+// ../core/domain/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
@@ -2568,7 +2568,7 @@ function isSubjectSeen(o, s) {
   return seenAt !== null && s.changedAt <= seenAt;
 }
 
-// ../hooks/status-page.ts
+// ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
@@ -2754,7 +2754,7 @@ function statusPage(s, now) {
   };
 }
 
-// ../hooks/session-view.ts
+// ../core/view/session-view.ts
 var PRESS_TIMEOUT_MS = 6e4;
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS) return last;
@@ -2837,7 +2837,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
   };
 }
 
-// ../hooks/session-presses.ts
+// ../core/runtime/session-presses.ts
 function rowsInPlace(s, now = Date.now()) {
   const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
@@ -2861,10 +2861,10 @@ function pruned(s, now = Date.now()) {
   });
 }
 
-// ../hooks/host-prs.ts
+// ../core/runtime/host-prs.ts
 var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
 
-// ../hooks/remote-commands.ts
+// ../core/remote/remote-commands.ts
 var LIFETIME_MS = 24 * 60 * 6e4;
 var REMOTE_ACTIONS = [
   "type",
@@ -2910,7 +2910,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
-// ../hooks/status-upgrade-goal.ts
+// ../core/domain/status-upgrade-goal.ts
 var REFUSAL_LINES = ["goal", "retire"];
 var REFUSAL_WHYS = [
   "typed",
@@ -3022,7 +3022,7 @@ function goalFields(o, subjects) {
   };
 }
 
-// ../hooks/status-upgrade.ts
+// ../core/domain/status-upgrade.ts
 var CHILD_KINDS = ["subagent", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
@@ -3165,7 +3165,7 @@ function upgradeStatus(saved) {
   };
 }
 
-// ../hooks/ledger.ts
+// ../core/domain/ledger.ts
 var EMPTY = {
   overview: null,
   items: [],
@@ -3241,14 +3241,14 @@ function howFromOutcome(outcome) {
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
 
-// ../hooks/session-version.ts
+// ../core/domain/session-version.ts
 var SESSION_VERSION = 1;
 function checkVersion(saved) {
   const version = saved.version ?? 1;
   if (version !== SESSION_VERSION) throw new Error(`Unsupported inbox state version: ${version}`);
 }
 
-// ../hooks/host-tasks.ts
+// ../core/domain/host-tasks.ts
 var STATUSES2 = {
   pending: "pending",
   in_progress: "in-progress",
@@ -3286,7 +3286,7 @@ function upgradeHostTasks(saved) {
   });
 }
 
-// ../hooks/saved-check-keys.ts
+// ../core/view/saved-check-keys.ts
 function savedCheckKey(checks, name) {
   if (checks.some((c) => checkKey(c) === name)) return name;
   const named = checks.filter((c) => c.name === name);
@@ -3319,7 +3319,7 @@ function withCheckKeys(s, views) {
   };
 }
 
-// ../hooks/session-files.ts
+// ../core/view/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
@@ -3448,7 +3448,7 @@ function sessionFields(saved, views) {
   };
 }
 
-// ../hooks/question-history.ts
+// ../core/domain/question-history.ts
 var HISTORY_VERSION = 1;
 var DAY_MS3 = 24 * 60 * 6e4;
 var HISTORY_KEEP_MS = 180 * DAY_MS3;
@@ -3528,7 +3528,7 @@ function historyFolder(env) {
   return state ? `${state.replace(/\/+$/, "")}/inbox/questions` : null;
 }
 
-// ../hooks/history-store.ts
+// ../core/runtime/history-store.ts
 var caches = /* @__PURE__ */ new Map();
 var repos = /* @__PURE__ */ new Map();
 function cacheOf(folder) {
@@ -3940,7 +3940,7 @@ async function updateState(dir, sessionId, change, now = Date.now) {
   });
 }
 
-// ../hooks/model-text.ts
+// ../core/domain/model-text.ts
 function guidanceText(host) {
   return `# Inbox
 ${host.intro}
@@ -3969,7 +3969,7 @@ Close with ${host.closeTool}:
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 
-// ../hooks/session-turns.ts
+// ../core/runtime/session-turns.ts
 function startContext(host, s, source) {
   const carried = carryText(s.ledger, START_TITLE);
   const parts = [source === "resume" ? null : guidanceText(host), carried].filter((x) => x !== null);
@@ -4116,7 +4116,7 @@ function endTurn(host, s, reply, isOpen2, { tab = null, queuesEmptyReply = false
   return { ...base, pending: [...base.pending, { ex, turnsStarted: s.presence.turnsStarted }] };
 }
 
-// ../hooks/session-status.ts
+// ../core/runtime/session-status.ts
 var STATUS_REFRESH_MS = 10 * 6e4;
 function claimedStatusRefresh(s, now) {
   const { isTurnRunning, turnStartedAt } = s.presence;
@@ -4202,7 +4202,7 @@ function viewOf(s, now, holds = NO_HOLDS) {
   return { ...sessionView(s, now, SETTLE_WINDOW_MS, holds), heard: heardState(s.heard), at: now };
 }
 
-// ../hooks/band.ts
+// ../core/view/band.ts
 function isMaybeStale(view, isReadFailed = false) {
   return isReadFailed || view.status.error !== null || view.status.isRetrying;
 }
@@ -4210,7 +4210,7 @@ function bandCounts(view) {
   return ROW_TABS.map((t) => ({ id: t.id, label: t.label, count: view[t.id].count })).filter((c) => c.count > 0);
 }
 
-// ../hooks/children.ts
+// ../core/domain/children.ts
 var ACTIVITY_SAVE_MS = 3e4;
 var NAME_CHARS = 80;
 function childStarted(o, { ref, kind, name }, at, delegateState = null) {
@@ -4330,7 +4330,7 @@ function childrenCutOff(o, at) {
   return childrenEnded(o, (c) => c.kind !== "delegate", at);
 }
 
-// ../hooks/hc-terminals.ts
+// ../core/remote/hc-terminals.ts
 var HC_TIMEOUT_MS = 5e3;
 var HC_STATUSES = ["idle", "working", "blocked", "done"];
 var HC_BLOCKED = /* @__PURE__ */ new Set(["blocked", "error"]);
@@ -4383,10 +4383,10 @@ function childAgents(stdout, parent) {
   }
 }
 
-// ../hooks/herdr-labels.ts
+// ../core/remote/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
 
-// ../hooks/session-presentation.ts
+// ../core/view/session-presentation.ts
 var SESSION_FIELDS = Object.keys(emptySession()).filter(
   (field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers"
 );
@@ -4394,7 +4394,7 @@ function presentedSession(session) {
   return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
 }
 
-// ../hooks/herdr.ts
+// ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
 var FOCUS_TOKEN = "inbox-focus";
@@ -4622,7 +4622,7 @@ function publishedSessionPath(appHome, sessionId) {
   return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
 }
 
-// ../hooks/herdr-app.ts
+// ../core/remote/herdr-app.ts
 var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
 var PUBLISH_LIMIT_BYTES = 1024 * 1024;
 function utf8Bytes(text2) {
@@ -4999,7 +4999,7 @@ var jsonRecord = (raw) => {
   }
 };
 
-// ../hooks/conversation.ts
+// ../core/domain/conversation.ts
 var NL4 = "\n";
 var TRANSCRIPT_MAX = 8e4;
 var MESSAGE_MAX = 6e3;

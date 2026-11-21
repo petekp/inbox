@@ -1,10 +1,10 @@
 // @bun
-// Built by omp/build.ts with Bun 1.4.4 from omp/src and hooks/. Do not edit.
+// Built by omp/build.ts with Bun 1.4.4 from omp/src and core/. Do not edit.
 
 // src/host.ts
 import { randomUUID } from "crypto";
 
-// ../hooks/gh.ts
+// ../core/domain/gh.ts
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
 var GH_TIMEOUT_MS = 20000;
 var UNSTARTABLE_CODE = -1;
@@ -43,7 +43,7 @@ function ghIn(exec, bin, cwd, onUnstartable) {
   };
 }
 
-// ../hooks/open-targets.ts
+// ../core/domain/open-targets.ts
 function baseName(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? path;
 }
@@ -80,7 +80,7 @@ async function openTarget(run, probe, target, root, home) {
   return retry.code === 0 ? null : failure(retry);
 }
 
-// ../hooks/status-limits.ts
+// ../core/domain/status-limits.ts
 var NAME_WORDS = 3;
 var TEXT_WORDS = 4;
 var DESCRIPTION_WORDS = 8;
@@ -194,7 +194,7 @@ function isUnderWay(s) {
   return s.status === "working" || s.status === "waits-on-other";
 }
 
-// ../hooks/ask-match.ts
+// ../core/domain/ask-match.ts
 function words2(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -371,7 +371,7 @@ function repeatsSettled(c, a) {
   return c.id === a.label || sameAsk(c.ask, a.ask) || c.kind === a.kind && repeatsSubject(c.ask, a.ask);
 }
 
-// ../hooks/clients-claude-code.ts
+// ../core/domain/clients-claude-code.ts
 var CLAUDE_CODE = {
   support: {
     "codex-desktop-companion": {
@@ -477,7 +477,7 @@ var CLAUDE_CODE = {
   }
 };
 
-// ../hooks/clients-codex.ts
+// ../core/domain/clients-codex.ts
 var CODEX = {
   support: {
     "codex-desktop-companion": { kind: "full" },
@@ -640,7 +640,7 @@ var CODEX = {
   }
 };
 
-// ../hooks/clients-omp.ts
+// ../core/domain/clients-omp.ts
 var OMP = {
   support: {
     "codex-desktop-companion": {
@@ -752,14 +752,14 @@ var OMP = {
   }
 };
 
-// ../hooks/clients.ts
+// ../core/domain/clients.ts
 var CLIENTS = {
   "claude-code": CLAUDE_CODE,
   codex: CODEX,
   omp: OMP
 };
 
-// ../hooks/press-messages.ts
+// ../core/domain/press-messages.ts
 function findingBody(finding) {
   return [
     `${finding.kind === "issue" ? "Issue" : "Opportunity"}: ${finding.title}`,
@@ -812,7 +812,7 @@ function isCompareInBackground(client) {
   return CLIENTS[client].support["compare-in-background"].kind === "full";
 }
 
-// ../hooks/pr-checks.ts
+// ../core/domain/pr-checks.ts
 function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
 }
@@ -835,7 +835,7 @@ function blockingChecks(pr) {
   return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
 }
 
-// ../hooks/text.ts
+// ../core/domain/text.ts
 var NL2 = `
 `;
 var FENCE = /```[^\n]*\n([\s\S]*?)```/g;
@@ -933,7 +933,7 @@ function clockTime(ms) {
   return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-// ../hooks/prs.ts
+// ../core/domain/prs.ts
 var NL3 = `
 `;
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
@@ -1112,7 +1112,7 @@ function numberList(prs) {
   return numbers.length === 0 ? last ?? "" : `${numbers.join(", ")} and ${last}`;
 }
 
-// ../hooks/help-steps.ts
+// ../core/domain/help-steps.ts
 var COMMAND_LABEL_CHARS = 64;
 var commandLabel = (command) => clipLabel(command, COMMAND_LABEL_CHARS);
 function helpLabel(help) {
@@ -1163,7 +1163,7 @@ function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
 
-// ../hooks/pr-query.ts
+// ../core/domain/pr-query.ts
 var PRS_PER_QUERY = 50;
 var PR_FIELDS = `fragment PrFields on PullRequest {
   number title url isDraft state baseRefName mergeable reviewDecision
@@ -1376,7 +1376,7 @@ function limitResetOf(json) {
   }
 }
 
-// ../hooks/pr-fetch.ts
+// ../core/domain/pr-fetch.ts
 var MAX_PRS = 12;
 var MAX_ORDERED_PRS = 30;
 var PR_SHARED_MS = 120000;
@@ -1547,7 +1547,7 @@ import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
 var version = "0.6.0";
 
-// ../hooks/clipboard-commands.ts
+// ../core/runtime/clipboard-commands.ts
 function clipboardCommands(platform) {
   if (platform === "darwin")
     return [["pbcopy"]];
@@ -1559,7 +1559,7 @@ function noClipboardCommand(commands) {
   return `no clipboard command started (${commands.map((c) => c[0]).join(", ")})`;
 }
 
-// ../hooks/press-labels.ts
+// ../core/domain/press-labels.ts
 function actionId(p) {
   return p.action === "step" ? `step-${p.step}` : p.action;
 }
@@ -1591,7 +1591,7 @@ function capitalized(text) {
 var ISSUE_LABEL = "File issue";
 var SHOW_EXPLANATION_LABEL = "Show explanation";
 
-// ../hooks/banners.ts
+// ../core/view/banners.ts
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
 }
@@ -1674,7 +1674,7 @@ function versionLabel(version, isNextBuild) {
 var NOTHING_NEEDED_TEXT = "Nothing needed";
 var MAYBE_STALE_TEXT = "May be out of date";
 
-// ../hooks/tabs.ts
+// ../core/view/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
   { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
@@ -1709,7 +1709,7 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 
-// ../hooks/band.ts
+// ../core/view/band.ts
 function isMaybeStale(view, isReadFailed = false) {
   return isReadFailed || view.status.error !== null || view.status.isRetrying;
 }
@@ -1720,7 +1720,7 @@ function noCountsText(view, isReadFailed = false) {
   return isMaybeStale(view, isReadFailed) ? MAYBE_STALE_TEXT : NOTHING_NEEDED_TEXT;
 }
 
-// ../hooks/status-children.ts
+// ../core/domain/status-children.ts
 var NOT_SEEN = "not seen yet";
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
@@ -1834,7 +1834,7 @@ function lookReported(o, look) {
   return { ...o, missedInLastLook: { ...o.missedInLastLook, ...Object.fromEntries(raised.map((s) => [s.id, seenUpTo])) } };
 }
 
-// ../hooks/children.ts
+// ../core/domain/children.ts
 var ACTIVITY_SAVE_MS = 30000;
 var NAME_CHARS = 80;
 function childStarted(o, { ref, kind, name }, at, delegateState = null) {
@@ -1977,7 +1977,7 @@ function childrenCutOff(o, at) {
   return childrenEnded(o, (c) => c.kind !== "delegate", at);
 }
 
-// ../hooks/hc-terminals.ts
+// ../core/remote/hc-terminals.ts
 var HC_TIMEOUT_MS = 5000;
 var HC_STATUSES = ["idle", "working", "blocked", "done"];
 var HC_BLOCKED = new Set(["blocked", "error"]);
@@ -2055,10 +2055,10 @@ function childAgents(stdout, parent) {
   }
 }
 
-// ../hooks/herdr-labels.ts
+// ../core/remote/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
 
-// ../hooks/ask-subject.ts
+// ../core/domain/ask-subject.ts
 var NAMED_THING = /#\d+|\b\d{2,}\b|\b[A-Z][A-Z0-9]+-\d+\b|https?:\/\/|[\w~.-]*\/[\w.-]+|\b[\w-]+\.[a-z]{1,5}\b|`[^`]+`|"[^"]+"|\u201C[^\u201D]+\u201D/;
 var EMPTY_WORDS = new Set(`a about above after again ahead all already also an and any anything are as at back be been before being below both
 but by can could did do does doing done each either else every everything first for from get go going had has have
@@ -2086,7 +2086,7 @@ function namesSubject(ask) {
   return (ask.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).some((w) => !isEmptyWord(w));
 }
 
-// ../hooks/ledger-close.ts
+// ../core/domain/ledger-close.ts
 var MAX_CLOSED = 12;
 function closedRecord(item, closing, now) {
   const { id, kind, ask, label } = item;
@@ -2200,7 +2200,7 @@ function isLapsed(d) {
   return closedState(d) !== "handled";
 }
 
-// ../hooks/reply-parse.ts
+// ../core/domain/reply-parse.ts
 var NL4 = `
 `;
 var MAX_HELPS = 3;
@@ -2407,7 +2407,7 @@ function stepHelp(step) {
   return value !== "" && !isSentence ? readHelp("terminal", value, null, [], null) : null;
 }
 
-// ../hooks/ledger-update.ts
+// ../core/domain/ledger-update.ts
 var MAX_OPEN = 20;
 var STALE_AFTER = 12;
 var UNFOUNDED_MOOT = /^no longer applies:.*(\b(not|never) (related|relevant|addressed|mentioned|discussed|answered|raised|part of)\b|\bunrelated\b|\b(still|stays) open\b|\boutside (the|this)\b|\bnothing\b.*\b(touch|address|mention|relate))/i;
@@ -2600,7 +2600,7 @@ function addAgentItem(ledger, entry, now) {
   return { ledger: next, is: "added", id, expired: dropped[0] ?? null };
 }
 
-// ../hooks/status-upgrade-goal.ts
+// ../core/domain/status-upgrade-goal.ts
 var REFUSAL_LINES = ["goal", "retire"];
 var REFUSAL_WHYS = [
   "typed",
@@ -2709,7 +2709,7 @@ function goalFields(o, subjects) {
   };
 }
 
-// ../hooks/status-upgrade.ts
+// ../core/domain/status-upgrade.ts
 var CHILD_KINDS = ["subagent", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
@@ -2859,7 +2859,7 @@ function upgradeStatus(saved) {
   };
 }
 
-// ../hooks/ledger.ts
+// ../core/domain/ledger.ts
 var KEPT_SESSIONS = 40;
 var EMPTY = {
   overview: null,
@@ -2939,7 +2939,7 @@ function howFromOutcome(outcome) {
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
 
-// ../hooks/ledger-prompt.ts
+// ../core/domain/ledger-prompt.ts
 var NL5 = `
 `;
 var MODEL_KIND = { question: "decide", task: "do" };
@@ -3023,7 +3023,7 @@ function outcomeText(d) {
   return d.outcome;
 }
 
-// ../hooks/inbox-text.ts
+// ../core/domain/inbox-text.ts
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
 }
@@ -3155,12 +3155,12 @@ function promptNotes(host, ledger, prompt, told) {
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
-// ../hooks/presses.ts
+// ../core/domain/presses.ts
 function isPrRowId(id) {
   return id.startsWith("pr:") || id.includes(" ");
 }
 
-// ../hooks/last-actions.ts
+// ../core/domain/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
   return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
@@ -3227,7 +3227,7 @@ function upgradeLastActions(saved) {
   }));
 }
 
-// ../hooks/host-tasks.ts
+// ../core/domain/host-tasks.ts
 var NL6 = `
 `;
 var TASKS_KEPT = 12;
@@ -3302,7 +3302,7 @@ function tasksText(tasks) {
   return keptTasks(tasks).map((t) => `TASK: ${t.status} | ${t.text}`).join(NL6);
 }
 
-// ../hooks/status-freshness.ts
+// ../core/domain/status-freshness.ts
 var STALE_AFTER_CALLS = 5;
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 function pageWords(o) {
@@ -3331,7 +3331,7 @@ function statusPageLine(s, now) {
   };
 }
 
-// ../hooks/status-goal-gate.ts
+// ../core/domain/status-goal-gate.ts
 function heldSubjects(o) {
   const open = new Set(o.milestones.filter(isOpen).map((m) => m.id));
   return o.subjects.filter((s) => open.has(o.serves[s.id] ?? ""));
@@ -3399,7 +3399,7 @@ function goalRefusal(o, start, kind, now) {
   return refusalOf(start, kind, now) === null ? null : why;
 }
 
-// ../hooks/status-milestone-work.ts
+// ../core/domain/status-milestone-work.ts
 function forgetSeenWas(m, lastLookAt) {
   if (lastLookAt !== null && m.changedAt <= lastLookAt)
     m.was = null;
@@ -3442,7 +3442,7 @@ function withWorkStartedMilestones(o, now) {
   };
 }
 
-// ../hooks/status-goal-ops.ts
+// ../core/domain/status-goal-ops.ts
 var RESTATED_SHARE = 0.8;
 function restatesGoal(text, goal) {
   const own = [...stems(text)];
@@ -3720,7 +3720,7 @@ function setTypedGoal(o, text, now) {
   return { ...o, goal, goalRemoved: null, goalRefused: null, serves: {}, suggestedGoal: null };
 }
 
-// ../hooks/status-suggest.ts
+// ../core/domain/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 var isNextGoalAsked = (o) => o === null || !hasRunningGoal(o) && o.suggestedGoal === null;
 function nextGoalWork(o, askIds) {
@@ -3754,7 +3754,7 @@ function takeSuggestedGoal(o, now) {
   return set.goal === null ? o : { ...set, goal: { ...set.goal, source: "inferred" }, suggestedGoal: null };
 }
 
-// ../hooks/goal-press.ts
+// ../core/domain/goal-press.ts
 function goalPressed(ledger, p, record, now) {
   const o = ledger.overview ?? EMPTY_SESSION_STATUS;
   const unchanged = { ledger, last: null, effects: [] };
@@ -3788,7 +3788,7 @@ function goalPressed(ledger, p, record, now) {
   return changed(typed);
 }
 
-// ../hooks/help.ts
+// ../core/view/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
@@ -3942,12 +3942,12 @@ function helpKeys(look) {
   }
 }
 
-// ../hooks/fold-chevron.ts
+// ../core/view/fold-chevron.ts
 var FOLD_CLOSED_CHEVRON = "\u203A";
 var FOLD_OPEN_CHEVRON = "v";
 var foldGlyph = (isOpen) => isOpen ? FOLD_OPEN_CHEVRON : FOLD_CLOSED_CHEVRON;
 
-// ../hooks/status-page-parts.ts
+// ../core/view/status-page-parts.ts
 var LISTED_NAMES = 2;
 var namedFoldMore = (n) => `+${n} more`;
 function namedList(names) {
@@ -4097,7 +4097,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   return rows;
 }
 
-// ../hooks/status-folds.ts
+// ../core/view/status-folds.ts
 function waitingUnderParents(ledger) {
   const o = ledger.overview;
   if (!o)
@@ -4145,7 +4145,7 @@ function statusListRows(page) {
   return listRows(page.goal?.milestones ?? [], page.rows);
 }
 
-// ../hooks/status-path.ts
+// ../core/view/status-path.ts
 var LATER_TEXT = "Later";
 function milestonePath(shown) {
   const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
@@ -4192,7 +4192,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
   return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
 }
 
-// ../hooks/status-goal-page.ts
+// ../core/view/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
@@ -4279,7 +4279,7 @@ function goalPage(o, items) {
   };
 }
 
-// ../hooks/status-keys.ts
+// ../core/view/status-keys.ts
 var GOAL_KEYS_ID = "goal";
 var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
 function viewAsk(ask) {
@@ -4400,7 +4400,7 @@ function statusSelected(page, selectedId, isUnfolded = () => false, isCollapsed 
 var GOAL_FIELD = { placeholder: "An outcome to work toward" };
 var goalSubmitLabel = (page) => page.goal === null || page.goal.isMet ? "Set" : "Save";
 
-// ../hooks/pressed.ts
+// ../core/view/pressed.ts
 function offersUndo(c) {
   return c.how === "done" || c.how === "dismissed";
 }
@@ -4624,12 +4624,12 @@ function replyToClosed(ledger, p, last, answerMessage) {
   return { ledger, last, effects: [{ kind: "send", text, by: null }] };
 }
 
-// ../hooks/marks.ts
+// ../core/view/marks.ts
 function textMark(mark) {
   return mark === CLOSED_MARKS.lapsed ? "\u2298" : mark;
 }
 
-// ../hooks/timing.ts
+// ../core/view/timing.ts
 var SETTLED_MS = 5120;
 var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
@@ -4741,7 +4741,7 @@ function resultGlyph(mark, now) {
   return mark.isRunning ? runningMark(now) : textMark(mark.text) || " ";
 }
 
-// ../hooks/rows.ts
+// ../core/view/rows.ts
 var OPTIONS_FOLD_AT = 5;
 var DOT = "\u2007\xB7\u2002";
 var NEEDS_YOU_GROUPS = [
@@ -4935,7 +4935,7 @@ function outcomeLabel(c) {
   return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
 }
 
-// ../hooks/pr-rows.ts
+// ../core/view/pr-rows.ts
 function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
 }
@@ -5069,7 +5069,7 @@ var PR_TONES = {
   closed: "error"
 };
 
-// ../hooks/saved-check-keys.ts
+// ../core/view/saved-check-keys.ts
 function savedCheckKey(checks, name) {
   if (checks.some((c) => checkKey(c) === name))
     return name;
@@ -5099,7 +5099,7 @@ function withCheckKeys(s, views) {
   };
 }
 
-// ../hooks/session-files.ts
+// ../core/view/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
@@ -5231,13 +5231,13 @@ function sessionFields(saved, views) {
   };
 }
 
-// ../hooks/session-presentation.ts
+// ../core/view/session-presentation.ts
 var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers");
 function presentedSession(session) {
   return Object.fromEntries(SESSION_FIELDS.map((field) => [field, session[field]]));
 }
 
-// ../hooks/herdr.ts
+// ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
 var FOCUS_TOKEN = "inbox-focus";
@@ -5482,7 +5482,7 @@ function pressFolder(appHome, sessionId) {
   return `${appHome}/inbox/presses/${sessionId}`;
 }
 
-// ../hooks/herdr-open.ts
+// ../core/remote/herdr-open.ts
 var HERDR_APP_TIMEOUT_MS = 5000;
 var PANEL_LABEL = "inbox.panel";
 var NO_SUCH_PANE = "no such pane";
@@ -5595,7 +5595,7 @@ function herdrPanelOpener() {
   });
 }
 
-// ../hooks/collapse.ts
+// ../core/view/collapse.ts
 var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
 function newsByRow({ ledger, prViews, lastActions }) {
   const pressed = (id) => lastActions[id]?.at;
@@ -5655,7 +5655,7 @@ function withCollapse(s, row, isCollapsed, at) {
   return { ...s, collapsed: isCollapsed && news.has(row) ? { ...kept, [row]: collapse } : kept };
 }
 
-// ../hooks/remote-viewers.ts
+// ../core/runtime/remote-viewers.ts
 var VIEWER_LEASE_MS = 60000;
 var MAX_VIEWERS = 32;
 function updateRemoteViewer(s, update, now) {
@@ -5727,7 +5727,7 @@ function remoteViewerReceipts(s) {
   ]));
 }
 
-// ../hooks/press-reducer.ts
+// ../core/view/press-reducer.ts
 function doneWake(ledger, ctx) {
   if (ctx.isTurnRunning)
     return null;
@@ -5822,7 +5822,7 @@ function reopenOnFailure(ledger, id, at) {
   return closed?.item && closed.how === "answered" && closed.at === at ? reopenItem(ledger, id) : ledger;
 }
 
-// ../hooks/remote-command-state.ts
+// ../core/runtime/remote-command-state.ts
 function remoteCommandArrival(s, deliveryId) {
   if (!deliveryId)
     return s;
@@ -5941,7 +5941,7 @@ function blockRemoteDeferred(s, id, reason) {
   };
 }
 
-// ../hooks/catch-up-text.ts
+// ../core/domain/catch-up-text.ts
 var CATCH_UP = "The ledger below may have missed turns. Write a CLOSED line for every item in <open> that the conversation shows answered, done, dealt with, or no longer relevant, and a FIXED line for every finding in <findings> that it shows was fixed. Add as NEW only what still waits on the user and is not already in <open> or <findings>.";
 function transcriptCatchUpPrompt(ledger, screen, transcript) {
   return [
@@ -6031,7 +6031,7 @@ function dialogActivity(questions, outcome) {
   }
 }
 
-// ../hooks/dialogs.ts
+// ../core/domain/dialogs.ts
 var OPTION_LABEL = /^\s*\(?(?:[a-z]|\d{1,2})\s*(?:[.):]|[\u2014\u2013-])\s+/i;
 function optionKey(option) {
   return option.replace(RECOMMENDED_SUFFIX, "").replace(OPTION_LABEL, "").trim().toLowerCase();
@@ -6186,7 +6186,7 @@ function noteDialog(s, callId, questions) {
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
 }
 
-// ../hooks/feedback.ts
+// ../core/view/feedback.ts
 function markedFeedbackText(f, isMarkDone, look) {
   return f.is === "done" && isMarkDone ? f.label : feedbackText(f, look);
 }
@@ -6377,7 +6377,7 @@ function feedbackText(f, look) {
   }
 }
 
-// ../hooks/pr-press.ts
+// ../core/view/pr-press.ts
 var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 function isPrPress(p) {
   return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh" || p.action === "pr-clear-finished";
@@ -6477,7 +6477,7 @@ function retryAction(retry) {
   return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
 }
 
-// ../hooks/pr-refresh.ts
+// ../core/view/pr-refresh.ts
 var PR_REFRESH_LABEL = "Refresh PRs";
 function tabWideProblem(prs) {
   if (prs.isGhMissing)
@@ -6531,7 +6531,7 @@ function prRefreshActions(row) {
   ]);
 }
 
-// ../hooks/pr-views.ts
+// ../core/view/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
 var PR_MERGED_LABEL = "Merged";
 var PR_CLOSED_LABEL = "Closed";
@@ -6578,7 +6578,7 @@ function drawnPrs(prState, links, lastActions, placing) {
   return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
 }
 
-// ../hooks/pr-order.ts
+// ../core/view/pr-order.ts
 var RANK_AGAIN_LABEL = "Rank again";
 var OTHER_PRS_TEXT = "Other PRs";
 function otherPrsStart(drawn) {
@@ -6654,7 +6654,7 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/pr-tab.ts
+// ../core/view/pr-tab.ts
 function threadActions(pr, t, presses) {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt);
   const on = { ref: pr.ref, thread: t.id };
@@ -6994,7 +6994,7 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
   }
 }
 
-// ../hooks/question-checks.ts
+// ../core/domain/question-checks.ts
 var MAX_CONTEXT = 200;
 var MAX_OPTION_NOTE = 120;
 function questionBody(input, options) {
@@ -7064,7 +7064,7 @@ function approvalText(item, canSend) {
   return isApproval(item) && item.helps.length === 0 && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
 }
 
-// ../hooks/earlier-answers.ts
+// ../core/domain/earlier-answers.ts
 var K1 = 1.2;
 var B = 0.75;
 var RELATIVE_FLOOR = 0.22;
@@ -7157,7 +7157,7 @@ function earlierLineText(line) {
   return `${line.lead}${line.answer}${line.rest}`;
 }
 
-// ../hooks/record-matches.ts
+// ../core/domain/record-matches.ts
 var MATCH_TEXT_CHARS = 200;
 function earlierAnswersText(id, earlier, now) {
   if (earlier.length === 0)
@@ -7174,7 +7174,7 @@ function earlierAnswersText(id, earlier, now) {
 `);
 }
 
-// ../hooks/tool-schemas.ts
+// ../core/domain/tool-schemas.ts
 var RECORD_SCHEMA = {
   type: "object",
   properties: {
@@ -7273,7 +7273,7 @@ var TOOL_FIELDS = {
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
-// ../hooks/tools.ts
+// ../core/runtime/tools.ts
 var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
 function orderDescription(host) {
   return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
@@ -7505,7 +7505,7 @@ function orderPrs(host, ledger, input, now, lastActions) {
   };
 }
 
-// ../hooks/arrivals.ts
+// ../core/view/arrivals.ts
 function recordRows(seen, listed) {
   const next = { ...seen };
   const added = {};
@@ -7637,7 +7637,7 @@ function titleTintEndsAt(rows, v, seen, now) {
   return next === Infinity ? null : next;
 }
 
-// ../hooks/action-plan.ts
+// ../core/view/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 function showsCompare(item) {
   return item.kind === "question" && item.isDesignChoice === true && item.options.length >= 2;
@@ -7874,7 +7874,7 @@ function actionLines(keys, more, { width, gap, separator }) {
   return { lines, isFollowUpLineNew };
 }
 
-// ../hooks/view.ts
+// ../core/view/view.ts
 var HOLDS_UP_TEXT = "Holds up";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -8098,7 +8098,7 @@ function perTurnStatus(recovery) {
   return { isRetrying: recovery === "retrying", error };
 }
 
-// ../hooks/status-page.ts
+// ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";
@@ -8281,7 +8281,7 @@ function seenSubjectIds(row) {
   return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
 
-// ../hooks/session-view.ts
+// ../core/view/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
@@ -8363,7 +8363,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
   };
 }
 
-// ../hooks/session-presses.ts
+// ../core/runtime/session-presses.ts
 function isRepeatWhileOut(s, p, at, drawn) {
   const rowId = pressRowId(p);
   const view = sessionView(s, at, drawn.settleWindowMs, drawn.holds);
@@ -8493,7 +8493,7 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
   };
 }
 
-// ../hooks/host-prs.ts
+// ../core/runtime/host-prs.ts
 var PRS_REFRESH_MS = 120000;
 var PRS_HIDDEN_REFRESH_MS = 10 * 60000;
 var NEW_PR_FETCH_MS = 15000;
@@ -8599,7 +8599,7 @@ async function rerunRun(host, e) {
 `)[0] || `gh exited with ${r.exitCode}`;
 }
 
-// ../hooks/fold-all.ts
+// ../core/view/fold-all.ts
 var statusFoldsOf = (view) => {
   const page = view.statusPage;
   const milestones = page.goal?.milestones ?? [];
@@ -8649,7 +8649,7 @@ function foldAllOn(view, tab, open, isOpening) {
   return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
 }
 
-// ../hooks/ui-controller-types.ts
+// ../core/view/ui-controller-types.ts
 var DEMO_REPLY_MS = SETTLED_MS;
 var COLLAPSE_WAIT_MS = 30000;
 var ROW_TAB_IDS = ["needsYou", "findings", "prs"];
@@ -8702,7 +8702,7 @@ function chain(start, ...steps) {
   }, start);
 }
 
-// ../hooks/ui-controller-selection.ts
+// ../core/view/ui-controller-selection.ts
 var opensFor2 = (r) => r.isWaiting && !r.isCollapsed;
 function collapsedOf(ui, view) {
   const collapsed = new Set(view.collapsed);
@@ -8886,7 +8886,7 @@ function selectRestored(ui, view, now) {
   return withCommands(moved, ...ui.tab === tab ? [{ kind: "reveal", tab, id: restoring.id, closedId: null }] : []);
 }
 
-// ../hooks/ui-controller-reply.ts
+// ../core/view/ui-controller-reply.ts
 function holdsOf(ui, now) {
   const undoOut = Object.values(ui.pressesOut).flatMap((p) => p.action === "undo" || p.action === "pr-undo" ? [p.rowId] : []);
   const undoShown = ui.config.undoClock === "first-read" ? Object.entries(ui.undoSeen).flatMap(([id, at]) => at + SETTLED_MS > now ? [id] : []) : undefined;
@@ -9066,7 +9066,7 @@ function releasedDrafts(ui, view) {
   return next;
 }
 
-// ../hooks/ui-controller-tabs.ts
+// ../core/view/ui-controller-tabs.ts
 var newRowsOf = (ui) => new Map(Object.entries(ui.newRows));
 var asRecord = (rows) => Object.fromEntries(rows);
 function isShownEmpty(ui, view, tab) {
@@ -9195,7 +9195,7 @@ function readTabs(ui, view, added, now) {
 }
 var hasHeldArrivals = (ui) => Object.values(ui.heldArrivals).some((ids) => (ids ?? []).length > 0);
 
-// ../hooks/ui-controller-clock.ts
+// ../core/view/ui-controller-clock.ts
 var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
 function settledStates(view) {
   const rows = allRows(view).flatMap((r) => r.state.is === "settled" ? [{ id: r.id, state: r.state }] : []);
@@ -9283,7 +9283,7 @@ function dueDemoReplies(ui, now) {
   return withCommands({ ...ui, demoReplies: ui.demoReplies.filter((d) => d.dueAt > now) }, ...commands);
 }
 
-// ../hooks/ui-controller.ts
+// ../core/view/ui-controller.ts
 var PERSON_EVENTS = new Set([
   "show-tab",
   "show-help",
@@ -9440,7 +9440,7 @@ function noticeOf(ui, now) {
 }
 var isUiWorthKeeping = (ui) => Object.values(ui.drafts).some((d) => d.text.trim() !== "") || Object.keys(ui.sentReplies).length > 0;
 
-// ../hooks/layout.ts
+// ../core/view/layout.ts
 var SPACE_UNIT = 4;
 var LINE_PT = 5 * SPACE_UNIT;
 var INSIDE_GAP_PT = 0;
@@ -9456,7 +9456,7 @@ var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
 var MARK_PT = 6 * SPACE_UNIT;
 var ROW_PAD_PT = ITEM_GAP_PT / 2;
 
-// ../hooks/row-parts.ts
+// ../core/view/row-parts.ts
 var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
 var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
 var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
@@ -9979,7 +9979,7 @@ function drawLine(line, isSelected, d) {
   return lines(out);
 }
 
-// ../hooks/empty-tab.ts
+// ../core/view/empty-tab.ts
 var EMPTY_TITLES = {
   needsYou: NOTHING_NEEDED_TEXT,
   findings: "No findings yet",
@@ -10362,7 +10362,7 @@ function drawGoalPart(part, d, isSelected) {
   return fieldLines(d, PAGE_MARK_AT);
 }
 
-// ../hooks/herdr-install.ts
+// ../core/remote/herdr-install.ts
 var BUILD_BANNER = "// Built by herdr/build.ts ";
 var BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)\. (\d+) characters follow\.$/;
 var isInboxMod = (mainJs) => mainJs.startsWith(BUILD_BANNER);
@@ -10504,7 +10504,7 @@ async function answerHerdrMod(files, appHome, bundledFolder, isYes, now) {
   return isYes ? keepHerdrModCurrent(files, appHome, bundledFolder, now) : { is: "current" };
 }
 
-// ../hooks/herdr-ask.ts
+// ../core/remote/herdr-ask.ts
 var LEAD = "Install the inbox's Herdr mod?";
 var INSTALLING_TEXT = "Installing the inbox mod in Herdr\u2026";
 var SAVING_TEXT = "Saving the answer\u2026";
@@ -11461,7 +11461,7 @@ function createPanel(deps) {
   };
 }
 
-// ../hooks/demo-delegates.ts
+// ../core/domain/demo-delegates.ts
 var MIN = 60000;
 function finishedDelegate(now, id, name, hoursAgo, summary) {
   const endedAt = now - hoursAgo * 60 * MIN;
@@ -11480,7 +11480,7 @@ function finishedDelegate(now, id, name, hoursAgo, summary) {
   };
 }
 
-// ../hooks/demo.ts
+// ../core/view/demo.ts
 var MIN2 = 60000;
 var REPO2 = "https://github.com/acme/visor";
 var DEMO_PLACE = { folder: "/Users/you/code/visor", branch: "pinch-dismiss" };
@@ -12064,7 +12064,7 @@ function demoView(now, agent) {
   };
 }
 
-// ../hooks/press-effects.ts
+// ../core/runtime/press-effects.ts
 function finishedResult(pending, errors, at) {
   const parts = pending.parts.map((part, n) => ({ ...part, error: errors[n] ?? null }));
   return {
@@ -12147,7 +12147,7 @@ async function runSends(host, effects, rowId, rows, at) {
 import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "fs/promises";
 import { join } from "path";
 
-// ../hooks/question-history.ts
+// ../core/domain/question-history.ts
 var HISTORY_VERSION = 1;
 var DAY_MS3 = 24 * 60 * 60000;
 var HISTORY_KEEP_MS = 180 * DAY_MS3;
@@ -12231,7 +12231,7 @@ function historyFolder(env) {
   return state ? `${state.replace(/\/+$/, "")}/inbox/questions` : null;
 }
 
-// ../hooks/history-store.ts
+// ../core/runtime/history-store.ts
 var caches = new Map;
 var repos = new Map;
 function cacheOf(folder) {
@@ -12389,7 +12389,7 @@ async function recordMatches(place, input, now) {
   }
 }
 
-// ../hooks/model-text.ts
+// ../core/domain/model-text.ts
 function guidanceText(host) {
   return `# Inbox
 ${host.intro}
@@ -12418,7 +12418,7 @@ Close with ${host.closeTool}:
 The answer to a question is the user's to give. Close a question with their answer, or once it no longer applies, and never with an answer of your own.`;
 }
 
-// ../hooks/session-turns.ts
+// ../core/runtime/session-turns.ts
 function notePrompt(host, s, text, isOpen) {
   const matched = matchSent(s, text);
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
@@ -12569,7 +12569,7 @@ function applied(s, parsed, now, promptAt, isDelegate) {
   });
 }
 
-// ../hooks/status-ops.ts
+// ../core/domain/status-ops.ts
 function namesAny(subjects, description) {
   const said = words(description);
   return subjects.some((s) => {
@@ -12809,7 +12809,7 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
   return withNoGoalNoted(kept, answer, askIds);
 }
 
-// ../hooks/session-status.ts
+// ../core/runtime/session-status.ts
 function isStatusCallCurrent(s, appliedAfter) {
   return s.presence.turnsApplied >= appliedAfter && s.overviewTurn <= appliedAfter;
 }
@@ -12899,7 +12899,7 @@ function appliedCatchUp(s, begun, parsed, now, isDelegate) {
   });
 }
 
-// ../hooks/status.ts
+// ../core/domain/status.ts
 var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES|NEXT|SUGGEST)\s*(?::\s*(.*))?$/i;
 function fields(value) {
   return value.split("|").map((f) => f.trim());
@@ -13009,7 +13009,7 @@ async function askStatus(ask, retryFor = () => null) {
   return { answer: withRetryLines(answer, parseStatus(again.text), retry.keeps), last: again };
 }
 
-// ../hooks/status-prompt-goal.ts
+// ../core/domain/status-prompt-goal.ts
 var NO_WORK_LINKED = "no work linked";
 var NO_TEXT = "no text";
 var NEXT_MARK = "next";
@@ -13131,7 +13131,7 @@ function goalBlocks(o, now) {
   ];
 }
 
-// ../hooks/status-prompt.ts
+// ../core/domain/status-prompt.ts
 var PARTS_RULE = ` When the agent's plan or the person names several parts of the work that the person would each name on their own, such as a login screen, a password reset and a sign-out button, each part is its own subject, queued until it starts, and the head names the whole. Never write one subject that repeats the head and holds those parts in its text. A part gets its subject even when a milestone covers it: a milestone is an outcome the goal needs, never a copy of a subject. The steps of one part, such as making it, testing it and writing its docs, are not parts: they stay in that part's subject.`;
 var OWN_CHILDREN_RULE = ` Work this session's own subagents or background tasks do on it, such as a review, keeps it working.`;
 function statusSystem(without = [], splitsParts = false) {
@@ -13250,7 +13250,7 @@ function statusCatchUpPrompt(input, transcript) {
   ].join(NL5);
 }
 
-// ../hooks/status-retry.ts
+// ../core/domain/status-retry.ts
 function isLineFor(op, s, last, askIds, now) {
   const names = (ref) => findSubject(last?.subjects ?? [], ref)?.id === s.id;
   if (op.kind === "set" || op.kind === "done" || op.kind === "drop" || op.kind === "was")
@@ -13287,7 +13287,7 @@ function statusRetry(input, prompt) {
   };
 }
 
-// ../hooks/call-record.ts
+// ../core/runtime/call-record.ts
 var ERROR_CHARS = 500;
 var ANSWER_CHARS = 4000;
 async function askedCall(ask, prompt, system, kind) {
@@ -13347,7 +13347,7 @@ function withCall(s, kind, heard, isParsed, at) {
   return { ...s, callFailures: { ...s.callFailures, [kind.call]: next } };
 }
 
-// ../hooks/status-records.ts
+// ../core/runtime/status-records.ts
 function statusCallPrompt(input, read) {
   switch (read.kind) {
     case "reply":
@@ -13484,7 +13484,7 @@ function refreshStatus(host) {
   });
 }
 
-// ../hooks/session-host.ts
+// ../core/runtime/session-host.ts
 function exclusiveKeys() {
   const held = new Set;
   return {
@@ -13621,7 +13621,7 @@ async function runUpdates(host) {
 }
 var NO_CONVERSATION_SCROLL = "this app does not let the inbox scroll its conversation";
 
-// ../hooks/session-version.ts
+// ../core/domain/session-version.ts
 var SESSION_VERSION = 1;
 function checkVersion(saved) {
   const version = saved.version ?? 1;
@@ -13804,7 +13804,7 @@ function demoSource(deps) {
   };
 }
 
-// ../hooks/tones.ts
+// ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
 var DARK_TONES = {
   needsYou: DARK_ORANGE,
@@ -14704,7 +14704,7 @@ import { appendFile, lstat, mkdir as mkdir3, readdir as readdir3, readFile as re
 import { dirname as dirname2, join as join3 } from "path";
 import { fileURLToPath } from "url";
 
-// ../hooks/herdr-press-file.ts
+// ../core/remote/herdr-press-file.ts
 var isLookFile = (file) => ("look" in file);
 var isPrsShownFile = (file) => ("prsShown" in file);
 var isPressFile = (file) => file.format === HERDR_FORMAT && ("press" in file);
@@ -14820,7 +14820,7 @@ function pressFile(text) {
   return { ok: true, file: { ...read, holds: { ...read.holds, listInput: listInputOf(read.holds.listInput) } } };
 }
 
-// ../hooks/held-sends.ts
+// ../core/runtime/held-sends.ts
 function dueRows(s, now) {
   return Object.entries(s.lastActions).filter(([, a]) => a.delivery?.state === "held" && a.delivery.until <= now && (!a.commandId || s.remoteCommands[a.commandId]?.state === "applied")).map(([id]) => id);
 }
@@ -14913,7 +14913,7 @@ async function releaseOne(host, id, isEarly) {
   });
 }
 
-// ../hooks/host-press.ts
+// ../core/runtime/host-press.ts
 async function wakeAfterSettle(host, current) {
   await releaseHeldSends(host, current);
   await wakeForDone(host);
@@ -15195,7 +15195,7 @@ async function press2(host, p, isStale, holds, commandId) {
   return (await startPress(host, p, isStale, holds, commandId)).finish();
 }
 
-// ../hooks/remote-commands.ts
+// ../core/remote/remote-commands.ts
 var LIFETIME_MS = 24 * 60 * 60000;
 var MAX_COMMANDS = 128;
 var MAX_COMMAND_BYTES = 128000;
@@ -15448,7 +15448,7 @@ async function applyRemoteCommand(host, command, sessionId) {
   return outcome;
 }
 
-// ../hooks/herdr-app.ts
+// ../core/remote/herdr-app.ts
 var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
 function pressFileProblem(info) {
   if (!info.isFile())
@@ -15699,7 +15699,7 @@ async function startHerdrFile(host, file, sessionId = "") {
   };
 }
 
-// ../hooks/herdr-sweep.ts
+// ../core/remote/herdr-sweep.ts
 var SWEEP_AFTER_MS = 24 * 60 * 60 * 1000;
 var HC_TIMEOUT_MS2 = 5000;
 var LIST_REQUEST = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "terminal.list", params: {} });
@@ -15772,7 +15772,7 @@ async function sweepModTemporaries(files, appHome, now) {
   return stale.length;
 }
 
-// ../hooks/herdr-start.ts
+// ../core/remote/herdr-start.ts
 var message3 = (err) => err instanceof Error ? err.message : String(err);
 function modLine(result) {
   if (result.is === "failed")
@@ -16117,7 +16117,7 @@ function panelCalls(context, sessions, herdrAsk) {
 import { mkdir as mkdir4, readdir as readdir4, rename as rename4, rm as rm2, rmdir, writeFile as writeFile4 } from "fs/promises";
 import { dirname as dirname3, join as join4 } from "path";
 
-// ../hooks/conversation.ts
+// ../core/domain/conversation.ts
 var NL7 = `
 `;
 var TRANSCRIPT_MAX = 80000;

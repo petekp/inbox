@@ -1,4 +1,4 @@
-// Built by codex/build.mjs from codex/src and hooks/. Do not edit.
+// Built by codex/build.mjs from codex/src and core/. Do not edit.
 
 // src/companion-listener.ts
 import { createHash } from "node:crypto";
@@ -6,7 +6,7 @@ import net from "node:net";
 import { chmod, lstat, mkdir, readFile, unlink, realpath } from "node:fs/promises";
 import { join } from "node:path";
 
-// ../hooks/status-limits.ts
+// ../core/domain/status-limits.ts
 var GOAL_LEFT_MS = 30 * 6e4;
 var IDLE_AFTER_MS = 24 * 60 * 6e4;
 var CHILD_KEPT_MS = 24 * 60 * 6e4;
@@ -21,7 +21,7 @@ function stem(word) {
   return base.replace(/([b-df-hj-np-tv-z])\1$/, "$1");
 }
 
-// ../hooks/ask-match.ts
+// ../core/domain/ask-match.ts
 var SYNONYMS = [
   ["vanish", "disappear"],
   ["remove", "delete"],
@@ -30,7 +30,7 @@ var SYNONYMS = [
 ];
 var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
 
-// ../hooks/ask-subject.ts
+// ../core/domain/ask-subject.ts
 var EMPTY_WORDS = new Set(
   `a about above after again ahead all already also an and any anything are as at back be been before being below both
 but by can could did do does doing done each either else every everything first for from get go going had has have
@@ -48,11 +48,11 @@ code problem stuff part green current new old latest previous mentioned proposed
   )
 );
 
-// ../hooks/ledger-close.ts
+// ../core/domain/ledger-close.ts
 var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
 
-// ../hooks/text.ts
+// ../core/domain/text.ts
 var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
 var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
 var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
@@ -68,10 +68,10 @@ var GRAPHEME = new RegExp(
 );
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 
-// ../hooks/ledger-update.ts
+// ../core/domain/ledger-update.ts
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
-// ../hooks/ledger.ts
+// ../core/domain/ledger.ts
 var EMPTY = {
   overview: null,
   items: [],
@@ -86,21 +86,21 @@ var EMPTY = {
   updates: 0
 };
 
-// ../hooks/inbox-text.ts
+// ../core/domain/inbox-text.ts
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
-// ../hooks/gh.ts
+// ../core/domain/gh.ts
 var GH_TIMEOUT_MS = 2e4;
 var UNSTARTABLE_CODE = -1;
 var TIMED_OUT_CODE = -2;
 
-// ../hooks/pr-fetch.ts
+// ../core/domain/pr-fetch.ts
 var MAX_ORDERED_PRS = 30;
 var CLOSED_PR_REFRESH_MS = 60 * 6e4;
 var LIMIT_RETRY_MS = 5 * 6e4;
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1e3} seconds`;
 
-// ../hooks/tabs.ts
+// ../core/view/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\u{1F9ED}" },
   { id: "needsYou", label: "Asks", symbol: "\u{1F64B}" },
@@ -114,7 +114,7 @@ function isRowTab(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 
-// ../hooks/help.ts
+// ../core/view/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
@@ -197,15 +197,15 @@ var MARK_LEGEND = [
   }
 ];
 
-// ../hooks/status-page-parts.ts
+// ../core/view/status-page-parts.ts
 var CHILD_MARK = SUBJECT_MARKS.working;
 var STALL_GAP = " \xB7 ";
 var DAY_MS = 24 * 60 * 6e4;
 
-// ../hooks/status-folds.ts
+// ../core/view/status-folds.ts
 var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
 
-// ../hooks/timing.ts
+// ../core/view/timing.ts
 var SETTLED_MS = 5120;
 var COMPARE_LIMIT_MS = 30 * 6e4;
 function listInputOf(raw) {
@@ -217,14 +217,14 @@ function listInputOf(raw) {
 var RUNNING_FRAME_MS = 300;
 var RUNNING_PULSE_MS = RUNNING_FRAMES.length * RUNNING_FRAME_MS;
 
-// ../hooks/rows.ts
+// ../core/view/rows.ts
 var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
   { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
 var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
 
-// ../hooks/session-files.ts
+// ../core/view/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
@@ -273,12 +273,12 @@ function emptySession() {
 var SESSION_FILE = /^[\w-]{1,100}\.json$/;
 var isSessionFile = (name) => SESSION_FILE.test(name);
 
-// ../hooks/session-presentation.ts
+// ../core/view/session-presentation.ts
 var SESSION_FIELDS = Object.keys(emptySession()).filter(
   (field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers"
 );
 
-// ../hooks/herdr.ts
+// ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
 var FOCUS_TOKEN = "inbox-focus";
@@ -307,7 +307,7 @@ function herdrTarget(env) {
 }
 var HERDR_FORMAT = 1;
 
-// ../hooks/herdr-press-file.ts
+// ../core/remote/herdr-press-file.ts
 var PRESS_TARGETS = {
   answer: "id",
   type: "id",
@@ -598,7 +598,7 @@ function detachedUpdate(dir2, env, script) {
   };
 }
 
-// ../hooks/pr-press.ts
+// ../core/view/pr-press.ts
 var RERUN_LABEL = "Re-run";
 var PR_FIX_LABELS = {
   "pr-conflicts": "Resolve conflicts",
@@ -612,7 +612,7 @@ var PR_READ_FIRST_LABELS = {
   "thread-address": "Address"
 };
 
-// ../hooks/earlier-answers.ts
+// ../core/domain/earlier-answers.ts
 var STOP_WORDS = new Set(
   `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
@@ -622,7 +622,7 @@ pr prs`.split(/\s+/)
 );
 var DAY_MS2 = 24 * 60 * 6e4;
 
-// ../hooks/tool-schemas.ts
+// ../core/domain/tool-schemas.ts
 var RECORD_SCHEMA = {
   type: "object",
   properties: {
@@ -721,13 +721,13 @@ var TOOL_FIELDS = {
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
-// ../hooks/arrivals.ts
+// ../core/view/arrivals.ts
 var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
-// ../hooks/action-plan.ts
+// ../core/view/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 
-// ../hooks/view.ts
+// ../core/view/view.ts
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
   waiting: `The inbox couldn't update from the agent's last reply. Questions, tasks and findings from it may be missing.${NEXT_TRY}`,
@@ -735,24 +735,24 @@ var FAILED_UPDATE_TEXT = {
   unreadable: `The inbox couldn't read this conversation. Questions, tasks and findings from the agent's last reply may be missing.${NEXT_TRY}`
 };
 
-// ../hooks/host-prs.ts
+// ../core/runtime/host-prs.ts
 var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
 
-// ../hooks/remote-commands.ts
+// ../core/remote/remote-commands.ts
 var LIFETIME_MS = 24 * 60 * 6e4;
 
 // src/host.ts
 import { appendFile, mkdir as mkdir2, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join as join3 } from "node:path";
 
-// ../hooks/question-history.ts
+// ../core/domain/question-history.ts
 var DAY_MS3 = 24 * 60 * 6e4;
 var HISTORY_KEEP_MS = 180 * DAY_MS3;
 var BASELINE_MS = 7 * DAY_MS3;
 var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
 var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
 
-// ../hooks/history-store.ts
+// ../core/runtime/history-store.ts
 var DAY_MS4 = 24 * 60 * 6e4;
 
 // src/diagnostics.ts
@@ -761,14 +761,14 @@ var DIAGNOSTIC = new RegExp(
   `${TIME}(?:(?:ERROR|WARNING|error|warning):|(?:ERROR|WARN)\\s|Unknown feature flag: |[\\w ]*stream error:)`
 );
 
-// ../hooks/session-status.ts
+// ../core/runtime/session-status.ts
 var STATUS_REFRESH_MS = 10 * 6e4;
 
 // src/settle.ts
 var POLL_MS = 3e3;
 var SETTLE_WINDOW_MS = SETTLED_MS + 2 * POLL_MS;
 
-// ../hooks/herdr-app.ts
+// ../core/remote/herdr-app.ts
 var PRESS_FILE_LIMIT_BYTES = 64 * 1024;
 var PUBLISH_LIMIT_BYTES = 1024 * 1024;
 

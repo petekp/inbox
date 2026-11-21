@@ -1,5 +1,5 @@
-// Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.
-// Built at 2026-11-21T04:52:17.011Z. 337622 characters follow.
+// Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
+// Built at 2026-11-21T07:26:36.575Z. 337974 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -23,7 +23,7 @@ import {
   writeTextFile
 } from "herdr";
 
-// ../hooks/press-labels.ts
+// ../core/domain/press-labels.ts
 function actionId(p) {
   return p.action === "step" ? `step-${p.step}` : p.action;
 }
@@ -33,7 +33,7 @@ function capitalized(text) {
 var ISSUE_LABEL = "File issue";
 var SHOW_EXPLANATION_LABEL = "Show explanation";
 
-// ../hooks/banners.ts
+// ../core/view/banners.ts
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
 }
@@ -77,7 +77,7 @@ function versionLabel(version, isNextBuild) {
 var NOTHING_NEEDED_TEXT = "Nothing needed";
 var MAYBE_STALE_TEXT = "May be out of date";
 
-// ../hooks/tabs.ts
+// ../core/view/tabs.ts
 var TAB_NAMES = [
   { id: "overview", label: "Status", symbol: "\uD83E\uDDED" },
   { id: "needsYou", label: "Asks", symbol: "\uD83D\uDE4B" },
@@ -100,12 +100,12 @@ function screenTabOf(tab) {
 }
 var ROW_TABS = TAB_NAMES.filter((t) => isRowTab(t.id));
 
-// ../hooks/band.ts
+// ../core/view/band.ts
 function isMaybeStale(view, isReadFailed = false) {
   return isReadFailed || view.status.error !== null || view.status.isRetrying;
 }
 
-// ../hooks/status-limits.ts
+// ../core/domain/status-limits.ts
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
 var TEXT_KEPT = 12;
@@ -193,7 +193,7 @@ function isOpen(s) {
   return s.status !== "done" && s.status !== "dropped";
 }
 
-// ../hooks/text.ts
+// ../core/domain/text.ts
 function clipLabel(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
@@ -247,7 +247,7 @@ function clockTime(ms) {
   return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-// ../hooks/status-children.ts
+// ../core/domain/status-children.ts
 function isChildRunning(c, now) {
   return c.startedAt <= now && (c.endedAt === null || c.endedAt > now);
 }
@@ -269,20 +269,20 @@ function isSubjectSeen(o, s) {
   return seenAt !== null && s.changedAt <= seenAt;
 }
 
-// ../hooks/children.ts
+// ../core/domain/children.ts
 var ENDED = new Set(["completed", "failed", "killed", "stopped"]);
 
-// ../hooks/gh.ts
+// ../core/domain/gh.ts
 var GH_TIMEOUT_MS = 20000;
 
-// ../hooks/hc-terminals.ts
+// ../core/remote/hc-terminals.ts
 var HC_BLOCKED = new Set(["blocked", "error"]);
 
-// ../hooks/herdr-labels.ts
+// ../core/remote/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
 var PRESS_LABEL = "inbox.press";
 
-// ../hooks/ask-match.ts
+// ../core/domain/ask-match.ts
 function words2(text) {
   return text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
@@ -383,7 +383,7 @@ var SYNONYMS = [
 ];
 var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), stem(group[0])])));
 
-// ../hooks/ask-subject.ts
+// ../core/domain/ask-subject.ts
 var EMPTY_WORDS = new Set(`a about above after again ahead all already also an and any anything are as at back be been before being below both
 but by can could did do does doing done each either else every everything first for from get go going had has have
 here how i if in into is it its just last later lets let me more my need next no not now of ok okay on once one ones
@@ -397,7 +397,7 @@ edit set show see look pick choose decide answer reply tell say ask like prefer 
 pr prs branch thing step plan design option variant version note rule issue item task question proposal idea
 code problem stuff part green current new old latest previous mentioned proposed suggested remaining pending`.split(/\s+/));
 
-// ../hooks/ledger-close.ts
+// ../core/domain/ledger-close.ts
 function idNumber(id) {
   return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
 }
@@ -436,16 +436,16 @@ function closedAt(c) {
   return "closedAt" in c ? c.closedAt : c.at;
 }
 
-// ../hooks/reply-parse.ts
+// ../core/domain/reply-parse.ts
 function readKind(kind) {
   return kind === "task" || kind === "do" ? "task" : "question";
 }
 
-// ../hooks/ledger-update.ts
+// ../core/domain/ledger-update.ts
 var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
-// ../hooks/status-upgrade-goal.ts
+// ../core/domain/status-upgrade-goal.ts
 var REFUSAL_LINES = ["goal", "retire"];
 var REFUSAL_WHYS = [
   "typed",
@@ -554,7 +554,7 @@ function goalFields(o, subjects) {
   };
 }
 
-// ../hooks/status-upgrade.ts
+// ../core/domain/status-upgrade.ts
 var CHILD_KINDS = ["subagent", "workflow", "delegate"];
 var DELEGATE_STATES = ["working", "blocked", "finished"];
 function text(value) {
@@ -704,7 +704,7 @@ function upgradeStatus(saved) {
   };
 }
 
-// ../hooks/ledger.ts
+// ../core/domain/ledger.ts
 var EMPTY = {
   overview: null,
   items: [],
@@ -778,7 +778,7 @@ function howFromOutcome(outcome) {
 }
 var CLOSED_BY_CLAUDE = "closed by Claude";
 
-// ../hooks/inbox-text.ts
+// ../core/domain/inbox-text.ts
 function latestBatch(ledger) {
   return ledger.batchTurn === 0 ? [] : ledger.items.filter((i) => i.turn === ledger.batchTurn);
 }
@@ -808,12 +808,12 @@ function questionNumbers(ledger, promptTurn) {
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
 
-// ../hooks/presses.ts
+// ../core/domain/presses.ts
 function isPrRowId(id) {
   return id.startsWith("pr:") || id.includes(" ");
 }
 
-// ../hooks/last-actions.ts
+// ../core/domain/last-actions.ts
 function isAwaitingReply(last, turns) {
   const pressed = last?.delivery?.state !== "failed" ? last?.turnsStarted : undefined;
   return pressed !== undefined && pressed <= turns.turnsStarted && turns.turnsApplied <= pressed;
@@ -874,7 +874,7 @@ function upgradeLastActions(saved) {
   }));
 }
 
-// ../hooks/host-tasks.ts
+// ../core/domain/host-tasks.ts
 var STATUSES2 = {
   pending: "pending",
   in_progress: "in-progress",
@@ -895,7 +895,7 @@ function upgradeHostTasks(saved) {
   });
 }
 
-// ../hooks/pr-checks.ts
+// ../core/domain/pr-checks.ts
 function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
 }
@@ -918,7 +918,7 @@ function blockingChecks(pr) {
   return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
 }
 
-// ../hooks/prs.ts
+// ../core/domain/prs.ts
 function namedPrs(text, refs) {
   const numbers = new Set([...text.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
   const known = [...new Set(refs)];
@@ -1044,7 +1044,7 @@ function took(ms) {
   return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
 }
 
-// ../hooks/open-targets.ts
+// ../core/domain/open-targets.ts
 function baseName(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? path;
 }
@@ -1081,7 +1081,7 @@ async function openTarget(run, probe, target, root, home) {
   return retry.code === 0 ? null : failure(retry);
 }
 
-// ../hooks/press-messages.ts
+// ../core/domain/press-messages.ts
 function findingBody(finding) {
   return [
     `${finding.kind === "issue" ? "Issue" : "Opportunity"}: ${finding.title}`,
@@ -1130,7 +1130,7 @@ ${asks.map((a) => `- ${a}`).join(`
   }
 };
 
-// ../hooks/help-steps.ts
+// ../core/domain/help-steps.ts
 var COMMAND_LABEL_CHARS = 64;
 var commandLabel = (command) => clipLabel(command, COMMAND_LABEL_CHARS);
 function helpLabel(help) {
@@ -1181,7 +1181,7 @@ function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
 
-// ../hooks/pr-fetch.ts
+// ../core/domain/pr-fetch.ts
 var MAX_PRS = 12;
 var CLOSED_PR_REFRESH_MS = 60 * 60000;
 var LIMIT_RETRY_MS = 5 * 60000;
@@ -1226,7 +1226,7 @@ function fetchFailureWords(f) {
 }
 var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} seconds`;
 
-// ../hooks/status-freshness.ts
+// ../core/domain/status-freshness.ts
 var STALE_AFTER_CALLS = 5;
 var STATUS_FAILED = "The inbox couldn't update this page from one of the agent's replies. What changed in that reply may be missing. It will read the whole conversation to fix this after the next reply. If that fails, it waits longer before each new try.";
 function statusPageLine(s, now) {
@@ -1238,10 +1238,10 @@ function statusPageLine(s, now) {
   };
 }
 
-// ../hooks/status-suggest.ts
+// ../core/domain/status-suggest.ts
 var hasRunningGoal = (o) => o.goal !== null && o.goal.metAt === null;
 
-// ../hooks/help.ts
+// ../core/view/help.ts
 var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "▲", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "✦", tone: "opportunity" }
@@ -1395,7 +1395,7 @@ function helpKeys(look) {
   }
 }
 
-// ../hooks/status-page-parts.ts
+// ../core/view/status-page-parts.ts
 var LISTED_NAMES = 2;
 var namedFoldMore = (n) => `+${n} more`;
 function namedList(names) {
@@ -1545,7 +1545,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   return rows;
 }
 
-// ../hooks/status-folds.ts
+// ../core/view/status-folds.ts
 function waitingUnderParents(ledger) {
   const o = ledger.overview;
   if (!o)
@@ -1592,7 +1592,7 @@ function statusListRows(page) {
   return listRows(page.goal?.milestones ?? [], page.rows);
 }
 
-// ../hooks/status-path.ts
+// ../core/view/status-path.ts
 var LATER_TEXT = "Later";
 function milestonePath(shown) {
   const done = shown.filter((m) => m.status === "done").sort((x, y) => (x.closedAt ?? x.changedAt) - (y.closedAt ?? y.changedAt));
@@ -1639,7 +1639,7 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
   return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
 }
 
-// ../hooks/status-goal-page.ts
+// ../core/view/status-goal-page.ts
 var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
@@ -1726,7 +1726,7 @@ function goalPage(o, items) {
   };
 }
 
-// ../hooks/status-keys.ts
+// ../core/view/status-keys.ts
 var GOAL_KEYS_ID = "goal";
 var VIEW_ASK_LABELS = { question: "View question", task: "View task" };
 function viewAsk(ask) {
@@ -1803,7 +1803,7 @@ function goalKeyGroups(page) {
 var GOAL_FIELD = { placeholder: "An outcome to work toward" };
 var goalSubmitLabel = (page) => page.goal === null || page.goal.isMet ? "Set" : "Save";
 
-// ../hooks/pressed.ts
+// ../core/view/pressed.ts
 function offersUndo(c) {
   return c.how === "done" || c.how === "dismissed";
 }
@@ -1844,7 +1844,7 @@ function isHeldSend(last) {
   return last?.delivery?.state === "held";
 }
 
-// ../hooks/timing.ts
+// ../core/view/timing.ts
 var SETTLED_MS = 5120;
 var PRESS_GUARD_MS = 400;
 var QUEUED_AFTER_MS = 1000;
@@ -1943,7 +1943,7 @@ function hasRunningMark(page) {
   return statusListRows(page).some((r) => (r.kind === "subject" || r.kind === "child") && r.isRunning);
 }
 
-// ../hooks/rows.ts
+// ../core/view/rows.ts
 var OPTIONS_FOLD_AT = 5;
 var DOT = " · ";
 var NEEDS_YOU_GROUPS = [
@@ -2144,7 +2144,7 @@ function outcomeLabel(c) {
   return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
 }
 
-// ../hooks/pr-rows.ts
+// ../core/view/pr-rows.ts
 function prThreadId(pr, t) {
   return threadRowId(pr.ref, t.id);
 }
@@ -2281,7 +2281,7 @@ var PR_TONES = {
   closed: "error"
 };
 
-// ../hooks/saved-check-keys.ts
+// ../core/view/saved-check-keys.ts
 function savedCheckKey(checks, name) {
   if (checks.some((c) => checkKey(c) === name))
     return name;
@@ -2311,7 +2311,7 @@ function withCheckKeys(s, views) {
   };
 }
 
-// ../hooks/session-files.ts
+// ../core/view/session-files.ts
 var NO_PRS = { views: {}, branchRef: null, isFetching: false };
 var NO_FAILURE = { lastFailure: null, recoveredAt: null };
 var NO_CALL_FAILURES = { ledger: NO_FAILURE, status: NO_FAILURE };
@@ -2434,10 +2434,10 @@ function sessionFields(saved, views) {
   };
 }
 
-// ../hooks/session-presentation.ts
+// ../core/view/session-presentation.ts
 var SESSION_FIELDS = Object.keys(emptySession()).filter((field) => field !== "remoteCommands" && field !== "remoteViewers" && field !== "remoteCommandFloor" && field !== "lastAnswers");
 
-// ../hooks/herdr.ts
+// ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
 var FOCUS_TOKEN = "inbox-focus";
@@ -2459,7 +2459,7 @@ function pressFolder(appHome, sessionId) {
   return `${appHome}/inbox/presses/${sessionId}`;
 }
 
-// ../hooks/arrivals.ts
+// ../core/view/arrivals.ts
 function recordRows(seen, listed) {
   const next = { ...seen };
   const added = {};
@@ -2591,7 +2591,7 @@ function titleTintEndsAt(rows, v, seen, now) {
   return next === Infinity ? null : next;
 }
 
-// ../hooks/pr-views.ts
+// ../core/view/pr-views.ts
 var PR_DISMISSED_LABEL = "Dismissed";
 var PR_MERGED_LABEL = "Merged";
 var PR_CLOSED_LABEL = "Closed";
@@ -2631,7 +2631,7 @@ function drawnPrs(prState, links, lastActions, placing) {
   return drawn.map((d) => ({ ...d, isRanked: rankOf(d.pr, ranked) !== null }));
 }
 
-// ../hooks/press-reducer.ts
+// ../core/view/press-reducer.ts
 var STALE_TEXT = "This changed before your press. Nothing was sent.";
 function noteText() {
   return STALE_TEXT;
@@ -2640,7 +2640,7 @@ function isPressConfirmed(outcome) {
   return outcome.error === null && outcome.note === null && !outcome.isUnconfirmed;
 }
 
-// ../hooks/feedback.ts
+// ../core/view/feedback.ts
 function markedFeedbackText(f, isMarkDone, look) {
   return f.is === "done" && isMarkDone ? f.label : feedbackText(f, look);
 }
@@ -2835,7 +2835,7 @@ function feedbackText(f, look) {
   }
 }
 
-// ../hooks/pr-press.ts
+// ../core/view/pr-press.ts
 function isPrPress(p) {
   return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh" || p.action === "pr-clear-finished";
 }
@@ -2946,7 +2946,7 @@ function retryAction(retry) {
   return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
 }
 
-// ../hooks/pr-order.ts
+// ../core/view/pr-order.ts
 var RANK_AGAIN_LABEL = "Rank again";
 var OTHER_PRS_TEXT = "Other PRs";
 function otherPrsStart(drawn) {
@@ -3009,7 +3009,7 @@ function prOrderActions(row) {
   ]);
 }
 
-// ../hooks/pr-refresh.ts
+// ../core/view/pr-refresh.ts
 var PR_REFRESH_LABEL = "Refresh PRs";
 function tabWideProblem(prs) {
   if (prs.isGhMissing)
@@ -3063,7 +3063,7 @@ function prRefreshActions(row) {
   ]);
 }
 
-// ../hooks/pr-tab.ts
+// ../core/view/pr-tab.ts
 function threadActions(pr, t, presses) {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt);
   const on = { ref: pr.ref, thread: t.id };
@@ -3199,7 +3199,7 @@ function prClearActions(prState, links) {
   ];
 }
 
-// ../hooks/action-plan.ts
+// ../core/view/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 function showsCompare(item) {
   return item.kind === "question" && item.isDesignChoice === true && item.options.length >= 2;
@@ -3411,7 +3411,7 @@ function answersFitLine(widths, gap, room) {
   return widths.reduce((sum, w) => sum + w, 0) + gap * Math.max(0, widths.length - 1) <= room;
 }
 
-// ../hooks/earlier-answers.ts
+// ../core/domain/earlier-answers.ts
 var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
 shall may might must not no yes now still also just again already instead yet any all some each per via up out over
@@ -3442,7 +3442,7 @@ function earlierLineText(line) {
   return `${line.lead}${line.answer}${line.rest}`;
 }
 
-// ../hooks/view.ts
+// ../core/view/view.ts
 var HOLDS_UP_TEXT = "Holds up";
 function needsYouOrder(ledger) {
   const newestReplyFirst = (kind) => ledger.items.filter((i) => i.kind === kind).sort((a, b) => b.turn - a.turn);
@@ -3666,7 +3666,7 @@ function perTurnStatus(recovery) {
   return { isRetrying: recovery === "retrying", error };
 }
 
-// ../hooks/collapse.ts
+// ../core/view/collapse.ts
 var latest = (...times) => Math.max(-Infinity, ...times.filter((t) => typeof t === "number"));
 function newsByRow({ ledger, prViews, lastActions }) {
   const pressed = (id) => lastActions[id]?.at;
@@ -3694,7 +3694,7 @@ function collapsedRows(s) {
   return Object.entries(s.collapsed ?? {}).flatMap(([id, c]) => isUnchanged(news.get(id), c) ? [id] : []);
 }
 
-// ../hooks/status-page.ts
+// ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
 var WAS_PREFIX = "Prev: ";
 var MERGED_PREFIX = "merged in: ";
@@ -3871,7 +3871,7 @@ function seenSubjectIds(row) {
   return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
 }
 
-// ../hooks/session-view.ts
+// ../core/view/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
   if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
@@ -3953,7 +3953,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
   };
 }
 
-// ../hooks/fold-all.ts
+// ../core/view/fold-all.ts
 var statusFoldsOf = (view) => {
   const page = view.statusPage;
   const milestones = page.goal?.milestones ?? [];
@@ -4003,7 +4003,7 @@ function foldAllOn(view, tab, open, isOpening) {
   return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
 }
 
-// ../hooks/ui-controller-types.ts
+// ../core/view/ui-controller-types.ts
 var DEMO_REPLY_MS = SETTLED_MS;
 var COLLAPSE_WAIT_MS = 30000;
 var MAX_KEPT_UI = 20;
@@ -4057,7 +4057,7 @@ function chain(start, ...steps) {
   }, start);
 }
 
-// ../hooks/ui-controller-selection.ts
+// ../core/view/ui-controller-selection.ts
 var opensFor2 = (r) => r.isWaiting && !r.isCollapsed;
 function collapsedOf(ui, view) {
   const collapsed = new Set(view.collapsed);
@@ -4241,7 +4241,7 @@ function selectRestored(ui, view, now) {
   return withCommands(moved, ...ui.tab === tab ? [{ kind: "reveal", tab, id: restoring.id, closedId: null }] : []);
 }
 
-// ../hooks/ui-controller-reply.ts
+// ../core/view/ui-controller-reply.ts
 function holdsOf(ui, now) {
   const undoOut = Object.values(ui.pressesOut).flatMap((p) => p.action === "undo" || p.action === "pr-undo" ? [p.rowId] : []);
   const undoShown = ui.config.undoClock === "first-read" ? Object.entries(ui.undoSeen).flatMap(([id, at]) => at + SETTLED_MS > now ? [id] : []) : undefined;
@@ -4421,7 +4421,7 @@ function releasedDrafts(ui, view) {
   return next;
 }
 
-// ../hooks/ui-controller-tabs.ts
+// ../core/view/ui-controller-tabs.ts
 var newRowsOf = (ui) => new Map(Object.entries(ui.newRows));
 var asRecord = (rows) => Object.fromEntries(rows);
 function isShownEmpty(ui, view, tab) {
@@ -4550,7 +4550,7 @@ function readTabs(ui, view, added, now) {
 }
 var hasHeldArrivals = (ui) => Object.values(ui.heldArrivals).some((ids) => (ids ?? []).length > 0);
 
-// ../hooks/ui-controller-clock.ts
+// ../core/view/ui-controller-clock.ts
 var undoPlaceEndsAt = (state) => state.at + SETTLED_MS + QUEUED_AFTER_MS;
 function settledStates(view) {
   const rows = allRows(view).flatMap((r) => r.state.is === "settled" ? [{ id: r.id, state: r.state }] : []);
@@ -4638,7 +4638,7 @@ function dueDemoReplies(ui, now) {
   return withCommands({ ...ui, demoReplies: ui.demoReplies.filter((d) => d.dueAt > now) }, ...commands);
 }
 
-// ../hooks/ui-controller.ts
+// ../core/view/ui-controller.ts
 var PERSON_EVENTS = new Set([
   "show-tab",
   "show-help",
@@ -5137,7 +5137,7 @@ function holdLinesAbove(blocks, held, now) {
   return { blocks: shown, held: next };
 }
 
-// ../hooks/springs.ts
+// ../core/view/springs.ts
 var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
 var LONGEST_MOVE_PX = 2000;
 var FRAME_MS = 16;
@@ -5178,7 +5178,7 @@ function settleMs(spring) {
 }
 var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
 
-// ../hooks/row-motion.ts
+// ../core/view/row-motion.ts
 var FADE_MS = 200;
 var LEAVE_FADE_MS = 120;
 var ENTER_FADE_MS = 150;
@@ -5418,7 +5418,7 @@ function opacityAt(steps, now) {
   return step.from + (step.to - step.from) * easeOut(share);
 }
 
-// ../hooks/layout.ts
+// ../core/view/layout.ts
 var SPACE_UNIT = 4;
 var LINE_PT = 5 * SPACE_UNIT;
 var INSIDE_GAP_PT = 0;
@@ -5766,7 +5766,7 @@ function nextDrawAt(now, moved) {
 import { div as div14 } from "gpui-kit";
 import { h_flex as h_flex9, v_flex as v_flex6 } from "gpui-base";
 
-// ../hooks/row-parts.ts
+// ../core/view/row-parts.ts
 var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
 var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
 var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
@@ -5798,7 +5798,7 @@ function partPt(above, below) {
   return STEP_PT[partGap(above, below).step];
 }
 
-// ../hooks/tones.ts
+// ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
 var DARK_TONES = {
   needsYou: DARK_ORANGE,
@@ -6857,7 +6857,7 @@ function herdrIo({ exec, hc, readTextFile, writeTextFile, home }) {
   return { queueIo, hereIo };
 }
 
-// ../hooks/empty-tab.ts
+// ../core/view/empty-tab.ts
 var EMPTY_TITLES = {
   needsYou: NOTHING_NEEDED_TEXT,
   findings: "No findings yet",
@@ -7149,7 +7149,7 @@ function prTabBlocks(screen, selected) {
   ];
 }
 
-// ../hooks/status-gaps.ts
+// ../core/view/status-gaps.ts
 function isOneLineStatusRow(r) {
   if (r.kind !== "subject")
     return true;
