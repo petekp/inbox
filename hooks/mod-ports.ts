@@ -72,7 +72,8 @@ type AtomStore = {
   dialogs: AtomCalls<InboxState['dialogs']>
   redraw: AtomCalls<number>
   runningFrame: AtomCalls<number>
-  session: AtomCalls<ModSession>
+  /** Read only here: `writeSession` writes it. */
+  session: Pick<AtomCalls<ModSession>, 'read'>
   away: AtomCalls<InboxState['away']>
   unreadable: AtomCalls<string | null>
   demo: AtomCalls<InboxState['demo']>
@@ -129,8 +130,10 @@ type SetupCalls = {
   /** `CLAUDE_CODE_ENTRYPOINT` and `CLAUDE_CODE_CHILD_SESSION`. */
   launchEnv: () => Promise<[string | undefined, string | undefined]>
   terminalProgram: () => Promise<string | undefined>
-  read: (path: string) => Promise<string>
-  exists: (path: string) => Promise<boolean>
+  /** The plugin's `.claude-plugin/plugin.json`. */
+  manifest: () => Promise<string>
+  /** Whether the plugin folder holds the next-build mark. */
+  isNextBuild: () => Promise<boolean>
   /** The `theme` row's value in /config. */
   theme: () => Promise<unknown>
 }
@@ -142,7 +145,7 @@ type ModelCalls = {
 
 /**
  * What the mod's modules reach, which `register.tsx` binds from `$` for each hook: narrow engine calls, and the
- * operations modules share. A module names the fields it uses with `Pick`. The shared operations run through here
+ * operations modules share. A module that uses some of them names those with `Pick`, and one that uses most takes `Mod`. The shared operations run through here
  * rather than by import, so the modules that call them and the modules that define them import no value from each
  * other in a loop.
  */
@@ -158,6 +161,8 @@ export type Mod = {
   commands: EngineCalls
   herdr: HerdrCalls
   pluginRoot: string
+  /** Writes the drawn session. The state upgrade and the modules that run the write loop in `mod-session-write.ts` take it. */
+  writeSession: (change: (s: ModSession) => ModSession) => Promise<ModSession>
   /** Changes `owner`'s session, as `commit` in `hooks/mod-session-write.ts` does. */
   commit: (owner: Owner, change: (s: Session) => Session | Promise<Session>) => Promise<Session>
   /** Runs events through the shared controller, as `sendUi` in `hooks/mod-ui-loop.ts` does. */

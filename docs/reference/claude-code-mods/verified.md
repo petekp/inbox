@@ -31,7 +31,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 
 - `AGENTS.md`: "The plugin store is keyed by the mod's name". Live store file names are keyed by plugin id (`inbox_inline-7e8589075f50.json`).
 - `AGENTS.md` and `ROADMAP.md:29` call the per-turn call a "Sonnet call". `sonnet` resolves to different models by provider. See "What the inbox's model calls cost".
-- The comment in `hooks/register.tsx:on('session.start')` says "-p, the SDK and VS Code draw nothing". That matches the docs. The types give `vscode` its own element table.
+- The comment in `hooks/mod-lifecycle.ts:sessionStarted` says "-p, the SDK and VS Code draw nothing". That matches the docs. The types give `vscode` its own element table.
 
 ## Store files (live, names only)
 

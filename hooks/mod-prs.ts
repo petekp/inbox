@@ -11,6 +11,7 @@ import { withNewPrRefs } from './session-turns'
 type PrCalls = Pick<
   Mod,
   | 'atoms'
+  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'saves'

@@ -21,7 +21,9 @@ import { noteRanCall } from './mod-records'
 import type { SaveEngine } from './mod-saves'
 import { commit } from './mod-session-write'
 import { NO_SESSION, PRESENT } from './mod-sessions'
-import { ensureOn, inboxCommand, registerInboxCommand, sessionEnded, sessionStarted } from './mod-start'
+import { inboxCommand } from './mod-command'
+import { ensureOn, registerInboxCommand, sessionEnded, sessionStarted } from './mod-lifecycle'
+import { nextBuildMarkPath } from './mod-plugin-files'
 import { cancelUndoScroll, mod, sessionState } from './mod-state'
 import { agentSpawned, runTool, toolCalled } from './mod-tool-calls'
 import { noteStopFailure, noteTurnEnd, noteTurnStart } from './mod-turns'
@@ -135,7 +137,7 @@ function modOf($: EngineInterface): Mod {
       dialogs: { read: () => read($, DIALOGS), update: change => update($, DIALOGS, change) },
       redraw: { read: () => read($, REDRAW), update: change => update($, REDRAW, change) },
       runningFrame: { read: () => read($, RUNNING_FRAME), update: change => update($, RUNNING_FRAME, change) },
-      session: { read: () => read($, SESSION), update: change => update($, SESSION, change) },
+      session: { read: () => read($, SESSION) },
       away: { read: () => read($, AWAY), update: change => update($, AWAY, change) },
       unreadable: { read: () => read($, UNREADABLE), update: change => update($, UNREADABLE, change) },
       demo: { read: () => read($, DEMO), update: change => update($, DEMO, change) },
@@ -199,8 +201,8 @@ function modOf($: EngineInterface): Mod {
       surfaces: () => $.session.surfaces(),
       launchEnv: () => Promise.all([$.env.get('CLAUDE_CODE_ENTRYPOINT'), $.env.get('CLAUDE_CODE_CHILD_SESSION')]),
       terminalProgram: () => $.env.get('TERM_PROGRAM'),
-      read: path => $.fs.read(path),
-      exists: path => $.fs.exists(path),
+      manifest: () => $.fs.read(`${$.plugin.root}/.claude-plugin/plugin.json`),
+      isNextBuild: () => $.fs.exists(nextBuildMarkPath($.plugin.root)),
       theme: async () => (await $.config.list()).find(row => row.key === 'theme')?.value,
     },
     saves,
@@ -208,6 +210,7 @@ function modOf($: EngineInterface): Mod {
     commands,
     herdr: herdrCalls($, commands),
     pluginRoot: $.plugin.root,
+    writeSession: change => update($, SESSION, change),
     commit: (owner, change) => commit(m, owner, change),
     sendUi: (events, surface) => sendUi(m, events, surface),
     publishStatus: (isEnding, isExit) => publishStatus(m, isEnding, isExit),

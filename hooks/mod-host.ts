@@ -24,6 +24,7 @@ import { SETTLED_MS } from './timing'
 type HostCalls = Pick<
   Mod,
   | 'atoms'
+  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'conversation'

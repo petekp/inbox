@@ -82,5 +82,5 @@ Other public source:
 Local sources:
 
 - `.claude-plugin/types/claude-code/index.d.ts`: the engine types. Gitignored; rewritten by the engine that loads the mod.
-- `hooks/register.tsx`, `hooks/mod-start.ts` and `hooks/mod-prompts.ts`: how the inbox turns on, reloads and reads prompt origins.
+- `hooks/register.tsx`, `hooks/mod-lifecycle.ts` and `hooks/mod-prompts.ts`: how the inbox turns on, reloads and reads prompt origins.
 - Live checks on this Mac: process arguments, `claude --version`, `claude agents --json`, `claude plugin list`, the files under `~/Library/Application Support/Claude/` and `~/.claude/plugins/store/`.

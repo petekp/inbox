@@ -46,6 +46,7 @@ import { type AgentTool, NOT_SAVED, type ToolAnswer } from './tools'
 type ToolCallCalls = Pick<
   Mod,
   | 'atoms'
+  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'conversation'

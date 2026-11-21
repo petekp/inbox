@@ -1,16 +1,13 @@
-import type { Hook, SessionEndReason } from 'claude-code'
+import type { SessionEndReason } from 'claude-code'
 
 import { PR_POLL_MS } from './host-prs'
 import { forgetStored } from './mod-delivery'
-import { setDemo } from './mod-demo'
-import { readUi, redraw } from './mod-drawn'
+import { redraw } from './mod-drawn'
 import { recordsFolder } from './mod-engine-calls'
-import { askHerdrModAgain, isExitReason, listenForHerdrPresses, openInHerdr, startInHerdr } from './mod-herdr'
+import { isExitReason, listenForHerdrPresses, startInHerdr } from './mod-herdr'
 import { loadConversation } from './mod-load'
-import { showInbox } from './mod-pane-open'
-import { nextBuildMarkPath } from './mod-plugin-files'
 import type { Mod } from './mod-ports'
-import { findPrs, pollPrs } from './mod-prs'
+import { pollPrs } from './mod-prs'
 import { herdrPress } from './mod-publish'
 import { replaceDrawn } from './mod-session-write'
 import { AWAY_MS, conversation, DESKTOP_APP_ENTRYPOINTS, withoutRowActions } from './mod-sessions'
@@ -21,8 +18,6 @@ import { CLAUDE_CODE } from './model-text'
 import { cleared } from './session-turns'
 import { agentTools } from './tools'
 
-type CommandRunEvent = Parameters<Hook<'command.run'>>[1]
-
 async function tick(m: Mod) {
   const now = await m.clock.now()
   const [away, { presence }] = await Promise.all([m.atoms.away.read(), m.atoms.session.read()])
@@ -31,10 +26,6 @@ async function tick(m: Mod) {
   } else if (!presence.isTurnRunning && away.lastActiveAt > 0 && now - away.lastActiveAt > AWAY_MS) {
     await m.atoms.away.update(a => ({ ...a, isAway: true, minute: Math.floor(now / 60_000) }))
   }
-}
-
-function readIsNextBuild(m: Mod): Promise<boolean> {
-  return m.setup.exists(nextBuildMarkPath(m.pluginRoot)).catch(() => false)
 }
 
 export function registerInboxCommand(m: Mod) {
@@ -63,13 +54,13 @@ function turnOn(m: Mod): Promise<void> {
 
 async function readVersion(m: Mod) {
   try {
-    const manifest: unknown = JSON.parse(await m.setup.read(`${m.pluginRoot}/.claude-plugin/plugin.json`))
+    const manifest: unknown = JSON.parse(await m.setup.manifest())
     const stated = (manifest as { version?: unknown } | null)?.version
     mod.version = typeof stated === 'string' ? stated : null
   } catch {
     mod.version = null
   }
-  mod.isNextBuild = await readIsNextBuild(m)
+  mod.isNextBuild = await m.setup.isNextBuild().catch(() => false)
   mod.statusRecordsFolder = mod.isNextBuild ? await recordsFolder(m.commands).catch(() => null) : null
 }
 
@@ -156,29 +147,5 @@ export async function sessionEnded(m: Mod, reason: SessionEndReason) {
     resetTurn()
     sessionState.shellCommand = null
     forgetStored()
-  }
-}
-
-/** Runs `/inbox`: opens the pane, or with `demo` shows or hides the sample, or with `herdr` asks about the Herdr mod again. */
-export async function inboxCommand(m: Mod, e: CommandRunEvent): Promise<{ text?: string }> {
-  if (!mod.isOn && !mod.turningOn && e.origin.kind !== 'composer') return {}
-  await ensureOn(m)
-  const isShown = (await m.atoms.demo.read()) !== null
-  const args = e.args.trim().split(/\s+/).join(' ')
-  if (args === 'herdr') return { text: await askHerdrModAgain(m.herdr, () => showInbox(m, null)) }
-  if (args === 'demo' || args === 'demo recording') await setDemo(m, !isShown, args === 'demo recording')
-  else if ((await readUi(m)).tab === 'prs') await findPrs(m)
-  const [isDemo, isDemoRecording] = await Promise.all([
-    m.atoms.demo.read().then(d => d !== null),
-    m.atoms.demoRecording.read(),
-  ])
-  const note = await showInbox(m, args || isDemo ? null : openInHerdr(m.herdr))
-
-  return {
-    text: !isDemo
-      ? (note ?? 'Opened the inbox.')
-      : isDemoRecording
-        ? 'Showing sample entries without their notices, for a recording. Run /inbox demo to go back.'
-        : 'Showing sample entries in the inbox. Run /inbox demo again to go back.',
   }
 }

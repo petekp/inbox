@@ -11,6 +11,7 @@ import { isShownTab } from './tabs'
 type PaneEventCalls = Pick<
   Mod,
   | 'atoms'
+  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'saves'

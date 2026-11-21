@@ -4,7 +4,7 @@ import { askedCalls, callKey, permissionText } from './mod-records'
 import { mod } from './mod-state'
 import { PERMISSION_FALLBACK_DELAY_MS } from './timing'
 
-type DialogCalls = Pick<Mod, 'atoms' | 'clock' | 'conversation' | 'publishStatus'>
+type DialogCalls = Pick<Mod, 'clock' | 'conversation' | 'publishStatus'> & { atoms: Pick<Mod['atoms'], 'dialogs'> }
 
 export async function openDialog(m: DialogCalls, dialog: Dialog) {
   await m.atoms.dialogs.update(d => [...d.filter(x => x.key !== dialog.key), dialog])

@@ -17,6 +17,7 @@ import { isRowTab, type ShownTab } from './tabs'
 type PaneOpenCalls = Pick<
   Mod,
   | 'atoms'
+  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'saves'

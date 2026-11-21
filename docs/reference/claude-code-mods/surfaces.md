@@ -33,7 +33,7 @@ Public docs say nothing about this. It comes from the engine types, the changelo
 - `$.session.surfaces()` "Returns every surface the session draws on … `terminal` under the REPL first, then the remote ones in the order they attached. A session may draw on several at once (a terminal and two phones) … Empty in a plain -p run". `$.session.surface()` is deprecated. [T: `session.surfaces`]
 - `PromptComposeInput.surfaces` gives "Where the session draws at this render … empty where nothing draws". [T: `PromptComposeInput`]
 
-The inbox's gate (`hooks/register.tsx` and `hooks/mod-start.ts:sessionStarted`):
+The inbox's gate (`hooks/register.tsx` and `hooks/mod-lifecycle.ts:sessionStarted`):
 
 ```ts
 on('session.start', async ($, e, next) => {
@@ -55,9 +55,9 @@ on('session.attach', { surface: 'desktop' }, async ($, e, next) => {
 })
 ```
 
-- `session.start` is at `hooks/register.tsx:on('session.start')`, the gate in `hooks/mod-start.ts:sessionStarted`, `session.attach` at `hooks/register.tsx:on('session.attach')`. Commit `05c3548` added the desktop gate.
+- `session.start` is at `hooks/register.tsx:on('session.start')`, the gate in `hooks/mod-lifecycle.ts:sessionStarted`, `session.attach` at `hooks/register.tsx:on('session.attach')`. Commit `05c3548` added the desktop gate.
 - `isStartedByDesktopApp` is true when `CLAUDE_CODE_ENTRYPOINT` is `claude-desktop` or `claude-desktop-3p` and `CLAUDE_CODE_CHILD_SESSION` is unset. The app sets the entrypoint and removes `CLAUDE_CODE_CHILD_SESSION` ([desktop](../claude-desktop-app/how-it-runs.md#how-the-app-runs-claude-code)). Claude Code sets `CLAUDE_CODE_CHILD_SESSION=1` for every command it runs. So a `claude -p` that a desktop session runs inherits the entrypoint, reads as a child, and stays off.
-- It handles the attach arriving before or after the start. `hooks/mod-start.ts:turnOn` shares one `turningOn` promise, so two calls that overlap run `hooks/mod-start.ts:initializeInbox` once. `initializeInbox` sets `isOn`. `hooks/mod-start.ts:ensureOn` returns early when `isOn` is set or `turningOn` is pending. The start path calls `turnOn` without that check, so a start that follows a finished attach runs `initializeInbox` again. That run cancels the intervals the first one started before it starts its own. Whether a start can follow an attach is not verified.
+- It handles the attach arriving before or after the start. `hooks/mod-lifecycle.ts:turnOn` shares one `turningOn` promise, so two calls that overlap run `hooks/mod-lifecycle.ts:initializeInbox` once. `initializeInbox` sets `isOn`. `hooks/mod-lifecycle.ts:ensureOn` returns early when `isOn` is set or `turningOn` is pending. The start path calls `turnOn` without that check, so a start that follows a finished attach runs `initializeInbox` again. That run cancels the intervals the first one started before it starts its own. Whether a start can follow an attach is not verified.
 - Tests: `tests/hooks-startup.test.ts` test "a headless run stays inactive when ${origin.kind} invokes the inbox command" checks that a headless start does nothing. The tests `tests/hooks-startup.test.ts` "the desktop app turns the mod on when it attaches before the start" and "… after the start" check a desktop attach in both orders and mount the band with `surface: 'desktop'`. "a session the desktop app started carries its saved rows into a first prompt that comes before the attach" and "a claude -p run from a desktop session stays off" check the entrypoint path.
 
 ## Mobile
@@ -67,7 +67,7 @@ on('session.attach', { surface: 'desktop' }, async ($, e, next) => {
 - Projects: "A conversation where Claude coordinates parallel threads of work and reports back", for when you "want to see which threads finished or need you". [MOB#work-from-your-phone] This overlaps the inbox's job.
 - Docs: mods draw nothing on the phone. Types: `mobile` is a surface with Box, Text, Button, Svg, Link, Code, Markdown and no `Input` or `Select` ("the mobile app draws no field yet"); "the mobile app reports `false`" for `isFullscreen`; Svg is drawn "in a web view"; the `session.attach` example reads `{ surface: "mobile" }`, "a phone joined: draw the lobby". [T: `Elements.mobile`; `RenderViewport`; `SvgProps`; `session.attach`] Inference: the protocol may exist without a slot for Pane or AbovePrompt ("draws the tree where it has a slot for it").
 - No `RenderSurface` value stands for claude.ai/code in a browser. [T]
-- The inbox has no mobile code. It detects a missing `Input` generically (`hooks/register.tsx:on('ui.render', Pane)`) and drops `typekey-` actions without one (`hooks/pane-row-keys.tsx:pressable`).
+- The inbox has no mobile code. It detects a missing `Input` generically (`hooks/mod-pane-render.tsx:paneTree`) and drops `typekey-` actions without one (`hooks/pane-row-keys.tsx:pressable`).
 - Inference: if a phone ever draws mod trees, the rework needs one tree that degrades to Buttons, Text and Markdown, with no keyboard hints and no sidebar.
 
 ## Cloud sessions

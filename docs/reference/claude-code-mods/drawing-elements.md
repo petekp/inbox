@@ -13,7 +13,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 
 - Element the surface lacks. The interface page: "If a tree uses an element the app doesn't have, a prop an element doesn't take, or a child where none goes, Claude Code draws its own version of the site." [IF#build-a-tree-from-elements] The gallery: "In the terminal, a pane that returns only an `Svg` opens empty." [GA#svg] The types: "an omitted one draws a fragment". These conflict; see "Where sources disagree".
 - Draw with `$.ui.resolve(e)` and branch on `e.surface` or on which elements exist. JSX works in `.tsx` after destructuring the elements. `$.ui.resolve(e)` is "A read, not a dispatch". [IF#build-a-tree-from-elements; T: `ui.resolve`]
-- The inbox checks for a field with `'Input' in elements` (`hooks/register.tsx:on('ui.render', Pane)`).
+- The inbox checks for a field with `'Input' in elements` (`hooks/mod-pane-render.tsx:paneTree`).
 
 ## Button
 

@@ -23,7 +23,7 @@ Part of [the look map](../looks.md#files).
 | --- | --- |
 | `hooks/claude.ts` | Mod only. Claude transcript, command, dialog and stop helpers. |
 | `hooks/explanation-reply.ts` | Mod only. Saves the transcript row where an explanation's reply begins, for Show explanation, and words a refused scroll for the row. |
-: the atoms, clock, pane, conversation, model, setup, store, history, command and Herdr calls. It also carries the operations several modules share, `commit`, `sendUi`, `publishStatus`, `syncLook`, `hostOf` and `fetchPrs`, so the modules that call them and the modules that define them import no value from each other in a loop. Each module names the fields it uses with `Pick`. |
+: the atoms, clock, pane, conversation, model, setup, store, history, command and Herdr calls. It also carries the operations several modules share, `commit`, `sendUi`, `publishStatus`, `syncLook`, `hostOf` and `fetchPrs`, so the modules that call them and the modules that define them import no value from each other in a loop. A module that uses some fields names them with `Pick`, and one that uses most takes `Mod`. Only the modules that write the session take `writeSession`. |
 | `hooks/mod-upgrade.ts` | Mod only. On load, brings what an older build left in engine state to the current shape: the drawn session, the pane's fields from before the shared controller, and a sample copy that lacks a field. `OLD_INITIAL` gives each old field its value while that build wrote nothing there. |
 | `hooks/mod-drawn.ts` | Mod only. Reads what the pane draws: the controller's state, the drawn session or the sample, whether the pane and the PRs tab show, and the /config theme. `redraw` draws the pane again. |
 | `hooks/mod-session-write.ts` | Mod only. Writes a conversation's session. `changeSession` writes the drawn session's atom while no other write lands, saves it to the engine store, and sends a write for a conversation off screen to its saved session. `commit` then updates the Status look, the Herdr look and the controller. |
@@ -42,9 +42,10 @@ Part of [the look map](../looks.md#files).
 | `hooks/mod-turns.ts` | Mod only. A turn's start and end, and the stop a failed or cut-off turn leaves, with Resume. |
 | `hooks/mod-prompts.ts` | Mod only. A submitted prompt and the rows Claude Code stores: which prompt is the person's words, what Claude reads beside it, and the replies and command rows a turn records. |
 | `hooks/mod-tool-calls.ts` | Mod only. The `record`, `close` and `order_prs` calls, and what other tool calls and spawned agents add to the turn and to the Status's children. |
-| `hooks/mod-start.ts` | Mod only. Turns the mod on: registers `/inbox` and the tools, upgrades and loads state, and starts the clock and the Herdr listener. Also runs `/inbox` and the session's end. |
+| `hooks/mod-lifecycle.ts` | Mod only. Turns the mod on: registers `/inbox` and the tools, upgrades and loads state, and starts the clock and the Herdr listener. Also ends the session's conversation, at exit and at /clear and /resume. |
+| `hooks/mod-command.ts` | Mod only. Runs `/inbox`: opens the pane, shows or hides the sample, or asks about the Herdr mod again. |
 | `hooks/mod-pane-events.ts` | Mod only. The pane's presses, scrolls, messages and close. |
-| `hooks/mod-pane-keys.ts` | Mod only. The handlers the pane's rows and buttons call, the pane's tab and move keys, where the Status starts in the pane, and the desktop focus after a draw. |
+| `hooks/mod-pane-handlers.ts` | Mod only. The handlers the pane's rows and buttons call, the pane's tab and move keys, where the Status starts in the pane, and the desktop focus after a draw. |
 | `hooks/mod-pane-render.tsx` | Mod only. The Pane render in both looks. It reads the drawn state and the controller's state, and calls the `pane-*.tsx` files, which draw every tab. |
 | `hooks/mod-band.tsx` | Mod only. The band above the prompt: the inbox's counts with Open inbox, and the stop row with Resume. |
 | `hooks/pane-context.ts` | Mod only. The types the Pane render hands its drawing files: `PaneBase` for the values the render computed, `PaneClient` for whether the surface draws Clients, `PaneHandlers` for the calls that need `$`, and `Row`, the shape every list row is drawn from. |

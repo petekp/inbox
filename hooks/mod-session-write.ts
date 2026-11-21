@@ -10,7 +10,7 @@ import { heldReplies } from './timing'
 
 type SessionWriteCalls = Pick<
   Mod,
-  'atoms' | 'clock' | 'pane' | 'saves' | 'history' | 'commit' | 'sendUi' | 'publishStatus' | 'syncLook'
+  'atoms' | 'writeSession' | 'clock' | 'pane' | 'saves' | 'history' | 'commit' | 'sendUi' | 'publishStatus' | 'syncLook'
 >
 
 /**
@@ -21,7 +21,7 @@ export async function replaceDrawn(m: SessionWriteCalls, change: (s: ModSession)
   const cur = await m.atoms.session.read()
   if (change(cur) === cur) return cur
 
-  return m.atoms.session.update(s => ({ ...change(s), revision: s.revision + 1 }))
+  return m.writeSession(s => ({ ...change(s), revision: s.revision + 1 }))
 }
 
 /**
@@ -55,7 +55,7 @@ export async function changeSession(
       Object.keys(changed.remoteViewers).length > 0 ? await m.clock.now() : 0,
     )
     let landed: ModSession | null = null
-    await m.atoms.session.update(cur => {
+    await m.writeSession(cur => {
       if (!isCurrent(owner) || cur.revision !== drawn.revision) {
         landed = null
         return cur

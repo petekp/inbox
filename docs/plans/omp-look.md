@@ -4,7 +4,7 @@ Status: built. Merged to main in #5.
 
 omp ([omp.sh](https://omp.sh/)) is a terminal coding agent forked from pi. It loads TypeScript extensions in its own Bun process. A throwaway extension showed that the shared modules in `hooks/` load in omp unchanged, and that omp can draw the band above the prompt and an `/inbox` panel and take its keys. That extension drew the shared demo data only. It never ran a real session.
 
-A host does more than draw. It reacts to the prompt, tool-call and turn-end events, keeps each session's state, runs the inbox model after each reply, runs a press's sends, opens and copies, and runs gh. That work is written twice today: in the mod's `hooks/register.tsx`, and in the Codex host's `codex/src/core.ts`, `hook.ts`, `server.ts` and `update.ts`. omp would make a third copy, and each later feature would be wired three times. So the shared part of that work moves into `hooks/` first, and omp is built on it.
+A host does more than draw. It reacts to the prompt, tool-call and turn-end events, keeps each session's state, runs the inbox model after each reply, runs a press's sends, opens and copies, and runs gh. That work is written twice today: in the mod's `hooks/register.tsx` and its `hooks/mod-*.ts` modules, and in the Codex host's `codex/src/core.ts`, `hook.ts`, `server.ts` and `update.ts`. omp would make a third copy, and each later feature would be wired three times. So the shared part of that work moves into `hooks/` first, and omp is built on it.
 
 ## Order
 

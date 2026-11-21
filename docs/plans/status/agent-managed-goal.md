@@ -116,7 +116,7 @@ The person removes a goal with a new Remove button beside Edit. The goal and its
 
 Remove offers Undo in its place, beside New. Undo brings back the goal, its milestones and their links, and takes the goal out of `removedGoals`. `goalRemoved` holds them until a goal is set or the answer of a Status call that did not read the removed goal applies. Row Undos last a few seconds. This one lasts until the call moves on, so no look needs a timer, and a slip of the `r` key is never final before the person sees it.
 
-Saving the field empty does not work as a removal. In every look an empty field refuses to submit today: `sendTyped` in `hooks/register.tsx` (terminal and desktop) refocuses the field, the Codex tab's form returns, and `handleKey` in `omp/src/panel-keys.ts` ignores enter. Changing that in four looks also makes an accidental empty enter delete the goal.
+Saving the field empty does not work as a removal. In every look an empty field refuses to submit today: `sendTyped` in `hooks/mod-pane-input.ts` (terminal and desktop) refocuses the field, the Codex tab's form returns, and `handleKey` in `omp/src/panel-keys.ts` ignores enter. Changing that in four looks also makes an accidental empty enter delete the goal.
 
 A goal the call retires does not join `removedGoals`: the work left it, the person did not reject it.
 

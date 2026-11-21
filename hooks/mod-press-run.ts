@@ -17,6 +17,7 @@ import type { SettledOutcome } from './ui-controller-types'
 type PressRunCalls = Pick<
   Mod,
   | 'atoms'
+  | 'writeSession'
   | 'clock'
   | 'pane'
   | 'saves'

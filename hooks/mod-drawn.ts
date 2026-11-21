@@ -12,7 +12,9 @@ import { notesOf } from './ui-controller'
 import { holdsOf } from './ui-controller-reply'
 import type { UiState } from './ui-controller-types'
 
-type DrawnCalls = Pick<Mod, 'atoms' | 'clock' | 'pane'>
+type DrawnCalls = Pick<Mod, 'clock' | 'pane'> & {
+  atoms: Pick<Mod['atoms'], 'ui' | 'session' | 'demo' | 'demoRecording' | 'unreadable' | 'redraw' | 'away'>
+}
 
 /** The pane's state: the saved controller state, with the terminal's config while it draws the pane, else desktop's. */
 export async function readUi(m: DrawnCalls): Promise<UiState> {
@@ -108,7 +110,7 @@ export function later(m: DrawnCalls, waitMs: number, run: () => unknown) {
 }
 
 /** Reads the /config theme into `THEME`, which the pane draws its colors from. */
-export async function syncTheme(m: Pick<Mod, 'atoms' | 'setup'>) {
+export async function syncTheme(m: Pick<Mod, 'setup'> & { atoms: Pick<Mod['atoms'], 'theme'> }) {
   const theme = await m.setup.theme().catch(() => undefined)
   await m.atoms.theme.update(() => (typeof theme === 'string' ? theme : ''))
 }

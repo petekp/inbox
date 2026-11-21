@@ -67,7 +67,7 @@ The search runs once, when a question is added to the ledger, whatever added it:
 
 | Host | Runs the step in | Reads and writes the history with |
 | --- | --- | --- |
-| The mod, for the terminal and desktop looks | `changeSession` in `hooks/register.tsx`, through `withHistory` in `hooks/mod-history.ts`, and so `changeSaved` too | `$.fs.list`, `$.fs.read` and `$.fs.write` |
+| The mod, for the terminal and desktop looks | `changeSession` in `hooks/mod-session-write.ts`, through `withHistory` in `hooks/mod-history.ts`, and so `changeSaved` too | `$.fs.list`, `$.fs.read` and `$.fs.write` |
 | Codex | `updateState` in `codex/src/state.ts`, under the session lock, in its hook, update and MCP server processes | `node:fs`, from `codex/src/question-history.ts` |
 | omp | `updateState` in `omp/src/state.ts` | `node:fs`, from `omp/src/question-history.ts` |
 

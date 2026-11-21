@@ -9,7 +9,7 @@ import { paneState } from './mod-state'
 import { lookConfigOf, type OldPaneFields, uiFromOldFields } from './mod-ui'
 import { type SavedSession, upgradeSession } from './session-files'
 
-type UpgradeCalls = Pick<Mod, 'atoms' | 'clock' | 'conversation'>
+type UpgradeCalls = Pick<Mod, 'atoms' | 'writeSession' | 'clock' | 'conversation'>
 
 /** What each key an older build kept read as while that build wrote nothing there. */
 const OLD_INITIAL: OldFields = {
@@ -68,7 +68,7 @@ async function upgradeDrawn(m: UpgradeCalls): Promise<ModSession> {
   const written = await m.atoms.writtenSession()
   const base = written === undefined ? await fromOldFields(m) : upgradeSession(written as SavedSession)
 
-  return m.atoms.session.update(cur => {
+  return m.writeSession(cur => {
     const s = written === undefined ? base : upgradeSession(cur as SavedSession)
 
     return { ...withLostSendsUncertain(s), revision: (cur.revision ?? 0) + 1 }
