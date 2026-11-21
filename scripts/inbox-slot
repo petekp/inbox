@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""Let one heavy job at a time run on this Mac: ./scripts/check.sh, or the inbox-ui VM.
+
+  inbox-slot run [--for WHAT] [--no-wait] -- COMMAND [ARGS...]
+  inbox-slot take --pid PID [--for WHAT] [--no-wait]
+  inbox-slot release [--pid PID]
+  inbox-slot status
+
+One rule decides who gets the slot: it is free, or its holder's tracked process
+has exited. The terminal never decides it, so two jobs from one terminal
+exclude each other.
+
+run takes the slot, runs the command and releases the slot when the command
+exits for any reason. It tracks its own process, and releases only that hold.
+Prefer it: inbox-slot run -- ./scripts/check.sh
+
+take waits until the slot is free, then records the holder: its terminal
+(HC_TERMINAL_ID, when set), the process to track, what the slot is for and the
+time. --no-wait fails at once, exit 1, naming the holder. Taking again with the
+pid that already holds it succeeds. --pid is required: pass a process that lives
+as long as the job, such as the VM's. The caller's own shell would end with the
+call and release the slot at once. Use take for the VM, and release when it is
+shut down.
+
+release clears a hold made by take: the one recorded for your terminal, or for
+--pid. It never clears a hold made by run, which clears itself.
+
+status prints the holder and how long it has held the slot. It changes nothing.
+
+The record is inbox-slot.json in $FLEET_STATE_DIR, which defaults to
+~/.local/state/fleet.
+
+Exit status: 0 done, 1 the slot is held or the hold is not yours, 2 the command
+could not run. run exits with the command's own status.
+"""
+import argparse
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import time
+from contextlib import contextmanager
+
+STATE_DIR = os.environ.get("FLEET_STATE_DIR") or os.path.expanduser("~/.local/state/fleet")
+SLOT_FILE = os.path.join(STATE_DIR, "inbox-slot.json")
+POLL_SECONDS = 2
+PS_TIME = "%a %b %d %H:%M:%S %Y"
+
+
+class Refused(Exception):
+    pass
+
+
+def process_start(pid):
+    """The process's start time as ps prints it, or None when it has exited."""
+    done = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True)
+    return " ".join(done.stdout.split()) if done.returncode == 0 and done.stdout.strip() else None
+
+
+def age(since):
+    minutes = max(time.time() - since, 0) / 60
+    if minutes < 60:
+        return f"{minutes:.0f}m"
+    return f"{minutes / 60:.1f}h"
+
+
+@contextmanager
+def locked():
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(SLOT_FILE + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def holder():
+    """The record of the current holder, or None when the slot is free or the holder's process has exited."""
+    try:
+        with open(SLOT_FILE) as f:
+            record = json.load(f)
+    except (FileNotFoundError, ValueError):
+        return None
+    return record if process_start(record["pid"]) == record["pid_started"] else None
+
+
+def write(record):
+    if record is None:
+        try:
+            os.remove(SLOT_FILE)
+        except FileNotFoundError:
+            pass
+        return
+    temporary = SLOT_FILE + ".tmp"
+    with open(temporary, "w") as f:
+        json.dump(record, f, indent=1)
+    os.replace(temporary, SLOT_FILE)
+
+
+def describe(record):
+    terminal = record["terminal"]
+    who = f"terminal {terminal}" if terminal else f"pid {record['pid']}"
+    return f"{who} for {record['purpose']}, held for {age(record['taken_at'])}, tracking pid {record['pid']}"
+
+
+def take(purpose, pid, wait, kind):
+    if not process_start(pid):
+        raise Refused(f"process {pid} is not running")
+    announced = False
+    while True:
+        with locked():
+            current = holder()
+            if current is None or current["pid"] == pid:
+                write({
+                    "terminal": os.environ.get("HC_TERMINAL_ID"), "purpose": purpose, "pid": pid, "kind": kind,
+                    "pid_started": process_start(pid),
+                    "taken_at": current["taken_at"] if current else time.time(),
+                })
+                print(f"took the slot for {purpose}")
+                return
+        if not wait:
+            raise Refused(f"the slot is held by {describe(current)}")
+        if not announced:
+            print(f"waiting for the slot, held by {describe(current)}", file=sys.stderr, flush=True)
+            announced = True
+        time.sleep(POLL_SECONDS)
+
+
+def release(pid):
+    terminal = os.environ.get("HC_TERMINAL_ID")
+    if not terminal and pid is None:
+        raise Refused("HC_TERMINAL_ID is not set; pass --pid with the process the hold tracks")
+    with locked():
+        current = holder()
+        if current is None:
+            write(None)
+            print("the slot is free")
+            return
+        is_mine = (pid is not None and current["pid"] == pid) or (pid is None and current["terminal"] == terminal)
+        if current["kind"] != "take" or not is_mine:
+            raise Refused(f"the slot is held by {describe(current)}, and no take of yours made that hold")
+        write(None)
+        print("released the slot")
+
+
+def run_command(args):
+    me = os.getpid()
+    take(args.purpose, me, not args.no_wait, "run")
+    try:
+        return subprocess.run(args.command).returncode
+    finally:
+        with locked():
+            current = holder()
+            if current and current["pid"] == me:
+                write(None)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command_name", required=True)
+    for name in ("run", "take"):
+        p = sub.add_parser(name)
+        p.add_argument("--for", dest="purpose", default="a heavy job", help="what the slot is for, such as check.sh or vm")
+        p.add_argument("--no-wait", action="store_true", help="fail at once when the slot is held")
+        if name == "take":
+            p.add_argument("--pid", type=int, required=True, help="the process to track; it must live as long as the job")
+    sub.choices["run"].add_argument("command", nargs=argparse.REMAINDER, help="after --, the command to run")
+    rel = sub.add_parser("release")
+    rel.add_argument("--pid", type=int, help="the process the hold tracks; defaults to the hold for your terminal")
+    sub.add_parser("status")
+    args = parser.parse_args()
+    try:
+        if args.command_name == "run":
+            if args.command[:1] == ["--"]:
+                args.command = args.command[1:]
+            if not args.command:
+                raise Refused("give the command to run after --")
+            return run_command(args)
+        if args.command_name == "take":
+            take(args.purpose, args.pid, not args.no_wait, "take")
+        elif args.command_name == "release":
+            release(args.pid)
+        else:
+            current = holder()
+            print(f"the slot is held by {describe(current)}" if current else "the slot is free")
+        return 0
+    except Refused as refusal:
+        print(f"refused: {refusal}", file=sys.stderr)
+        return 1
+    except OSError as error:
+        print(f"inbox-slot: could not run: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
