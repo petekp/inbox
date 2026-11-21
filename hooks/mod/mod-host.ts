@@ -19,6 +19,7 @@ import type { Effect } from '../../core/view/press-reducer'
 import { upgradeSession } from '../../core/view/session-files'
 import type { Ask, SessionHost } from '../../core/runtime/session-host'
 import type { SendOutcome } from '../../core/runtime/session-presses'
+import { markArrived } from '../../core/runtime/remote-command-state'
 import { SETTLED_MS } from '../../core/view/timing'
 
 type HostCalls = Pick<
@@ -103,16 +104,23 @@ export async function deliver(m: HostWriteCalls, owner: Owner, text: string, del
   if (entered === text) return { state: 'accepted', queuedId: null }
   let outcome: SendOutcome = { state: 'accepted', queuedId: null, entered }
   const { heldRows } = await m.atoms.session.read()
+  let isArrived = false
   await changeSession(
     m,
     owner,
     s => {
       const settled = settleRewrite(s, deliveryId, text, entered, since)
       outcome = settled?.outcome ?? { state: 'accepted', queuedId: null, entered }
+      isArrived = settled?.outcome.state === 'accepted'
       return settled?.state ?? s
     },
     new Set(heldRows),
   )
+  if (isArrived)
+    await markArrived(
+      m.saves.commands?.(owner.id, () => void m.publishStatus()),
+      deliveryId,
+    )
 
   return outcome
 }
@@ -141,7 +149,7 @@ function sessionHost(
       return readSettledSession(m.saves, owner.id)
     },
     readDurable: () => readDurableSession(m.saves, owner.id),
-    commands: m.saves.commands?.(owner.id),
+    commands: m.saves.commands?.(owner.id, () => void m.publishStatus()),
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
     ask: (prompt, system, _kind, report) => askInboxModel(m, prompt, system, 45_000, report),

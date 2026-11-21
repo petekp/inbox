@@ -1,6 +1,6 @@
 import { sessionFile } from '../view/session-files'
 import type { Session } from '../../types'
-import { EMPTY_LOG, hasCommandRows, remoteCommandState, withLegacy } from './remote-command-state'
+import { EMPTY_LOG, hasCommandRows, remoteCommandState, withLegacy, withoutLegacy } from './remote-command-state'
 import type { CommandLog, CommandRunner, CommandStore } from './remote-command-state'
 
 /** The file calls a command log needs. `read` gives null when there is no file. `lock` runs `fn` alone for `path`. */
@@ -104,9 +104,7 @@ export async function movedLegacyCommands<S extends Session>(
     log(`inbox: the command log could not take the session's commands: ${err instanceof Error ? err.message : err}`)
     return s
   }
-  const { remoteCommands: _moved, ...rest } = s
-
-  return rest as S
+  return withoutLegacy(s)
 }
 
 /** What a saved session says about its commands, by command log path, as this process last wrote it to the log. */

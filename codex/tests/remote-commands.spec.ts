@@ -6,22 +6,19 @@ import { demoSession } from '../../core/view/demo'
 import { upgradeSession } from '../../core/view/session-files'
 import { remoteRowVersion, startRemoteCommand } from '../../core/remote/remote-commands'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
-import {
-  commandsOf,
-  EMPTY_LOG,
-  remoteCommandState,
-  remoteReceipts,
-  withRecord,
-} from '../../core/runtime/remote-command-state'
+import { commandsOf, EMPTY_LOG, remoteReceipts, withRecord } from '../../core/runtime/remote-command-state'
 import type { CommandLog } from '../../core/runtime/remote-command-state'
-import { movedLegacyCommands } from '../../core/runtime/command-store'
+import { followCommandRows, movedLegacyCommands } from '../../core/runtime/command-store'
 import { pruned } from '../../core/runtime/session-presses'
 import { fakeHostWith } from '../../tests/session-script'
 import { memoryCommandStore } from '../../tests/memory-command-store'
 import { codexCommandStore, commandsPath } from '../src/command-log'
 import { tempDir } from './helpers'
 
+let fixtures = 0
+
 function fixture(isRunning?: (runner: { id: string }) => boolean) {
+  const key = `fixture-${fixtures++}`
   let now = 1_000_000
   let state = demoSession(now, 'Claude')
   const question = state.ledger.items.find(row => row.kind === 'question')
@@ -30,14 +27,22 @@ function fixture(isRunning?: (runner: { id: string }) => boolean) {
   let durable = structuredClone(state)
   let writing = Promise.resolve()
   let sequence = 0
-  const commands = memoryCommandStore(isRunning)
+  const store = memoryCommandStore(isRunning)
+  let allowedUpdates = Infinity
+  const commands = {
+    ...store,
+    update: (...args: Parameters<typeof store.update>) => {
+      if (allowedUpdates-- <= 0) return Promise.reject(new Error('The log cannot be written.'))
+      return store.update(...args)
+    },
+  }
   const built = fakeHostWith({
     read: async () => state,
     update: change => {
       const result = writing.then(async () => {
         state = await movedLegacyCommands(commands, pruned(await change(state), now), () => undefined)
         durable = structuredClone(state)
-        await commands.update(log => remoteCommandState(log, state))
+        await followCommandRows(commands, key, state, () => undefined)
         return state
       })
       writing = result.then(
@@ -75,6 +80,9 @@ function fixture(isRunning?: (runner: { id: string }) => boolean) {
     receipt: async (id: string) => remoteReceipts(await commandsOf(commands, state))[id],
     state: () => state,
     durable: () => durable,
+    allowUpdates: (count: number) => {
+      allowedUpdates = count
+    },
     setState: (next: typeof state) => {
       state = next
     },
@@ -213,7 +221,7 @@ test('an invalid far-future refusal cannot poison the admission cutoff', async (
   assert.ok((await f.commands.read()).floor < futureAt)
 })
 
-test('a command saves the session with its time as the floor an earlier build refuses older commands below', async () => {
+test('each session write a command makes is stamped with the command and raises the saved floor to its time', async () => {
   const f = fixture()
   const c = f.command()
   await f.run(c)
@@ -241,10 +249,21 @@ test('a message held until the agent’s turn ends leaves its command running, a
   assert.equal((await f.receipt(c.id))?.state, 'applied')
 })
 
-test('a command left running by a process that has ended reads as uncertain', async () => {
+test('a command left running by a process that has ended stops running, and its held message reads Not sent', async () => {
   const f = fixture(runner => runner.id === 'this-process')
   const c = f.command()
   await f.run(c)
+  await f.host.update(s => {
+    const last = s.lastActions.i1
+    if (!last) throw new Error('The command pressed no row.')
+    return {
+      ...s,
+      lastActions: {
+        ...s.lastActions,
+        i1: { ...last, delivery: { state: 'held', message: 'Fixture reply', until: Infinity, by: null } },
+      },
+    }
+  })
   await f.commands.update(log => {
     const record = log.commands[c.id]
     if (!record) throw new Error('The command was not admitted.')
@@ -252,8 +271,9 @@ test('a command left running by a process that has ended reads as uncertain', as
   })
   await f.run({ ...f.command(), expected: 'a different row version' })
   const receipt = await f.receipt(c.id)
-  assert.equal(receipt?.state, 'uncertain')
+  assert.equal(receipt?.state, 'failed')
   assert.equal(receipt?.error, 'The host could not confirm this action.')
+  assert.equal(f.state().lastActions.i1?.delivery?.state, 'failed')
 })
 
 test('a session an earlier build saved with its commands keeps their outcomes in the command log', async () => {
@@ -263,13 +283,21 @@ test('a session an earlier build saved with its commands keeps their outcomes in
   const log = await f.commands.read()
   await f.commands.update(() => EMPTY_LOG)
   f.setState({ ...f.state(), remoteCommands: log.commands, remoteCommandFloor: log.floor })
-  await f.host.update(s => ({ ...s }))
+  await f.run(f.command('Next reply'))
   assert.equal('remoteCommands' in f.state(), false)
   const moved = await f.commands.read()
   assert.equal(moved.commands[c.id]?.state, 'applied')
   assert.equal(moved.floor, log.floor)
   await f.run(c)
-  assert.equal(f.delivered.length, 1)
+  assert.equal(f.delivered.length, 2)
+})
+
+test('a command whose delivery id the log cannot take sends nothing', async () => {
+  const f = fixture()
+  const c = f.command()
+  f.allowUpdates(2)
+  await f.run(c).catch(() => undefined)
+  assert.equal(f.delivered.length, 0)
 })
 
 test('an unreadable command log is moved aside, and the log that replaces it refuses every earlier command', async () => {

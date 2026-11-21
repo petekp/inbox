@@ -1,8 +1,10 @@
 import {
   blockRemoteDeferred,
+  confirmRemoteDelivery,
   recoverStrandedCommands,
   remoteCommandState,
   withLegacy,
+  withoutLegacy,
   withRecord,
 } from '../runtime/remote-command-state'
 import type { CommandLog, CommandStore } from '../runtime/remote-command-state'
@@ -308,7 +310,7 @@ export async function startRemoteCommand<S extends Session>(
       let seq = 0
       const changed = await host.update(async s => {
         if (!isStarted && !(await matchesRow(s, command))) throw new Error('This item changed before the action.')
-        const next = await change(s)
+        const next = withoutLegacy(await change(s))
         seq = (s.commandWrite?.seq ?? 0) + 1
         return {
           ...next,
@@ -319,6 +321,9 @@ export async function startRemoteCommand<S extends Session>(
         }
       })
       await requireDurableWrite(host, seq, command.issuedAt)
+      for (const send of changed.sent)
+        if (send.phase === 'attempting' && send.deliveryId && send.commandIds?.includes(command.id))
+          await confirmRemoteDelivery({ readDurable: host.readDurable, commands: store }, changed, send.deliveryId)
       isStarted = true
       return changed
     },

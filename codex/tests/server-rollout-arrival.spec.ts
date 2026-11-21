@@ -104,16 +104,10 @@ test('transcript polling cannot confirm remote commands from matching text, even
   const { dir, transcript, view } = await queuedPress()
   await updateState(dir, 's1', s => {
     const sent = s.sent[0]
-    const row = s.lastActions.i1
-    const delivery = row?.delivery
-    if (!sent || !row || delivery?.state !== 'queued') throw new Error('The answer was not queued.')
+    if (!sent) throw new Error('The answer was not queued.')
     const ids = ['remote-first', 'remote-second']
     return {
       ...s,
-      lastActions: {
-        ...s.lastActions,
-        i1: { ...row, commandId: 'remote-first', delivery: { ...delivery, id: 'remote-first' } },
-      },
       sent: ids.map(id => ({ ...sent, deliveryId: id, commandIds: [id] })),
       remoteCommands: Object.fromEntries(
         ids.map(id => [

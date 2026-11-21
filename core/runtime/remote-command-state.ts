@@ -40,6 +40,14 @@ export function withLegacy(log: CommandLog, s: Session): CommandLog {
   return { ...log, floor, commands: { ...Object.fromEntries(missing), ...log.commands } }
 }
 
+/** `s` without the command records an earlier build saved in it. */
+export function withoutLegacy<S extends Session>(s: S): S {
+  if (!s.remoteCommands) return s
+  const { remoteCommands: _moved, ...rest } = s
+
+  return rest as S
+}
+
 export const withRecord = (log: CommandLog, id: string, record: RemoteCommandRecord): CommandLog => ({
   ...log,
   commands: { ...log.commands, [id]: record },
@@ -191,6 +199,28 @@ export async function saveDeliveryOutcome(
           error: outcome.reason?.slice(0, 256) ?? c.error,
         })
       }, log),
+    )
+    .catch(() => undefined)
+}
+
+/**
+ * Marks delivered each command whose message went out as `deliveryId`, once the agent got that message. The row the
+ * command pressed may name another press by then, so the log is told directly.
+ */
+export async function markArrived(
+  store: CommandStore | undefined,
+  deliveryId: string | null | undefined,
+): Promise<void> {
+  if (!store || !deliveryId) return
+  await store
+    .update(log =>
+      Object.entries(log.commands).reduce(
+        (next, [id, c]) =>
+          c.deliveryId === deliveryId && !c.delivered
+            ? withRecord(next, id, { ...c, delivered: true, pendingDelivery: false })
+            : next,
+        log,
+      ),
     )
     .catch(() => undefined)
 }

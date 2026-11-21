@@ -104,7 +104,7 @@ export function arrived(s: Session, text: string, count: number): { state: Sessi
 
   return {
     state: { ...s, sent: s.sent.filter(x => x !== match), lastActions },
-    sentBy: { press: match.press },
+    sentBy: { press: match.press, deliveryId: match.deliveryId },
   }
 }
 

@@ -20,6 +20,7 @@ import { CLAUDE_CODE } from '../../core/domain/model-text'
 import { tasksRunBy } from '../../core/domain/reply-parse'
 import { messageTyped, recordPrompt, type SentBy } from '../../core/runtime/session-turns'
 import { childEnded } from '../../core/domain/status-children'
+import { markArrived } from '../../core/runtime/remote-command-state'
 
 type PromptSubmitEvent = Parameters<Hook<'prompt.submit'>>[1]
 type SessionAppendEvent = Parameters<Hook<'session.append'>>[1]
@@ -54,13 +55,20 @@ async function notePrompt(
   const [now, isShown] = await Promise.all([m.clock.now(), isPaneShown(m)])
   await m.atoms.away.update(a => ({ ...a, lastActiveAt: now, isAway: false }))
   let notes: string[] = []
-  await m.commit(currentOwner(), s => {
+  let arrival: string | null | undefined
+  const owner = currentOwner()
+  await m.commit(owner, s => {
     const matched = match(s)
+    arrival = matched.sentBy?.deliveryId
     const lastActions = withExplanationAwaited(s.lastActions, matched.state.lastActions, isOwnTurn)
     const r = recordPrompt(CLAUDE_CODE, { ...matched.state, lastActions }, text, isShown, matched.sentBy, personSource)
     notes = r.notes
     return isTyped ? messageTyped(r.state, now) : r.state
   })
+  await markArrived(
+    m.saves.commands?.(owner.id, () => void m.publishStatus()),
+    arrival,
+  )
 
   return notes
 }

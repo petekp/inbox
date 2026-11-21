@@ -30,6 +30,8 @@ import { endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
 import { noteDialogs } from './dialogs'
 import { withEarlierHistory, withMissedTurns } from './history'
 import { codexStore } from './host'
+import { codexCommandStore } from './command-log'
+import { markArrived } from '../../core/runtime/remote-command-state'
 import type { OnWrite } from './host'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
@@ -158,10 +160,12 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
     }
     case 'UserPromptSubmit': {
       let notes: string[] = []
+      let arrival: string | null | undefined
       const withHistory = await readHistoryAhead(read)
       await write(async s => {
         const r = notePrompt(withHost(await withHistory(s)), input.prompt ?? '', now())
         notes = r.notes
+        arrival = r.sentBy?.deliveryId
         if (input.agent_id) return r.state
         const started = noteHook(turnStarted({ ...r.state, delegateCalls: [] }, now()), 'prompt', now(), input.turn_id)
         // Codex names no source for a prompt, so a prompt no press sent is one the person typed.
@@ -169,6 +173,10 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
 
         return isTyped ? messageTyped(started, now()) : started
       })
+      await markArrived(
+        codexCommandStore(dir, id, now, async () => deps.onWrite?.(await read())),
+        arrival,
+      )
       if (isMarkedBehind) deps.startUpdate(id)
 
       return notes.length === 0
