@@ -20,10 +20,9 @@ function leasesPath(dir: string, sessionId: string): string {
 
 /** A session's saved viewer leases. A missing or unreadable file holds none. */
 export async function readViewers(dir: string, sessionId: string): Promise<SavedLeases> {
-  const saved = await readFile(leasesPath(dir, sessionId), 'utf8').then(
-    text => JSON.parse(text) as Partial<SavedLeases>,
-    () => null,
-  )
+  const saved = await readFile(leasesPath(dir, sessionId), 'utf8')
+    .then(text => JSON.parse(text) as Partial<SavedLeases>)
+    .catch(() => null)
   const isSaved = typeof saved?.writtenAt === 'number' && typeof saved.leases === 'object' && saved.leases !== null
 
   return isSaved ? (saved as SavedLeases) : NO_LEASES
