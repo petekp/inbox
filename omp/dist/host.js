@@ -1097,8 +1097,15 @@ var prompts = {
     threadText(t)
   ].join(NL3),
   merge: (pr, shown) => [
-    `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, the inbox read "${shown}".`,
-    "Check that it is still mergeable, merge it with the repo's usual merge method, and tell me the result.",
+    ...pr.headSha === undefined ? [
+      `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, the inbox read "${shown}".`,
+      "Check that it is still mergeable, merge it with the repo's usual merge method, and tell me the result."
+    ] : [
+      `Merge PR #${pr.number} (${pr.url}) into ${pr.base}. When I pressed this, the inbox read "${shown}", and the PR's head commit was ${pr.headSha}.`,
+      "Check that it is still mergeable, and merge it with the repo's usual merge method only while its head is still that commit. Tell me the result.",
+      `Pass \`--match-head-commit ${pr.headSha}\` to \`gh pr merge\`, so GitHub refuses a newer head.`,
+      "If the head has moved, merge nothing and tell me what changed."
+    ],
     "If it is not mergeable, or merging would need a bypass or a force, stop and tell me instead."
   ].join(NL3),
   fixCheck: (pr, c) => [
