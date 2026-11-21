@@ -65,6 +65,11 @@ test('the host’s last press reads back, and one in an unknown shape reads as n
   expect(read.is === 'read' && read.lastPress).toEqual(lastPress)
   const odd = readSession(demoEnvelopeText({ lastPress: { id: 'p1', outcome: 'lost' } }))
   expect(odd.is === 'read' && odd.lastPress).toBeNull()
+  const refused = { id: 'p1', outcome: 'refused', why: 'This press is too old to run. Nothing was sent.' } as const
+  const readRefused = readSession(demoEnvelopeText({ lastPress: refused }))
+  expect(readRefused.is === 'read' && readRefused.lastPress).toEqual(refused)
+  const unexplained = readSession(demoEnvelopeText({ lastPress: { id: 'p1', outcome: 'refused' } }))
+  expect(unexplained.is === 'read' && unexplained.lastPress).toBeNull()
 })
 
 test('no file reads as missing, and a file cut off mid-write reads as torn', () => {

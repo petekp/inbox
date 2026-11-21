@@ -186,5 +186,6 @@ export const CODEX: Client = {
       reason:
         "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process.",
     },
+    'press-preconditions': { kind: 'full' },
   },
 }

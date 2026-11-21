@@ -9,7 +9,7 @@ export const PRS_PER_QUERY = 50
  * review threads, each with its first and latest comment.
  */
 const PR_FIELDS = `fragment PrFields on PullRequest {
-  number title url isDraft state baseRefName mergeable reviewDecision
+  number title url isDraft state baseRefName mergeable reviewDecision headRefOid
   author { login }
   commits(last: 1) { nodes { commit { committedDate statusCheckRollup { contexts(first: 100) { nodes {
     __typename
@@ -88,6 +88,7 @@ export type PrNode = {
   baseRefName?: string
   mergeable?: string
   reviewDecision?: string | null
+  headRefOid?: string
   author?: { login: string } | null
   commits?: {
     nodes?: {
@@ -232,6 +233,7 @@ export function readPrNode(
     base: String(node.baseRefName ?? ''),
     mergeable: String(node.mergeable ?? 'UNKNOWN'),
     reviewDecision: String(node.reviewDecision ?? ''),
+    ...(typeof node.headRefOid === 'string' && { headSha: node.headRefOid }),
     checks: checksOf(node),
     threads: threadsError === null ? threadsOf(node, viewer) : (previous?.threads ?? []),
     isYours: viewer === undefined || node.author === undefined ? null : node.author?.login === viewer,

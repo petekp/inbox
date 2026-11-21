@@ -464,6 +464,8 @@ export type PrView = {
   error: string | null
   /** When a fetch last read the PR's state from GitHub. Absent on a view saved before the inbox kept it. */
   fetchedAt?: number
+  /** The PR's head commit at the last fetch. Absent on a view saved before the inbox kept it. */
+  headSha?: string
 }
 
 /** Where a PR stands, as its block's status line names it. `core/domain/prs.ts:readiness` reads it. */
@@ -762,8 +764,12 @@ export type RemoteCommandRecord = {
   delivered: boolean
 }
 
-/** A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed. */
-export type HerdrPressOutcome = { id: string; outcome: 'applied' | 'stale' }
+/**
+ * A press from the Herdr look and its outcome: `stale` when `press()` found its row already changed, `refused` when
+ * the host applied nothing, with why. A look from before `refused` ignores it.
+ */
+export type HerdrPressOutcome =
+  { id: string; outcome: 'applied' | 'stale' } | { id: string; outcome: 'refused'; why: string }
 
 /** One conversation's inbox: what every host saves and the shared session functions change. */
 export type Session = {

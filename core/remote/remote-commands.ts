@@ -13,6 +13,7 @@ import type { RowPress } from '../domain/presses'
 import type { PressHost, PressOutcome } from '../runtime/host-press'
 import { startPress } from '../runtime/host-press'
 import { NO_HOLDS } from '../view/timing'
+import { PRESS_LIFETIME_MS } from '../domain/preconditions'
 
 export type RemoteCommand = {
   format: 2
@@ -24,7 +25,7 @@ export type RemoteCommand = {
   press: RowPress
 }
 
-const LIFETIME_MS = 24 * 60 * 60_000
+const LIFETIME_MS = PRESS_LIFETIME_MS
 const MAX_COMMANDS = 128
 const MAX_COMMAND_BYTES = 128_000
 const OUTCOME_RESERVE_BYTES = 4096
@@ -329,7 +330,9 @@ export async function startRemoteCommand<S extends Session>(
     },
   }
   const failed = (error: unknown) => rejected(error instanceof Error ? error.message : 'Command outcome is uncertain.')
-  const started = await startPress(stamped, command.press, false, { ...NO_HOLDS, shownSince: now }, command.id).catch(
+  const expires = { kind: 'expires-at' as const, at: command.issuedAt + LIFETIME_MS }
+  const holds = { ...NO_HOLDS, shownSince: now }
+  const started = await startPress(stamped, command.press, false, holds, command.id, [expires]).catch(
     (error: unknown) => failed(error),
   )
   if (!('finish' in started)) return done(await settled(host, store, command, started))

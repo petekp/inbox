@@ -89,6 +89,8 @@ export type PaneBase = {
   prState: PrViews
   lastActions: Record<string, LastAction>
   notes: Record<string, RowNote>
+  /** A refused press's text on row `id`, from the controller, while it shows. */
+  rowError: (id: string) => string | null
   turns: Turns
   stop: Stop | null
   view: SessionView

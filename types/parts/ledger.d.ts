@@ -72,6 +72,8 @@ export type PrView = {
   error: string | null
   /** When a fetch last read the PR's state from GitHub. Absent on a view saved before the inbox kept it. */
   fetchedAt?: number
+  /** The PR's head commit at the last fetch. Absent on a view saved before the inbox kept it. */
+  headSha?: string
 }
 
 /** Where a PR stands, as its block's status line names it. `core/domain/prs.ts:readiness` reads it. */

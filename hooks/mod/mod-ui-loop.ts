@@ -50,7 +50,8 @@ const withoutListInput = (ui: UiState) => JSON.stringify({ ...ui, listInput: nul
 
 /**
  * Runs `events` through the shared controller on the drawn view, one batch at a time, saves its state, and runs its
- * commands. `'read'` reads what the drawn session says about its host. A press's `surface` reaches its commands.
+ * commands. A press carries the rows and PR heads the pane last painted, which can be older than the saved session.
+ * `'read'` reads what the drawn session says about its host. A press's `surface` reaches its commands.
  */
 export function sendUi(m: UiLoopCalls, events: (UiEvent | 'read')[], surface?: UiPressArgument['surface']) {
   return inUiQueue(() => applyUi(m, events, surface))
@@ -62,7 +63,8 @@ async function applyUi(m: UiLoopCalls, events: (UiEvent | 'read')[], surface?: U
   const host = hostFactsOf(drawn)
   const synced = withPaneShown(events, drawn.ui, isPaneOpen)
   const all = synced.map((event): UiEvent => (event === 'read' ? { type: 'read', host } : event))
-  const applied = applyUiEvents(drawn.ui, drawn.view, all, drawn.now)
+  const view = paneState.paintedVersions ? { ...drawn.view, drawnVersions: paneState.paintedVersions } : drawn.view
+  const applied = applyUiEvents(drawn.ui, view, all, drawn.now)
   paneState.listInput = applied.ui.listInput
   paneState.nextPressId = applied.ui.nextPressId
   if (withoutListInput(applied.ui) !== withoutListInput(drawn.ui)) await m.atoms.ui.update(() => applied.ui)
@@ -109,7 +111,7 @@ async function wakeUi(m: UiLoopCalls) {
 }
 
 async function runUiCommand(m: UiLoopCalls, c: UiCommand, surface?: UiPressArgument['surface']) {
-  if (c.kind === 'press') await runPress(m, c.pressId, c.press, c.holds, surface)
+  if (c.kind === 'press') await runPress(m, c.pressId, c.press, c.holds, surface, c.when)
   else if (c.kind === 'save-collapse') await saveCollapse(m, c.id, c.isCollapsed).then(() => m.sendUi(['read']))
   else if (c.kind === 'read') await m.sendUi(['read'])
   else if (c.kind === 'focus-field') await focusOpenedField(m, c.id)
@@ -125,6 +127,7 @@ export function leaveUi(m: UiLoopCalls) {
     const id = conversation.id
     paneState.keptUi = keptUiStates({ ...paneState.keptUi, [id]: { ui, shownAt: now } }, null)
     paneState.listInput = null
+    paneState.paintedVersions = null
     await m.atoms.ui.update(() => freshUi(ui.config, ui.tab))
   })
 }

@@ -10,6 +10,7 @@ import { cancelUndoScroll, paneState, suspendUndoReveal } from './mod-state'
 import { isPrPress, pressRowId, type PrPress } from '../../core/view/pr-press'
 import { prUndoBlockAfter } from '../../core/view/pr-views'
 import type { RowPress } from '../../core/domain/presses'
+import type { Precondition } from '../../core/domain/preconditions'
 import { allRows } from '../../core/view/rows'
 import { type Holds, SETTLED_MS } from '../../core/view/timing'
 import type { SettledOutcome } from '../../core/view/ui-controller-types'
@@ -37,6 +38,7 @@ export async function runPress(
   p: RowPress | PrPress,
   holds: Holds,
   surface?: UiPressArgument['surface'],
+  when: Precondition[] = [],
 ) {
   const mayStayOnRow = isPrPress(p)
     ? ['pr-open', 'pr-refresh', 'thread-open', 'log', 'check-rerun'].includes(p.action)
@@ -44,7 +46,7 @@ export async function runPress(
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const now = await m.clock.now()
   const isDemo = (await m.atoms.demo.read()) !== null
-  const started = isDemo ? null : await startPress(m.hostOf(currentOwner(), surface), p, false, holds)
+  const started = isDemo ? null : await startPress(m.hostOf(currentOwner(), surface), p, false, holds, undefined, when)
   const demo = isDemo ? await runDemoPress(m, pressId, p, holds, now) : null
   const effects = started?.effects ?? (demo?.hasEffects ? [] : null)
   if (effects) {

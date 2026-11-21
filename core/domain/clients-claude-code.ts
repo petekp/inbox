@@ -109,5 +109,6 @@ export const CLAUDE_CODE: Client = {
     'delegate-asks': { kind: 'full' },
     'record-earlier-answers': { kind: 'full' },
     'session-registry': { kind: 'full' },
+    'press-preconditions': { kind: 'full' },
   },
 }

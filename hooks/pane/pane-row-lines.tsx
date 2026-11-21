@@ -7,6 +7,7 @@ import {
   feedbackOf,
   feedbackText,
   feedbackTone,
+  type Feedback,
   type FeedbackTone,
   hasAge,
   isAfterTitle,
@@ -41,6 +42,7 @@ export function paneRowLines({
   elements,
   lastActions,
   notes,
+  rowError,
   turns,
   now,
   look,
@@ -58,6 +60,7 @@ export function paneRowLines({
     PaneBase,
     | 'lastActions'
     | 'notes'
+    | 'rowError'
     | 'turns'
     | 'now'
     | 'look'
@@ -72,6 +75,11 @@ export function paneRowLines({
     | 'Button'
   >) {
   const feedbackLabel = (id: string, row?: Row) => {
+    const error = rowError(id)
+    if (error !== null) {
+      const refused: Feedback = { is: 'notSent', reason: error, retry: null }
+      return { text: error, age: '', isAfterTitle: false, tone: 'error' as const, doneText: null, feedback: refused }
+    }
     const f = row?.view ? row.view.feedback : feedbackOf(id, lastActions[id], notes[id], turns, now)
     if (!f) return null
     const mark = look === 'terminal' && row?.view ? rowResultMark(row.view) : null

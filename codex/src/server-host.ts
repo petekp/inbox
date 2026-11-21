@@ -9,6 +9,7 @@ import type { PrPress } from '../../core/view/pr-press'
 import { openTarget } from '../../core/domain/open-targets'
 import type { PathProbe } from '../../core/domain/open-targets'
 import type { RowPress } from '../../core/domain/presses'
+import type { Precondition } from '../../core/domain/preconditions'
 import { turnEnded, turnStarted } from '../../core/runtime/session-turns'
 import type { SendOutcome } from '../../core/runtime/session-presses'
 import { fetchPrs, prFetchTracker } from '../../core/runtime/host-prs'
@@ -251,10 +252,16 @@ export function makeSessionHost(
       setTimeout(() => void wakeAfterSettle(id).catch(() => undefined), SETTLE_WINDOW_MS).unref()
   }
 
-  /** Applies a press from the tab. */
-  async function onPress(id: string, p: RowPress | PrPress, thread: unknown, holds: Holds): Promise<PressReply> {
+  /** Applies a press from the tab, which sends what `when` the host checks before it applies the press. */
+  async function onPress(
+    id: string,
+    p: RowPress | PrPress,
+    thread: unknown,
+    holds: Holds,
+    when: readonly Precondition[] = [],
+  ): Promise<PressReply> {
     await beforePress(id, p)
-    const outcome = await press(hostFor(id), p, thread !== id, holds)
+    const outcome = await press(hostFor(id), p, thread !== id, holds, undefined, when)
     wakeAfterPress(id, outcome)
     const { isUnconfirmed, wakesAfterSettle: _wakes, ...rest } = outcome
 

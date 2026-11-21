@@ -4,6 +4,7 @@ import type { DemoSent } from '../../core/runtime/press-effects'
 import type { ModLook } from '../../core/view/rows'
 import type { HerdrAsk } from '../../core/remote/herdr-ask'
 import type { UiState } from '../../core/view/ui-controller-types'
+import type { DrawnVersions } from '../../core/view/press-preconditions'
 import { memoryViewerStores } from '../../core/runtime/remote-viewers'
 
 class PaneState {
@@ -19,6 +20,11 @@ class PaneState {
   isOpenUnheard = false
   /** The load revision of a conversation still loading. Until it ends, the controller sees the pane closed. */
   loadingRevision: number | null = null
+  /**
+   * The row versions and PR heads of the view the pane last painted. The controller's view is read again for each event,
+   * so a press checks against these, which are what the person saw.
+   */
+  paintedVersions: DrawnVersions | null = null
   /** The last list input, kept out of the saved state so a pointer move writes nothing and redraws nothing. */
   listInput: UiState['listInput'] = null
   /**

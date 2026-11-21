@@ -1,4 +1,4 @@
-import type { Session } from '../../types'
+import type { HerdrPressOutcome, Session } from '../../types'
 import { HERDR_FORMAT, publishedSessionPath, publishedSessionsFolder } from '../../core/remote/herdr'
 import type { HerdrEnvelope } from '../../core/remote/herdr-envelope'
 import { upgradeSession } from '../../core/view/session-files'
@@ -20,7 +20,8 @@ export function isSessionChange(changed: readonly string[], appHome: string, ses
  * A published session file, read. `missing`: no file, as before the host's first write or after the session ended.
  * `torn`: not JSON, which a read mid-write can give, so the look reads again. `newer`: a format from a newer host.
  * `isTrimmed`: the host left out older closed items to keep the file under the 1 MiB Herdr's `readTextFile` reads.
- * `lastPress`: the last press file the host handled, and whether it applied or found its row already changed.
+ * `lastPress`: the last press file the host handled, and whether it applied, found its row already changed, or was
+ * refused, with why.
  * `projectFolder`: the absolute folder the host opens a relative path against, or null when the host gave none.
  * `isFetchingPrs`: the host had a PR fetch running. A file from a host that does not say reads as not fetching.
  * `isReadFailed`: the host could not read the saved inbox. A file from a host that does not say reads as read.
@@ -50,10 +51,11 @@ const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'obj
 
 const SOURCE_FIELDS = ['host', 'agent', 'sessionId', 'terminal'] as const
 
-export type LastPress = { id: string; outcome: 'applied' | 'stale' }
+export type LastPress = HerdrPressOutcome
 
 function lastPressOf(x: unknown): LastPress | null {
   if (!isRecord(x) || typeof x.id !== 'string') return null
+  if (x.outcome === 'refused') return typeof x.why === 'string' ? { id: x.id, outcome: 'refused', why: x.why } : null
   return x.outcome === 'applied' || x.outcome === 'stale' ? { id: x.id, outcome: x.outcome } : null
 }
 
