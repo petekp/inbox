@@ -6,7 +6,6 @@ import type { StatusRow } from './status-page'
 import { namedList, textBeyondName } from './status-page-parts'
 import { milestonePath, namesOnlyMilestoneUnderWay } from './status-path'
 import { hasRunningGoal } from '../domain/status-suggest'
-import { namesWorkingSubject } from './status-repeats'
 import type { PathLine, PathPlace, PathStep } from './status-path'
 
 /** A milestone under the goal, in the goal's path. Its name draws bold until the milestone is done or dropped. */
@@ -192,10 +191,7 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
   const isAwaiting = g.isAwaitingMilestones || kept.length === 0
   const head = o.head
   const nowText = head ? head.description || head.title : null
-  const isNowSaid =
-    nowText !== null &&
-    (namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept) ||
-      namesWorkingSubject(nowText, o.subjects))
+  const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept)
   const milestones = g.isAwaitingMilestones ? [] : milestonePath(shown).map(step => milestoneRow(step, o, items))
 
   return {

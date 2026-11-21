@@ -1,7 +1,8 @@
 import type { Item, Milestone, SessionStatus, Subject } from '../../types'
 import { isOpen, stems } from '../domain/status-limits'
+import { statusListRows } from './status-folds'
 import type { MilestoneRow } from './status-goal-page'
-import type { StatusRow } from './status-page'
+import type { StatusPage, StatusRow } from './status-page'
 
 /** Whether `text` holds every key word of `name`, as `stems` gives them. */
 function holdsEveryWordOf(text: string, name: string): boolean {
@@ -19,9 +20,21 @@ function isNamedAlike(a: string, b: string): boolean {
   return short.size > 0 && [...short].every(w => long.has(w))
 }
 
-/** Whether the goal's Now line repeats a working subject: it holds every key word of the subject's name. */
-export const namesWorkingSubject = (nowText: string, subjects: readonly Subject[]): boolean =>
-  subjects.some(x => x.into === null && x.status === 'working' && holdsEveryWordOf(nowText, x.name))
+/**
+ * The page with the goal's Now line left out when the line holds every key word of a working subject the page draws as
+ * a row. A subject behind a fold does not count, so the Now line still says what is under way.
+ */
+export function withoutRepeatedNow(page: StatusPage, o: SessionStatus | null): StatusPage {
+  const g = page.goal
+  const nowText = o?.head ? o.head.description || o.head.title : null
+  if (g === null || g.now === null || o === null || nowText === null) return page
+  const drawnIds = new Set(statusListRows(page).flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+  const isRepeated = o.subjects.some(
+    x => drawnIds.has(x.id) && x.status === 'working' && holdsEveryWordOf(nowText, x.name),
+  )
+
+  return isRepeated ? { ...page, goal: { ...g, now: null } } : page
+}
 
 /**
  * The subject the page draws in a milestone's place: the only subject that serves it, dropped ones counted, when that

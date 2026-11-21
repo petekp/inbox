@@ -28,6 +28,20 @@ test('under a goal, the Now line hides while it holds every key word of a workin
   )
 })
 
+test('under a goal, the Now line stays while the working subject it repeats is behind the open fold', () => {
+  const more = ['Billing', 'Search', 'Exports', 'Onboarding', 'Settings']
+  const grown = after(withGoal(), more.map(n => `NEW: working | ${n} | under way`).join('\n'), 30)
+  const o: SessionStatus = {
+    ...grown,
+    lastLookAt: 50,
+    subjects: grown.subjects.map(x => (x.id === 's1' ? { ...x, changedAt: 5 } : x)),
+  }
+  const p = page(o, 60)
+
+  expect(statusListRows(p).map(r => r.id)).not.toContain('s1')
+  expect(p.goal?.now).toBe('Now: Making CSV import ready to demo')
+})
+
 test('a milestone whose only subject is named alike, with no ask naming the milestone, draws the subject in its place with its name, text, ask and rows, and lists the subject among the page’s rows', () => {
   const linked = after(withGoal(), 'SERVES: s2 | m3\nLINK: i1 | s2', 30, new Set(['i1']))
   const child = {

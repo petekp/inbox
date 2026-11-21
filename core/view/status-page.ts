@@ -19,7 +19,7 @@ import {
   unplacedChildren,
 } from './status-page-parts'
 import type { ListContext, PartSplit } from './status-page-parts'
-import { isTitleRepeated, milestoneAsSubject, subjectInPlaceOf } from './status-repeats'
+import { isTitleRepeated, milestoneAsSubject, subjectInPlaceOf, withoutRepeatedNow } from './status-repeats'
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'
@@ -405,15 +405,18 @@ export function statusPage(
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]!)),
   }
 
-  return {
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
-    head,
-    ...goalParts,
-    goal,
-    rows,
-    sync,
-    syncText: statusSyncText(sync, now),
-  }
+  return withoutRepeatedNow(
+    {
+      isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+      head,
+      ...goalParts,
+      goal,
+      rows,
+      sync,
+      syncText: statusSyncText(sync, now),
+    },
+    o,
+  )
 }
 
 /** The subjects a look counts as seen while `row` is on screen. */
