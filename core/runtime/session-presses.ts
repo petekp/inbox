@@ -23,7 +23,7 @@ import { isShownSince } from '../view/timing'
 import { outAction, pressFeedbackIn } from '../view/feedback'
 import type { Holds } from '../view/timing'
 import type { RowState } from '../view/rows'
-import type { PrFetchFailure, PrViews, Session, ToolFields } from '../../types'
+import type { PrFetchFailure, PrViews, Session, ToolFields, ViewerLeases } from '../../types'
 import { sessionView } from '../view/session-view'
 
 export type Pressed = Exclude<Applied, { stale: true }>
@@ -184,8 +184,15 @@ export function withHolds<S extends Session>(s: S, holds: Holds): S {
   return { ...s, heldRows: Object.keys(holds.replies), shownSince: holds.shownSince }
 }
 
-/** The rows a look still draws in place: the rows `heldRows` names, and the rows closed or pressed since `shownSince`. */
-export function rowsInPlace(s: Session, now = Date.now()): Set<string> {
+/**
+ * The rows a look still draws in place: the rows `heldRows` names, the rows closed or pressed since `shownSince`, and
+ * the rows the live viewer leases in `viewers` hold.
+ */
+export function rowsInPlace(
+  s: Session,
+  now = Date.now(),
+  viewers: Parameters<typeof remoteHeldRows>[0] = {},
+): Set<string> {
   const since = [
     ...Object.entries(s.lastActions).map(([id, a]) => ({ id, at: a.at })),
     ...[...s.ledger.closed, ...s.ledger.closedFindings].map(c => ({ id: c.id, at: closedAt(c) })),
@@ -194,14 +201,15 @@ export function rowsInPlace(s: Session, now = Date.now()): Set<string> {
   const pending = Object.values(s.remoteCommands)
     .filter(c => c.pendingDelivery && !c.deliveryId)
     .map(c => c.row)
-  return new Set([...s.heldRows, ...remoteHeldRows(s, now), ...pending, ...since])
+  return new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pending, ...since])
 }
 
 /**
- * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of `rowsInPlace`.
- * A PR's view goes once `isViewKept` no longer keeps it, and the collapses settle as `settledCollapses` says.
+ * `s` as every write saves it. Each closed list is cut to its newest records, and keeps the records of `rowsInPlace`
+ * for the session's live `viewers`. A PR's view goes once `isViewKept` no longer keeps it, and the collapses settle as
+ * `settledCollapses` says.
  */
-export function pruned<S extends Session>(s: S, now = Date.now()): S {
+export function pruned<S extends Session>(s: S, now = Date.now(), viewers: ViewerLeases = {}): S {
   s = remoteCommandState(s)
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) =>
@@ -212,7 +220,7 @@ export function pruned<S extends Session>(s: S, now = Date.now()): S {
 
   return settledCollapses({
     ...s,
-    ledger: pruneClosed(s.ledger, rowsInPlace(s, now)),
+    ledger: pruneClosed(s.ledger, rowsInPlace(s, now, viewers)),
     prViews: isViewDropped ? { ...s.prViews, views } : s.prViews,
   })
 }

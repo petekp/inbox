@@ -4,9 +4,9 @@ import { test } from './test-with-timeout'
 import { delegatesSettled } from '../core/domain/children'
 import { childEnded, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../core/domain/status-children'
 import { startHerdrFile } from '../core/remote/herdr-app'
+import type { HerdrFileHost } from '../core/remote/herdr-app'
 import { delegatesInHerdr, HERDR_FORMAT, herdrTarget } from '../core/remote/herdr'
 import { emptySession } from '../core/view/session-files'
-import type { PressHost } from '../core/runtime/host-press'
 import type { Session } from '../types'
 import type { Run } from '../core/domain/gh'
 import type { SessionStatus } from '../types'
@@ -137,7 +137,7 @@ test('a look file the Herdr look wrote sets the last look on the saved Status', 
   }
   const host = {
     update: async (change: (s: Session) => Session) => void (saved = change(saved)),
-  } as unknown as PressHost<Session>
+  } as unknown as HerdrFileHost<Session>
   const look = {
     startedAt: 20 * MIN,
     endedAt: 20 * MIN + LOOK_MIN_MS,

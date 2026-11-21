@@ -1,10 +1,10 @@
 import { remoteReceipts } from '../../core/runtime/remote-command-state'
 import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
-import type { Session } from '../../types'
+import type { Session, ViewerLeases } from '../../types'
 import { KEPT_SESSIONS } from '../../core/domain/ledger'
 import { dropUnreadSharedViews } from './mod-pr-shared'
 import { type Changed, type ModSession, type Owner, type SavedRecord, sessionKey } from './mod-sessions'
-import { sessionState } from './mod-state'
+import { sessionState, viewerLeases } from './mod-state'
 import { isLockHeld, isStoreFull, whileLockHeld } from './mod-store'
 import { emptySession, upgradeSession } from '../../core/view/session-files'
 import { pruned } from '../../core/runtime/session-presses'
@@ -89,7 +89,8 @@ type Held = { session: Session; savedAt: number; since: number; timer: Timer }
 const held = new Map<string, Held>()
 
 /** For saving: the pane draws another conversation, so this one holds no rows and has no showing. */
-const forSaving = (s: Session, now: number): Session => pruned({ ...s, heldRows: [], shownSince: null }, now)
+const forSaving = (s: Session, now: number, leases: ViewerLeases): Session =>
+  pruned({ ...s, heldRows: [], shownSince: null }, now, leases)
 
 /**
  * Whether the store holds a newer save of `kept`'s conversation than the one it was changed from. Only a save of the
@@ -238,12 +239,13 @@ export function changeSaved(e: SaveEngine, id: string, change: Change): Promise<
         const read = await sessionToChange(e, id)
         if (!read) return
         const after = await change(read.session)
+        const leases = viewerLeases.peek(id)
         result = {
           before: read.session,
           after:
             after === read.session
               ? after
-              : forSaving(after, Object.keys(after.remoteViewers).length > 0 ? await e.now() : 0),
+              : forSaving(after, Object.keys(leases).length > 0 ? await e.now() : 0, leases),
           isDrawn: false,
         }
         if (result.after === read.session) return
@@ -374,16 +376,13 @@ export async function readSettled(e: SaveEngine, id: string): Promise<{ session:
   return kept && (!saved || !isOvertaken(kept, saved)) ? { session: { savedAt: kept.savedAt, ...kept.session } } : saved
 }
 
-export async function readRemoteState(e: SaveEngine, id: string, live: Session) {
-  if (!Object.keys(live.remoteCommands).length && !Object.keys(live.remoteViewers).length) return {}
+export async function readRemoteState(e: SaveEngine, id: string, live: Session, leases: ViewerLeases) {
+  const viewers = Object.keys(leases).length > 0 ? { viewers: remoteViewerReceipts(leases) } : {}
+  if (!Object.keys(live.remoteCommands).length) return viewers
   const saved = await readSaved(e, id)
-  if (!saved?.session) return {}
+  if (!saved?.session) return viewers
   const durable = upgradeSession(saved.session)
-  return {
-    receipts: remoteReceipts(durable),
-    viewers: remoteViewerReceipts(durable),
-    remoteHistoryAfter: durable.remoteCommandFloor ?? 0,
-  }
+  return { receipts: remoteReceipts(durable), ...viewers, remoteHistoryAfter: durable.remoteCommandFloor ?? 0 }
 }
 
 export async function readDurableSession(e: SaveEngine, id: string): Promise<Session> {

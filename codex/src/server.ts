@@ -37,6 +37,8 @@ import {
 import { makeHooksTrustNow } from './server-trust'
 import { makeBackground } from './background'
 import { pruneSessions, readState, recordMatchesNow, updateState } from './state'
+import { readViewers } from './viewers'
+import { isPrsTabViewed } from '../../core/runtime/remote-viewers'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
 import type { CodexHerdrAsk } from './server-herdr'
@@ -288,14 +290,8 @@ export function makeServer(given: ServerDeps): Server {
       return errors
     },
     apply: async (id, file) => void (await (await onHerdrFile(id, file)).waiting?.()),
-    fetch: (id, state) =>
-      fetchPrsWhenDue(
-        id,
-        state,
-        Object.values(state.remoteViewers).some(
-          viewer => viewer.tab === 'prs' && !viewer.released && viewer.expiresAt > now(),
-        ),
-      ),
+    fetch: async (id, state) =>
+      fetchPrsWhenDue(id, state, isPrsTabViewed((await readViewers(deps.dir, id)).leases, now())),
     trust: hooksTrustNow,
   })
   return Object.assign(handle, { settled: background.settled, companion })

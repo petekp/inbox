@@ -46,6 +46,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/core.ts` | Codex host. Codex bindings over `core/runtime/session-turns.ts`, `core/runtime/session-status.ts` and `core/view/session-view.ts`, the tab view and tab helpers. |
 | `codex/src/data-dir.ts` | Codex host. The data folder and the dev build, which the loader reads. It imports no shared module, so a shared-module change leaves the loader's bundle unchanged. |
 | `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `types/index.d.ts`. |
+| `codex/src/lock.ts` | Codex host. `withLock` and `tryWithLock`: a lock on a file path that the hook, update and MCP server processes share, which a lock of a process that ended gives up. |
+| `codex/src/viewers.ts` | Codex host. A session's viewer leases, in `<id>.viewers.json` beside its state, so a heartbeat leaves the state file alone. |
 | `codex/src/question-history.ts` | Codex host. The question history's file calls through `node:fs`, and the sessions Codex keeps, which seed its first history files. Each entry point turns the history on with `useQuestionHistory`. |
 | `codex/src/host.ts` | Codex host. `codexStore`, the Codex store that `core/runtime/session-host.ts` runs on. |
 | `codex/src/server.ts` | Codex host. The MCP server: `makeServer`, which takes `ServerDeps` and answers each JSON-RPC call. Its `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. |

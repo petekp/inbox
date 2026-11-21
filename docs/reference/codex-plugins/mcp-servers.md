@@ -51,7 +51,7 @@ Part of [Codex plugins and the Codex app](../codex-plugins.md).
     lived at least 2.5 minutes, across turns.
   - So state must live in files or in one process the others can reach. The
     repo keeps one JSON file per session under an mkdir lock
-    (codex/src/state.ts:withLock).
+    (codex/src/lock.ts:withLock).
 - **The inbox server's handshake** [repo]: it echoes the client's
   `protocolVersion` or defaults to `2025-06-18`, returns
   `capabilities: { tools: {}, resources: {} }` and

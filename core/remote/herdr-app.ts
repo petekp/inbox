@@ -10,6 +10,7 @@ import type { PressHost, PressOutcome } from '../runtime/host-press'
 import { lookReportedOn } from '../runtime/session-status'
 import { rowsInPlace } from '../runtime/session-presses'
 import { updateRemoteViewer } from '../runtime/remote-viewers'
+import type { RemoteViewerUpdate, ViewerStore } from '../runtime/remote-viewers'
 import { applyRemoteCommand } from './remote-commands'
 import { clipLabel } from '../domain/text'
 
@@ -78,9 +79,12 @@ function utf8Bytes(text: string): number {
 
 const isOverLimit = (text: string) => text.length * 3 > PUBLISH_LIMIT_BYTES && utf8Bytes(text) > PUBLISH_LIMIT_BYTES
 
-/** `s` without the closed items and findings that no row draws in place, which the look folds under its closed count. */
-function withoutFoldedClosed(s: Session, now: number): Session {
-  const inPlace = rowsInPlace(s, now)
+/**
+ * `s` without the closed items and findings that no row draws in place, which the look folds under its closed count.
+ * The rows a remote viewer holds stay.
+ */
+function withoutFoldedClosed(s: Session, now: number, viewers: EnvelopeSource['viewers']): Session {
+  const inPlace = rowsInPlace(s, now, viewers)
   const { closed, closedFindings } = s.ledger
 
   return {
@@ -100,7 +104,9 @@ function withoutFoldedClosed(s: Session, now: number): Session {
 export function publishedText(source: EnvelopeSource, session: Session, log: (text: string) => void): string {
   const text = JSON.stringify(herdrEnvelope(source, session))
   if (!isOverLimit(text)) return text
-  const trimmed = JSON.stringify(herdrEnvelope(source, withoutFoldedClosed(session, source.writtenAt), true))
+  const trimmed = JSON.stringify(
+    herdrEnvelope(source, withoutFoldedClosed(session, source.writtenAt, source.viewers), true),
+  )
   if (isOverLimit(trimmed))
     log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`)
 
@@ -334,6 +340,45 @@ export const startedFile = (started: StartedHerdrFile, after: (outcome: PressOut
   return DONE
 }
 
+/** A host that applies Herdr files: a press host, with the store that keeps its viewer leases. */
+export type HerdrFileHost<S extends Session> = PressHost<S> & { viewers: ViewerStore }
+
+/**
+ * Applies a viewer's heartbeat to the viewer store, which leaves the saved session alone. When a viewer stops showing
+ * the Status, its look is counted as `lookReportedOn` counts it, and that is saved before the lease, so a failed save
+ * leaves the heartbeat to be applied again. A viewer on the PRs tab makes the host read the session's PRs if they are due.
+ */
+async function applyViewerUpdate<S extends Session>(host: HerdrFileHost<S>, file: RemoteViewerUpdate): Promise<void> {
+  const now = await host.now()
+  const leases = await host.viewers.read()
+  const next = updateRemoteViewer(leases, file, now)
+  const previous = leases[file.id]
+  const viewer = next[file.id]
+  if (next === leases || !viewer) return
+  const isSameLook =
+    previous !== undefined &&
+    !previous.released &&
+    previous.expiresAt > now &&
+    previous.generation === file.generation &&
+    previous.tab === 'overview' &&
+    file.tab === 'overview'
+  const endedLook = isSameLook && !file.active ? previous : undefined
+  const lookShownSince = endedLook?.shownSince ?? null
+  if (endedLook && lookShownSince !== null) {
+    const duration = Math.min(file.visibleForMs ?? 0, now - lookShownSince)
+    await host.update(s =>
+      lookReportedOn(s, {
+        startedAt: now - duration,
+        endedAt: now,
+        drawnWrittenAt: Math.min(now, file.seenAt ?? 0),
+        shown: viewer.released ? endedLook.shownRows : viewer.shownRows,
+      }),
+    )
+  }
+  await host.viewers.update(current => updateRemoteViewer(current, file, now))
+  if (!viewer.released && viewer.tab === 'prs') await host.refreshPrsIfDue?.()
+}
+
 /**
  * Applies a file the Herdr look wrote. A look at the Status counts as `lookReportedOn` counts it, a collapse is
  * saved as `withCollapse` saves it, and a report that the look shows the PRs tab makes the host read the session's PRs
@@ -343,42 +388,14 @@ export const startedFile = (started: StartedHerdrFile, after: (outcome: PressOut
  * queued, which is its row's outcome until then: that press is named once saved, and waits to run.
  */
 export async function startHerdrFile<S extends Session>(
-  host: PressHost<S>,
+  host: HerdrFileHost<S>,
   file: HerdrFile,
   sessionId = '',
 ): Promise<StartedHerdrFile> {
   if (file.format === 2) {
     if (file.kind === 'command') return finished(await applyRemoteCommand(host, file, sessionId))
     if (file.session !== sessionId) return finished(LOOK_OUTCOME)
-    const now = await host.now()
-    let refresh = false
-    await host.update(s => {
-      refresh = false
-      const previous = s.remoteViewers[file.id]
-      let next = updateRemoteViewer(s, file, now)
-      if (next === s) return s
-      const viewer = next.remoteViewers[file.id]!
-      const sameLook =
-        previous &&
-        !previous.released &&
-        previous.expiresAt > now &&
-        previous.generation === file.generation &&
-        previous.tab === 'overview' &&
-        file.tab === 'overview'
-      if (sameLook && !file.active && previous.shownSince !== null) {
-        const duration = Math.min(file.visibleForMs ?? 0, now - previous.shownSince)
-        next = lookReportedOn(next, {
-          startedAt: now - duration,
-          endedAt: now,
-          drawnWrittenAt: Math.min(now, file.seenAt ?? 0),
-          shown: viewer.released ? previous.shownRows : viewer.shownRows,
-        })
-      }
-      refresh = !viewer.released && viewer.tab === 'prs'
-
-      return next
-    })
-    if (refresh) await host.refreshPrsIfDue?.()
+    await applyViewerUpdate(host, file)
     return finished(LOOK_OUTCOME)
   }
   if (isLookFile(file)) {

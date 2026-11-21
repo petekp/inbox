@@ -1,5 +1,6 @@
 import { REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
+import type { ViewerStore } from '../../core/runtime/remote-viewers'
 import { remoteReceipts } from '../../core/runtime/remote-command-state'
 import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -30,7 +31,7 @@ import type { StatusRecords, RecordFiles } from '../../core/runtime/status-recor
 import { screenTabOf } from '../../core/view/tabs'
 import { version } from '../package.json'
 import { openTarget } from './commands'
-import { exclusiveRun, pruneSessions, readState, updateState } from './state'
+import { exclusiveRun, pruneSessions, readState, updateState, viewerLeases } from './state'
 import type { OmpState } from './state'
 import { OMP } from './texts'
 import { sessionIdOf } from './host-context'
@@ -151,7 +152,7 @@ export function sessionCalls(context: HostContext) {
               appHome,
               {
                 receipts: remoteReceipts(s),
-                viewers: remoteViewerReceipts(s),
+                viewers: remoteViewerReceipts(viewerLeases.peek(id)),
                 remoteProtocol: 2,
                 remoteActions: REMOTE_ACTIONS,
                 remoteHistoryAfter: s.remoteCommandFloor ?? 0,
@@ -197,11 +198,12 @@ export function sessionCalls(context: HostContext) {
   /** The sessions whose results calls run one after another. They hold no lock, so a ledger call never waits for one. */
   const resultsOrder = orderedKeys()
 
-  function hostFor(ctx: OmpContext): SessionHost<OmpState> {
+  function hostFor(ctx: OmpContext): SessionHost<OmpState> & { viewers: ViewerStore } {
     const id = sessionIdOf(ctx)
 
     return {
       now: deps.now,
+      viewers: viewerLeases.of(id, () => reportCounts(id)),
       read: () => readState(dir, id),
       readDurable: () => readState(dir, id),
       update: fn => change(id, fn),

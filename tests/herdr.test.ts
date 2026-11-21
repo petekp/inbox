@@ -4,10 +4,11 @@ import { UNSTARTABLE_CODE } from '../core/domain/gh'
 import type { Run } from '../core/domain/gh'
 import { CLEARED_TOKENS, herdrEnvelope, herdrLabels, herdrReporter, herdrTarget } from '../core/remote/herdr'
 import { pressFile } from '../core/remote/herdr-press-file'
+import type { HerdrFile } from '../core/remote/herdr-press-file'
+import { memoryViewerStores } from '../core/runtime/remote-viewers'
 import type { EnvelopeSource } from '../core/remote/herdr'
 import { publishSession, startHerdrFile } from '../core/remote/herdr-app'
-import type { PublishFiles } from '../core/remote/herdr-app'
-import type { PressHost } from '../core/runtime/host-press'
+import type { HerdrFileHost, PublishFiles } from '../core/remote/herdr-app'
 import type { Session } from '../types'
 import { emptySession } from '../core/view/session-files'
 
@@ -126,13 +127,7 @@ describe('herdrLabels', () => {
 describe('herdrEnvelope', () => {
   test('keeps presentation state and omits private command and viewer records and the inbox model’s last answers', () => {
     const session = emptySession()
-    const {
-      remoteCommands: _commands,
-      remoteViewers: _viewers,
-      remoteCommandFloor: _floor,
-      lastAnswers: _answers,
-      ...presentation
-    } = session
+    const { remoteCommands: _commands, remoteCommandFloor: _floor, lastAnswers: _answers, ...presentation } = session
     const hostState = { ...session, herdrReport: { seq: 4 }, revision: 9 }
 
     expect(JSON.parse(JSON.stringify(herdrEnvelope(SOURCE, hostState)))).toEqual({
@@ -221,12 +216,46 @@ describe('a report that the Herdr look shows the PRs tab', () => {
     const host = {
       update: async () => void (updates += 1),
       refreshPrsIfDue: async () => void (refreshes += 1),
-    } as unknown as PressHost<Session>
+    } as unknown as HerdrFileHost<Session>
     const file = pressFile(JSON.stringify(REPORT))
     if (!file.ok) throw new Error(file.reason)
 
     await startHerdrFile(host, file.file, 's1')
 
     expect([refreshes, updates]).toEqual([1, 0])
+  })
+})
+
+describe('a viewer heartbeat from the Herdr look', () => {
+  const HEARTBEAT: HerdrFile = {
+    format: 2,
+    kind: 'viewer',
+    id: 'viewer-1',
+    session: 's1',
+    issuedAt: 1_000,
+    generation: 1,
+    sequence: 1,
+    active: true,
+    replies: ['q1'],
+    tab: 'needsYou',
+    shownRows: [],
+    listActive: false,
+  }
+
+  test('keeps its lease in the viewer store, republishes once, and saves nothing to the session', async () => {
+    let updates = 0
+    let republished = 0
+    const store = memoryViewerStores()
+    const host = {
+      now: async () => 1_000,
+      update: async () => void (updates += 1),
+      viewers: store.of('s1', () => void (republished += 1)),
+    } as unknown as HerdrFileHost<Session>
+
+    await startHerdrFile(host, HEARTBEAT, 's1')
+    await startHerdrFile(host, HEARTBEAT, 's1')
+
+    expect([updates, republished]).toEqual([0, 1])
+    expect(Object.keys(store.peek('s1'))).toEqual(['viewer-1'])
   })
 })

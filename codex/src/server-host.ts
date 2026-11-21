@@ -35,6 +35,8 @@ import type { PressReply, ServerDeps } from './server'
 import { pageName } from './server-tools'
 import { SETTLE_WINDOW_MS } from './settle'
 import { readState, updateState } from './state'
+import { codexViewerStore } from './viewers'
+import type { ViewerStore } from '../../core/runtime/remote-viewers'
 import type { SessionState } from './state'
 import { withRolloutArrivals } from './rollout-arrivals'
 import { hasUserMessageSince, newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
@@ -100,10 +102,11 @@ export function makeSessionHost(
     return queueMessage(s, message, resolvedCli)
   }
 
-  const hostFor = (id: string): Omit<SessionHost<SessionState>, 'ask'> => {
+  const hostFor = (id: string): Omit<SessionHost<SessionState>, 'ask'> & { viewers: ViewerStore } => {
     let preparedCli: string | undefined
     return {
       ...codexStore(dir, id, now, deps.onWrite),
+      viewers: codexViewerStore(dir, id, now, async () => deps.onWrite?.(await readState(dir, id))),
       prepare: async s => {
         preparedCli = s.cliPath ?? (await deps.fallbackCli())
       },

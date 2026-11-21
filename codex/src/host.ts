@@ -1,12 +1,14 @@
 import { REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
+import { readViewers } from './viewers'
 import { remoteReceipts } from '../../core/runtime/remote-command-state'
 import { appendFile, mkdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { isPrFetchRunning, statePath, readState, tryWithLock, updateState, withLock } from './state'
+import { isPrFetchRunning, statePath, readState, updateState } from './state'
+import { tryWithLock, withLock } from './lock'
 import type { SessionState } from './state'
 import { viewOf } from './core'
 import { CODEX } from './texts'
@@ -111,7 +113,7 @@ export function herdrOnWrite(
   return async written => {
     const id = written.sessionId
     await withLock(`${statePath(dir, id)}.herdr`, async () => {
-      const s = await readState(dir, id)
+      const [s, viewers] = await Promise.all([readState(dir, id), readViewers(dir, id)])
       const at = now()
       const seq = s.writtenAt ?? at
       const isPublished =
@@ -121,7 +123,7 @@ export function herdrOnWrite(
           target.appHome,
           {
             receipts: remoteReceipts(s),
-            viewers: remoteViewerReceipts(s),
+            viewers: remoteViewerReceipts(viewers.leases),
             remoteProtocol: 2,
             remoteActions: REMOTE_ACTIONS,
             remoteHistoryAfter: s.remoteCommandFloor ?? 0,
@@ -129,7 +131,7 @@ export function herdrOnWrite(
             agent: CODEX.agent,
             sessionId: id,
             terminal: target.terminal,
-            writtenAt: seq,
+            writtenAt: Math.max(seq, viewers.writtenAt),
             projectFolder: s.root,
             isFetchingPrs: isPrFetchRunning(s),
             version: VERSION,
