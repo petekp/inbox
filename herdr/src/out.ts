@@ -88,6 +88,13 @@ export function notSentLine(reason: string): RowLine {
 export const notAppliedLine = (out: Out, agent: string): RowLine =>
   out.result ? resultLine(out.result) : notAppliedText(`${agent}'s inbox did not answer.`)
 
+/** A press the host refused, in its own words, which say that nothing was sent. */
+const refusedLine = (why: string): RowLine => ({
+  text: why,
+  tone: 'error',
+  source: { is: 'notSent', reason: why, retry: null },
+})
+
 /** A press that ended without a host applying it. */
 export const notAppliedText = (why: string): RowLine => ({
   text: `Not applied: ${why}`,
@@ -121,7 +128,7 @@ function appliedOutcome(view: SessionView, rowId: string): SettledOutcome {
 
 /**
  * The presses still out after a read of the session, and how the others ended. The host's `lastPress` ends the press
- * it names: applied, or stale when its row had already changed. Another press ends when its row changed. A host
+ * it names: applied, stale when its row had already changed, or refused, with why on its row. Another press ends when its row changed. A host
  * applies presses oldest first and press ids sort by time, so a taken press older than `lastPress` will not be
  * reported, and reads as not confirmed. By `GIVE_UP_MS` after its write, a taken press reads the same, and one still
  * in its folder goes to `toClaim` for the look to take back.
@@ -130,6 +137,11 @@ export function settleOuts(outs: readonly Out[], view: SessionView, lastPress: L
   const settled: Settled = { outs: [], lines: {}, ended: [], toClaim: [] }
   const end = (out: Out, outcome: SettledOutcome) => settled.ended.push({ uiPressId: out.uiPressId, outcome })
   for (const out of outs) {
+    if (lastPress?.id === out.pressId && lastPress.outcome === 'refused') {
+      settled.lines[out.rowId] = refusedLine(lastPress.why)
+      end(out, { error: lastPress.why, note: null, isUnconfirmed: false })
+      continue
+    }
     if (lastPress?.id === out.pressId) {
       end(out, lastPress.outcome === 'stale' ? STALE : appliedOutcome(view, out.rowId))
       continue

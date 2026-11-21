@@ -66,6 +66,9 @@
 .row.collapsed:hover .side {
   color: var(--muted);
 }
+.status-lines {
+  overflow: clip;
+}
 .content {
   min-width: 0;
   display: flex;

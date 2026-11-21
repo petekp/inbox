@@ -1,5 +1,6 @@
 import type { PrPress } from './pr-press'
 import type { RowPress } from '../domain/presses'
+import type { Precondition } from '../domain/preconditions'
 import type { ShownTab } from './tabs'
 import type { Holds } from './timing'
 import { SETTLED_MS } from './timing'
@@ -56,7 +57,7 @@ export type UiEvent =
   | { type: 'tick' }
 
 export type UiCommand =
-  | { kind: 'press'; pressId: number; press: RowPress | PrPress; holds: Holds }
+  | { kind: 'press'; pressId: number; press: RowPress | PrPress; holds: Holds; when: Precondition[] }
   | { kind: 'save-collapse'; id: string; isCollapsed: boolean }
   | { kind: 'read' }
   | { kind: 'focus-field'; id: string }

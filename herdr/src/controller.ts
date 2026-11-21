@@ -126,6 +126,7 @@ export function pressSending(
           terminal: read.envelope.terminal,
           view,
           holds: c.holds,
+          when: c.when,
           projectFolder: read.projectFolder,
         }
       : null

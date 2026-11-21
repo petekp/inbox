@@ -174,6 +174,14 @@ describe('pressFile', () => {
       const opened = { ...PRESS, result: { error } }
       expect(pressFile(JSON.stringify(opened))).toEqual(read(opened))
     }
+    const checked = {
+      ...PRESS,
+      when: [
+        { kind: 'row-version', row: 'q3', version: 'a1' },
+        { kind: 'expires-at', at: 99 },
+      ],
+    }
+    expect(pressFile(JSON.stringify(checked))).toEqual(read(checked))
   })
 
   test('the list use a press file reports is kept, and a malformed one reads as none', () => {
@@ -200,6 +208,9 @@ describe('pressFile', () => {
       [[PRESS], 'not an object'],
       [{ ...PRESS, result: { error: 3 } }, 'result without error'],
       [{ ...PRESS, result: null }, 'result without error'],
+      [{ ...PRESS, when: 'now' }, 'when is not a list of known checks'],
+      [{ ...PRESS, when: [{ kind: 'row-version', row: 'q3' }] }, 'when is not a list of known checks'],
+      [{ ...PRESS, when: [{ kind: 'launch-at', at: 99 }] }, 'when is not a list of known checks'],
     ]
     for (const [file, reason] of refused) expect(pressFile(JSON.stringify(file))).toEqual({ ok: false, reason })
     expect(pressFile('{"format":1,')).toEqual({ ok: false, reason: 'not JSON' })

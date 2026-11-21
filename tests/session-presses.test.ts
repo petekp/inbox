@@ -21,6 +21,7 @@ import { fakeHost } from './session-fake-host'
 import { FIX_REF, BLOCKED_PR } from './session-helpers'
 import { blockedPrHost, repliedTo } from './session-pr-helpers'
 import { TOOL_FIELDS } from '../core/domain/tool-schemas'
+import { rowVersion } from '../core/domain/preconditions'
 
 async function pressedCompare() {
   const { host } = fakeHost(async () => 'NONE')
@@ -370,4 +371,51 @@ test('a check saved by its name alone loads named by workflow and name when one 
   expect(loaded.sent.map(x => x.row)).toEqual([old('CI / lint')])
   expect(loaded.ledger.prOrder?.statuses?.[FIX_REF]?.failing).toEqual(['CI / lint', 'test', 'deploy'])
   expect(upgradeSession(loaded)).toEqual(loaded)
+})
+
+test('a row press whose row changed since it was drawn, or that is too old, sends and saves nothing and says why', async () => {
+  const { host, delivered } = fakeHost(async () => null)
+  const ask = { kind: 'question', ask: 'Ship it?', options: ['Yes', 'No'] }
+  await host.update(async s => recorded(CLAUDE_CODE, s, 'record', ask, await host.now(), TOOL_FIELDS, null).state)
+  const [item] = (await host.read()).ledger.items
+  if (!item) throw new Error('The question was not recorded.')
+  const drawn = rowVersion(await host.read(), item.id)
+  await host.update(s => ({ ...s, ledger: { ...s.ledger, items: [{ ...item, ask: 'Ship it today?' }] } }))
+  const before = await host.read()
+
+  const changed = await press(host, { action: 'explain', id: item.id }, false, NO_HOLDS, undefined, [
+    { kind: 'row-version', row: item.id, version: drawn },
+  ])
+  const expired = await press(host, { action: 'explain', id: item.id }, false, NO_HOLDS, undefined, [
+    { kind: 'expires-at', at: await host.now() },
+  ])
+
+  expect([changed.error, expired.error]).toEqual([
+    'This changed before your press. Nothing was sent.',
+    'This press is too old to run. Nothing was sent.',
+  ])
+  expect([await host.read(), delivered]).toEqual([before, []])
+})
+
+test('a row press acts when its row is as drawn and it is not too old, and when it carries no checks', async () => {
+  const { host, delivered } = fakeHost(async () => null)
+  for (const ask of ['Ship it?', 'Tag it?'])
+    await host.update(
+      async s =>
+        recorded(CLAUDE_CODE, s, 'record', { kind: 'question', ask, options: ['Yes', 'No'] }, 1, TOOL_FIELDS, null)
+          .state,
+    )
+  const [checked, unchecked] = (await host.read()).ledger.items
+  if (!checked || !unchecked) throw new Error('The questions were not recorded.')
+  const when = [
+    { kind: 'row-version' as const, row: checked.id, version: rowVersion(await host.read(), checked.id) },
+    { kind: 'expires-at' as const, at: (await host.now()) + 60_000 },
+  ]
+
+  const outcomes = [
+    await press(host, { action: 'explain', id: checked.id }, false, NO_HOLDS, undefined, when),
+    await press(host, { action: 'explain', id: unchecked.id }, false, NO_HOLDS),
+  ]
+
+  expect([outcomes.map(o => o.error), delivered.length]).toEqual([[null, null], 2])
 })

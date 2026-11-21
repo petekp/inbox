@@ -4,6 +4,7 @@ import type { PrPress } from '../../core/view/pr-press'
 import type { RowPress } from '../../core/domain/presses'
 import type { SessionView } from '../../core/view/session-view'
 import type { Holds } from '../../core/view/timing'
+import type { Precondition } from '../../core/domain/preconditions'
 import type { LocalResult, PressKind } from '../../types'
 import type { LastPress } from './files'
 import { nextOutCheckAt, notAppliedLine, notAppliedText, notSentLine, outAction, rowSignature, settleOuts } from './out'
@@ -34,6 +35,8 @@ export type PressTarget = {
   view: SessionView
   holds: Holds
   projectFolder: string | null
+  /** What the host checks before it applies the press, from the view the look drew. */
+  when: Precondition[]
 }
 
 /** Runs the opens and copies of a press the look does itself, from the result its row reads meanwhile. */
@@ -123,7 +126,7 @@ export class PressQueue {
       ran()
     }
     const local = out.result ? { error: firstError(out.result) } : null
-    const text = pressFileText(out.pressId, pressedAt, press, target.holds, local)
+    const text = pressFileText(out.pressId, pressedAt, press, target.holds, local, target.when)
     const failed = await this.io.write(out.path, text)
     if (failed !== null) {
       this.outs = this.outs.filter(o => o !== out)

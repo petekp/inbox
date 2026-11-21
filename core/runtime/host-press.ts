@@ -38,6 +38,7 @@ import type { RowPress } from '../domain/presses'
 import { attemptCommands, completedAttempt, isRepeatWhileOut, withHolds, pressOn } from './session-presses'
 import type { Pressed, SendOutcome } from './session-presses'
 import type { Holds } from '../view/timing'
+import { refusal, type Precondition } from '../domain/preconditions'
 import type { Session, RowNote, LastAction } from '../../types'
 import type { SessionHost } from './session-host'
 
@@ -260,10 +261,25 @@ type StartedPress = {
   finish(): Promise<PressOutcome>
 }
 
+/** A press refused before anything ran: it saved, sent and released nothing, and `why` is its row's error. */
+const refusedPress = (why: string): StartedPress => ({
+  effects: null,
+  finish: async () => ({
+    copy: null,
+    error: why,
+    note: null,
+    isUnconfirmed: false,
+    isRowFailed: false,
+    wakesAfterSettle: false,
+  }),
+})
+
 /**
  * Applies and saves a press. When it sends a message, the sent record is saved with it. A look can update its own
  * drawing before `finish` delivers, since a host's delivery can run the host's own handlers before it returns. `holds`
- * are the reply holds the look draws the rows with, so a press whose button draws as out sends nothing.
+ * are the reply holds the look draws the rows with, so a press whose button draws as out sends nothing. A press whose
+ * `when` no longer holds on the saved session saves and sends nothing, and its outcome's `error` says why. A Merge
+ * that checks the PR's head reads the PR first.
  */
 export async function startPress<S extends Session>(
   host: PressHost<S>,
@@ -271,7 +287,10 @@ export async function startPress<S extends Session>(
   isStale: boolean,
   holds: Holds,
   commandId?: string,
+  when: readonly Precondition[] = [],
 ): Promise<StartedPress> {
+  const early = isStale || when.length === 0 ? null : refusal(await host.read(), when, await host.now())
+  if (early) return refusedPress(early)
   const rowId = pressRowId(p)
   const isSecondPressOnHeld = !isPrPress(p) && p.action !== 'undo' && isHeldSend((await host.read()).lastActions[rowId])
   if (isSecondPressOnHeld && !isStale) await releaseHeldSendEarly(host, rowId)
@@ -328,7 +347,7 @@ export async function startPress<S extends Session>(
     })
   const isReadFirst = async () => {
     if (!isPrPress(p)) return false
-    if (isPrReadFirstPress(p)) return true
+    if (isPrReadFirstPress(p) || when.some(c => c.kind === 'pr-head-sha')) return true
     if (!isPrStaleReadPress(p)) return false
     const saved = await host.read()
 
@@ -366,6 +385,8 @@ export async function startPress<S extends Session>(
       if (note) return s
       // Read under the lock, so the press is timed after every write that landed before it.
       const at = await host.now()
+      error = refusal(s, when, at)
+      if (error) return s
       const r = pressOn(s, p, at, { settleWindowMs: host.settleWindowMs, holds }, host, localPressId)
       if ('stale' in r) {
         note = 'stale'
@@ -467,6 +488,7 @@ export async function press<S extends Session>(
   isStale: boolean,
   holds: Holds,
   commandId?: string,
+  when: readonly Precondition[] = [],
 ): Promise<PressOutcome> {
-  return (await startPress(host, p, isStale, holds, commandId)).finish()
+  return (await startPress(host, p, isStale, holds, commandId, when)).finish()
 }

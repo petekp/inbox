@@ -7,6 +7,7 @@ import type { DelegateSession } from '../../core/remote/hc-terminals'
 import type { PrPress } from '../../core/view/pr-press'
 import { noteText } from '../../core/view/press-reducer'
 import type { RowPress } from '../../core/domain/presses'
+import { preconditionsOf } from '../../core/domain/preconditions'
 import { statusChanged } from '../../core/runtime/session-status'
 import { recorded, withHolds } from '../../core/runtime/session-presses'
 import type { RowNote } from '../../types'
@@ -212,9 +213,11 @@ export function makeServer(given: ServerDeps): Server {
         }
         const p = args.press as RowPress | PrPress
         const holds = holdsOf(args)
+        const when = preconditionsOf(args.when)
+        if (when === null) return { ...text('when is not a list of known checks'), isError: true }
         const r = await (args.demo === true
           ? onDemoPress(id, p, args.thread, holds)
-          : onPress(id, p, args.thread, holds))
+          : onPress(id, p, args.thread, holds, when))
         return { ...text(r.error ?? (r.note ? noteText() : 'Done')), structuredContent: r }
       }
     }

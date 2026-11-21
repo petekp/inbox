@@ -38,6 +38,7 @@ import {
   UndoPlace,
 } from './tab-parts'
 import { TitleTint } from './tab-title-tint'
+import { StatusLines, statusLinesOf, statusMotion, type StatusLine } from './tab-status-part'
 import { Sep } from './tab-parted'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
@@ -59,7 +60,9 @@ export function stepLists(v: View): {
   const status = t === 'overview' ? stepStatus(v.statusPage, now, changed, kept) : null
   const banners = stepLines(tabBanners(v), tabState.lastBanners ?? undefined, bannerMotion, now, changed, kept)
   const lastPressLines = new Map(pressLines)
+  const lastStatusLines = new Map(statusLines)
   pressLines.clear()
+  statusLines.clear()
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
@@ -91,6 +94,8 @@ export function stepLists(v: View): {
         const { text, tone } = statusUnderOf(x.row)
         const lines = text ? [{ id: x.row.id, text, tone }] : []
         pressLines.set(x.row.id, stepLines(lines, lastPressLines.get(x.row.id), pressMotion, now, changed, kept))
+        const status = statusLinesOf(x.row.id, statusTextOf(x.row))
+        statusLines.set(x.row.id, stepLines(status, lastStatusLines.get(x.row.id), statusMotion, now, changed, kept))
       }
     }
     lists[LIST_OF[group]] = drawn
@@ -134,6 +139,10 @@ function statusUnderOf(row: Row): { text: string | null; tone: FeedbackTone } {
 
 const pressLines = new Map<string, (TextLine & { tone: FeedbackTone })[]>()
 const pressMotion = (id: string) => `press-${id}`
+
+const statusLines = new Map<string, StatusLine[]>()
+
+const statusTextOf = (row: Row) => ({ foldNote: row.fold?.note ?? null, note: noteOf(row.id), error: errorOf(row.id) })
 
 /** What a row's line and side column draw, in its open form or its closed one. */
 type LineForm = {
@@ -262,25 +271,10 @@ export function ListRow({
 function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const { keys, more } = rowActions(row)
   const copied = copies.get(row.id)
-  const note = noteOf(row.id)
   const isTyping = !!row.typing && tabState.ui.typing === row.id
-  const error = errorOf(row.id)
-  const notes = [
-    row.fold?.note ? (
-      <div class="muted parted">
-        {row.fold.note.split(DOT).map((part, n) => (
-          <span class="part">
-            {n > 0 ? <Sep /> : null}
-            {part}
-          </span>
-        ))}
-      </div>
-    ) : null,
-    note ? <div class="muted">{note}</div> : null,
-    error ? <div class="tone-error">{error}</div> : null,
-  ].filter(Boolean)
+  const status = statusLines.get(row.id)?.[0]
   const bodyEnd: RowPart = row.body ? (row.bodyEnd?.() ?? 'detail') : 'title'
-  const actionsAbove: RowPart = notes.length > 0 ? 'status' : bodyEnd
+  const actionsAbove: RowPart = status ? 'status' : bodyEnd
   const lines = pressLines.get(row.id) ?? []
   const actionsPart = isTyping ? 'field' : 'buttons'
 
@@ -291,7 +285,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
           {row.body()}
         </div>
       ) : null}
-      {notes.length > 0 ? <div {...partAttrs(bodyEnd, 'status')}>{notes}</div> : null}
+      {status ? <StatusLines line={status} above={bodyEnd} under={actionsPart} /> : null}
       <RowActions
         part={partAttrs(actionsAbove, actionsPart)}
         keys={keys}

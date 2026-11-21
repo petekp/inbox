@@ -6,6 +6,7 @@ import type { RowPress } from '../domain/presses'
 import type { ReportedLook } from '../domain/status-children'
 import { listInputOf } from '../view/timing'
 import type { Holds } from '../view/timing'
+import { preconditionsOf, type Precondition } from '../domain/preconditions'
 
 /** A press the Herdr look made, with the look's holds, which `press()` needs to tell a stale press. */
 export type PressFile = {
@@ -19,6 +20,8 @@ export type PressFile = {
    * or null. Without it, the host runs them.
    */
   result?: { error: string | null }
+  /** What must still hold when the host applies the press, from the view the look drew. A look before it wrote none. */
+  when?: Precondition[]
 }
 
 /** A look at the Status the Herdr look drew, written once the look ended. It has no press. */
@@ -213,7 +216,11 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
   }
   if (typeof file.pressedAt !== 'number' || !Number.isFinite(file.pressedAt))
     return { ok: false, reason: 'no pressedAt' }
-  const reason = pressProblem(file.press) ?? holdsProblem(file.holds) ?? resultProblem(file.result)
+  const reason =
+    pressProblem(file.press) ??
+    holdsProblem(file.holds) ??
+    resultProblem(file.result) ??
+    (preconditionsOf(file.when) === null ? 'when is not a list of known checks' : null)
 
   if (reason) return { ok: false, reason }
   const read = file as PressFile

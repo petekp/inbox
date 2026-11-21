@@ -17,6 +17,7 @@ import { remoteRowVersion } from '../core/remote/remote-commands'
 import type { RemoteCommand } from '../core/remote/remote-commands'
 import { remoteReceipts } from '../core/runtime/remote-command-state'
 import { memoryCommandStore } from './memory-command-store'
+import { PRESS_LIFETIME_MS } from '../core/domain/preconditions'
 
 const SOURCE: EnvelopeSource = { host: 'omp', agent: 'omp', sessionId: 's1', terminal: 't1', writtenAt: 5 }
 
@@ -449,4 +450,31 @@ describe('listenForHerdrPresses', () => {
 
     expect([spawned, reads]).toEqual([[], []])
   })
+})
+
+test('a Herdr press older than its lifetime sends nothing, and the session names it refused with why', async () => {
+  const { host: base, delivered } = fakeHost(async () => null)
+  const host = {
+    ...base,
+    viewers: memoryViewerStores().of('s1', () => undefined),
+    commands: memoryCommandStore(),
+    readDurable: () => base.read(),
+  }
+  await host.update(
+    s => recorded(CLAUDE_CODE, s, 'record', { kind: 'task', ask: 'Sign in to npm' }, 1, TOOL_FIELDS, null).state,
+  )
+  const [row] = (await host.read()).ledger.items
+  if (!row) throw new Error('The task was not recorded.')
+  const pressedAt = (await host.now()) - PRESS_LIFETIME_MS
+
+  await startHerdrFile(
+    host,
+    { format: 1, id: 'p1', pressedAt, press: { action: 'explain', id: row.id }, holds: { ...HOLDS, listInput: null } },
+    's1',
+  )
+
+  expect([(await host.read()).lastHerdrPress, delivered]).toEqual([
+    { id: 'p1', outcome: 'refused', why: 'This press is too old to run. Nothing was sent.' },
+    [],
+  ])
 })

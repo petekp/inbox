@@ -5,6 +5,7 @@ import { startedFile, startHerdrFile } from '../../core/remote/herdr-app'
 import type { StartedFile } from '../../core/remote/herdr-app'
 import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import type { RowPress } from '../../core/domain/presses'
+import type { Precondition } from '../../core/domain/preconditions'
 import { lookEndedOn, withLook } from '../../core/runtime/session-status'
 import type { ShownRows } from '../../core/domain/status-children'
 import { withHolds } from '../../core/runtime/session-presses'
@@ -58,7 +59,7 @@ export type Inbox = {
   /** Calls `listener` after the session's saved state changes. Returns how to stop. */
   onChange(ctx: OmpContext, listener: () => void): () => void
   /** Applies a press for the session. */
-  press(ctx: OmpContext, p: RowPress | PrPress, holds: Holds): Promise<PressOutcome>
+  press(ctx: OmpContext, p: RowPress | PrPress, holds: Holds, when?: Precondition[]): Promise<PressOutcome>
   /**
    * Applies a file the Herdr look wrote: a press, whose opens and copies it may have run, or a look at the Status. Gives
    * what waits for the agent's turn to end.
@@ -170,8 +171,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
 
       return () => void set.delete(listener)
     },
-    press: async (ctx, p, holds) => {
-      const outcome = await press(hostFor(ctx), p, false, holds)
+    press: async (ctx, p, holds, when) => {
+      const outcome = await press(hostFor(ctx), p, false, holds, undefined, when)
       if (outcome.wakesAfterSettle) wakeLater(ctx)
 
       return outcome
@@ -189,8 +190,8 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
 
   const liveSource = (ctx: OmpContext): PanelSource => ({
     screen: (holds, notes) => inbox.screen(ctx, holds, notes),
-    press: async (p, holds) => {
-      const outcome = await inbox.press(ctx, p, holds)
+    press: async (p, holds, _pressId, when) => {
+      const outcome = await inbox.press(ctx, p, holds, when)
 
       return {
         error: outcome.error,

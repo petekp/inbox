@@ -18,6 +18,9 @@ import { inboxView, perTurnStatus } from './view'
 import { NO_SYNC_INPUTS, viewSync } from './sync-state'
 import type { GhSync, SyncInputs, ViewSync } from './sync-state'
 import { isRowTab } from './tabs'
+import { drawnVersions, type DrawnVersions } from './press-preconditions'
+import { allRows } from './rows'
+import { GOAL_KEYS_ID } from './status-keys'
 import { collapsedRows } from './collapse'
 import { statusPage } from './status-page'
 import type { InboxView } from './view'
@@ -56,6 +59,8 @@ export type SessionView = InboxView & {
   statusPage: StatusPage
   /** Whether each source the view draws is current. Each PR's is in `sync.prs` by ref. */
   sync: ViewSync
+  /** The rows and PR heads as drawn, which a press from this view carries for the host to check. */
+  drawnVersions: DrawnVersions
 }
 
 /** Drops a Local result still pending after `PRESS_TIMEOUT_MS`, whose press will not finish. */
@@ -98,13 +103,21 @@ export function sessionView(
     canScrollConversation,
   })
 
+  const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh)
+  const rowIds = [...allRows(inbox).map(r => r.id), GOAL_KEYS_ID]
+
   return {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
-    prs: prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh),
+    prs,
     statusPage: statusPage(s, now, sync.turn),
     sync,
+    drawnVersions: drawnVersions(
+      s,
+      rowIds,
+      prs.drawn.map(d => d.pr),
+    ),
   }
 }
 

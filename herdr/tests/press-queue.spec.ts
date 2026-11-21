@@ -36,6 +36,7 @@ const target: PressTarget = {
   view,
   holds: NO_HOLDS,
   projectFolder: '/w',
+  when: [],
 }
 const open = [{ kind: 'open' as const, target: '/w/plan.md', name: 'plan.md' }]
 const opts = (label: string, kind: PressKind | null, uiPressId: number) => ({ effects: [], label, kind, uiPressId })
@@ -208,5 +209,16 @@ test('a reply whose file could not be written ends refused, with the reason on i
     id: 3,
     isError: true,
     line: 'error',
+  })
+})
+
+test('a press the host refused ends with the host’s reason on its row', async () => {
+  const queue = new PressQueue(taken())
+  const pressId = await sendReply(queue, 4)
+  const why = 'This changed before your press. Nothing was sent.'
+  await queue.settle(view, { id: pressId, outcome: 'refused', why }, AGENT)
+  expect({ line: queue.lines[rowId], ended: queue.takeEnded() }).toEqual({
+    line: { text: why, tone: 'error', source: { is: 'notSent', reason: why, retry: null } },
+    ended: [{ uiPressId: 4, outcome: { error: why, note: null, isUnconfirmed: false } }],
   })
 })

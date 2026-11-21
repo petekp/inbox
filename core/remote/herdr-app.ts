@@ -1,4 +1,4 @@
-import type { Session } from '../../types'
+import type { HerdrPressOutcome, Session } from '../../types'
 import type { ClientId } from '../domain/client-features'
 import { pressFolder, publishedSessionPath } from './herdr'
 import { herdrEnvelope } from './herdr-envelope'
@@ -15,6 +15,7 @@ import type { RemoteViewerUpdate, ViewerStore } from '../runtime/remote-viewers'
 import { startRemoteCommand } from './remote-commands'
 import type { StartedCommand } from './remote-commands'
 import { clipLabel } from '../domain/text'
+import { PRESS_LIFETIME_MS } from '../domain/preconditions'
 
 /**
  * The file calls a host publishes with. `move` replaces `to` in one step, so the Herdr look never reads half a file.
@@ -385,7 +386,8 @@ async function applyViewerUpdate<S extends Session>(host: HerdrFileHost<S>, file
  * Applies a file the Herdr look wrote. A look at the Status counts as `lookReportedOn` counts it, a collapse is
  * saved as `withCollapse` saves it, and a report that the look shows the PRs tab makes the host read the session's PRs
  * if they are due. A press is applied, then named as the session's `lastHerdrPress`, so the next publish tells the look
- * the outcome even when the press changed nothing. When the look ran the press's opens and copies, `perform` answers
+ * the outcome even when the press changed nothing, and why when the host applied nothing. A press runs only within
+ * `PRESS_LIFETIME_MS` of when the look made it and while its `when` holds, unless the look already ran it. When the look ran the press's opens and copies, `perform` answers
  * with their result instead of running them again. A message the host holds until the agent's turn ends is saved as
  * queued, which is its row's outcome until then: that press is named once saved, and waits to run.
  */
@@ -414,17 +416,22 @@ export async function startHerdrFile<S extends Session>(
     return finished(LOOK_OUTCOME)
   }
   const { result } = file
+  const expires = { kind: 'expires-at' as const, at: file.pressedAt + PRESS_LIFETIME_MS }
   const started = await startPress(
     result ? { ...host, perform: async () => result.error } : host,
     file.press,
     false,
     file.holds,
+    undefined,
+    result ? [] : [...(file.when ?? []), expires],
   )
-  const saveLast = (outcome: PressOutcome | null) =>
-    host.update(s => ({
-      ...s,
-      lastHerdrPress: { id: file.id, outcome: outcome?.note === 'stale' ? 'stale' : 'applied' } as const,
-    }))
+  const lastOf = (outcome: PressOutcome | null): HerdrPressOutcome => {
+    if (outcome?.note === 'stale') return { id: file.id, outcome: 'stale' }
+    const why = started.effects === null ? outcome?.error : null
+
+    return why ? { id: file.id, outcome: 'refused', why } : { id: file.id, outcome: 'applied' }
+  }
+  const saveLast = (outcome: PressOutcome | null) => host.update(s => ({ ...s, lastHerdrPress: lastOf(outcome) }))
   const isQueuedOnSave =
     host.isDeliveryHeldUntilRun === true && (started.effects?.some(e => e.kind === 'send') ?? false)
   if (!isQueuedOnSave) {

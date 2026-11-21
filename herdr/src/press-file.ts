@@ -2,6 +2,7 @@ import { HERDR_FORMAT, pressFolder } from '../../core/remote/herdr'
 import type { PrPress } from '../../core/view/pr-press'
 import type { RowPress } from '../../core/domain/presses'
 import type { Holds } from '../../core/view/timing'
+import type { Precondition } from '../../core/domain/preconditions'
 
 /** Where the look writes a press for the host that publishes the session. A host reads only names ending in `.json`. */
 export const pressPath = (appHome: string, sessionId: string, pressId: string) =>
@@ -24,6 +25,7 @@ export function pressFileText(
   press: RowPress | PrPress,
   holds: Holds,
   result: LocalOutcome | null = null,
+  when: readonly Precondition[] = [],
 ): string {
   const { replies, discarded, shownSince, listInput } = holds
 
@@ -34,5 +36,6 @@ export function pressFileText(
     press,
     holds: { replies, discarded, shownSince, listInput },
     ...(result ? { result } : {}),
+    ...(when.length > 0 ? { when } : {}),
   })
 }

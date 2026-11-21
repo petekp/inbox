@@ -159,7 +159,7 @@ async function runPress(c: Extract<UiCommand, { kind: 'press' }>) {
   try {
     const r = await callTool<PressReply>(
       'inbox_press',
-      { press: c.press, thread: v?.thread, demo: tabState.isDemo, ...c.holds },
+      { press: c.press, thread: v?.thread, demo: tabState.isDemo, ...c.holds, when: c.when },
       PRESS_TIMEOUT_MS,
     )
     if (r.copy) copies.set(rowId, r.copy)

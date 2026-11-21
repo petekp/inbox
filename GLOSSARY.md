@@ -301,6 +301,14 @@ keeps only its latest. The pressed button reads "… again", as in "Explain
 again", once the press is no longer queued, unconfirmed or waiting on the
 agent. Until then it keeps its label, so its width holds.
 
+**Press check**:
+What must still hold when a host applies a press. A look takes each check
+from the view the person pressed in: the row's version, a hash of its
+content, and for Merge the PR's head commit. A Herdr press and a remote
+command also carry the time they stop being valid, 24 hours after the press.
+A press whose check fails sends nothing and saves nothing, and its row says
+why. `core/domain/preconditions.ts:Precondition`.
+
 **PR order**:
 The order an agent set for the PRs tab with `order_prs`, first to last, such as
 a merge ranking. Its open PRs draw first, in its order and with no number,

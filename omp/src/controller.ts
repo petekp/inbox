@@ -2,6 +2,7 @@ import { HERDR_CHECK_MS } from '../../core/remote/herdr'
 import { PR_POLL_MS } from '../../core/domain/pr-fetch'
 import type { PrPress } from '../../core/view/pr-press'
 import type { RowPress } from '../../core/domain/presses'
+import type { Precondition } from '../../core/domain/preconditions'
 import { READING_TEXT } from '../../core/view/banners'
 import type { Holds } from '../../core/view/timing'
 import type { ShownTab } from '../../core/view/tabs'
@@ -19,7 +20,7 @@ import type { KeyResult } from './panel-keys'
 export type PanelSource = {
   screen(holds: Holds, notes: Record<string, RowNote>): Promise<PanelScreen>
   /** Applies a press. `pressId` is the shared controller's, which the demo's stand-in reply answers to. */
-  press(p: RowPress | PrPress, holds: Holds, pressId: number): Promise<SettledOutcome>
+  press(p: RowPress | PrPress, holds: Holds, pressId: number, when?: Precondition[]): Promise<SettledOutcome>
   /** Sends the message that resumes a stopped turn. Returns why it could not, or null. */
   resume(): Promise<string | null>
   /** Answers the question before omp installs the inbox's Herdr mod. */
@@ -163,7 +164,7 @@ export function createPanel(deps: PanelDeps): Panel {
   }
 
   function run(c: UiCommand): void {
-    if (c.kind === 'press') void runPress(c.pressId, c.press, c.holds)
+    if (c.kind === 'press') void runPress(c.pressId, c.press, c.holds, c.when)
     else if (c.kind === 'save-collapse') void source.collapse(c.id, c.isCollapsed).then(() => refresh())
     else if (c.kind === 'read') void refresh()
     else if (c.kind === 'tab-shown') source.shown(c.tab, holdsOf(ui, deps.now()))
@@ -171,9 +172,9 @@ export function createPanel(deps: PanelDeps): Panel {
     // An open field and the selected row draw on every render, so focus-field and reveal need nothing more.
   }
 
-  async function runPress(pressId: number, p: RowPress | PrPress, holds: Holds): Promise<void> {
+  async function runPress(pressId: number, p: RowPress | PrPress, holds: Holds, when: Precondition[]): Promise<void> {
     const outcome = await source
-      .press(p, holds, pressId)
+      .press(p, holds, pressId, when)
       .catch((err: unknown): SettledOutcome => ({ error: errorText(err), note: null, isUnconfirmed: false }))
     settled.push({ type: 'press-settled', pressId, outcome })
     await refresh()

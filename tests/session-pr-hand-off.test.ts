@@ -190,6 +190,30 @@ for (const kind of KINDS.filter(k => ['Merge', 'Address all', 'Address'].include
   })
 }
 
+const MERGE: PrPress = { action: 'pr-merge', ref: FIX_REF }
+const DRAWN_HEAD = [{ kind: 'pr-head-sha' as const, ref: FIX_REF, sha: 'a1' }]
+
+test('Merge pressed on a head the PR has moved past reads the PR, then sends and saves nothing and says why', async () => {
+  const t = await blockedPrHost((pr, at) => ({ ...pr, headSha: 'b2', fetchedAt: at }), {
+    ...READY,
+    headSha: 'a1',
+    fetchedAt: 1,
+  })
+  const outcome = await press(t.host, MERGE, false, NO_HOLDS, undefined, DRAWN_HEAD)
+
+  expect(outcome.error).toBe('PR #12 has new commits since you pressed. Nothing was sent.')
+  expect(t.delivered).toEqual([])
+  expect((await t.host.read()).lastActions[prMarkId(FIX_REF)]).toBeUndefined()
+})
+
+test('Merge pressed on the head the PR still has, or with no head drawn, sends', async () => {
+  for (const when of [DRAWN_HEAD, []]) {
+    const t = await blockedPrHost((pr, at) => ({ ...pr, fetchedAt: at }), { ...READY, headSha: 'a1', fetchedAt: 1 })
+    const outcome = await press(t.host, MERGE, false, NO_HOLDS, undefined, when)
+    expect([outcome.error, t.delivered.length]).toEqual([null, 1])
+  }
+})
+
 test('a turn that ends with no time stamps a hand-off at the host clock, never before its press', async () => {
   const t = await blockedPrHost((pr, at) => ({ ...pr, fetchedAt: at }), { ...BLOCKED_PR, fetchedAt: 1 })
   await press(t.host, { action: 'pr-conflicts', ref: FIX_REF }, false, NO_HOLDS)

@@ -12,6 +12,7 @@ import { matchPaneEscape } from './mod-pane-open'
 import { scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { cancelUndoScroll, paneState } from './mod-state'
+import { currentOwner } from './mod-sessions'
 import { applyUiEvents, hostFactsOf } from './mod-ui'
 import { landTerminalFrame } from './mod-ui-loop'
 import { lookOf, paletteFor } from '../pane/palettes'
@@ -46,7 +47,7 @@ import { isRowTab, type ShownTab, shownTabs, tabBadge } from '../../core/view/ta
 import { glued } from '../pane/terminal-text'
 import { cellWidth } from '../../core/domain/text'
 import { PRESS_GUARD_MS } from '../../core/view/timing'
-import { noticeOf } from '../../core/view/ui-controller'
+import { noticeOf, rowErrorOf } from '../../core/view/ui-controller'
 import { collapsedOf, selectedOf } from '../../core/view/ui-controller-selection'
 import type { UiEvent } from '../../core/view/ui-controller-types'
 import { footerError } from '../../core/view/view'
@@ -87,6 +88,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     look === 'terminal' ? m.atoms.runningFrame.read() : null,
   ])
   const { prViews: prState, lastActions, notes, turns, stop, isDemo, showsDemoNotices, isUnread, now } = drawn
+  paneState.paintedVersions = { owner: currentOwner(), versions: drawn.view.drawnVersions }
   // The pane can draw before the controller hears that it opened, so the first frame shows the tab the open moves to.
   const opening: UiEvent[] = [{ type: 'opened' }, { type: 'read', host: hostFactsOf(drawn) }]
   const isOpenUnheard = paneState.isOpenUnheard && drawn.ui.shownSince === null
@@ -229,6 +231,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     ...client,
     lastActions,
     notes,
+    rowError: id => rowErrorOf(ui, id, now),
     turns,
     now,
     look,

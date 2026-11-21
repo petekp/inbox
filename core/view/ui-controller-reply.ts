@@ -4,6 +4,7 @@ import { pressRowId, isPrPress, type PrPress } from './pr-press'
 import { prMarkId } from './pr-rows'
 import { actionId } from '../domain/press-labels'
 import { isPressConfirmed, noteText } from './press-reducer'
+import { drawnPreconditions } from './press-preconditions'
 import type { RowPress } from '../domain/presses'
 import { allRows } from './rows'
 import type { SessionView } from './session-view'
@@ -74,7 +75,8 @@ const isUndoPress = (p: RowPress | PrPress) => p.action === 'undo' || p.action =
 /**
  * Sends a press, unless it repeats an action still out on its row, falls in the guard of the input that opened the
  * row, or is a reply with no words. A reply repeats only when a reply is out on its row and its words match the
- * row's latest sent reply. A reply's field closes and its draft stays, holding its row, until the reply arrives.
+ * row's latest sent reply. A reply's field closes and its draft stays, holding its row, until the reply arrives. The
+ * press carries what `drawnPreconditions` reads from `view`, so `view` must be the one the person pressed in.
  */
 export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by: InputKind, now: number): UiStep {
   const rowId = pressRowId(p)
@@ -113,7 +115,7 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
     if (index >= 0) next = withCursor(next, tab, { id: rowId, index, guard: null })
   }
 
-  return withCommands(next, { kind: 'press', pressId, press: p, holds })
+  return withCommands(next, { kind: 'press', pressId, press: p, holds, when: drawnPreconditions(view, p) })
 }
 
 /** When row or PR `id` closed, by the session's clock, or null when the view draws it unsettled or not at all. */
