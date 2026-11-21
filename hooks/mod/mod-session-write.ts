@@ -6,6 +6,7 @@ import { changeSaved, save } from './mod-saves'
 import { type Changed, currentOwner, isCurrent, MAX_TRIES, type ModSession, type Owner } from './mod-sessions'
 import { upgradeSession } from '../../core/view/session-files'
 import { pruned } from '../../core/runtime/session-presses'
+import { movedLegacyCommands } from '../../core/runtime/command-store'
 import { heldReplies } from '../../core/view/timing'
 import { viewerLeases } from './mod-state'
 
@@ -55,8 +56,10 @@ export async function changeSession(
     const isTurnOnly = (Object.keys(changed) as (keyof Session)[]).every(k => k === 'turn' || changed[k] === before[k])
     const [ui, demo] = await Promise.all([readUi(m), m.atoms.demo.read()])
     const leases = viewerLeases.peek(owner.id)
+    const commands = m.saves.commands?.(owner.id)
+    const moved = commands ? await movedLegacyCommands(commands, changed, m.saves.log) : changed
     const kept = pruned(
-      { ...changed, heldRows: [...held], shownSince: demo === null ? ui.shownSince : null },
+      { ...moved, heldRows: [...held], shownSince: demo === null ? ui.shownSince : null },
       Object.keys(leases).length > 0 ? await m.clock.now() : 0,
       leases,
     )

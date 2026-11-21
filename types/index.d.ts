@@ -734,14 +734,19 @@ export type RemoteViewerRecord = {
 /** The viewer leases a session's viewer store keeps, by viewer id. The saved session never holds them. */
 export type ViewerLeases = Record<string, RemoteViewerRecord>
 
-/** A command a remote viewer sent, and the durable receipt of what happened to it. */
+/**
+ * A command a remote viewer sent, and the durable receipt of what happened to it, as the session's command log keeps
+ * it. `revision` is only in records an earlier build saved in the session. `runner` is the process running the
+ * command while it is `attempting`.
+ */
 export type RemoteCommandRecord = {
   timeWasValid?: boolean
   issuedAt?: number
   pendingDelivery?: boolean
   payload: string
   acceptedAt: number
-  revision: string
+  revision?: string
+  runner?: { id: string; startedAt: number } | null
   state: 'accepted' | 'attempting' | 'applied' | 'stale' | 'failed' | 'uncertain' | 'cancelled' | 'refused' | 'expired'
   error: string | null
   row: string
@@ -823,8 +828,18 @@ export type Session = {
    * `lastPress`, so the look can tell a press whose row had already changed from one no host applied.
    */
   lastHerdrPress?: HerdrPressOutcome
-  remoteCommands: Record<string, RemoteCommandRecord>
+  /** The command records an earlier build saved in the session. A write moves them into the command log and drops this. */
+  remoteCommands?: Record<string, RemoteCommandRecord>
+  /**
+   * At least the `issuedAt` of the newest command a press ran, so an earlier build that loads this session refuses a
+   * command file sent again as outside its history.
+   */
   remoteCommandFloor?: number
+  /**
+   * The command whose press made the latest write it stamped, and that write's number in this session. A command reads
+   * the saved session back and finds its number or a later one, which proves its write was saved.
+   */
+  commandWrite?: { id: string; seq: number } | null
   /** The rows the person's replies in progress held at the latest view or press. Every write keeps their closed records. */
   heldRows: string[]
   /**

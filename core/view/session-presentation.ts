@@ -1,10 +1,10 @@
 import type { Session } from '../../types'
 import { emptySession } from './session-files'
 
-type Presented = Omit<Session, 'remoteCommands' | 'remoteCommandFloor' | 'lastAnswers'>
+type Presented = Omit<Session, 'remoteCommands' | 'remoteCommandFloor' | 'commandWrite' | 'lastAnswers'>
 
 const SESSION_FIELDS = Object.keys(emptySession()).filter(
-  field => field !== 'remoteCommands' && field !== 'remoteCommandFloor' && field !== 'lastAnswers',
+  field => field !== 'remoteCommandFloor' && field !== 'commandWrite' && field !== 'lastAnswers',
 )
 
 export function presentedSession(session: Session): Presented {

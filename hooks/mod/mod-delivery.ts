@@ -1,4 +1,3 @@
-import { remoteCommandArrival } from '../../core/runtime/remote-command-state'
 import type { SessionAppendMessage } from 'claude-code'
 import type { Session } from '../../types'
 import type { SentBy } from '../../core/runtime/session-turns'
@@ -104,7 +103,7 @@ export function arrived(s: Session, text: string, count: number): { state: Sessi
     )
 
   return {
-    state: { ...remoteCommandArrival(s, match.deliveryId), sent: s.sent.filter(x => x !== match), lastActions },
+    state: { ...s, sent: s.sent.filter(x => x !== match), lastActions },
     sentBy: { press: match.press },
   }
 }
@@ -135,7 +134,7 @@ export function settleRewrite(
   if (isConfirmed)
     return {
       state: {
-        ...remoteCommandArrival(s, deliveryId),
+        ...s,
         sent: s.sent.filter(x => x.deliveryId !== deliveryId),
         lastActions: withArrival(moved, entered, undefined, deliveryId),
         turn: { ...s.turn, press: s.turn.press ?? record?.press ?? null },

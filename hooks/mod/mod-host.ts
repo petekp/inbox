@@ -141,6 +141,7 @@ function sessionHost(
       return readSettledSession(m.saves, owner.id)
     },
     readDurable: () => readDurableSession(m.saves, owner.id),
+    commands: m.saves.commands?.(owner.id),
     update: opts.update,
     exclusive: fn => updating.run(owner.id, fn),
     ask: (prompt, system, _kind, report) => askInboxModel(m, prompt, system, 45_000, report),

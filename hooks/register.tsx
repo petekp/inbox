@@ -31,6 +31,7 @@ import { sendUi } from './mod/mod-ui-loop'
 import type { UiState } from '../core/view/ui-controller-types'
 import { CLAUDE_CODE, guidedCloseDescription } from '../core/domain/model-text'
 import { runningSessions } from './mod/running-sessions'
+import { modCommandStore } from './mod/mod-command-log'
 import { INBOX_COMMAND_TEXT } from '../core/view/tabs'
 
 // The plugin directory accepts `$` passed only to a function declared at the top of this file, so the functions
@@ -92,6 +93,20 @@ function saveEngine($: EngineInterface, commands: EngineCalls): SaveEngine {
         read: path => $.fs.read(path),
         run: (argv, init) => $.process.run(argv, init),
       }).catch(() => null),
+    commands: (id, onChange) =>
+      modCommandStore(
+        {
+          stateEnv: async () => ({ XDG_STATE_HOME: await $.env.get('XDG_STATE_HOME'), HOME: await $.env.get('HOME') }),
+          exists: path => $.fs.exists(path),
+          read: path => $.fs.read(path),
+          write: (path, text) => $.fs.write(path, text),
+          run: argv => runOf(commands)(argv, { cwd: '/', timeoutMs: 5000 }),
+          now: () => $.clock.now(),
+          log: text => $.ui.log(text, { to: 'debug' }),
+        },
+        id,
+        onChange,
+      ),
   }
 }
 

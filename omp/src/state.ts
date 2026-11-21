@@ -11,6 +11,9 @@ import {
   upgradeSession,
 } from '../../core/view/session-files'
 import { pruned } from '../../core/runtime/session-presses'
+import { followCommandRows, movedLegacyCommands } from '../../core/runtime/command-store'
+import { commandsPath, ompCommandStore, removeCommands } from './command-log'
+import { herdrLog } from './herdr-log'
 import { memoryViewerStores } from '../../core/runtime/remote-viewers'
 import type { AnswerDoc } from '../../core/domain/earlier-answers'
 import { historyStep, recordMatches } from '../../core/runtime/history-store'
@@ -112,7 +115,9 @@ export async function updateState(
     const { state: current, isSaved } = await readSaved(dir, sessionId)
     const changed = await historyStep(questionHistory, sessionId, current, await change(current), Date.now())
     if (isSaved && changed === current) return current
-    const next = pruned(changed, now(), viewerLeases.peek(sessionId))
+    const commands = ompCommandStore(dir, sessionId, now)
+    const log = herdrLog(dir)
+    const next = await movedLegacyCommands(commands, pruned(changed, now(), viewerLeases.peek(sessionId)), log)
     const folder = join(dir, 'sessions')
     if (!madeFolders.has(folder)) {
       await mkdir(folder, { recursive: true })
@@ -121,6 +126,7 @@ export async function updateState(
     const tmp = `${path}.${process.pid}-${++tmpCount}.tmp`
     await writeFile(tmp, JSON.stringify(next))
     await rename(tmp, path)
+    await followCommandRows(commands, commandsPath(dir, sessionId), next, log)
 
     return next
   })
@@ -158,7 +164,9 @@ export async function pruneSessions(dir: string, keep: string): Promise<void> {
   )) {
     if (updateTails.has(path) || exclusiveRuns.isHeld(path)) continue
     try {
-      if ((await stat(path)).mtimeMs === mtimeMs) await unlink(path)
+      if ((await stat(path)).mtimeMs !== mtimeMs) continue
+      await unlink(path)
+      await removeCommands(dir, path.slice(folder.length + 1, -'.json'.length))
     } catch {
       continue
     }

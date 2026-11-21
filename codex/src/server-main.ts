@@ -12,7 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { createHandler } from './server-handler'
 import { dataDir, devBuild } from './data-dir'
 import { detachedUpdate } from './detached-update'
-import { herdrLog } from './host'
+import { herdrLog } from './herdr-log'
 import { run } from './run'
 import { withoutSharedTerminal } from './shared-daemon'
 

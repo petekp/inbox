@@ -1,4 +1,3 @@
-import { remoteCommandArrival } from './remote-command-state'
 import { linkDialogs } from '../domain/dialogs'
 import { EMPTY } from '../domain/ledger'
 import { applyExchangeUpdate, withoutNewAsks } from '../domain/ledger-update'
@@ -123,7 +122,7 @@ function matchSent<S extends Session>(s: S, text: string): { state: S; sentBy: S
 
   return {
     state: {
-      ...remoteCommandArrival(s, sent?.deliveryId ?? null),
+      ...s,
       lastActions,
       sent: sent ? s.sent.filter((_x, i) => i !== sentAt) : s.sent,
     },

@@ -6,7 +6,8 @@ import { lstat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { emptySession } from '../../core/view/session-files'
 import { sessionView } from '../../core/view/session-view'
-import { remoteReceipts } from '../../core/runtime/remote-command-state'
+import { commandsOf, remoteReceipts } from '../../core/runtime/remote-command-state'
+import { codexCommandStore } from './command-log'
 import { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
 import { REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import { presentedSession } from '../../core/view/session-presentation'
@@ -91,19 +92,20 @@ export function makeCompanion(
     }
     const { state, savedAt } = captured
     const viewers = await readViewers(deps.dir, entry.id)
+    const commands = await commandsOf(codexCommandStore(deps.dir, entry.id, deps.now), state)
     if (request.operation === 'view' && request.opened) void operations.fetch(entry.id, state)
     const trust = request.operation === 'view' && request.opened ? operations.trust(state, entry.id) : null
     const result: CompanionView = {
       sessionId: entry.id,
       name: entry.name || basename(state.root) || 'Codex chat',
       projectFolder: state.root,
-      writtenAt: Math.max(savedAt, viewers.writtenAt),
+      writtenAt: Math.max(savedAt, viewers.writtenAt, commands.writtenAt),
       serverNow: deps.now(),
       version: VERSION,
       isFetchingPrs: isPrFetchRunning(state),
       remoteActions: REMOTE_ACTIONS,
-      remoteHistoryAfter: state.remoteCommandFloor ?? 0,
-      receipts: remoteReceipts(state),
+      remoteHistoryAfter: commands.floor,
+      receipts: remoteReceipts(commands),
       viewers: remoteViewerReceipts(viewers.leases),
       session: { ...emptySession(), ...presentedSession(state) },
       warnings: [...warnings, ...(trust ? [HOOKS_TRUST_TEXT[trust]] : [])],

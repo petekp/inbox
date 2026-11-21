@@ -8,6 +8,8 @@ import { ROLLOUT_ARRIVAL_AFTER_MS } from '../src/rollout-arrivals'
 import { makeServer } from '../src/server'
 import { SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, updateState } from '../src/state'
+import { codexCommandStore } from '../src/command-log'
+import { commandsOf } from '../../core/runtime/remote-command-state'
 import { fakeRunner, hookDeps, input, tempDir } from './helpers'
 import { ANSWER, setup } from './server-fixtures'
 
@@ -101,10 +103,17 @@ test('a prompt hook whose text has a trailing newline still reads the queued ans
 test('transcript polling cannot confirm remote commands from matching text, even after a real arrival', async () => {
   const { dir, transcript, view } = await queuedPress()
   await updateState(dir, 's1', s => {
-    const sent = s.sent[0]!
+    const sent = s.sent[0]
+    const row = s.lastActions.i1
+    const delivery = row?.delivery
+    if (!sent || !row || delivery?.state !== 'queued') throw new Error('The answer was not queued.')
     const ids = ['remote-first', 'remote-second']
     return {
       ...s,
+      lastActions: {
+        ...s.lastActions,
+        i1: { ...row, commandId: 'remote-first', delivery: { ...delivery, id: 'remote-first' } },
+      },
       sent: ids.map(id => ({ ...sent, deliveryId: id, commandIds: [id] })),
       remoteCommands: Object.fromEntries(
         ids.map(id => [
@@ -112,7 +121,6 @@ test('transcript polling cannot confirm remote commands from matching text, even
           {
             payload: id,
             acceptedAt: PRESSED_AT,
-            revision: id,
             state: 'applied' as const,
             error: null,
             row: 'i1',
@@ -125,16 +133,21 @@ test('transcript polling cannot confirm remote commands from matching text, even
     }
   })
   appendFileSync(transcript, JSON.stringify(userMessageRow(MESSAGE + '\n', PRESSED_AT + 5_000)) + '\n')
+  const delivered = async (s: Awaited<ReturnType<typeof view>>) => {
+    const { commands } = await commandsOf(
+      codexCommandStore(dir, 's1', () => PRESSED_AT),
+      s,
+    )
+    return [commands['remote-first']?.delivered, commands['remote-second']?.delivered]
+  }
   for (const now of [PRESSED_AT + 20_000, PRESSED_AT + 30_000]) {
     const s = await view(now)
-    assert.equal(s.remoteCommands['remote-first']!.delivered, false)
-    assert.equal(s.remoteCommands['remote-second']!.delivered, false)
+    assert.deepEqual(await delivered(s), [false, false])
     assert.equal(s.sent.length, 2)
   }
   await handleHook(input('UserPromptSubmit', { prompt: MESSAGE, turn_id: 't1' }), hookDeps(dir))
   const s = await view(PRESSED_AT + 40_000)
-  assert.equal(s.remoteCommands['remote-first']!.delivered, true)
-  assert.equal(s.remoteCommands['remote-second']!.delivered, false)
+  assert.deepEqual(await delivered(s), [true, false])
   assert.equal(s.sent.length, 1)
 })
 

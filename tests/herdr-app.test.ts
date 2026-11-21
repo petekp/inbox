@@ -13,6 +13,10 @@ import { TOOL_FIELDS } from '../core/domain/tool-schemas'
 import type { Closed, Session } from '../types'
 import { fakeHost } from './session-fake-host'
 import { memoryViewerStores } from '../core/runtime/remote-viewers'
+import { remoteRowVersion } from '../core/remote/remote-commands'
+import type { RemoteCommand } from '../core/remote/remote-commands'
+import { remoteReceipts } from '../core/runtime/remote-command-state'
+import { memoryCommandStore } from './memory-command-store'
 
 const SOURCE: EnvelopeSource = { host: 'omp', agent: 'omp', sessionId: 's1', terminal: 't1', writtenAt: 5 }
 
@@ -209,9 +213,12 @@ describe('pressDrainer', () => {
       endTurn = resolve
     })
     const delivered: string[] = []
+    const base = fakeHost(async () => null).host
     const host = {
-      ...fakeHost(async () => null).host,
+      ...base,
       viewers: memoryViewerStores().of('s1', () => undefined),
+      commands: memoryCommandStore(),
+      readDurable: () => base.read(),
       isDeliveryHeldUntilRun,
       deliver: async (_s: Session, text: string) => {
         delivered.push(text)
@@ -244,7 +251,7 @@ describe('pressDrainer', () => {
       Promise.race([draining.then(() => true), settled().then(() => false)])
     const lastPress = async () => (await host.read()).lastHerdrPress?.id
 
-    return { delivered, endTurn, files, pressRow, drain, isDrained, lastPress }
+    return { host, rows, delivered, endTurn, files, pressRow, drain, isDrained, lastPress }
   }
 
   test('a press whose message waits for the agent’s turn is named at once, and the presses after it apply meanwhile and send in order', async () => {
@@ -268,6 +275,30 @@ describe('pressDrainer', () => {
       'p3',
       [true, false],
     ])
+  })
+
+  test('a remote command whose message waits for the agent’s turn holds up no press behind it', async () => {
+    const turn = await pressesDuringTurn(true)
+    const [row] = turn.rows
+    if (!row) throw new Error('The session has no row.')
+    const command: RemoteCommand = {
+      format: 2,
+      kind: 'command',
+      id: '1-remote-command-fixture',
+      session: 's1',
+      issuedAt: 1,
+      expected: remoteRowVersion(await turn.host.read(), row),
+      press: { action: 'explain', id: row },
+    }
+    turn.files[`${dir}/c1.json`] = JSON.stringify(command)
+    turn.pressRow('p2', 'explain', 2)
+    await turn.drain('/app', 's1')
+    expect([await turn.lastPress(), turn.files]).toEqual(['p2', {}])
+
+    turn.endTurn()
+    await settled()
+    expect(remoteReceipts(await turn.host.commands.read())[command.id]?.state).toBe('applied')
+    expect(turn.delivered.map(text => text.includes('Sign in to npm'))).toEqual([true, false])
   })
 
   test('a press whose message the host confirms is applied in the drain and named once the message is delivered', async () => {
