@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import { stampedCode } from './code-stamp'
+import { ownCode, stampedCode } from './code-stamp'
 
 /** The repo: `scripts/eval.sh` names it, since the runners run as bundles in a temporary folder. */
 const ROOT = process.env.INBOX_EVAL_ROOT ?? process.cwd()
@@ -233,12 +233,21 @@ export function stamp(c: object, read: string[], grade: string[]): Stamp {
   return { case: sha256(JSON.stringify(c)), read: sha256(read.join('\0')), grade: sha256(grade.join('\0')) }
 }
 
+const repoText = (path: string): string | null => {
+  const full = join(ROOT, path)
+  return existsSync(full) && statSync(full).isFile() ? readFileSync(full, 'utf8') : null
+}
+
 /** The code that runs from `entries`, as `stampedCode` gives it, from this repo's files. */
-export const gradingCode = (entries: string[]): string =>
-  stampedCode(entries, path => {
-    const full = join(ROOT, path)
-    return existsSync(full) && statSync(full).isFile() ? readFileSync(full, 'utf8') : null
-  })
+export const gradingCode = (entries: string[]): string => stampedCode(entries, repoText)
+
+/** One repo file's own code, or its declarations of `names`, as `ownCode` gives it. */
+export function fileCode(path: string, names?: string[]): string {
+  const source = repoText(path)
+  if (source === null) throw new Error(`${path} is not a file`)
+
+  return ownCode(path, source, names)
+}
 
 /**
  * A case's pass count from a run long enough to judge later runs by, keyed `<agent> <case>`, with the stamp of the

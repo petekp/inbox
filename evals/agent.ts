@@ -52,6 +52,7 @@ import {
   provenance,
   readBaselines,
   readCases,
+  fileCode,
   gradingCode,
   report,
   resultsPath,
@@ -449,6 +450,14 @@ const RUN_SETTINGS: Record<Agent, string[]> = {
   omp: OMP_FLAGS,
 }
 const GRADING = gradingCode(['evals/agent-checks.ts'])
+/** The stand-in inbox's own code, which carries the ledger from call to call and, in omp, delivers the guidance. */
+const probeCode = (custom: string | undefined, path: string): string =>
+  custom === undefined ? fileCode(path) : readFileSync(custom, 'utf8')
+const PROBE_CODE: Record<Agent, string> = {
+  claude: probeCode(values.probe, 'evals/probe.ts'),
+  codex: probeCode(values.probe, 'evals/probe.ts'),
+  omp: probeCode(values['omp-probe'], 'evals/omp-probe.ts'),
+}
 const ALL_AGENTS: Agent[] = ['claude', 'codex', 'omp']
 const about = provenance(
   isGuided ? 'agent' : 'agent-no-guidance',
@@ -469,7 +478,7 @@ const about = provenance(
         caseFiles.cases.filter(c => c.agents?.includes(a) ?? true).map(c => readsFor(a, c, isGuided)),
       ),
     ),
-    grading: JSON.stringify([GRADING, RUN_SETTINGS]),
+    grading: JSON.stringify([GRADING, RUN_SETTINGS, PROBE_CODE]),
   },
 )
 const path = resultsPath(values.out, about)
@@ -505,7 +514,10 @@ writeResults(path, about, results, stopped)
 const judged = [...firstRuns, ...results]
 const stamps: Stamps = Object.fromEntries(
   agents.flatMap(a =>
-    casesFor(a).map(c => [`${a} ${c.name}`, stamp(c, readsFor(a, c, isGuided), [GRADING, ...RUN_SETTINGS[a]])]),
+    casesFor(a).map(c => [
+      `${a} ${c.name}`,
+      stamp(c, readsFor(a, c, isGuided), [GRADING, PROBE_CODE[a], ...RUN_SETTINGS[a]]),
+    ]),
   ),
 )
 const baselines = readBaselines(about.suite)

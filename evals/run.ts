@@ -23,6 +23,7 @@ import {
   provenance,
   readBaselines,
   readCases,
+  fileCode,
   gradingCode,
   report,
   resultsPath,
@@ -76,8 +77,16 @@ const runs = runCount(values.runs)
 const caseFiles = readCases<Case>(values.cases)
 const cases: Case[] = selectCases(caseFiles.cases, values.case)
 /** What reads each model's answer, applies it to the ledger and grades the result. */
-const GRADING = gradingCode(['core/domain/reply-parse.ts', 'core/domain/ledger-update.ts', 'evals/model-checks.ts'])
-const CALL: Record<Agent, string> = { claude: gradingCode(['evals/claude-model.ts']), codex: MODEL }
+const GRADING = gradingCode([
+  'core/domain/ledger.ts',
+  'core/domain/reply-parse.ts',
+  'core/domain/ledger-update.ts',
+  'evals/model-checks.ts',
+])
+const CALL: Record<Agent, string> = {
+  claude: gradingCode(['evals/claude-model.ts']),
+  codex: fileCode('codex/src/update.ts', ['MODEL', 'TIMEOUT_MS', 'OFF', 'modelHome', 'codexAsk']),
+}
 const about = provenance(
   'model',
   { claude: 'claude', codex: codexCli },
@@ -87,7 +96,7 @@ const about = provenance(
     prompts: JSON.stringify(caseFiles.cases.flatMap(c => [inputs('claude', c).prompt, inputs('codex', c).prompt])),
     cases: caseFiles.text,
     models: JSON.stringify({ claude: CLAUDE_MODEL, codex: MODEL }),
-    grading: [GRADING, CALL.claude].join('\0'),
+    grading: [GRADING, CALL.claude, CALL.codex].join('\0'),
   },
 )
 const path = resultsPath(values.out, about)
