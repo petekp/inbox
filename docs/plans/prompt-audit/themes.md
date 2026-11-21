@@ -8,7 +8,7 @@ Status: building. The index says which themes are built, measured or proposed.
 
 ### 1. The agent does not know its reply makes the items
 
-- **Where:** `guidanceText` in `hooks/model-text.ts`. Five of the six reviewers found this one independently.
+- **Where:** `guidanceText` in `core/domain/model-text.ts`. Five of the six reviewers found this one independently.
 - **What is wrong:** the inbox model builds every question, its options, its recommendation and its one-press steps from the agent's reply. It may copy a recommendation only when the reply states one, and a command only when the reply contains it. The guidance never tells the agent any of this. A reply that asks "How should I handle X?" gives the inbox model little to work with, and the row ends with no recommendation and no step.
 - **Proposed wording,** one paragraph after the first:
 
@@ -25,9 +25,9 @@ Status: building. The index says which themes are built, measured or proposed.
 ### 2. An open item cannot change
 
 - **Where:**
-  - `applyUpdate` in `hooks/ledger-update.ts` and `ledgerBlocks` in `hooks/model-text.ts`;
+  - `applyUpdate` in `core/domain/ledger-update.ts` and `ledgerBlocks` in `core/domain/model-text.ts`;
   - the sentence in `systemText` that begins "When the reply restates, rewords or narrows an item";
-  - `messages.explain` in `hooks/press-messages.ts`.
+  - `messages.explain` in `core/domain/press-messages.ts`.
 - **What is wrong:**
   - When a NEW line matches an open item, only its steps are merged. Its new ask, options and recommendation are dropped.
   - The inbox model sees each open item as id, kind, label and ask. It never sees the options or recommendation, so it cannot tell a reworded question from a changed one.
@@ -42,7 +42,7 @@ Status: building. The index says which themes are built, measured or proposed.
 
 ### 3. Dismissed findings vanish
 
-- **Where:** `addFinding` in `hooks/ledger-update.ts`, `closedText` and `promptNotes` in `hooks/model-text.ts`, and `recordFinding` in `hooks/tools.ts`.
+- **Where:** `addFinding` in `core/domain/ledger-update.ts`, `closedText` and `promptNotes` in `core/domain/model-text.ts`, and `recordFinding` in `core/runtime/tools.ts`.
 - **What is wrong:**
   - Closed findings are saved, but no text tells either model about them. When the person dismisses a finding, the agent sees it gone from the inbox line with no reason given.
   - `addFinding` checks a new finding only against open findings, and only by exact title. A reworded finding the person dismissed is recorded again, and `recordFinding` answers "Recorded as fN".
@@ -70,7 +70,7 @@ Status: building. The index says which themes are built, measured or proposed.
 
 ### 6. Ids go missing where the agent must close
 
-- **Where:** `messages` in `hooks/press-messages.ts`, and `recordClose` in `hooks/tools.ts`.
+- **Where:** `messages` in `core/domain/press-messages.ts`, and `recordClose` in `core/runtime/tools.ts`.
 - **What is wrong:**
   - Address, Discuss, a typed reply to a finding and Run leave the row open until the agent closes it. Their messages name the row by its title only.
   - The inbox line with the ids is repeated only when the inbox changed, and after one of these presses it usually has not.

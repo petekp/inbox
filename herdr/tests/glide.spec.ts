@@ -1,10 +1,10 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
 import type { Block } from '../src/blocks'
-import { demoSession } from '../../hooks/demo'
-import { sessionView } from '../../hooks/session-view'
-import { SLIDE_PX } from '../../hooks/row-motion'
-import { SETTLED_MS } from '../../hooks/timing'
+import { demoSession } from '../../core/view/demo'
+import { sessionView } from '../../core/view/session-view'
+import { SLIDE_PX } from '../../core/view/row-motion'
+import { SETTLED_MS } from '../../core/view/timing'
 
 const { framesOf, jumpsOf } = await import('./frames')
 type Step = import('./frames').Step

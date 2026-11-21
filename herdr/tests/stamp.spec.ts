@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { modBuiltAt } from '../../hooks/herdr-install'
+import { modBuiltAt } from '../../core/remote/herdr-install'
 import { BUILT_AT_LINE, stampedBundle } from '../stamp'
 
 const unstamped = (code: string) => `// Built by herdr/build.ts\n${BUILT_AT_LINE}\n${code}`

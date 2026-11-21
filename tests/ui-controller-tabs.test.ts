@@ -1,10 +1,10 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import type { SessionView } from '../hooks/session-view'
-import { FOLD_QUIET_MS, SETTLED_MS } from '../hooks/timing'
-import { reduceUi } from '../hooks/ui-controller'
-import { freshUi } from '../hooks/ui-controller-types'
+import type { SessionView } from '../core/view/session-view'
+import { FOLD_QUIET_MS, SETTLED_MS } from '../core/view/timing'
+import { reduceUi } from '../core/view/ui-controller'
+import { freshUi } from '../core/view/ui-controller-types'
 import {
   closedByAgent,
   FACTS,

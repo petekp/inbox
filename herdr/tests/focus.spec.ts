@@ -1,7 +1,7 @@
 import { expect, setSystemTime, test } from 'bun:test'
 
-import { GOAL_KEYS_ID } from '../../hooks/status-keys'
-import { PRESS_GUARD_MS } from '../../hooks/timing'
+import { GOAL_KEYS_ID } from '../../core/view/status-keys'
+import { PRESS_GUARD_MS } from '../../core/view/timing'
 import { NOW } from './fixtures'
 import { allOf, focusTerminal, giveKeysElsewhere, keysHolder, openPanel, typeIn } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'

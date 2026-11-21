@@ -1,10 +1,10 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { askStatus, parseStatus } from '../hooks/status'
-import { applyStatus } from '../hooks/status-ops'
-import { goalBlocks } from '../hooks/status-prompt-goal'
-import { statusRetry } from '../hooks/status-retry'
+import { askStatus, parseStatus } from '../core/domain/status'
+import { applyStatus } from '../core/domain/status-ops'
+import { goalBlocks } from '../core/domain/status-prompt-goal'
+import { statusRetry } from '../core/domain/status-retry'
 import type { SessionStatus } from '../types'
 import { after, MIN } from './status-helpers'
 

@@ -1,5 +1,5 @@
-import { delegateRefs, delegateRowsTakenBack, delegatesStarted } from '../../hooks/children'
-import { statusChanged } from '../../hooks/session-status'
+import { delegateRefs, delegateRowsTakenBack, delegatesStarted } from '../../core/domain/children'
+import { statusChanged } from '../../core/runtime/session-status'
 import type { SessionState } from './state'
 
 /** The delegates `command` names run from `at`, and the session keeps their rows as they were, to take back. */

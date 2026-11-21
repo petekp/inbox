@@ -1,8 +1,8 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { SESSION_VERSION } from '../hooks/session-version'
-import type { TabsProps } from '../hooks/tabs-client'
-import { PR_READ_WAIT_MS, PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
+import { SESSION_VERSION } from '../core/domain/session-version'
+import type { TabsProps } from '../hooks/pane/tabs-client'
+import { PR_READ_WAIT_MS, PRESS_GUARD_MS, SETTLED_MS } from '../core/view/timing'
 import { w, world } from './hooks-world'
 import { PANE, SAVED_SESSION, leaveAndReturn } from './hooks-helpers'
 

@@ -90,7 +90,7 @@ settled PR takes no tint.
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what
 kind it is, such as ◆, waits on you. Each glyph means one thing wherever a look
-draws it. `MARK_LEGEND` in `hooks/help.ts` lists them all.
+draws it. `core/view/help.ts:MARK_LEGEND` lists them all.
 Help calls them Indicators.
 
 **Result mark**:
@@ -247,7 +247,7 @@ stop, such as "Last update failed." or "Could not read the inbox.". Its first
 sentence is its lead, drawn in bold. Its tone says what it means: error, the
 inbox cannot do its job until something changes; warning, part of it is
 missing or out of date; notice, a fact. A row's own result is not a banner.
-`BannerView` in `hooks/banners.ts`.
+`core/view/banners.ts:BannerView`.
 _Avoid_: alert, error strip, status line
 
 **Help**:
@@ -261,7 +261,7 @@ The line the conversation shows under the agent's `record` or `close` call,
 written for the person, such as "Question: Which cache should the API use?". A
 call that changed nothing shows none. The agent reads its own answer to the
 call, which Codex shows in place of the line. `personLine` in
-`hooks/tools.ts:ToolAnswer`.
+`core/runtime/tools.ts:ToolAnswer`.
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Status,
@@ -270,7 +270,7 @@ shows them in an overlay that `/inbox` opens.
 
 **Tab symbol**:
 The emoji a tab shows in place of its words when the words don't fit,
-followed by its count, as "🔍 4". `symbol` in `TAB_NAMES` in `hooks/tabs.ts`.
+followed by its count, as "🔍 4". `symbol` in `TAB_NAMES` in `core/view/tabs.ts`.
 
 **New row**:
 A row a look lists for the first time since it last recorded its rows. A
@@ -314,7 +314,7 @@ changed since", with Rank again, which asks the agent to rank the PRs again.
 One of the five ways the inbox is drawn: `terminal` in the Claude Code
 terminal, `desktop` in the pane of the Claude desktop app's Code sessions,
 `codex` in the Codex tab, `omp` in omp's panel, and `herdr` in a pane of the
-Herdr app. `Look` in `hooks/rows.ts`.
+Herdr app. `core/view/rows.ts:Look`.
 _Avoid_: client, surface
 
 **Host**:
@@ -328,17 +328,16 @@ its session, and the Herdr app runs the mod in `herdr/`, which draws it.
 The file a host writes for the Herdr look at
 `<app home>/inbox/sessions/<session id>.json`, after each saved change. It
 holds the session with its source: the host, the agent, the session id, the
-terminal, and the project folder when the host knows it. The terminal's `inbox.session` label names it. `HerdrEnvelope` in
-`hooks/herdr.ts`.
+terminal, and the project folder when the host knows it. The terminal's `inbox.session` label names it. `core/remote/herdr.ts:HerdrEnvelope`.
 
 **Shared module**:
-A file in `hooks/` that every host consumes, directly or through a build.
-It imports only other shared modules and the shared types.
+A file in `core/` that every host consumes, directly or through a build.
+`docs/looks.md` gives its layers.
 
 **Adapter**:
 The code that draws the shared view in a look. For the terminal and desktop
-looks, it is `hooks/mod-pane-render.tsx`, `hooks/mod-band.tsx` and
-`hooks/pane-*.tsx`. For the
+looks, it is `hooks/mod/mod-pane-render.tsx`, `hooks/mod/mod-band.tsx` and
+`hooks/pane/`. For the
 Codex tab, it is `codex/src/tab.tsx`, the other `codex/src/tab-*` files,
 `codex/src/row-actions.tsx` and the styles in `codex/src/tab-css/`. For the omp
 panel, it is `omp/src/panel.ts` and the other `omp/src/panel-*.ts` files.
@@ -368,10 +367,10 @@ and the next update tries again.
 A checkout that follows the `next` branch and holds `NEXT_BUILD_MARK`, a file
 Git ignores, in each folder a host loads or installs. Each look's version label
 adds "next" on one, and only a next build keeps Status call records.
-`hooks/banners.ts:versionLabel`, `hooks/status-records.ts`.
+`core/view/banners.ts:versionLabel`, `core/runtime/status-records.ts`.
 
 **Parity record**:
-`hooks/clients.ts`. It lists, for each host and published look, whether each
+`core/domain/clients.ts`. It lists, for each host and published look, whether each
 feature is `full`, `host`, `different` or `unsupported`, with a reason for the
 last two. Each such entry needs a row in "Differences on purpose" in
 `docs/looks.md`, and `scripts/check-structure.mjs` fails when one is missing.
@@ -385,9 +384,8 @@ the list as `Session.toolFields`. Only a conversation the mod saw start gets
 this build's list. A fork gets its parent's, and any other conversation with no
 saved list gets 0.3.0's. Codex takes the list from the server's last
 `tools/list` answer, and omp registers this build's tools.
-`hooks/tool-schemas.ts:TOOL_FIELDS`, `V0_3_TOOL_FIELDS`.
+`core/domain/tool-schemas.ts:TOOL_FIELDS`, `V0_3_TOOL_FIELDS`.
 
 The engine has two terms of its own. Its `surface` is where Claude Code runs,
-and includes `mobile` and `vscode`; `lookOf` in `hooks/palettes.ts` maps it to
-a look. Its `Client` is a drawn region that takes clicks over its whole shape,
-as in `hooks/row-client.tsx`.
+and includes `mobile` and `vscode`; `lookOf` in `hooks/pane/palettes.ts` maps it to
+a look. Its `Client` is a drawn region that takes clicks over its whole shape.

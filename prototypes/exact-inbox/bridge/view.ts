@@ -1,12 +1,12 @@
-import { remoteRowDigest, supportsRemotePress } from '../../../hooks/remote-commands'
+import { remoteRowDigest, supportsRemotePress } from '../../../core/remote/remote-commands'
 import { createHash } from 'node:crypto'
-import type { HerdrEnvelope } from '../../../hooks/herdr'
+import type { HerdrEnvelope } from '../../../core/remote/herdr'
 import { readSession } from '../../../herdr/src/files'
-import { sessionView } from '../../../hooks/session-view'
-import type { SessionView } from '../../../hooks/session-view'
-import { isMaybeStale } from '../../../hooks/band'
-import { rowKeyPlan } from '../../../hooks/action-plan'
-import { rowFeedbackText } from '../../../hooks/feedback'
+import { sessionView } from '../../../core/view/session-view'
+import type { SessionView } from '../../../core/view/session-view'
+import { isMaybeStale } from '../../../core/view/band'
+import { rowKeyPlan } from '../../../core/view/action-plan'
+import { rowFeedbackText } from '../../../core/view/feedback'
 import {
   settledLabel,
   rowResultMark,
@@ -14,11 +14,11 @@ import {
   shownOptionDescriptions,
   optionBody,
   optionReasonLine,
-} from '../../../hooks/rows'
-import type { RowView } from '../../../hooks/rows'
-import type { RowPress } from '../../../hooks/presses'
-import { SETTLED_MS, NO_HOLDS } from '../../../hooks/timing'
-import type { StatusRow } from '../../../hooks/status-page'
+} from '../../../core/view/rows'
+import type { RowView } from '../../../core/view/rows'
+import type { RowPress } from '../../../core/domain/presses'
+import { SETTLED_MS, NO_HOLDS } from '../../../core/view/timing'
+import type { StatusRow } from '../../../core/view/status-page'
 import { readPublished, publishedTerminal } from './remote'
 import { activeBinding, boundTerminal } from './binding'
 import type { SessionBinding } from './binding'

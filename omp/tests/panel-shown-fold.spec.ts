@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test'
 
-import { statusPage } from '../../hooks/status-page'
-import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
-import { emptySession } from '../../hooks/session-files'
+import { statusPage } from '../../core/view/status-page'
+import { EMPTY_SESSION_STATUS } from '../../core/domain/status-limits'
+import { emptySession } from '../../core/view/session-files'
 import type { Subject } from '../../types'
 import { drawPanel } from '../src/panel'
 import { NOW, onPage, screenOf, style } from './panel-harness'

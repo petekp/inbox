@@ -1,8 +1,8 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import type { FoldProps } from '../hooks/fold-client'
-import { isSubjectSeen, LOOK_MIN_MS } from '../hooks/status-children'
-import { statusPage } from '../hooks/status-page'
+import type { FoldProps } from '../hooks/pane/fold-client'
+import { isSubjectSeen, LOOK_MIN_MS } from '../core/domain/status-children'
+import { statusPage } from '../core/view/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

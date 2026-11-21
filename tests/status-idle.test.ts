@@ -1,11 +1,11 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { askStatus, parseStatus } from '../hooks/status'
-import { withChild } from '../hooks/status-children'
-import { statusPrompt } from '../hooks/status-prompt'
-import { statusRetry } from '../hooks/status-retry'
-import { upgradeStatus } from '../hooks/status-upgrade'
+import { askStatus, parseStatus } from '../core/domain/status'
+import { withChild } from '../core/domain/status-children'
+import { statusPrompt } from '../core/domain/status-prompt'
+import { statusRetry } from '../core/domain/status-retry'
+import { upgradeStatus } from '../core/domain/status-upgrade'
 import type { SessionStatus } from '../types'
 import { after, askItem, MIN, page, shape } from './status-helpers'
 

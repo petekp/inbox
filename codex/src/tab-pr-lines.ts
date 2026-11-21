@@ -1,5 +1,5 @@
-import { ago } from '../../hooks/text'
-import { DOT } from '../../hooks/rows'
+import { ago } from '../../core/domain/text'
+import { DOT } from '../../core/view/rows'
 import {
   feedbackOf,
   feedbackText,
@@ -7,9 +7,9 @@ import {
   hasAge,
   holdsStatusWhileOut,
   type FeedbackTone,
-} from '../../hooks/feedback'
-import { prMarkId, isBlockPressShown } from '../../hooks/pr-rows'
-import { isDismissed } from '../../hooks/pr-views'
+} from '../../core/view/feedback'
+import { prMarkId, isBlockPressShown } from '../../core/view/pr-rows'
+import { isDismissed } from '../../core/view/pr-views'
 import type { PrView } from '../../types'
 import type { TabView as View } from './core'
 import { SENDING } from './tab-state'

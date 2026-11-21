@@ -1,8 +1,8 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
-import { NEEDS_YOU_MARKS } from '../../hooks/help'
-import { RUNNING_PULSE_MS } from '../../hooks/timing'
+import { NEEDS_YOU_MARKS } from '../../core/view/help'
+import { RUNNING_PULSE_MS } from '../../core/view/timing'
 import type { Button, Mark } from './blocks'
 import {
   BUTTON_H,

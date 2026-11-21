@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 
-import { statusListRows } from '../../hooks/status-folds'
+import { statusListRows } from '../../core/view/status-folds'
 import type { Block } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import { demoScreen, uiOn } from './fixtures'

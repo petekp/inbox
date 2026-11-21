@@ -1,8 +1,8 @@
 import type { Session } from '../../types'
-import type { RemoteCommand } from '../../hooks/remote-commands'
-import type { RemoteViewerUpdate } from '../../hooks/remote-viewers'
-import type { remoteReceipts } from '../../hooks/remote-command-state'
-import type { remoteViewerReceipts } from '../../hooks/remote-viewers'
+import type { RemoteCommand } from '../../core/remote/remote-commands'
+import type { RemoteViewerUpdate } from '../../core/runtime/remote-viewers'
+import type { remoteReceipts } from '../../core/runtime/remote-command-state'
+import type { remoteViewerReceipts } from '../../core/runtime/remote-viewers'
 
 export type CompanionSession = { id: string; name: string }
 export type CompanionRequest =

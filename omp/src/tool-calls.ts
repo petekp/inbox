@@ -1,5 +1,5 @@
-import { dialogQuestions, toolActivity } from '../../hooks/catch-up-text'
-import type { DialogOutcome } from '../../hooks/catch-up-text'
+import { dialogQuestions, toolActivity } from '../../core/domain/catch-up-text'
+import type { DialogOutcome } from '../../core/domain/catch-up-text'
 import type { DialogQuestion } from '../../types'
 import { formQuestions } from './ask-form'
 

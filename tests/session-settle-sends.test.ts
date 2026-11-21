@@ -1,13 +1,13 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { CLAUDE_CODE } from '../hooks/model-text'
-import { recorded } from '../hooks/session-presses'
-import { sessionView } from '../hooks/session-view'
-import { press, wakeAfterSettle } from '../hooks/host-press'
-import { NO_HOLDS, QUEUED_AFTER_MS } from '../hooks/timing'
+import { CLAUDE_CODE } from '../core/domain/model-text'
+import { recorded } from '../core/runtime/session-presses'
+import { sessionView } from '../core/view/session-view'
+import { press, wakeAfterSettle } from '../core/runtime/host-press'
+import { NO_HOLDS, QUEUED_AFTER_MS } from '../core/view/timing'
 import { fakeHost } from './session-fake-host'
-import { TOOL_FIELDS } from '../hooks/tool-schemas'
+import { TOOL_FIELDS } from '../core/domain/tool-schemas'
 
 for (const isDeliveryHeldUntilRun of [false, true])
   test(`a refused Done message folds its row and leaves its Closed line reading Not sent, with Undo, when delivery is held until run: ${isDeliveryHeldUntilRun}`, async () => {

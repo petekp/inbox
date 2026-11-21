@@ -1,8 +1,8 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { SESSION_VERSION } from '../hooks/session-version'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
-import { statusPage } from '../hooks/status-page'
+import { SESSION_VERSION } from '../core/domain/session-version'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../core/view/timing'
+import { statusPage } from '../core/view/status-page'
 import { w, world } from './hooks-world'
 import { PANE, replyField, selectRow, SAVED_SESSION } from './hooks-helpers'
 

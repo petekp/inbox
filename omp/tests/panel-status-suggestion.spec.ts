@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
-import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
-import { sessionView } from '../../hooks/session-view'
+import { SETTLED_MS, NO_HOLDS } from '../../core/view/timing'
+import { sessionView } from '../../core/view/session-view'
 import type { SessionStatus } from '../../types'
 import { demoState } from '../src/demo'
 import { drawn, keyed, keys, NOW, onPage, screenOf, strip, style, text } from './panel-harness'

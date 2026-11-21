@@ -1,5 +1,5 @@
-import { faintCloseFades } from '../../hooks/row-motion'
-import type { FadeStep } from '../../hooks/row-motion'
+import { faintCloseFades } from '../../core/view/row-motion'
+import type { FadeStep } from '../../core/view/row-motion'
 import { fade, opacityOf } from './tab-glide'
 
 /**

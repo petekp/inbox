@@ -1,4 +1,4 @@
-import { clipboardCommands, noClipboardCommand } from '../../hooks/clipboard-commands'
+import { clipboardCommands, noClipboardCommand } from '../../core/runtime/clipboard-commands'
 import type { RunWithInput } from './run'
 
 const COPY_TIMEOUT_MS = 5000

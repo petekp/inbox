@@ -1,11 +1,11 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { latestBatch } from '../hooks/inbox-text'
-import { EMPTY } from '../hooks/ledger'
-import { closeItem } from '../hooks/ledger-close'
-import { addAgentItem, applyUpdate } from '../hooks/ledger-update'
-import { parseReply } from '../hooks/reply-parse'
+import { latestBatch } from '../core/domain/inbox-text'
+import { EMPTY } from '../core/domain/ledger'
+import { closeItem } from '../core/domain/ledger-close'
+import { addAgentItem, applyUpdate } from '../core/domain/ledger-update'
+import { parseReply } from '../core/domain/reply-parse'
 import { REPLY } from './ledger-helpers'
 
 describe('applyUpdate', () => {

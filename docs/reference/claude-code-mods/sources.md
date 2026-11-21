@@ -134,5 +134,5 @@ Every page was read on 2026-10-08. Page URLs below were checked to resolve that 
 
 ## Local sources
 
-- This repo at `55ab122`: `hooks/register.tsx`, `hooks/ledger.ts`, `hooks/prs.ts`, `hooks/hooks.json`, `.claude-plugin/plugin.json`, `tests/hooks.test.ts`, `scripts/check.sh`, `README.md`, `ROADMAP.md`, `AGENTS.md`.
+- This repo at `55ab122`: `hooks/register.tsx`, `core/domain/ledger.ts`, `core/domain/prs.ts`, `hooks/hooks.json`, `.claude-plugin/plugin.json`, `tests/hooks.test.ts`, `scripts/check.sh`, `README.md`, `ROADMAP.md`, `AGENTS.md`.
 - Live commands on 2026-10-08: `claude --version`, `claude plugin list`, `claude plugin details inbox`, `claude plugin validate`, `claude plugin test`, `claude agents --json`, `ps`, and file listings of `~/.claude/plugins/store/` and `~/Library/Application Support/Claude/`.

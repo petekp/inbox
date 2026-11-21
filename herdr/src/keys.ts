@@ -1,6 +1,6 @@
-import { COLLAPSE_KEY, FOLD_ALL_KEY, UNDO_KEY } from '../../hooks/help'
-import type { ShownTab } from '../../hooks/tabs'
-import type { UiEvent } from '../../hooks/ui-controller-types'
+import { COLLAPSE_KEY, FOLD_ALL_KEY, UNDO_KEY } from '../../core/view/help'
+import type { ShownTab } from '../../core/view/tabs'
+import type { UiEvent } from '../../core/view/ui-controller-types'
 import type { Block, Button, RowBlock } from './blocks'
 import type { TabCell } from './draw'
 

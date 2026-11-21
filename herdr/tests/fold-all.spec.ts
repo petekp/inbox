@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
-import { freshUi } from '../../hooks/ui-controller-types'
-import type { UiCommand } from '../../hooks/ui-controller-types'
+import { freshUi } from '../../core/view/ui-controller-types'
+import type { UiCommand } from '../../core/view/ui-controller-types'
 import { HERDR_LOOK, applyEvents } from '../src/controller'
 import { foldClickOpens } from '../src/fold-all'
 import { tabBlocks } from '../src/draw'

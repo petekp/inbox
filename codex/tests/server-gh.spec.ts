@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../hooks/gh'
-import { feedbackOf, feedbackText } from '../../hooks/feedback'
-import { GH_TIMED_OUT_TEXT } from '../../hooks/pr-fetch'
-import { ghNoticeOf, PR_REFRESH_ID } from '../../hooks/pr-rows'
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../core/domain/gh'
+import { feedbackOf, feedbackText } from '../../core/view/feedback'
+import { GH_TIMED_OUT_TEXT } from '../../core/domain/pr-fetch'
+import { ghNoticeOf, PR_REFRESH_ID } from '../../core/view/pr-rows'
 import type { LastAction, Session } from '../../types'
 import { readState, updateState } from '../src/state'
 import { run } from '../src/run'
 import { ghAnswer, PRS_STALE_MS, prServer, viewAfterFetch } from './server-fixtures'
-import { PRS_HIDDEN_REFRESH_MS } from '../../hooks/host-prs'
+import { PRS_HIDDEN_REFRESH_MS } from '../../core/runtime/host-prs'
 
 test('a view starts a fetch of the session’s PRs through gh in its folder, and the next view shows them', async () => {
   const { dir, calls, call } = await prServer(ghAnswer)

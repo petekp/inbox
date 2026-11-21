@@ -1,10 +1,10 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { asksText, isSubjectSeen, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../hooks/status-children'
-import { EMPTY_SESSION_STATUS } from '../hooks/status-limits'
-import { mergedLine, nameBeforeStall, seenSubjectIds } from '../hooks/status-page'
-import { statusKeyPlan } from '../hooks/status-keys'
+import { asksText, isSubjectSeen, lookEnded, lookStarted, LOOK_MIN_MS, withChild } from '../core/domain/status-children'
+import { EMPTY_SESSION_STATUS } from '../core/domain/status-limits'
+import { mergedLine, nameBeforeStall, seenSubjectIds } from '../core/view/status-page'
+import { statusKeyPlan } from '../core/view/status-keys'
 import {
   IDLE_MARK,
   CLOSED_MARKS,
@@ -15,7 +15,7 @@ import {
   PR_MARKS,
   RUNNING_FRAMES,
   SUBJECT_MARKS,
-} from '../hooks/help'
+} from '../core/view/help'
 import type { Item, SessionStatus } from '../types'
 import { minutes } from '../evals/status-replay'
 import { statusOf, subject } from './status-evals-scene-base'

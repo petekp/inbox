@@ -1,5 +1,5 @@
-import { answersFitLine } from '../../hooks/action-plan'
-import { earlierLineText } from '../../hooks/earlier-answers'
+import { answersFitLine } from '../../core/view/action-plan'
+import { earlierLineText } from '../../core/domain/earlier-answers'
 import type { Button, Line } from './panel-lines'
 import { visibleLength, wrapText } from './panel-text'
 import type { Style } from './panel'

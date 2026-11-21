@@ -1,7 +1,7 @@
 import { mock } from 'bun:test'
 
-import { SESSION_LABEL } from '../../hooks/herdr-labels'
-import type { UiEvent } from '../../hooks/ui-controller-types'
+import { SESSION_LABEL } from '../../core/remote/herdr-labels'
+import type { UiEvent } from '../../core/view/ui-controller-types'
 import type { Session } from '../../types'
 import { hostFactsOf } from '../src/controller'
 import { demoEnvelopeText } from './fixtures'

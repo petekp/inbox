@@ -6,9 +6,9 @@ Some content and host bookkeeping still have two copies. These are remaining wor
 
 | Rule | Where it is written | Remaining work |
 | --- | --- | --- |
-| PR block and row composition | `hooks/mod-pane-render.tsx`, `codex/src/tab-prs.tsx` and `codex/src/tab-rows.tsx` | Both use shared PR rules and button plans, but compose their own content. |
-| Host notices and some closed-row composition | `hooks/mod-pane-render.tsx`, `codex/src/tab-chrome.tsx` and `codex/src/tab-groups.tsx` | Share identical decisions while keeping native fitting and decoration local. |
-| Local effects and demo presses | `hooks/open-targets.ts:openTarget`, `hooks/press-effects.ts:demoAfterPress`, `hooks/press-effects.ts:demoReplied`, `hooks/mod-demo.ts:runDemoPress`, `hooks/host-press.ts:press`, `codex/src/server-host.ts:open`, `codex/src/server-demo.ts:onDemoPress`, `omp/src/demo.ts:demoSource` | Every host opens files and links through `openTarget`, and computes a demo press with `demoAfterPress`. `SETTLED_MS` after a press that sent, each host's own timer applies `demoReplied`, the demo's stand-in for the agent's reply. It answers that press and leaves the sample's own hand-offs waiting. |
+| PR block and row composition | `hooks/mod/mod-pane-render.tsx`, `codex/src/tab-prs.tsx` and `codex/src/tab-rows.tsx` | Both use shared PR rules and button plans, but compose their own content. |
+| Host notices and some closed-row composition | `hooks/mod/mod-pane-render.tsx`, `codex/src/tab-chrome.tsx` and `codex/src/tab-groups.tsx` | Share identical decisions while keeping native fitting and decoration local. |
+| Local effects and demo presses | `core/domain/open-targets.ts:openTarget`, `core/runtime/press-effects.ts:demoAfterPress`, `core/runtime/press-effects.ts:demoReplied`, `hooks/mod/mod-demo.ts:runDemoPress`, `core/runtime/host-press.ts:press`, `codex/src/server-host.ts:open`, `codex/src/server-demo.ts:onDemoPress`, `omp/src/demo.ts:demoSource` | Every host opens files and links through `openTarget`, and computes a demo press with `demoAfterPress`. `SETTLED_MS` after a press that sent, each host's own timer applies `demoReplied`, the demo's stand-in for the agent's reply. It answers that press and leaves the sample's own hand-offs waiting. |
 
 A `deliveryId` identifies one local press. Each host keeps a sent-prompt record
 before an arrival can change its rows. Arrival events provide message text but

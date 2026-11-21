@@ -1,5 +1,5 @@
-import { LEAVE_FADE_MS, ROW_STATE_MS, drawsPanel, enterDelayMs, isMoving, stepRow } from '../../hooks/row-motion'
-import type { RowState, RowTarget, RowTrack } from '../../hooks/row-motion'
+import { LEAVE_FADE_MS, ROW_STATE_MS, drawsPanel, enterDelayMs, isMoving, stepRow } from '../../core/view/row-motion'
+import type { RowState, RowTarget, RowTrack } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import type { TabCell } from './draw'

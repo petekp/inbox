@@ -19,16 +19,16 @@ import {
   window as herdrWindow,
   writeTextFile,
 } from 'herdr'
-import { publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
-import type { SessionView } from '../../hooks/session-view'
-import type { ShownTab } from '../../hooks/tabs'
-import { notesOf } from '../../hooks/ui-controller'
-import { readWakeAt } from '../../hooks/ui-controller-clock'
-import { holdsOf } from '../../hooks/ui-controller-reply'
-import { collapsedOf } from '../../hooks/ui-controller-selection'
-import { closed, newRowsOf, opened } from '../../hooks/ui-controller-tabs'
-import { freshUi } from '../../hooks/ui-controller-types'
-import type { UiCommand, UiEvent, UiState } from '../../hooks/ui-controller-types'
+import { publishedSessionPath, publishedSessionsFolder } from '../../core/remote/herdr'
+import type { SessionView } from '../../core/view/session-view'
+import type { ShownTab } from '../../core/view/tabs'
+import { notesOf } from '../../core/view/ui-controller'
+import { readWakeAt } from '../../core/view/ui-controller-clock'
+import { holdsOf } from '../../core/view/ui-controller-reply'
+import { collapsedOf } from '../../core/view/ui-controller-selection'
+import { closed, newRowsOf, opened } from '../../core/view/ui-controller-tabs'
+import { freshUi } from '../../core/view/ui-controller-types'
+import type { UiCommand, UiEvent, UiState } from '../../core/view/ui-controller-types'
 import type { Block, Button } from './blocks'
 import {
   HERDR_LOOK,

@@ -21,18 +21,18 @@ A new folder, `herdr/`, holds the look. It follows `omp/`: the decisions import 
 
 ## Shared-code changes
 
-- **`hooks/text.ts`: a fallback for `Intl.Segmenter`.** Herdr's runtime has no `Intl`, and `text.ts` builds an `Intl.Segmenter` at load, so the shared modules do not load in a mod as they are. The probe loaded them with a global stand-in. That is wrong for a shipped mod: Herdr's mods share one global object, so a global stand-in leaks into every other mod. `text.ts` builds its segmenter only when `Intl.Segmenter` exists. Otherwise it splits text with a regular expression that keeps a base character with its combining marks, and an emoji sequence joined by U+200D, together. The runtime supports `\p{…}` in regular expressions. Cell widths matter only to terminal looks, which always have `Intl`, so the fallback changes only where the Herdr look cuts a title.
-- **`hooks/view.ts`: `Look` gains `'herdr'`.** It is not terminal-like, so `rowTitle`, `feedbackText` and `helpKeys` follow the desktop look's text. `helpKeys` lists the Herdr look's keys.
-- **`hooks/row-motion.ts`: the row state machine,** moved from `codex/src/rows.ts` unchanged. See [the look](look.md#every-state-and-every-move).
-- **`hooks/herdr.ts`: the app target,** labels and envelope. `herdrTarget(env)` picks the multiplexer pane or the app terminal. `herdrLabels(tokens)` turns today's tokens into `inbox.` labels. `herdrEnvelope(host, agent, session)` builds the published file. `pressFile(text)` reads and checks a press file. Every host calls these, so the format lives in one place. The file is about 2,000 tokens now, so it has room.
-- **The press follow-ups leave `runPress`.** `hooks/mod-press-run.ts:runPress` mixes the terminal pane's scroll and Undo bookkeeping with what any press needs afterwards, such as `wakeForDone`. The second part moves into a function that both the pane and the Herdr press path call. The spike called `press()` alone, so its Done never woke the agent.
+- **`core/domain/text.ts`: a fallback for `Intl.Segmenter`.** Herdr's runtime has no `Intl`, and `text.ts` builds an `Intl.Segmenter` at load, so the shared modules do not load in a mod as they are. The probe loaded them with a global stand-in. That is wrong for a shipped mod: Herdr's mods share one global object, so a global stand-in leaks into every other mod. `text.ts` builds its segmenter only when `Intl.Segmenter` exists. Otherwise it splits text with a regular expression that keeps a base character with its combining marks, and an emoji sequence joined by U+200D, together. The runtime supports `\p{…}` in regular expressions. Cell widths matter only to terminal looks, which always have `Intl`, so the fallback changes only where the Herdr look cuts a title.
+- **`core/view/view.ts`: `Look` gains `'herdr'`.** It is not terminal-like, so `rowTitle`, `feedbackText` and `helpKeys` follow the desktop look's text. `helpKeys` lists the Herdr look's keys.
+- **`core/view/row-motion.ts`: the row state machine,** moved from `codex/src/rows.ts` unchanged. See [the look](look.md#every-state-and-every-move).
+- **`core/remote/herdr.ts`: the app target,** labels and envelope. `herdrTarget(env)` picks the multiplexer pane or the app terminal. `herdrLabels(tokens)` turns today's tokens into `inbox.` labels. `herdrEnvelope(host, agent, session)` builds the published file. `pressFile(text)` reads and checks a press file. Every host calls these, so the format lives in one place. The file is about 2,000 tokens now, so it has room.
+- **The press follow-ups leave `runPress`.** `hooks/mod/mod-press-run.ts:runPress` mixes the terminal pane's scroll and Undo bookkeeping with what any press needs afterwards, such as `wakeForDone`. The second part moves into a function that both the pane and the Herdr press path call. The spike called `press()` alone, so its Done never woke the agent.
 - **Each host's publish and press watch.** In `hooks/register.tsx` or a module beside it, `codex/src/host.ts` and `codex/src/server.ts`, and `omp/src/host.ts`, as [Data and presses](data-and-presses.md) describes.
 
 `scripts/check-structure.mjs` gains `herdr/`'s rule: its files import only shared modules, only `herdr/src/main.ts` imports `herdr`, and only it and the `herdr/src/paint-*.ts` files import `gpui-kit` and `gpui-base`.
 
 ## Feature entries
 
-The Herdr look is a look, not a host. Each host publishes for it and applies its presses, and those parts differ by host. So it gets one `FeatureId`, `herdr-look`, with an entry for each client in `hooks/clients.ts`:
+The Herdr look is a look, not a host. Each host publishes for it and applies its presses, and those parts differ by host. So it gets one `FeatureId`, `herdr-look`, with an entry for each client in `core/domain/clients.ts`:
 
 | Client | Entry | Reason |
 | --- | --- | --- |
@@ -46,7 +46,7 @@ The Herdr look is a look, not a host. Each host publishes for it and applies its
 
 The look map is `docs/looks.md` and its parts in `docs/looks/`.
 
-- **Files.** A new part, `docs/looks/files-herdr.md`, with a row for each file in `herdr/src`. The structure check reads every `docs/looks/files-*.md`. The `hooks/herdr.ts` row in `files-shared.md` changes, and `hooks/row-motion.ts` gets a row there.
+- **Files.** A new part, `docs/looks/files-herdr.md`, with a row for each file in `herdr/src`. The structure check reads every `docs/looks/files-*.md`. The `core/remote/herdr.ts` row in `files-shared.md` changes, and `core/view/row-motion.ts` gets a row there.
 - **Differences on purpose, by host.** `herdr-look` gets a row in `differences-hosts.md` for Claude Code and Codex, and one in `differences-omp-host.md` for omp. The `herdr-sidebar` rows change in both.
 - **Differences on purpose, by look.** A new part, `docs/looks/differences-herdr.md`, compares the Herdr look with the Codex tab, the nearest look. Its rows start with:
 
@@ -59,6 +59,6 @@ The look map is `docs/looks.md` and its parts in `docs/looks/`.
   | Reduced motion | Animates until Herdr reports the setting | Herdr exposes no reduced-motion setting yet. |
 
   The structure check learns this part as the table for the `herdr` look, the way it tells the omp table apart by its file name.
-- **Owners.** `owners-rows-and-feedback.md` names `hooks/row-motion.ts` as the owner of row states. `owners-ledger-and-sessions.md` names `hooks/herdr.ts` as the owner of the envelope and the press file.
+- **Owners.** `owners-rows-and-feedback.md` names `core/view/row-motion.ts` as the owner of row states. `owners-ledger-and-sessions.md` names `core/remote/herdr.ts` as the owner of the envelope and the press file.
 - **After you change X.** `docs/looks/after-a-change.md` adds the Herdr look to every check that lists the looks.
 - **Elsewhere.** `GLOSSARY.md` adds the `herdr` look, the published session and the press file. `AGENTS.md` lists five looks and adds the Herdr bundle's build step. The README gains Herdr install steps.

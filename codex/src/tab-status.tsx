@@ -1,16 +1,16 @@
 import { Icon } from './row-actions'
-import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../hooks/status-page'
-import { STALL_GAP } from '../../hooks/status-page-parts'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, goalSubmitLabel, milestoneKeyPlan } from '../../hooks/status-keys'
-import type { MilestoneRow } from '../../hooks/status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT, suggestedGoalOffer } from '../../hooks/status-goal-page'
-import { ROW_COPY } from '../../hooks/rows'
-import type { StatusKey } from '../../hooks/status-keys'
-import type { StatusPage, StatusRow } from '../../hooks/status-page'
-import { emptyTab } from '../../hooks/empty-tab'
-import { unfoldedRows } from '../../hooks/status-folds'
-import { isSpacedAbove, LATER_TEXT, workJoints } from '../../hooks/status-path'
-import type { WorkJoint } from '../../hooks/status-path'
+import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { STALL_GAP } from '../../core/view/status-page-parts'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, goalSubmitLabel, milestoneKeyPlan } from '../../core/view/status-keys'
+import type { MilestoneRow } from '../../core/view/status-goal-page'
+import { GOAL_HEADING, NO_GOAL_TEXT, suggestedGoalOffer } from '../../core/view/status-goal-page'
+import { ROW_COPY } from '../../core/view/rows'
+import type { StatusKey } from '../../core/view/status-keys'
+import type { StatusPage, StatusRow } from '../../core/view/status-page'
+import { emptyTab } from '../../core/view/empty-tab'
+import { unfoldedRows } from '../../core/view/status-folds'
+import { isSpacedAbove, LATER_TEXT, workJoints } from '../../core/view/status-path'
+import type { WorkJoint } from '../../core/view/status-path'
 import type { TabView as View } from './core'
 import { closingFolds, tabState } from './tab-state'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
@@ -30,7 +30,7 @@ import {
   milestonePadPt,
   milestoneRowPads,
   milestoneSpacePt,
-} from '../../hooks/status-gaps'
+} from '../../core/view/status-gaps'
 
 /** The goal's text field, with its submit button and Cancel. Its draft stays until the goal arrives. */
 function GoalField({ page }: { page: StatusPage }) {

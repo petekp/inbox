@@ -1,8 +1,8 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import type { Mounted } from 'claude-code/testing'
-import type { ParentProps } from '../hooks/parent-client'
-import { STATUS_TEXT_LINES } from '../hooks/status-page'
+import type { ParentProps } from '../hooks/pane/parent-client'
+import { STATUS_TEXT_LINES } from '../core/view/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

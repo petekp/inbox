@@ -2,9 +2,9 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { isSubjectSeen, LOOK_MIN_MS } from '../../hooks/status-children'
-import { EMPTY_SESSION_STATUS } from '../../hooks/status-limits'
-import { NO_HOLDS } from '../../hooks/timing'
+import { isSubjectSeen, LOOK_MIN_MS } from '../../core/domain/status-children'
+import { EMPTY_SESSION_STATUS } from '../../core/domain/status-limits'
+import { NO_HOLDS } from '../../core/view/timing'
 import { createInbox } from '../src/host'
 import { call, deps, endWorld, makeCtx, pi, prompt, record, settle, startWorld, state, w } from './host-harness'
 

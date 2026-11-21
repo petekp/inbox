@@ -1,4 +1,4 @@
-import { NAME_WORDS } from '../hooks/status-limits'
+import { NAME_WORDS } from '../core/domain/status-limits'
 import { isOpenPiece } from './status-facts'
 import { headOffFocus, headWords, isAnswerWritten, isTitleKept, STATUS_WORDS, WORD } from './status-rule-helpers'
 import type { Rule } from './status-rules'

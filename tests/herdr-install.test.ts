@@ -1,7 +1,7 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import type { Run } from '../hooks/gh'
-import { herdrTarget } from '../hooks/herdr'
+import type { Run } from '../core/domain/gh'
+import { herdrTarget } from '../core/remote/herdr'
 import {
   answerHerdrAsk,
   answeringOf,
@@ -10,14 +10,14 @@ import {
   herdrAskInApp,
   herdrAskOf,
   isHerdrAskOpen,
-} from '../hooks/herdr-ask'
-import { answerHerdrMod, builtAtLine, keepHerdrModCurrent, NEWER_ANSWER_TEXT } from '../hooks/herdr-install'
-import type { ModFiles } from '../hooks/herdr-install'
-import { startInHerdrApp } from '../hooks/herdr-start'
-import { labelledSessions, sweepModTemporaries, sweepPublished, SWEEP_AFTER_MS } from '../hooks/herdr-sweep'
-import type { SweepFiles } from '../hooks/herdr-sweep'
+} from '../core/remote/herdr-ask'
+import { answerHerdrMod, builtAtLine, keepHerdrModCurrent, NEWER_ANSWER_TEXT } from '../core/remote/herdr-install'
+import type { ModFiles } from '../core/remote/herdr-install'
+import { startInHerdrApp } from '../core/remote/herdr-start'
+import { labelledSessions, sweepModTemporaries, sweepPublished, SWEEP_AFTER_MS } from '../core/remote/herdr-sweep'
+import type { SweepFiles } from '../core/remote/herdr-sweep'
 
-const BANNER = '// Built by herdr/build.ts with Bun 1.4.4 from herdr/src and hooks/. Do not edit.'
+const BANNER = '// Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.'
 const build = (builtAt: string | null, code = 'draw()') =>
   [BANNER, ...(builtAt ? [builtAtLine(builtAt, code.length)] : []), code].join('\n')
 const OLD = '2026-11-01T00:00:00.000Z'

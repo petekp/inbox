@@ -1,4 +1,4 @@
-import { SETTLED_MS } from '../../hooks/timing'
+import { SETTLED_MS } from '../../core/view/timing'
 import type { Block, Button } from './blocks'
 
 /** The share of a button's time left at `now`: 1 as its time starts, 0 once it has run out. */

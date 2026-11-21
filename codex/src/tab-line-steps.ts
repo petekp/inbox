@@ -1,5 +1,5 @@
-import { stepRow } from '../../hooks/row-motion'
-import type { BannerView } from '../../hooks/banners'
+import { stepRow } from '../../core/view/row-motion'
+import type { BannerView } from '../../core/view/banners'
 import { drawnRows } from './tab-state'
 import { reducedMotion } from './tab-motion'
 

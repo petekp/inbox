@@ -1,10 +1,10 @@
-// Built by scripts/build-tool-inputs.mjs from the schemas in hooks/tools.ts. Edit a schema, then run it and
+// Built by scripts/build-tool-inputs.mjs from the schemas in core/runtime/tools.ts. Edit a schema, then run it and
 // scripts/build-types.mjs.
 
 export {}
 
 declare module 'claude-code' {
-  /** The arguments of the agent's tools, as their schemas in `hooks/tools.ts` give them. */
+  /** The arguments of the agent's tools, as their schemas in `core/runtime/tools.ts` give them. */
   interface McpToolInputs {
     mcp__inbox__record: {
       kind: 'question' | 'task' | 'finding'

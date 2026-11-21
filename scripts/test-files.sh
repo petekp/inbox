@@ -2,7 +2,7 @@
 # Runs only the named mod test files with `claude plugin test`, and exits with
 # its status. `claude plugin test` runs every test file in a plugin folder and
 # refuses symlinks, so this copies what the tests import into a temporary
-# folder outside the repo: the manifest, hooks/, types/, evals/, the sources of
+# folder outside the repo: the manifest, core/, hooks/, types/, evals/, the sources of
 # codex/ and omp/ that evals/ imports, the helper files in tests/ and the named
 # tests. The folder is removed on exit.
 #
@@ -42,7 +42,7 @@ done
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 
-cp -R "$DIR/.claude-plugin" "$DIR/hooks" "$DIR/types" "$DIR/package.json" "$DIR/tsconfig.json" "$scratch/"
+cp -R "$DIR/.claude-plugin" "$DIR/core" "$DIR/hooks" "$DIR/types" "$DIR/package.json" "$DIR/tsconfig.json" "$scratch/"
 # Copies the files under $1 to the same place under $scratch, leaving out
 # test files, which would all run, and installed or generated folders.
 copy_sources() {

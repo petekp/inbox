@@ -1,5 +1,5 @@
-import { isFailure, isStatusUnderActions, pressUnderWaySince } from '../../hooks/feedback'
-import type { Feedback } from '../../hooks/feedback'
+import { isFailure, isStatusUnderActions, pressUnderWaySince } from '../../core/view/feedback'
+import type { Feedback } from '../../core/view/feedback'
 import { agedText } from './blocks'
 import type { Aged, Block, RowBlock, Tone } from './blocks'
 

@@ -1,7 +1,7 @@
-import { earliestOf } from '../../hooks/timing'
-import type { PressOut } from '../../hooks/ui-controller-types'
+import { earliestOf } from '../../core/view/timing'
+import type { PressOut } from '../../core/view/ui-controller-types'
 import type { TabView as View } from './core'
-import type { Feedback } from '../../hooks/feedback'
+import type { Feedback } from '../../core/view/feedback'
 import type { PressKind } from '../../types'
 import { localOuts, tabState } from './tab-state'
 

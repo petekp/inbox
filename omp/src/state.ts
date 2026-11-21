@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { KEPT_SESSIONS } from '../../hooks/ledger'
+import { KEPT_SESSIONS } from '../../core/domain/ledger'
 import {
   emptySession,
   isSessionFile,
@@ -9,17 +9,17 @@ import {
   sessionFile,
   staleSessionFiles,
   upgradeSession,
-} from '../../hooks/session-files'
-import { pruned } from '../../hooks/session-presses'
-import type { AnswerDoc } from '../../hooks/earlier-answers'
-import { historyStep, recordMatches } from '../../hooks/history-store'
-import type { HistoryPlace } from '../../hooks/history-store'
+} from '../../core/view/session-files'
+import { pruned } from '../../core/runtime/session-presses'
+import type { AnswerDoc } from '../../core/domain/earlier-answers'
+import { historyStep, recordMatches } from '../../core/runtime/history-store'
+import type { HistoryPlace } from '../../core/runtime/history-store'
 import type { Session } from '../../types'
-import type { SavedSession } from '../../hooks/session-files'
-import { exclusiveKeys } from '../../hooks/session-host'
-import { checkVersion, SESSION_VERSION } from '../../hooks/session-version'
-import { freshUi } from '../../hooks/ui-controller-types'
-import type { UiState } from '../../hooks/ui-controller-types'
+import type { SavedSession } from '../../core/view/session-files'
+import { exclusiveKeys } from '../../core/runtime/session-host'
+import { checkVersion, SESSION_VERSION } from '../../core/domain/session-version'
+import { freshUi } from '../../core/view/ui-controller-types'
+import type { UiState } from '../../core/view/ui-controller-types'
 import { OMP_LOOK } from './panel'
 
 export type OmpState = Session & {

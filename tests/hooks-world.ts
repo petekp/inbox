@@ -1,9 +1,9 @@
 import type { Engine, MockClock } from 'claude-code/testing'
 import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
-import { GH_TIMEOUT_MS } from '../hooks/gh'
-import { STATUS_SYSTEM } from '../hooks/status-prompt'
-import { parseStatus } from '../hooks/status'
-import { answersNextGoal } from '../hooks/status-suggest'
+import { GH_TIMEOUT_MS } from '../core/domain/gh'
+import { STATUS_SYSTEM } from '../core/domain/status-prompt'
+import { parseStatus } from '../core/domain/status'
+import { answersNextGoal } from '../core/domain/status-suggest'
 import { prNodeOf, prsAnswerOf, queriedPrs } from './gh-answers'
 import type { PrAnswer, ThreadsJson, ViewJson } from './gh-answers'
 

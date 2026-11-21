@@ -74,7 +74,7 @@ export type PrView = {
   fetchedAt?: number
 }
 
-/** Where a PR stands, as its block's status line names it. `hooks/prs.ts:readiness` reads it. */
+/** Where a PR stands, as its block's status line names it. `core/domain/prs.ts:readiness` reads it. */
 export type PrStatus = 'ready' | 'blocked' | 'waiting' | 'draft' | 'merged' | 'closed'
 
 /**

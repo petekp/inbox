@@ -1,6 +1,6 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/timing'
+import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../core/view/timing'
 import { w, arrive, world } from './hooks-world'
 import { PANE, sidebarTokens } from './hooks-helpers'
 

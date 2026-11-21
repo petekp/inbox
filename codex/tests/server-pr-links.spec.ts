@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { demoView } from '../../hooks/demo'
-import { SETTLED_MS } from '../../hooks/timing'
+import { demoView } from '../../core/view/demo'
+import { SETTLED_MS } from '../../core/view/timing'
 import { makeServer } from '../src/server'
 import { POLL_MS, SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, updateState } from '../src/state'

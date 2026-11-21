@@ -1,9 +1,9 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import type { Run } from '../hooks/gh'
-import { openTarget } from '../hooks/open-targets'
-import type { PathProbe } from '../hooks/open-targets'
+import type { Run } from '../core/domain/gh'
+import { openTarget } from '../core/domain/open-targets'
+import type { PathProbe } from '../core/domain/open-targets'
 
 const NO_FILES: PathProbe = { stat: async () => null, isExecutable: async () => false }
 

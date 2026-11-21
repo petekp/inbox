@@ -6,7 +6,7 @@ Status: built. Merged to main in #5.
 
 ## Step 4: the mod on the shared session modules
 
-Built. The mod keeps one `session` value of type `Session`, and runs its presses, Done messages, turns, updates and PR fetches through the session modules and `hooks/session-host.ts`. The mod's `hooks/mod-*.ts` modules hold its `SessionHost`, how it stores and saves each conversation's session, and its effects. `hooks/register.tsx` wires Claude Code's events to them, and `hooks/mod-pane-render.tsx` and `hooks/mod-band.tsx` draw the terminal and desktop looks.
+Built. The mod keeps one `session` value of type `Session`, and runs its presses, Done messages, turns, updates and PR fetches through the session modules and `core/runtime/session-host.ts`. The mod's `hooks/mod/mod-*.ts` modules hold its `SessionHost`, how it stores and saves each conversation's session, and its effects. `hooks/register.tsx` wires Claude Code's events to them, and `hooks/mod/mod-pane-render.tsx` and `hooks/mod/mod-band.tsx` draw the terminal and desktop looks.
 
 This step changes the most code, and runs last so that the `SessionHost` shape has been tested on two hosts first. After it, each host runs the same session code, and a new host supplies a `SessionHost`, a look and their tests.
 
@@ -37,7 +37,7 @@ The mod's host code does more than `Session` and `SessionHost` model. Each diffe
 - **Catching up.** When the ledger is `behind` or `failed`, or a reload cut off an update, the shared `runUpdates` catches up through the host's `catchUp` member. The mod forks the conversation with `$.model.fork`, or reads the transcript when there is nothing to fork. Codex and omp have no fork, so they read the conversation (the rollout and the session branch) and call `askOverConversation`.
 - **Delivery receipts.** The mod learns that a message arrived when Claude Code stores its prompt row, in `session.append`. It adds the inbox text at that point too. The shared `notePrompt` matches arrivals by the prompt's text. It is built from three parts: `matchSent` matches the arrival, `startTurn` counts the turn, and `recordPrompt` records the words and returns the notes. Codex and omp call `notePrompt`. The mod calls `recordPrompt` for the person's words and its own sends, and its `session.append` handler marks arrivals on the shared `sent` records.
 - **Conversation switches.** `/clear`, `/resume` and `/branch` switch conversations inside one process. The mod tracks which conversation a write belongs to, and drops a write that arrives after a switch. A branched conversation starts from its parent's saved state. The mod's `SessionHost.read` and `update` hold the conversation they were made for, and do nothing once it changes.
-- **An unreadable store.** When the store cannot read a conversation's saved state, the mod skips saves until a read succeeds, so it does not overwrite that state. This stays in `changeSession` in `hooks/mod-session-write.ts`.
+- **An unreadable store.** When the store cannot read a conversation's saved state, the mod skips saves until a read succeeds, so it does not overwrite that state. This stays in `changeSession` in `hooks/mod/mod-session-write.ts`.
 - **Claude Code's signals.** These stay in the mod's event handlers:
   - permission and question dialogs
   - away time and the minute tick
@@ -51,7 +51,7 @@ The mod's host code does more than `Session` and `SessionHost` model. Each diffe
   - replies a Stop hook sent back
   - the turn box
 - **Coalesced PR fetches.** The mod runs one PR fetch at a time, shows that one is running, and polls every two minutes unless the person is away. A dismissed PR leaves the tab once its row settles. These stay in the mod, around the shared `fetchPrs`.
-- **The pane's follow-ups to a press.** Undo scrolling, keeping the pressed row open, reopening a row whose send failed, and restoring a draft stay in the mod's `hooks/mod-*.ts` modules. They read the shared `press`'s outcome.
+- **The pane's follow-ups to a press.** Undo scrolling, keeping the pressed row open, reopening a row whose send failed, and restoring a draft stay in the mod's `hooks/mod/mod-*.ts` modules. They read the shared `press`'s outcome.
 
 #### Drop
 

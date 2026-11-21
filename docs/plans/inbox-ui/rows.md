@@ -25,7 +25,7 @@ It leaves out findings, PR rows, handed-off rows and the stop line. A queued sen
 2. Questions from older replies, newest reply first and each reply in its original order.
 3. Tasks not handed off, newest reply first and each reply in its original order.
 
-The Herdr sidebar line names the latest reply's first question through `hooks/herdr.ts:statusLine`. The band shows counts. The pane orders questions by reply, and its terminal handles use the numbered-answer mapping below.
+The Herdr sidebar line names the latest reply's first question through `core/remote/herdr.ts:statusLine`. The band shows counts. The pane orders questions by reply, and its terminal handles use the numbered-answer mapping below.
 
 ### 2.2 Row types
 
@@ -56,15 +56,15 @@ The Closed fold's outcomes are the answer itself ("Yes, rename"), "Done", "You r
 
 Only the Status tab shows the head and subjects. The band shows only counts, and the other tabs only rows. The Codex tab has no band, and its tab labels carry the counts, so it draws no count or head either.
 
-**Question numbers.** Typing "1 yes" in the prompt answers a numbered question through `hooks/inbox-text.ts:answerNote`. That function maps a typed number to the agent's latest batch of questions: by the agent's own label when it gave one, else by position in the batch. It does this only when that batch came from the reply just before.
+**Question numbers.** Typing "1 yes" in the prompt answers a numbered question through `core/domain/inbox-text.ts:answerNote`. That function maps a typed number to the agent's latest batch of questions: by the agent's own label when it gave one, else by position in the batch. It does this only when that batch came from the reply just before.
 
 The rule, in the terminal: a question's handle shows a number only when a typed number reaches it now, and shows the number `answerNote` would resolve. Every other open question shows a task's bullet, `•`. The Claude app pane and the Codex tab draw no number or bullet: a question's own buttons answer it there, and the agent's reply already shows the numbers a typed answer uses. Once the person sends any message, the batch is no longer "the reply just before", and every handle becomes `•` until the agent asks again. The Codex tab follows the same rule, since it uses `answerNote` through `promptNotes`.
 
 **Which row is open.**
 
-- When the pane or tab opens, its first row that still waits on the person is open. A handed-off row stays closed until clicked, and a tab with no waiting row has none open. `firstWaiting` in `hooks/view.ts` picks the row for every look. Once a row is open that way, rows that arrive above it arrive closed and it stays open, so the row the person is reading does not close under them. `keptOpen` in `hooks/view.ts` picks it. When the pane or tab opens on a tab that shows only its empty text, it moves to the first other tab that lists rows, as it does when rows arrive there. `followTo` in `hooks/arrivals.ts` decides for both.
+- When the pane or tab opens, its first row that still waits on the person is open. A handed-off row stays closed until clicked, and a tab with no waiting row has none open. `firstWaiting` in `core/view/view.ts` picks the row for every look. Once a row is open that way, rows that arrive above it arrive closed and it stays open, so the row the person is reading does not close under them. `keptOpen` in `core/view/view.ts` picks it. When the pane or tab opens on a tab that shows only its empty text, it moves to the first other tab that lists rows, as it does when rows arrive there. `followTo` in `core/view/arrivals.ts` decides for both.
 - A click on a closed row's title opens it. A click on an open row's title does nothing.
 - After a press, the pressed row shows its result in place.
-- When a press answers, closes or hands off the open row, the next row that still waits on the person opens, its buttons guarded. With none below it, the nearest one above opens. Rows already handed off are skipped. `rowAfterClose` in `hooks/view.ts` picks the row for every look.
+- When a press answers, closes or hands off the open row, the next row that still waits on the person opens, its buttons guarded. With none below it, the nearest one above opens. Rows already handed off are skipped. `rowAfterClose` in `core/view/view.ts` picks the row for every look.
 
 **The press guard.** An action button ignores presses for 0.4 s after its row opens (`PRESS_GUARD_MS`). During that time the row's buttons draw dim (`dimColor` on a mod `Button`, `disabled` in HTML), so an ignored press shows why. A double-click on a closed row's title opens the row with its first click, and the second click lands on a button that just drew under the pointer.

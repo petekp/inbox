@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
 
-import { closeItem } from '../../hooks/ledger-close'
-import { SETTLED_MS, NO_HOLDS } from '../../hooks/timing'
-import type { RowView } from '../../hooks/rows'
-import { sessionView } from '../../hooks/session-view'
+import { closeItem } from '../../core/domain/ledger-close'
+import { SETTLED_MS, NO_HOLDS } from '../../core/view/timing'
+import type { RowView } from '../../core/view/rows'
+import { sessionView } from '../../core/view/session-view'
 import { demoSource, demoState } from '../src/demo'
-import { holdsOf } from '../../hooks/ui-controller-reply'
+import { holdsOf } from '../../core/view/ui-controller-reply'
 import { INITIAL_UI } from '../src/panel'
 import { applyEvents } from '../src/panel-keys'
 import {

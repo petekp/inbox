@@ -1,14 +1,17 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { actionLines, answersFitLine, drawnLists, rowKeyPlan, tabUndos } from '../hooks/action-plan'
-import { demoSession } from '../hooks/demo'
-import { sessionView } from '../hooks/session-view'
-import { deliveryLabel, settledLabel } from '../hooks/rows'
-import type { RowView } from '../hooks/rows'
-import { cellWidth } from '../hooks/text'
-import { FOLD_QUIET_MS, SETTLED_MS, isSettledInPlace, nextFoldAt, withListInput } from '../hooks/timing'
-import type { ListInput, Placing } from '../hooks/timing'
+import { actionLines, answersFitLine, drawnLists, rowKeyPlan, steppedIndex, tabUndos } from '../core/view/action-plan'
+import { demoSession } from '../core/view/demo'
+import { emptySession } from '../core/view/session-files'
+import { sessionView } from '../core/view/session-view'
+import { footerError, inboxView, perTurnStatus } from '../core/view/view'
+import { deliveryLabel, settledLabel } from '../core/view/rows'
+import type { RowView } from '../core/view/rows'
+import { cellWidth } from '../core/domain/text'
+import { FOLD_QUIET_MS, SETTLED_MS, isSettledInPlace, nextFoldAt, withListInput } from '../core/view/timing'
+import type { ListInput, Placing } from '../core/view/timing'
+import type { Item } from '../types'
 
 test('a row’s follow-ups stay on its buttons’ last line only when all of them fit there, and otherwise start the next line together', async () => {
   const spacing = { gap: 1, separator: 0 }
@@ -216,4 +219,59 @@ test('a question offers its answers side by side only when two or more show and 
   expect(wide).toEqual([8, 8])
   expect(answersFitLine(wide, 2, 18)).toBe(true)
   expect(answersFitLine(wide, 2, 17)).toBe(false)
+})
+
+const ask = (id: string, turn: number, kind: Item['kind'] = 'question'): Item => ({
+  id,
+  kind,
+  label: null,
+  ask: `Ask ${id}`,
+  options: [],
+  rec: null,
+  helps: [],
+  turn,
+  at: turn,
+  from: 'record',
+})
+
+test('the inbox view lists questions and tasks newest reply first, and counts each open one as waiting', () => {
+  const s = emptySession()
+  const v = inboxView({
+    ledger: { ...s.ledger, items: [ask('q1', 1), ask('t1', 2, 'task'), ask('q2', 3)] },
+    lastActions: {},
+    notes: {},
+    turns: s.presence,
+    extraSteps: {},
+    settleWindowMs: SETTLED_MS,
+    status: perTurnStatus('none'),
+    now: 10,
+    replies: {},
+    discarded: {},
+    shownSince: null,
+    lastTypedMessageAt: null,
+    listInput: null,
+  })
+  expect(v.needsYou.questions.map(r => r.id)).toEqual(['q2', 'q1'])
+  expect(v.needsYou.tasks.map(r => r.id)).toEqual(['t1'])
+  expect(v.needsYou.count).toBe(3)
+  expect(v.findings.count).toBe(0)
+})
+
+test('the footer shows a failed update on every tab but PRs, and on Status puts the page’s error first, then the update’s, then a stale note', () => {
+  const failed = perTurnStatus('waiting')
+  expect(typeof failed.error).toBe('string')
+  expect(perTurnStatus('retrying')).toEqual({ isRetrying: true, error: null })
+  expect(footerError('prs', failed, null)).toBe(null)
+  expect(footerError('needsYou', failed, { error: 'page', stale: 'old' })).toBe(failed.error)
+  expect(footerError('overview', failed, { error: 'page', stale: 'old' })).toBe('page')
+  expect(footerError('overview', failed, { error: null, stale: 'old' })).toBe(failed.error)
+  expect(footerError('overview', perTurnStatus('none'), { error: null, stale: 'old' })).toBe('old')
+})
+
+test('stepping through a list wraps past either end, and with nothing selected starts from the end it steps toward', () => {
+  expect(steppedIndex(2, 1, 3)).toBe(0)
+  expect(steppedIndex(0, -1, 3)).toBe(2)
+  expect(steppedIndex(-1, 1, 3)).toBe(0)
+  expect(steppedIndex(-1, -1, 3)).toBe(2)
+  expect(steppedIndex(-1, 1, 0)).toBe(-1)
 })

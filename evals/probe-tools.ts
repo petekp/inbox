@@ -1,8 +1,8 @@
-import { promptNotes, TOLD_NOTHING } from '../hooks/inbox-text'
-import { guidedCloseDescription } from '../hooks/model-text'
-import type { Host } from '../hooks/model-text'
-import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../hooks/tool-schemas'
-import { agentTools } from '../hooks/tools'
+import { promptNotes, TOLD_NOTHING } from '../core/domain/inbox-text'
+import { guidedCloseDescription } from '../core/domain/model-text'
+import type { Host } from '../core/domain/model-text'
+import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../core/domain/tool-schemas'
+import { agentTools } from '../core/runtime/tools'
 import type { Ledger, ToolFields } from '../types'
 
 /** The inbox tools a case gives the agent: this build's, or with `0.3.0`, those a session that 0.3.0 started keeps. */

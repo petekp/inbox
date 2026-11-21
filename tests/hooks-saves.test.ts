@@ -3,7 +3,7 @@ import { test } from './test-with-timeout'
 import type { Session } from '../types'
 import { w, world } from './hooks-world'
 import { SAVED_SESSION } from './hooks-helpers'
-import { changeSaved, readSettled, type SaveEngine } from '../hooks/mod-saves'
+import { changeSaved, readSettled, type SaveEngine } from '../hooks/mod/mod-saves'
 
 test('tool calls during a turn leave the saved session alone, and the turn’s update saves it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })

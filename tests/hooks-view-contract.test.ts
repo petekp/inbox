@@ -1,17 +1,17 @@
 import { expect, mock } from 'claude-code/testing'
 import type { Session } from '../types'
 import { test } from './test-with-timeout'
-import { SESSION_VERSION } from '../hooks/session-version'
-import { sessionView } from '../hooks/session-view'
-import Fold from '../hooks/fold-client'
-import Links from '../hooks/links-client'
-import Parent from '../hooks/parent-client'
-import Press from '../hooks/press-client'
-import RowClient from '../hooks/row-client'
-import Tabs from '../hooks/tabs-client'
-import type { TabsProps } from '../hooks/tabs-client'
-import Title from '../hooks/title-client'
-import { NO_HOLDS, PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
+import { SESSION_VERSION } from '../core/domain/session-version'
+import { sessionView } from '../core/view/session-view'
+import Fold from '../hooks/pane/fold-client'
+import Links from '../hooks/pane/links-client'
+import Parent from '../hooks/pane/parent-client'
+import Press from '../hooks/pane/press-client'
+import RowClient from '../hooks/pane/row-client'
+import Tabs from '../hooks/pane/tabs-client'
+import type { TabsProps } from '../hooks/pane/tabs-client'
+import Title from '../hooks/pane/title-client'
+import { NO_HOLDS, PRESS_GUARD_MS, SETTLED_MS } from '../core/view/timing'
 import { contractSessions } from './view-contract-sessions'
 import { drawnGaps, missingTexts, rowTexts, statusFoldIds, statusTexts } from './view-contract'
 import type { Expected } from './view-contract'
@@ -26,13 +26,13 @@ const WIDE_COLUMNS = 120
 const SHOWN_BEFORE_MS = 10_000
 
 const MODULES: Record<string, unknown> = {
-  'hooks/fold-client.tsx': Fold,
-  'hooks/links-client.tsx': Links,
-  'hooks/parent-client.tsx': Parent,
-  'hooks/press-client.tsx': Press,
-  'hooks/row-client.tsx': RowClient,
-  'hooks/tabs-client.tsx': Tabs,
-  'hooks/title-client.tsx': Title,
+  'hooks/pane/fold-client.tsx': Fold,
+  'hooks/pane/links-client.tsx': Links,
+  'hooks/pane/parent-client.tsx': Parent,
+  'hooks/pane/press-client.tsx': Press,
+  'hooks/pane/row-client.tsx': RowClient,
+  'hooks/pane/tabs-client.tsx': Tabs,
+  'hooks/pane/title-client.tsx': Title,
 }
 
 const element =

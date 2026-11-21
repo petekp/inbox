@@ -1,9 +1,9 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../hooks/gh'
-import type { Run } from '../hooks/gh'
-import { herdrTarget } from '../hooks/herdr'
-import { herdrPanelOpener } from '../hooks/herdr-open'
+import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../core/domain/gh'
+import type { Run } from '../core/domain/gh'
+import { herdrTarget } from '../core/remote/herdr'
+import { herdrPanelOpener } from '../core/remote/herdr-open'
 
 const TARGET = herdrTarget({ HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' }) as Extract<
   ReturnType<typeof herdrTarget>,

@@ -5,5 +5,6 @@
     "noUnusedParameters": true,
     "types": ["claude-code", "claude-code-tools"]
   },
+  "include": ["core", "hooks", "types", "tests"],
   "exclude": ["types/parts"]
 }

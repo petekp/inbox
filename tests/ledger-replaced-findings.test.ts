@@ -1,11 +1,11 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { EMPTY, upgradeLedger } from '../hooks/ledger'
-import { closeItem, closedState, reopenFinding } from '../hooks/ledger-close'
-import { addAgentItem, addFinding, applyUpdate } from '../hooks/ledger-update'
-import { parseReply } from '../hooks/reply-parse'
-import { applyPress } from '../hooks/press-reducer'
+import { EMPTY, upgradeLedger } from '../core/domain/ledger'
+import { closeItem, closedState, reopenFinding } from '../core/domain/ledger-close'
+import { addAgentItem, addFinding, applyUpdate } from '../core/domain/ledger-update'
+import { parseReply } from '../core/domain/reply-parse'
+import { applyPress } from '../core/view/press-reducer'
 
 describe('a finding replaced by a question', () => {
   const finding = (title: string, detail = 'd') => ({

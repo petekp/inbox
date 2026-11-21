@@ -1,4 +1,4 @@
-import { HEIGHT_SPRING, springStep } from '../../hooks/springs'
+import { HEIGHT_SPRING, springStep } from '../../core/view/springs'
 import type { Block } from '../src/blocks'
 import type { Paint } from '../src/paint-theme'
 import { columnOf, fieldOf } from './gpui-stand-in'
@@ -10,7 +10,7 @@ const { moveRows, NO_TRACKS } = await import('../src/motion')
 const { Heights, MOVED_TO, panelId } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
-const { CUT_OPACITY, TURNED_BACK_CUT_OPACITY } = await import('../../hooks/row-motion')
+const { CUT_OPACITY, TURNED_BACK_CUT_OPACITY } = await import('../../core/view/row-motion')
 const { easeOut } = await import('../src/panel-steps')
 
 const FRAME_MS = 16

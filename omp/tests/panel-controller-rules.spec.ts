@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 
-import { FOLD_QUIET_MS, PRESS_GUARD_MS } from '../../hooks/timing'
-import type { UiEvent } from '../../hooks/ui-controller-types'
+import { FOLD_QUIET_MS, PRESS_GUARD_MS } from '../../core/view/timing'
+import type { UiEvent } from '../../core/view/ui-controller-types'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelScreen, PanelUi } from '../src/panel'
 import { applyEvents } from '../src/panel-keys'

@@ -19,13 +19,13 @@ Five things in this table break the proximity rule or drift between looks:
 
 - Herdr puts 4 pt between a title and its detail. Every other look puts none.
 - Herdr's "Other work" heading sits 32 pt under the item above it and 12 pt over its first item. Items sit 24 pt apart, so the heading binds to what it heads, but the steps are larger than the content needs.
-- The desktop Status row's padding is `STATUS_PAD_Y` = 4.75 / 19 (`hooks/pane-sizes.ts:70`), passed to a Box that counts padding in half lines (`desktopSpaceLines`, `hooks/pane-status-tops.ts:71`). So it draws about 2.4 pt per side, not the 4.75 pt `hooks/layout.ts:4` states. Not checked in real pixels.
+- The desktop Status row's padding is `STATUS_PAD_Y` = 4.75 / 19 (`hooks/pane/pane-sizes.ts:70`), passed to a Box that counts padding in half lines (`desktopSpaceLines`, `hooks/pane/pane-status-tops.ts:71`). So it draws about 2.4 pt per side, not the 4.75 pt `core/view/layout.ts:4` states. Not checked in real pixels.
 - Codex places marks and text at 18 and 44 px with a 14 px right edge. Herdr uses 16, 40 and 16.
 - The terminal leaves 2 blank rows between Asks sections. omp leaves none between groups.
 
 ## Herdr panel
 
-`herdr/src/paint-theme.ts` already defines a 4-pt scale, `SPACE = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 }`, and names roles from it. `gapBetween` in `herdr/src/paint-space.ts:45` picks the space between two blocks. A row's padding (`ROW_PAD_PT`, `hooks/layout.ts:2`) counts toward that space.
+`herdr/src/paint-theme.ts` already defines a 4-pt scale, `SPACE = { xs: 4, s: 8, m: 12, l: 16, xl: 24, xxl: 32 }`, and names roles from it. `gapBetween` in `herdr/src/paint-space.ts:45` picks the space between two blocks. A row's padding (`ROW_PAD_PT`, `core/view/layout.ts:2`) counts toward that space.
 
 | Value | Where | What it separates |
 |---|---|---|
@@ -48,7 +48,7 @@ The tab bar uses `EDGE` above, `CONTROL_GAP` below and between lines, and `LINE_
 
 ## Codex tab
 
-The tab reads `--row-pad`, `--status-row-pad`, `--section-gap`, `--banner-pad-y` and `--banner-gap` from `hooks/layout.ts` (`codex/src/tab-motion.ts:316–320`). Everything else is a literal in `codex/src/tab-css/`.
+The tab reads `--row-pad`, `--status-row-pad`, `--section-gap`, `--banner-pad-y` and `--banner-gap` from `core/view/layout.ts` (`codex/src/tab-motion.ts:316–320`). Everything else is a literal in `codex/src/tab-css/`.
 
 | Value | Where | What it separates |
 |---|---|---|
@@ -79,7 +79,7 @@ The tab reads `--row-pad`, `--status-row-pad`, `--section-gap`, `--banner-pad-y`
 
 ## Terminal and desktop pane
 
-The two looks share `hooks/register.tsx` and the `hooks/pane-*.tsx` files. Desktop counts a Box's height and width in lines of 19 pt (`DESKTOP_LINE_PT`) and cells of 8.8 pt (`DESKTOP_CELL_PT`). It counts a Box's padding, margin and gap in half lines, so a written 1 draws 9.5 pt. The terminal counts whole rows and columns. `blankLine` (register.tsx:2961) is 1 row docked and 0 inline. On desktop it draws 9.5 pt.
+The two looks share `hooks/register.tsx` and the `hooks/pane/pane-*.tsx` files. Desktop counts a Box's height and width in lines of 19 pt (`DESKTOP_LINE_PT`) and cells of 8.8 pt (`DESKTOP_CELL_PT`). It counts a Box's padding, margin and gap in half lines, so a written 1 draws 9.5 pt. The terminal counts whole rows and columns. `blankLine` (register.tsx:2961) is 1 row docked and 0 inline. On desktop it draws 9.5 pt.
 
 | Value | Where | Desktop | Terminal | What it separates |
 |---|---|---|---|---|
@@ -105,7 +105,7 @@ The two looks share `hooks/register.tsx` and the `hooks/pane-*.tsx` files. Deskt
 
 ## omp panel
 
-omp draws plain lines in `omp/src/panel*.ts`. It has no spacing constants of its own: blank lines are literal `''` entries, and columns are literal numbers. It reads `isSpacedAbove` (`hooks/status-path.ts:118`) to decide whether a milestone gets a blank line.
+omp draws plain lines in `omp/src/panel*.ts`. It has no spacing constants of its own: blank lines are literal `''` entries, and columns are literal numbers. It reads `isSpacedAbove` (`core/view/status-path.ts:118`) to decide whether a milestone gets a blank line.
 
 | Value | Where | What it separates |
 |---|---|---|

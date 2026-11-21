@@ -10,11 +10,11 @@ Status: built.
 
 Beats 7 to 10 need a real session, because the point is that an answer reaches the agent and the agent acts. Demo presses send nothing. Script the session in a small sample project in the inbox-ui VM, so the recording never writes to your real inbox. Record it as one continuous take, as Vignette's trailer was recorded. The cut keeps spans of the take at real speed and skips Claude's working time, so the model's varying reply times don't need several takes.
 
-Beat 11 needs the same rows in all three apps, and presses that change nothing outside the recording. The demo gives both. Claude Code shows it without its notices with `/inbox demo recording`. Codex does in a build made with `INBOX_DEMO_RECORDING=1`, from its Show demo button. All three read the same sample data from `hooks/demo.ts`.
+Beat 11 needs the same rows in all three apps, and presses that change nothing outside the recording. The demo gives both. Claude Code shows it without its notices with `/inbox demo recording`. Codex does in a build made with `INBOX_DEMO_RECORDING=1`, from its Show demo button. All three read the same sample data from `core/view/demo.ts`.
 
 The demo's rows describe work on Visor, an app for AR glasses: adding pinch-to-dismiss to glances, the small cards the glasses show. Beat 11 answers "Dismiss a glance with a pinch, or a flick of the wrist?", opens the finding "Pinned glances drift in a dim room", and marks "Put on the glasses and pair them with this Mac" done.
 
-The AR rows are a change to `hooks/demo.ts` that is not on main. It is in the worktree `~/Code/worktrees/inbox/video-ar`, and the takes were recorded with it. Pete decides whether it lands on main. Until it does, the demo users see describes the checkout app.
+The AR rows are a change to `core/view/demo.ts` that is not on main. It is in the worktree `~/Code/worktrees/inbox/video-ar`, and the takes were recorded with it. Pete decides whether it lands on main. Until it does, the demo users see describes the checkout app.
 
 Reason: the earlier demo rows described the inbox itself, such as "Hotkeys vanish on selected rows in ANSI", and beat 11 is where viewers read rows most closely.
 
@@ -44,7 +44,7 @@ Checked on the demo:
 - A click back on Needs you reopens the row that was open when you left it, in all three apps. In beat 11, that is the question that opened after the answer.
 - A click on a row opens it, in all three apps.
 - A click in the terminal's pane presses what is under it.
-- A row ignores presses for its first 400 ms open, `PRESS_GUARD_MS` in `hooks/view.ts`. So beat 11 clicks Done 0.9 s after the task opens. Done also comes before the answered row leaves, so the rows don't move under the click, and the finished task leaves by 14.1 s, before the end card starts.
+- A row ignores presses for its first 400 ms open, `PRESS_GUARD_MS` in `core/view/view.ts`. So beat 11 clicks Done 0.9 s after the task opens. Done also comes before the answered row leaves, so the rows don't move under the click, and the finished task leaves by 14.1 s, before the end card starts.
 - Terminal.app passes the pointer's hover to Claude Code, so a hovered option lights in the terminal's take.
 
 ### Synchronizing the three columns
@@ -55,7 +55,7 @@ Record each app separately and line the three up in Remotion. `drive.py launch s
 
 The animatic is the `launch` video in `videos/`, the Remotion project that holds the inbox's videos, with its own `package.json`. [videos/README.md](../../../videos/README.md) describes the project and the parts every video shares. Remotion renders React components to video frame by frame. Pete bought a Company License for publishing the video.
 
-- **The timeline** is `videos/src/launch/timeline.ts`. It holds each beat's caption, start and length, and each state's time, click and still. It imports `SETTLED_MS` from `hooks/view.ts` and `ROW_STATE_MS` from `hooks/row-motion.ts`, so a settled row holds for its real time.
+- **The timeline** is `videos/src/launch/timeline.ts`. It holds each beat's caption, start and length, and each state's time, click and still. It imports `SETTLED_MS` from `core/view/view.ts` and `ROW_STATE_MS` from `core/view/row-motion.ts`, so a settled row holds for its real time.
 - **The drawn thread** is `videos/src/launch/thread.ts`, for its lines and when each appears, and `videos/src/launch/ThreadView.tsx`, which draws it. Its text is written for the video. Its questions, idea and unmentioned insight are the ones the real session brings to the inbox in beats 7 to 9.
 - **The pointer** is `videos/src/shared/Pointer.tsx`.
 - **Two cuts.** `launch` is the video. `launch-captions-off` is the same with no captions, to check that the pictures carry the story.

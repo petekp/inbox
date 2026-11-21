@@ -1,19 +1,19 @@
 import type { FoldKind, PressKind } from '../../types'
-import type { BannerView } from '../../hooks/banners'
-import type { Feedback } from '../../hooks/feedback'
-import type { Effect } from '../../hooks/press-reducer'
-import type { PrPress } from '../../hooks/pr-press'
-import type { RowPress } from '../../hooks/presses'
-import { DOT, shortAgo } from '../../hooks/rows'
-import type { ActionEmphasis } from '../../hooks/rows'
-import type { StatusStall } from '../../hooks/status-page'
-import type { PathLine } from '../../hooks/status-path'
-import type { EmptyTab, EmptyText } from '../../hooks/empty-tab'
-import type { ShownTab } from '../../hooks/tabs'
-import type { RowPart } from '../../hooks/row-parts'
+import type { BannerView } from '../../core/view/banners'
+import type { Feedback } from '../../core/view/feedback'
+import type { Effect } from '../../core/view/press-reducer'
+import type { PrPress } from '../../core/view/pr-press'
+import type { RowPress } from '../../core/domain/presses'
+import { DOT, shortAgo } from '../../core/view/rows'
+import type { ActionEmphasis } from '../../core/view/rows'
+import type { StatusStall } from '../../core/view/status-page'
+import type { PathLine } from '../../core/view/status-path'
+import type { EmptyTab, EmptyText } from '../../core/view/empty-tab'
+import type { ShownTab } from '../../core/view/tabs'
+import type { RowPart } from '../../core/view/row-parts'
 
 /**
- * A color the paint maps onto Herdr's theme. The first ten are the shared tones of `hooks/tones.ts`, so a tone means
+ * A color the paint maps onto Herdr's theme. The first ten are the shared tones of `core/view/tones.ts`, so a tone means
  * the same thing in every look, and done means what it does in Herdr's sidebar.
  */
 export type Tone =

@@ -34,7 +34,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 - "One short wall-clock bound (1.5 s by default) covers every hook, its `$` waits and core". [T: `SessionEndInput`] The settings-hook docs agree and name the override `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`. The budget "applies when you exit, run `/clear`, or switch sessions with interactive `/resume`". [H#sessionend]
 - On `/clear` "the conversation ends, the process goes on under a new session id, and no `session.start` fires for it." [T: `SessionEndInput.reason`]
 - `session.detach` with reason `end` "runs inside `session.end`'s one short bound". [T: `session.detach`]
-- Inference: the inbox's `session.end` work (store writes and `publishStatus`, a `$.process.run` with a 5,000 ms timeout at `hooks/mod-publish.ts:publishStatus`) can be cut off. The saved ledger must not depend on `session.end`.
+- Inference: the inbox's `session.end` work (store writes and `publishStatus`, a `$.process.run` with a 5,000 ms timeout at `hooks/mod/mod-publish.ts:publishStatus`) can be cut off. The saved ledger must not depend on `session.end`.
 - After the turn, `-p` waits for background work. It stops idle work after 10 minutes by default (`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`), but not while a main-conversation background command still runs. [HL#background-tasks-at-exit]
 
 ## Other `-p` behavior

@@ -1,10 +1,10 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { withCollapse } from '../hooks/collapse'
-import { FOLD_QUIET_MS, PRESS_GUARD_MS } from '../hooks/timing'
-import { collapsedOf, isGuardedPress, openRowOf, selectedOf } from '../hooks/ui-controller-selection'
-import { COLLAPSE_WAIT_MS } from '../hooks/ui-controller-types'
+import { withCollapse } from '../core/view/collapse'
+import { FOLD_QUIET_MS, PRESS_GUARD_MS } from '../core/view/timing'
+import { collapsedOf, isGuardedPress, openRowOf, selectedOf } from '../core/view/ui-controller-selection'
+import { COLLAPSE_WAIT_MS } from '../core/view/ui-controller-types'
 import {
   closedByAgent,
   finding,

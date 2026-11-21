@@ -1,7 +1,7 @@
 // Notes the dialogs a Codex turn opened, and words an inbox answer so that it answers the dialog its question copies.
 
-import { noteDialog } from '../../hooks/dialogs'
-import { messages } from '../../hooks/press-messages'
+import { noteDialog } from '../../core/domain/dialogs'
+import { messages } from '../../core/domain/press-messages'
 import type { DialogLink, Item, Session } from '../../types'
 import type { Dialog } from './rollout-turns'
 

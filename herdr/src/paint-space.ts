@@ -1,10 +1,10 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
-import { ROW_PAD_PT } from '../../hooks/layout'
+import { ROW_PAD_PT } from '../../core/view/layout'
 import { isOpenRow } from './blocks'
 import type { Block, PathSide, RowBlock, TreeStroke } from './blocks'
-import type { PathLine } from '../../hooks/status-path'
+import type { PathLine } from '../../core/view/status-path'
 import type { RowMotion } from './motion'
 import {
   CHILD_GAP,
@@ -25,8 +25,8 @@ import {
 import type { Paint, Theme } from './paint-theme'
 import { panelId, titleId } from './heights'
 import { shutTo } from './block-glide'
-import { SLIDE_PX, enterDelayMs } from '../../hooks/row-motion'
-import { HEIGHT_SPRING } from '../../hooks/springs'
+import { SLIDE_PX, enterDelayMs } from '../../core/view/row-motion'
+import { HEIGHT_SPRING } from '../../core/view/springs'
 
 /** A group's Closed fold, which ends its list. */
 const isClosedFold = (b: Block): boolean => b.kind === 'fold' && 'closedFold' in b.change

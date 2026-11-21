@@ -10,7 +10,7 @@ Every release relies on the two eval suites in `./scripts/eval.sh` (AGENTS.md, "
 | --- | --- |
 | The model suite's Claude calls load the person's own `CLAUDE.md` | `claude -p` without `--setting-sources ''` read the runner's private rules: a probe asked for its instructions and got their first line. Results depend on whose machine ran them. |
 | The Codex calls load the person's `~/.codex/AGENTS.md` | The agent suite links it into each run's `CODEX_HOME`. The model suite's call, the product's own `codexAsk`, reads it too, despite `--ignore-user-config` and `project_doc_max_bytes=0`. So does every user's inbox model in Codex. |
-| The model suite runs Sonnet at the CLI's default effort | The product runs it at `effort: 'low'` (`hooks/mod-host.ts:askInboxModel`). The eval is kinder than the product. |
+| The model suite runs Sonnet at the CLI's default effort | The product runs it at `effort: 'low'` (`hooks/mod/mod-host.ts:askInboxModel`). The eval is kinder than the product. |
 | The model suite grades with `applyUpdate` | The product applies `applyExchangeUpdate`, which keeps an item the person asked to explain open. The eval is stricter than the product there. |
 | `--agent omp` in the model suite runs Claude and labels it omp | `run.ts` casts any value to an agent. An unknown `--case` name is dropped, and a selection with no cases passes. |
 | A run records no commit, date or model id, and writes results only with `--out` | No log can say what it tested. |
@@ -49,7 +49,7 @@ The agent suite gets `--no-guidance`. One run of Claude on all 15 cases, at 5 ru
 
 Result, on 0195b98 with a clean tree (`evals/results/agent-no-guidance-2026-10-21T06-35-46.075Z.json`): 14 of the 15 cases pass without the guidance. Only `no-finding-user-only` fails, 2 of 5: Claude listed the options without asking a question. `record-question` passed 4 of 5 and missed the same way once. Every other case passed 5 of 5. With the guidance, `no-finding-user-only` passed 5 of 5 in the last two full agent runs before this one.
 
-So on Claude, the agent suite shows it needs the guidance for one rule: that the agent asks in its reply as a direct question. The tool descriptions in `hooks/tools.ts` and the inbox text are enough for the other 14 cases. This is a control of 5 runs on one agent, with the whole guidance removed. It does not show how Codex or omp behave without the guidance, or what removing one rule would do. It does show that these cases cannot catch the loss of the whole guidance on Claude, so they cannot be counted on to catch the loss of one rule. Cases that fail without the guidance are follow-up work: see "Not in these steps".
+So on Claude, the agent suite shows it needs the guidance for one rule: that the agent asks in its reply as a direct question. The tool descriptions in `core/runtime/tools.ts` and the inbox text are enough for the other 14 cases. This is a control of 5 runs on one agent, with the whole guidance removed. It does not show how Codex or omp behave without the guidance, or what removing one rule would do. It does show that these cases cannot catch the loss of the whole guidance on Claude, so they cannot be counted on to catch the loss of one rule. Cases that fail without the guidance are follow-up work: see "Not in these steps".
 
 ### 3. Mutation tests
 

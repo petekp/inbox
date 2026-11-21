@@ -20,7 +20,7 @@ A label is a `key=value` pair that herdr-core keeps on a terminal. `hc label <te
 | `inbox.stop` | The stop, as "! Signed out: /login" | A stop is set. A stop also removes the three counts, as the token report does today. |
 | `inbox.panel` | The pane id of the Herdr look a host opened beside this terminal | A host's open splits a panel. Removed when `pane.focus` answers `no such pane`. It outlives the session, since Herdr keeps a mod pane with its tab, so every host in the terminal finds the panel. |
 
-The values come from `hooks/herdr.ts:herdrTokens`, the function that builds today's pane tokens, so the TUI and the app say the same thing. The spike set `inbox.session`, `inbox.needs-you` and `inbox.findings` from the Claude Code mod with one `hc label` call per change. Herdr showed them on the terminal at once: `inbox.needs-you=8` and `inbox.findings=4` for the demo rows.
+The values come from `core/remote/herdr.ts:herdrTokens`, the function that builds today's pane tokens, so the TUI and the app say the same thing. The spike set `inbox.session`, `inbox.needs-you` and `inbox.findings` from the Claude Code mod with one `hc label` call per change. Herdr showed them on the terminal at once: `inbox.needs-you=8` and `inbox.findings=4` for the demo rows.
 
 ### When a host reports
 
@@ -30,9 +30,9 @@ The values come from `hooks/herdr.ts:herdrTokens`, the function that builds toda
 
 ## Replacing the `HERDR_PANE_ID` reporting
 
-Today `hooks/herdr.ts` reports to Herdr's terminal multiplexer with `herdr pane report-metadata`, only when `HERDR_PANE_ID` is set. The app sets no `HERDR_PANE_ID`. Its terminals get `HC_TERMINAL_ID`, `HC_TERMINAL_SOCKET` and `HC_SCOPE`, and the probe found that a Claude Code hook inherits them.
+Today `core/remote/herdr.ts` reports to Herdr's terminal multiplexer with `herdr pane report-metadata`, only when `HERDR_PANE_ID` is set. The app sets no `HERDR_PANE_ID`. Its terminals get `HC_TERMINAL_ID`, `HC_TERMINAL_SOCKET` and `HC_SCOPE`, and the probe found that a Claude Code hook inherits them.
 
-`hooks/herdr.ts` gains one function that reads the environment and returns where to report:
+`core/remote/herdr.ts` gains one function that reads the environment and returns where to report:
 
 ```ts
 type HerdrTarget =
@@ -46,11 +46,11 @@ type HerdrTarget =
 - `HC_TERMINAL_ID` set: `terminal`, reported with `hc label`, and the session file is published.
 - Neither: `null`, and nothing is reported.
 
-The three callers switch from reading `HERDR_PANE_ID` to this function: `hooks/mod-publish.ts:publishStatus`, `codex/src/host.ts:herdrOnWrite` and `omp/src/host-sessions.ts:reportCounts`. The mod and omp keep a reporter queue, so one report runs at a time and the last one reads the newest state. Each report's turn publishes the file before it sets the labels. `inbox.session` names the session only when that publish succeeded, so it never names a file that was not written. A Codex start drops the saved `herdrReport`, so each start labels the terminal even when the counts match the last report, since another session may have labelled the terminal in between.
+The three callers switch from reading `HERDR_PANE_ID` to this function: `hooks/mod/mod-publish.ts:publishStatus`, `codex/src/host.ts:herdrOnWrite` and `omp/src/host-sessions.ts:reportCounts`. The mod and omp keep a reporter queue, so one report runs at a time and the last one reads the newest state. Each report's turn publishes the file before it sets the labels. `inbox.session` names the session only when that publish succeeded, so it never names a file that was not written. A Codex start drops the saved `herdrReport`, so each start labels the terminal even when the counts match the last report, since another session may have labelled the terminal in between.
 
 `hc` is found on `PATH`, then at `~/.local/bin/hc`, where Herdr's installer puts it. The reporter tries each in turn and keeps the first one that starts. A host where neither starts reports nothing. The mod logs each failed publish to its debug log. Codex and omp log nothing. The spike called `~/.local/bin/hc` by its full path.
 
-Delegate tracking, `hooks/herdr.ts:delegatesInHerdr`, asks `herdr agent list`, which only the multiplexer answers. Tracking agents a session starts with `hc run` is separate work and is not in this plan.
+Delegate tracking, `core/remote/herdr.ts:delegatesInHerdr`, asks `herdr agent list`, which only the multiplexer answers. Tracking agents a session starts with `hc run` is separate work and is not in this plan.
 
 ## What Herdr's sidebar and tabs show
 

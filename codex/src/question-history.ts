@@ -1,9 +1,9 @@
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import type { HistoryFs, HistoryPlace } from '../../hooks/history-store'
-import { historyFolder } from '../../hooks/question-history'
-import { isSessionFile } from '../../hooks/session-files'
+import type { HistoryFs, HistoryPlace } from '../../core/runtime/history-store'
+import { historyFolder } from '../../core/domain/question-history'
+import { isSessionFile } from '../../core/view/session-files'
 import { readState } from './state'
 
 /** The question history's files through `node:fs`. A write goes to a temporary file first, so no read sees half of it. */

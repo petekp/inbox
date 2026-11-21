@@ -8,8 +8,8 @@ import {
   ompTodoOf,
   tasksText,
   upgradeHostTasks,
-} from '../hooks/host-tasks'
-import { statusPrompt } from '../hooks/status-prompt'
+} from '../core/domain/host-tasks'
+import { statusPrompt } from '../core/domain/status-prompt'
 import type { HostTask } from '../types'
 
 test('Claude Code tasks are created, then updated by id, and a TodoWrite call replaces the list', () => {

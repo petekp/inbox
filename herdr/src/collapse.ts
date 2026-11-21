@@ -1,5 +1,5 @@
-import { HERDR_FORMAT } from '../../hooks/herdr'
-import type { CollapseFile } from '../../hooks/herdr-press-file'
+import { HERDR_FORMAT } from '../../core/remote/herdr'
+import type { CollapseFile } from '../../core/remote/herdr-press-file'
 import type { ReadSession } from './files'
 import { newPressId, pressPath } from './press-file'
 import type { QueueIo } from './press-queue'

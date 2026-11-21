@@ -1,4 +1,4 @@
-import { closedTitleClock, newRowIn, steppedTitleTint } from '../../hooks/arrivals'
+import { closedTitleClock, newRowIn, steppedTitleTint } from '../../core/view/arrivals'
 import type { RowBlock } from './blocks'
 import { colorOf, mixInto } from './paint-theme'
 import type { Paint } from './paint-theme'

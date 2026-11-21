@@ -30,7 +30,7 @@ The marks:
 | A mark of its own, proposed `→` | Filed for later. The session will not do it. | A new closed status, not built yet |
 | ◆ | Held up by an open ask. It replaces the status's mark until the ask closes. | Code, from the link |
 
-More rules of the drawn page, all in `hooks/status-page.ts:statusPage`:
+More rules of the drawn page, all in `core/view/status-page.ts:statusPage`:
 
 - A subject's text wraps to at most 3 lines.
 - Rows run ◆, ●, ◌, ○, then ✓ and ✗ together, each group newest change first, whether or not the person has seen them.
@@ -54,17 +54,17 @@ Before any work, the page reads: "What this session's work is for, where each pa
   - the names of the last 10 finished subjects, so it does not add one again;
   - each open ask's id, its first 30 words and its linked subject;
   - the running children, and each delegate that finished since the last applied Status call read the Status, while its subject is open, each marked running, blocked or finished;
-  - the idle subjects: working or waiting ones with no change for a day or more, that no open ask holds up and no running child works for, each with its status and how long it has gone without a change, so the call closes, drops or keeps each one with a line (`hooks/status-children.ts:idleSubjects`);
+  - the idle subjects: working or waiting ones with no change for a day or more, that no open ask holds up and no running child works for, each with its status and how long it has gone without a change, so the call closes, drops or keeps each one with a line (`core/domain/status-children.ts:idleSubjects`);
   - the host's task list, where there is one;
   - the person's message, the agent's tool activity and the reply.
-- **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, write the head. Or `UNCHANGED`. `hooks/status.ts` parses the answer, and `hooks/status-ops.ts` applies it.
+- **What it answers:** edits by id, one per line: add a subject, update one, finish one, drop one or drop it into another, write a was line, link an ask or a child, write the head. Or `UNCHANGED`. `core/domain/status.ts` parses the answer, and `core/domain/status-ops.ts` applies it.
 - **What code does with it:**
   - A new subject whose name holds the same key words as an open one updates that one. One that matches a subject finished since the person last looked reopens that subject, so the page shows the piece once.
   - A new subject or a head named only by a PR or issue number, such as "#3655" or "PR 3655", changes nothing: a number names no work, and the PRs tab shows the PR.
   - An update that keeps the status and has the same content words, in any order, keeps the old text and its place. An update that sets an idle subject working moves its time anyway, so the page shows it working again. A head that comes with finished work and none under way keeps the old head. A head that keeps its title keeps the old title and takes the new description.
-  - A line that is not an edit is left out, and the answer's edits apply. An answer with no edit is asked once more. If that fails too, the page stays as it was and the status line says so. While no goal runs and none is suggested, the call reads a `<next-goal>` block that asks for the next goal. An answer that leaves an idle subject with no line, or leaves no goal running and none suggested with no GOAL or SUGGEST line, is asked once more, with its first answer, for only those lines. Code adds only the lines it asked for from the second answer. It does not ask for the next goal again while the goal, open subjects and open asks are those its last `SUGGEST: -` judged. Code never writes a goal itself (`hooks/status-retry.ts:statusRetry`).
-- **When the page falls behind.** After five Status calls in a row that read a reply with agent activity and changed nothing the page says, the status line reads "Not updated in 2h", with the time since a call or the person last changed it. Calls during a turn do not count. A failed Status call or a failed update shows in its place (`hooks/status-freshness.ts`).
+  - A line that is not an edit is left out, and the answer's edits apply. An answer with no edit is asked once more. If that fails too, the page stays as it was and the status line says so. While no goal runs and none is suggested, the call reads a `<next-goal>` block that asks for the next goal. An answer that leaves an idle subject with no line, or leaves no goal running and none suggested with no GOAL or SUGGEST line, is asked once more, with its first answer, for only those lines. Code adds only the lines it asked for from the second answer. It does not ask for the next goal again while the goal, open subjects and open asks are those its last `SUGGEST: -` judged. Code never writes a goal itself (`core/domain/status-retry.ts:statusRetry`).
+- **When the page falls behind.** After five Status calls in a row that read a reply with agent activity and changed nothing the page says, the status line reads "Not updated in 2h", with the time since a call or the person last changed it. Calls during a turn do not count. A failed Status call or a failed update shows in its place (`core/domain/status-freshness.ts`).
 - **During a long turn.** The main agent's next tool call, once 10 minutes have passed since the turn began and since the last Status call, starts a Status call. That call reads the person's message and the turn's activity so far.
 - **On a catch-up.** The call reads the whole conversation and edits the current subjects.
 
-`hooks/status.ts` owns the parser, `hooks/status-ops.ts` how an answer applies, and `hooks/status-upgrade.ts` how a saved Status loads. `hooks/status-page.ts` owns the drawn page. `hooks/status-prompt.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.
+`core/domain/status.ts` owns the parser, `core/domain/status-ops.ts` how an answer applies, and `core/domain/status-upgrade.ts` how a saved Status loads. `core/view/status-page.ts` owns the drawn page. `core/domain/status-prompt.ts` owns the call's prompts. `docs/looks.md` names the owner of every other rule.

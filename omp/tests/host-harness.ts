@@ -2,9 +2,9 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { parseStatus } from '../../hooks/status'
-import { STATUS_SYSTEM } from '../../hooks/status-prompt'
-import { answersNextGoal } from '../../hooks/status-suggest'
+import { parseStatus } from '../../core/domain/status'
+import { STATUS_SYSTEM } from '../../core/domain/status-prompt'
+import { answersNextGoal } from '../../core/domain/status-suggest'
 import type { HostDeps } from '../src/host'
 
 type Handler = (event: any, ctx: any) => unknown

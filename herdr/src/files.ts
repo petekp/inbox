@@ -1,8 +1,8 @@
 import type { Session } from '../../types'
-import { HERDR_FORMAT, publishedSessionPath, publishedSessionsFolder } from '../../hooks/herdr'
-import type { HerdrEnvelope } from '../../hooks/herdr'
-import { upgradeSession } from '../../hooks/session-files'
-import type { SavedSession } from '../../hooks/session-files'
+import { HERDR_FORMAT, publishedSessionPath, publishedSessionsFolder } from '../../core/remote/herdr'
+import type { HerdrEnvelope } from '../../core/remote/herdr'
+import { upgradeSession } from '../../core/view/session-files'
+import type { SavedSession } from '../../core/view/session-files'
 
 /**
  * Whether a batch of changed paths from `watchFolder` can change the session's file: it names that file, or names the

@@ -31,7 +31,7 @@ The Asks count currently excludes PRs. A proposal to include blocked PRs changes
 
 Explain remains available by key in terminal and Codex. Desktop has no action keys, so it draws Explain. Reply uses the shared intent and order. Desktop draws that follow-up in a Client region because native Buttons fill and pad only their labels; Codex draws a normal button.
 
-Keep shared dimensions where both drawings have a measured need, such as `ROW_PAD_PT` in `hooks/layout.ts`. Breakpoints, wrapping and unit conversion stay with the adapter they affect. A new common dimension needs evidence from each affected look. The current work does not require a universal column, spacing or widget schema.
+Keep shared dimensions where both drawings have a measured need, such as `ROW_PAD_PT` in `core/view/layout.ts`. Breakpoints, wrapping and unit conversion stay with the adapter they affect. A new common dimension needs evidence from each affected look. The current work does not require a universal column, spacing or widget schema.
 
 ## Verification
 

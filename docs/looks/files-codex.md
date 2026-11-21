@@ -43,24 +43,24 @@ Part of [the look map](../looks.md#files).
 | `codex/src/settle.ts` | Codex adapter. The poll's interval, which settled rows the tab draws, and how long the tab offers Undo. |
 | `codex/src/list-input.ts` | Codex adapter. Sends the controller the person's presses, keys, scrolls and pointer moves on the list, which hold a due fold, an arrival and an agent's close. |
 | `codex/src/texts.ts` | Codex adapter. Texts only Codex reads, and the `CODEX` host. |
-| `codex/src/core.ts` | Codex host. Codex bindings over `hooks/session-turns.ts`, `hooks/session-status.ts` and `hooks/session-view.ts`, the tab view and tab helpers. |
+| `codex/src/core.ts` | Codex host. Codex bindings over `core/runtime/session-turns.ts`, `core/runtime/session-status.ts` and `core/view/session-view.ts`, the tab view and tab helpers. |
 | `codex/src/data-dir.ts` | Codex host. The data folder and the dev build, which the loader reads. It imports no shared module, so a shared-module change leaves the loader's bundle unchanged. |
 | `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `types/index.d.ts`. |
 | `codex/src/question-history.ts` | Codex host. The question history's file calls through `node:fs`, and the sessions Codex keeps, which seed its first history files. Each entry point turns the history on with `useQuestionHistory`. |
-| `codex/src/host.ts` | Codex host. `codexStore`, the Codex store that `hooks/session-host.ts` runs on. |
+| `codex/src/host.ts` | Codex host. `codexStore`, the Codex store that `core/runtime/session-host.ts` runs on. |
 | `codex/src/server.ts` | Codex host. The MCP server: `makeServer`, which takes `ServerDeps` and answers each JSON-RPC call. Its `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. |
 | `codex/src/background.ts` | Codex host. `makeBackground`, which tracks the work the server starts and does not wait for, such as a PR fetch's state update, so `settled` can wait for it. |
 | `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, the tool fields of the last list it gave, and the readers of a call's session, turn and arguments. |
 | `codex/src/server-herdr.ts` | Codex host. `followCodexPresses`: in a Herdr app terminal, the MCP server watches the presses folder and applies the presses for the Codex sessions this terminal publishes. |
-| `codex/src/clipboard.ts` | Codex host. Puts a copy press's text on the clipboard of the machine the server runs on, through `hooks/clipboard-commands.ts`, since the tab's frame gets no clipboard permission. |
-| `codex/src/server-host.ts` | Codex host. The bindings `hooks/session-host.ts` runs on for presses, opening, sending a press's message and the session's background PR fetch. Also the tab view each answer carries. |
+| `codex/src/clipboard.ts` | Codex host. Puts a copy press's text on the clipboard of the machine the server runs on, through `core/runtime/clipboard-commands.ts`, since the tab's frame gets no clipboard permission. |
+| `codex/src/server-host.ts` | Codex host. The bindings `core/runtime/session-host.ts` runs on for presses, opening, sending a press's message and the session's background PR fetch. Also the tab view each answer carries. |
 | `codex/src/app-steer.ts` | Codex host. Puts a press's message into a turn the ChatGPT app runs, through the app's IPC socket. The only code that speaks that socket. |
 | `codex/src/server-trust.ts` | Codex host. Whether Codex runs the inbox's hooks in a chat's folder. The server asks Codex in the background and caches the answer. |
 | `codex/src/server-catch-up.ts` | Codex host. When the inbox has not seen a chat, the chat's first view copies a fork's ledger and starts a catch-up. |
 | `codex/src/server-demo.ts` | Codex host. The demo session and its presses. |
 | `codex/src/server-main.ts` | Codex host. The loader that Codex starts once per app launch. |
 | `codex/src/server-handler.ts` | Codex host. The request handler the loader reloads. |
-| `codex/src/update.ts` | Codex host. Binds `hooks/session-host.ts` update flows to `codex exec`. Reports a failed call with its process, which the shared flow saves in `callFailures`. |
+| `codex/src/update.ts` | Codex host. Binds `core/runtime/session-host.ts` update flows to `codex exec`. Reports a failed call with its process, which the shared flow saves in `callFailures`. |
 | `codex/src/diagnostics.ts` | Codex host. Keeps only the diagnostic lines of a `codex exec` call's stderr, its errors and warnings. |
 | `codex/src/update-main.ts` | Codex host. Entry point for the update process. |
 | `codex/src/hook.ts` | Codex host. The hook logic that changes session state. |

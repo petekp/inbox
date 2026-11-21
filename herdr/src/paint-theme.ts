@@ -1,4 +1,4 @@
-import { DARK_TONES, LIGHT_TONES } from '../../hooks/tones'
+import { DARK_TONES, LIGHT_TONES } from '../../core/view/tones'
 import {
   BUTTON_BORDER_PT,
   BUTTON_PAD_X_PT,
@@ -14,11 +14,11 @@ import {
   MARK_PT,
   SECTION_GAP_PT,
   SPACE_UNIT,
-} from '../../hooks/layout'
-import type { ClosedSeen, NewRows } from '../../hooks/arrivals'
+} from '../../core/view/layout'
+import type { ClosedSeen, NewRows } from '../../core/view/arrivals'
 import type { Context } from 'gpui-kit'
 import type { InputState } from 'gpui-base'
-import type { ShownTab } from '../../hooks/tabs'
+import type { ShownTab } from '../../core/view/tabs'
 import type { Button, Tone } from './blocks'
 import type { RowMotion } from './motion'
 import type { TimeLeft } from './time-left'
@@ -48,7 +48,7 @@ export type Theme = Record<
 >
 
 /**
- * Warnings take the theme's yellow. Needs-you takes the shared orange of `hooks/tones.ts`, as tasks take the shared violet,
+ * Warnings take the theme's yellow. Needs-you takes the shared orange of `core/view/tones.ts`, as tasks take the shared violet,
  * so a question's mark does not read as a warning. Findings, PRs and errors take
  * its magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. An issue takes the red
  * of an error. Done takes the color Herdr's sidebar gives an agent that is done. A met goal and a ready PR take the success
@@ -75,7 +75,7 @@ const isLightTheme = (t: Theme) => {
   return (r! * 299 + g! * 587 + b! * 114) / 1000 > 128
 }
 
-/** Tasks and needs-you take the shared violet and orange of `hooks/tones.ts`, which no Herdr theme names, in the light or dark form the theme's background calls for. */
+/** Tasks and needs-you take the shared violet and orange of `core/view/tones.ts`, which no Herdr theme names, in the light or dark form the theme's background calls for. */
 export const colorOf = (t: Theme, tone: Tone): Color =>
   tone === 'tasks' || tone === 'needsYou'
     ? ((isLightTheme(t) ? LIGHT_TONES : DARK_TONES)[tone] as Color)
@@ -116,7 +116,7 @@ export const HEAD_TEXT = 15
 export const HEAD_LINE = '24px'
 
 /**
- * The spacing roles, each a step of the shared scale in `hooks/layout.ts`, so every look spaces its blocks alike. The
+ * The spacing roles, each a step of the shared scale in `core/view/layout.ts`, so every look spaces its blocks alike. The
  * vertical gaps rise from `INSIDE_GAP` to `SECTION_GAP`, so space shows what belongs together.
  */
 /** A title to each line under it, and the head's title to its notes. */

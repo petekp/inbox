@@ -4,7 +4,7 @@ Status: built. Merged to main in #5.
 
 omp ([omp.sh](https://omp.sh/)) is a terminal coding agent forked from pi. It loads TypeScript extensions in its own Bun process. A throwaway extension showed that the shared modules in `hooks/` load in omp unchanged, and that omp can draw the band above the prompt and an `/inbox` panel and take its keys. That extension drew the shared demo data only. It never ran a real session.
 
-A host does more than draw. It reacts to the prompt, tool-call and turn-end events, keeps each session's state, runs the inbox model after each reply, runs a press's sends, opens and copies, and runs gh. That work is written twice today: in the mod's `hooks/register.tsx` and its `hooks/mod-*.ts` modules, and in the Codex host's `codex/src/core.ts`, `hook.ts`, `server.ts` and `update.ts`. omp would make a third copy, and each later feature would be wired three times. So the shared part of that work moves into `hooks/` first, and omp is built on it.
+A host does more than draw. It reacts to the prompt, tool-call and turn-end events, keeps each session's state, runs the inbox model after each reply, runs a press's sends, opens and copies, and runs gh. That work is written twice today: in the mod's `hooks/register.tsx` and its `hooks/mod/mod-*.ts` modules, and in the Codex host's `codex/src/core.ts`, `hook.ts`, `server.ts` and `update.ts`. omp would make a third copy, and each later feature would be wired three times. So the shared part of that work moves into `hooks/` first, and omp is built on it.
 
 ## Order
 
@@ -17,7 +17,7 @@ Each step passes `./scripts/check.sh` and leaves the shipped hosts working, so t
 
 ## Parts
 
-- [Step 1, the shared session modules](omp-look/step-1-shared-modules.md): the session modules and `hooks/session-host.ts`.
+- [Step 1, the shared session modules](omp-look/step-1-shared-modules.md): the session modules and `core/runtime/session-host.ts`.
 - [Step 2, the omp host and look](omp-look/step-2-omp-host.md): omp's events, the look, and the choices made.
 - [Step 4, the mod on the shared session modules](omp-look/step-4-mod-on-shared-modules.md): The gap list, how the mod saves its session, what people will notice, and the build order.
 
@@ -25,7 +25,7 @@ Each step passes `./scripts/check.sh` and leaves the shipped hosts working, so t
 
 Built. It adds omp to the repo's checks, docs and release steps, and to omp's own marketplace.
 
-- `Look` in `hooks/view.ts` gained `omp` in step 2.
+- `Look` in `core/view/view.ts` gained `omp` in step 2.
 - `docs/looks.md` lists omp's files, owners and differences on purpose, and has a section on adding a host. `GLOSSARY.md` names omp under Look, Host and Adapter. `AGENTS.md`, `README.md` and `docs/release.md` cover omp.
 - `omp/tests/panel.spec.ts` checks the omp panel's button order against `rowKeyPlan`. The demo test in `tests/hooks.test.ts` stays on the terminal and desktop looks.
 - `scripts/check-structure.mjs` checks `omp/` imports, and `scripts/check.sh` runs omp's bundle check, types and tests.

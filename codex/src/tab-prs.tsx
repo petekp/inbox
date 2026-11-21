@@ -1,9 +1,9 @@
-import { settledMark, settledLabel } from '../../hooks/rows'
+import { settledMark, settledLabel } from '../../core/view/rows'
 import { Sep } from './tab-parted'
-import { bannerOf } from '../../hooks/banners'
-import { emptyTab } from '../../hooks/empty-tab'
-import type { SettledState } from '../../hooks/rows'
-import { prBlockActions } from '../../hooks/pr-tab'
+import { bannerOf } from '../../core/view/banners'
+import { emptyTab } from '../../core/view/empty-tab'
+import type { SettledState } from '../../core/view/rows'
+import { prBlockActions } from '../../core/view/pr-tab'
 import {
   RANK_AGAIN_ID,
   CLEAR_FINISHED_ID,
@@ -14,11 +14,11 @@ import {
   prMarkId,
   prRefreshFailedText,
   threadSentIn,
-} from '../../hooks/pr-rows'
-import { OTHER_PRS_TEXT, otherPrsStart } from '../../hooks/pr-order'
-import type { PrOrderView } from '../../hooks/pr-order'
-import type { PrAction } from '../../hooks/pr-press'
-import { readiness } from '../../hooks/prs'
+} from '../../core/view/pr-rows'
+import { OTHER_PRS_TEXT, otherPrsStart } from '../../core/view/pr-order'
+import type { PrOrderView } from '../../core/view/pr-order'
+import type { PrAction } from '../../core/view/pr-press'
+import { readiness } from '../../core/domain/prs'
 import type { PrView } from '../../types'
 import type { TabView as View } from './core'
 import { tabState, drawnRows } from './tab-state'
@@ -27,14 +27,14 @@ import { isUndoing, outOn } from './tab-press'
 import type { Key, Row } from './tab-state'
 import { pendingLocal, pressesOf, prKey, pressTitle } from './tab-rows'
 import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner, EmptyState } from './tab-parts'
-import { PR_REFRESH } from '../../hooks/pr-press'
-import type { PrRefreshView } from '../../hooks/pr-refresh'
+import { PR_REFRESH } from '../../core/view/pr-press'
+import type { PrRefreshView } from '../../core/view/pr-refresh'
 import { ListRow } from './tab-list'
 import { pressLine } from './tab-pr-lines'
 import type { PressLine } from './tab-pr-lines'
 import { PR_CLEAR_MOTION, PR_GROUPS, prBlockMotion, prGroupMotion, prLineMotion } from './tab-pr-steps'
 import type { DrawnPrBlock, DrawnPrs, PrGroup } from './tab-pr-steps'
-import type { RowTrack } from '../../hooks/row-motion'
+import type { RowTrack } from '../../core/view/row-motion'
 
 /** Clear merged and closed, on its line under Refresh PRs. */
 export function prClearKeys(v: View): Key[] {

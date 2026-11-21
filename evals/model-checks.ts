@@ -1,4 +1,4 @@
-import type { Update } from '../hooks/reply-parse'
+import type { Update } from '../core/domain/reply-parse'
 import type { Ledger } from '../types'
 
 /** Patterns are case-insensitive regular expressions. */

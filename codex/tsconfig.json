@@ -14,5 +14,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "tests", "../hooks/ledger.ts", "../evals"]
+  "include": ["src", "tests", "../core/domain/ledger.ts", "../evals"]
 }

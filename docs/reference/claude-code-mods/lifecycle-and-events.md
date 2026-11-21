@@ -39,8 +39,8 @@ What survives what:
 | `$.store` | Kept | Kept | Kept, shared by every session | [IF#keep-state] |
 
 - To reload after a switch, hook `classic.SessionStart` with `source: ['clear','resume','fork']`. [IF#load-a-saved-value-again-after-clear]
-- The inbox does this at `hooks/register.tsx:on('classic.SessionStart')`. `$.session.id()` still names the previous conversation there, so the inbox reads the new id from `e.session_id` (commit `f23d9ad`; see the comment on `hooks/mod-load.ts:conversationSwitched`). Live on 2.1.295: a `--debug-file` log of an in-session `/resume` showed `$.session.id()` returning the old id, even after `next(e)`.
-- The inbox's `session.end` (`hooks/mod-lifecycle.ts:sessionEnded`) runs four state updates plus `publishStatus(true, …)`. `publishStatus` runs `herdr pane report-metadata` through `$.process.run` with `timeoutMs: 5000`, only when `HERDR_PANE_ID` is set (`hooks/mod-publish.ts:publishStatus`). Inference: that 5 s timeout exceeds the 1.5 s bound, so the call can be cut off at session end.
+- The inbox does this at `hooks/register.tsx:on('classic.SessionStart')`. `$.session.id()` still names the previous conversation there, so the inbox reads the new id from `e.session_id` (commit `f23d9ad`; see the comment on `hooks/mod/mod-load.ts:conversationSwitched`). Live on 2.1.295: a `--debug-file` log of an in-session `/resume` showed `$.session.id()` returning the old id, even after `next(e)`.
+- The inbox's `session.end` (`hooks/mod/mod-lifecycle.ts:sessionEnded`) runs four state updates plus `publishStatus(true, …)`. `publishStatus` runs `herdr pane report-metadata` through `$.process.run` with `timeoutMs: 5000`, only when `HERDR_PANE_ID` is set (`hooks/mod/mod-publish.ts:publishStatus`). Inference: that 5 s timeout exceeds the 1.5 s bound, so the call can be cut off at session end.
 - A worker crash ×3 unloads every non-built-in mod until `/reload-plugins`. [A]
 
 ## The hook function
@@ -84,5 +84,5 @@ From [R#events] unless marked.
 
 ### Prompt origin (who sent a prompt)
 
-- `prompt.submit`'s `origin.kind` says where a prompt came from. The inbox treats a prompt as the person's own words only for `composer`, `bridge`, or `plugin` with `asUser` (`hooks/mod-prompts.ts:isPersonsWords`), and skips prompts its own plugin sent (`hooks/mod-prompts.ts:promptSubmitted`).
+- `prompt.submit`'s `origin.kind` says where a prompt came from. The inbox treats a prompt as the person's own words only for `composer`, `bridge`, or `plugin` with `asUser` (`hooks/mod/mod-prompts.ts:isPersonsWords`), and skips prompts its own plugin sent (`hooks/mod/mod-prompts.ts:promptSubmitted`).
 - Which `origin.kind` a desktop Code-mode prompt has is unknown. Inference: an SDK host may send prompts as `sdk`. If so, the inbox would not treat desktop prompts as the person's words. This is the largest open risk for desktop.

@@ -2,10 +2,10 @@ import { expect, mock } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { test } from './test-with-timeout'
-import { QUEUED_AFTER_MS, SETTLED_MS } from '../hooks/timing'
+import { QUEUED_AFTER_MS, SETTLED_MS } from '../core/view/timing'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
-import type { LinksProps } from '../hooks/links-client'
+import type { LinksProps } from '../hooks/pane/links-client'
 
 const FULLSCREEN = { columns: 160, rows: 40, isFullscreen: true }
 

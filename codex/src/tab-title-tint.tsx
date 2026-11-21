@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
-import { NEW_FADE_MS, NEW_HOLD_MS, TITLE_TINT, type NewRow } from '../../hooks/arrivals'
+import { NEW_FADE_MS, NEW_HOLD_MS, TITLE_TINT, type NewRow } from '../../core/view/arrivals'
 import { reducedMotion } from './tab-motion'
 
 const EASE_IN_OUT_SINE = 'cubic-bezier(0.37, 0, 0.63, 1)'

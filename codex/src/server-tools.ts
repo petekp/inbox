@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 
-import { agentTools } from '../../hooks/tools'
-import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../../hooks/tool-schemas'
-import { isShownTab } from '../../hooks/tabs'
-import { listInputOf } from '../../hooks/timing'
-import type { Holds } from '../../hooks/timing'
-import type { ShownTab } from '../../hooks/tabs'
+import { agentTools } from '../../core/runtime/tools'
+import { TOOL_FIELDS, V0_3_TOOL_FIELDS } from '../../core/domain/tool-schemas'
+import { isShownTab } from '../../core/view/tabs'
+import { listInputOf } from '../../core/view/timing'
+import type { Holds } from '../../core/view/timing'
+import type { ShownTab } from '../../core/view/tabs'
 import type { ToolFields } from '../../types'
 import { CODEX, INBOX_DESCRIPTION, VIEW_DESCRIPTION } from './texts'
 

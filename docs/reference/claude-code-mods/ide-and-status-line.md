@@ -36,7 +36,7 @@ The **status line** is "a customizable bar at the bottom of Claude Code that run
 - Input includes `session_id`, `transcript_path`, `cost`, `context_window`, `rate_limits`, `pr`. `cost.total_cost_usd` "Resets to $0 when `/clear` starts a new session." No field names the surface or client. [SL#available-data]
 - The page is written for the terminal. Whether it renders in the desktop app, the VS Code panel or mobile is not stated.
 - The mod equivalent is `$.ui.status(text)`: "Pins `text` as this plugin's status line under the prompt … One per plugin". It draws the "first 2000 characters … (10000 remotely)". [T: `ui.status`] `$.session.usage()` returns "the context window's fill, the rate-limit windows and the cost as the status line has them". [T: `session.usage`]
-- Repo naming: `statusLine` in `hooks/herdr.ts` builds the Herdr sidebar text. `hooks/mod-publish.ts:publishStatus` calls it through `herdrTokens`. It is not Claude Code's `statusLine` setting.
+- Repo naming: `statusLine` in `core/remote/herdr.ts` builds the Herdr sidebar text. `hooks/mod/mod-publish.ts:publishStatus` calls it through `herdrTokens`. It is not Claude Code's `statusLine` setting.
 
 ## Artifacts
 

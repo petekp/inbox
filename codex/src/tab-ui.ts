@@ -1,16 +1,23 @@
-import { clipLabel } from '../../hooks/text'
-import { capitalized } from '../../hooks/press-labels'
-import { pressRowId } from '../../hooks/pr-press'
-import type { PrPress } from '../../hooks/pr-press'
-import type { RowPress } from '../../hooks/presses'
-import type { Feedback } from '../../hooks/feedback'
-import { PRESS_TIMEOUT_MS } from '../../hooks/session-view'
-import type { ShownTab } from '../../hooks/tabs'
-import { reduceUi, rowErrorOf } from '../../hooks/ui-controller'
-import { holdsOf } from '../../hooks/ui-controller-reply'
-import { readWakeAt } from '../../hooks/ui-controller-clock'
-import { collapsedOf, isGuardedPress, openRowOf, selectedOf } from '../../hooks/ui-controller-selection'
-import type { HostFacts, InputKind, SettledOutcome, UiCommand, UiEvent, UiState } from '../../hooks/ui-controller-types'
+import { clipLabel } from '../../core/domain/text'
+import { capitalized } from '../../core/domain/press-labels'
+import { pressRowId } from '../../core/view/pr-press'
+import type { PrPress } from '../../core/view/pr-press'
+import type { RowPress } from '../../core/domain/presses'
+import type { Feedback } from '../../core/view/feedback'
+import { PRESS_TIMEOUT_MS } from '../../core/view/session-view'
+import type { ShownTab } from '../../core/view/tabs'
+import { reduceUi, rowErrorOf } from '../../core/view/ui-controller'
+import { holdsOf } from '../../core/view/ui-controller-reply'
+import { readWakeAt } from '../../core/view/ui-controller-clock'
+import { collapsedOf, isGuardedPress, openRowOf, selectedOf } from '../../core/view/ui-controller-selection'
+import type {
+  HostFacts,
+  InputKind,
+  SettledOutcome,
+  UiCommand,
+  UiEvent,
+  UiState,
+} from '../../core/view/ui-controller-types'
 import type { PressKind, Tab } from '../../types'
 import type { TabView as View } from './core'
 import type { PressReply } from './server'

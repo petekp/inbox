@@ -1,7 +1,7 @@
 import type { GoalPart } from './panel-goal'
 import type { FoldKind } from '../../types'
-import { foldGlyph } from '../../hooks/fold-chevron'
-import type { PrAction } from '../../hooks/pr-press'
+import { foldGlyph } from '../../core/view/fold-chevron'
+import type { PrAction } from '../../core/view/pr-press'
 import {
   closedLineAction,
   closedTitleTone,
@@ -16,18 +16,18 @@ import {
   rowResultMark,
   ASK_MARK,
   settledLabel,
-} from '../../hooks/rows'
-import { feedbackOf, feedbackTone, markedFeedbackText, rowFeedbackText } from '../../hooks/feedback'
-import { groupEmptyText } from '../../hooks/banners'
-import { rowKeyPlan } from '../../hooks/action-plan'
-import type { AnswerRow } from '../../hooks/action-plan'
-import type { BannerView } from '../../hooks/banners'
-import type { ClosedDelivery, RowView, ResultMark } from '../../hooks/rows'
-import type { Feedback } from '../../hooks/feedback'
-import type { StatusKeyTarget } from '../../hooks/status-keys'
-import type { StatusRow } from '../../hooks/status-page'
-import type { WorkJoint } from '../../hooks/status-path'
-import type { HelpKey, LegendEntry } from '../../hooks/help'
+} from '../../core/view/rows'
+import { feedbackOf, feedbackTone, markedFeedbackText, rowFeedbackText } from '../../core/view/feedback'
+import { groupEmptyText } from '../../core/view/banners'
+import { rowKeyPlan } from '../../core/view/action-plan'
+import type { AnswerRow } from '../../core/view/action-plan'
+import type { BannerView } from '../../core/view/banners'
+import type { ClosedDelivery, RowView, ResultMark } from '../../core/view/rows'
+import type { Feedback } from '../../core/view/feedback'
+import type { StatusKeyTarget } from '../../core/view/status-keys'
+import type { StatusRow } from '../../core/view/status-page'
+import type { WorkJoint } from '../../core/view/status-path'
+import type { HelpKey, LegendEntry } from '../../core/view/help'
 import type { PanelPress, PanelScreen, PanelUi, Tone } from './panel'
 
 export const AGENT = 'omp'

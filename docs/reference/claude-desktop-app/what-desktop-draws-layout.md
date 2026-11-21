@@ -24,7 +24,7 @@ The reference says "`e.surface` is `terminal` or `desktop`" (reference#render-si
 
 Risks for the inbox:
 
-- The inbox draws hotkey `Button`s in a `Box` with `display="none"` only when `look !== 'desktop'` (`hooks/pane-row-keys.tsx:keyBindings`). On desktop it draws none. A desktop that draws native buttons may show hidden hotkey Buttons or drop them. Unverified.
+- The inbox draws hotkey `Button`s in a `Box` with `display="none"` only when `look !== 'desktop'` (`hooks/pane/pane-row-keys.tsx:keyBindings`). On desktop it draws none. A desktop that draws native buttons may show hidden hotkey Buttons or drop them. Unverified.
 
 ## What desktop draws
 
@@ -64,11 +64,11 @@ This section was read from the app bundle of Claude app 4.23118.0 (`Contents/Res
 - Each Button is a `button` with `display:inline-flex`, `flex-shrink:0`, `width:fit-content`, `max-width:100%` and `white-space:nowrap`. So a wrapping row draws Buttons side by side while they fit, and moves a Button to the next line rather than shrink it. A default or primary Button is the theme's control height, with medium padding at the sides. A plain Button is at least one line tall, with extra-small padding.
 - Before drawing, the pane only drops the top and bottom margins of its outermost Box, and of each Box below it that is its parent's only child. The band has rules of its own that change its tree, and this section does not cover them.
 
-The 0.3.0 release pass's capture of the PRs tab, taken in the inbox-ui VM on 2026-11-01 at 2x, measures the Buttons. Its app version was not recorded. A primary "Merge" was 66.0 pt wide with a 40.0 pt label, so 26 pt of padding. A default "Open PR" was 94.5 pt wide with a 55.0 pt label, an 8 pt icon and a 6 pt gap, so 25.5 pt. Buttons were 25 pt tall. `desktopButtonPt` in `hooks/desktop-metrics.ts` counts 26 pt of padding. It counts a primary Button's label 8.5% wider, from an earlier app on which a primary "Plain (recommended)" was 163 to 167 pt wide with a 130 pt label. No capture of the newer app shows a long primary label. `DESKTOP_BUTTON_PT` is 23 pt, measured on an earlier app.
+The 0.3.0 release pass's capture of the PRs tab, taken in the inbox-ui VM on 2026-11-01 at 2x, measures the Buttons. Its app version was not recorded. A primary "Merge" was 66.0 pt wide with a 40.0 pt label, so 26 pt of padding. A default "Open PR" was 94.5 pt wide with a 55.0 pt label, an 8 pt icon and a 6 pt gap, so 25.5 pt. Buttons were 25 pt tall. `desktopButtonPt` in `hooks/pane/desktop-metrics.ts` counts 26 pt of padding. It counts a primary Button's label 8.5% wider, from an earlier app on which a primary "Plain (recommended)" was 163 to 167 pt wide with a 130 pt label. No capture of the newer app shows a long primary label. `DESKTOP_BUTTON_PT` is 23 pt, measured on an earlier app.
 
 ## Measuring the cell and the row inset
 
-The engine gives the pane's size in columns only, so `DESKTOP_CELL_PT` and `FRAME_INSET_PT` in `hooks/pane-sizes.ts` are fixed numbers. Measure them again after an app update when the pane cuts text early or draws past a row's edge, and record the result in the Cell size and Box borderStyle rows above.
+The engine gives the pane's size in columns only, so `DESKTOP_CELL_PT` and `FRAME_INSET_PT` in `hooks/pane/pane-sizes.ts` are fixed numbers. Measure them again after an app update when the pane cuts text early or draws past a row's edge, and record the result in the Cell size and Box borderStyle rows above.
 
 1. In a Code-mode session, open the pane at the docked width and run `/inbox demo`.
 2. Capture the app window with `screencapture -l`. Work out pixels per point from the capture's width and the window's width in points.

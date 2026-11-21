@@ -1,5 +1,5 @@
-import type { Host } from '../../hooks/model-text'
-import type { AgentTool } from '../../hooks/tools'
+import type { Host } from '../../core/domain/model-text'
+import type { AgentTool } from '../../core/runtime/tools'
 
 export const OMP: Host = {
   agent: 'omp',

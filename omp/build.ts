@@ -1,6 +1,6 @@
 // Bundles src/host.ts and the shared modules it imports into dist/host.js, which package.json lists under
 // omp.extensions. omp installs a marketplace plugin by copying only this folder, so the extension cannot import
-// ../hooks at runtime. The bundle is committed, since an install runs no build. omp's own packages stay external,
+// ../core at runtime. The bundle is committed, since an install runs no build. omp's own packages stay external,
 // because omp supplies them to the extension.
 //
 //   bun build.ts          writes dist/host.js
@@ -52,7 +52,7 @@ const result = await Bun.build({
   target: 'bun',
   format: 'esm',
   external: ['@oh-my-pi/*'],
-  banner: `// Built by omp/build.ts with Bun ${Bun.version} from omp/src and hooks/. Do not edit.`,
+  banner: `// Built by omp/build.ts with Bun ${Bun.version} from omp/src and core/. Do not edit.`,
 })
 if (!result.success) {
   for (const log of result.logs) console.error(String(log))

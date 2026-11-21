@@ -7,7 +7,7 @@ import { mkdir, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { noteActivity } from '../../hooks/session-turns'
+import { noteActivity } from '../../core/runtime/session-turns'
 import { endTurn, notePrompt, viewOf } from '../src/core'
 import { readState, statePath, updateState } from '../src/state'
 import { runUpdates as runBothCalls } from '../src/update'

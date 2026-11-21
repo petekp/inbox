@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { demoSession } from '../../hooks/demo'
-import { upgradeSession } from '../../hooks/session-files'
-import { applyRemoteCommand, remoteRowVersion } from '../../hooks/remote-commands'
-import type { RemoteCommand } from '../../hooks/remote-commands'
-import { remoteCommandArrival, remoteReceipts } from '../../hooks/remote-command-state'
-import { pruned } from '../../hooks/session-presses'
+import { demoSession } from '../../core/view/demo'
+import { upgradeSession } from '../../core/view/session-files'
+import { applyRemoteCommand, remoteRowVersion } from '../../core/remote/remote-commands'
+import type { RemoteCommand } from '../../core/remote/remote-commands'
+import { remoteCommandArrival, remoteReceipts } from '../../core/runtime/remote-command-state'
+import { pruned } from '../../core/runtime/session-presses'
 import { fakeHostWith } from '../../tests/session-script'
 
 function fixture() {

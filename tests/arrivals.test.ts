@@ -3,15 +3,19 @@ import { test } from './test-with-timeout'
 import {
   addNewRows,
   closedTitleClock,
+  followTo,
+  isPrsTabEmpty,
+  isTabEmpty,
   NEW_FADE_MS,
   NEW_HOLD_MS,
   newRowIn,
   newRowShare,
+  recordRows,
   showNewRows,
   steppedShare,
   steppedTitleTint,
   TITLE_TINT,
-} from '../hooks/arrivals'
+} from '../core/view/arrivals'
 
 test("a new row's tint stays full until its tab shows, holds, fades, and is gone once the fade ends", () => {
   const added = addNewRows(new Map(), { needsYou: [], findings: ['f1'] })
@@ -50,4 +54,36 @@ test("a new row's tint draws only in the tab that recorded it", () => {
   expect(newRowIn(added, 'i1', 'findings')).toBe(added.get('i1'))
   expect(newRowIn(added, 'i1', 'needsYou')).toBe(undefined)
   expect(newRowIn(added, 'i2', 'findings')).toBe(undefined)
+})
+
+test("a tab's first record and a loading tab add no new rows, and a later record adds only the ids it lacked", () => {
+  const first = recordRows({}, { needsYou: ['q1'], findings: null })
+  expect(first.added).toEqual({ needsYou: [], findings: [] })
+  const loading = recordRows(first.seen, { needsYou: null, findings: ['f1'] })
+  expect(loading.added).toEqual({ needsYou: [], findings: [] })
+  const next = recordRows(loading.seen, { needsYou: ['q1', 'q2'], findings: ['f1', 'f2'] })
+  expect(next.added).toEqual({ needsYou: ['q2'], findings: ['f2'] })
+})
+
+test('a look moves to the first other tab with rows only while its shown tab shows nothing but its empty text', () => {
+  const tabs = ['overview', 'needsYou', 'findings']
+  const rows = { overview: [], needsYou: [], findings: ['f1'] }
+  expect(followTo(tabs, 'overview', true, rows)).toBe('findings')
+  expect(followTo(tabs, 'overview', false, rows)).toBe(null)
+  expect(followTo(tabs, 'findings', true, rows)).toBe(null)
+})
+
+test('a row tab is empty only with no blocker, no row that is not settled, and no unfolded Closed row still settling elsewhere', () => {
+  const folded = { isUnfolded: false, rows: [{ id: 'c1' }] }
+  const unfolded = { ...folded, isUnfolded: true }
+  const none = new Set<string>()
+  expect(isTabEmpty({ rows: [], settled: none, closed: [folded], hasBlocker: false })).toBe(true)
+  expect(isTabEmpty({ rows: [], settled: none, closed: [unfolded], hasBlocker: false })).toBe(false)
+  expect(isTabEmpty({ rows: [], settled: new Set(['c1']), closed: [unfolded], hasBlocker: false })).toBe(true)
+  expect(
+    isTabEmpty({ rows: [{ id: 'q1', state: { is: 'handedOff' } }], settled: none, closed: [], hasBlocker: false }),
+  ).toBe(false)
+  expect(isTabEmpty({ rows: [], settled: none, closed: [], hasBlocker: true })).toBe(false)
+  expect(isPrsTabEmpty(0, false)).toBe(true)
+  expect(isPrsTabEmpty(0, true)).toBe(false)
 })

@@ -1,7 +1,7 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { noteStatusDrawn, takeShownRows } from '../hooks/pane-status-shown'
-import { exactly, type Lines, type RowTop } from '../hooks/pane-status-tops'
+import { noteStatusDrawn, takeShownRows } from '../hooks/pane/pane-status-shown'
+import { exactly, type Lines, type RowTop } from '../hooks/pane/pane-status-tops'
 
 const draw = (
   tops: Map<string, RowTop>,

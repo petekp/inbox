@@ -1,4 +1,4 @@
-import type { PrNode } from '../hooks/pr-query'
+import type { PrNode } from '../core/domain/pr-query'
 
 /** A PR as `gh pr view --json` prints it, which the tests describe each PR with. */
 export type ViewJson = {

@@ -1,13 +1,13 @@
 import { expect, setSystemTime, test } from 'bun:test'
 
-import { prMarkId } from '../../hooks/pr-rows'
-import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS } from '../../hooks/row-motion'
-import { PRESS_GUARD_MS } from '../../hooks/timing'
+import { prMarkId } from '../../core/view/pr-rows'
+import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS } from '../../core/view/row-motion'
+import { PRESS_GUARD_MS } from '../../core/view/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { NEXT_FRAME_MS } from '../src/block-glide'
 import { NO_TRACKS, heldTabs, moveRows } from '../src/motion'
-import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
+import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import { NOW, demoScreen, dismissedPr, dismissedSession, uiOn } from './fixtures'
 import { allOf, openPanel } from './gpui-stand-in'
 

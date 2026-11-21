@@ -61,7 +61,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 
 `PromptOrigin.kind` in the types: `composer` (the person's own gesture, "never presumed"), `bridge` (Remote Control), `sdk`, `peer`, `peer-send-message`, `channel`, `scheduled-trigger`, `task-notification`, `projects-relay`, `coordinator`, `observer`, `observer-activity`, `auto-continuation`, `slack-ping`, `plugin` ("A plugin's `$.prompt.submit`"), `unclassified` (same-user socket posts and unstamped engine notices). [T: `PromptOrigin`]
 
-- The inbox counts a prompt as the person's words only for `composer`, `bridge`, or `plugin` with `asUser` (`hooks/mod-prompts.ts:isPersonsWords`).
+- The inbox counts a prompt as the person's words only for `composer`, `bridge`, or `plugin` with `asUser` (`hooks/mod/mod-prompts.ts:isPersonsWords`).
 - The types' settings-hook `UserPromptSubmit.source` defines `sdk` as the "non-interactive entrypoint (`-p` / Agent SDK)". [T] What a desktop Code-mode prompt carries is unknown. See "Unknown, and how to check".
 
 ### Channels

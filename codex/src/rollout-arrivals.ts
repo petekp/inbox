@@ -1,4 +1,4 @@
-import { withSentArrived } from '../../hooks/session-turns'
+import { withSentArrived } from '../../core/runtime/session-turns'
 import type { SessionState } from './state'
 import { userMessagesSince } from './transcript'
 

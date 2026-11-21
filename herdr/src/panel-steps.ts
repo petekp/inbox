@@ -1,7 +1,7 @@
-import { faintCloseFades, turnBackFades } from '../../hooks/row-motion'
-import type { FadeStep } from '../../hooks/row-motion'
-import { springStep } from '../../hooks/springs'
-import type { SpringState } from '../../hooks/springs'
+import { faintCloseFades, turnBackFades } from '../../core/view/row-motion'
+import type { FadeStep } from '../../core/view/row-motion'
+import { springStep } from '../../core/view/springs'
+import type { SpringState } from '../../core/view/springs'
 import { NEXT_FRAME_MS } from './block-glide'
 
 /**

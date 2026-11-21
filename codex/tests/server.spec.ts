@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { demoView } from '../../hooks/demo'
-import { feedbackOf } from '../../hooks/feedback'
+import { demoView } from '../../core/view/demo'
+import { feedbackOf } from '../../core/view/feedback'
 import { notePrompt, viewOf } from '../src/core'
 import { readState, updateState } from '../src/state'
 import { GH_VIEW, ghAnswer, prsAnswer, prServer } from './server-fixtures'

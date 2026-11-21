@@ -1,7 +1,7 @@
-import { ENTER_FADE_MS, LEAVE_FADE_MS, enterDelayMs } from '../../hooks/row-motion'
-import type { RowTrack } from '../../hooks/row-motion'
-import { HEIGHT_SETTLE_MS, HEIGHT_SPRING, springStep } from '../../hooks/springs'
-import type { SpringState } from '../../hooks/springs'
+import { ENTER_FADE_MS, LEAVE_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
+import type { RowTrack } from '../../core/view/row-motion'
+import { HEIGHT_SETTLE_MS, HEIGHT_SPRING, springStep } from '../../core/view/springs'
+import type { SpringState } from '../../core/view/springs'
 
 /** The draw after a move's first frame, which starts its transition or spring. */
 export const NEXT_FRAME_MS = 16

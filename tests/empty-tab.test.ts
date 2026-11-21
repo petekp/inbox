@@ -1,12 +1,12 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { EMPTY_STATUS_TEXT, emptyTab, prsEmptyHint } from '../hooks/empty-tab'
-import { GH_MISSING_TEXT, GH_SIGNED_OUT_TEXT } from '../hooks/pr-rows'
-import { emptySession } from '../hooks/session-files'
-import { sessionView } from '../hooks/session-view'
-import type { SessionView } from '../hooks/session-view'
-import { goalKeyPlan } from '../hooks/status-keys'
+import { EMPTY_STATUS_TEXT, emptyTab, prsEmptyHint } from '../core/view/empty-tab'
+import { GH_MISSING_TEXT, GH_SIGNED_OUT_TEXT } from '../core/view/pr-rows'
+import { emptySession } from '../core/view/session-files'
+import { sessionView } from '../core/view/session-view'
+import type { SessionView } from '../core/view/session-view'
+import { goalKeyPlan } from '../core/view/status-keys'
 
 const VIEW = sessionView(emptySession(), 1000, 0)
 const ASKS = { tab: 'needsYou', agent: 'Claude', drawn: 0, hasBlocker: false, isReadFailed: false } as const

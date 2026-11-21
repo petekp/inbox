@@ -60,7 +60,7 @@ const result = await Bun.build({
   target: 'browser',
   format: 'esm',
   external: APP_MODULES,
-  banner: `// Built by herdr/build.ts with Bun ${Bun.version} from herdr/src and hooks/. Do not edit.\n${BUILT_AT_LINE}`,
+  banner: `// Built by herdr/build.ts with Bun ${Bun.version} from herdr/src and core/. Do not edit.\n${BUILT_AT_LINE}`,
   plugins: [
     {
       name: 'app modules only',

@@ -1,7 +1,7 @@
-import { RUNNING_PULSE_MS } from '../../hooks/timing'
-import * as layout from '../../hooks/layout'
-import { ENTER_FADE_MS, enterDelayMs, FADE_MS, LEAVE_FADE_MS } from '../../hooks/row-motion'
-import { HEIGHT_SETTLE_MS } from '../../hooks/springs'
+import { RUNNING_PULSE_MS } from '../../core/view/timing'
+import * as layout from '../../core/view/layout'
+import { ENTER_FADE_MS, enterDelayMs, FADE_MS, LEAVE_FADE_MS } from '../../core/view/row-motion'
+import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import { FADE_EASING } from './tab-glide'
 
 /** The shared spacing scale, as the CSS variables the tab's styles read. */

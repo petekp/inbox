@@ -1,11 +1,11 @@
-import { EMPTY_STATUS_TEXT } from '../hooks/empty-tab'
-import { countsText } from '../hooks/status-folds'
-import { mergedLine, WAS_PREFIX } from '../hooks/status-page'
-import { STALL_GAP } from '../hooks/status-page-parts'
-import type { StatusPage, StatusRow, StatusStall } from '../hooks/status-page'
-import type { MilestoneRow } from '../hooks/status-goal-page'
-import { milestoneRows } from '../hooks/status-folds'
-import { LATER_TEXT } from '../hooks/status-path'
+import { EMPTY_STATUS_TEXT } from '../core/view/empty-tab'
+import { countsText } from '../core/view/status-folds'
+import { mergedLine, WAS_PREFIX } from '../core/view/status-page'
+import { STALL_GAP } from '../core/view/status-page-parts'
+import type { StatusPage, StatusRow, StatusStall } from '../core/view/status-page'
+import type { MilestoneRow } from '../core/view/status-goal-page'
+import { milestoneRows } from '../core/view/status-folds'
+import { LATER_TEXT } from '../core/view/status-path'
 
 /** A row's name, with its stall word after it. */
 function nameLine(name: string, stall: StatusStall | null): string {

@@ -1,6 +1,6 @@
 import { basename, isAbsolute, resolve } from 'node:path'
 import { readFile } from 'node:fs/promises'
-import { isSessionFile } from '../../../hooks/session-files'
+import { isSessionFile } from '../../../core/view/session-files'
 import { runtimeRoot } from '../tools/paths'
 import { coreRequest, appHome, currentTerminal, demoEndpoint, listTerminals } from './core'
 import type { CoreEndpoint, Terminal } from './core'

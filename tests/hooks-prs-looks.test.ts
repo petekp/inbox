@@ -1,8 +1,8 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { DESKTOP_MARK_CELLS, DESKTOP_SIDE_CELLS } from '../hooks/pane-sizes'
-import type { TabsProps } from '../hooks/tabs-client'
-import { PRESS_GUARD_MS } from '../hooks/timing'
+import { DESKTOP_MARK_CELLS, DESKTOP_SIDE_CELLS } from '../hooks/pane/pane-sizes'
+import type { TabsProps } from '../hooks/pane/tabs-client'
+import { PRESS_GUARD_MS } from '../core/view/timing'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 

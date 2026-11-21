@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { STATUS_REFRESH_MS } from '../../hooks/session-status'
+import { STATUS_REFRESH_MS } from '../../core/runtime/session-status'
 import { handleHook } from '../src/hook'
 import type { HookInput } from '../src/hook'
 import { readState } from '../src/state'

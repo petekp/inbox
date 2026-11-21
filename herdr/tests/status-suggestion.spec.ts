@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import type { Block } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import type { LookUi } from '../src/draw'
-import { freshUi } from '../../hooks/ui-controller-types'
+import { freshUi } from '../../core/view/ui-controller-types'
 import { HERDR_LOOK, applyEvents } from '../src/controller'
 import { NOW, demoScreen, uiOn } from './fixtures'
 

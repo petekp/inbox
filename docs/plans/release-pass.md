@@ -29,7 +29,7 @@ Any design has to catch both. Today's checks would miss both on a rerun.
 The 0.2.10 passes were driven by hand-written scripts: window captures, a text finder that clicks a word it reads, tmux keys, and install scripts. Each item below is a requirement for the Tier 2 drivers.
 
 - **The scripts live outside the repo** and hard-code the VM window's id, which changes each time the VM boots. A driver finds the window by its name at each run.
-- **A press's ✓ and its Undo last 5.12 s,** set by `SETTLED_MS` in `hooks/view.ts`. Capturing, finding the word and clicking took longer, and Undo was missed four times across the desktop and Codex looks. A driver presses Undo by its accessibility label or key, right after Dismiss.
+- **A press's ✓ and its Undo last 5.12 s,** set by `SETTLED_MS` in `core/view/view.ts`. Capturing, finding the word and clicking took longer, and Undo was missed four times across the desktop and Codex looks. A driver presses Undo by its accessibility label or key, right after Dismiss.
 - **The terminal's inline pane gives Undo no key,** and Tab passes over it, so no keyboard driver can press it there. Closing the last open row on a tab also moves the keyboard focus to the prompt, so the next keys go to the agent.
 - **The VM's clock jumped about an hour mid-pass,** so row ages read wrong. A clone syncs its clock before a run.
 - **Restoring a release's saved state by hand brought back transcripts that held later answers,** so the first turn closed the restored question. The base image's fixed saved sessions avoid this.

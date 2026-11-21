@@ -1,15 +1,15 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS } from '../hooks/arrivals'
-import { closeItem } from '../hooks/ledger-close'
-import { QUEUED_AFTER_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../hooks/timing'
-import { keptUiStates, noticeOf, restoredUi, rowErrorOf } from '../hooks/ui-controller'
-import { readWakeAt } from '../hooks/ui-controller-clock'
-import { holdsOf } from '../hooks/ui-controller-reply'
-import { freshUi, MAX_KEPT_UI, type UiState } from '../hooks/ui-controller-types'
+import { NEW_FADE_MS, NEW_HOLD_MS, NEW_STEPS } from '../core/view/arrivals'
+import { closeItem } from '../core/domain/ledger-close'
+import { QUEUED_AFTER_MS, RUNNING_FRAME_MS, SETTLED_MS } from '../core/view/timing'
+import { keptUiStates, noticeOf, restoredUi, rowErrorOf } from '../core/view/ui-controller'
+import { readWakeAt } from '../core/view/ui-controller-clock'
+import { holdsOf } from '../core/view/ui-controller-reply'
+import { freshUi, MAX_KEPT_UI, type UiState } from '../core/view/ui-controller-types'
 import type { Session } from '../types'
-import { FOLD_QUIET_MS } from '../hooks/timing'
+import { FOLD_QUIET_MS } from '../core/view/timing'
 import {
   closedByAgent,
   finding,

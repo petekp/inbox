@@ -1,7 +1,7 @@
-import { dialogActivity } from '../../hooks/catch-up-text'
-import { noteAnsweredDialog, noteDialog } from '../../hooks/dialogs'
-import { noteActivity, noteCommandOutput } from '../../hooks/session-turns'
-import { claimedStatusRefresh, statusChanged } from '../../hooks/session-status'
+import { dialogActivity } from '../../core/domain/catch-up-text'
+import { noteAnsweredDialog, noteDialog } from '../../core/domain/dialogs'
+import { noteActivity, noteCommandOutput } from '../../core/runtime/session-turns'
+import { claimedStatusRefresh, statusChanged } from '../../core/runtime/session-status'
 import {
   activityGate,
   childStarted,
@@ -10,9 +10,9 @@ import {
   delegatesStarted,
   delegatesTakenBack,
   waitsOnDelegate,
-} from '../../hooks/children'
-import { childEnded } from '../../hooks/status-children'
-import { refreshStatus } from '../../hooks/status-records'
+} from '../../core/domain/children'
+import { childEnded } from '../../core/domain/status-children'
+import { refreshStatus } from '../../core/runtime/status-records'
 import { activityOf, askOutcome, askQuestions } from './tool-calls'
 import type { SessionStatus } from '../../types'
 import { isUnattended, sessionIdOf } from './host-context'

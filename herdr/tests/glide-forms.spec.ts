@@ -4,7 +4,7 @@ import type { Block } from '../src/blocks'
 import type { PressKind } from '../../types'
 
 const { framesOf } = await import('./frames')
-const { FRAME_MS } = await import('../../hooks/springs')
+const { FRAME_MS } = await import('../../core/view/springs')
 type Step = import('./frames').Step
 const { tabBlocks } = await import('../src/draw')
 const { NOW, demoScreen, dismissedPr, uiOn, withDismissedAsk } = await import('./fixtures')

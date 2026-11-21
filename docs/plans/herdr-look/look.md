@@ -53,7 +53,7 @@ Text uses Herdr's UI font, so `rowTitle(r, 'herdr')` follows the desktop look's 
 
 ## Every state and every move
 
-The Codex tab steps each row through one state machine: `entering`, `closed`, `opening`, `open`, `closing`, `settling`, `settled`, `undoing` and `leaving`, in `codex/src/rows.ts`. The file imports nothing from Codex. It moves to `hooks/row-motion.ts`, and both the Codex tab and the Herdr look step rows with it. The rules in `docs/plans/codex-row-states.md` then hold in both looks: a panel is never removed while it shows, the settled line shows as soon as the result arrives, and time ends a move, not the animation.
+The Codex tab steps each row through one state machine: `entering`, `closed`, `opening`, `open`, `closing`, `settling`, `settled`, `undoing` and `leaving`, in `codex/src/rows.ts`. The file imports nothing from Codex. It moves to `core/view/row-motion.ts`, and both the Codex tab and the Herdr look step rows with it. The rules in `docs/plans/codex-row-states.md` then hold in both looks: a panel is never removed while it shows, the settled line shows as soon as the result arrives, and time ends a move, not the animation.
 
 GPUI animates natively, with no script running during the motion:
 
@@ -79,7 +79,7 @@ Herdr is a desktop app, so the look is click-first, and every move works with th
 
 ## Light and dark
 
-The look draws only with `theme()` colors, which every light and dark theme names alike. Warnings take the theme's yellow. Needs you takes the shared orange of `hooks/tones.ts`, so a question's mark does not read as a warning. Findings, PRs and errors take the theme's magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. So a banner reads by its color: a notice in blue, a warning in yellow, an error in red. Done takes the color Herdr's sidebar gives an agent that is done. A running mark keeps its row's color and fades in and out, so needs you never reads as running. The look draws nothing in `blocked`, which is red in many themes and would make a count read as an error:
+The look draws only with `theme()` colors, which every light and dark theme names alike. Warnings take the theme's yellow. Needs you takes the shared orange of `core/view/tones.ts`, so a question's mark does not read as a warning. Findings, PRs and errors take the theme's magenta, cyan and red, and a notice its blue, as the terminal look takes its theme's. So a banner reads by its color: a notice in blue, a warning in yellow, an error in red. Done takes the color Herdr's sidebar gives an agent that is done. A running mark keeps its row's color and fades in and out, so needs you never reads as running. The look draws nothing in `blocked`, which is red in many themes and would make a count read as an error:
 
 | Inbox tone | Herdr color |
 | --- | --- |

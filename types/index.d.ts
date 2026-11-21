@@ -466,7 +466,7 @@ export type PrView = {
   fetchedAt?: number
 }
 
-/** Where a PR stands, as its block's status line names it. `hooks/prs.ts:readiness` reads it. */
+/** Where a PR stands, as its block's status line names it. `core/domain/prs.ts:readiness` reads it. */
 export type PrStatus = 'ready' | 'blocked' | 'waiting' | 'draft' | 'merged' | 'closed'
 
 /**
@@ -828,7 +828,7 @@ export type Session = {
   /**
    * The rows the person collapsed, each with when, by row id: rows of the Asks, Finds and PRs tabs, and Status parents
    * folded by their name. A row stays collapsed until something new arrives on it, as
-   * `hooks/collapse.ts:collapsedRows` decides.
+   * `core/view/collapse.ts:collapsedRows` decides.
    */
   collapsed: Record<string, RowCollapse>
   /**
@@ -919,7 +919,7 @@ export type SentReply = {
   isConfirmed: boolean
 }
 
-/** A look's interaction state, which the shared controller in `hooks/ui-controller.ts` keeps. */
+/** A look's interaction state, which the shared controller in `core/view/ui-controller.ts` keeps. */
 export type UiState = {
   config: LookConfig
   host: HostFacts
@@ -1019,11 +1019,11 @@ declare module 'claude-code' {
   }
 }
 
-// Built by scripts/build-tool-inputs.mjs from the schemas in hooks/tools.ts. Edit a schema, then run it and
+// Built by scripts/build-tool-inputs.mjs from the schemas in core/runtime/tools.ts. Edit a schema, then run it and
 // scripts/build-types.mjs.
 
 declare module 'claude-code' {
-  /** The arguments of the agent's tools, as their schemas in `hooks/tools.ts` give them. */
+  /** The arguments of the agent's tools, as their schemas in `core/runtime/tools.ts` give them. */
   interface McpToolInputs {
     mcp__inbox__record: {
       kind: 'question' | 'task' | 'finding'

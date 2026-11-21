@@ -1,7 +1,7 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
-import { demoView } from '../hooks/demo'
-import { PRESS_GUARD_MS, SETTLED_MS } from '../hooks/timing'
+import { demoView } from '../core/view/demo'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../core/view/timing'
 import { w, world } from './hooks-world'
 import { BAND, PANE, replyKey } from './hooks-helpers'
 

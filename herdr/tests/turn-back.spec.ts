@@ -1,7 +1,7 @@
 import './gpui-stand-in'
 import { expect, setSystemTime, test } from 'bun:test'
-import { LEAVE_FADE_MS, TURNED_BACK_CUT_OPACITY } from '../../hooks/row-motion'
-import { PRESS_GUARD_MS } from '../../hooks/timing'
+import { LEAVE_FADE_MS, TURNED_BACK_CUT_OPACITY } from '../../core/view/row-motion'
+import { PRESS_GUARD_MS } from '../../core/view/timing'
 import type { Block, RowBlock } from '../src/blocks'
 
 const { framesOf } = await import('./frames')
