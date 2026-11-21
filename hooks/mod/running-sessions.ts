@@ -56,12 +56,21 @@ async function sessionFiles(f: Pick<SessionsFolder, 'configFolder' | 'list' | 'r
   return read.filter((file): file is SessionFile => file !== null)
 }
 
-/** The pid of the Claude Code process that runs conversation `sessionId` now, by its session file, or null. */
+/**
+ * The pid of the Claude Code process that runs conversation `sessionId` now, by its session file. Null unless exactly
+ * one such file's process runs, or, when `ps` cannot tell, unless exactly one file names it.
+ */
 export async function sessionPid(
-  f: Pick<SessionsFolder, 'configFolder' | 'list' | 'read'>,
+  f: Pick<SessionsFolder, 'configFolder' | 'list' | 'read' | 'run'>,
   sessionId: string,
 ): Promise<number | null> {
-  return (await sessionFiles(f))?.find(file => file.sessionId === sessionId)?.pid ?? null
+  const pids = ((await sessionFiles(f)) ?? []).filter(file => file.sessionId === sessionId).map(file => file.pid)
+  if (pids.length === 0) return null
+  const live = await livePids(f, pids)
+  const running = live ? pids.filter(pid => live.has(pid)) : pids
+  const [only] = running
+
+  return running.length === 1 && only !== undefined ? only : null
 }
 
 /** The pids among `pids` whose process runs, by one `ps`. Null when `ps` cannot run. */

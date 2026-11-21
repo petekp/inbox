@@ -69,11 +69,8 @@ function entryOf(text: string | null): RegistryEntry | null {
   }
 }
 
-/** What each registry file this process wrote last held, besides `writtenAt`, by path. */
-const written = new Map<string, string>()
-
 /**
- * Writes the registry entry of `source`'s session, when it changed since this process last wrote it, then removes the
+ * Writes the registry entry of `source`'s session, when it differs from the saved one besides `writtenAt`, then removes the
  * entries of the same host whose process has ended. `pid` is the process whose exit ends the session; null keeps
  * the one the entry has, and writes nothing when there is no entry. A failure is logged.
  */
@@ -100,11 +97,11 @@ export async function writeRegistryEntry(
       isTurnRunning: s.presence.isTurnRunning,
       counts: { needsYou: view.needsYou.count, findings: view.findings.count, prs: view.prs.count },
     }
-    const key = JSON.stringify(fields)
-    if (written.get(path) === key && kept) return
+    const isUnchanged =
+      kept && JSON.stringify({ ...kept, writtenAt: 0 }) === JSON.stringify({ ...fields, writtenAt: 0 })
+    if (isUnchanged) return
     const entry: RegistryEntry = { ...fields, writtenAt: now }
     await files.write(path, JSON.stringify(entry))
-    written.set(path, key)
     await pruneEnded(files, folder, source.host, path)
   } catch (error) {
     files.log(
@@ -134,10 +131,8 @@ export async function removeRegistryEntry(
   host: ClientId,
   sessionId: string,
 ): Promise<void> {
-  const path = `${folder}/${fileName(host, sessionId)}`
-  written.delete(path)
   await files
-    .remove(path)
+    .remove(`${folder}/${fileName(host, sessionId)}`)
     .catch((error: unknown) =>
       files.log(
         `inbox: the session registry entry could not be removed: ${error instanceof Error ? error.message : error}`,

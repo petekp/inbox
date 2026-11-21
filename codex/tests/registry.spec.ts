@@ -56,6 +56,10 @@ test('a Codex state write saves the session registry entry for its owner only, a
   await registryOnWrite(env, dir, () => 1500, process.pid)?.(saved)
   assert.equal((await entryAt(path)).writtenAt, 1000)
 
+  await writeFile(path, JSON.stringify({ ...first, counts: { needsYou: 0, findings: 1, prs: 0 } }))
+  await registryOnWrite(env, dir, () => 1700, process.pid)?.(saved)
+  assert.deepEqual((await entryAt(path)).counts, { needsYou: 0, findings: 0, prs: 0 })
+
   const running = await updateState(dir, 's1', s => ({ ...s, presence: { ...s.presence, isTurnRunning: true } }))
   await registryOnWrite(env, dir, () => 2000, null)?.(running)
   const second = await entryAt(path)

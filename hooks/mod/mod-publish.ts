@@ -62,7 +62,7 @@ export async function publishStatus(m: PublishCalls, isEnding = false, isExit = 
       },
       isExit,
     ),
-    registry,
+    isExit ? null : registry,
   ])
 
   return isTaken

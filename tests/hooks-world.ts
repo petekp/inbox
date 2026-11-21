@@ -194,7 +194,10 @@ async function gh(argv: readonly string[]) {
   const hit = w.ghAnswers.find(a => a.match(argv))
   if (isPrsQuery(argv) && (!hit || isThreadsAnswer(hit))) return prsQueryAnswer(argv)
   await hit?.hold?.()
-  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc' || argv[0] === 'mkdir'))
+  if (
+    !hit &&
+    (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc' || argv[0] === 'mkdir' || argv[0] === 'chmod')
+  )
     return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
   return answerOf(hit)
