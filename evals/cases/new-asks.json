@@ -422,5 +422,30 @@
         "noOption": "[?=/]|http"
       }
     ]
+  },
+  {
+    "name": "uncommitted-note-not-question",
+    "about": "A reply that only says its change is not committed yet, after the person answered its dialog, adds no question.",
+    "ledger": {
+      "turn": 1,
+      "nextId": 1,
+      "items": [],
+      "findings": [],
+      "closed": []
+    },
+    "exchange": {
+      "person": "Add a --wave option to greet.js. Before you write it, ask me where the 👋 should go.",
+      "turn": 1,
+      "activity": [
+        "read greet.js",
+        "asked the user in a dialog: \"For greet.js --wave, where should the 👋 go?\" (options: Before greeting / Between greeting and name / After the name); answer: User has answered your questions: \"For greet.js --wave, where should the 👋 go?\"=\"Before greeting\". You can now continue with the user's answers in mind.",
+        "edited greet.js",
+        "ran: node greet.js --wave Ana",
+        "ran: node greet.js --wave --shout --lang en --times 2",
+        "ran: node greet.js Ana"
+      ],
+      "reply": "I added `--wave` to greet.js. It puts 👋 at the very start of the line, before the greeting, as you chose.\n\n```\n$ node greet.js --wave Ana\n👋 Hola, Ana\n$ node greet.js --wave --shout --lang en --times 2\n👋 HI, WORLD\n👋 HI, WORLD\n```\n\nIt also works with `--shout`, `--lang` and `--times`, and the output without `--wave` hasn't changed. Nothing is committed yet."
+    },
+    "checks": [{ "added": 0 }]
   }
 ]
