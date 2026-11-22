@@ -50,7 +50,7 @@ This gap from the last audit still holds in the terminal, the desktop app and He
 
 We recommend showing the band's "Nothing needed" line from the start in the mod's looks, as omp does, or recording the difference with its reason.
 
-Fixed. The band now reads "Nothing needed" with Open inbox from the session's start, as omp's band does. It waits only while a conversation loads after the inbox turns on, `/clear` or `/resume`.
+Fixed. The band now reads "Nothing needed" with Open inbox from the session's start, as omp's band does. It waits only while a conversation loads after the inbox turns on, `/clear` or `/resume`. In the desktop app, a new session runs no engine until its first message, so the band shows from that message, before the reply.
 
 #### 5. On v0.6.0, Codex's PRs tab shows a raw git error
 
