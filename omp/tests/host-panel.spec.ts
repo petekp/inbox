@@ -185,6 +185,21 @@ test('the band shows above the editor and redraws with the counts after a change
   expect(band.render(80).join('')).toContain('/inbox to open')
 })
 
+test('while an ask dialog is open and nothing else waits, the band says omp waits for an answer, until the call ends', async () => {
+  createInbox(pi(), deps())
+  const { ctx, widgets, renders } = tuiCtx()
+  await call('session_start', { type: 'session_start' }, ctx)
+  const band = (widgets[0]!.content as any)({ requestRender: () => renders.count++ }, theme)
+  await until(() => band.render(80).join('').includes('Nothing needed'))
+  await call('tool_execution_start', { toolCallId: 'a1', toolName: 'ask', args: {} }, ctx)
+  await until(() => band.render(80).join('').includes('omp is waiting for your answer'))
+  expect(band.render(80).join('')).toContain('omp is waiting for your answer')
+  expect(band.render(80).join('')).not.toContain('Nothing needed')
+  await call('tool_execution_end', { toolCallId: 'a1' }, ctx)
+  await until(() => band.render(80).join('').includes('Nothing needed'))
+  expect(band.render(80).join('')).toContain('Nothing needed')
+})
+
 test('the band is not drawn without a terminal UI', async () => {
   createInbox(pi(), deps())
   const { ctx, widgets } = tuiCtx()

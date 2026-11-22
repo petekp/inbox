@@ -1,4 +1,4 @@
-import type { Tab } from '../../types'
+import type { Dialog, Tab } from '../../types'
 import { MAYBE_STALE_TEXT, NOTHING_NEEDED_TEXT } from './banners'
 import type { SessionView } from './session-view'
 import type { LedgerSync } from './sync-state'
@@ -29,4 +29,17 @@ export function nothingMark(isChecking: boolean, now: number): string {
 
 export function nothingText(ledger: LedgerSync, current: string = NOTHING_NEEDED_TEXT): NothingText {
   return { text: isMaybeStale(ledger) ? MAYBE_STALE_TEXT : current, isChecking: ledger.is === 'checking' }
+}
+
+/** What the band and an empty Asks tab read while the agent's own dialog waits on the person. */
+export function dialogWaitText(agent: string, kind: Dialog['kind']): string {
+  return kind === 'question' ? `${agent} is waiting for your answer` : `${agent} is waiting for your permission`
+}
+
+/**
+ * What the band reads with no counts: that the agent waits on the person while its own dialog is open, else
+ * `nothingText`. The dialog's text draws no running mark.
+ */
+export function bandIdleText(ledger: LedgerSync, dialog: { agent: string; kind: Dialog['kind'] | null }): NothingText {
+  return dialog.kind ? { text: dialogWaitText(dialog.agent, dialog.kind), isChecking: false } : nothingText(ledger)
 }

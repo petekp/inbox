@@ -1,6 +1,6 @@
 import type { Elements, RenderElement, RenderInput, RenderSurface } from 'claude-code'
 
-import { bandCounts, nothingMark, nothingText } from '../../core/view/band'
+import { bandCounts, bandIdleText, nothingMark } from '../../core/view/band'
 import { isResumable, stopFix, stopText } from '../../core/view/banners'
 import { isBlankLedger } from '../../core/domain/ledger'
 import { setDemo } from './mod-demo'
@@ -43,7 +43,7 @@ export async function band(
   theirsOf: () => Promise<RenderElement>,
 ) {
   const { Box, Button, Text } = elements
-  const [{ ledger, stop, view, isDemo, showsDemoNotices, now }, theme] = await Promise.all([
+  const [{ ledger, stop, view, isDemo, showsDemoNotices, openDialog, now }, theme] = await Promise.all([
     drawnState(m),
     m.atoms.theme.read(),
   ])
@@ -61,7 +61,7 @@ export async function band(
     </Text>
   ))
   const look = lookOf(e.surface)
-  const nothing = nothingText(view.sync.ledger)
+  const nothing = bandIdleText(view.sync.ledger, { agent: 'Claude', kind: openDialog })
   const isChecking = counts.length === 0 && nothing.isChecking
   if (isChecking && look === 'terminal') nextBandFrame(m, now)
   const Svg = look === 'desktop' && 'Svg' in elements ? elements.Svg : null

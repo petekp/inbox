@@ -134,18 +134,39 @@ test('a turn an API error ended shows its stop from the error text in the transc
   expect(await band.find({ text: /API error \(server_error\)/ })).toBeDefined()
 })
 
-test('while a permission prompt is open, the empty Asks tab says Claude waits for the person, then Nothing needed once it clears', async ($, on) => {
+test('while a permission prompt is open, the band and the empty Asks tab say Claude waits for the person, then Nothing needed once it clears', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const pane = await $.ui.mount(PANE)
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'git push' } } as never)
   await clock.settle()
-  expect(await pane.find({ text: /^Claude is waiting for your permission$/ })).toBeDefined()
-  expect(await pane.find({ text: /^Nothing needed$/ })).toBeUndefined()
+  for (const drawn of [pane, band]) {
+    expect(await drawn.find({ text: /^Claude is waiting for your permission$/ })).toBeDefined()
+    expect(await drawn.find({ text: /^Nothing needed$/ })).toBeUndefined()
+  }
   await $.tool.call({ tool: 'Bash', command: 'git push' } as never)
   await clock.settle()
-  expect(await pane.find({ text: /^Claude is waiting for your permission$/ })).toBeUndefined()
-  expect(await pane.find({ text: /^Nothing needed$/ })).toBeDefined()
+  for (const drawn of [pane, band]) {
+    expect(await drawn.find({ text: /^Claude is waiting for your permission$/ })).toBeUndefined()
+    expect(await drawn.find({ text: /^Nothing needed$/ })).toBeDefined()
+  }
+})
+
+test('while a permission prompt is open and a row waits, the band keeps its counts', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'task', ask: 'Sign in to npm' })
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'git push' } } as never)
+  await clock.settle()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const band = await $.ui.mount({ plugin: 'inbox', surface, ...BAND })
+    expect(await band.find({ text: /^Asks 1$/ })).toBeDefined()
+    expect(await band.find({ text: /waiting for your permission/ })).toBeUndefined()
+    await band.unmount()
+  }
 })

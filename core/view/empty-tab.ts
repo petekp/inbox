@@ -1,5 +1,5 @@
 import type { Dialog } from '../../types'
-import { nothingText } from './band'
+import { dialogWaitText, nothingText } from './band'
 import { NOTHING_NEEDED_TEXT } from './banners'
 import { ghNoticeOf } from './pr-rows'
 import type { PrRefreshView } from './pr-refresh'
@@ -65,9 +65,10 @@ export const EMPTY_STATUS_TEXT: { title: string; hint: string } = {
 
 /** The empty Asks tab's text while the agent's own dialog waits on the person. */
 function dialogText(agent: string, kind: Dialog['kind']): EmptyText {
-  return kind === 'question'
-    ? { title: `${agent} is waiting for your answer`, hint: `Answer the question in ${agent}'s dialog.` }
-    : { title: `${agent} is waiting for your permission`, hint: `Allow or deny it in ${agent}'s dialog.` }
+  const hint =
+    kind === 'question' ? `Answer the question in ${agent}'s dialog.` : `Allow or deny it in ${agent}'s dialog.`
+
+  return { title: dialogWaitText(agent, kind), hint }
 }
 
 /** The hint under an empty PRs tab. */
