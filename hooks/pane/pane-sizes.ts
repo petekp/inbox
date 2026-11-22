@@ -1,7 +1,14 @@
 import { DESKTOP_CHARS_PER_CELL } from './desktop-metrics'
 import { cellWidth } from '../../core/domain/text'
 import { fitTabs, tabName, type TabNaming } from '../../core/view/tabs'
-import { DESKTOP_LINE_PT, LIST_GAP_PT, LIST_MARGIN_PT, ROW_PAD_PT, SECTION_GAP_PT } from '../../core/view/layout'
+import {
+  DESKTOP_LINE_PT,
+  LIST_GAP_PT,
+  LIST_MARGIN_PT,
+  QUIET_BUTTON_GAP_PT,
+  ROW_PAD_PT,
+  SECTION_GAP_PT,
+} from '../../core/view/layout'
 import { TAB_COUNT_GAP } from './tabs-client'
 
 export const REPLY_ROWS = 3
@@ -49,8 +56,9 @@ export const DESKTOP_ANSWER_LABEL_CELLS = 1.35
 export const DESKTOP_CELL_PT = 8.8
 /** The side padding of a native Button on desktop, about 6 pt in the pane's captures, as cells. */
 export const DESKTOP_BUTTON_PAD_CELLS = 0.7
-export const DESKTOP_LINK_GAP_CELLS = 1.5
-/** Room a link takes past its label's estimated width. At the estimate alone, app 3.6556.2 cut a link's label, as "Re…". */
+/** The gap between two follow-ups' labels, `Reply` included: `QUIET_BUTTON_GAP_PT` in cells. */
+export const DESKTOP_LINK_GAP_CELLS = QUIET_BUTTON_GAP_PT / DESKTOP_CELL_PT
+/** Room a line of links keeps past their estimated widths. At the estimate alone, app 3.6556.2 cut a link's label, as "Re…". */
 export const DESKTOP_LINK_SLACK_CELLS = 0.5
 export const UNDO_CELLS = 9
 export const UNDO_HEIGHT_PT = 23

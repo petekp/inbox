@@ -106,11 +106,11 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
         const linksBox = (await pane.findAll({ type: 'Box' })).find(b =>
           b.children.some(c => (c as { props?: { key?: string } }).props?.key === `links-${row.id}`),
         )!
-        const { links, gap } = (await pane.find({ key: `links-${row.id}` }))?.props.props as LinksProps
+        const { links, gap, slack } = (await pane.find({ key: `links-${row.id}` }))?.props.props as LinksProps
         expect(
           [linksBox.props.width, linksBox.props.flexShrink, linksBox.props.minWidth],
           `desktop at ${columns} columns`,
-        ).toEqual([Math.ceil(links.reduce((sum, l) => sum + l.width, gap * (links.length - 1))), 1, 0])
+        ).toEqual([Math.ceil(links.reduce((sum, l) => sum + l.width + slack, gap * (links.length - 1))), 1, 0])
       }
       forms.add(buttonLabels.some(l => holds(rows[0]!, l)) ? 'shared' : 'own')
     }

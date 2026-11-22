@@ -72,5 +72,5 @@ The engine gives the pane's size in columns only, so `DESKTOP_CELL_PT` and `FRAM
 
 1. In a Code-mode session, open the pane at the docked width and run `/inbox demo`.
 2. Capture the app window with `screencapture -l`. Work out pixels per point from the capture's width and the window's width in points.
-3. Measure the cell on the open Asks row's links. Take the distance in points between the left edges of two links on one line, and subtract the first link's `desktopTextPt`. Divide what is left by `DESKTOP_LINK_SLACK_CELLS` plus `DESKTOP_LINK_GAP_CELLS`. That is the cell.
+3. Measure the cell on the open Asks row's links. Take the distance in points between the left edges of two links on one line, and subtract the first link's `desktopTextPt`. Divide what is left by `DESKTOP_LINK_GAP_CELLS`. That is the cell.
 4. Measure the inset on a closed row. From the row's highlight edge to the start of its title is `FRAME_INSET_PT` plus the one-cell mark column.
