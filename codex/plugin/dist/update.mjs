@@ -5516,6 +5516,11 @@ function delegateReader(target, run2) {
 // ../core/remote/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
 
+// ../core/view/dialog-row.ts
+function dialogTitle(dialog) {
+  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
+}
+
 // ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -5542,13 +5547,10 @@ function stopLine(stop) {
       return "! API error: resume";
   }
 }
-function dialogText(dialog) {
-  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
-}
 function statusLine(stop, dialogs, input) {
   if (stop) return stopLine(stop);
   const dialog = dialogs[0];
-  if (dialog) return dialogText(dialog);
+  if (dialog) return dialogTitle(dialog);
   const { firstAsk, asks, findings, focus, stale } = input;
   if (firstAsk !== null) return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? "" : "s"}`;

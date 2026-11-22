@@ -671,7 +671,7 @@ var OMP = {
     "dialog-descriptions": { kind: "full" },
     "open-dialog-asks": {
       kind: "different",
-      reason: "omp's ask dialog takes the place of the panel and the editor until it closes, so the panel cannot show while one waits. omp publishes the open dialog, and the Herdr look shows it. omp's tool approval prompt raises no event an extension sees."
+      reason: "omp's ask dialog takes the place of the panel and the editor until it closes, so the panel cannot show while one waits. omp publishes the open dialog and its question, and the Herdr look lists it as an Asks row. omp's tool approval prompt raises no event an extension sees."
     },
     "tool-output-urls": { kind: "full" },
     "pr-link-from-output": { kind: "full" },
@@ -4880,7 +4880,7 @@ function isWaitingRow(row) {
   return row.state.is === "open";
 }
 function waitingCount(rows) {
-  return rows.filter((r) => r !== undefined && isWaitingRow(r)).length;
+  return rows.filter((r) => r !== undefined && isWaitingRow(r) && r.type !== "dialog").length;
 }
 function isHandedOffDone(row) {
   const f = row.feedback;
@@ -5296,6 +5296,11 @@ function sessionFields(saved, views) {
   };
 }
 
+// ../core/view/dialog-row.ts
+function dialogTitle(dialog) {
+  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
+}
+
 // ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -5351,15 +5356,12 @@ function stopLine(stop) {
       return "! API error: resume";
   }
 }
-function dialogText(dialog) {
-  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
-}
 function statusLine(stop, dialogs, input) {
   if (stop)
     return stopLine(stop);
   const dialog = dialogs[0];
   if (dialog)
-    return dialogText(dialog);
+    return dialogTitle(dialog);
   const { firstAsk, asks, findings, focus, stale } = input;
   if (firstAsk !== null)
     return asks > 1 ? `${asks} \xB7 ${firstAsk}` : firstAsk;
@@ -10338,10 +10340,6 @@ var EMPTY_STATUS_TEXT = {
   title: screenTabOf("overview").label,
   hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
 };
-function dialogText2(agent, kind) {
-  const hint = kind === "question" ? `Answer the question in ${agent}'s dialog.` : `Allow or deny it in ${agent}'s dialog.`;
-  return { title: dialogWaitText(agent, kind), hint };
-}
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
@@ -10375,8 +10373,6 @@ function emptyTab(view, look) {
   }
   if (look.drawn > 0 || look.hasBlocker)
     return null;
-  if (look.tab === "needsYou" && look.openDialog)
-    return { ...dialogText2(look.agent, look.openDialog), under: null, titleMark: null };
   if (look.tab === "needsYou" && look.hostText)
     return { ...look.hostText, under: null, titleMark: null };
   const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
@@ -16920,7 +16916,7 @@ function sessionCalls(context) {
         writtenAt: now,
         projectFolder: memory.shownCwd?.(),
         isFetchingPrs: prFetches.isFetching(id),
-        ...openAsk && { openDialog: openAsk.kind },
+        ...openAsk && { openDialog: openAsk.kind, openDialogText: openAsk.text },
         version,
         isNextBuild: deps.isNextBuild
       }, s, context.logHerdr);

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-22T19:34:43.269Z. 349528 characters follow.
+// Built at 2026-11-22T20:17:25.882Z. 350407 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -2049,7 +2049,7 @@ function isWaitingRow(row) {
   return row.state.is === "open";
 }
 function waitingCount(rows) {
-  return rows.filter((r) => r !== undefined && isWaitingRow(r)).length;
+  return rows.filter((r) => r !== undefined && isWaitingRow(r) && r.type !== "dialog").length;
 }
 function isHandedOffDone(row) {
   const f = row.feedback;
@@ -2464,6 +2464,44 @@ function sessionFields(saved, views) {
     dialogQuestions: (saved.dialogQuestions ?? []).map((q) => ({ ...q, descriptions: q.descriptions ?? {} })),
     toolFields: savedToolFields(saved.toolFields)
   };
+}
+
+// ../core/view/dialog-row.ts
+function dialogRowId(dialog) {
+  return `dialog:${dialog.kind}:${dialog.text ?? ""}`;
+}
+function dialogTitle(dialog) {
+  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
+}
+function answerPlace(agent, kind) {
+  return kind === "question" ? `Answer the question in ${agent}'s dialog.` : `Allow or deny it in ${agent}'s dialog.`;
+}
+function dialogRow(dialog, agent) {
+  return {
+    id: dialogRowId(dialog),
+    type: "dialog",
+    number: null,
+    title: dialog.text ? dialogTitle({ kind: dialog.kind, text: dialog.text }) : dialogWaitText(agent, dialog.kind),
+    at: null,
+    detail: null,
+    fileName: null,
+    replyKind: "answer",
+    item: null,
+    finding: null,
+    steps: [],
+    state: { is: "open" },
+    feedback: null,
+    actions: [],
+    optionDescriptions: [],
+    holdsUpLine: null,
+    contextLine: answerPlace(agent, dialog.kind),
+    earlierLine: null
+  };
+}
+function withDialogRow(view, dialog, agent) {
+  if (!dialog)
+    return view;
+  return { ...view, needsYou: { ...view.needsYou, questions: [dialogRow(dialog, agent), ...view.needsYou.questions] } };
 }
 
 // ../core/remote/herdr.ts
@@ -5150,7 +5188,7 @@ function readSession(text) {
     isFetchingPrs: file.isFetchingPrs === true,
     isReadFailed: file.isReadFailed === true,
     turnReadFailedAt: typeof file.turnReadFailedAt === "number" ? file.turnReadFailedAt : null,
-    openDialog: file.openDialog === "question" || file.openDialog === "permission" ? file.openDialog : null
+    openDialog: file.openDialog === "question" || file.openDialog === "permission" ? { kind: file.openDialog, text: typeof file.openDialogText === "string" ? file.openDialogText : null } : null
   };
 }
 var TORN_RETRY_MS = 30;
@@ -7119,10 +7157,6 @@ var EMPTY_STATUS_TEXT = {
   title: screenTabOf("overview").label,
   hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
 };
-function dialogText(agent, kind) {
-  const hint = kind === "question" ? `Answer the question in ${agent}'s dialog.` : `Allow or deny it in ${agent}'s dialog.`;
-  return { title: dialogWaitText(agent, kind), hint };
-}
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
@@ -7156,8 +7190,6 @@ function emptyTab(view, look) {
   }
   if (look.drawn > 0 || look.hasBlocker)
     return null;
-  if (look.tab === "needsYou" && look.openDialog)
-    return { ...dialogText(look.agent, look.openDialog), under: null, titleMark: null };
   if (look.tab === "needsYou" && look.hostText)
     return { ...look.hostText, under: null, titleMark: null };
   const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
@@ -7929,8 +7961,7 @@ function rowTabBlocks(screen, ui, tab) {
     tab,
     agent: screen.agent,
     drawn: groups.filter((g) => g.rows.length > 0 || g.closed.length > 0).length,
-    hasBlocker: false,
-    openDialog: screen.openDialog
+    hasBlocker: false
   });
   if (empty)
     return [emptyBlock(tab, empty)];
@@ -7992,12 +8023,12 @@ function messageOf(followed, read) {
     return message("Can't read this inbox", `Its file has ${read.reason}.`, true);
   return null;
 }
-var readView = (read, now, holds, notes) => sessionView(read.session, now, SETTLED_MS, holds, notes, false, {
+var readView = (read, now, holds, notes) => withDialogRow(sessionView(read.session, now, SETTLED_MS, holds, notes, false, {
   ...NO_SYNC_INPUTS,
   isReadFailed: read.isReadFailed,
   isFetchingPrs: read.isFetchingPrs,
   turnReadFailedAt: read.turnReadFailedAt
-});
+}), read.openDialog, read.envelope.agent);
 function screenOf(followed, read, ui, o) {
   const shown = messageOf(followed, read);
   if (shown !== null || read?.is !== "read")
@@ -8011,8 +8042,7 @@ function screenOf(followed, read, ui, o) {
     now: o.now,
     shownSince: holds.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
-    isFetchingPrs: read.isFetchingPrs,
-    openDialog: read.openDialog
+    isFetchingPrs: read.isFetchingPrs
   };
   return {
     is: "inbox",
