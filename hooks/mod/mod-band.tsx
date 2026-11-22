@@ -7,7 +7,7 @@ import { setDemo } from './mod-demo'
 import { drawnState, redraw } from './mod-drawn'
 import { openInbox } from './mod-pane-open'
 import type { Mod } from './mod-ports'
-import { paneState, sessionState } from './mod-state'
+import { sessionState } from './mod-state'
 import { resume } from './mod-turns'
 import { lookOf, paletteFor } from '../pane/palettes'
 import { DOT, resumeLabel } from '../../core/view/rows'
@@ -47,8 +47,8 @@ export async function band(
     drawnState(m),
     m.atoms.theme.read(),
   ])
-  // A loading conversation may bring back saved rows, so the band waits for them before it reads "Nothing needed".
-  const isLoadingRows = paneState.loadingRevision !== null && isBlankLedger(ledger)
+  // A loading conversation may bring back saved rows, so the band waits for them before it reads that none wait.
+  const isLoadingRows = sessionState.isConversationLoading && isBlankLedger(ledger)
   if (!stop && isLoadingRows) return theirsOf()
   // Every mod shares the band, and a tree without the drawing from next(e)
   // hides what the mods after this one draw there.

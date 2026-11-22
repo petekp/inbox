@@ -241,12 +241,13 @@ _Avoid_: collapsed subject, folded milestone
 
 **Band**:
 In Claude Code, the line above the prompt with the Asks, Finds and PRs
-counts and [Open inbox]. It shows from the session's start, once a resumed
-conversation's saved rows have loaded. With no counts it reads "Nothing needed", with a
-running mark while the ledger's sync state is checking, or "May be out of
-date" while it is stale or unavailable. When the session stops, a second line says why, with
-[Resume] after an API error. Codex has no band. omp has a band with the same
-counts and no button, which says `/inbox` opens the panel.
+counts and [Open inbox]. It shows from the session's start, once the
+conversation's saved rows have loaded. With no counts it reads "Nothing
+needed", with a running mark while the ledger's sync state is checking, or
+"May be out of date" while it is stale or unavailable. When the session
+stops, a second line says why, with [Resume] after an API error. Codex has
+no band. omp has a band with the same counts and no button, which says
+`/inbox` opens the panel.
 
 **Sync state**:
 Whether a source the view draws from is current: the ledger, the Status page,

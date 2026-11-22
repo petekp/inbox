@@ -1,6 +1,6 @@
 # First-run audit, 2026-11-21
 
-Status: proposed. The README fixes are in this branch. The code fixes it recommends are not built.
+Status: proposed. The README fixes are in this branch. Of the code fixes it recommends, only gap 4's is built.
 
 This audit followed a new user through their first ten minutes with the inbox in each client. It ranks what stopped or confused them, and says for each gap what is fixed and what still needs work. It replaces the audit of 2026-11-19. Gaps from that audit that still hold are listed again. The fixed ones are left out.
 
@@ -50,7 +50,7 @@ This gap from the last audit still holds in the terminal, the desktop app and He
 
 We recommend showing the band's "Nothing needed" line from the start in the mod's looks, as omp does, or recording the difference with its reason.
 
-Fixed. The band now reads "Nothing needed" with Open inbox from the session's start, as omp's band does. It waits only while a resumed conversation loads its saved rows.
+Fixed. The band now reads "Nothing needed" with Open inbox from the session's start, as omp's band does. It waits only while a conversation loads after the inbox turns on, `/clear` or `/resume`.
 
 #### 5. On v0.6.0, Codex's PRs tab shows a raw git error
 
