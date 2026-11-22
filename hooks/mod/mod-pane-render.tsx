@@ -15,6 +15,7 @@ import { cancelUndoScroll, paneState } from './mod-state'
 import { currentOwner } from './mod-sessions'
 import { applyUiEvents, hostFactsOf } from './mod-ui'
 import { landTerminalFrame } from './mod-ui-loop'
+import { herdrAskKeys } from '../pane/pane-herdr-ask'
 import { lookOf, paletteFor } from '../pane/palettes'
 import { paneAskRows, paneAskTabs } from '../pane/pane-asks'
 import type { PaneClient, Row } from '../pane/pane-context'
@@ -328,6 +329,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
       railWidth,
       hasRail,
       isHelpShown,
+      space,
     },
     handlers,
   )
@@ -594,7 +596,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
       {look === 'desktop' ? null : (
         <Box display="none">
           {keyBindings(viewKeys)}
-          {keyBindings(rowKeys, KEY_BINDING_SUFFIX)}
+          {keyBindings([...rowKeys, ...herdrAskKeys()], KEY_BINDING_SUFFIX)}
         </Box>
       )}
     </Box>

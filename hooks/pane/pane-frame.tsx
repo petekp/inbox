@@ -1,8 +1,8 @@
 import { bannerOf, type BannerView, tabBarBanners } from '../../core/view/banners'
 import { HELP_COPY } from '../../core/view/help'
 import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from '../../core/view/layout'
-import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../core/remote/herdr-ask'
-import { pressHerdrAsk } from '../mod/mod-herdr'
+import { herdrAskBanner } from '../../core/remote/herdr-ask'
+import { herdrAskButtons } from './pane-herdr-ask'
 import { TOOLS_REFUSED_TEXT } from '../mod/mod-records'
 import { mod } from '../mod/mod-state'
 import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
@@ -45,6 +45,7 @@ export function paneFrame(
     railWidth,
     hasRail,
     isHelpShown,
+    space,
   }: PaneClient &
     Pick<
       PaneBase,
@@ -69,6 +70,7 @@ export function paneFrame(
       | 'railWidth'
       | 'hasRail'
       | 'isHelpShown'
+      | 'space'
     >,
   { showTab, toggleHelp: toggleHelpShown }: Pick<PaneHandlers, 'showTab' | 'toggleHelp'>,
 ) {
@@ -171,19 +173,6 @@ export function paneFrame(
       </Box>
     )
   }
-  /** The install question's buttons, on their own line under its text, while it asks. */
-  const herdrAskButtons = () =>
-    mod.herdrAsk?.is === 'asking' ? (
-      <Box
-        flexDirection="row"
-        columnGap={1}
-        marginTop={look === 'desktop' ? (2 * BANNER_PAD_Y_PT) / DESKTOP_LINE_PT : 0}
-      >
-        {HERDR_ASK_BUTTONS.map(a => (
-          <Button key={a.id} label={a.label} onPress={() => void pressHerdrAsk(a.isYes)} />
-        ))}
-      </Box>
-    ) : null
   const statusLines = tabBarBanners(
     [
       ...(mod.toolsRefused ? [bannerOf('tools-refused', TOOLS_REFUSED_TEXT)] : []),
@@ -192,7 +181,11 @@ export function paneFrame(
     ],
     shownError,
     notice,
-  ).map(b => (b.kind === 'herdr-mod-ask' ? banner(b, { isBodyBelow: true, extra: herdrAskButtons() }) : banner(b)))
+  ).map(b =>
+    b.kind === 'herdr-mod-ask'
+      ? banner(b, { isBodyBelow: true, extra: herdrAskButtons({ look, Box, Button, Text, pal, space }) })
+      : banner(b),
+  )
   const namesWidth = (naming: TabNaming) =>
     tabList.reduce((sum, t) => sum + cellWidth(tabText(t.id, tabName(t, naming))), 0)
   const helpCells = cellWidth(HELP_COPY.icon)

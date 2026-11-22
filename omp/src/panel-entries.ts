@@ -67,7 +67,7 @@ function herdrAskEntries(screen: PanelScreen): Entry[] {
   const isAsking = screen.herdrAsk?.is === 'asking'
   const buttons: Button[] = HERDR_ASK_BUTTONS.map(a => ({
     label: a.label,
-    key: null,
+    key: a.hotkey,
     press: { action: 'herdr-ask', isYes: a.isYes },
     isRecommended: a.isYes,
     isFollowUp: false,

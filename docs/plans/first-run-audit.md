@@ -24,11 +24,11 @@ After the walk, the current `next` build (028edd25) was loaded in the terminal a
 
 #### 1. In a Herdr terminal, the Herdr mod's Install button could not be pressed
 
-Claude Code in a Herdr terminal answers the first `/inbox` with "Opened the inbox here, since the Herdr app has no inbox mod". The inline pane then asks "Install the inbox's Herdr mod?" with Install and Don't install. These two buttons have no hotkey, so pressing one needs focus in the pane. `herdrAskButtons` in `hooks/pane/pane-frame.tsx` draws them.
+Claude Code in a Herdr terminal answers the first `/inbox` with "Opened the inbox here, since the Herdr app has no inbox mod". The inline pane then asks "Install the inbox's Herdr mod?" with Install and Don't install. In v0.6.0 these two buttons had no hotkey, so pressing one needed focus in the pane. `herdrAskButtons` in `hooks/pane/pane-herdr-ask.tsx` draws them.
 
 In the walk, none of these reached them: a click, Ctrl+X Tab sent as key events, and keys sent with `hc`. The same key events moved focus in Terminal.app. The 2026-11-19 audit hit the same wall. Whether a person's real click works in Herdr is unverified.
 
-We recommend giving both buttons hotkeys, as row buttons have. Issue [#723](https://github.com/petekp/inbox/issues/723) tracks it.
+Since [#723](https://github.com/petekp/inbox/issues/723), y presses Install and q presses Don't install, as a row's keys press its buttons.
 
 #### 2. After an Install pressed elsewhere, `/inbox` still says Herdr has no inbox mod
 

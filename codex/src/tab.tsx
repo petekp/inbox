@@ -18,6 +18,7 @@ import { restoreState } from './tab-swap'
 import { foldAllHere } from './tab-fold-all'
 import { pressCollapseKey, tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
+import { pressHerdrAskKey } from './tab-herdr-ask'
 import { rowActions, stepLists } from './tab-list'
 import { NeedsYou, Findings } from './tab-groups'
 import { prClearKeys, prOrderKeys, Prs } from './tab-prs'
@@ -184,6 +185,10 @@ document.addEventListener(
     if (e.key === '?' || (e.key === 'Escape' && isHelpShown)) {
       e.preventDefault()
       dispatch([{ type: 'show-help', isShown: e.key === '?' && !isHelpShown }])
+      return
+    }
+    if (pressHerdrAskKey(tabState.view, e.key)) {
+      e.preventDefault()
       return
     }
     const switched = shownTabs().find(t => t.hotkey === e.key)

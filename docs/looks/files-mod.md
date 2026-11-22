@@ -50,6 +50,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/mod/mod-band.tsx` | Mod only. The band above the prompt: the inbox's counts with Open inbox, and the stop row with Resume. |
 | `hooks/pane/pane-context.ts` | Mod only. The types the Pane render hands its drawing files: `PaneBase` for the values the render computed, `PaneClient` for whether the surface draws Clients, `PaneHandlers` for the calls that need `$`, and `Row`, the shape every list row is drawn from. |
 | `hooks/pane/pane-frame.tsx` | Mod only. The pane's frame in both looks: the tab bar, the inline rail, banners and the status block. |
+| `hooks/pane/pane-herdr-ask.tsx` | Mod only. The Herdr install question's buttons under its banner, and `herdrAskKeys`, the y and q bindings the pane draws hidden in the terminal. |
 | `hooks/pane/pane-row-frame.tsx` | Mod only. `desktopFrame`, the frame a desktop row, group title, PR block or Status row draws in: its mark column, side column and padding. |
 | `hooks/pane/pane-asks.tsx` | Mod only. The Asks and Finds tabs: question, task and finding rows, the Needs you and Finds groups, and a tab's empty state. |
 | `hooks/pane/pane-ask-tree.tsx` | Mod only. An open question's or task's Holds up line, context, option lines, hung on one connector in the terminal, and the entries desktop draws on its own lines. |
