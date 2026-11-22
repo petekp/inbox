@@ -50,6 +50,8 @@ This gap from the last audit still holds in the terminal, the desktop app and He
 
 We recommend showing the band's "Nothing needed" line from the start in the mod's looks, as omp does, or recording the difference with its reason.
 
+Fixed. The band now reads "Nothing needed" with Open inbox from the session's start, as omp's band does. It waits only while a resumed conversation loads its saved rows.
+
 #### 5. On v0.6.0, Codex's PRs tab shows a raw git error
 
 In a folder that is not a git repository, the PRs tab reads "Could not read the PRs: failed to run git: fatal: not a git repository…". This shows before the first message. `next` fixes it in d23e39a9, which treats a session with no branch as having no branch PR. The next release ships the fix, so this needs no issue.
