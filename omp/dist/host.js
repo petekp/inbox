@@ -388,6 +388,7 @@ var CLAUDE_CODE = {
     },
     "dialog-answer-closes-copy": { kind: "full" },
     "dialog-descriptions": { kind: "full" },
+    "open-dialog-asks": { kind: "full" },
     "tool-output-urls": { kind: "full" },
     "pr-link-from-output": { kind: "full" },
     "pr-arrivals": { kind: "full" },
@@ -502,6 +503,10 @@ var CODEX = {
       reason: "Codex's dialog tool returns before the person answers, so the inbox sees no answer when the dialog ends. The copy stays open until the person's reply in the dialog's form arrives, and the agent closes it then."
     },
     "dialog-descriptions": { kind: "full" },
+    "open-dialog-asks": {
+      kind: "unsupported",
+      reason: "Codex runs no hook while its dialog or an approval waits, and its dialog tool returns before the person answers, so the inbox cannot tell that one is open."
+    },
     "tool-output-urls": { kind: "full" },
     "pr-link-from-output": {
       kind: "different",
@@ -664,6 +669,10 @@ var OMP = {
     },
     "dialog-answer-closes-copy": { kind: "full" },
     "dialog-descriptions": { kind: "full" },
+    "open-dialog-asks": {
+      kind: "different",
+      reason: "omp's ask dialog takes the place of the panel and the editor until it closes, so the panel cannot show while one waits. omp publishes the open dialog, and the Herdr look shows it. omp's tool approval prompt raises no event an extension sees."
+    },
     "tool-output-urls": { kind: "full" },
     "pr-link-from-output": { kind: "full" },
     "pr-arrivals": { kind: "full" },
@@ -10323,6 +10332,9 @@ var EMPTY_STATUS_TEXT = {
   title: screenTabOf("overview").label,
   hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
 };
+function dialogText2(agent, kind) {
+  return kind === "question" ? { title: `${agent} is waiting for your answer`, hint: `Answer the question in ${agent}'s dialog.` } : { title: `${agent} is waiting for your permission`, hint: `Allow or deny it in ${agent}'s dialog.` };
+}
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
@@ -10356,6 +10368,8 @@ function emptyTab(view, look) {
   }
   if (look.drawn > 0 || look.hasBlocker)
     return null;
+  if (look.tab === "needsYou" && look.openDialog)
+    return { ...dialogText2(look.agent, look.openDialog), under: null, titleMark: null };
   if (look.tab === "needsYou" && look.hostText)
     return { ...look.hostText, under: null, titleMark: null };
   const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
@@ -11471,6 +11485,11 @@ function tabBar(d) {
   const { naming, layout } = fitTabs(TAB_FORMS, (naming, form) => visibleLength(lineOf(naming, form)) <= width);
   return spread(lineOf(naming, layout), ui.isHelpShown ? "" : s.dim("esc to close "), width);
 }
+function inboxModelText({ modelName, isSignedIn }) {
+  if (modelName)
+    return `inbox model ${modelName}`;
+  return isSignedIn ? "no inbox model: set @inbox" : "no inbox model: sign in with /login";
+}
 function footer(d, isPageScrolling) {
   const { screen, ui, width, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
@@ -11483,7 +11502,7 @@ function footer(d, isPageScrolling) {
     "tab switch",
     "? help"
   ];
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : "no inbox model: set @inbox"} `;
+  const model = `${inboxModelText(screen)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
   if (fitsBesideHints)
@@ -14253,7 +14272,7 @@ function demoSource(deps) {
         ...NO_SYNC_INPUTS,
         isDemo: true
       }),
-      modelName: deps.modelName,
+      ...deps.inboxModel,
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,
@@ -15148,7 +15167,7 @@ function shownLine(result) {
 // src/host-activity.ts
 function activityHandlers(context, sessions) {
   const { deps, memory } = context;
-  const { change, updateHostFor, fetchPrsWhenDue } = sessions;
+  const { change, updateHostFor, fetchPrsWhenDue, notifyChanged } = sessions;
   const isActivityWorthSaving = activityGate();
   const onSubagentLifecycle = async (data) => {
     const frame = data;
@@ -15194,6 +15213,12 @@ function activityHandlers(context, sessions) {
   const onToolExecutionStart = async (event, ctx) => {
     if (isUnattended(ctx))
       return;
+    if (event.toolName === "ask") {
+      const question = askQuestions(event.args ?? {})[0]?.question ?? "A question";
+      context.openAsks.set(sessionIdOf(ctx), { kind: "question", text: question, key: event.toolCallId });
+      notifyChanged(sessionIdOf(ctx));
+      return;
+    }
     const args = event.args ?? {};
     const command = event.toolName === "bash" && typeof args.command === "string" ? args.command : "";
     if (!waitsOnDelegate(command))
@@ -15208,6 +15233,11 @@ function activityHandlers(context, sessions) {
     });
   };
   const onToolExecutionEnd = async (event, ctx) => {
+    const id = sessionIdOf(ctx);
+    if (context.openAsks.get(id)?.key === event.toolCallId) {
+      context.openAsks.delete(id);
+      notifyChanged(id);
+    }
     const wait = waits.get(event.toolCallId);
     if (!wait)
       return;
@@ -15216,6 +15246,13 @@ function activityHandlers(context, sessions) {
     await change(sessionIdOf(ctx), (s) => statusChanged(s, takenBack)).catch(() => {
       return;
     });
+  };
+  const onAgentEnd = (event, ctx) => {
+    if (isUnattended(ctx) || event.willContinue)
+      return;
+    const id = sessionIdOf(ctx);
+    if (context.openAsks.delete(id))
+      notifyChanged(id);
   };
   const onToolResult = async (event, ctx) => {
     if (isUnattended(ctx))
@@ -15258,7 +15295,7 @@ function activityHandlers(context, sessions) {
       return;
     });
   };
-  return { onSubagentLifecycle, onSubagentProgress, onToolExecutionStart, onToolExecutionEnd, onToolResult };
+  return { onSubagentLifecycle, onSubagentProgress, onToolExecutionStart, onToolExecutionEnd, onToolResult, onAgentEnd };
 }
 
 // src/host-presses.ts
@@ -16594,7 +16631,7 @@ function keptUi(kept) {
   return { heldRows, ui: kept !== null && isUiWorthKeeping(kept) ? kept : null };
 }
 function panelCalls(context, sessions, herdrAsk) {
-  const { deps, dir, openPanels, uiStates, prFetches, listeners, memory, sendToAgent, modelNameOf } = context;
+  const { deps, dir, openPanels, uiStates, prFetches, listeners, memory, sendToAgent, inboxModelOf } = context;
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions;
   const shownRows = new Map;
   const takeShownRows = (id) => {
@@ -16608,7 +16645,7 @@ function panelCalls(context, sessions, herdrAsk) {
       const s = await readState(dir, id);
       return {
         view: sessionView({ ...s, prViews: { ...s.prViews, isGhMissing: memory.isGhMissing } }, deps.now(), deps.settleWindowMs, holds, notes, false, { ...NO_SYNC_INPUTS, isFetchingPrs: prFetches.isFetching(id) }),
-        modelName: modelNameOf(ctx),
+        ...inboxModelOf(ctx),
         isGhMissing: memory.isGhMissing,
         herdrModFailure: memory.herdrModFailure,
         herdrAsk: memory.herdrAsk,
@@ -16861,6 +16898,7 @@ function sessionCalls(context) {
       const s = await readState(dir, id);
       const commands = await commandsOf(ompCommandStore(dir, id, deps.now), s);
       const now = deps.now();
+      const openAsk = context.openAsks.get(id);
       const isPublished = target.kind === "terminal" && await publishedSession(publishFiles, appHome, {
         receipts: remoteReceipts(commands),
         viewers: remoteViewerReceipts(viewerLeases.peek(id)),
@@ -16874,11 +16912,16 @@ function sessionCalls(context) {
         writtenAt: now,
         projectFolder: memory.shownCwd?.(),
         isFetchingPrs: prFetches.isFetching(id),
+        ...openAsk && { openDialog: openAsk.kind },
         version,
         isNextBuild: deps.isNextBuild
       }, s, context.logHerdr);
       const view = sessionView(s, now, deps.settleWindowMs);
-      return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null };
+      return {
+        target,
+        tokens: herdrTokens(s.ledger, s.stop, view, openAsk ? [openAsk] : []),
+        session: isPublished ? id : null
+      };
     }, deps.after));
   }
   let registryWork = Promise.resolve();
@@ -17380,15 +17423,21 @@ function createInbox(pi, deps = defaultDeps) {
     if (kept.length !== active.length)
       await pi.setActiveTools(kept);
   };
-  const modelNameOf = (ctx) => {
+  const inboxModelOf = (ctx) => {
     const model = inboxModel(ctx);
-    return model ? model.name ?? model.id : null;
+    const keys = ctx.modelRegistry.authStorage.keys;
+    const hasSignIn = (provider) => keys.source(provider) !== undefined || keys.keyless(provider);
+    return {
+      modelName: model ? model.name ?? model.id : null,
+      isSignedIn: ctx.models.list().some((m) => hasSignIn(m.provider))
+    };
   };
   const logHerdr = herdrLog(dir);
   const context = {
     deps,
     dir,
     openPanels: new Map,
+    openAsks: new Map,
     uiStates: new Map,
     prepared: new Set,
     prFetches: prFetchTracker(deps.now, (id) => sessions.notifyChanged(id)),
@@ -17411,7 +17460,7 @@ function createInbox(pi, deps = defaultDeps) {
     askFor,
     dropTools,
     showBand,
-    modelNameOf,
+    inboxModelOf,
     sendNotes: (notes) => pi.sendMessage({ customType: MESSAGE_TYPE, content: notes.join(`
 
 `), display: false, attribution: "agent" }, { deliverAs: "nextTurn" })
@@ -17453,7 +17502,10 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("tool_result", activity.onToolResult);
   pi.on("message_end", turns.onMessageEnd);
   pi.on("message_start", turns.onMessageStart);
-  pi.on("agent_end", turns.onAgentEnd);
+  pi.on("agent_end", (event, ctx) => {
+    activity.onAgentEnd(event, ctx);
+    return turns.onAgentEnd(event, ctx);
+  });
   const tool = (name, description, parameters) => {
     pi.registerTool({
       name,
@@ -17539,7 +17591,7 @@ function createInbox(pi, deps = defaultDeps) {
       version,
       isNextBuild: deps.isNextBuild,
       comparePage: deps.comparePage,
-      modelName: modelNameOf(ctx)
+      inboxModel: inboxModelOf(ctx)
     }) : liveSource(ctx);
     hideBand(ctx);
     if (!isDemo)
@@ -17604,7 +17656,7 @@ function createInbox(pi, deps = defaultDeps) {
         settleWindowMs: deps.settleWindowMs,
         version,
         comparePage: deps.comparePage,
-        modelName: modelNameOf(ctx)
+        inboxModel: inboxModelOf(ctx)
       }).screen(NO_HOLDS, {}) : await inbox.screen(ctx);
       const { needsYou, findings } = screen.view;
       ctx.ui.notify(`Asks ${needsYou.count}, Finds ${findings.count}`, "info");

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-21T23:51:51.476Z. 347890 characters follow.
+// Built at 2026-11-22T07:44:41.645Z. 348478 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5146,7 +5146,8 @@ function readSession(text) {
     projectFolder: typeof file.projectFolder === "string" && file.projectFolder.startsWith("/") ? file.projectFolder : null,
     isFetchingPrs: file.isFetchingPrs === true,
     isReadFailed: file.isReadFailed === true,
-    turnReadFailedAt: typeof file.turnReadFailedAt === "number" ? file.turnReadFailedAt : null
+    turnReadFailedAt: typeof file.turnReadFailedAt === "number" ? file.turnReadFailedAt : null,
+    openDialog: file.openDialog === "question" || file.openDialog === "permission" ? file.openDialog : null
   };
 }
 var TORN_RETRY_MS = 30;
@@ -7093,6 +7094,9 @@ var EMPTY_STATUS_TEXT = {
   title: screenTabOf("overview").label,
   hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
 };
+function dialogText(agent, kind) {
+  return kind === "question" ? { title: `${agent} is waiting for your answer`, hint: `Answer the question in ${agent}'s dialog.` } : { title: `${agent} is waiting for your permission`, hint: `Allow or deny it in ${agent}'s dialog.` };
+}
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
 }
@@ -7126,6 +7130,8 @@ function emptyTab(view, look) {
   }
   if (look.drawn > 0 || look.hasBlocker)
     return null;
+  if (look.tab === "needsYou" && look.openDialog)
+    return { ...dialogText(look.agent, look.openDialog), under: null, titleMark: null };
   if (look.tab === "needsYou" && look.hostText)
     return { ...look.hostText, under: null, titleMark: null };
   const hint = look.tab === "needsYou" ? `${look.agent}'s questions and the tasks only you can do show up here.` : `${look.agent} flags issues and opportunities it spots beyond your task.`;
@@ -7897,7 +7903,8 @@ function rowTabBlocks(screen, ui, tab) {
     tab,
     agent: screen.agent,
     drawn: groups.filter((g) => g.rows.length > 0 || g.closed.length > 0).length,
-    hasBlocker: false
+    hasBlocker: false,
+    openDialog: screen.openDialog
   });
   if (empty)
     return [emptyBlock(tab, empty)];
@@ -7978,7 +7985,8 @@ function screenOf(followed, read, ui, o) {
     now: o.now,
     shownSince: holds.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
-    isFetchingPrs: read.isFetchingPrs
+    isFetchingPrs: read.isFetchingPrs,
+    openDialog: read.openDialog
   };
   return {
     is: "inbox",
