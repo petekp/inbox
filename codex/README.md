@@ -29,7 +29,7 @@ Then, in the desktop app:
    The hooks give Codex the inbox at each prompt, record what it does, and
    update the inbox after each reply.
 2. Open the Inbox tab: click the side panel button at the top right of the
-   window, then choose the ⋯ menu beside New, then Inbox.
+   window, then click the Inbox tile on the New tab page it opens.
 
 To update, run `codex plugin marketplace upgrade`, then
 `codex plugin add inbox@inbox`, and start a new chat. On Codex 0.164.0 and

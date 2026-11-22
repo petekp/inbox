@@ -37,7 +37,8 @@ To install from the Claude desktop app instead, open a Code session:
    marketplace**, then **Add from a repository**.
 3. Type `petekp/inbox`, pick **inbox / petekp** from the list, and click
    **Sync**.
-4. On Inbox, click **Add to this computer**.
+4. On Inbox, click **Add to this computer**, then **Continue** when the app
+   asks about a plugin that runs code.
 5. Go back to your session and type `/inbox` to open the pane.
 
 This installs it for your user account, so it works in the terminal too.
@@ -80,8 +81,8 @@ beside the prompt's approval setting, then Allow all. If the icon isn't there,
 open Settings, then Hooks, then Inbox, then Trust all. Codex runs a plugin's
 hooks only after you trust them. On Codex 0.164.0 and later, an update stops
 the hooks, so trust them again after each update. To open the inbox, open the
-side panel and choose the ⋯ menu beside New, then Inbox. This was checked on
-2026-11-14 in the ChatGPT app with Codex 0.169.
+side panel, then click the Inbox tile on its New tab page. This was checked on
+2026-11-21 in the ChatGPT app with Codex 0.171.
 
 [codex/README.md](codex/README.md) covers updating and running the `codex`
 command from inside the app.
