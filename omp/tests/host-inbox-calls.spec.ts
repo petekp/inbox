@@ -13,6 +13,7 @@ import {
   endWorld,
   makeCtx,
   MODEL_ANSWER,
+  onDevice,
   pi,
   prompt,
   retiredSonnet,
@@ -355,8 +356,9 @@ test('the inbox model falls back to the smol role and the panel names it', async
   expect((await inbox.screen(makeCtx())).modelName).toBe('GPT Mini')
 })
 
-test('with no usable model the update fails and the panel shows no model', async () => {
-  w.models = []
+test('with only a model that needs no sign-in, the update fails and the panel shows no model and no sign-in', async () => {
+  w.models = [onDevice]
+  w.providersWithoutSignIn = ['apple']
   w.smolModel = undefined
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
@@ -364,5 +366,12 @@ test('with no usable model the update fails and the panel shows no model', async
   await settle()
   expect(w.completions).toEqual([])
   expect(state().presence.ledgerState).toBe('failed')
-  expect((await inbox.screen(makeCtx())).modelName).toBeNull()
+  expect(await inbox.screen(makeCtx())).toMatchObject({ modelName: null, isSignedIn: false })
+})
+
+test('with a signed-in provider but no model that fits, the panel shows no model and the sign-in', async () => {
+  w.models = [smol]
+  w.smolModel = undefined
+  const inbox = createInbox(pi(), deps())
+  expect(await inbox.screen(makeCtx())).toMatchObject({ modelName: null, isSignedIn: true })
 })

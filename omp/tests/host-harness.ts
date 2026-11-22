@@ -25,6 +25,7 @@ export const retiredSonnet: Model = {
   identity: { family: 'sonnet', revision: '3.5.0' },
 }
 export const smol: Model = { id: 'gpt-mini', name: 'GPT Mini', provider: 'openai', identity: {} }
+export const onDevice: Model = { id: 'on-device', name: 'Apple On-Device', provider: 'apple', identity: {} }
 
 type World = {
   dir: string
@@ -39,6 +40,7 @@ type World = {
   completions: { model: Model; system: string[]; prompt: string }[]
   background: Promise<unknown>[]
   models: Model[]
+  providersWithoutSignIn: string[]
   smolModel: Model | undefined
   inboxRoleModel: Model | undefined
   reply: string | Error
@@ -80,6 +82,7 @@ export function startWorld() {
     completions: [],
     background: [],
     models: [smol, sonnet],
+    providersWithoutSignIn: [],
     smolModel: smol,
     inboxRoleModel: undefined,
     reply: MODEL_ANSWER,
@@ -141,7 +144,16 @@ export const makeCtx = (id = 's1') =>
       list: () => w.models,
       resolve: (spec: string) => (spec === '@smol' ? w.smolModel : spec === '@inbox' ? w.inboxRoleModel : undefined),
     },
-    modelRegistry: { getApiKey: async () => 'key' },
+    modelRegistry: {
+      getApiKey: async () => 'key',
+      authStorage: {
+        keys: {
+          source: (provider: string) =>
+            w.providersWithoutSignIn.includes(provider) ? undefined : { kind: 'env', concrete: true },
+          keyless: () => false,
+        },
+      },
+    },
     ui: {
       notify: (message: string) => w.notices.push(message),
       getEditorText: () => w.editorText,

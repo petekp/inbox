@@ -26,6 +26,7 @@ export const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, '')
 export const screenOf = (overrides: Partial<PanelScreen> = {}, holds = NO_HOLDS): PanelScreen => ({
   view: sessionView(demoState(NOW), NOW, SETTLED_MS, holds),
   modelName: 'Claude Sonnet 4.5',
+  isSignedIn: true,
   isGhMissing: false,
   isFetchingPrs: false,
   stop: null,

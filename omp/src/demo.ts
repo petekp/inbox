@@ -6,6 +6,7 @@ import { withCollapse } from '../../core/view/collapse'
 import { sessionView } from '../../core/view/session-view'
 import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import type { PanelSource } from './controller'
+import type { InboxModel } from './panel'
 import { emptyState } from './state'
 import type { OmpState } from './state'
 import { OMP } from './texts'
@@ -22,7 +23,7 @@ export function demoSource(deps: {
   isNextBuild?: boolean
   comparePage: string
   /** The person's inbox model, which the footer names as the live panel's does. */
-  modelName: string | null
+  inboxModel: InboxModel
 }): PanelSource {
   let state = demoState(deps.now())
   const listeners = new Set<() => void>()
@@ -36,7 +37,7 @@ export function demoSource(deps: {
         ...NO_SYNC_INPUTS,
         isDemo: true,
       }),
-      modelName: deps.modelName,
+      ...deps.inboxModel,
       isGhMissing: false,
       isFetchingPrs: false,
       stop: null,

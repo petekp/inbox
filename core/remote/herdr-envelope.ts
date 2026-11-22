@@ -1,6 +1,6 @@
 import type { remoteViewerReceipts } from '../runtime/remote-viewers'
 import type { remoteReceipts } from '../runtime/remote-command-state'
-import type { HerdrPressOutcome, Session } from '../../types'
+import type { Dialog, HerdrPressOutcome, Session } from '../../types'
 import type { ClientId } from '../domain/client-features'
 import { presentedSession } from '../view/session-presentation'
 import { HERDR_FORMAT } from './herdr'
@@ -25,6 +25,8 @@ export type EnvelopeSource = {
   isFetchingPrs?: boolean
   /** Whether the host could not read the session's saved inbox, so its asks and findings may be missing. */
   isReadFailed?: boolean
+  /** The kind of the agent's own dialog that waits on the person, while one is open. */
+  openDialog?: Dialog['kind']
   /** When Codex first failed to read whether the running turn still runs, so the look draws its working marks still. */
   turnReadFailedAt?: number
   /** The inbox build the host runs, which Help names. A file from an older host has none, and Help then names none. */

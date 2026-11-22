@@ -97,7 +97,7 @@ test('a held row’s close label has no ✓, so it draws muted, not in the done 
 async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>['press']>[0][]) {
   let now = NOW
   const source = demoSource({
-    modelName: 'Claude Sonnet 5.5',
+    inboxModel: { modelName: 'Claude Sonnet 5.5', isSignedIn: true },
     now: () => now,
     settleWindowMs: SETTLED_MS,
     version: '1.2.3',

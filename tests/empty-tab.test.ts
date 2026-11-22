@@ -67,6 +67,22 @@ describe('emptyTab', () => {
     expect(emptyTab(VIEW, { ...ASKS, tab: 'findings', hostText })?.title).toBe('No findings yet')
   })
 
+  test('while the agent’s own dialog waits, an empty Asks tab says so in place of the host’s text, and Finds does not', () => {
+    const hostText = { title: 'The inbox starts with your next message.', hint: null }
+    expect(emptyTab(VIEW, { ...ASKS, openDialog: 'question', hostText })).toEqual({
+      title: 'Claude is waiting for your answer',
+      hint: "Answer the question in Claude's dialog.",
+      under: null,
+      titleMark: null,
+    })
+    expect(emptyTab(VIEW, { ...ASKS, agent: 'omp', openDialog: 'permission' })).toMatchObject({
+      title: 'omp is waiting for your permission',
+      hint: "Allow or deny it in omp's dialog.",
+    })
+    expect(emptyTab(VIEW, { ...ASKS, tab: 'findings', openDialog: 'question' })?.title).toBe('No findings yet')
+    expect(emptyTab(VIEW, { ...ASKS, drawn: 1, openDialog: 'question' })).toBeNull()
+  })
+
   test('a PRs tab with no PR drawn reads No PRs, or Checking for PRs… while a fetch runs, with the host’s word in its hint', () => {
     expect(emptyTab(VIEW, PRS)).toEqual({
       title: 'No PRs',

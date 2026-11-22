@@ -125,6 +125,38 @@ test('in a Herdr app terminal, the shown session is published and labelled, a sw
   expect(readdirSync(join(appHome, 'inbox/sessions'))).toEqual([])
 })
 
+test('in a Herdr app terminal, the published session names an open ask dialog from its start until its call ends', async () => {
+  const appHome = join(w.dir, 'herdr-app')
+  const target = { kind: 'terminal', terminal: 't1', appHome, hc: ['hc'], herdrApp: ['herdr-app'] } as const
+  createInbox(pi(), { ...deps(), herdrTarget: target })
+  const published = () => JSON.parse(readFileSync(join(appHome, 'inbox/sessions/s1.json'), 'utf8'))
+
+  await call('session_start', { type: 'session_start' })
+  await settle()
+  expect(published().openDialog).toBeUndefined()
+  await call('tool_execution_start', { toolCallId: 'a1', toolName: 'ask', args: {} })
+  await settle()
+  expect(published().openDialog).toBe('question')
+  await call('tool_execution_end', { toolCallId: 'a1' })
+  await settle()
+  expect(published().openDialog).toBeUndefined()
+})
+
+test('in a Herdr pane, an open ask leads the sidebar line until the turn ends', async () => {
+  createInbox(pi(), { ...deps(), herdrTarget: { kind: 'pane', pane: 'p1' } })
+  await call('session_start', { type: 'session_start' })
+  await call('tool_execution_start', {
+    toolCallId: 'a1',
+    toolName: 'ask',
+    args: { questions: [{ question: 'Deploy now?', options: ['yes', 'no'] }] },
+  })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens.inbox).toBe('Deploy now?')
+  await call('agent_end', { type: 'agent_end', messages: [] })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens.inbox).toBeNull()
+})
+
 test('in a Herdr pane, each change reports the tab counts, a stop replaces them until it clears, and shutdown clears every token', async () => {
   createInbox(pi(), { ...deps(), herdrTarget: { kind: 'pane', pane: 'p1' } })
   const cleared = {

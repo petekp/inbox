@@ -10,6 +10,8 @@ import type { UiState } from '../../core/view/ui-controller-types'
 import type { OmpState } from './state'
 import type { HostDeps } from './host'
 import type { OmpPresses } from './host-presses'
+import type { InboxModel } from './panel'
+import type { Dialog } from '../../types'
 
 /** The slice of omp's extension context the handlers read. */
 export type OmpContext = {
@@ -40,6 +42,8 @@ export type HostContext = {
   dir: string
   /** The open panels, with the tab each shows. */
   openPanels: Map<string, ShownTab>
+  /** The ask dialog each session's agent has open, by session id. */
+  openAsks: Map<string, Dialog>
   /** Each session's panel state from the shared controller, by session id. A panel starts from it when it opens. */
   uiStates: Map<string, UiState>
   prepared: Set<string>
@@ -58,7 +62,7 @@ export type HostContext = {
   askFor(ctx: OmpContext, id: string): SessionHost<OmpState>['ask']
   dropTools(): Promise<void>
   showBand(ctx: OmpContext): void
-  modelNameOf(ctx: OmpContext): string | null
+  inboxModelOf(ctx: OmpContext): InboxModel
   /** Tells the agent `notes` at its next turn, out of the person's view. */
   sendNotes(notes: string[]): void
 }

@@ -1,3 +1,4 @@
+import type { Dialog } from '../../types'
 import { nothingText } from './band'
 import { NOTHING_NEEDED_TEXT } from './banners'
 import { ghNoticeOf } from './pr-rows'
@@ -43,6 +44,8 @@ type EmptyTabLook =
       hasBlocker: boolean
       /** The host's own text in place of the Asks tab's, such as Codex's while it has not heard from its hooks. */
       hostText?: EmptyText | null
+      /** The kind of the agent's own dialog that waits on the person, which the tab does not list, or null. */
+      openDialog?: Dialog['kind'] | null
     }
   | {
       tab: 'prs'
@@ -58,6 +61,13 @@ type EmptyTabLook =
 export const EMPTY_STATUS_TEXT: { title: string; hint: string } = {
   title: screenTabOf('overview').label,
   hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts.",
+}
+
+/** The empty Asks tab's text while the agent's own dialog waits on the person. */
+function dialogText(agent: string, kind: Dialog['kind']): EmptyText {
+  return kind === 'question'
+    ? { title: `${agent} is waiting for your answer`, hint: `Answer the question in ${agent}'s dialog.` }
+    : { title: `${agent} is waiting for your permission`, hint: `Allow or deny it in ${agent}'s dialog.` }
 }
 
 /** The hint under an empty PRs tab. */
@@ -98,6 +108,8 @@ export function emptyTab(view: SessionView, look: EmptyTabLook): EmptyTab | null
     }
   }
   if (look.drawn > 0 || look.hasBlocker) return null
+  if (look.tab === 'needsYou' && look.openDialog)
+    return { ...dialogText(look.agent, look.openDialog), under: null, titleMark: null }
   if (look.tab === 'needsYou' && look.hostText) return { ...look.hostText, under: null, titleMark: null }
   const hint =
     look.tab === 'needsYou'

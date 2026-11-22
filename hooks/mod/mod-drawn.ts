@@ -1,4 +1,4 @@
-import type { DemoCopy } from '../../types'
+import type { DemoCopy, Dialog } from '../../types'
 import { type ScreenTab, screenText } from '../../core/domain/inbox-text'
 import type { Mod } from './mod-ports'
 import { conversation, drawnSession } from './mod-sessions'
@@ -14,7 +14,7 @@ import { holdsOf } from '../../core/view/ui-controller-reply'
 import type { UiState } from '../../core/view/ui-controller-types'
 
 type DrawnCalls = Pick<Mod, 'clock' | 'pane'> & {
-  atoms: Pick<Mod['atoms'], 'ui' | 'session' | 'demo' | 'demoRecording' | 'unreadable' | 'redraw' | 'away'>
+  atoms: Pick<Mod['atoms'], 'ui' | 'session' | 'demo' | 'demoRecording' | 'unreadable' | 'redraw' | 'away' | 'dialogs'>
 }
 
 /** The pane's state: the saved controller state, with the terminal's config while it draws the pane, else desktop's. */
@@ -35,17 +35,20 @@ export async function drawnState(
     isDemo: boolean
     showsDemoNotices: boolean
     isUnread: boolean
+    /** The kind of Claude's own dialog that waits on the person, or null. A demo shows none. */
+    openDialog: Dialog['kind'] | null
     lastTypedMessageAt: number | null
     now: number
   }
 > {
-  const [session, ui, demo, isDemoRecording, unreadable, now] = await Promise.all([
+  const [session, ui, demo, isDemoRecording, unreadable, now, dialogs] = await Promise.all([
     m.atoms.session.read(),
     readUi(m),
     m.atoms.demo.read(),
     m.atoms.demoRecording.read(),
     m.atoms.unreadable.read(),
     m.clock.now(),
+    m.atoms.dialogs.read(),
     m.atoms.redraw.read(),
     // The minute tick while the person is away redraws the ages.
     m.atoms.away.read(),
@@ -82,6 +85,7 @@ export async function drawnState(
     isDemo: demo !== null,
     showsDemoNotices: demo !== null && !isDemoRecording,
     isUnread,
+    openDialog: demo === null ? (dialogs[0]?.kind ?? null) : null,
     now,
   }
 }

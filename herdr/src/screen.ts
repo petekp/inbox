@@ -116,6 +116,7 @@ export function screenOf(
     shownSince: holds.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs,
+    openDialog: read.openDialog,
   }
 
   return {

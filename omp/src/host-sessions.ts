@@ -151,6 +151,7 @@ export function sessionCalls(context: HostContext) {
           const s = await readState(dir, id)
           const commands = await commandsOf(ompCommandStore(dir, id, deps.now), s)
           const now = deps.now()
+          const openAsk = context.openAsks.get(id)
           const isPublished =
             target.kind === 'terminal' &&
             (await publishedSession(
@@ -169,6 +170,7 @@ export function sessionCalls(context: HostContext) {
                 writtenAt: now,
                 projectFolder: memory.shownCwd?.(),
                 isFetchingPrs: prFetches.isFetching(id),
+                ...(openAsk && { openDialog: openAsk.kind }),
                 version,
                 isNextBuild: deps.isNextBuild,
               },
@@ -177,7 +179,11 @@ export function sessionCalls(context: HostContext) {
             ))
           const view = sessionView(s, now, deps.settleWindowMs)
 
-          return { target, tokens: herdrTokens(s.ledger, s.stop, view, []), session: isPublished ? id : null }
+          return {
+            target,
+            tokens: herdrTokens(s.ledger, s.stop, view, openAsk ? [openAsk] : []),
+            session: isPublished ? id : null,
+          }
         },
         deps.after,
       ),

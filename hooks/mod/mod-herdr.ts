@@ -164,6 +164,16 @@ export function openInHerdr(calls: HerdrCalls): Promise<HerdrOpened> | HerdrOpen
 }
 
 /**
+ * `openInHerdr` for `/inbox`, which can wait before its pane opens. It first reads again whether the app home holds the
+ * inbox mod, so a mod another session or app installed since the last read opens.
+ */
+export async function openInHerdrAfterModCheck(calls: HerdrCalls): Promise<HerdrOpened | null> {
+  await readHasMod(calls)
+
+  return openInHerdr(calls)
+}
+
+/**
  * In a Herdr app terminal, keeps the inbox's mod in the app current with the one this install holds, and removes the
  * published sessions no live terminal can show, as `startInHerdrApp` says. The mod runs it as it turns on. A failed
  * install or update shows as a banner until the next turn-on, and `redraw` runs when that banner changes.
@@ -186,7 +196,7 @@ export async function startInHerdr(calls: HerdrCalls, redraw: () => unknown): Pr
     redraw()
   }
   if (result?.is === 'ask' && target.appHome) showAsk(herdrAskOf(target.appHome, home, null))
-  if (appTerminal) appTerminal.hasMod = await hasHerdrMod(openCalls(calls).isFile, target)
+  await readHasMod(calls)
 }
 
 const bundledMod = (calls: HerdrCalls) => `${calls.pluginRoot}/herdr/mod/inbox`
@@ -209,7 +219,11 @@ function showAsk(ask: HerdrAsk | null) {
   if (ask?.is === 'asking') {
     const files = herdrFiles(calls)
     askCheck = calls.every(PRESS_POLL_MS, () => {
-      void isHerdrAskOpen(files, ask).then(isOpen => !isOpen && isShown() && showAsk(null))
+      void isHerdrAskOpen(files, ask).then(async isOpen => {
+        if (isOpen || !isShown()) return
+        await readHasMod(calls)
+        if (isShown()) showAsk(null)
+      })
     })
   }
   if (ask?.is === 'answered') calls.after(SETTLED_MS, () => isShown() && showAsk(null))
@@ -226,6 +240,11 @@ export async function pressHerdrAsk(isYes: boolean): Promise<void> {
   const answered = await answerHerdrAsk(herdrFiles(calls), ask, bundledMod(calls), isYes, now, 'Run /inbox herdr')
   mod.herdrModFailure = answered.failure
   showAsk(answered.ask)
+  await readHasMod(calls)
+}
+
+/** Reads again whether the app home holds the inbox mod, since another session or app may have installed it. */
+async function readHasMod(calls: HerdrCalls) {
   if (appTerminal) appTerminal.hasMod = await hasHerdrMod(openCalls(calls).isFile, appTerminal.target)
 }
 
@@ -299,6 +318,7 @@ export async function publishToHerdr(
             projectFolder: root,
             isFetchingPrs: session.prViews.isFetching,
             isReadFailed: isUnread,
+            ...(dialogs[0] && { openDialog: dialogs[0].kind }),
             ...(mod.version ? { version: mod.version, isNextBuild: mod.isNextBuild } : {}),
           },
           session,

@@ -32,7 +32,15 @@ export function demoScreen(sample = readSample()): LookScreen {
   const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
   const view = sessionView(sample, NOW, SETTLED_MS, holds)
 
-  return { view, agent: AGENT, now: NOW, shownSince: NOW, isGhMissing: false, isFetchingPrs: false }
+  return {
+    view,
+    agent: AGENT,
+    now: NOW,
+    shownSince: NOW,
+    isGhMissing: false,
+    isFetchingPrs: false,
+    openDialog: null,
+  }
 }
 
 export const uiOn = (tab: ShownTab, changes: Partial<LookUi> = {}): LookUi => ({

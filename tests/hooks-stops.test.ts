@@ -133,3 +133,19 @@ test('a turn an API error ended shows its stop from the error text in the transc
   await clock.settle()
   expect(await band.find({ text: /API error \(server_error\)/ })).toBeDefined()
 })
+
+test('while a permission prompt is open, the empty Asks tab says Claude waits for the person, then Nothing needed once it clears', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount(PANE)
+  await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'git push' } } as never)
+  await clock.settle()
+  expect(await pane.find({ text: /^Claude is waiting for your permission$/ })).toBeDefined()
+  expect(await pane.find({ text: /^Nothing needed$/ })).toBeUndefined()
+  await $.tool.call({ tool: 'Bash', command: 'git push' } as never)
+  await clock.settle()
+  expect(await pane.find({ text: /^Claude is waiting for your permission$/ })).toBeUndefined()
+  expect(await pane.find({ text: /^Nothing needed$/ })).toBeDefined()
+})

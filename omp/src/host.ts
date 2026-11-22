@@ -31,7 +31,7 @@ import { INBOX_COMMAND_TEXT } from '../../core/view/tabs'
 import { createPanel } from './controller'
 import { demoSource } from './demo'
 import { bandLines, withScreenReadFailed } from './panel'
-import type { PanelScreen } from './panel'
+import type { InboxModel, PanelScreen } from './panel'
 import { wrapText } from './panel-text'
 import { styleOf } from './theme'
 import type { OmpState } from './state'
@@ -240,10 +240,16 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     if (kept.length !== active.length) await pi.setActiveTools(kept)
   }
 
-  const modelNameOf = (ctx: ExtensionContext) => {
+  const inboxModelOf = (ctx: ExtensionContext): InboxModel => {
     const model = inboxModel(ctx)
 
-    return model ? (model.name ?? model.id) : null
+    const keys = ctx.modelRegistry.authStorage.keys
+    const hasSignIn = (provider: string) => keys.source(provider) !== undefined || keys.keyless(provider)
+
+    return {
+      modelName: model ? (model.name ?? model.id) : null,
+      isSignedIn: ctx.models.list().some(m => hasSignIn(m.provider)),
+    }
   }
 
   const logHerdr = herdrLog(dir)
@@ -251,6 +257,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     deps,
     dir,
     openPanels: new Map(),
+    openAsks: new Map(),
     uiStates: new Map(),
     prepared: new Set(),
     prFetches: prFetchTracker(deps.now, id => sessions.notifyChanged(id)),
@@ -273,7 +280,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
     askFor,
     dropTools,
     showBand,
-    modelNameOf,
+    inboxModelOf,
     sendNotes: notes =>
       pi.sendMessage(
         { customType: MESSAGE_TYPE, content: notes.join('\n\n'), display: false, attribution: 'agent' },
@@ -319,7 +326,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.on('tool_result', activity.onToolResult)
   pi.on('message_end', turns.onMessageEnd)
   pi.on('message_start', turns.onMessageStart)
-  pi.on('agent_end', turns.onAgentEnd)
+  pi.on('agent_end', (event, ctx) => {
+    activity.onAgentEnd(event, ctx)
+    return turns.onAgentEnd(event, ctx)
+  })
 
   const tool = (name: AgentTool, description: string, parameters: object) => {
     pi.registerTool({
@@ -419,7 +429,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
           version,
           isNextBuild: deps.isNextBuild,
           comparePage: deps.comparePage,
-          modelName: modelNameOf(ctx),
+          inboxModel: inboxModelOf(ctx),
         })
       : liveSource(ctx)
     hideBand(ctx)
@@ -483,7 +493,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
             settleWindowMs: deps.settleWindowMs,
             version,
             comparePage: deps.comparePage,
-            modelName: modelNameOf(ctx),
+            inboxModel: inboxModelOf(ctx),
           }).screen(NO_HOLDS, {})
         : await inbox.screen(ctx)
       const { needsYou, findings } = screen.view

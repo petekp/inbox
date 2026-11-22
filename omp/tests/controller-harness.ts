@@ -21,7 +21,7 @@ type Timer = { fn: () => void; ms: number; dueAt: number; isOnce: boolean; stopp
 
 export const demoOf = (now: () => number) =>
   demoSource({
-    modelName: 'Claude Sonnet 5.5',
+    inboxModel: { modelName: 'Claude Sonnet 5.5', isSignedIn: true },
     now,
     settleWindowMs: SETTLED_MS,
     version: '1.2.3',
