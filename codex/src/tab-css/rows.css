@@ -143,6 +143,18 @@
   opacity: 0;
   pointer-events: none;
 }
+/* A moving title's closed form that `fitClosedForm` keeps on one line with its label: the title gives up the width,
+   cut with "…" wherever it runs out. */
+.row .line .text.short[data-one-line] {
+  flex-wrap: nowrap;
+}
+.row .line .text.short[data-one-line] > .title-part {
+  display: block;
+  white-space: nowrap;
+}
+.row .line .text.short[data-one-line] > .part:not(.title-part) {
+  flex-shrink: 0;
+}
 .row.selected .line .after,
 .row.closing .line .after {
   white-space: normal;

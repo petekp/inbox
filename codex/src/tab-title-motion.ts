@@ -14,8 +14,7 @@ const fullOf = (line: HTMLElement) => line.querySelector<HTMLElement>(':scope > 
 
 /**
  * A row's title while its line moves: `full` is the title as the open row draws it, in flow, and `short` the same text
- * clamped as the closed row draws it, over the first lines of `full`. They wrap at different places, so both show only
- * while one fades to the other.
+ * cut to the closed row's lines, over the first lines of `full`. Both show only while one fades to the other.
  */
 function titleOf(line: HTMLElement): { full: HTMLElement; short: HTMLElement } | null {
   const full = fullOf(line)
@@ -25,18 +24,21 @@ function titleOf(line: HTMLElement): { full: HTMLElement; short: HTMLElement } |
 }
 
 /**
- * Clamps a moving title's closed form to the lines the closed row's title takes. The closed form draws the open form's
- * weight, at which it can need a line more, so the clamp shows "…" in that line's place and the line starts and ends
- * at the closed row's height.
+ * Fits a moving title's closed form to the closed row's height. The closed form draws the open form's weight, at which
+ * its title can need a line more, or push the label beside it to a line of its own. So the title is clamped to the
+ * lines it takes at the closed weight, with "…" in place of the rest, and a label that shares its line keeps it.
  */
-function clampToClosedLines(short: HTMLElement) {
+function fitClosedForm(short: HTMLElement) {
   const part = short.querySelector<HTMLElement>('.title-part')
   if (!part) return
   part.style.removeProperty('-webkit-line-clamp')
+  delete short.dataset.oneLine
   short.style.fontWeight = 'inherit'
+  const closedHeight = short.getBoundingClientRect().height
   const lines = Math.round(part.getBoundingClientRect().height / parseFloat(getComputedStyle(part).lineHeight))
   short.style.fontWeight = ''
   if (lines > 0) part.style.setProperty('-webkit-line-clamp', String(lines))
+  if (short.getBoundingClientRect().height - closedHeight >= 0.5) short.dataset.oneLine = ''
 }
 
 /**
@@ -68,7 +70,7 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
   const title = line && titleOf(line)
   if (!line || !title) return
   glides.get(line)?.anim.cancel()
-  clampToClosedLines(title.short)
+  fitClosedForm(title.short)
   const to = line.getBoundingClientRect().height
   const from: SpringState = held ?? { x: Math.min(title.short.getBoundingClientRect().height, to), v: 0 }
   if (to - from.x < 0.5 && Math.abs(from.v) * FRAME_MS < 0.5) {
@@ -87,7 +89,7 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
  */
 export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
   const title = titleOf(line)
-  if (title) clampToClosedLines(title.short)
+  if (title) fitClosedForm(title.short)
   const end = title ? Math.max(to, title.short.getBoundingClientRect().height) : to
   if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null))
     swapTitle(title, false, 0, delay >= LEAVE_FADE_MS)
