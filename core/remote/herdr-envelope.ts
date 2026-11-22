@@ -27,6 +27,8 @@ export type EnvelopeSource = {
   isReadFailed?: boolean
   /** The kind of the agent's own dialog that waits on the person, while one is open. */
   openDialog?: Dialog['kind']
+  /** What that dialog asks: the permission's action, as "npm test", or the question. */
+  openDialogText?: string
   /** When Codex first failed to read whether the running turn still runs, so the look draws its working marks still. */
   turnReadFailedAt?: number
   /** The inbox build the host runs, which Help names. A file from an older host has none, and Help then names none. */

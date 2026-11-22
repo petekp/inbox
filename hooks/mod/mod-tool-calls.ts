@@ -21,6 +21,7 @@ import type { Mod } from './mod-ports'
 import { linkPrs } from './mod-prs'
 import {
   askedCalls,
+  callInput,
   callKey,
   childRefOf,
   delegateWaits,
@@ -137,7 +138,7 @@ export async function agentSpawned(m: ToolCallCalls, e: AgentSpawnEvent, agentId
  */
 export async function toolCalled(m: ToolCallCalls, e: ToolCallEvent, next: ToolCallNext) {
   if (!mod.isOn) return next(e)
-  const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
+  const input = callInput(e)
   const key = callKey(String(e.tool), input)
   const activity = e.agentId ? null : toolActivity(String(e.tool), input)
   const call = { didRun: true }

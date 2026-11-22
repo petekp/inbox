@@ -4,17 +4,21 @@ import { askedCalls, callKey, permissionText } from './mod-records'
 import { mod } from './mod-state'
 import { PERMISSION_FALLBACK_DELAY_MS } from '../../core/view/timing'
 
-type DialogCalls = Pick<Mod, 'clock' | 'conversation' | 'publishStatus'> & { atoms: Pick<Mod['atoms'], 'dialogs'> }
+type DialogCalls = Pick<Mod, 'clock' | 'conversation' | 'publishStatus' | 'sendUi'> & {
+  atoms: Pick<Mod['atoms'], 'dialogs'>
+}
 
 export async function openDialog(m: DialogCalls, dialog: Dialog) {
   await m.atoms.dialogs.update(d => [...d.filter(x => x.key !== dialog.key), dialog])
   void m.publishStatus()
+  void m.sendUi(['read']).catch(() => undefined)
 }
 
 export async function closeDialogs(m: DialogCalls, key: string | null) {
   if (!(await m.atoms.dialogs.read()).some(d => key === null || d.key === key)) return
   await m.atoms.dialogs.update(d => (key === null ? [] : d.filter(x => x.key !== key)))
   void m.publishStatus()
+  void m.sendUi(['read']).catch(() => undefined)
 }
 
 export async function clearingDialog<T>(m: DialogCalls, key: string, run: () => Promise<T>): Promise<T> {
@@ -44,21 +48,26 @@ export async function waitForPermission(m: DialogCalls, id: string, tool: string
     await m.clock.sleep(PERMISSION_FALLBACK_DELAY_MS)
     if (!askedCalls.has(id) || mod.hasPermissionRequestHook) return
     await openDialog(m, { kind: 'permission', text: permissionText(tool, input), key })
+    const wasAllowedWhileOpening = !askedCalls.has(id)
+    if (wasAllowedWhileOpening) await closeDialogs(m, key)
   } catch {
     askedCalls.delete(id)
   }
 }
 
-/** Ends the wait for a permission row, and closes the row, for a call that has started running. */
-export function endWaitFor(m: DialogCalls, id: string | undefined) {
-  const key = id ? askedCalls.get(id) : undefined
-  if (!id || key === undefined) return
-  askedCalls.delete(id)
-  // Drawing is pure, so the dialog closes after the render returns.
-  void m.clock
-    .sleep(0)
-    .then(() => closeDialogs(m, key))
-    .catch(() => undefined)
+/**
+ * tool.run: the call was allowed, by the person or by auto mode, so its permission step is over. Ends the wait for its
+ * permission row and closes the row. An AskUserQuestion call's dialog is its run, which its tool.call hook closes.
+ */
+export async function callAllowed(
+  m: DialogCalls,
+  id: string | undefined,
+  tool: string,
+  input: Record<string, unknown>,
+) {
+  if (tool === 'AskUserQuestion') return
+  if (id) askedCalls.delete(id)
+  await closeDialogs(m, callKey(tool, input))
 }
 
 /** classic.PermissionRequest: a permission dialog opened. A question dialog opens from its own tool call. */

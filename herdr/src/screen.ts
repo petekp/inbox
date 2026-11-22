@@ -2,6 +2,7 @@ import type { BannerView } from '../../core/view/banners'
 import { READING_TEXT } from '../../core/view/banners'
 import { helpVersionText } from '../../core/view/help'
 import { sessionView } from '../../core/view/session-view'
+import { withDialogRow } from '../../core/view/dialog-row'
 import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
 import type { SessionView } from '../../core/view/session-view'
 import { SETTLED_MS } from '../../core/view/timing'
@@ -79,12 +80,16 @@ export const readView = (
   holds: Holds,
   notes: Record<string, RowNote>,
 ): SessionView =>
-  sessionView(read.session, now, SETTLED_MS, holds, notes, false, {
-    ...NO_SYNC_INPUTS,
-    isReadFailed: read.isReadFailed,
-    isFetchingPrs: read.isFetchingPrs,
-    turnReadFailedAt: read.turnReadFailedAt,
-  })
+  withDialogRow(
+    sessionView(read.session, now, SETTLED_MS, holds, notes, false, {
+      ...NO_SYNC_INPUTS,
+      isReadFailed: read.isReadFailed,
+      isFetchingPrs: read.isFetchingPrs,
+      turnReadFailedAt: read.turnReadFailedAt,
+    }),
+    read.openDialog,
+    read.envelope.agent,
+  )
 
 /**
  * What the look holds besides the session: rows held in place, the notes its presses left, the collapses it drew
@@ -116,7 +121,6 @@ export function screenOf(
     shownSince: holds.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs,
-    openDialog: read.openDialog,
   }
 
   return {

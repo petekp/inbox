@@ -131,7 +131,8 @@ export type ActionView = {
 
 export type RowView = {
   id: string
-  type: 'question' | 'task' | 'finding'
+  /** `dialog`: the agent's own dialog, from `core/view/dialog-row.ts:withDialogRow`. */
+  type: 'question' | 'task' | 'finding' | 'dialog'
   /** The question's number in the batch the person can answer by number, as the agent's message numbers it. */
   number: number | null
   title: string
@@ -249,9 +250,12 @@ export function isWaitingRow(row: RowView): boolean {
   return row.state.is === 'open'
 }
 
-/** The count a group's title shows: its rows that wait on the person. A look draws no count when it is 0. */
+/**
+ * The count a group's title shows: its rows that wait on the person, save the agent's own dialog, which no count
+ * includes. A look draws no count when it is 0.
+ */
 export function waitingCount(rows: readonly (RowView | undefined)[]): number {
-  return rows.filter(r => r !== undefined && isWaitingRow(r)).length
+  return rows.filter(r => r !== undefined && isWaitingRow(r) && r.type !== 'dialog').length
 }
 
 /** Whether a handed-off row's last press is done: its send arrived, or its open or copy worked. */

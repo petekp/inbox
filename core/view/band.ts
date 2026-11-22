@@ -31,7 +31,7 @@ export function nothingText(ledger: LedgerSync, current: string = NOTHING_NEEDED
   return { text: isMaybeStale(ledger) ? MAYBE_STALE_TEXT : current, isChecking: ledger.is === 'checking' }
 }
 
-/** What the band and an empty Asks tab read while the agent's own dialog waits on the person. */
+/** What the band reads while the agent's own dialog waits on the person, and the dialog's row when it has no text. */
 export function dialogWaitText(agent: string, kind: Dialog['kind']): string {
   return kind === 'question' ? `${agent} is waiting for your answer` : `${agent} is waiting for your permission`
 }

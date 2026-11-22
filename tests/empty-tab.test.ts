@@ -1,17 +1,21 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
+import { dialogRowId, withDialogRow } from '../core/view/dialog-row'
 import { EMPTY_STATUS_TEXT, emptyTab, prsEmptyHint } from '../core/view/empty-tab'
+import { waitingCount } from '../core/view/rows'
 import { GH_MISSING_TEXT, GH_SIGNED_OUT_TEXT } from '../core/view/pr-rows'
 import { emptySession } from '../core/view/session-files'
 import { sessionView } from '../core/view/session-view'
 import type { SessionView } from '../core/view/session-view'
 import type { GhSync, LedgerSync } from '../core/view/sync-state'
 import { goalKeyPlan } from '../core/view/status-keys'
+import { question } from './ui-controller-helpers'
 
 const VIEW = sessionView(emptySession(), 1000, 0)
 const ASKS = { tab: 'needsYou', agent: 'Claude', drawn: 0, hasBlocker: false } as const
 const PRS = { tab: 'prs', place: 'session', drawn: 0, isFetchingPrs: false } as const
+const ITEM = question('q1')
 const REFRESH = { text: 'PR #4 could not be read.', actions: [], showsPress: false }
 
 const withLedger = (v: SessionView, ledger: LedgerSync): SessionView => ({ ...v, sync: { ...v.sync, ledger } })
@@ -67,22 +71,6 @@ describe('emptyTab', () => {
     expect(emptyTab(VIEW, { ...ASKS, tab: 'findings', hostText })?.title).toBe('No findings yet')
   })
 
-  test('while the agent’s own dialog waits, an empty Asks tab says so in place of the host’s text, and Finds does not', () => {
-    const hostText = { title: 'The inbox starts with your next message.', hint: null }
-    expect(emptyTab(VIEW, { ...ASKS, openDialog: 'question', hostText })).toEqual({
-      title: 'Claude is waiting for your answer',
-      hint: "Answer the question in Claude's dialog.",
-      under: null,
-      titleMark: null,
-    })
-    expect(emptyTab(VIEW, { ...ASKS, agent: 'omp', openDialog: 'permission' })).toMatchObject({
-      title: 'omp is waiting for your permission',
-      hint: "Allow or deny it in omp's dialog.",
-    })
-    expect(emptyTab(VIEW, { ...ASKS, tab: 'findings', openDialog: 'question' })?.title).toBe('No findings yet')
-    expect(emptyTab(VIEW, { ...ASKS, drawn: 1, openDialog: 'question' })).toBeNull()
-  })
-
   test('a PRs tab with no PR drawn reads No PRs, or Checking for PRs… while a fetch runs, with the host’s word in its hint', () => {
     expect(emptyTab(VIEW, PRS)).toEqual({
       title: 'No PRs',
@@ -130,5 +118,36 @@ describe('emptyTab', () => {
   test('a Status page with something on it is not empty', () => {
     const page = { ...VIEW.statusPage, isEmpty: false }
     expect(emptyTab({ ...VIEW, statusPage: page }, { tab: 'overview', isGoalFieldOpen: false })).toBeNull()
+  })
+})
+
+describe('withDialogRow', () => {
+  test('while the agent’s own dialog waits, the Asks tab lists it first, uncounted, with where to answer it', () => {
+    const asked = sessionView({ ...emptySession(), ledger: { ...emptySession().ledger, items: [ITEM] } }, 1000, 0)
+    const view = withDialogRow(asked, { kind: 'permission', text: 'npm test' }, 'Claude')
+    const [row, ...rest] = view.needsYou.questions
+    expect(row).toMatchObject({
+      id: dialogRowId({ kind: 'permission', text: 'npm test' }),
+      title: 'Allow npm test?',
+      contextLine: "Allow or deny it in Claude's dialog.",
+      actions: [],
+    })
+    expect(rest.map(r => r.id)).toEqual([ITEM.id])
+    expect(view.needsYou.count).toBe(1)
+    expect(waitingCount(view.needsYou.questions)).toBe(1)
+    expect(withDialogRow(VIEW, { kind: 'question', text: 'Which port?' }, 'omp').needsYou.questions[0]).toMatchObject({
+      title: 'Which port?',
+      contextLine: "Answer the question in omp's dialog.",
+    })
+    expect(withDialogRow(VIEW, { kind: 'question', text: null }, 'Claude').needsYou.questions[0]?.title).toBe(
+      'Claude is waiting for your answer',
+    )
+    expect(withDialogRow(VIEW, null, 'Claude')).toBe(VIEW)
+  })
+
+  test('each dialog’s row has its own id, so a fold of one does not carry to the next', () => {
+    const first = withDialogRow(VIEW, { kind: 'permission', text: 'npm test' }, 'Claude').needsYou.questions[0]
+    const next = withDialogRow(VIEW, { kind: 'permission', text: 'git push' }, 'Claude').needsYou.questions[0]
+    expect(first?.id).not.toBe(next?.id)
   })
 })

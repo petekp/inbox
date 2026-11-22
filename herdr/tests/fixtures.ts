@@ -39,7 +39,6 @@ export function demoScreen(sample = readSample()): LookScreen {
     shownSince: NOW,
     isGhMissing: false,
     isFetchingPrs: false,
-    openDialog: null,
   }
 }
 
