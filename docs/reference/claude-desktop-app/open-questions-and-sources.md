@@ -26,7 +26,6 @@ Each check runs in a local Code-mode session in the app unless noted.
 | Whether `keybindings.json` or any key reaches a desktop pane | Rebind `pane:close`, focus the pane, and try it. |
 | Whether `/clear` and `/resume` in the app raise `classic.SessionStart` with the new id | Log `classic.SessionStart` and `session.end`, then run both in the app. |
 | Whether `http://localhost` links are clickable | Draw one `Link` with that `href`. |
-| Whether `classic.PermissionRequest` fires | Trigger a permission prompt; log the event. |
 | What happens on `session.detach` and app quit | Log `session.detach` and `session.end`. Quit the app. Check whether the 1.5 s `session.end` budget is met and the store was written. |
 | Whether a mod draws over SSH, and where its store lives | Open an SSH session to a host with the plugin. Look for the band. List `~/.claude/plugins/store/` on the remote host. |
 | Whether Claude mode is Cowork, and what plugin parts it loads | Install a test plugin with a hook and a skill through Customize. Use them in Claude mode. |

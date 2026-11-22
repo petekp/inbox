@@ -4,7 +4,7 @@ import type { DemoCopy, Dialog } from '../types'
 
 import { band } from './mod/mod-band'
 import { runOf } from './mod/mod-commands'
-import { endWaitFor, permissionAsked, waitForPermission } from './mod/mod-dialogs'
+import { callAllowed, permissionAsked, waitForPermission } from './mod/mod-dialogs'
 import { configFolder, type EngineCalls } from './mod/mod-engine-calls'
 import type { HerdrCalls } from './mod/mod-herdr'
 import type { HistoryEngine } from './mod/mod-history'
@@ -17,7 +17,7 @@ import { type Mod, PANE } from './mod/mod-ports'
 import { commandRowStored, ownMessageStored, promptSubmitted, replyStored } from './mod/mod-prompts'
 import { fetchPrs } from './mod/mod-prs'
 import { publishStatus } from './mod/mod-publish'
-import { noteRanCall } from './mod/mod-records'
+import { callInput, noteRanCall } from './mod/mod-records'
 import type { SaveEngine } from './mod/mod-saves'
 import { commit } from './mod/mod-session-write'
 import { NO_SESSION, PRESENT } from './mod/mod-sessions'
@@ -337,6 +337,12 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('tool.run', async ($, e, next) => {
+    if (mod.isOn) void callAllowed(modOf($), e.tool_use_id, String(e.tool), callInput(e)).catch(() => undefined)
+
+    return next(e)
+  })
+
   on('classic.StopFailure', async ($, e, next) => {
     const r = await next(e)
     await noteStopFailure(modOf($), e)
@@ -408,21 +414,6 @@ export const register: Register = on => {
     await paneClosed(modOf($))
 
     return r
-  })
-
-  // A running tool row means the permission step is over: the dialog was answered or the
-  // auto-mode classifier approved the call.
-  on('ui.render', { component: 'ToolUse' }, ($, e, next) => {
-    if (mod.isOn && e.props.isRunning) endWaitFor(modOf($), e.props.tool_use_id)
-
-    return next(e)
-  })
-
-  // A call folded into a collapsed group draws no ToolUse row; the group carries its state.
-  on('ui.render', { component: 'ToolGroup' }, ($, e, next) => {
-    if (mod.isOn) for (const call of e.props.calls) if (call.isRunning) endWaitFor(modOf($), call.tool_use_id)
-
-    return next(e)
   })
 
   // The ctrl+o transcript draws the text the agent read.

@@ -101,6 +101,15 @@ with Haiku 5.5 in Auto permission mode. The terminal `claude` in the VM is
   Undo in time; a press while a turn runs; quitting the app with a session open;
   the light theme.
 
+## A permission dialog
+
+Live, 2026-11-22, app 6.28899.6 with engine 2.1.330, in Manual mode. A Haiku turn ran `mkdir -p` with the Bash tool, and a folder build logged each event.
+
+- `tool.check` fired, and a `$.tool.check` query of the call answered `ask`. `classic.PermissionRequest` fired 10 ms later, as the dialog opened, so no guard was seated.
+- The call's `ToolUse` row reported `isRunning: true` 9 ms after that, while the dialog was still open. In the terminal it stays false until the dialog is answered ([admin policy](../claude-code-mods/admin-policy.md)). The inbox closed its row on that render, so the band read "Nothing needed" for the whole dialog ([#733](https://github.com/petekp/inbox/issues/733)).
+- The inbox now closes the row on `tool.run`, which fires only once a call is allowed. With that build, the band read "Claude is waiting for your permission" and the Asks tab listed "Allow create directory /tmp/…?" first while the dialog was open. After Always allow, the call ran, the row cleared and the band read "Nothing needed".
+- Not checked: Deny with that build, auto mode, and a session with the guard seated.
+
 ## A reopened session's first prompt
 
 [#97](https://github.com/petekp/inbox/issues/97) reports it on app 3.6556.2 with engine 2.1.308. The person quit the app and reopened a saved Code session with `claude --desktop --resume <id>`. The first prompt went out without the inbox's tools, and the band was missing until that prompt.

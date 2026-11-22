@@ -518,7 +518,7 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
     w.sessionId = e.session_id
     return {}
   })
-  on('tool.call', async (_$, e) => {
+  const toolAnswer = async (e: { tool: string; tool_use_id?: string }) => {
     await w.toolHold
     const answer = e.tool === 'AskUserQuestion' ? w.dialogAnswer : w.otherToolAnswer
     if (w.raisesPostHooks && w.toolVerdict !== 'deny') {
@@ -527,7 +527,9 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
       else await $.classic.PostToolUse({ ...call, tool_response: answer.result } as never)
     }
     return answer as never
-  })
+  }
+  on('tool.call', async (_$, e) => (w.toolVerdict === 'deny' ? toolAnswer(e) : $.tool.run(e as never)))
+  on('tool.run', async (_$, e) => toolAnswer(e))
   on('agent.spawn', () => ({ model: 'sonnet', agentId: w.spawnedAgentId }))
   on('agent.list', () => ({ value: w.listedAgents as never }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))

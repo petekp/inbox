@@ -53,16 +53,19 @@ export async function waitForPermission(m: DialogCalls, id: string, tool: string
   }
 }
 
-/** Ends the wait for a permission row, and closes the row, for a call that has started running. */
-export function endWaitFor(m: DialogCalls, id: string | undefined) {
-  const key = id ? askedCalls.get(id) : undefined
-  if (!id || key === undefined) return
-  askedCalls.delete(id)
-  // Drawing is pure, so the dialog closes after the render returns.
-  void m.clock
-    .sleep(0)
-    .then(() => closeDialogs(m, key))
-    .catch(() => undefined)
+/**
+ * tool.run: the call was allowed, by the person or by auto mode, so its permission step is over. Ends the wait for its
+ * permission row and closes the row. An AskUserQuestion call's dialog is its run, which its tool.call hook closes.
+ */
+export async function callAllowed(
+  m: DialogCalls,
+  id: string | undefined,
+  tool: string,
+  input: Record<string, unknown>,
+) {
+  if (tool === 'AskUserQuestion') return
+  if (id) askedCalls.delete(id)
+  await closeDialogs(m, callKey(tool, input))
 }
 
 /** classic.PermissionRequest: a permission dialog opened. A question dialog opens from its own tool call. */
