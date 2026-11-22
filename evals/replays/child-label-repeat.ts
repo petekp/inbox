@@ -5,7 +5,8 @@ import { delegate, goal, milestone, NO_FACTS, overview, piece, subject } from '.
 const layersDelegate = delegate('c1', 'Restructuring the sync code into layers', 's2', -40)
 
 /** Text that says only what the delegate is doing, as its label does: "sorting sync files into layer folders". */
-const SAYS_WHAT_CHILD_DOES = '\\b(sort|restructur|reorganiz|mov)ing\\b|\\binto (the )?(layer|layered) folders?\\b'
+const SAYS_WHAT_CHILD_DOES =
+  '\\b(sort|restructur|reorganiz|mov)ing\\b(?! (is )?(done|finished|complete|merged))|\\binto (the )?(layer|layered) folders?\\b'
 
 /**
  * From a real Status call on 11-20: a subject said only what its running delegate was doing, which the delegate's

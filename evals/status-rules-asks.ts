@@ -10,9 +10,9 @@ import {
 } from './status-rule-helpers'
 import type { Rule } from './status-rules'
 
-/** Text that says work waits on the person, as "waiting on your check" or "needs your yes". */
+/** Text that says work waits on the person, as "waiting on your check", "needs your yes" or "ready for your review". */
 const WAITS_ON_PERSON =
-  /\b(wait(s|ing)? (on|for) (you|your)\b|awaits? your|awaiting your|needs? your|your (check|try|yes|ok|okay|approval|answer|look|go)\b)/i
+  /\b(wait(s|ing)? (on|for) (you|your)\b|awaits? your|awaiting your|needs? your|for your (review|check|look|try|sign-?off|approval|input|answer|go|yes|ok)\b|your (check|try|yes|ok|okay|approval|answer|look|go|review|input|sign-?off|call)\b)/i
 
 /** The rules for the person's open asks: what each one holds up, and what a held row says. */
 export const ASK_RULES: Rule[] = [
