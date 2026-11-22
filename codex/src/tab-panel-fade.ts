@@ -24,6 +24,18 @@ export function fadeThrough(el: HTMLElement, from: number, steps: FadeStep[], de
 /** A panel's Holds up line, which the closed line draws in the same place once the row's close ends. */
 const HOLDS_UP = '.branch.holds-up'
 
+/**
+ * The trunk the row's mark draws beside its title, over the row's panel `part`. It fades with the panel, so the tree
+ * comes and goes whole with the lines it joins. A closing row that keeps its Holds up line shown keeps the trunk the
+ * line hangs from.
+ */
+export function trunkBeside(part: HTMLElement, isClosing = false): HTMLElement[] {
+  const trunk = part.parentElement?.querySelector<HTMLElement>(':scope > .mark > .trunk')
+  if (!trunk || (isClosing && part.querySelector(HOLDS_UP))) return []
+
+  return [trunk]
+}
+
 /** The parts of a closing row's panel that fade out: all of it but its Holds up line, which stays shown. */
 export function fadingParts(el: HTMLElement): HTMLElement[] {
   if (!el.querySelector(HOLDS_UP)) return [el]
@@ -47,6 +59,8 @@ export function shownPanel(el: HTMLElement): HTMLElement | null {
 export function fadeFaintPanel(part: HTMLElement) {
   const held = opacityOf(part)
   fade(part, held, held, 0, true)
+  for (const trunk of trunkBeside(part, true))
+    fadeThrough(trunk, opacityOf(trunk), faintCloseFades(opacityOf(trunk)), 0)
   for (const p of fadingParts(part)) {
     const own = p === part ? 1 : opacityOf(p)
     const scale = p === part ? 1 : held

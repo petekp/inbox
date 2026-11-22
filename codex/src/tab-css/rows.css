@@ -317,8 +317,7 @@
   position: relative;
   align-self: stretch;
 }
-.mark.has-tree::after {
-  content: '';
+.mark.has-tree > .trunk {
   position: absolute;
   left: calc((var(--text-x) - var(--mark-x) - var(--control-gap)) / 2 - 0.75px);
   top: 1.7em;

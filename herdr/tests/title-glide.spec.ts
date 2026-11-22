@@ -35,7 +35,10 @@ function titleOf(steps: Step[]) {
     wrapsAtEnd: d11.at(-1)?.wrapped,
     boxAtEnd: Math.round(d11.at(-1)?.box ?? NaN),
     isWrapShownOnlyOpen: d11.every(t => t.wrapped < 0.02 || t.box >= wrappedHeight - 0.5),
-    framesWithBothForms: d11.filter(t => t.wrapped > 0.02 && t.oneLine > 0.02).map(t => t.at),
+    bothFormsWhileBoxMoves: d11
+      .filter(t => t.wrapped > 0.02 && t.oneLine > 0.02 && t.box < wrappedHeight - 0.5)
+      .map(t => t.at),
+    fadeFrames: d11.filter(t => t.wrapped > 0.02 && t.wrapped < 0.98).length,
     boxShrinksAt: d11.find(t => t.box < wrappedHeight - 0.5)?.at ?? null,
     titleCuts: cuts.filter(c => c.text === TITLE_D11),
   }
@@ -43,7 +46,7 @@ function titleOf(steps: Step[]) {
 
 const TITLE_D11 = asks(ALL).flatMap(b => (b.kind === 'row' && b.id === 'd11' ? [b.title] : []))[0]
 
-test('a closing row shows its title on one line at once, never both forms, and its title box shrinks after its panel fades', () => {
+test('a closing row fades its title to one line while its title box holds, and the box shrinks after its panel fades', () => {
   const closes: [string, Step[]][] = [
     [
       'the open row collapses',
@@ -66,18 +69,20 @@ test('a closing row shows its title on one line at once, never both forms, and i
       name,
       jumps: [],
       boxShrinksAt: title.boxShrinksAt,
-      wrapsAtFirst: 0,
+      wrapsAtFirst: 1,
       wrapsAtEnd: 0,
       boxAtEnd: LINE_HEIGHT,
       isWrapShownOnlyOpen: true,
-      framesWithBothForms: [],
+      bothFormsWhileBoxMoves: [],
+      fadeFrames: title.fadeFrames,
       titleCuts: [],
     })
     expect(title.boxShrinksAt).toBeGreaterThanOrEqual(LEAVE_FADE_MS)
+    expect(title.fadeFrames).toBeGreaterThan(2)
   }
 })
 
-test('an opening row keeps its title on one line until the title box is open, then shows it wrapped, never both forms', () => {
+test('an opening row keeps its title on one line until the title box is open, then fades it to its wrapped form', () => {
   const opens: [string, Step[]][] = [
     [
       'the person opens the row',
@@ -111,10 +116,12 @@ test('an opening row keeps its title on one line until the title box is open, th
       boxAtEnd: title.boxAtEnd,
       boxShrinksAt: title.boxShrinksAt,
       isWrapShownOnlyOpen: true,
-      framesWithBothForms: [],
+      bothFormsWhileBoxMoves: [],
+      fadeFrames: title.fadeFrames,
       titleCuts: [],
     })
     expect(title.boxAtEnd).toBeGreaterThan(LINE_HEIGHT)
+    expect(title.fadeFrames).toBeGreaterThan(2)
   }
 })
 
@@ -135,7 +142,7 @@ test('a row whose close or open turns back moves its title from where it is and 
       jumps: [],
       wrapsAtEnd: 1,
       isWrapShownOnlyOpen: true,
-      framesWithBothForms: [],
+      bothFormsWhileBoxMoves: [],
       titleCuts: [],
     })
     expect({ at, ...recloses }).toMatchObject({
@@ -143,7 +150,7 @@ test('a row whose close or open turns back moves its title from where it is and 
       jumps: [],
       wrapsAtEnd: 0,
       boxAtEnd: LINE_HEIGHT,
-      framesWithBothForms: [],
+      bothFormsWhileBoxMoves: [],
       titleCuts: [],
     })
     expect(recloses.isWrapShownOnlyOpen).toBe(true)
@@ -162,13 +169,13 @@ test('a row closed, opened and closed again a frame apart ends on one line and n
       gap,
       wrapsAtEnd: 0,
       boxAtEnd: LINE_HEIGHT,
-      framesWithBothForms: [],
+      bothFormsWhileBoxMoves: [],
       titleCuts: [],
     })
   }
 })
 
-test('a row opened, closed before its panel shows and opened again swaps to its wrapped title only once the title box rests', () => {
+test('a row opened, closed before its panel shows and opened again fades to its wrapped title only once the title box rests', () => {
   const shut = asks(ALL, 'd11', null, ['d11'])
   const open = asks(ALL, 'd11')
   const sequences: Step[][] = [
@@ -197,7 +204,7 @@ test('a row opened, closed before its panel shows and opened again swaps to its 
       jumps: [],
       wrapsAtEnd: 1,
       isWrapShownOnlyOpen: true,
-      framesWithBothForms: [],
+      bothFormsWhileBoxMoves: [],
       titleCuts: [],
     })
   }

@@ -27,7 +27,7 @@ import {
   stopFadeOut,
   waitLeftMs,
 } from './tab-glide'
-import { fadeFaintPanel, fadeThrough, fadingParts, shownPanel } from './tab-panel-fade'
+import { fadeFaintPanel, fadeThrough, fadingParts, shownPanel, trunkBeside } from './tab-panel-fade'
 
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -268,8 +268,12 @@ function moveRow(
  * that still shows whole stops its fade out.
  */
 function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
-  if (!wasDrawn) return fade(part, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
-  for (const el of new Set([part, ...fadingParts(part)])) {
+  if (!wasDrawn) {
+    for (const el of [part, ...trunkBeside(part)])
+      fade(el, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
+    return
+  }
+  for (const el of new Set([part, ...fadingParts(part), ...trunkBeside(part)])) {
     const opacity = opacityOf(el)
     if (opacity < 0.99) fadeThrough(el, opacity, turnBackFades(target, from), delay)
     else stopFadeOut(el)
@@ -337,8 +341,9 @@ function collapse(
   if (part && state === 'settling' && openTop !== null) keepTop(el, part, openTop)
   const shown = state === 'closing' ? shownPanel(el) : null
   if (shown && isShort) fadeFaintPanel(shown)
-  else if (shown) for (const p of fadingParts(shown)) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
-  else if (part && state === 'closing') fade(part, 0, 0, 0, true)
+  else if (shown)
+    for (const p of [...fadingParts(shown), ...trunkBeside(shown, true)]) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
+  else if (part && state === 'closing') for (const p of [part, ...trunkBeside(part, true)]) fade(p, 0, 0, 0, true)
   const opacity = opacityOf(el)
   const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0)
   glide(el, 'height', from, target, true, false, shrinksAfter)

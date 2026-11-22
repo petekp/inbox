@@ -179,6 +179,7 @@ export function ListRow({
           <MarkGlyph text={row.handle} />
         )}
       </TitleTint>
+      {isTreeHung ? <span class="trunk" /> : null}
     </span>
   )
 
@@ -203,7 +204,8 @@ export function ListRow({
       </span>
     ) : null
   const isSideSplit = closed !== null && closed.side !== drawn.side
-  const isTitleMoving = isClosing || (drawsPanel(track) && track.state === 'opening')
+  // An open row keeps its clamped title drawn, hidden, since the title's fade can outlast the opening state.
+  const drawsClampedTitle = isClosing || drawsPanel(track)
   const textParts = () => (
     <>
       <span class="part title-part">
@@ -235,7 +237,7 @@ export function ListRow({
           onClick={isSelected ? e => onSelect(e.altKey, inputOf(e)) : undefined}
         >
           <span class="text parted">{textParts()}</span>
-          {isTitleMoving ? (
+          {drawsClampedTitle ? (
             <span class="text parted short" aria-hidden="true">
               {textParts()}
             </span>

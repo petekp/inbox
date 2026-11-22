@@ -135,7 +135,9 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .id(`title ${r.id}`)
     .items_start()
     .when(isPressable && isOpen, e => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt)))
-    .when(hasTree, e => e.relative().child(trunkEl(LINE_HEIGHT, null, t, r.isSelected)))
+    .when(hasTree, e =>
+      e.relative().child(panelFadeEl(r, m, p, trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`))),
+    )
     .child(markEl(r.mark, t, markTintOf(r, p)))
     .child(titleTextEl(r, p, titleColorOf(r, p)))
     .when(r.age !== null, e =>
@@ -255,20 +257,33 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
   ]
   if (parts.length === 0) return []
   const key = panelId(r.id)
+
+  return [
+    panelFadeEl(
+      r,
+      m,
+      p,
+      v_flex()
+        .id(key)
+        .on_size_change((size, cx) => p.measure(key, size, cx))
+        .children(parts),
+    ),
+  ]
+}
+
+/**
+ * `el` fading as the row's panel fades while the row opens or closes. The trunk beside a wrapped title fades with the
+ * panel, so the tree comes and goes whole with the lines it joins.
+ */
+function panelFadeEl(r: RowBlock, m: RowMotion | undefined, p: Paint, el: Element): Element {
   const opacity = m?.panel ?? null
-  const height = p.heights.get(key) ?? 0
+  if (opacity === null) return el
+  const height = p.heights.get(panelId(r.id)) ?? 0
   const turnBackFadeMs = m?.panelFadeMs ?? null
   const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0
   const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? 'open']
-  const glide = { duration, delay, easing: 'ease-out' as const }
 
-  return [
-    v_flex()
-      .id(key)
-      .on_size_change((size, cx) => p.measure(key, size, cx))
-      .children(parts)
-      .when(opacity !== null, e => e.opacity(opacity ?? 1).transition('opacity', glide)),
-  ]
+  return el.opacity(opacity).transition('opacity', { duration, delay, easing: 'ease-out' })
 }
 
 /**

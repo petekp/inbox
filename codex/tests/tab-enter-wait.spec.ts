@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { Window } from 'happy-dom'
-import { LEAVE_FADE_MS, ROW_STATE_MS, TURNED_BACK_CUT_OPACITY } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, TURNED_BACK_CUT_OPACITY } from '../../core/view/row-motion'
 import { FRAME_MS } from '../../core/view/springs'
 import TAB_HTML from '../src/tab.html'
 import { NO_HOLDS } from '../../core/view/timing'
@@ -54,6 +54,7 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
   performance.now = () => Date.now()
   const window = new Window()
   const moves: Move[] = []
+  const lineRests = new Map<string, number>()
   const fades: Fade[] = []
   const lastFades = new WeakMap<object, Fade>()
   const animate = window.HTMLElement.prototype.animate
@@ -63,6 +64,11 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
     if (key && Array.isArray(frames) && frames.some(f => 'height' in f)) {
       const delay = Number((timing as KeyframeAnimationOptions | undefined)?.delay ?? 0)
       moves.push({ key, delay, startsAt: Date.now() + delay, scalesEdges: frames.some(f => 'paddingTop' in f) })
+    }
+    const lineOf = this.classList.contains('line') && this.closest<HTMLElement>('[data-motion]')?.dataset.motion
+    if (lineOf && Array.isArray(frames) && frames.some(f => 'height' in f)) {
+      const options = (timing ?? {}) as KeyframeAnimationOptions
+      lineRests.set(lineOf, Date.now() + Number(options.delay ?? 0) + Number(options.duration ?? 0))
     }
     const animation = animate.apply(this, args)
     animation.finished.catch(() => {})
@@ -170,6 +176,7 @@ async function inTab(run: (tab: Harness) => Promise<void>, context: TestContext)
       window,
       state,
       moves,
+      lineRests,
       fades,
       settle,
       after: async ms => {
@@ -192,13 +199,14 @@ type Harness = {
   window: Window
   state: ReturnType<typeof emptyState>
   moves: Move[]
+  lineRests: Map<string, number>
   fades: Fade[]
   settle: () => Promise<void>
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, held faint while its row regrows from a shrink, a moving row’s clamped title draws the closed weight and never shows with its full title, and a dismissed open row draws only its settled line', async context => {
-  await inTab(async ({ state, moves, fades, settle, after }) => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, held faint while its row regrows from a shrink, a moving row’s clamped title draws the closed weight and fades with its full title only while its line rests, and a dismissed open row draws only its settled line', async context => {
+  await inTab(async ({ state, moves, lineRests, fades, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-ui')
     await settle()
@@ -269,13 +277,37 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
         )
         return shown ?? (form === '.text.short' ? 0 : 1)
       })
-    for (const id of ['i1', pressed.id])
-      for (let t = 0; t <= ROW_STATE_MS.opening; t += FRAME_MS) {
+    const bothFormsAt = (id: string) =>
+      Array.from(
+        { length: Math.floor((ROW_STATE_MS.opening + ENTER_FADE_MS) / FRAME_MS) + 1 },
+        (_, n) => n * FRAME_MS,
+      ).filter(t => {
         const [short, full] = titleForms(id, pressedAt + t)
-        assert.ok(short! < 0.02 || full! < 0.02, `${id} shows both title forms ${t} ms in: ${short} and ${full}`)
-      }
-    assert.deepEqual(titleForms('i1', pressedAt), [1, 0], 'the closing title does not take its closed form at once')
-    assert.deepEqual(titleForms(pressed.id, pressedAt + ROW_STATE_MS.opening), [0, 1])
+        return short! >= 0.02 && full! >= 0.02
+      })
+    const closingBoth = bothFormsAt('i1')
+    assert.ok(
+      closingBoth.every(t => t <= LEAVE_FADE_MS),
+      `i1 shows both title forms after its line holds: ${closingBoth}`,
+    )
+    const openingBoth = bothFormsAt(pressed.id)
+    const lineRestsAt = [...lineRests].find(([key]) => key.includes(pressed.id))?.[1]
+    assert.ok(lineRestsAt !== undefined, `${pressed.id}'s line does not grow`)
+    assert.ok(
+      openingBoth.length > 0 &&
+        openingBoth.every(t => pressedAt + t >= lineRestsAt - FRAME_MS) &&
+        (openingBoth.at(-1) ?? 0) - (openingBoth[0] ?? 0) <= ENTER_FADE_MS,
+      `${pressed.id} shows both title forms outside one fade after its line rests at ${lineRestsAt - pressedAt}: ${openingBoth}`,
+    )
+    const closingShort = titleForms('i1', pressedAt + LEAVE_FADE_MS / 2)[0]!
+    assert.ok(closingShort > 0.02 && closingShort < 0.98, `the closing title swaps in one frame: ${closingShort}`)
+    assert.deepEqual(titleForms('i1', pressedAt), [0, 1], 'the closing title does not start from its full form')
+    assert.deepEqual(
+      titleForms('i1', pressedAt + LEAVE_FADE_MS),
+      [1, 0],
+      'the closing title has not faded to its closed form',
+    )
+    assert.deepEqual(titleForms(pressed.id, pressedAt + ROW_STATE_MS.opening + ENTER_FADE_MS), [0, 1])
     const shrinks = moves.filter(m => m.key.includes('i1'))
     assert.ok(shrinks.length > 0, 'closing i1 started no glide')
     for (const m of shrinks)
