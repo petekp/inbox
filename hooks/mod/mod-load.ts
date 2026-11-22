@@ -96,6 +96,7 @@ async function loadConversationRows(
   sessionState.resuming = null
   conversation.id = id
   conversation.root = sessionRoot
+  conversation.loadedBy = by
   sessionState.isReadingAgain = false
   // A reload stops any update the previous load had running, and state outlives
   // it, so an update in flight at load was cut off: record it as failed.
@@ -104,8 +105,7 @@ async function loadConversationRows(
   const loadedAt = await m.clock.now()
   // The pane now shows another conversation, so it opens on it as on a new showing.
   await enterUi(m, id)
-  // The conversation /clear begins holds only the /clear command, and `$.session.turns()` counts it as a turn.
-  const turns = by === 'clear' ? 0 : await m.conversation.turns().catch(() => null)
+  const turns = await earlierTurns(m)
   const cutOff = (s: Session) => {
     const loaded = statusChanged(cutOffTurn(cutOffUpdate(s), loadedAt), o => childrenCutOff(o, loadedAt))
 
@@ -176,6 +176,12 @@ async function restore(m: Mod, saved: SavedRecord) {
   ])
 }
 
+/** The turns the conversation ran before the mod loaded it. */
+function earlierTurns(m: Mod): Promise<number | null> {
+  // `$.session.turns()` reads above 0 in the conversation /clear begins, before any turn runs in it.
+  return conversation.loadedBy === 'clear' ? Promise.resolve(0) : m.conversation.turns().catch(() => null)
+}
+
 export async function readAgain(m: Mod) {
   if (sessionState.isReadingAgain) return
   sessionState.isReadingAgain = true
@@ -195,8 +201,7 @@ export async function readAgain(m: Mod) {
     if (hasRun && saved.session) await restore(m, saved.session)
     else await bringBack(m, saved.session, () => conversation.id === id)
     const { ledger } = await m.atoms.session.read()
-    if ((hasRun && saved.session) || (isBlankLedger(ledger) && (await m.conversation.turns().catch(() => 0)) > 0))
-      await catchUpNow(m)
+    if ((hasRun && saved.session) || (isBlankLedger(ledger) && ((await earlierTurns(m)) ?? 0) > 0)) await catchUpNow(m)
     void m.publishStatus()
     if (tabPrs(ledger).length > 0) void m.fetchPrs(false)
     void m.sendUi(['read']).catch(() => undefined)
