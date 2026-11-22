@@ -11,6 +11,7 @@ Part of [Claude Code mods](../claude-code-mods.md).
 - **Band** (site `AbovePrompt`): "a strip directly above the prompt input. It's always there, and every mod shares it." [IF#pick-where-to-draw]
 - Sharing the band: "A tree replaces what the mods after yours draw there. To keep theirs, put the result of `await next(e)` among the children of a `Box`." [IF#pick-where-to-draw]
   - The inbox's band hook (`hooks/register.tsx:on('ui.render', AbovePrompt)`) yields while a survey holds the band (`if (!isOn || e.props.hasSurvey) return next(e)`). When it draws, its tree puts the result of `await next(e)` under its own lines, so the mods that run after it still show. Live on 2.1.304, with a probe mod loaded after it that draws one line without `next(e)`: the probe's line shows under the counts, and under the stop line.
+  - Live on 2.1.330 on 2026-11-22, in tmux at 110 columns, in normal and `tui: fullscreen` modes: while a permission dialog or an AskUserQuestion dialog is open, it takes the prompt's place and the terminal draws no band. The band comes back when the dialog closes.
 
 ### Sites by surface
 

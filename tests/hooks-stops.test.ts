@@ -140,16 +140,17 @@ test('while a permission prompt is open, the band and the empty Asks tab say Cla
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   const pane = await $.ui.mount(PANE)
-  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  const terminalBand = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  const desktopBand = await $.ui.mount({ plugin: 'inbox', surface: 'desktop', ...BAND })
   await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'git push' } } as never)
   await clock.settle()
-  for (const drawn of [pane, band]) {
+  for (const drawn of [pane, terminalBand, desktopBand]) {
     expect(await drawn.find({ text: /^Claude is waiting for your permission$/ })).toBeDefined()
     expect(await drawn.find({ text: /^Nothing needed$/ })).toBeUndefined()
   }
   await $.tool.call({ tool: 'Bash', command: 'git push' } as never)
   await clock.settle()
-  for (const drawn of [pane, band]) {
+  for (const drawn of [pane, terminalBand, desktopBand]) {
     expect(await drawn.find({ text: /^Claude is waiting for your permission$/ })).toBeUndefined()
     expect(await drawn.find({ text: /^Nothing needed$/ })).toBeDefined()
   }
