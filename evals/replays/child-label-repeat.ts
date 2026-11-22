@@ -47,7 +47,7 @@ export const childLabelRepeat: Replay = {
         piece({
           id: 'layers',
           names: ['Sync layers'],
-          match: 'layer',
+          match: 'sync layer|layer folder',
           state: 'working',
           stands: 'delegate moving the files into layer folders',
           restates: SAYS_WHAT_CHILD_DOES,
@@ -76,11 +76,11 @@ export const childLabelRepeat: Replay = {
             {
               id: 'layered',
               name: 'Sync code layered',
-              match: '^(?!.*(data|state|check)).*(layer|folder|structur)',
+              match: '^(?!.*(data|state|check|bound|enforc|rule|separat|owner)).*(layer|folder|structur)',
               state: 'working',
             },
-            { id: 'data', name: 'Note data split', match: 'data|split', state: 'queued' },
-            { id: 'check', name: 'Layer check added', match: 'check|state|boundar', state: 'queued' },
+            { id: 'data', name: 'Note data split', match: 'data|split|separat|owner', state: 'queued' },
+            { id: 'check', name: 'Layer check added', match: 'check|state|bound|enforc|rule', state: 'queued' },
           ],
         },
       },

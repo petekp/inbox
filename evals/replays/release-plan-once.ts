@@ -54,7 +54,6 @@ export const releasePlanOnce: Replay = {
           state: 'waits-on-other',
           alsoRight: ['working'],
           stands: 'signed, update test running',
-          serves: 'tested',
         }),
         piece({
           id: 'crash',
@@ -114,13 +113,12 @@ export const releasePlanOnce: Replay = {
           text: 'Ship Sketchpad 0.2.0',
           match: '0\\.2\\.0',
           milestones: [
-            { id: 'built', name: 'Candidate built', match: 'built|signed|candidate ready', state: 'done' },
-            { id: 'tested', name: 'Update test passed', match: 'update', state: 'working' },
             {
               id: 'published',
               name: '0.2.0 published',
               match: 'publish|shipped|released|\\blive\\b|\\bout\\b',
               state: 'queued',
+              alsoRight: ['working'],
             },
           ],
         },
