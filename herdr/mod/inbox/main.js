@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-22T07:44:41.645Z. 348478 characters follow.
+// Built at 2026-11-22T09:03:09.901Z. 348578 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -1401,6 +1401,9 @@ function isMaybeStale(ledger) {
 }
 function nothingText(ledger, current = NOTHING_NEEDED_TEXT) {
   return { text: isMaybeStale(ledger) ? MAYBE_STALE_TEXT : current, isChecking: ledger.is === "checking" };
+}
+function dialogWaitText(agent, kind) {
+  return kind === "question" ? `${agent} is waiting for your answer` : `${agent} is waiting for your permission`;
 }
 
 // ../core/domain/status-children.ts
@@ -7095,7 +7098,8 @@ var EMPTY_STATUS_TEXT = {
   hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
 };
 function dialogText(agent, kind) {
-  return kind === "question" ? { title: `${agent} is waiting for your answer`, hint: `Answer the question in ${agent}'s dialog.` } : { title: `${agent} is waiting for your permission`, hint: `Allow or deny it in ${agent}'s dialog.` };
+  const hint = kind === "question" ? `Answer the question in ${agent}'s dialog.` : `Allow or deny it in ${agent}'s dialog.`;
+  return { title: dialogWaitText(agent, kind), hint };
 }
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;

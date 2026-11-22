@@ -3318,6 +3318,12 @@ function nothingMark(isChecking, now) {
 function nothingText(ledger, current = NOTHING_NEEDED_TEXT) {
   return { text: isMaybeStale(ledger) ? MAYBE_STALE_TEXT : current, isChecking: ledger.is === "checking" };
 }
+function dialogWaitText(agent, kind) {
+  return kind === "question" ? `${agent} is waiting for your answer` : `${agent} is waiting for your permission`;
+}
+function bandIdleText(ledger, dialog) {
+  return dialog.kind ? { text: dialogWaitText(dialog.agent, dialog.kind), isChecking: false } : nothingText(ledger);
+}
 
 // ../core/domain/status-children.ts
 var NOT_SEEN = "not seen yet";
@@ -10333,7 +10339,8 @@ var EMPTY_STATUS_TEXT = {
   hint: "What this session's work is for, where each part stands, and what changed. It fills in once the work starts."
 };
 function dialogText2(agent, kind) {
-  return kind === "question" ? { title: `${agent} is waiting for your answer`, hint: `Answer the question in ${agent}'s dialog.` } : { title: `${agent} is waiting for your permission`, hint: `Allow or deny it in ${agent}'s dialog.` };
+  const hint = kind === "question" ? `Answer the question in ${agent}'s dialog.` : `Allow or deny it in ${agent}'s dialog.`;
+  return { title: dialogWaitText(agent, kind), hint };
 }
 function prsEmptyHint(place) {
   return `Your PRs show here when this ${place} opens or links one, or when your branch has one.`;
@@ -11647,7 +11654,7 @@ function withScreenReadFailed(screen) {
 }
 function bandLines(screen, width, now, style) {
   const counts = bandCounts(screen.view).map((c) => `${c.label} ${style.tone(c.id, String(c.count))}`);
-  const nothing = nothingText(screen.view.sync.ledger);
+  const nothing = bandIdleText(screen.view.sync.ledger, { agent: AGENT, kind: screen.openDialog ?? null });
   const nothingDrawn = style.dim(nothing.text) + style.dim(nothingMark(nothing.isChecking, now));
   const left = ` ${counts.length > 0 ? counts.join(` ${style.tone("sep", "\xB7")} `) : nothingDrawn}`;
   const countLine = spread(left, style.dim("/inbox to open "), width);
@@ -16651,6 +16658,7 @@ function panelCalls(context, sessions, herdrAsk) {
         herdrAsk: memory.herdrAsk,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
+        openDialog: context.openAsks.get(id)?.kind ?? null,
         version,
         isNextBuild: deps.isNextBuild
       };
