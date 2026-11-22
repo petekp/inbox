@@ -48,6 +48,8 @@ export async function waitForPermission(m: DialogCalls, id: string, tool: string
     await m.clock.sleep(PERMISSION_FALLBACK_DELAY_MS)
     if (!askedCalls.has(id) || mod.hasPermissionRequestHook) return
     await openDialog(m, { kind: 'permission', text: permissionText(tool, input), key })
+    const wasAllowedWhileOpening = !askedCalls.has(id)
+    if (wasAllowedWhileOpening) await closeDialogs(m, key)
   } catch {
     askedCalls.delete(id)
   }

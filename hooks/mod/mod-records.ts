@@ -46,9 +46,16 @@ export const workflowTasks = new Map<string, string>()
 /** Each background `herdr agent wait`'s task id and tool_use_id to the delegate it waits on. */
 export const delegateWaits = new Map<string, string>()
 
-/** A `tool.call` or `tool.run` event's tool arguments: the event less the keys the engine sets beside them. */
+/** A `tool.call` or `tool.run` event's tool arguments: the event less the keys the engine and hooks set beside them. */
 export function callInput(e: object): Record<string, unknown> {
-  const { tool: _tool, tool_use_id: _id, agentId: _agent, ...input } = e as Record<string, unknown>
+  const {
+    tool: _tool,
+    tool_use_id: _id,
+    agentId: _agent,
+    requestMeta: _meta,
+    consent: _consent,
+    ...input
+  } = e as Record<string, unknown>
   return input
 }
 
