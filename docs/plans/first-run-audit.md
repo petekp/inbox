@@ -11,7 +11,7 @@ Each client started with no inbox installed and no inbox state, in the test VM. 
 | Client | Version | Install and open | First useful row |
 |---|---|---|---|
 | Claude Code, terminal | 2.1.330 | 2 commands, then `/inbox` | After the first reply |
-| Claude desktop app | 6.28899.6 | About 12 clicks, then `/inbox` | After the first reply, see gap 3 |
+| Claude desktop app | 6.28899.6 | About 12 clicks, then `/inbox` | Not seen, since the agent asked in Claude's own dialog, see gap 3 |
 | Codex in the ChatGPT app | 0.171 | 2 commands, a hooks trust, then about 2 clicks | After the first reply |
 | omp | 18.12.3 | 2 commands | Not seen, since omp's own sign-in had expired |
 | Herdr app, with Claude Code | 0.1.16 | `/inbox`, then an Install press on the Codex tab and a restart | After the first reply |
@@ -76,7 +76,7 @@ Fixed. Step 4 of the desktop steps now ends with Continue.
 
 11. A recommended answer names itself twice. Its label ends "(recommended)", and its note repeats "Recommended:" before the reason. `recommendedLine` in `core/view/rows.ts` builds the note. This is the documented form, in every look. We recommend dropping the word from the note and keeping the reason.
 
-12. The desktop app wrapped a title with a leading dash as "-" over "-wave" in the last audit. This walk did not see that title. We recommend not breaking a line inside a word that starts with dashes.
+12. On 2026-11-19, the desktop app broke the word "--wave" in a row title across two lines: "-" on one line and "-wave" on the next. This walk showed no title with such a word. We recommend not breaking a line inside a word that starts with dashes.
 
 ### Host limits
 
@@ -97,7 +97,7 @@ Fixed. Step 4 of the desktop steps now ends with Continue.
 | Band before the first reply | Hidden | Hidden |
 | PRs tab outside a git repository | Raw git error | "No PRs" (d23e39a9) |
 | Gaps 1 to 4 and 8 to 11 | Present | Same code |
-| README steps | Same as `next` before this branch | Fixed in this branch |
+| README steps | Old steps | Old steps, which this branch fixes |
 
 ## What this audit could not see
 
