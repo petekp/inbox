@@ -1,17 +1,21 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
+import { DIALOG_ROW_ID, withDialogRow } from '../core/view/dialog-row'
 import { EMPTY_STATUS_TEXT, emptyTab, prsEmptyHint } from '../core/view/empty-tab'
+import { waitingCount } from '../core/view/rows'
 import { GH_MISSING_TEXT, GH_SIGNED_OUT_TEXT } from '../core/view/pr-rows'
 import { emptySession } from '../core/view/session-files'
 import { sessionView } from '../core/view/session-view'
 import type { SessionView } from '../core/view/session-view'
 import type { GhSync, LedgerSync } from '../core/view/sync-state'
 import { goalKeyPlan } from '../core/view/status-keys'
+import { question } from './ui-controller-helpers'
 
 const VIEW = sessionView(emptySession(), 1000, 0)
 const ASKS = { tab: 'needsYou', agent: 'Claude', drawn: 0, hasBlocker: false } as const
 const PRS = { tab: 'prs', place: 'session', drawn: 0, isFetchingPrs: false } as const
+const ITEM = question('q1')
 const REFRESH = { text: 'PR #4 could not be read.', actions: [], showsPress: false }
 
 const withLedger = (v: SessionView, ledger: LedgerSync): SessionView => ({ ...v, sync: { ...v.sync, ledger } })
@@ -67,20 +71,27 @@ describe('emptyTab', () => {
     expect(emptyTab(VIEW, { ...ASKS, tab: 'findings', hostText })?.title).toBe('No findings yet')
   })
 
-  test('while the agent’s own dialog waits, an empty Asks tab says so in place of the host’s text, and Finds does not', () => {
-    const hostText = { title: 'The inbox starts with your next message.', hint: null }
-    expect(emptyTab(VIEW, { ...ASKS, openDialog: 'question', hostText })).toEqual({
-      title: 'Claude is waiting for your answer',
-      hint: "Answer the question in Claude's dialog.",
-      under: null,
-      titleMark: null,
+  test('while the agent’s own dialog waits, the Asks tab lists it first, uncounted, with where to answer it', () => {
+    const asked = sessionView({ ...emptySession(), ledger: { ...emptySession().ledger, items: [ITEM] } }, 1000, 0)
+    const view = withDialogRow(asked, { kind: 'permission', text: 'npm test' }, 'Claude')
+    const [row, ...rest] = view.needsYou.questions
+    expect(row).toMatchObject({
+      id: DIALOG_ROW_ID,
+      title: 'Allow npm test?',
+      contextLine: "Allow or deny it in Claude's dialog.",
+      actions: [],
     })
-    expect(emptyTab(VIEW, { ...ASKS, agent: 'omp', openDialog: 'permission' })).toMatchObject({
-      title: 'omp is waiting for your permission',
-      hint: "Allow or deny it in omp's dialog.",
+    expect(rest.map(r => r.id)).toEqual([ITEM.id])
+    expect(view.needsYou.count).toBe(1)
+    expect(waitingCount(view.needsYou.questions)).toBe(1)
+    expect(withDialogRow(VIEW, { kind: 'question', text: 'Which port?' }, 'omp').needsYou.questions[0]).toMatchObject({
+      title: 'Which port?',
+      contextLine: "Answer the question in omp's dialog.",
     })
-    expect(emptyTab(VIEW, { ...ASKS, tab: 'findings', openDialog: 'question' })?.title).toBe('No findings yet')
-    expect(emptyTab(VIEW, { ...ASKS, drawn: 1, openDialog: 'question' })).toBeNull()
+    expect(withDialogRow(VIEW, { kind: 'question', text: null }, 'Claude').needsYou.questions[0]?.title).toBe(
+      'Claude is waiting for your answer',
+    )
+    expect(withDialogRow(VIEW, null, 'Claude')).toBe(VIEW)
   })
 
   test('a PRs tab with no PR drawn reads No PRs, or Checking for PRs… while a fetch runs, with the host’s word in its hint', () => {

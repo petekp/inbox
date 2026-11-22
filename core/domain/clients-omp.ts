@@ -20,7 +20,7 @@ export const OMP: Client = {
     'open-dialog-asks': {
       kind: 'different',
       reason:
-        "omp's ask dialog takes the place of the panel and the editor until it closes, so the panel cannot show while one waits. omp publishes the open dialog, and the Herdr look shows it. omp's tool approval prompt raises no event an extension sees.",
+        "omp's ask dialog takes the place of the panel and the editor until it closes, so the panel cannot show while one waits. omp publishes the open dialog and its question, and the Herdr look lists it as an Asks row. omp's tool approval prompt raises no event an extension sees.",
     },
     'tool-output-urls': { kind: 'full' },
     'pr-link-from-output': { kind: 'full' },

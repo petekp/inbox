@@ -318,7 +318,7 @@ export async function publishToHerdr(
             projectFolder: root,
             isFetchingPrs: session.prViews.isFetching,
             isReadFailed: isUnread,
-            ...(dialogs[0] && { openDialog: dialogs[0].kind }),
+            ...(dialogs[0] && { openDialog: dialogs[0].kind, openDialogText: dialogs[0].text }),
             ...(mod.version ? { version: mod.version, isNextBuild: mod.isNextBuild } : {}),
           },
           session,

@@ -9,6 +9,7 @@ import { UNSTARTABLE_CODE } from '../domain/gh'
 import type { Run } from '../domain/gh'
 import type { SessionView } from '../view/session-view'
 import { isWaitingRow } from '../view/rows'
+import { dialogTitle } from '../view/dialog-row'
 import { ROW_TABS } from '../view/tabs'
 import { clipLabel } from '../domain/text'
 
@@ -131,10 +132,6 @@ function stopLine(stop: Stop): string {
   }
 }
 
-function dialogText(dialog: Dialog): string {
-  return dialog.kind === 'permission' ? `Allow ${dialog.text}?` : dialog.text
-}
-
 /**
  * What the status line reads when no stop or dialog leads it: the first ask that waits, how many asks and findings
  * wait, what the session is focused on, and `MAYBE_STALE_TEXT` when the band shows it.
@@ -150,7 +147,7 @@ type StatusInput = {
 function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input: StatusInput): string {
   if (stop) return stopLine(stop)
   const dialog = dialogs[0]
-  if (dialog) return dialogText(dialog)
+  if (dialog) return dialogTitle(dialog)
   const { firstAsk, asks, findings, focus, stale } = input
   if (firstAsk !== null) return asks > 1 ? `${asks} · ${firstAsk}` : firstAsk
   const findingsText = findings === 0 ? null : `${findings} finding${findings === 1 ? '' : 's'}`

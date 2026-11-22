@@ -170,7 +170,7 @@ export function sessionCalls(context: HostContext) {
                 writtenAt: now,
                 projectFolder: memory.shownCwd?.(),
                 isFetchingPrs: prFetches.isFetching(id),
-                ...(openAsk && { openDialog: openAsk.kind }),
+                ...(openAsk && { openDialog: openAsk.kind, openDialogText: openAsk.text }),
                 version,
                 isNextBuild: deps.isNextBuild,
               },

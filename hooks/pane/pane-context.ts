@@ -7,7 +7,7 @@ import type {
   RenderSurface,
   UiPressArgument,
 } from 'claude-code'
-import type { Dialog, Draft, FoldKind, LastAction, PrViews, RowNote, Stop, Tab, Turns } from '../../types'
+import type { Draft, FoldKind, LastAction, PrViews, RowNote, Stop, Tab, Turns } from '../../types'
 import type { AnswerRow, DrawnEntry, DrawnLists } from '../../core/view/action-plan'
 import type { statusSelected } from '../../core/view/status-keys'
 import type { PressState } from '../../core/view/feedback'
@@ -95,8 +95,6 @@ export type PaneBase = {
   stop: Stop | null
   view: SessionView
   isUnread: boolean
-  /** The kind of Claude's own dialog that waits on the person, or null. */
-  openDialog: Dialog['kind'] | null
   now: number
   typing: string | null
   drafts: Record<string, Draft>

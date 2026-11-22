@@ -1,4 +1,4 @@
-import type { Closed, Dialog, FoldKind } from '../../types'
+import type { Closed, FoldKind } from '../../types'
 import type { RowPress } from '../../core/domain/presses'
 import type { ClosedDelivery, ResultMark, RowView } from '../../core/view/rows'
 import {
@@ -72,8 +72,6 @@ export type LookScreen = {
   isGhMissing: boolean
   /** Whether the host has a PR fetch running, from the published file. */
   isFetchingPrs: boolean
-  /** The kind of the agent's own dialog that waits on the person, from the published file, or null. */
-  openDialog: Dialog['kind'] | null
 }
 
 const markOf = (m: ResultMark | null): Mark | null =>
@@ -361,7 +359,6 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
     agent: screen.agent,
     drawn: groups.filter(g => g.rows.length > 0 || g.closed.length > 0).length,
     hasBlocker: false,
-    openDialog: screen.openDialog,
   })
   if (empty) return [emptyBlock(tab, empty)]
 

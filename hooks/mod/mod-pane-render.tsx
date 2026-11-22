@@ -88,18 +88,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     // A redraw loop on desktop blocks clicks, so only the terminal draws running marks and Undo in frames.
     look === 'terminal' ? m.atoms.runningFrame.read() : null,
   ])
-  const {
-    prViews: prState,
-    lastActions,
-    notes,
-    turns,
-    stop,
-    isDemo,
-    showsDemoNotices,
-    isUnread,
-    openDialog,
-    now,
-  } = drawn
+  const { prViews: prState, lastActions, notes, turns, stop, isDemo, showsDemoNotices, isUnread, now } = drawn
   paneState.paintedVersions = { owner: currentOwner(), versions: drawn.view.drawnVersions }
   // The pane can draw before the controller hears that it opened, so the first frame shows the tab the open moves to.
   const opening: UiEvent[] = [{ type: 'opened' }, { type: 'read', host: hostFactsOf(drawn) }]
@@ -158,7 +147,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
   const lists = drawnLists(
     view,
     () => true,
-    r => (!isListShown ? null : r.item ? itemRow(r) : r.finding ? findingRow(r) : null),
+    r => (!isListShown ? null : r.type === 'finding' ? findingRow(r) : itemRow(r)),
   )
   const needsYouGroups = NEEDS_YOU_GROUPS.map(g => ({ ...g, entries: lists[g.list], rows: rowsIn(lists[g.list]) }))
   const findingEntries = lists.findings
@@ -396,7 +385,6 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
       needsYouGroups,
       view,
       isUnread,
-      openDialog,
       unfolded,
       closedAll,
       Button,

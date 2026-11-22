@@ -246,7 +246,8 @@ conversation's saved rows have loaded. With no counts it reads "Nothing
 needed", with a running mark while the ledger's sync state is checking, or
 "May be out of date" while it is stale or unavailable. While the agent's own
 dialog waits and no row does, it reads that the agent is waiting, as "Claude is
-waiting for your permission", the same words as the empty Asks tab. The
+waiting for your permission", while the Asks tab lists the dialog as its first
+row. The
 terminal draws no band while Claude Code's dialog is open, so this shows in
 the desktop app and omp. When the session
 stops, a second line says why, with [Resume] after an API error. Codex has

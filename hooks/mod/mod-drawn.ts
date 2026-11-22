@@ -6,6 +6,7 @@ import { paneState } from './mod-state'
 import { modUiOf } from './mod-ui'
 import { CLAUDE_CODE } from '../../core/domain/model-text'
 import { sessionView, type SessionView } from '../../core/view/session-view'
+import { withDialogRow } from '../../core/view/dialog-row'
 import { screenTabOf } from '../../core/view/tabs'
 import { SETTLED_MS } from '../../core/view/timing'
 import { NO_SYNC_INPUTS } from '../../core/view/sync-state'
@@ -70,11 +71,13 @@ export async function drawnState(
   const isUnread = demo === null && unreadable === conversation.id
 
   const drawnFrom = drawnSession(session, drawn, demo !== null, now)
-  const view = sessionView(drawnFrom, now, SETTLED_MS, holdsOf(ui, now), notes, canScrollConversation, {
+  const dialog = demo === null ? (dialogs[0] ?? null) : null
+  const shared = sessionView(drawnFrom, now, SETTLED_MS, holdsOf(ui, now), notes, canScrollConversation, {
     ...NO_SYNC_INPUTS,
     isReadFailed: isUnread,
     isDemo: demo !== null,
   })
+  const view = withDialogRow(shared, dialog, CLAUDE_CODE.agent)
 
   return {
     ...drawn,
@@ -85,7 +88,7 @@ export async function drawnState(
     isDemo: demo !== null,
     showsDemoNotices: demo !== null && !isDemoRecording,
     isUnread,
-    openDialog: demo === null ? (dialogs[0]?.kind ?? null) : null,
+    openDialog: dialog?.kind ?? null,
     now,
   }
 }

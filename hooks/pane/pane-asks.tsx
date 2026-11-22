@@ -122,7 +122,6 @@ export function paneAskTabs(
     needsYouGroups,
     view,
     isUnread,
-    openDialog,
     unfolded,
     closedAll,
     Button,
@@ -155,7 +154,6 @@ export function paneAskTabs(
     | 'needsYouGroups'
     | 'view'
     | 'isUnread'
-    | 'openDialog'
     | 'unfolded'
     | 'closedAll'
     | 'Button'
@@ -282,7 +280,7 @@ export function paneAskTabs(
         ]
       : []
     const hasBlocker = stop !== null || isUnread
-    const empty = emptyTab(view, { tab: 'needsYou', agent: 'Claude', drawn, hasBlocker, openDialog })
+    const empty = emptyTab(view, { tab: 'needsYou', agent: 'Claude', drawn, hasBlocker })
     if (empty) return emptyState(empty)
     const outside = stop
       ? [

@@ -136,10 +136,11 @@ test('in a Herdr app terminal, the published session names an open ask dialog fr
   expect(published().openDialog).toBeUndefined()
   await call('tool_execution_start', { toolCallId: 'a1', toolName: 'ask', args: {} })
   await settle()
-  expect(published().openDialog).toBe('question')
+  expect(published()).toMatchObject({ openDialog: 'question', openDialogText: 'A question' })
   await call('tool_execution_end', { toolCallId: 'a1' })
   await settle()
   expect(published().openDialog).toBeUndefined()
+  expect(published().openDialogText).toBeUndefined()
 })
 
 test('in a Herdr pane, an open ask leads the sidebar line until the turn ends', async () => {

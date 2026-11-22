@@ -1,6 +1,7 @@
-import type { Dialog, HerdrPressOutcome, Session } from '../../types'
+import type { HerdrPressOutcome, Session } from '../../types'
 import { HERDR_FORMAT, publishedSessionPath, publishedSessionsFolder } from '../../core/remote/herdr'
 import type { HerdrEnvelope } from '../../core/remote/herdr-envelope'
+import type { OpenDialog } from '../../core/view/dialog-row'
 import { upgradeSession } from '../../core/view/session-files'
 import type { SavedSession } from '../../core/view/session-files'
 
@@ -26,7 +27,8 @@ export function isSessionChange(changed: readonly string[], appHome: string, ses
  * `isFetchingPrs`: the host had a PR fetch running. A file from a host that does not say reads as not fetching.
  * `isReadFailed`: the host could not read the saved inbox. A file from a host that does not say reads as read.
  * `turnReadFailedAt`: when Codex first failed to read whether the running turn still runs, or null.
- * `openDialog`: the kind of the agent's own dialog that waits on the person, or null.
+ * `openDialog`: the agent's own dialog that waits on the person, or null. Its text is null from a host that names only
+ * its kind.
  * `savesCollapses`: the session carries `collapsed`, so its host saves the collapses the look writes. An older host
  * deletes a collapse file unread.
  */
@@ -42,7 +44,7 @@ export type ReadSession =
       isFetchingPrs: boolean
       isReadFailed: boolean
       turnReadFailedAt: number | null
-      openDialog: Dialog['kind'] | null
+      openDialog: OpenDialog | null
     }
   | { is: 'missing' }
   | { is: 'torn' }
@@ -92,7 +94,10 @@ export function readSession(text: string | null): ReadSession {
     isFetchingPrs: file.isFetchingPrs === true,
     isReadFailed: file.isReadFailed === true,
     turnReadFailedAt: typeof file.turnReadFailedAt === 'number' ? file.turnReadFailedAt : null,
-    openDialog: file.openDialog === 'question' || file.openDialog === 'permission' ? file.openDialog : null,
+    openDialog:
+      file.openDialog === 'question' || file.openDialog === 'permission'
+        ? { kind: file.openDialog, text: typeof file.openDialogText === 'string' ? file.openDialogText : null }
+        : null,
   }
 }
 
