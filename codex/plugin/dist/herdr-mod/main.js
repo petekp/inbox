@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-22T20:17:25.882Z. 350407 characters follow.
+// Built at 2026-11-22T20:28:30.211Z. 350487 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5687,6 +5687,7 @@ var LIST_MARGIN_PT = SPACE_UNIT;
 var CONTROL_GAP_PT = 2 * SPACE_UNIT;
 var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
 var BUTTON_BORDER_PT = 1;
+var QUIET_BUTTON_GAP_PT = CONTROL_GAP_PT + 2 * (SPACE_UNIT + BUTTON_BORDER_PT);
 var SECTION_GAP_PT = 6 * SPACE_UNIT;
 var EDGE_PT = 4 * SPACE_UNIT;
 var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
