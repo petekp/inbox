@@ -1,3 +1,4 @@
+import { isOpen } from '../core/domain/status-limits'
 import {
   DECISION_WORDS,
   label,
@@ -8,6 +9,10 @@ import {
   subjectsFor,
 } from './status-rule-helpers'
 import type { Rule } from './status-rules'
+
+/** Text that says work waits on the person, as "waiting on your check", "needs your yes" or "ready for your review". */
+const WAITS_ON_PERSON =
+  /\b(wait(s|ing)? (on|for) (you|your)\b|awaits? your|awaiting your|needs? your|for your (review|check|look|try|sign-?off|approval|input|answer|go|yes|ok)\b|your (check|try|yes|ok|okay|approval|answer|look|go|review|input|sign-?off|call)\b)/i
 
 /** The rules for the person's open asks: what each one holds up, and what a held row says. */
 export const ASK_RULES: Rule[] = [
@@ -22,6 +27,18 @@ export const ASK_RULES: Rule[] = [
       return [...shownOf(o), ...milestonesOf(o)]
         .filter(s => held.has(s.id) && DECISION_WORDS.test(s.text))
         .map(s => `held, and names the decision: "${s.name}: ${s.text}"`)
+    },
+  },
+  {
+    id: 'no-wait-on-person',
+    reads: 'answer',
+    property: 9,
+    text: "No open subject's or milestone's text says it waits on the person. The open ask says that.",
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      return [...shownOf(o), ...milestonesOf(o)]
+        .filter(s => isOpen(s) && WAITS_ON_PERSON.test(s.text))
+        .map(s => `waits on the person: "${s.name}: ${s.text}"`)
     },
   },
   {

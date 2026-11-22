@@ -260,6 +260,24 @@ const FIXED_RULES: Rule[] = [
     },
   },
   {
+    id: 'child-not-restated',
+    reads: 'facts',
+    property: 7,
+    text: "An open subject with a running child row says in where it stands what the child's label does not, not only what the child is doing, as the fact list's pattern gives it.",
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      const hasRunningChild = (s: Subject) =>
+        (o?.children ?? []).some(c => c.subjectId === s.id && isChildRunning(c, result.now))
+      return result.facts.pieces.flatMap(({ restates, ...p }) =>
+        restates === undefined
+          ? []
+          : subjectsFor(p, o)
+              .filter(s => isOpen(s) && hasRunningChild(s) && new RegExp(restates, 'i').test(s.text))
+              .map(s => `${label(s)} says only what its running child is doing, like /${restates}/`),
+      )
+    },
+  },
+  {
     id: 'no-news-no-move',
     reads: 'quiet',
     property: 11,

@@ -146,6 +146,20 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     answer: GOOD_RUNS['next-milestone']![1]!.replace('\nNEXT: m4', ''),
     breaks: 'milestone-next',
   },
+  'child-label-repeat': {
+    at: 0,
+    answer:
+      GOOD_RUNS['child-label-repeat']?.[0]?.replace(
+        'SET: s2 | working | one PR, not merged',
+        'SET: s2 | working | moving sync files into layers',
+      ) ?? '',
+    breaks: 'child-not-restated',
+  },
+  'release-plan-once': {
+    at: 0,
+    answer: `${GOOD_RUNS['release-plan-once']?.[0] ?? ''}\nMILESTONE: queued | Candidate approved | Waiting on your check`,
+    breaks: 'no-wait-on-person',
+  },
   'children-finished': {
     at: 1,
     answer: 'DONE: s1 | PDF export merged',

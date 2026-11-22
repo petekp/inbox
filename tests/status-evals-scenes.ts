@@ -85,6 +85,12 @@ function secondChildRunning(s: Scene) {
 
 const CLEAR = { text: 'Get offline sync into both stores', match: 'offline sync' }
 
+function withEngineRestates(s: Scene) {
+  s.facts.pieces = s.facts.pieces.map(p =>
+    p.id === 'engine' ? { ...p, restates: 'review(ing)? the (sync )?engine' } : p,
+  )
+}
+
 const s1Of = (s: Scene) => s.after.subjects[0]!
 const s2Of = (s: Scene) => s.after.subjects[1]!
 const allDone = (s: Scene, description: string) => {
@@ -128,6 +134,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     },
   },
   'held-text': { bad: s => (s2Of(s).text = 'needs your decision') },
+  'no-wait-on-person': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.milestones = s.after.milestones.map(m => (m.id === 'm2' ? { ...m, text: 'waiting on your check' } : m))
+    },
+  },
   'asks-linked': { bad: s => (s.after.askSubjects = { i1: ['s1'] }) },
   'ask-holds-several': { bad: s => (s.facts.asks[0]!.holdsUp = ['conflicts', 'engine']) },
   'children-linked': { bad: s => (s.after.children[0]!.subjectId = 's2') },
@@ -135,6 +148,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'step-left-named': {
     good: s => childFinished(s, 'syncs, merge left'),
     bad: s => childFinished(s, 'syncs on reconnect'),
+  },
+  'child-not-restated': {
+    good: withEngineRestates,
+    bad: s => {
+      withEngineRestates(s)
+      s.after.subjects = s.after.subjects.map(x => (x.id === 's1' ? { ...x, text: 'reviewing the engine diff' } : x))
+    },
   },
   'no-news-no-move': { bad: s => (s.facts.changed = []) },
   'changes-move': { bad: s => (s1Of(s).changedAt = minutes(0)) },
@@ -191,17 +211,6 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     bad: s => {
       withGoal(s)
       s.after.milestones[1]!.name = 'Sync conflicts'
-    },
-  },
-  'milestone-text': {
-    good: s => {
-      withGoal(s)
-      s.after.milestones[0]!.text = ''
-    },
-    bad: s => {
-      withGoal(s)
-      s.after.milestones[0]!.text = ''
-      s.before = { ...s.before, goal: s.after.goal, milestones: s.after.milestones, serves: s.after.serves }
     },
   },
   'milestone-size': {
@@ -369,6 +378,27 @@ function linkedToMilestones(s: Scene, holdsUp: string[], ids: string[]) {
 }
 
 export const PATH_SCENES: { rule: string; path: string; good: (s: Scene) => void; bad: (s: Scene) => void }[] = [
+  {
+    rule: 'no-wait-on-person',
+    path: 'a subject that says it waits on the person',
+    good: () => undefined,
+    bad: s => {
+      s.after.subjects = s.after.subjects.map(x => (x.id === 's1' ? { ...x, text: 'waits on your yes' } : x))
+    },
+  },
+  {
+    rule: 'child-not-restated',
+    path: "a subject that restates its child's label after the child finished",
+    good: s => {
+      withEngineRestates(s)
+      s.after.subjects = s.after.subjects.map(x => (x.id === 's1' ? { ...x, text: 'reviewing the engine diff' } : x))
+      s.after.children = s.after.children.map(c => ({ ...c, endedAt: minutes(8) }))
+    },
+    bad: s => {
+      withEngineRestates(s)
+      s.after.subjects = s.after.subjects.map(x => (x.id === 's1' ? { ...x, text: 'reviewing the engine diff' } : x))
+    },
+  },
   {
     rule: 'head-title',
     path: 'a head with no description once no subject is working or waiting',

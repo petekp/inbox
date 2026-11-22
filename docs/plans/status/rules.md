@@ -17,7 +17,9 @@ These run after every step of every replay, on the saved Status, the page `statu
 - Each piece's mark matches its state in the fact list. Where two marks are both right, as for work just set aside, the fact list allows both.
 - No subject matches an ask, a finding, a task for the person or a standing rule in the fact list. No text restates an open ask or finding.
 - Each open ask is linked to every subject the fact list says it holds up, and to no other. A held subject's text names no decision, such as "needs your decision" or "your call".
+- No open subject's or milestone's text says it waits on the person, as in "waiting on your check". The open ask says that.
 - Each running child is linked to the subject the fact list names.
+- An open subject with a running child row says in where it stands what the child's label does not. Where the fact list gives a pattern for text that says only what the child is doing, the text does not match it.
 - A working subject whose child rows have all finished, and that no ask holds up, names in where it stands the step left in this session, as the fact list gives it.
 - A child's label is not its host's handle, joins no words with "-" or "_", and has at least two words. The replays start their delegates with ids and show no Herdr focus, so this check stays known failing for them. The eval-trust follow-ups name the replay step it needs.
 - On a step the fact list marks as no news, no row's or milestone's last-changed time or place moves.
