@@ -25,6 +25,21 @@ function titleOf(line: HTMLElement): { full: HTMLElement; short: HTMLElement } |
 }
 
 /**
+ * Clamps a moving title's closed form to the lines the closed row's title takes. The closed form draws the open form's
+ * weight, at which it can need a line more, so the clamp shows "…" in that line's place and the line starts and ends
+ * at the closed row's height.
+ */
+function clampToClosedLines(short: HTMLElement) {
+  const part = short.querySelector<HTMLElement>('.title-part')
+  if (!part) return
+  part.style.removeProperty('-webkit-line-clamp')
+  short.style.fontWeight = 'inherit'
+  const lines = Math.round(part.getBoundingClientRect().height / parseFloat(getComputedStyle(part).lineHeight))
+  short.style.fontWeight = ''
+  if (lines > 0) part.style.setProperty('-webkit-line-clamp', String(lines))
+}
+
+/**
  * Fades a title from its closed form to its open form, or back, after `delay` ms, as `titleFades` times it, or in one
  * frame when not `isFaded`. Each form fades from the opacity it shows now, so a fade that turns back never blinks.
  */
@@ -53,6 +68,7 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
   const title = line && titleOf(line)
   if (!line || !title) return
   glides.get(line)?.anim.cancel()
+  clampToClosedLines(title.short)
   const to = line.getBoundingClientRect().height
   const from: SpringState = held ?? { x: Math.min(title.short.getBoundingClientRect().height, to), v: 0 }
   if (to - from.x < 0.5 && Math.abs(from.v) * FRAME_MS < 0.5) {
@@ -71,6 +87,7 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
  */
 export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
   const title = titleOf(line)
+  if (title) clampToClosedLines(title.short)
   const end = title ? Math.max(to, title.short.getBoundingClientRect().height) : to
   if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null))
     swapTitle(title, false, 0, delay >= LEAVE_FADE_MS)

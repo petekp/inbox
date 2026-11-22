@@ -128,10 +128,10 @@
 .row.closing .line .text:not(.short) .title-part {
   display: block;
 }
-/* A moving row's full title draws the open form's weight, and a closing row's keeps it until the row's height rests.
-   The clamped title it swaps with draws the closed weight, so it wraps as the closed row does. */
-.row.selected .line .text:not(.short),
-.row.closing .line .text:not(.short) {
+/* An open or moving row's title draws the open form's weight in both its forms, so they wrap alike and the words they
+   share overlap exactly while one fades to the other. A closing row's keeps it until the row's height rests. */
+.row.selected .line .text,
+.row.closing .line .text {
   font-weight: 600;
 }
 /* A moving row's title in its closed form, which shows in place of the full title under it. */

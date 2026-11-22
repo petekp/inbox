@@ -205,7 +205,7 @@ type Harness = {
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, held faint while its row regrows from a shrink, a moving row’s clamped title draws the closed weight and fades with its full title only while its line rests, and a dismissed open row draws only its settled line', async context => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, held faint while its row regrows from a shrink, a moving row’s clamped title draws the open weight and fades with its full title only while its line rests, and a dismissed open row draws only its settled line', async context => {
   await inTab(async ({ state, moves, lineRests, fades, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-ui')
@@ -334,11 +334,11 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
     await after(ROW_STATE_MS.closing + 50)
     await press('i1')
     const opening = rowOf('i1').querySelector<HTMLElement>('.row.selected .line .text.short')!
-    assert.notEqual(getComputedStyle(opening).fontWeight, '600')
+    assert.equal(getComputedStyle(opening).fontWeight, '600')
     const title = (clamped: boolean) =>
       rowOf(pressed.id).querySelector<HTMLElement>(`.row.closing .line .text${clamped ? '.short' : ':not(.short)'}`)!
     assert.equal(getComputedStyle(title(false)).fontWeight, '600')
-    assert.notEqual(getComputedStyle(title(true)).fontWeight, '600')
+    assert.equal(getComputedStyle(title(true)).fontWeight, '600')
     const fadesOut = () => fades.filter(f => f.to === 0 && f.el.closest('.panel') && rowOf(pressed.id).contains(f.el))
     const stillFadingOut = () => fadesOut().filter(f => f.anim.playState !== 'idle').length
     for (const turnsBackAtMs of [60, 0]) {
