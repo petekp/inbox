@@ -72,7 +72,7 @@ Fixed. Step 4 of the desktop steps now ends with Continue.
 
 8. The band says "Open inbox" while the pane is already open beside it. This happens in the desktop app, Herdr and the terminal. The press raises the pane and gives it the keyboard, so only the label is wrong. We recommend a label that fits both states, such as "Go to inbox".
 
-Fixed in the terminal and the desktop app. The button reads "Go to inbox" while the pane shows, and "Open inbox" otherwise. In a Herdr app terminal the inbox pane stays closed, so the band keeps "Open inbox" and the press focuses the Herdr look's panel.
+Fixed in the terminal and the desktop app. The button reads "Go to inbox" while the pane shows, and "Open inbox" otherwise. In a Herdr app terminal the inbox pane is normally closed, so the band keeps "Open inbox" and the press focuses the Herdr look's panel, whether or not it is open.
 
 9. A narrow desktop pane shows its tabs as symbols with no labels: 🧭 🙋 🔍 🔀. This follows the tab-symbols rule in `docs/looks/differences-drawing.md`, and the Codex tab does the same under 348 pixels. A new user still cannot tell Asks from Finds. We recommend a tooltip, or labels whenever they fit.
 
