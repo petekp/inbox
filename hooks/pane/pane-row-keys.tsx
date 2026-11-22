@@ -17,7 +17,7 @@ import { actionLabel, fieldExit, ROW_COPY } from '../../core/view/rows'
 import { wrapped } from './terminal-text'
 import { cellWidth, cutForEllipsis } from '../../core/domain/text'
 
-const HOTKEY_SEPARATOR = ': '
+export const HOTKEY_SEPARATOR = ': '
 
 /** Cells a terminal button's label starts in from the button's edge, after its hotkey and the separator. */
 export const terminalLabelCells = (k: Pick<KeyAction, 'hotkey'>) =>
