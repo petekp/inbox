@@ -3,14 +3,19 @@ import { dialogWaitText } from './band'
 import type { RowView } from './rows'
 import type { SessionView } from './session-view'
 
-/** The id of the agent's own dialog's row. No ledger item, finding or PR row takes it. */
-export const DIALOG_ROW_ID = 'dialog'
-
 /**
  * The agent's own dialog that waits on the person, as a host knows it. `text` is null from a Herdr publisher that
  * names only the dialog's kind.
  */
 export type OpenDialog = { kind: Dialog['kind']; text: string | null }
+
+/**
+ * The id of the dialog's row. Each dialog gets its own, so a fold of one dialog's row does not carry to the next. No
+ * ledger item, finding or PR row id starts with `dialog:`.
+ */
+export function dialogRowId(dialog: OpenDialog): string {
+  return `dialog:${dialog.kind}:${dialog.text ?? ''}`
+}
 
 /** What the dialog asks, in one line: "Allow npm test?" for a permission, else the question. */
 export function dialogTitle(dialog: Pick<Dialog, 'kind' | 'text'>): string {
@@ -28,7 +33,7 @@ function answerPlace(agent: string, kind: Dialog['kind']): string {
  */
 function dialogRow(dialog: OpenDialog, agent: string): RowView {
   return {
-    id: DIALOG_ROW_ID,
+    id: dialogRowId(dialog),
     type: 'dialog',
     number: null,
     title: dialog.text ? dialogTitle({ kind: dialog.kind, text: dialog.text }) : dialogWaitText(agent, dialog.kind),

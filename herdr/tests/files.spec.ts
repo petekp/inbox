@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { HERDR_FORMAT } from '../../core/remote/herdr'
 import { writeCollapse } from '../src/collapse'
 import { isSessionChange, readSession } from '../src/files'
-import { DIALOG_ROW_ID } from '../../core/view/dialog-row'
+import { dialogRowId } from '../../core/view/dialog-row'
 import { NO_HOLDS } from '../../core/view/timing'
 import type { RowBlock } from '../src/blocks'
 import type { Followed } from '../src/follow'
@@ -101,11 +101,13 @@ test('the session rereads on a change to its own file or the whole folder, not o
   expect(isSessionChange([`${folder}/s2.json`], '/home/app', 's1')).toBe(false)
 })
 
+const PERMISSION = { kind: 'permission', text: 'npm test' } as const
+
 test('a published open dialog draws first in the Asks tab, with where to answer it, and counts in no badge', () => {
   const o = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW }, notes: {}, queue: { outs: [], lines: {} } }
   const followed: Followed = { is: 'session', terminal: 't1', sessionId: 's1' }
   const screenWith = (overrides: Record<string, unknown>) => {
-    const ui = uiOn('needsYou', { selected: DIALOG_ROW_ID })
+    const ui = uiOn('needsYou', { selected: dialogRowId(PERMISSION) })
     const screen = screenOf(followed, readSession(demoEnvelopeText(overrides)), ui, o)
     if (screen.is !== 'inbox') throw new Error('the demo file drew no inbox')
 
@@ -114,7 +116,7 @@ test('a published open dialog draws first in the Asks tab, with where to answer 
   const without = screenWith({})
   const asking = screenWith({ openDialog: 'permission', openDialogText: 'npm test' })
 
-  expect(asking.rows[0]).toMatchObject({ id: DIALOG_ROW_ID, title: 'Allow npm test?', buttons: [] })
+  expect(asking.rows[0]).toMatchObject({ id: dialogRowId(PERMISSION), title: 'Allow npm test?', buttons: [] })
   expect(asking.rows[0]?.body.map(l => l.text)).toEqual([`Allow or deny it in ${AGENT}'s dialog.`])
   expect(asking.rows.slice(1).map(r => r.id)).toEqual(without.rows.map(r => r.id))
   expect(asking.tabs).toEqual(without.tabs)

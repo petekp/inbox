@@ -4,17 +4,21 @@ import { askedCalls, callKey, permissionText } from './mod-records'
 import { mod } from './mod-state'
 import { PERMISSION_FALLBACK_DELAY_MS } from '../../core/view/timing'
 
-type DialogCalls = Pick<Mod, 'clock' | 'conversation' | 'publishStatus'> & { atoms: Pick<Mod['atoms'], 'dialogs'> }
+type DialogCalls = Pick<Mod, 'clock' | 'conversation' | 'publishStatus' | 'sendUi'> & {
+  atoms: Pick<Mod['atoms'], 'dialogs'>
+}
 
 export async function openDialog(m: DialogCalls, dialog: Dialog) {
   await m.atoms.dialogs.update(d => [...d.filter(x => x.key !== dialog.key), dialog])
   void m.publishStatus()
+  void m.sendUi(['read']).catch(() => undefined)
 }
 
 export async function closeDialogs(m: DialogCalls, key: string | null) {
   if (!(await m.atoms.dialogs.read()).some(d => key === null || d.key === key)) return
   await m.atoms.dialogs.update(d => (key === null ? [] : d.filter(x => x.key !== key)))
   void m.publishStatus()
+  void m.sendUi(['read']).catch(() => undefined)
 }
 
 export async function clearingDialog<T>(m: DialogCalls, key: string, run: () => Promise<T>): Promise<T> {
