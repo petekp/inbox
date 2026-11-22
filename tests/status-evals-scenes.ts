@@ -213,17 +213,6 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.after.milestones[1]!.name = 'Sync conflicts'
     },
   },
-  'milestone-text': {
-    good: s => {
-      withGoal(s)
-      s.after.milestones[0]!.text = ''
-    },
-    bad: s => {
-      withGoal(s)
-      s.after.milestones[0]!.text = ''
-      s.before = { ...s.before, goal: s.after.goal, milestones: s.after.milestones, serves: s.after.serves }
-    },
-  },
   'milestone-size': {
     good: withGoal,
     bad: s => {

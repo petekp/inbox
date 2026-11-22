@@ -132,7 +132,7 @@ test('NEXT names a milestone by id or by name, and the call reads the queued mil
   ])
   expect(path(after(planned(), 'NEXT: Release notes', 40), 45)?.[2]?.[0]).toBe('Release notes')
   expect(blocks).toMatch(/m3 \| queued \| Demo script \| - \| next \| no work linked\n/)
-  expect(blocks).toMatch(/m4 \| queued \| Docs page \| - \| no text\n/)
+  expect(blocks).toMatch(/m4 \| queued \| Docs page \| -\n/)
   expect(goalBlocks(setTypedGoal(planned(), 'Demo on Friday', 40), 45).join('\n')).not.toMatch(/\| next/)
 })
 
@@ -171,7 +171,7 @@ test('a milestone more than MILESTONE_SUBJECTS subjects serve, two or more open,
   const full = after(busy, ['A', 'B', 'C'].map(n => `MILESTONE: queued | Part ${n} | not started`).join('\n'), 35)
   const waiting = { ...busy, goal: { ...busy.goal!, isAwaitingMilestones: true } }
 
-  expect(marks(busy)).toMatch(/m1 \| working \| Fixes merged \| - \| no text \| too big, 8 subjects, room for 3\n/)
+  expect(marks(busy)).toMatch(/m1 \| working \| Fixes merged \| - \| too big, 8 subjects, room for 3\n/)
   expect([oneOpen, full, waiting].map(o => marks(o).includes('too big'))).toEqual([false, false, false])
   expect(done.milestones.map(m => [m.name, m.status])).toEqual([
     ['Fixes merged', 'done'],
