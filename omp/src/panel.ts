@@ -1,4 +1,4 @@
-import type { Stop } from '../../types'
+import type { Dialog, Stop } from '../../types'
 import type { PrPress } from '../../core/view/pr-press'
 import type { RowPress } from '../../core/domain/presses'
 import type { SessionView } from '../../core/view/session-view'
@@ -6,7 +6,7 @@ import type { BannerTone, ToneName } from '../../core/view/tones'
 import { ago } from '../../core/domain/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../core/view/banners'
 import { shownTabs, isRowTab } from '../../core/view/tabs'
-import { bandCounts, nothingMark, nothingText } from '../../core/view/band'
+import { bandCounts, bandIdleText, nothingMark } from '../../core/view/band'
 import { footerError } from '../../core/view/view'
 import { withReadFailed } from '../../core/view/sync-state'
 import { statusSelected } from '../../core/view/status-keys'
@@ -19,7 +19,7 @@ import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw
 import type { Draw } from './panel-draw'
 import { entriesOf } from './panel-entries'
 import { selectedLine, withCollapses, withShared } from './panel-keys'
-import { HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
+import { AGENT, HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
 import type { HerdrAsk } from '../../core/remote/herdr-ask'
 import { drawGoalPart, goalPartId, goalPartSubjects, workRowLines } from './panel-goal'
 import { drawPageRow } from './panel-page'
@@ -47,6 +47,8 @@ export type PanelScreen = {
   isFetchingPrs: boolean
   /** Why the last turn stopped, until the next turn starts. */
   stop: Stop | null
+  /** The kind of omp's own dialog that waits on the person, or null. */
+  openDialog?: Dialog['kind'] | null
   version: string
   /** Whether the extension's folder holds `NEXT_BUILD_MARK`, which adds "next" to the version label. */
   isNextBuild?: boolean
@@ -280,7 +282,7 @@ export function withScreenReadFailed(screen: PanelScreen): PanelScreen {
 /** The band above the prompt: the counts, and under them why the last turn stopped. */
 export function bandLines(screen: PanelScreen, width: number, now: number, style: Style): string[] {
   const counts = bandCounts(screen.view).map(c => `${c.label} ${style.tone(c.id, String(c.count))}`)
-  const nothing = nothingText(screen.view.sync.ledger)
+  const nothing = bandIdleText(screen.view.sync.ledger, { agent: AGENT, kind: screen.openDialog ?? null })
   const nothingDrawn = style.dim(nothing.text) + style.dim(nothingMark(nothing.isChecking, now))
   const left = ` ${counts.length > 0 ? counts.join(` ${style.tone('sep', '·')} `) : nothingDrawn}`
   const countLine = spread(left, style.dim('/inbox to open '), width)

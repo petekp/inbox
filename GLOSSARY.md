@@ -244,7 +244,11 @@ In Claude Code, the line above the prompt with the Asks, Finds and PRs
 counts and [Open inbox]. It shows from the session's start, once the
 conversation's saved rows have loaded. With no counts it reads "Nothing
 needed", with a running mark while the ledger's sync state is checking, or
-"May be out of date" while it is stale or unavailable. When the session
+"May be out of date" while it is stale or unavailable. While the agent's own
+dialog waits and no row does, it reads that the agent is waiting, as "Claude is
+waiting for your permission", the same words as the empty Asks tab. The
+terminal draws no band while Claude Code's dialog is open, so this shows in
+the desktop app and omp. When the session
 stops, a second line says why, with [Resume] after an API error. Codex has
 no band. omp has a band with the same counts and no button, which says
 `/inbox` opens the panel.

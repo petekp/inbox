@@ -113,6 +113,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
         herdrAsk: memory.herdrAsk,
         isFetchingPrs: prFetches.isFetching(id),
         stop: s.stop,
+        openDialog: context.openAsks.get(id)?.kind ?? null,
         version,
         isNextBuild: deps.isNextBuild,
       }

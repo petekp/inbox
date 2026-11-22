@@ -55,6 +55,12 @@ test('the band shows the counts with their labels at full brightness, and how to
   expect(strip(bandLines(failed, 80, NOW, style)[0]!)).toContain('May be out of date')
   expect(text(failed, INITIAL_UI)).toContain('May be out of date')
   expect(strip(bandLines(withScreenReadFailed(empty), 80, NOW, style)[0]!)).toContain('May be out of date')
+  expect(strip(bandLines({ ...failed, openDialog: 'question' }, 80, NOW, style)[0]!)).toContain(
+    'omp is waiting for your answer',
+  )
+  expect(strip(bandLines({ ...screen, openDialog: 'question' }, 80, NOW, style)[0]!)).toContain(
+    `Asks ${screen.view.needsYou.count}`,
+  )
 })
 
 test('no drawn line is wider than the panel, and a short panel keeps the selected row in view', () => {
