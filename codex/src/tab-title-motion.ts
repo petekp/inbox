@@ -14,8 +14,8 @@ const fullOf = (line: HTMLElement) => line.querySelector<HTMLElement>(':scope > 
 
 /**
  * A row's title while its line moves: `full` is the title as the open row draws it, in flow, and `short` the same text
- * clamped as the closed row draws it, over the first lines of `full`. One of the two shows at a time, since they wrap at
- * different places.
+ * clamped as the closed row draws it, over the first lines of `full`. They wrap at different places, so both show only
+ * while one fades to the other.
  */
 function titleOf(line: HTMLElement): { full: HTMLElement; short: HTMLElement } | null {
   const full = fullOf(line)
@@ -26,7 +26,7 @@ function titleOf(line: HTMLElement): { full: HTMLElement; short: HTMLElement } |
 
 /**
  * Fades a title from its closed form to its open form, or back, after `delay` ms, as `titleFades` times it, or in one
- * frame when not `isFaded`.
+ * frame when not `isFaded`. Each form fades from the opacity it shows now, so a fade that turns back never blinks.
  */
 function swapTitle(
   { full, short }: { full: HTMLElement; short: HTMLElement },
@@ -38,8 +38,8 @@ function swapTitle(
   const [toFull, toShort] = isOpen ? [taken, left] : [left, taken]
   const ms = (f: typeof taken) => (isFaded ? f.ms : 0)
   const after = (f: typeof taken) => delay + (isFaded ? f.delayMs : 0)
-  fade(full, isOpen ? 0 : 1, isOpen ? 1 : 0, ms(toFull), !isOpen, false, after(toFull))
-  fade(short, isOpen ? 1 : 0, isOpen ? 0 : 1, ms(toShort), true, false, after(toShort))
+  fade(full, fadeShown(full) ?? (isOpen ? 0 : 1), isOpen ? 1 : 0, ms(toFull), !isOpen, false, after(toFull))
+  fade(short, fadeShown(short) ?? (isOpen ? 1 : 0), isOpen ? 0 : 1, ms(toShort), true, false, after(toShort))
 }
 
 /**
