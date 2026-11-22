@@ -10854,8 +10854,8 @@ var INSTALLING_TEXT = "Installing the inbox mod in Herdr\u2026";
 var SAVING_TEXT = "Saving the answer\u2026";
 var INSTALLED_TEXT = "\u2713 Installed the inbox mod in Herdr.";
 var HERDR_ASK_BUTTONS = [
-  { id: "herdr-install", label: "Install", isYes: true },
-  { id: "herdr-skip", label: "Don't install", isYes: false }
+  { id: "herdr-install", label: "Install", isYes: true, hotkey: "y" },
+  { id: "herdr-skip", label: "Don't install", isYes: false, hotkey: "q" }
 ];
 function herdrAskOf(appHome, home, answeredAt) {
   const folder = `${appHome}/mods/inbox`;
@@ -10905,7 +10905,7 @@ function herdrAskEntries(screen) {
   const isAsking = screen.herdrAsk?.is === "asking";
   const buttons = HERDR_ASK_BUTTONS.map((a) => ({
     label: a.label,
-    key: null,
+    key: a.hotkey,
     press: { action: "herdr-ask", isYes: a.isYes },
     isRecommended: a.isYes,
     isFollowUp: false

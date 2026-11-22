@@ -21,10 +21,13 @@ const INSTALLING_TEXT = 'Installing the inbox mod in Herdr…'
 const SAVING_TEXT = 'Saving the answer…'
 const INSTALLED_TEXT = '✓ Installed the inbox mod in Herdr.'
 
-/** The question's buttons, in the order every look draws them. Install is the answer the inbox recommends. */
+/**
+ * The question's buttons, in the order every look draws them. Install is the answer the inbox recommends. Each hotkey
+ * is a letter no other key of the inbox takes, so binding it never takes a key from a tab, a row or the Status.
+ */
 export const HERDR_ASK_BUTTONS = [
-  { id: 'herdr-install', label: 'Install', isYes: true },
-  { id: 'herdr-skip', label: "Don't install", isYes: false },
+  { id: 'herdr-install', label: 'Install', isYes: true, hotkey: 'y' },
+  { id: 'herdr-skip', label: "Don't install", isYes: false, hotkey: 'q' },
 ] as const
 
 /** The question in a host that found the mod missing, with the home folder written `~` in the folder it names. */

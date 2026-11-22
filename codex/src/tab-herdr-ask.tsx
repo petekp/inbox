@@ -26,6 +26,16 @@ async function answerHerdrAsk(ask: OpenHerdrAsk, isYes: boolean) {
   }, SETTLED_MS)
 }
 
+/** Presses Install or Don't install when `key` is its hotkey and the question asks. Whether it pressed one. */
+export function pressHerdrAskKey(v: View, key: string): boolean {
+  const ask = tabState.herdrAsk ?? v.herdrAsk ?? null
+  const button = HERDR_ASK_BUTTONS.find(a => a.hotkey === key)
+  if (ask?.is !== 'asking' || !button) return false
+  void answerHerdrAsk(ask, button.isYes)
+
+  return true
+}
+
 /** The question before the tab installs the inbox's Herdr mod, with Install and Don't install while it asks. */
 export function HerdrAskBanner({ v }: { v: View }) {
   const ask = tabState.herdrAsk ?? v.herdrAsk ?? null
