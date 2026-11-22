@@ -41,7 +41,7 @@ export type PanelScreen = {
   view: SessionView
   /** The model that runs the inbox update, or null when the person has none. */
   modelName: string | null
-  /** Whether omp has a signed-in provider. Without one, no model can run the inbox update. */
+  /** Whether a provider in omp has a credential. A provider that needs none, such as Apple's on-device model, does not count. */
   isSignedIn: boolean
   isGhMissing: boolean
   isFetchingPrs: boolean

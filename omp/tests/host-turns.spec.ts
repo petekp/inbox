@@ -142,6 +142,21 @@ test('in a Herdr app terminal, the published session names an open ask dialog fr
   expect(published().openDialog).toBeUndefined()
 })
 
+test('in a Herdr pane, an open ask leads the sidebar line until the turn ends', async () => {
+  createInbox(pi(), { ...deps(), herdrTarget: { kind: 'pane', pane: 'p1' } })
+  await call('session_start', { type: 'session_start' })
+  await call('tool_execution_start', {
+    toolCallId: 'a1',
+    toolName: 'ask',
+    args: { questions: [{ question: 'Deploy now?', options: ['yes', 'no'] }] },
+  })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens.inbox).toBe('Deploy now?')
+  await call('agent_end', { type: 'agent_end', messages: [] })
+  await settle()
+  expect(herdrReports().at(-1)?.tokens.inbox).toBeNull()
+})
+
 test('in a Herdr pane, each change reports the tab counts, a stop replaces them until it clears, and shutdown clears every token', async () => {
   createInbox(pi(), { ...deps(), herdrTarget: { kind: 'pane', pane: 'p1' } })
   const cleared = {

@@ -11,6 +11,7 @@ import type { OmpState } from './state'
 import type { HostDeps } from './host'
 import type { OmpPresses } from './host-presses'
 import type { InboxModel } from './panel'
+import type { Dialog } from '../../types'
 
 /** The slice of omp's extension context the handlers read. */
 export type OmpContext = {
@@ -41,8 +42,8 @@ export type HostContext = {
   dir: string
   /** The open panels, with the tab each shows. */
   openPanels: Map<string, ShownTab>
-  /** The tool call of the ask dialog each session's agent has open, by session id. */
-  openAsks: Map<string, string>
+  /** The ask dialog each session's agent has open, by session id. */
+  openAsks: Map<string, Dialog>
   /** Each session's panel state from the shared controller, by session id. A panel starts from it when it opens. */
   uiStates: Map<string, UiState>
   prepared: Set<string>

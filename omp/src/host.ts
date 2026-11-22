@@ -326,7 +326,10 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   pi.on('tool_result', activity.onToolResult)
   pi.on('message_end', turns.onMessageEnd)
   pi.on('message_start', turns.onMessageStart)
-  pi.on('agent_end', turns.onAgentEnd)
+  pi.on('agent_end', (event, ctx) => {
+    activity.onAgentEnd(event, ctx)
+    return turns.onAgentEnd(event, ctx)
+  })
 
   const tool = (name: AgentTool, description: string, parameters: object) => {
     pi.registerTool({

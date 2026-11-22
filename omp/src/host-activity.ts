@@ -78,7 +78,8 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
   ) => {
     if (isUnattended(ctx)) return
     if (event.toolName === 'ask') {
-      context.openAsks.set(sessionIdOf(ctx), event.toolCallId)
+      const question = askQuestions((event.args ?? {}) as Record<string, unknown>)[0]?.question ?? 'A question'
+      context.openAsks.set(sessionIdOf(ctx), { kind: 'question', text: question, key: event.toolCallId })
       notifyChanged(sessionIdOf(ctx))
       return
     }
@@ -96,7 +97,7 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
   // A wait that ended with no tool_result never ran.
   const onToolExecutionEnd = async (event: { toolCallId: string }, ctx: OmpContext) => {
     const id = sessionIdOf(ctx)
-    if (context.openAsks.get(id) === event.toolCallId) {
+    if (context.openAsks.get(id)?.key === event.toolCallId) {
       context.openAsks.delete(id)
       notifyChanged(id)
     }
@@ -105,6 +106,12 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
     waits.delete(event.toolCallId)
     const takenBack = (o: SessionStatus | null) => delegatesTakenBack(o, wait.command, wait.before, wait.at)
     await change(sessionIdOf(ctx), s => statusChanged(s, takenBack)).catch(() => undefined)
+  }
+
+  const onAgentEnd = (event: { willContinue?: boolean }, ctx: OmpContext) => {
+    if (isUnattended(ctx) || event.willContinue) return
+    const id = sessionIdOf(ctx)
+    if (context.openAsks.delete(id)) notifyChanged(id)
   }
 
   // omp raises tool_result only for a call that ran, never for one it blocked.
@@ -153,5 +160,5 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
     }).catch(() => undefined)
   }
 
-  return { onSubagentLifecycle, onSubagentProgress, onToolExecutionStart, onToolExecutionEnd, onToolResult }
+  return { onSubagentLifecycle, onSubagentProgress, onToolExecutionStart, onToolExecutionEnd, onToolResult, onAgentEnd }
 }

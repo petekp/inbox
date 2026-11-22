@@ -222,7 +222,7 @@ function showAsk(ask: HerdrAsk | null) {
       void isHerdrAskOpen(files, ask).then(async isOpen => {
         if (isOpen || !isShown()) return
         await readHasMod(calls)
-        showAsk(null)
+        if (isShown()) showAsk(null)
       })
     })
   }
