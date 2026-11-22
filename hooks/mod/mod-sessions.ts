@@ -20,7 +20,12 @@ export const AWAY_MS = 15 * 60_000
 export const resultsOrder = orderedKeys()
 
 /** The conversation the session runs. /clear, /resume and /branch move it to another id, and each move is a new generation. */
-export const conversation = { id: '', root: '', generation: 0 }
+export const conversation: { id: string; root: string; generation: number; loadedBy: LoadedBy } = {
+  id: '',
+  root: '',
+  generation: 0,
+  loadedBy: 'mod-start',
+}
 
 export type Owner = { id: string; generation: number }
 

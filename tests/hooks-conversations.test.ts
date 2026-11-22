@@ -50,6 +50,8 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
 test('across /clear and /resume the band never reads Nothing needed for a conversation whose saved rows have not loaded', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
+  let turns = 0
+  on('session.turns', () => ({ value: turns }))
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   w.ledgerReply = 'NEW: decide | 1 | Pin the Node version? | Yes / No | Yes'
   await $.prompt.submit({ text: 'fix the build', wait: false, origin: { kind: 'composer' } })
@@ -57,6 +59,7 @@ test('across /clear and /resume the band never reads Nothing needed for a conver
   await clock.settle()
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /^Asks 1$/ })).toBeDefined()
+  turns = 1
 
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   expect(await band.find({ text: /Nothing needed/ })).toBeUndefined()
