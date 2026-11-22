@@ -8,9 +8,12 @@ import type { PanelScreen } from '../src/panel'
 import { emptyState } from '../src/state'
 import { cursorOf, drawn, firstQuestion, keyed, NOW, onRow, screenOf, strip, style, text } from './panel-harness'
 
-test('the footer names the inbox model, or says there is none', () => {
+test('the footer names the inbox model, or says there is none and how to get one', () => {
   expect(text(screenOf(), INITIAL_UI)).toContain('inbox model Claude Sonnet 4.5')
   expect(text(screenOf({ modelName: null }), INITIAL_UI)).toContain('no inbox model: set @inbox')
+  expect(text(screenOf({ modelName: null, isSignedIn: false }), INITIAL_UI)).toContain(
+    'no inbox model: sign in with /login',
+  )
 })
 
 test('the footer puts the inbox model on its own line when it does not fit beside the hints', () => {

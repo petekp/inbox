@@ -22,7 +22,7 @@ import { textOfBlocks } from './omp-messages'
 
 export function activityHandlers(context: HostContext, sessions: SessionCalls) {
   const { deps, memory } = context
-  const { change, updateHostFor, fetchPrsWhenDue } = sessions
+  const { change, updateHostFor, fetchPrsWhenDue, notifyChanged } = sessions
 
   const isActivityWorthSaving = activityGate()
 
@@ -77,6 +77,11 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
     ctx: OmpContext,
   ) => {
     if (isUnattended(ctx)) return
+    if (event.toolName === 'ask') {
+      context.openAsks.set(sessionIdOf(ctx), event.toolCallId)
+      notifyChanged(sessionIdOf(ctx))
+      return
+    }
     const args = (event.args ?? {}) as Record<string, unknown>
     const command = event.toolName === 'bash' && typeof args.command === 'string' ? args.command : ''
     if (!waitsOnDelegate(command)) return
@@ -90,6 +95,11 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
 
   // A wait that ended with no tool_result never ran.
   const onToolExecutionEnd = async (event: { toolCallId: string }, ctx: OmpContext) => {
+    const id = sessionIdOf(ctx)
+    if (context.openAsks.get(id) === event.toolCallId) {
+      context.openAsks.delete(id)
+      notifyChanged(id)
+    }
     const wait = waits.get(event.toolCallId)
     if (!wait) return
     waits.delete(event.toolCallId)

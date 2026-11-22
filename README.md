@@ -270,9 +270,7 @@ In a Herdr app terminal, the inbox can open in a pane beside the terminal.
    Herdr mod?". Press Install. The ChatGPT app asks the same question on its
    Inbox tab.
 2. Type `/inbox` again. The inbox opens in a pane to the right of the
-   terminal. Claude Code's Open inbox button does the same. If you pressed
-   Install in another session or app and the inbox still opens in the
-   terminal, restart Claude Code.
+   terminal. Claude Code's Open inbox button does the same.
 3. The pane shows the inbox of the terminal you last focused in its tab. It has
    Asks, Finds and PRs, and you can press every button. ← and → switch tabs,
    `j` and `k` move between rows, and esc gives the keys back to the terminal.

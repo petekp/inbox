@@ -2,7 +2,7 @@ import type { Hook } from 'claude-code'
 
 import { setDemo } from './mod-demo'
 import { readUi } from './mod-drawn'
-import { askHerdrModAgain, openInHerdr } from './mod-herdr'
+import { askHerdrModAgain, openInHerdrAfterModCheck } from './mod-herdr'
 import { ensureOn } from './mod-lifecycle'
 import { showInbox } from './mod-pane-open'
 import type { Mod } from './mod-ports'
@@ -24,7 +24,7 @@ export async function inboxCommand(m: Mod, e: CommandRunEvent): Promise<{ text?:
     m.atoms.demo.read().then(d => d !== null),
     m.atoms.demoRecording.read(),
   ])
-  const note = await showInbox(m, args || isDemo ? null : openInHerdr(m.herdr))
+  const note = await showInbox(m, args || isDemo ? null : openInHerdrAfterModCheck(m.herdr))
 
   return {
     text: !isDemo

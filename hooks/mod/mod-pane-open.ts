@@ -2,6 +2,7 @@ import { delegatesSettled } from '../../core/domain/children'
 import { runOf } from './mod-commands'
 import { isPaneShown, readUi, redraw } from './mod-drawn'
 import { followDelegates as followHerdrDelegates, openInHerdr } from './mod-herdr'
+import type { HerdrOpened } from '../../core/remote/herdr-open'
 import { scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { wakeForHeldSends } from './mod-press-run'
@@ -97,7 +98,7 @@ export async function matchPaneEscape(m: PaneOpenCalls) {
   await m.pane.open(closesOnEscape ? { closeOnEscape: true } : {})
 }
 
-export async function showInbox(m: PaneOpenCalls, opening: ReturnType<typeof openInHerdr>) {
+export async function showInbox(m: PaneOpenCalls, opening: HerdrOpened | Promise<HerdrOpened | null> | null) {
   const herdr = await opening
   if (herdr?.isShown) return herdr.text
   await openPane(m)

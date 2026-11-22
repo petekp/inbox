@@ -17,6 +17,7 @@ test('the screen carries the view, the model and the gh state', async () => {
   const screen = await inbox.screen(makeCtx())
   expect(screen.view.needsYou.count).toBe(1)
   expect(screen.modelName).toBe('Claude Sonnet 4.5')
+  expect(screen.isSignedIn).toBe(true)
   expect(screen.isGhMissing).toBe(false)
   expect(screen.isFetchingPrs).toBe(false)
 })

@@ -9,7 +9,7 @@ import type { ShownTab, TabNaming } from '../../core/view/tabs'
 import type { Draw } from './panel-draw'
 import { drawnKeys } from './panel-keys'
 import { collapsedIn, fit, spread, visibleLength } from './panel-text'
-import type { Style } from './panel'
+import type { InboxModel, Style } from './panel'
 
 type TabCell = {
   id: ShownTab
@@ -60,6 +60,12 @@ export function tabBar(d: Draw): string {
   return spread(lineOf(naming, layout), ui.isHelpShown ? '' : s.dim('esc to close '), width)
 }
 
+function inboxModelText({ modelName, isSignedIn }: InboxModel): string {
+  if (modelName) return `inbox model ${modelName}`
+
+  return isSignedIn ? 'no inbox model: set @inbox' : 'no inbox model: sign in with /login'
+}
+
 export function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
@@ -84,7 +90,7 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
               'tab switch',
               '? help',
             ]
-  const model = `${screen.modelName ? `inbox model ${screen.modelName}` : 'no inbox model: set @inbox'} `
+  const model = `${inboxModelText(screen)} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2
   if (fitsBesideHints) out.push(spread(hintLine, s.dim(model), width))

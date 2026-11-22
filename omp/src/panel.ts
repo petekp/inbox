@@ -41,6 +41,8 @@ export type PanelScreen = {
   view: SessionView
   /** The model that runs the inbox update, or null when the person has none. */
   modelName: string | null
+  /** Whether omp has a signed-in provider. Without one, no model can run the inbox update. */
+  isSignedIn: boolean
   isGhMissing: boolean
   isFetchingPrs: boolean
   /** Why the last turn stopped, until the next turn starts. */
@@ -56,6 +58,9 @@ export type PanelScreen = {
   /** The question before omp installs the inbox's Herdr mod, while it shows. */
   herdrAsk?: HerdrAsk | null
 }
+
+/** What the footer says about the model that runs the inbox update. */
+export type InboxModel = Pick<PanelScreen, 'modelName' | 'isSignedIn'>
 
 export type Tone = ToneName | 'key' | 'accent' | 'sep'
 

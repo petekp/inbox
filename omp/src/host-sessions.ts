@@ -169,6 +169,7 @@ export function sessionCalls(context: HostContext) {
                 writtenAt: now,
                 projectFolder: memory.shownCwd?.(),
                 isFetchingPrs: prFetches.isFetching(id),
+                ...(context.openAsks.has(id) && { openDialog: 'question' as const }),
                 version,
                 isNextBuild: deps.isNextBuild,
               },

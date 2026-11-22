@@ -13,6 +13,7 @@ export type FeatureId =
   | 'dialog-answer'
   | 'dialog-answer-closes-copy'
   | 'dialog-descriptions'
+  | 'open-dialog-asks'
   | 'tool-output-urls'
   | 'pr-link-from-output'
   | 'pr-arrivals'

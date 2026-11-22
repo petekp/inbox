@@ -17,6 +17,7 @@ export const CLAUDE_CODE: Client = {
     },
     'dialog-answer-closes-copy': { kind: 'full' },
     'dialog-descriptions': { kind: 'full' },
+    'open-dialog-asks': { kind: 'full' },
     'tool-output-urls': { kind: 'full' },
     'pr-link-from-output': { kind: 'full' },
     'pr-arrivals': { kind: 'full' },

@@ -12,6 +12,7 @@ export const HERDR: LookTable = {
     'dialog-answer': { kind: 'host' },
     'dialog-answer-closes-copy': { kind: 'host' },
     'dialog-descriptions': { kind: 'host' },
+    'open-dialog-asks': { kind: 'full' },
     'tool-output-urls': { kind: 'host' },
     'pr-link-from-output': { kind: 'host' },
     'pr-arrivals': { kind: 'full' },

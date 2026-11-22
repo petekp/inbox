@@ -26,6 +26,11 @@ export const CODEX: Client = {
         "Codex's dialog tool returns before the person answers, so the inbox sees no answer when the dialog ends. The copy stays open until the person's reply in the dialog's form arrives, and the agent closes it then.",
     },
     'dialog-descriptions': { kind: 'full' },
+    'open-dialog-asks': {
+      kind: 'unsupported',
+      reason:
+        'Codex runs no hook while its dialog or an approval waits, and its dialog tool returns before the person answers, so the inbox cannot tell that one is open.',
+    },
     'tool-output-urls': { kind: 'full' },
     'pr-link-from-output': {
       kind: 'different',

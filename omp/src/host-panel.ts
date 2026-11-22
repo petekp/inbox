@@ -81,7 +81,7 @@ export function keptUi(kept: UiState | null): { heldRows: string[]; ui: UiState 
 }
 
 export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAsk: OmpHerdrAsk) {
-  const { deps, dir, openPanels, uiStates, prFetches, listeners, memory, sendToAgent, modelNameOf } = context
+  const { deps, dir, openPanels, uiStates, prFetches, listeners, memory, sendToAgent, inboxModelOf } = context
   const { change, hostFor, fetchPrsWhenDue, checkDelegatesWhenDue, wakeLater } = sessions
   /** When each Status subject row was last on screen in each session's look under way, by session id. */
   const shownRows = new Map<string, Map<string, number>>()
@@ -107,7 +107,7 @@ export function panelCalls(context: HostContext, sessions: SessionCalls, herdrAs
           false,
           { ...NO_SYNC_INPUTS, isFetchingPrs: prFetches.isFetching(id) },
         ),
-        modelName: modelNameOf(ctx),
+        ...inboxModelOf(ctx),
         isGhMissing: memory.isGhMissing,
         herdrModFailure: memory.herdrModFailure,
         herdrAsk: memory.herdrAsk,

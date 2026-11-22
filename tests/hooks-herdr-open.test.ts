@@ -102,6 +102,26 @@ test('in a Herdr app terminal without the inbox mod, Open inbox opens the pane i
   expect(herdrAppCalls()).toEqual([])
 })
 
+test('in a Herdr app terminal, /inbox opens the Herdr panel once another session installs the inbox mod', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], APP_TERMINAL)
+  w.missingFiles = ['/app/mods/inbox/main.js']
+  w.ghAnswers = [
+    { match: argv => argv[0] === 'herdr-app' && argv[1] === 'ls', stdout: LS },
+    { match: argv => argv[2] === 'pane.split', stdout: '{"pane":"p9","terminal":null}' },
+  ]
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  expect((await $.command.run({ command: 'inbox', args: '' } as never)).text).toBe(
+    'Opened the inbox here, since the Herdr app has no inbox mod in /app/mods.',
+  )
+  w.missingFiles = []
+  expect((await $.command.run({ command: 'inbox', args: '' } as never)).text).toBe(
+    'Opened the inbox in Herdr, to the right of this terminal.',
+  )
+})
+
 test('outside a Herdr app terminal, /inbox and Open inbox open the pane in the press and run no herdr-app', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const { events, awaitedSince, spy } = spyOnEvents(on)

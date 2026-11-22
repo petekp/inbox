@@ -15,6 +15,7 @@ const WIDE = 200
 const screenOf = (session: Session): PanelScreen => ({
   view: sessionView(session, NOW, SETTLED_MS, { ...NO_HOLDS, shownSince: NOW - DAY }),
   modelName: 'Claude Sonnet 4.5',
+  isSignedIn: true,
   isGhMissing: false,
   isFetchingPrs: false,
   stop: null,
