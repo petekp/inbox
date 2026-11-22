@@ -276,6 +276,29 @@ export const GOOD_RUNS: Record<string, string[]> = {
   'one-task-plan': [
     'HEAD: Export tooltip | Adding a formats tooltip to the Export button\nNEW: working | Export tooltip | shows the formats on hover',
   ],
+  'child-label-repeat': [
+    [
+      'SET: s2 | working | one PR, not merged',
+      'MILESTONE: working | Sync code layered | one PR, not merged',
+      'MILESTONE: queued | Note data split | not started',
+      'MILESTONE: queued | Layer check added | not started',
+      'SERVES: s2 | Sync code layered',
+    ].join('\n'),
+    'NO CHANGE',
+  ],
+  'release-plan-once': [
+    [
+      'MILESTONE: done | Candidate built | signed',
+      'MILESTONE: working | Update test passed | test running',
+      'MILESTONE: queued | 0.2.0 published | not started',
+      'SERVES: s1 | Update test passed',
+      'SERVES: s2 | -',
+      'SERVES: s3 | -',
+      'SERVES: s4 | -',
+      'SET: s4 | waits-on-other | built, merges after 0.2.0',
+      'LINK: i4 | s4',
+    ].join('\n'),
+  ],
   'children-finished': [
     'SET: s1 | working | PDF works, merge left\nSET: s2 | waits-on-other | waits on sync engine',
     'DONE: s1 | PDF export merged\nSET: s3 | working | retry queue done, unchecked',

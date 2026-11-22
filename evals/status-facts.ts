@@ -21,6 +21,11 @@ export type Piece = {
    * working and every child row under it has finished. It holds only at the step that gives it.
    */
   left?: string
+  /**
+   * A case-insensitive pattern for text that says only what the piece's running child is doing, which the child's
+   * label already says. Where it stands never matches it while that child runs.
+   */
+  restates?: string
   /** The plan the piece's last change replaced, while the person has not seen it. */
   was?: string
   /** The ids of pieces merged into this one. */
