@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-22T09:03:09.901Z. 348578 characters follow.
+// Built at 2026-11-22T19:34:43.269Z. 349528 characters follow.
 
 // src/main.ts
 import { View, div as div15 } from "gpui-kit";
@@ -5416,6 +5416,10 @@ function faintCloseFades(opacity) {
 function titleSwapMs(height, from) {
   return (springFrames(from, height).length - 1) * FRAME_MS;
 }
+function titleFades(isOpening) {
+  const ms = isOpening ? ENTER_FADE_MS : LEAVE_FADE_MS;
+  return { taken: { delayMs: 0, ms }, left: { delayMs: ms / 2, ms: ms / 2 } };
+}
 var drawsPanel = (track) => track.hasOpenForm && track.state !== "settling";
 var ROW_FADE_MS = {
   entering: ENTER_FADE_MS,
@@ -5653,6 +5657,7 @@ var ROW_PAD_PT = ITEM_GAP_PT / 2;
 var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
 
 // src/title-motion.ts
+var AT_ONCE = { delayMs: 0, ms: 0 };
 var wraps = (height) => height !== undefined && height > LINE_PT + 0.5;
 var boxNow = (g, now) => springStep(g.box, g.boxTo, now - g.boxAt);
 function aimed(g, to, now) {
@@ -5661,9 +5666,11 @@ function aimed(g, to, now) {
   const box = boxNow(g, now);
   const restsAt = now + titleSwapMs(to, box);
   const swapsAt = !g.isWrapped ? g.swapsAt : wraps(to) ? restsAt : null;
-  return { ...g, box, boxAt: now, boxTo: to, swapsAt, endsAt: Math.max(g.endsAt, restsAt + FRAME_MS) };
+  const fadesUntil = g.isWrapped ? restsAt + ENTER_FADE_MS : restsAt;
+  return { ...g, box, boxAt: now, boxTo: to, swapsAt, endsAt: Math.max(g.endsAt, fadesUntil + FRAME_MS) };
 }
-function stepTitle(last, wasOpen, isOpen, now, height, isHeld = false) {
+function stepTitle(last, wasOpen, isOpen, now, height, heldMs = 0) {
+  const isHeld = heldMs > 0;
   const live = last !== null && now < last.endsAt ? last : null;
   const to = (isOpen || isHeld) && wraps(height) ? height : LINE_PT;
   if (isOpen && !wasOpen) {
@@ -5671,6 +5678,7 @@ function stepTitle(last, wasOpen, isOpen, now, height, isHeld = false) {
     const endsAt = now + 2 * FRAME_MS + HEIGHT_SETTLE_MS;
     const opening = {
       isWrapped: true,
+      isFaded: true,
       since: now,
       swapsAt: null,
       box,
@@ -5685,7 +5693,9 @@ function stepTitle(last, wasOpen, isOpen, now, height, isHeld = false) {
       return null;
     const box = live ? boxNow(live, now) : { x: height, v: 0 };
     const endsAt = now + HEIGHT_SETTLE_MS + FRAME_MS;
-    return aimed({ isWrapped: false, since: now, swapsAt: now, box, boxAt: now, boxTo: live?.boxTo ?? height, endsAt }, to, now);
+    const isFaded = heldMs >= LEAVE_FADE_MS;
+    const swapsAt = isFaded ? now + FRAME_MS : now;
+    return aimed({ isWrapped: false, isFaded, since: now, swapsAt, box, boxAt: now, boxTo: live?.boxTo ?? height, endsAt }, to, now);
   }
   if (!live)
     return null;
@@ -5697,7 +5707,12 @@ function titleMotion(g, now) {
   if (g === null)
     return null;
   const hasSwapped = g.swapsAt !== null && now >= g.swapsAt;
-  return { isWrapShown: g.isWrapped === hasSwapped };
+  const fades = g.isFaded ? titleFades(g.isWrapped) : { taken: AT_ONCE, left: AT_ONCE };
+  return {
+    isWrapShown: g.isWrapped === hasSwapped,
+    wrapped: g.isWrapped ? fades.taken : fades.left,
+    oneLine: g.isWrapped ? fades.left : fades.taken
+  };
 }
 var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
 
@@ -5730,18 +5745,7 @@ function underMotion(u, now, height) {
 var underTimes = (u) => !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS] : [u.since + NEXT_FRAME_MS, u.since + ROW_STATE_MS.entering];
 var underId = (id) => `status ${id}`;
 
-// src/motion.ts
-var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
-var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
-var isFolding = (state) => state === "opening" || state === "closing";
-function panelOf(state, isStart, was, closing) {
-  const isFrom = isStart && !isFolding(was);
-  if (state === "opening")
-    return isFrom ? 0 : 1;
-  if (state === "closing" && closing)
-    return isFrom ? 1 : 0;
-  return null;
-}
+// src/moved-blocks.ts
 function longestRun(at) {
   const tails = [];
   const before = [];
@@ -5771,6 +5775,19 @@ function movedOf(blocks, was) {
     return new Set;
   const stays = longestRun(at);
   return new Set(kept.filter((_, i) => !stays.has(i)).map((b) => b.id));
+}
+
+// src/motion.ts
+var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
+var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
+var isFolding = (state) => state === "opening" || state === "closing";
+function panelOf(state, isStart, was, closing) {
+  const isFrom = isStart && !isFolding(was);
+  if (state === "opening")
+    return isFrom ? 0 : 1;
+  if (state === "closing" && closing)
+    return isFrom ? 1 : 0;
+  return null;
 }
 function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => {
   return;
@@ -5837,11 +5854,12 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
     const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
-    const isHeld = closing !== null && (isHeldForLeave || now < panelHeldUntil);
+    const heldUntil = closing === null ? 0 : Math.max(isHeldForLeave ? holdsUntil : 0, panelHeldUntil);
+    const isHeld = heldUntil > now;
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state));
     const holdsPanel = drawsPanel(track) && !isLeftOut;
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
-    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), isHeld) : null;
+    const title = block.kind === "row" && last && !isOpenFormSwapped ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now)) : null;
     rows.set(block.id, {
       track,
       block,
@@ -6562,8 +6580,8 @@ function titleTextEl(r, p, color) {
   const text = div10().flex_1().min_w(0).text_color(color).when(isOpen, (e) => e.font_semibold());
   if (m === null)
     return text.when(!isOpen, (e) => e.truncate()).child(r.title);
-  const form = (id, isShown) => div10().id(id).opacity(isShown ? 1 : 0);
-  return text.relative().child(form(`wrapped ${r.id}`, m.isWrapShown).child(r.title)).child(div10().absolute().top(0).left(0).w_full().child(form(`one line ${r.id}`, !m.isWrapShown).truncate().child(r.title)));
+  const form = (id, isShown, fade) => div10().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: fade.ms, delay: fade.delayMs, easing: "ease-out" });
+  return text.relative().child(form(`wrapped ${r.id}`, m.isWrapShown, m.wrapped).child(r.title)).child(div10().absolute().top(0).left(0).w_full().child(form(`one line ${r.id}`, !m.isWrapShown, m.oneLine).truncate().child(r.title)));
 }
 
 // src/paint-notes.ts
@@ -6644,7 +6662,7 @@ function rowEl(r, p) {
   const isOpen = isOpenRow(r);
   const isPressable = r.isSelectable && !isLeaving;
   const hasTree = (m?.closing ?? r).body.some((l) => l.tree !== undefined);
-  const line = h_flex9().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(trunkEl(LINE_HEIGHT, null, t, r.isSelected))).child(markEl(r.mark, t, markTintOf(r, p))).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div14().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex9().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(panelFadeEl(r, m, p, trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`)))).child(markEl(r.mark, t, markTintOf(r, p))).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div14().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
@@ -6703,15 +6721,19 @@ function panelEl(r, m, p, isLeaving, titleEnd) {
   if (parts.length === 0)
     return [];
   const key = panelId(r.id);
+  return [
+    panelFadeEl(r, m, p, v_flex6().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts))
+  ];
+}
+function panelFadeEl(r, m, p, el) {
   const opacity = m?.panel ?? null;
-  const height = p.heights.get(key) ?? 0;
+  if (opacity === null)
+    return el;
+  const height = p.heights.get(panelId(r.id)) ?? 0;
   const turnBackFadeMs = m?.panelFadeMs ?? null;
   const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0;
   const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? "open"];
-  const glide = { duration, delay, easing: "ease-out" };
-  return [
-    v_flex6().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts).when(opacity !== null, (e) => e.opacity(opacity ?? 1).transition("opacity", glide))
-  ];
+  return el.opacity(opacity).transition("opacity", { duration, delay, easing: "ease-out" });
 }
 function underEls(r, m, p, above) {
   const u = m ? m.under : isStatusUnder(r) ? { line: r.feedback, opacity: null, fadeMs: 0, delayMs: 0 } : null;
