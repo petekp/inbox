@@ -104,7 +104,7 @@ test('the band is [Open inbox] and the counts with full-brightness labels, the s
   })
 
   const standing = await band()
-  expect(await standing.find({ key: 'open-inbox' })).toBeDefined()
+  expect((await standing.find({ key: 'open-inbox' }))?.props.label).toBe('Open inbox')
   expect(await standing.find({ text: /^Asks 2\u2007·\u2002Finds 1$/ })).toBeDefined()
   const labels = await standing.findAll({ type: 'Text', text: /^(Asks|Finds) $/ })
   expect(labels).toHaveLength(2)
@@ -124,6 +124,7 @@ test('the band is [Open inbox] and the counts with full-brightness labels, the s
   w.panesOpened = []
   await standing.press({ key: 'open-inbox' })
   expect(w.panesOpened).toEqual(['inbox'])
+  expect((await standing.find({ key: 'open-inbox' }))?.props.label).toBe('Go to inbox')
   expect(await pane.find({ key: 'explain-i1-key' })).toBeDefined()
   expect(await pane.find({ key: 'explain-i2-key' })).toBeUndefined()
 })

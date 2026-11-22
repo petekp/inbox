@@ -10,6 +10,11 @@ export function isMaybeStale(ledger: LedgerSync): boolean {
   return ledger.is === 'stale' || ledger.is === 'unavailable'
 }
 
+/** The band's inbox button: it opens the pane, and while the pane shows it moves the keys to the pane. */
+export function bandOpenLabel(isPaneOpen: boolean): string {
+  return isPaneOpen ? 'Go to inbox' : 'Open inbox'
+}
+
 /** The band's counts: each row tab that has something waiting on the person, in tab order. */
 export function bandCounts(view: Pick<SessionView, Tab>): { id: Tab; label: string; count: number }[] {
   return ROW_TABS.map(t => ({ id: t.id, label: t.label, count: view[t.id].count })).filter(c => c.count > 0)

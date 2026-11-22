@@ -14,7 +14,7 @@ Status: built.
 - The `/inbox` pane. It docks beside the transcript in a fullscreen terminal from 110 columns, and is otherwise a framed region above the prompt.
 - The Herdr sidebar line. It is the only place that names an open permission prompt or AskUserQuestion dialog.
 
-**The band.** One line: the counts for Asks, Finds and PRs, with [Open inbox] at the right end. The PRs count is the PRs that wait on the person, as on the PRs tab. Each count reads as its tab does: the tab's name, muted, then the count in the tab's color. The button opens the pane with the top row open. The line is the same while Claude works and when the person comes back after a break.
+**The band.** One line: the counts for Asks, Finds and PRs, with [Open inbox] at the right end. The PRs count is the PRs that wait on the person, as on the PRs tab. Each count reads as its tab does: the tab's name, muted, then the count in the tab's color. The button opens the pane with the top row open. While the pane shows, it reads [Go to inbox] and gives the pane the keys. The line is the same while Claude works and when the person comes back after a break.
 
 ```
 Asks 2 · Finds 1 · PRs 1                                [Open inbox]

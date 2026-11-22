@@ -1,6 +1,6 @@
 import type { Elements, RenderElement, RenderInput, RenderSurface } from 'claude-code'
 
-import { bandCounts, bandIdleText, nothingMark } from '../../core/view/band'
+import { bandCounts, bandIdleText, bandOpenLabel, nothingMark } from '../../core/view/band'
 import { isResumable, stopFix, stopText } from '../../core/view/banners'
 import { isBlankLedger } from '../../core/domain/ledger'
 import { setDemo } from './mod-demo'
@@ -33,7 +33,7 @@ function nextBandFrame(m: Mod, now: number) {
 }
 
 /**
- * Draws the band above the prompt: the inbox's counts with Open inbox, and the stop row with Resume when the session
+ * Draws the band above the prompt: the inbox's counts with the Open inbox button, and the stop row with Resume when the session
  * stopped. `theirsOf` draws what the mods after this one put there.
  */
 export async function band(
@@ -43,7 +43,7 @@ export async function band(
   theirsOf: () => Promise<RenderElement>,
 ) {
   const { Box, Button, Text } = elements
-  const [{ ledger, stop, view, isDemo, showsDemoNotices, openDialog, now }, theme] = await Promise.all([
+  const [{ ledger, stop, view, ui, isDemo, showsDemoNotices, openDialog, now }, theme] = await Promise.all([
     drawnState(m),
     m.atoms.theme.read(),
   ])
@@ -97,7 +97,11 @@ export async function band(
         {desktopMark}
       </Box>
       {showsDemoNotices ? <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo(m, false)} /> : null}
-      <Button key="open-inbox" label="Open inbox" onPress={() => void openInbox(m, isDemo)} />
+      <Button
+        key="open-inbox"
+        label={bandOpenLabel(ui.shownSince !== null)}
+        onPress={() => void openInbox(m, isDemo)}
+      />
     </Box>
   )
   if (!stop)
