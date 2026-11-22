@@ -56,9 +56,9 @@ In a folder that is not a git repository, the PRs tab reads "Could not read the 
 
 #### 6. The READMEs gave a path to the Codex tab that the app no longer has
 
-Both READMEs said to choose "the ⋯ menu beside New, then Inbox". In the ChatGPT app now, the side panel opens on a New tab page with an Inbox tile.
+Both READMEs said to choose "the ⋯ menu beside New, then Inbox". In the ChatGPT app now, the side panel opens on a New tab page. In the walk, that page showed an Inbox tile. The app seems to promote a tile after use, so a new user may find Inbox only in the page's ⋯ menu.
 
-Fixed. Both READMEs now say to click the Inbox tile.
+Fixed. Both READMEs now say to click the Inbox tile, or to choose Inbox from the page's ⋯ menu when there is no tile.
 
 #### 7. The desktop steps left out a confirmation
 

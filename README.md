@@ -81,7 +81,8 @@ beside the prompt's approval setting, then Allow all. If the icon isn't there,
 open Settings, then Hooks, then Inbox, then Trust all. Codex runs a plugin's
 hooks only after you trust them. On Codex 0.164.0 and later, an update stops
 the hooks, so trust them again after each update. To open the inbox, open the
-side panel, then click the Inbox tile on its New tab page. This was checked on
+side panel. On its New tab page, click the Inbox tile, or if there is none,
+open the page's ⋯ menu and choose Inbox. This was checked on
 2026-11-21 in the ChatGPT app with Codex 0.171.
 
 [codex/README.md](codex/README.md) covers updating and running the `codex`
