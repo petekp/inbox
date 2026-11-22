@@ -58,7 +58,7 @@ export const DESKTOP_CELL_PT = 8.8
 export const DESKTOP_BUTTON_PAD_CELLS = 0.7
 /** The gap between two follow-ups' labels, `Reply` included: `QUIET_BUTTON_GAP_PT` in cells. */
 export const DESKTOP_LINK_GAP_CELLS = QUIET_BUTTON_GAP_PT / DESKTOP_CELL_PT
-/** Room a line of links keeps past their estimated widths. At the estimate alone, app 3.6556.2 cut a link's label, as "Re…". */
+/** Cells a line of links keeps free past their estimated widths when it decides where to wrap. */
 export const DESKTOP_LINK_SLACK_CELLS = 0.5
 export const UNDO_CELLS = 9
 export const UNDO_HEIGHT_PT = 23

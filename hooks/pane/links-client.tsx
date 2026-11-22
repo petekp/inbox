@@ -44,7 +44,7 @@ function linkLines(props: LinksProps, columns: number): ClientLink[][] {
 
 /**
  * The link under cell `x` of line `y`. A link's label draws at its real width, which its estimate can miss by a few
- * points, so a link takes the click from the middle of the gap before it to the middle of the gap after it.
+ * points, so a link also takes the clicks in the half gap before its label and the half gap after it.
  */
 function linkAt(props: LinksProps, columns: number, x: number, y: number): string | null {
   let left = 0

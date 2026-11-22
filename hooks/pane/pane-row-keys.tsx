@@ -160,7 +160,7 @@ export function paneRowKeys(
             flexDirection="row"
             flexWrap="wrap"
             alignItems="center"
-            columnGap={look === 'desktop' ? DESKTOP_LINK_GAP_CELLS : space.buttonGap}
+            columnGap={look === 'desktop' && hasClient ? DESKTOP_LINK_GAP_CELLS : space.buttonGap}
           >
             {reply ? (
               <Box marginLeft={-DESKTOP_BUTTON_PAD_CELLS} marginRight={-DESKTOP_BUTTON_PAD_CELLS}>
