@@ -116,17 +116,20 @@ export function paneRowKeys(
         return {
           key: a.key,
           label,
-          width: desktopTextPt(label) / DESKTOP_CELL_PT + DESKTOP_LINK_SLACK_CELLS,
+          width: desktopTextPt(label) / DESKTOP_CELL_PT,
           ...(a.isOut ? { isOut: true } : {}),
         }
       }),
       gap: DESKTOP_LINK_GAP_CELLS,
+      slack: DESKTOP_LINK_SLACK_CELLS,
       fallbackColumns: desktopTextColumns(DESKTOP_MARK_CELLS),
       isGuarded: isOpenGuarded,
       colors: { muted: pal.muted, hover: null },
     }
 
-    const linksWidth = Math.ceil(props.links.reduce((sum, l) => sum + l.width, props.gap * (props.links.length - 1)))
+    const linksWidth = Math.ceil(
+      props.links.reduce((sum, l) => sum + l.width + props.slack, props.gap * (props.links.length - 1)),
+    )
 
     // A Client takes no flexShrink or minWidth, so this Box gives it the room left on its line. In the Claude app,
     // the wrapping row moves a Box this wide to the next line whole when the room left is narrower, and then shrinks
@@ -153,7 +156,12 @@ export function paneRowKeys(
         {keys.map(keyedButton(rowId, false, width))}
         {look === 'terminal' && keys.length > 0 && more.length > 0 ? <Text color={pal.muted}>·</Text> : null}
         {reply || links.length > 0 ? (
-          <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
+          <Box
+            flexDirection="row"
+            flexWrap="wrap"
+            alignItems="center"
+            columnGap={look === 'desktop' && hasClient ? DESKTOP_LINK_GAP_CELLS : space.buttonGap}
+          >
             {reply ? (
               <Box marginLeft={-DESKTOP_BUTTON_PAD_CELLS} marginRight={-DESKTOP_BUTTON_PAD_CELLS}>
                 {keyedButton(rowId, true)(reply)}

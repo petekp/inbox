@@ -1,7 +1,7 @@
 /**
  * The spacing scale every look draws from, in points. The Codex tab's CSS pixels are points on macOS. The desktop pane
  * converts a step to its 19-point lines, and the terminal and omp to whole rows, as `docs/looks/differences-spacing.md`
- * says. Each step is a whole number of `SPACE_UNIT`, and the gaps rise in this order, so space shows what belongs
+ * says. Each step is a whole number of `SPACE_UNIT`, except `QUIET_BUTTON_GAP_PT`, and the gaps rise in this order, so space shows what belongs
  * together: `INSIDE_GAP_PT`, `LIST_GAP_PT`, `CHILD_GAP_PT`, `ITEM_GAP_PT`, `SECTION_GAP_PT`.
  */
 export const SPACE_UNIT = 4
@@ -47,6 +47,13 @@ export const BUTTON_PAD_X_PT = 3 * SPACE_UNIT
 
 /** A pill button's border. With `BUTTON_PAD_X_PT`, how far its label sits in from its edge. */
 export const BUTTON_BORDER_PT = 1
+
+/**
+ * Between one text-only button's label and the next's, in the desktop pane and the Codex tab: `CONTROL_GAP_PT`
+ * between the buttons' hit areas, plus each side's `SPACE_UNIT` of padding and `BUTTON_BORDER_PT` of border that the
+ * Codex tab's ghost button keeps as hit area. The desktop pane draws its follow-ups this far apart.
+ */
+export const QUIET_BUTTON_GAP_PT = CONTROL_GAP_PT + 2 * (SPACE_UNIT + BUTTON_BORDER_PT)
 
 /** Between two groups or sections. A rule between them sits halfway. */
 export const SECTION_GAP_PT = 6 * SPACE_UNIT

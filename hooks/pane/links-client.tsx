@@ -4,8 +4,12 @@ import type { ClientModule } from 'claude-code'
 type ClientLink = { key: string; label: string; width: number; isOut?: boolean }
 
 export type LinksProps = {
+  /** Each link's `width` is its label's estimated width in cells, which sets where a click lands and where a line wraps. */
   links: ClientLink[]
+  /** Cells between two links' drawn labels. Each link draws at its label's own width, so every gap is this. */
   gap: number
+  /** Cells a line keeps free past its links' estimated widths when it decides where to wrap. */
+  slack: number
   /** The region's width before its first layout, when `surface.columns` is still 0. */
   fallbackColumns: number
   /** While the row ignores clicks, as just after it opens, every label stays muted. */
@@ -16,28 +20,36 @@ export type LinksProps = {
 
 type State = { hover: string | null }
 
-/** Splits the links into lines no wider than `columns`. A link wider than a line gets a line of its own. */
+/**
+ * Splits the links into lines no wider than `columns`, counting `slack` past each link. A link wider than a line gets a
+ * line of its own.
+ */
 function linkLines(props: LinksProps, columns: number): ClientLink[][] {
   const lines: ClientLink[][] = []
   let used = 0
   for (const link of props.links) {
     const line = lines.at(-1)
-    if (line && used + props.gap + link.width <= columns) {
+    const width = link.width + props.slack
+    if (line && used + props.gap + width <= columns) {
       line.push(link)
-      used += props.gap + link.width
+      used += props.gap + width
     } else {
       lines.push([link])
-      used = link.width
+      used = width
     }
   }
 
   return lines
 }
 
+/**
+ * The link under cell `x` of line `y`. A link's label draws at its real width, which its estimate can miss by a few
+ * points, so a link also takes the clicks in the half gap before its label and the half gap after it.
+ */
 function linkAt(props: LinksProps, columns: number, x: number, y: number): string | null {
   let left = 0
   for (const link of linkLines(props, columns)[y] ?? []) {
-    if (x >= left && x < left + link.width) return link.key
+    if (x >= left - props.gap / 2 && x < left + link.width + props.gap / 2) return link.key
     left += link.width + props.gap
   }
 
@@ -69,7 +81,6 @@ const Links: ClientModule<LinksProps, State> = (props, surface) => {
 
           return Box({
             key: link.key,
-            width: link.width,
             flexShrink: 0,
             children: Text({
               ...(color ? { color } : {}),
