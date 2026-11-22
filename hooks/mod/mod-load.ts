@@ -104,7 +104,8 @@ async function loadConversationRows(
   const loadedAt = await m.clock.now()
   // The pane now shows another conversation, so it opens on it as on a new showing.
   await enterUi(m, id)
-  const turns = await m.conversation.turns().catch(() => null)
+  // The conversation /clear begins holds only the /clear command, and `$.session.turns()` counts it as a turn.
+  const turns = by === 'clear' ? 0 : await m.conversation.turns().catch(() => null)
   const cutOff = (s: Session) => {
     const loaded = statusChanged(cutOffTurn(cutOffUpdate(s), loadedAt), o => childrenCutOff(o, loadedAt))
 
