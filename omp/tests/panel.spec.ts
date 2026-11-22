@@ -352,7 +352,7 @@ test('a row keeps its age at a narrow width and beside a long outcome, and its t
     expect(strip(line).length).toBeLessThanOrEqual(48)
 })
 
-test('the Herdr install question sits above the Asks rows, and its buttons answer it once', () => {
+test('the Herdr install question sits above the Asks rows, its buttons and their y and q keys answer it once', () => {
   const asking = herdrAskOf('/app', undefined, null)
   const screen = screenOf({ herdrAsk: asking })
   const onAsk: PanelUi = withCursorOn({ ...INITIAL_UI }, HERDR_ASK_ID)
@@ -369,8 +369,13 @@ test('the Herdr install question sits above the Asks rows, and its buttons answe
     isYes: false,
   })
 
+  expect(text(screen, INITIAL_UI)).toMatch(/Install \(recommended\) +q .*Don't install/)
+  expect(keyed(screen, INITIAL_UI, 'y', NOW).press).toEqual({ action: 'herdr-ask', isYes: true })
+  expect(keyed(screen, INITIAL_UI, 'q', NOW).press).toEqual({ action: 'herdr-ask', isYes: false })
+
   const saving = screenOf({ herdrAsk: answeringOf(asking, false) })
   expect(text(saving, onAsk)).toContain('Saving the answer…')
+  expect(keyed(saving, onAsk, 'y', NOW).press).toBeUndefined()
   expect(keyed(saving, onAsk, 'enter', NOW).press?.action).not.toBe('herdr-ask')
 })
 
