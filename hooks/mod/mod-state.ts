@@ -79,6 +79,8 @@ class SessionState {
   turnBox: string | null = null
   isDialogDismissed = false
   loadRevision = 0
+  /** From turn-on, /clear or /resume until that conversation's saved rows are loaded. */
+  isConversationLoading = true
   applyingConversation: Promise<void> = Promise.resolve()
   isReadingAgain = false
   resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null

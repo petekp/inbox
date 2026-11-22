@@ -143,8 +143,8 @@ inbox has four tabs: Status, Asks, Finds and PRs.
 
 The inbox starts empty. Give your agent a task, and the first rows come after
 its reply: a question it asked you, with its answers as buttons, and the Status
-of the work. In Claude Code, the line above the prompt shows once the inbox
-has something.
+of the work. In Claude Code, the line above the prompt reads "Nothing needed"
+until then.
 
 To see every part with sample items, run `/inbox demo` in Claude Code or omp.
 Presses on them change only the samples. In Claude Code, press Hide demo or run

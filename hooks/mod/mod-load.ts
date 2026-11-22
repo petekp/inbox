@@ -74,7 +74,10 @@ async function applyConversation(
 function endConversationLoad(m: Mod, revision: number) {
   if (paneState.loadingRevision !== revision) return
   paneState.loadingRevision = null
-  if (revision === sessionState.loadRevision) void m.sendUi(['read']).catch(() => undefined)
+  if (revision !== sessionState.loadRevision) return
+  sessionState.isConversationLoading = false
+  void redraw(m)
+  void m.sendUi(['read']).catch(() => undefined)
 }
 
 async function loadConversationRows(

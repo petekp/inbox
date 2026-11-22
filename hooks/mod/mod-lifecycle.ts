@@ -128,6 +128,7 @@ export async function sessionEnded(m: Mod, reason: SessionEndReason) {
   }
   // /clear, /resume and /branch (which reports resume) go on in this process with another conversation.
   if (mod.isOn && (reason === 'clear' || reason === 'resume')) {
+    sessionState.isConversationLoading = true
     conversation.generation += 1
     await Promise.all([
       replaceDrawn(m, s => {

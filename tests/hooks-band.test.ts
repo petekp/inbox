@@ -128,6 +128,20 @@ test('the band is [Open inbox] and the counts with full-brightness labels, the s
   expect(await pane.find({ key: 'explain-i2-key' })).toBeUndefined()
 })
 
+test('a new session shows the band with Nothing needed and Open inbox before its first reply, in the terminal and the desktop app', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const band = await $.ui.mount({ plugin: 'inbox', surface, ...BAND })
+    expect(await band.find({ text: /^Nothing needed$/ })).toBeDefined()
+    expect(await band.find({ key: 'open-inbox' })).toBeDefined()
+    await band.unmount()
+  }
+})
+
 test('the band keeps what the mods after the inbox draw there, with its counts and with its stop line', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Text({ children: ['Heads up'] }))

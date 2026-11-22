@@ -1,6 +1,6 @@
 # First-run audit, 2026-11-21
 
-Status: proposed. The README fixes are in this branch. The code fixes it recommends are not built.
+Status: proposed. The README fixes are in this branch. Of the code fixes it recommends, only gap 4's is built.
 
 This audit followed a new user through their first ten minutes with the inbox in each client. It ranks what stopped or confused them, and says for each gap what is fixed and what still needs work. It replaces the audit of 2026-11-19. Gaps from that audit that still hold are listed again. The fixed ones are left out.
 
@@ -49,6 +49,8 @@ We recommend showing an open dialog in the Asks tab, or saying in the empty Asks
 This gap from the last audit still holds in the terminal, the desktop app and Herdr, on `main` and `next`. The band, the line above the prompt, stays hidden while the session has no rows. The `isBlankLedger` check in `hooks/mod/mod-band.tsx` hides it. omp shows "Nothing needed" and "/inbox to open" from the start, as its row in `docs/looks/differences-omp-panel.md` records. The mod's looks have no row for hiding it, so this is undocumented drift. The README says the inbox starts empty and fills after the first reply.
 
 We recommend showing the band's "Nothing needed" line from the start in the mod's looks, as omp does, or recording the difference with its reason.
+
+Fixed. The band now reads "Nothing needed" with Open inbox from the session's start, as omp's band does. It waits only while a conversation loads after the inbox turns on, `/clear` or `/resume`. In the desktop app, a new session runs no engine until its first message, so the band shows from that message, before the reply.
 
 #### 5. On v0.6.0, Codex's PRs tab shows a raw git error
 

@@ -2,7 +2,7 @@ import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import { SETTLED_MS } from '../core/view/timing'
 import { w, world } from './hooks-world'
-import { PANE, SAVED_SESSION } from './hooks-helpers'
+import { BAND, PANE, SAVED_SESSION } from './hooks-helpers'
 
 test('/clear and /resume switch the inbox to the other conversation, and each keeps its saved items, and the pane does not tint the open question a resume brings back as new', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -45,6 +45,30 @@ test('/clear and /resume switch the inbox to the other conversation, and each ke
   await clock.settle()
   expect(await pane.find({ text: /Pin the Node version\?/ })).toBeDefined()
   expect(await pane.find({ text: /Use Node or Python\?/ })).toBeUndefined()
+})
+
+test('across /clear and /resume the band never reads Nothing needed for a conversation whose saved rows have not loaded', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  w.ledgerReply = 'NEW: decide | 1 | Pin the Node version? | Yes / No | Yes'
+  await $.prompt.submit({ text: 'fix the build', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'ok', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  expect(await band.find({ text: /^Asks 1$/ })).toBeDefined()
+
+  await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
+  expect(await band.find({ text: /Nothing needed/ })).toBeUndefined()
+  await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
+  await clock.settle()
+  expect(await band.find({ text: /^Nothing needed$/ })).toBeDefined()
+
+  await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
+  expect(await band.find({ text: /Nothing needed/ })).toBeUndefined()
+  await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
+  await clock.settle()
+  expect(await band.find({ text: /^Asks 1$/ })).toBeDefined()
 })
 
 test('an answer held for Undo when /clear switches conversations sends once its conversation loads again, with no turn ending', async ($, on) => {
