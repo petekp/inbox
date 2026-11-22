@@ -179,6 +179,7 @@ export function ListRow({
           <MarkGlyph text={row.handle} />
         )}
       </TitleTint>
+      {isTreeHung ? <span class="trunk" /> : null}
     </span>
   )
 

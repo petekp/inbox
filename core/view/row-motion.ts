@@ -70,13 +70,27 @@ export function faintCloseFades(opacity: number): FadeStep[] {
 
 /**
  * How long an opening row's title keeps its closed form, in ms: until its space, opening to `height` px from `from`,
- * comes to rest. The open form then takes its place in one frame, which moves nothing and cuts no line. A closing
- * row's title takes its closed form at once, in the draw that starts the close, while its space still holds the open
- * form's height. A title never fades across its two forms: they wrap at different places, so a fade would show both
- * wraps overlaid.
+ * comes to rest. The title then fades to its open form (`titleFades`) in a space that no longer moves, so no edge
+ * cuts a line of it.
  */
 export function titleSwapMs(height: number, from: SpringState): number {
   return (springFrames(from, height).length - 1) * FRAME_MS
+}
+
+/** One form's fade while a title changes form: `delayMs` after the change starts, over `ms`. */
+export type TitleFade = { delayMs: number; ms: number }
+
+/**
+ * How a row's title fades from one form to the other, its closed form and its open form, which wrap at different
+ * places. The form it takes fades in over the whole fade, and the form it leaves fades out over the second half, so
+ * the words the two forms share in the same place never dim, and only where they wrap differently do both show, faint.
+ * An opening title fades over `ENTER_FADE_MS`, as its panel fades in, and a closing one over `LEAVE_FADE_MS`, as its
+ * panel fades out while its space holds. So the title's extra lines come and go with the panel under them.
+ */
+export function titleFades(isOpening: boolean): { taken: TitleFade; left: TitleFade } {
+  const ms = isOpening ? ENTER_FADE_MS : LEAVE_FADE_MS
+
+  return { taken: { delayMs: 0, ms }, left: { delayMs: ms / 2, ms: ms / 2 } }
 }
 
 /** The vertical offset of content at `opacity`: none when shown, `SLIDE_PX` above its place when faded out. */

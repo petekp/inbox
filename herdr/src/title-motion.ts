@@ -1,19 +1,23 @@
 import { LINE_PT } from '../../core/view/layout'
-import { titleSwapMs } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, titleFades, titleSwapMs } from '../../core/view/row-motion'
+import type { TitleFade } from '../../core/view/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springStep } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
 
 /**
  * How a row's title moves between its one-line form, cut with an ellipsis, and its wrapped form, while it moves. Both
- * forms are drawn, one over the other, and one shows at a time, since they wrap at different places. An opening
- * title's box grows to the wrapped height from the start, and the wrapped form takes the one-line form's place at
- * `swapsAt`, once that box has come to rest, so `swapsAt` is null until the wrapped height is measured. A closing title
- * takes its one-line form at once, and its box shrinks to one line unless its row's height holds. `box` is the title
- * box's spring at `boxAt`, the draw that last set its target, and `boxTo` that target, so a move that turns back
- * counts from where the box really is. At `endsAt` the title draws one form again.
+ * forms are drawn, one over the other, since they wrap at different places. An opening title's box grows to the
+ * wrapped height from the start, and the title fades to its wrapped form from `swapsAt`, once that box has come to
+ * rest, so `swapsAt` is null until the wrapped height is measured. A closing title whose row's height holds fades to its
+ * one-line form from the next draw, as its panel fades out, and its box shrinks to one line once the hold ends. One
+ * whose height does not hold takes its one-line form at once, as its box starts to shrink. `isFaded` says the forms
+ * fade (`titleFades`) rather than swap. `box` is the title box's spring at `boxAt`, the draw that last set its target,
+ * and `boxTo` that target, so a move that turns back counts from where the box really is. At `endsAt` the title draws
+ * one form again.
  */
 export type TitleGlide = {
   isWrapped: boolean
+  isFaded: boolean
   since: number
   swapsAt: number | null
   box: SpringState
@@ -24,9 +28,11 @@ export type TitleGlide = {
 
 /**
  * How a title draws in this draw while it moves. `isWrapShown` says whether its wrapped form shows, else its one-line
- * form.
+ * form, and `wrapped` and `oneLine` how each form fades when that changes.
  */
-export type TitleMotion = { isWrapShown: boolean }
+export type TitleMotion = { isWrapShown: boolean; wrapped: TitleFade; oneLine: TitleFade }
+
+const AT_ONCE: TitleFade = { delayMs: 0, ms: 0 }
 
 const wraps = (height: number | undefined): height is number => height !== undefined && height > LINE_PT + 0.5
 
@@ -42,14 +48,18 @@ function aimed(g: TitleGlide, to: number, now: number): TitleGlide {
   const restsAt = now + titleSwapMs(to, box)
   const swapsAt = !g.isWrapped ? g.swapsAt : wraps(to) ? restsAt : null
 
-  return { ...g, box, boxAt: now, boxTo: to, swapsAt, endsAt: Math.max(g.endsAt, restsAt + FRAME_MS) }
+  const fadesUntil = g.isWrapped ? restsAt + ENTER_FADE_MS : restsAt
+
+  return { ...g, box, boxAt: now, boxTo: to, swapsAt, endsAt: Math.max(g.endsAt, fadesUntil + FRAME_MS) }
 }
 
 /**
  * A row's title glide in this draw, from its last glide, whether the row was and is open, the title's measured height,
  * which is the wrapped height while the row is open or its title moves, and whether a closing row's height holds in
  * this draw while its panel fades. A title that fits on one line has no glide. An open that turns a close back grows
- * the box from where it is, and shows the wrapped form at once if the box still rests at the wrapped height.
+ * the box from where it is, and fades to the wrapped form at once if the box still rests at the wrapped height. A
+ * close whose height holds starts its fade in the next draw, since a form drawn first in this draw takes its opacity
+ * at once.
  */
 export function stepTitle(
   last: TitleGlide | null,
@@ -66,6 +76,7 @@ export function stepTitle(
     const endsAt = now + 2 * FRAME_MS + HEIGHT_SETTLE_MS
     const opening = {
       isWrapped: true,
+      isFaded: true,
       since: now,
       swapsAt: null,
       box,
@@ -80,9 +91,10 @@ export function stepTitle(
     if (!wraps(height)) return null
     const box = live ? boxNow(live, now) : { x: height, v: 0 }
     const endsAt = now + HEIGHT_SETTLE_MS + FRAME_MS
+    const swapsAt = isHeld ? now + FRAME_MS : now
 
     return aimed(
-      { isWrapped: false, since: now, swapsAt: now, box, boxAt: now, boxTo: live?.boxTo ?? height, endsAt },
+      { isWrapped: false, isFaded: isHeld, since: now, swapsAt, box, boxAt: now, boxTo: live?.boxTo ?? height, endsAt },
       to,
       now,
     )
@@ -96,8 +108,13 @@ export function stepTitle(
 export function titleMotion(g: TitleGlide | null, now: number): TitleMotion | null {
   if (g === null) return null
   const hasSwapped = g.swapsAt !== null && now >= g.swapsAt
+  const fades = g.isFaded ? titleFades(g.isWrapped) : { taken: AT_ONCE, left: AT_ONCE }
 
-  return { isWrapShown: g.isWrapped === hasSwapped }
+  return {
+    isWrapShown: g.isWrapped === hasSwapped,
+    wrapped: g.isWrapped ? fades.taken : fades.left,
+    oneLine: g.isWrapped ? fades.left : fades.taken,
+  }
 }
 
 /** The times a title glide changes how it draws, so the look draws again then. */

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { Window } from 'happy-dom'
-import { LEAVE_FADE_MS, ROW_STATE_MS, TURNED_BACK_CUT_OPACITY } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, TURNED_BACK_CUT_OPACITY } from '../../core/view/row-motion'
 import { FRAME_MS } from '../../core/view/springs'
 import TAB_HTML from '../src/tab.html'
 import { NO_HOLDS } from '../../core/view/timing'
@@ -197,7 +197,7 @@ type Harness = {
   after: (ms: number) => Promise<void>
 }
 
-test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, held faint while its row regrows from a shrink, a moving row’s clamped title draws the closed weight and never shows with its full title, and a dismissed open row draws only its settled line', async context => {
+test('a row that enters while another leaves keeps the rest of its wait and its edge scaling when a redraw lands 40 or 80 ms into the wait or 60 ms into the growth, so the list never grows before it shrinks; a row the person opens grows once the panel of the row it closes has faded out, and fades its own panel in once its space is nearly open, a close they turn back fades its panel back from where it is, at once, held faint while its row regrows from a shrink, a moving row’s clamped title draws the closed weight and fades with its full title only while its line rests, and a dismissed open row draws only its settled line', async context => {
   await inTab(async ({ state, moves, fades, settle, after }) => {
     await import('../src/tab')
     const { read } = await import('../src/tab-ui')
@@ -269,13 +269,31 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
         )
         return shown ?? (form === '.text.short' ? 0 : 1)
       })
-    for (const id of ['i1', pressed.id])
-      for (let t = 0; t <= ROW_STATE_MS.opening; t += FRAME_MS) {
+    const bothFormsAt = (id: string) =>
+      Array.from({ length: Math.floor(ROW_STATE_MS.opening / FRAME_MS) + 1 }, (_, n) => n * FRAME_MS).filter(t => {
         const [short, full] = titleForms(id, pressedAt + t)
-        assert.ok(short! < 0.02 || full! < 0.02, `${id} shows both title forms ${t} ms in: ${short} and ${full}`)
-      }
-    assert.deepEqual(titleForms('i1', pressedAt), [1, 0], 'the closing title does not take its closed form at once')
-    assert.deepEqual(titleForms(pressed.id, pressedAt + ROW_STATE_MS.opening), [0, 1])
+        return short! >= 0.02 && full! >= 0.02
+      })
+    const closingBoth = bothFormsAt('i1')
+    assert.ok(
+      closingBoth.every(t => t <= LEAVE_FADE_MS),
+      `i1 shows both title forms after its line holds: ${closingBoth}`,
+    )
+    const openingBoth = bothFormsAt(pressed.id)
+    const opensAt = Math.min(...moves.filter(m => m.key.includes(pressed.id)).map(m => m.startsAt)) - pressedAt
+    assert.ok(
+      openingBoth.every(t => t > opensAt) && (openingBoth.at(-1) ?? 0) - (openingBoth[0] ?? 0) <= ENTER_FADE_MS,
+      `${pressed.id} shows both title forms outside one fade after its line grows: ${openingBoth}`,
+    )
+    const closingShort = titleForms('i1', pressedAt + LEAVE_FADE_MS / 2)[0]!
+    assert.ok(closingShort > 0.02 && closingShort < 0.98, `the closing title swaps in one frame: ${closingShort}`)
+    assert.deepEqual(titleForms('i1', pressedAt), [0, 1], 'the closing title does not start from its full form')
+    assert.deepEqual(
+      titleForms('i1', pressedAt + LEAVE_FADE_MS),
+      [1, 0],
+      'the closing title has not faded to its closed form',
+    )
+    assert.deepEqual(titleForms(pressed.id, pressedAt + ROW_STATE_MS.opening + ENTER_FADE_MS), [0, 1])
     const shrinks = moves.filter(m => m.key.includes('i1'))
     assert.ok(shrinks.length > 0, 'closing i1 started no glide')
     for (const m of shrinks)

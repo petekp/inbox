@@ -1,4 +1,4 @@
-import { titleSwapMs } from '../../core/view/row-motion'
+import { LEAVE_FADE_MS, titleFades, titleSwapMs } from '../../core/view/row-motion'
 import { FRAME_MS } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
 import { fade, fadeShown, glide, glides, isRunning, springOf, stopFadeOut } from './tab-glide'
@@ -24,15 +24,27 @@ function titleOf(line: HTMLElement): { full: HTMLElement; short: HTMLElement } |
   return full && short ? { full, short } : null
 }
 
-/** Shows a title's open form, or its closed form, in place of the other in one frame, after `delay` ms. */
-function swapTitle({ full, short }: { full: HTMLElement; short: HTMLElement }, isOpen: boolean, delay: number) {
-  fade(full, isOpen ? 0 : 1, isOpen ? 1 : 0, 0, !isOpen, false, delay)
-  fade(short, isOpen ? 1 : 0, isOpen ? 0 : 1, 0, true, false, delay)
+/**
+ * Fades a title from its closed form to its open form, or back, after `delay` ms, as `titleFades` times it, or in one
+ * frame when not `isFaded`.
+ */
+function swapTitle(
+  { full, short }: { full: HTMLElement; short: HTMLElement },
+  isOpen: boolean,
+  delay: number,
+  isFaded = true,
+) {
+  const { taken, left } = titleFades(isOpen)
+  const [toFull, toShort] = isOpen ? [taken, left] : [left, taken]
+  const ms = (f: typeof taken) => (isFaded ? f.ms : 0)
+  const after = (f: typeof taken) => delay + (isFaded ? f.delayMs : 0)
+  fade(full, isOpen ? 0 : 1, isOpen ? 1 : 0, ms(toFull), !isOpen, false, after(toFull))
+  fade(short, isOpen ? 1 : 0, isOpen ? 0 : 1, ms(toShort), true, false, after(toShort))
 }
 
 /**
  * Starts an opening row's title move, after `delay` ms. The line grows from the closed title's height to the open
- * title's, with the title in its closed form, and the open form takes its place once the line comes to rest
+ * title's, with the title in its closed form, and the title fades to its open form once the line comes to rest
  * (`titleSwapMs`). A line that was held or gliding, as when the open turns a close back, grows from where it was,
  * `held`. A line already at the open title's height shows the open form at once.
  */
@@ -52,14 +64,16 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
 }
 
 /**
- * Starts a closing row's title move, from the line's height `from` to the closed title's height `to`. The title takes
- * its closed form at once, while the line holds its height, and the line shrinks after `delay` ms, with its row. A
- * title the closed form shows whole keeps its full form, unless an open it turns back had hidden it.
+ * Starts a closing row's title move, from the line's height `from` to the closed title's height `to`. The title fades to
+ * its closed form while the line holds its height, as the row's panel fades out, and the line shrinks after `delay` ms,
+ * with its row. A line that holds too briefly for the fade takes the closed form at once. A title the closed form shows
+ * whole keeps its full form, unless an open it turns back had hidden it.
  */
 export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
   const title = titleOf(line)
   const end = title ? Math.max(to, title.short.getBoundingClientRect().height) : to
-  if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null)) swapTitle(title, false, 0)
+  if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null))
+    swapTitle(title, false, 0, delay >= LEAVE_FADE_MS)
   glide(line, 'height', from, end, true, false, delay)
 }
 
