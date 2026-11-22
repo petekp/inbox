@@ -1,13 +1,13 @@
 import type { Elements, RenderElement, RenderInput, RenderSurface } from 'claude-code'
 
-import { bandCounts, isMaybeStale, nothingMark, nothingText } from '../../core/view/band'
+import { bandCounts, nothingMark, nothingText } from '../../core/view/band'
 import { isResumable, stopFix, stopText } from '../../core/view/banners'
 import { isBlankLedger } from '../../core/domain/ledger'
 import { setDemo } from './mod-demo'
 import { drawnState, redraw } from './mod-drawn'
 import { openInbox } from './mod-pane-open'
 import type { Mod } from './mod-ports'
-import { sessionState } from './mod-state'
+import { paneState, sessionState } from './mod-state'
 import { resume } from './mod-turns'
 import { lookOf, paletteFor } from '../pane/palettes'
 import { DOT, resumeLabel } from '../../core/view/rows'
@@ -47,7 +47,9 @@ export async function band(
     drawnState(m),
     m.atoms.theme.read(),
   ])
-  if (!stop && isBlankLedger(ledger) && !isMaybeStale(view.sync.ledger)) return theirsOf()
+  // A loading conversation may bring back saved rows, so the band waits for them before it reads "Nothing needed".
+  const isLoadingRows = paneState.loadingRevision !== null && isBlankLedger(ledger)
+  if (!stop && isLoadingRows) return theirsOf()
   // Every mod shares the band, and a tree without the drawing from next(e)
   // hides what the mods after this one draw there.
   const theirs = await theirsOf()
