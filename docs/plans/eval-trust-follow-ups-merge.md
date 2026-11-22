@@ -1,6 +1,6 @@
 # Evals the release can trust: merge cases
 
-Part of [Evals the release can trust](eval-trust.md). These follow-ups cover the agent cases about merging a PR: `merge-asked-before-taken` in `evals/agent-cases/record.json`, and the Merge press cases in `evals/agent-cases/merge.json`.
+Part of [Evals the release can trust](eval-trust.md). These follow-ups cover the agent cases about merging a PR: `merge-asked-before-taken` in `evals/agent-cases/held-acts.json`, and the Merge press cases in `evals/agent-cases/merge.json`.
 
 Status: building. Each item stays until the change that does it lands.
 
