@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T01:18:52.274Z. 354314 characters follow.
+// Built at 2026-11-23T03:16:39.803Z. 356004 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -6261,8 +6261,8 @@ import { div as div5 } from "gpui-kit";
 var TREE_LINE_SHARE = 0.2;
 var lineColor = (t, under = t.background) => mixInto(t.foreground, flatten(under, t.background), TREE_LINE_SHARE);
 var PATH_X = EDGE + 4;
-function lineEl2(c, top, height, t) {
-  const el = div5().absolute().left(PATH_X + c.depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
+function lineEl2(id, c, top, height, t) {
+  const el = div5().id(id).absolute().left(PATH_X + c.depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
   const sized = height === null ? el.bottom(0) : el.h(height);
   return c.isDashed ? sized.border_dashed() : sized;
 }
@@ -6372,32 +6372,67 @@ function feedsOf(blocks, moves) {
     return runsIn(below).filter((c) => c.depth === depth && !c.isDashed && !own.has(c.depth));
   });
 }
-var spaceColumnEl = (c, f, t) => f.above(c.depth)(lineEl2(c, 0, null, t));
-function contentStrokeEls(b, top, t, f, passes, feeds) {
+var spaceColumnEl = (key, c, f, t) => f.above(c.depth)(lineEl2(`space column ${key} ${c.depth}`, c, 0, null, t));
+function contentStrokeEls(key, b, top, t, f, passes, feeds) {
   const path = "path" in b ? b.path : undefined;
   const tree = "tree" in b ? b.tree ?? [] : [];
   const armAt = Math.round(top + LINE_HEIGHT / 2);
-  const whole = (c) => {
-    const up = f.above(c.depth);
-    const down = f.below(c.depth);
-    return up === down ? [up(lineEl2(c, 0, null, t))] : [up(lineEl2(c, 0, armAt + 1, t)), down(lineEl2(c, armAt + 1, null, t))];
+  const idOf = (name, part) => `stroke ${key} ${name} ${part}`;
+  const upper = (c, name, height) => f.above(c.depth)(lineEl2(idOf(name, "top"), c, 0, height, t));
+  const lower = (c, name, from) => f.below(c.depth)(lineEl2(idOf(name, "bottom"), c, from, null, t));
+  const whole = (c, name) => {
+    const isSplit = f.above(c.depth) !== f.below(c.depth);
+    const abovePart = f.above(c.depth)(lineEl2(idOf(name, "top"), c, 0, isSplit ? armAt + 1 : null, t));
+    const belowPart = f.below(c.depth)(lineEl2(idOf(name, "bottom"), c, armAt + 1, isSplit ? null : 0, t));
+    return [abovePart, belowPart];
   };
-  const below = (c) => f.below(c.depth)(lineEl2(c, top + LINE_HEIGHT, null, t));
-  const pathEls = (side) => side.is === "work" ? pathColumn(side.line).flatMap(whole) : [...pathColumn(side.above).map((c) => f.above(0)(lineEl2(c, 0, top, t))), ...pathColumn(side.below).map(below)];
-  const treeEls = tree.flatMap(({ depth, is }) => {
+  const below = (c, name) => lower(c, name, top + LINE_HEIGHT);
+  const pathEls = (side) => side.is === "work" ? pathColumn(side.line).flatMap((c) => whole(c, "path")) : [
+    ...pathColumn(side.above).map((c) => upper(c, "path", top)),
+    ...pathColumn(side.below).map((c) => below(c, "path"))
+  ];
+  const reaches = new Map;
+  const reachOf = (c) => {
+    const r = reaches.get(c.depth) ?? { isDashed: true, toEnd: false, toArm: false, lowerFrom: null };
+    r.isDashed &&= c.isDashed;
+    reaches.set(c.depth, r);
+    return r;
+  };
+  const reachWhole = (c) => void (reachOf(c).toEnd = true);
+  const reachBelow = (c) => {
+    const r = reachOf(c);
+    r.lowerFrom = Math.min(r.lowerFrom ?? Infinity, top + LINE_HEIGHT);
+  };
+  const arms = tree.flatMap(({ depth, is }) => {
     const c = { depth, isDashed: false };
-    const arm = f.own(div5().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)));
     if (is === "down")
-      return [below(c)];
-    if (is === "past")
-      return whole(c);
-    if (is === "arm")
-      return [arm];
-    if (is === "last")
-      return [f.above(depth)(lineEl2(c, 0, armAt + 1, t)), arm];
-    return [...whole(c), arm];
+      reachBelow(c);
+    else if (is === "last")
+      reachOf(c).toArm = true;
+    else if (is !== "arm")
+      reachWhole(c);
+    if (is === "down" || is === "past")
+      return [];
+    return [
+      f.own(div5().id(`stroke ${key} arm ${depth}`).absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)))
+    ];
   });
-  return [...path ? pathEls(path) : [], ...treeEls, ...passes.flatMap(whole), ...feeds.map(below)];
+  passes.forEach(reachWhole);
+  feeds.forEach(reachBelow);
+  const columnEls = [...reaches].flatMap(([depth, r]) => {
+    const c = { depth, isDashed: r.isDashed };
+    const isSplit = f.above(depth) !== f.below(depth);
+    const hasUpper = r.toEnd || r.toArm;
+    const upperHeight = r.toEnd && !isSplit ? null : hasUpper ? armAt + 1 : 0;
+    const lowerFrom = r.toEnd ? armAt + 1 : r.lowerFrom ?? armAt + 1;
+    const lowerHeight = r.toEnd ? isSplit ? null : 0 : r.lowerFrom === null ? 0 : null;
+    const id = (part) => `stroke ${key} column ${depth} ${part}`;
+    return [
+      f.above(depth)(lineEl2(id("top"), c, hasUpper ? 0 : armAt + 1, upperHeight, t)),
+      f.below(depth)(lineEl2(id("bottom"), c, lowerFrom, lowerHeight, t))
+    ];
+  });
+  return [...path ? pathEls(path) : [], ...columnEls, ...arms];
 }
 
 // src/paint-space.ts
@@ -6555,8 +6590,10 @@ function spacedEls(blocks, p, el) {
     if (!look || !f)
       throw new Error(`no look for block ${b.id}`);
     const { m, isShown, glide, fade } = look;
+    const key = m?.springId ?? b.id;
+    const drawing = v_flex2().id(`drawing ${key}`).child(el(b));
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
-    return v_flex2().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => spaceColumnEl(c, f, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), contentStrokeEls(b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? [])));
+    return v_flex2().id(`box ${key}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => spaceColumnEl(key, c, f, p.t)))).child(contentEl(b, m, p, slide(fade(drawing)), contentStrokeEls(key, b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? [])));
   });
 }
 
