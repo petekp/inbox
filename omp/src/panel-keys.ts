@@ -43,14 +43,16 @@ const cursorOf = (ui: UiState): string | null => (isRowTab(ui.tab) ? ui.selectio
 
 /**
  * `shared`, the controller's state after an event, with the panel's fields from `before`. A button's focus and a
- * reopened row last while the cursor stays on their row. A tab that starts showing starts at its top, and the PRs tab
- * at its first waiting row when its cursor was on one of the tab's own lines.
+ * reopened row last while the cursor stays on their row. A tab that starts showing starts at its top. The PRs tab, when
+ * it starts showing by a tab change or the panel opening, starts at its first waiting row if its cursor was on one of
+ * the tab's own lines.
  */
 export function withShared(before: PanelUi, shared: UiState): PanelUi {
   const isTabChanged = shared.tab !== before.tab
+  const isStartedShowing = isTabChanged || shared.shownSince !== before.shownSince
   const isOnPrTabLine = PR_TAB_LINE_IDS.includes(shared.selection.prs.id ?? '')
   const shown: UiState =
-    isTabChanged && shared.tab === 'prs' && isOnPrTabLine
+    isStartedShowing && shared.tab === 'prs' && isOnPrTabLine
       ? { ...shared, selection: { ...shared.selection, prs: { id: null, index: -1, guard: null } } }
       : shared
   const cursor = cursorOf(shown)
