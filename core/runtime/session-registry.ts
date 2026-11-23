@@ -36,8 +36,10 @@ export type RegistryFiles = {
   list(folder: string): Promise<string[]>
   /** The file's text, or null when it does not exist. */
   read(path: string): Promise<string | null>
-  /** Replaces the file at `path` through a move, after making its folder readable by its owner only. */
+  /** Writes a new file at `path` that only its owner can read, after making its folder readable by its owner only. */
   write(path: string, text: string): Promise<void>
+  /** Moves the file at `from` over the one at `to` in one step. */
+  move(from: string, to: string): Promise<void>
   remove(path: string): Promise<void>
   /** The pids among `pids` whose process runs, or null when that cannot be told. */
   livePids(pids: number[]): Promise<ReadonlySet<number> | null>
@@ -101,12 +103,27 @@ export async function writeRegistryEntry(
       kept && JSON.stringify({ ...kept, writtenAt: 0 }) === JSON.stringify({ ...fields, writtenAt: 0 })
     if (isUnchanged) return
     const entry: RegistryEntry = { ...fields, writtenAt: now }
-    await files.write(path, JSON.stringify(entry))
+    await replaceFile(files, path, JSON.stringify(entry), now)
     await pruneEnded(files, folder, source.host, path)
   } catch (error) {
     files.log(
       `inbox: the session registry entry could not be written: ${error instanceof Error ? error.message : error}`,
     )
+  }
+}
+
+/**
+ * Writes `text` to a temporary file beside `path`, then moves it over `path`, so a reader never sees a part-written
+ * entry. A failed write or move removes the temporary file and rejects. A temporary name never ends in `.json`.
+ */
+async function replaceFile(files: RegistryFiles, path: string, text: string, now: number) {
+  const temporary = `${path}.${now}.${Math.random().toString(36).slice(2)}.tmp`
+  try {
+    await files.write(temporary, text)
+    await files.move(temporary, path)
+  } catch (error) {
+    await files.remove(temporary).catch(() => undefined)
+    throw error
   }
 }
 

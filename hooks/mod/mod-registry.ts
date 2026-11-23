@@ -18,33 +18,31 @@ import { livePids, sessionPid } from './running-sessions'
 type RegistryCalls = Pick<Mod, 'commands' | 'history' | 'herdr'>
 
 const madeFolders = new Set<string>()
-let tmpCount = 0
+
+const run = async (m: RegistryCalls, argv: string[]) => {
+  const r = await m.commands.run(argv, { cwd: '/', timeoutMs: 5000 })
+  if (r.exitCode !== 0) throw new Error(`${argv[0]} exited ${r.exitCode}: ${r.stderr.trim()}`)
+}
 
 /**
  * The engine's calls for the session registry. It has no call that moves or removes a file, makes a folder or sets a
  * mode. `ps` is trusted only when it lists `ownPid`.
  */
 function registryFiles(m: RegistryCalls, ownPid: number | null): RegistryFiles {
-  const run = async (argv: string[]) => {
-    const r = await m.commands.run(argv, { cwd: '/', timeoutMs: 5000 })
-    if (r.exitCode !== 0) throw new Error(`${argv[0]} exited ${r.exitCode}: ${r.stderr.trim()}`)
-  }
-
   return {
     list: async folder => (await m.history.fs.list(folder).catch(() => [])).map(entry => entry.name),
     read: async path => ((await m.commands.exists(path)) ? m.history.fs.read(path) : null),
     write: async (path, text) => {
       const folder = path.slice(0, path.lastIndexOf('/'))
       if (!madeFolders.has(folder)) {
-        await run(['mkdir', '-p', '-m', '700', '--', folder])
+        await run(m, ['mkdir', '-p', '-m', '700', '--', folder])
         madeFolders.add(folder)
       }
-      const tmp = `${path}.${(await m.commands.now()).toString(36)}-${++tmpCount}.tmp`
-      await m.commands.write(tmp, text)
-      await run(['chmod', '600', '--', tmp])
-      await run(['mv', '-f', '--', tmp, path])
+      await m.commands.write(path, text)
+      await run(m, ['chmod', '--', '600', path])
     },
-    remove: path => run(['rm', '-f', '--', path]),
+    move: (from, to) => run(m, ['mv', '-f', '--', from, to]),
+    remove: path => run(m, ['rm', '-f', '--', path]),
     livePids: async pids => {
       if (ownPid === null) return null
       const live = await livePids({ run: (argv, init) => m.commands.run(argv, init) }, [...pids, ownPid])
@@ -52,6 +50,44 @@ function registryFiles(m: RegistryCalls, ownPid: number | null): RegistryFiles {
       return live?.has(ownPid) ? live : null
     },
     log: m.herdr.log,
+  }
+}
+
+/**
+ * The name earlier builds gave a registry write's temporary file: `<entry>.<time in base 36>-<count>.tmp`. macOS's
+ * chmod refused their `chmod 600 -- <file>`, so the file was never moved over its entry.
+ */
+const EARLIER_TEMPORARY = /^claude-code-.+\.json\.([0-9a-z]{1,12})-\d{1,15}\.tmp$/
+/** An earlier build's temporary file younger than this may be one that build is still writing. */
+const LEFTOVER_AGE_MS = 60_000
+/** Paths per `rm`, so a folder of tens of thousands stays under the argument limit. */
+const REMOVE_BATCH = 200
+
+let isSwept = false
+
+/**
+ * Once per process, removes the temporary files an earlier build's registry writes left in `folder`: the names
+ * `EARLIER_TEMPORARY` matches whose time is `LEFTOVER_AGE_MS` or more before `now`. A failure is logged.
+ */
+async function removeEarlierTemporaries(m: RegistryCalls, folder: string, now: number) {
+  if (isSwept) return
+  isSwept = true
+  const isLeftover = (name: string) => {
+    const writtenAt = EARLIER_TEMPORARY.exec(name)?.[1]
+    return writtenAt !== undefined && now - parseInt(writtenAt, 36) >= LEFTOVER_AGE_MS
+  }
+  const paths = (await m.history.fs.list(folder).catch(() => []))
+    .map(entry => entry.name)
+    .filter(isLeftover)
+    .map(name => `${folder}/${name}`)
+  try {
+    for (let i = 0; i < paths.length; i += REMOVE_BATCH)
+      await run(m, ['rm', '-f', '--', ...paths.slice(i, i + REMOVE_BATCH)])
+    if (paths.length > 0) m.herdr.log(`inbox: removed ${paths.length} temporary files earlier builds left in ${folder}`)
+  } catch (error) {
+    m.herdr.log(
+      `inbox: the session registry's leftover temporary files could not be removed: ${error instanceof Error ? error.message : error}`,
+    )
   }
 }
 
@@ -117,6 +153,7 @@ export function writeModRegistry(
     }
     const view = sessionView(session, now, SETTLED_MS)
     await writeRegistryEntry(registryFiles(m, ownPid), folder, source, session, view, now, ownPid)
+    await removeEarlierTemporaries(m, folder, now)
   })
 }
 
