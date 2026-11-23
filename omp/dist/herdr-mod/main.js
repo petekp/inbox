@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T16:50:22.667Z. 369289 characters follow.
+// Built at 2026-11-23T18:57:43.932Z. 371320 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -5586,10 +5586,13 @@ function formOf({ state, hasOpenForm, entersSettled }) {
       return "gone";
   }
 }
+var isSettledFormFading = (track, now) => track.state === "closing" && track.leavesSettled === true && now - track.since < LEAVE_FADE_MS;
 function moveToward(track, form, now) {
   const leaves = formOf(track) === "settled" ? { leavesSettled: true } : {};
   switch (form) {
     case "open":
+      if (isSettledFormFading(track, now))
+        return { ...track, state: "opening", hasOpenForm: true };
       return { state: "opening", since: now, hasOpenForm: true, ...leaves };
     case "closed":
       return track.state === "leaving" ? entering("closed", now) : { state: "closing", since: now, hasOpenForm: track.hasOpenForm, ...leaves };
@@ -5653,6 +5656,7 @@ class Heights {
   }
 }
 var titleId = (id) => `title ${id}`;
+var restId = (id) => `rest ${id}`;
 var panelId = (id) => `panel ${id}`;
 
 // ../core/view/layout.ts
@@ -6014,8 +6018,18 @@ function movedOf(blocks, was) {
 
 // src/form-swap.ts
 var isSettledRow = (b) => b?.kind === "row" && b.settled !== null;
-var endsAt = (s) => s.inAt === null ? Infinity : s.inAt + NEXT_FRAME_MS + ENTER_FADE_MS;
-function stepSwap(last, was, b, now) {
+var linesShownOf = (s, now) => s.inWait === null ? 0 : easeOut(Math.min(1, Math.max(0, (now - s.inWait.from - s.inWait.ms) / ENTER_FADE_MS)));
+var endsAt = (s) => s.inWait === null ? Infinity : s.inWait.from + s.inWait.ms + ENTER_FADE_MS;
+var MEASURE_WAIT_MS = 100;
+function panelShownOf(track, steps, height, now) {
+  if (track.state !== "opening")
+    return 1;
+  if (steps)
+    return opacityAt(steps, now);
+  const fadesAt = track.since + NEXT_FRAME_MS + enterDelayMs(height);
+  return easeOut(Math.min(1, Math.max(0, (now - fadesAt) / ENTER_FADE_MS)));
+}
+function stepSwap(last, was, b, now, panelShown = 1) {
   if (b.kind !== "row" || was?.kind !== "row")
     return null;
   const live = last !== null && now < endsAt(last) ? last : null;
@@ -6025,31 +6039,62 @@ function stepSwap(last, was, b, now) {
   if (live?.inAt === null) {
     const isBack = isSettledRow(live.from) === isSettled && isOpenRow(live.from) === isOpenRow(b);
     if (isBack)
-      return { ...live, isSettled, showsAt: now, inAt: now - NEXT_FRAME_MS };
+      return { ...live, isSettled, showsAt: now, inAt: now - NEXT_FRAME_MS, inWait: { from: now, ms: 0 } };
     return { ...live, isSettled, isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text };
   }
   const isMarkSwapped = was.mark?.text !== b.mark?.text;
-  return { from: was, isSettled, isMarkSwapped, since: now, showsAt: now + NEXT_FRAME_MS + LEAVE_FADE_MS, inAt: null };
+  const fromShown = live === null ? 1 : linesShownOf(live, now);
+  const showsAt = now + NEXT_FRAME_MS + (fromShown > 0 ? LEAVE_FADE_MS : 0);
+  const swap = { from: was, isSettled, isMarkSwapped, since: now, showsAt, inAt: null, fromShown, panelShown };
+  return { ...swap, restIn: undefined, inWait: null };
 }
-function takeSwap(s, drawn, now) {
+function takeSwap(s, drawn, now, rest) {
   const isTaken = s !== null && s.inAt === null && now >= s.showsAt && isSettledRow(drawn) === s.isSettled;
-  return isTaken ? { ...s, inAt: now } : s;
+  return isTaken ? { ...s, inAt: now, restIn: rest } : s;
+}
+function waitSwap(s, space, rest, now) {
+  if (s?.inAt === null || s?.inAt === undefined || s.inWait !== null || now < s.inAt + NEXT_FRAME_MS)
+    return s;
+  const isMeasured = rest !== s.restIn || now >= s.inAt + NEXT_FRAME_MS + MEASURE_WAIT_MS;
+  if (!isMeasured)
+    return s;
+  return { ...s, inWait: { from: now, ms: enterDelayMs(space.to, spaceNow(space, now)) } };
 }
 var swapHoldsUntil = (s, now) => s === null ? 0 : (s.inAt ?? Math.max(s.showsAt, now)) + NEXT_FRAME_MS;
 var swapWaitsUntil = (s) => s?.inAt === null ? s.showsAt + NEXT_FRAME_MS : 0;
 function swapMotion(s, now) {
   if (s === null)
     return null;
-  if (s.inAt === null)
-    return { from: s.from, isMarkSwapped: s.isMarkSwapped, opacity: now === s.since ? 1 : 0, fadeMs: LEAVE_FADE_MS };
-  return {
-    from: null,
-    isMarkSwapped: s.isMarkSwapped,
-    opacity: now < s.inAt + NEXT_FRAME_MS ? 0 : 1,
-    fadeMs: ENTER_FADE_MS
-  };
+  const { from, isMarkSwapped } = s;
+  if (s.inAt === null) {
+    const panel = s.panelShown < 1 ? s.panelShown : null;
+    return { from, isMarkSwapped, opacity: now === s.since ? s.fromShown : 0, fadeMs: LEAVE_FADE_MS, panel };
+  }
+  const opacity = s.inWait !== null && now >= s.inWait.from + s.inWait.ms ? 1 : 0;
+  return { from: null, isMarkSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null };
 }
-var swapTimes = (s) => s === null ? [] : [s.since + NEXT_FRAME_MS, s.showsAt, ...s.inAt === null ? [] : [s.inAt + NEXT_FRAME_MS, endsAt(s)]];
+var swapTimes = (s) => s === null ? [] : [
+  s.since + NEXT_FRAME_MS,
+  s.showsAt,
+  ...s.inAt === null ? [] : [s.inAt + NEXT_FRAME_MS, s.inAt + NEXT_FRAME_MS + MEASURE_WAIT_MS],
+  ...s.inWait === null ? [] : [s.inWait.from + s.inWait.ms, endsAt(s)]
+];
+
+// src/held-form.ts
+function heldForm(b, was, motion) {
+  const last = was.rows.get(b.id)?.block;
+  const state = motion.get(b.id)?.state;
+  const isHeld = last !== undefined && b.kind !== "row" && b.kind !== "empty" && state !== undefined && !isMoving(state);
+  return isHeld && JSON.stringify(last) !== JSON.stringify(b) ? last : b;
+}
+function heldTabs(tabs, last, motion) {
+  if (![...motion.values()].some((m) => m.isStart))
+    return tabs;
+  return tabs.map((t) => {
+    const was = last.find((l) => l.id === t.id);
+    return was ? { ...t, badge: was.badge } : t;
+  });
+}
 
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
@@ -6097,7 +6142,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
   }));
   const swaps = new Map(blocks.map((b) => {
     const old = moved.has(b.id) ? undefined : was.rows.get(b.id);
-    return [b.id, stepSwap(old?.swap ?? null, old?.block, b, now)];
+    const shown = old ? panelShownOf(old.track, old.panelSteps, heightOf(panelId(b.id)) ?? 0, now) : 1;
+    return [b.id, stepSwap(old?.swap ?? null, old?.block, b, now, shown)];
   }));
   const closeHoldsUntil = Math.max(0, ...[...swaps.values()].map(swapWaitsUntil), ...blocks.map((b) => {
     const old = was.rows.get(b.id);
@@ -6131,12 +6177,17 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const closing = track.state === "closing" && block.kind === "row" ? opened : null;
     const wasClosing = last?.track.state === "closing" && last.opened !== null && track.state === "closed";
     const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove;
-    const swap = takeSwap(swaps.has(block.id) ? swaps.get(block.id) ?? null : stepSwap(last?.swap ?? null, last?.block, block, now), block, now);
+    const rest = heightOf(restId(block.id));
+    const swap = takeSwap(swaps.has(block.id) ? swaps.get(block.id) ?? null : stepSwap(last?.swap ?? null, last?.block, block, now), block, now, rest);
     const closeHeldUntil = closing === null ? 0 : Math.max(isHeldForLeave ? holdsUntil : 0, panelHeldUntil);
     const heldUntil = Math.max(closeHeldUntil, swapHoldsUntil(swap, now));
     const isHeld = heldUntil > now;
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state));
     const holdsPanel = drawsPanel(track) && !isLeftOut;
+    const isPanelLeftOut = isLeftOut || wasClosing && block.kind === "row";
+    const leftOut = isPanelLeftOut ? panelHeight ?? 0 : 0;
+    const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now);
+    const waited = waitSwap(swap, restSpace, rest, now);
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
     const title = block.kind === "row" && last ? stepTitle(last.title, titleRestOf(last.block, last.swap, sizes), titleRestOf(block, swap, sizes), now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now)) : null;
     rows.set(block.id, {
@@ -6151,7 +6202,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       panelSpace,
       panelSteps,
       panelHeldUntil,
-      swap
+      swap: waited,
+      restSpace
     });
     motion.set(block.id, {
       state: track.state,
@@ -6165,13 +6217,13 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       isPanelWaiting: track.state === "opening",
       panelFadeMs: panelStep?.ms ?? null,
       closing,
-      isPanelLeftOut: isLeftOut || wasClosing && block.kind === "row",
+      isPanelLeftOut,
       title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,
       under: underMotion(under, now, heightOf(underId(block.id))),
       former: last && last.block.kind !== block.kind ? last.block : null,
-      swap: swapMotion(swap, now)
+      swap: swapMotion(waited, now)
     });
   };
   for (const b of blocks) {
@@ -6222,20 +6274,6 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     motion,
     nextAt: ends.length ? Math.min(...ends) : null
   };
-}
-function heldForm(b, was, motion) {
-  const last = was.rows.get(b.id)?.block;
-  const state = motion.get(b.id)?.state;
-  const isHeld = last !== undefined && b.kind !== "row" && b.kind !== "empty" && state !== undefined && !isMoving(state);
-  return isHeld && JSON.stringify(last) !== JSON.stringify(b) ? last : b;
-}
-function heldTabs(tabs, last, motion) {
-  if (![...motion.values()].some((m) => m.isStart))
-    return tabs;
-  return tabs.map((t) => {
-    const was = last.find((l) => l.id === t.id);
-    return was ? { ...t, badge: was.badge } : t;
-  });
 }
 function placeAfter(shown, above) {
   for (let i = above.length - 1;i >= 0; i--) {
@@ -6740,7 +6778,6 @@ function aboveOf(prev, b, section) {
   const gap = section ?? gapBetween(prev, b);
   return Math.max(0, gap - padOf(prev) - padOf(b));
 }
-var restId = (id) => `rest ${id}`;
 function spacesOf(blocks, isShut, formOf = (b) => b) {
   const out = [];
   let prev = null;
@@ -7170,7 +7207,7 @@ function panelEl(r, shown, m, p, isLeaving, titleEnd) {
   ];
 }
 function panelFadeEl(r, m, p, el) {
-  const opacity = m?.panel ?? null;
+  const opacity = m?.swap?.panel ?? m?.panel ?? null;
   if (opacity === null)
     return el;
   const height = p.heights.get(panelId(r.id)) ?? 0;
