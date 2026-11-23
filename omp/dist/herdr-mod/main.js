@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T20:25:16.494Z. 371381 characters follow.
+// Built at 2026-11-23T21:49:14.344Z. 373231 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -5717,8 +5717,36 @@ var COLLAPSED_TITLE_LINES = 2;
 // src/title-cut.ts
 var CLIPPED_HEIGHT = COLLAPSED_TITLE_LINES * LINE_PT;
 var CUT_ROOM = CLIPPED_HEIGHT + 0.5;
+var LINE_ROOM = LINE_PT + 0.5;
+var END_PUNCTUATION = /[^\p{L}\p{N}\s]+$/u;
 var wholeId = (id) => `whole title ${id}`;
 var cutId = (id, cut) => `title cut "${cut}" ${id}`;
+var bareOf = (title) => title.replace(END_PUNCTUATION, "");
+var bareId = (id, bare) => `bare title "${bare}" ${id}`;
+function isBareMeasured(r, sizes) {
+  const width = sizes.widthOf(wholeId(r.id));
+  return width !== undefined && sizes.widthOf(bareId(r.id, bareOf(r.title))) === width;
+}
+function lastWordAt(title) {
+  const lastSpace = title.lastIndexOf(" ");
+  if (lastSpace > 0)
+    return lastSpace + 1;
+  const bare = bareOf(title);
+  const chars = [...bare];
+  const lastChar = chars[chars.length - 1] ?? "";
+  return bare.length > lastChar.length ? bare.length - lastChar.length : -1;
+}
+function wrappedTitleOf(r, sizes) {
+  const whole = sizes.get(wholeId(r.id));
+  const bare = sizes.get(bareId(r.id, bareOf(r.title)));
+  const at = lastWordAt(r.title);
+  const isEndAlone = whole !== undefined && bare !== undefined && isBareMeasured(r, sizes) && whole > bare + 0.5 && at > 0;
+  if (!isEndAlone)
+    return r.title;
+  const lineEnd = r.title[at - 1] === " " ? at - 1 : at;
+  return `${r.title.slice(0, lineEnd)}
+${r.title.slice(at)}`;
+}
 var isOneLineRow = (r) => r.settled !== null || r.depth === 1;
 function isCutMeasured(r, sizes) {
   const width = sizes.widthOf(wholeId(r.id));
@@ -5727,10 +5755,10 @@ function isCutMeasured(r, sizes) {
 function cutTitleOf(r, sizes) {
   const whole = sizes.get(wholeId(r.id));
   if (whole !== undefined && whole <= CUT_ROOM)
-    return { text: r.title, isOneLine: false, isClipped: false, height: whole };
+    return { text: wrappedTitleOf(r, sizes), isOneLine: false, isClipped: false, height: whole };
   if (whole === undefined || !isCutMeasured(r, sizes))
     return {
-      text: r.title,
+      text: wrappedTitleOf(r, sizes),
       isOneLine: false,
       isClipped: true,
       height: whole === undefined ? undefined : CLIPPED_HEIGHT
@@ -5751,9 +5779,16 @@ function cutTitleOf(r, sizes) {
     };
   return { text: `${head}…`, isOneLine: false, isClipped: false, height };
 }
+function oneLineTitleOf(r, sizes) {
+  const whole = sizes.get(wholeId(r.id));
+  const isCutKnown = wordCuts(r.title).every((cut) => sizes.get(cutId(r.id, cut)) !== undefined);
+  const isCut = whole !== undefined && whole > LINE_ROOM && isCutKnown;
+  const head = isCut ? cutAtWord(r.title, (cut) => (sizes.get(cutId(r.id, cut)) ?? Infinity) <= LINE_ROOM) : null;
+  return { text: head === null ? r.title : `${head}…`, isOneLine: true, isClipped: false, height: LINE_PT };
+}
 function shortTitleOf(r, fromShown, sizes) {
   const isOneLine = isOneLineRow(r) || fromShown !== null && isOneLineRow(fromShown);
-  return isOneLine ? { text: r.title, isOneLine, isClipped: false, height: LINE_PT } : cutTitleOf(r, sizes);
+  return isOneLine ? oneLineTitleOf(r, sizes) : cutTitleOf(r, sizes);
 }
 var fromShownOf = (s) => s !== null && s.inAt === null ? s.from : null;
 function titleRestOf(b, swap, sizes) {
@@ -5764,9 +5799,13 @@ function titleRestOf(b, swap, sizes) {
 }
 function titleCopiesOf(r, sizes) {
   const whole = sizes.get(wholeId(r.id));
-  const isCutDrawn = !isOneLineRow(r) && whole !== undefined && whole > CUT_ROOM && !isCutMeasured(r, sizes);
+  const mayWrap = whole === undefined || whole > LINE_ROOM;
+  const bare = bareOf(r.title);
+  const isBareDrawn = mayWrap && bare !== r.title && !isBareMeasured(r, sizes);
+  const bareCopy = isBareDrawn ? [{ key: bareId(r.id, bare), text: bare }] : [];
+  const isCutDrawn = whole !== undefined && whole > LINE_ROOM && !isCutMeasured(r, sizes);
   const cuts = isCutDrawn ? wordCuts(r.title).map((cut) => ({ key: cutId(r.id, cut), text: cut })) : [];
-  return [{ key: wholeId(r.id), text: r.title }, ...cuts];
+  return [{ key: wholeId(r.id), text: r.title }, ...bareCopy, ...cuts];
 }
 
 // src/block-glide.ts
@@ -7045,12 +7084,13 @@ function titleTextEl(r, p, color) {
   const g = m?.title ?? null;
   const short = shortTitleOf(r, m?.swap?.from ?? null, p.heights);
   const text = div11().flex_1().min_w(0).relative().text_color(color).children(titleCopiesOf(r, p.heights).map((c) => copyEl(c.key, c.text, p)));
+  const whole = div11().child(wrappedTitleOf(r, p.heights));
   if (g === null)
-    return text.child(isOpenRow(r) ? div11().child(r.title) : shortTitleEl(short));
+    return text.child(isOpenRow(r) ? whole : shortTitleEl(short));
   const form = (id, isShown, fade) => div11().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: fade.ms, delay: fade.delayMs, easing: "ease-out" });
   const isCutTall = g.tallForm === "cut";
-  const tall = isCutTall ? shortTitleEl(cutTitleOf(r, p.heights)) : div11().child(r.title);
-  const shortForm = shortTitleEl(g.isShortOneLine ? { ...short, text: r.title, isOneLine: true } : short);
+  const tall = isCutTall ? shortTitleEl(cutTitleOf(r, p.heights)) : whole;
+  const shortForm = shortTitleEl(g.isShortOneLine ? oneLineTitleOf(r, p.heights) : short);
   return text.child(form(`tall ${r.id}`, g.isTallShown, g.tall).child(tall)).child(div11().absolute().top(0).left(0).w_full().child(form(`short ${r.id}`, !g.isTallShown, g.short).child(shortForm)));
 }
 var copyEl = (key, text, p) => div11().id(`copy ${key}`).absolute().top(0).left(0).w_full().opacity(0).on_size_change((size, cx) => p.measure(key, size, cx, true)).child(text);

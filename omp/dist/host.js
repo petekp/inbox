@@ -9951,6 +9951,10 @@ function cutTitle(title, room) {
   const cells = Math.max(MARKED_TITLE_CELLS, room);
   return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}\u2026`;
 }
+function cutSettledTitle(title, room) {
+  const cells = Math.max(MARKED_TITLE_CELLS, room);
+  return cutLine(title, (text) => cellWidth(text) <= cells);
+}
 function spread(left, right, width) {
   const gap = width - visibleLength(left) - visibleLength(right);
   return gap >= 2 ? left + " ".repeat(gap) + right : fit(left, width);
@@ -10395,7 +10399,8 @@ function drawLine(line, isSelected, d) {
   const titleRoom = besideAge - visibleLength(head);
   const isRowLine = line.row !== null && line.settled === null && status === "";
   const wrapped = isRowLine && cellWidth(line.title) + visibleLength(after) > titleRoom ? titleLines(line.title, titleRoom, room - indent - 1, isOpen ? Infinity : COLLAPSED_TITLE_LINES) : null;
-  const shownTitle = line.mark ? cutTitle(line.title, titleRoom - visibleLength(status) - visibleLength(after)) : line.title;
+  const cutMarked = line.settled ? cutSettledTitle : cutTitle;
+  const shownTitle = line.mark ? cutMarked(line.title, titleRoom - visibleLength(status) - visibleLength(after)) : line.title;
   const first = wrapped ? spread(`${head}${paintTitle(wrapped[0])}`, `${age} `, width) : spread(fit(`${head}${paintTitle(shownTitle)}${status}${after}`, besideAge), `${age} `, width);
   const underTitle = wrapped ? [
     ...wrapped.slice(1).map((t) => " ".repeat(indent) + paintTitle(t)),
