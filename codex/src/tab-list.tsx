@@ -254,6 +254,11 @@ export function ListRow({
           ) : null}
           {row.holdsUp ? <span class="holds-up">{row.holdsUp}</span> : null}
         </button>
+        {row.holdsUp && (isSelected || isClosing) ? (
+          <span class="holds-up" aria-hidden="true">
+            {row.holdsUp}
+          </span>
+        ) : null}
       </div>
       <span class="side" data-room={SENDING}>
         {isSideSplit ? (
