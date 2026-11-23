@@ -1,6 +1,7 @@
 import { EMPTY_STATUS_TEXT } from '../core/view/empty-tab'
 import { countsText } from '../core/view/status-folds'
-import { WAS_PREFIX } from '../core/view/status-page'
+// The judge's checks quote a Prev line by its word alone, as `Prev: …`, so the page text leaves out the mark.
+import { WAS_LABEL } from '../core/view/status-page'
 import { mergedLine, STALL_GAP } from '../core/view/status-page-parts'
 import type { StatusPage, StatusRow, StatusStall } from '../core/view/status-page'
 import type { MilestoneRow } from '../core/view/status-goal-page'
@@ -25,7 +26,7 @@ function rowText(r: StatusRow): string[] {
         `${pad}${r.mark} ${nameLine(r.name, r.stall)}`,
         ...(r.text ? [`${pad}  ${r.text}`] : []),
         ...(r.merged ? [`${pad}  ${mergedLine(r.merged, () => true)}`] : []),
-        ...(r.was ? [`${pad}  ${WAS_PREFIX}${r.was}`] : []),
+        ...(r.was ? [`${pad}  ${WAS_LABEL}${r.was}`] : []),
       ]
     }
     case 'child': {
@@ -68,7 +69,7 @@ function goalText(page: StatusPage): string[] {
     ? [
         g.label,
         g.text,
-        ...(g.was ? [`${WAS_PREFIX}${g.was}`] : []),
+        ...(g.was ? [`${WAS_LABEL}${g.was}`] : []),
         ...(g.now ? [g.now] : []),
         ...(g.awaiting ? [g.awaiting] : []),
         ...g.milestones.flatMap(milestoneText),

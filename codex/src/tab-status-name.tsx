@@ -1,6 +1,6 @@
 import { Icon } from './row-actions'
 import type { ParentChevron } from './tab-status-fold'
-import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { STATUS_TEXT_LINES, WAS_LABEL, WAS_MARK } from '../../core/view/status-page'
 import { nameBeforeStall, nameLevelOf, STALL_GAP, WAS_LEVEL } from '../../core/view/status-page-parts'
 import type { NameLevel, TextLevel } from '../../core/view/status-page-parts'
 import type { StatusTone } from '../../core/view/help'
@@ -15,7 +15,8 @@ export const levelClass = (level: TextLevel): string => LEVEL_CLASS[level]
 /** A Prev line, which says what a Status row or milestone was before it changed. */
 export const WasLine = ({ was }: { was: string }) => (
   <div class={`${levelClass(WAS_LEVEL)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
-    {WAS_PREFIX}
+    <span aria-hidden="true">{`${WAS_MARK} `}</span>
+    {WAS_LABEL}
     {was}
   </div>
 )
