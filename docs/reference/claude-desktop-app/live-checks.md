@@ -140,4 +140,5 @@ On 2026-11-23, a second probe in the same VM, app 6.28899.6 with engine 2.1.330,
 - View > Show Side Panel drew the pane again, with a new `Client` instance and `scroll.offset` 0. The pane loses its scroll position across a hide and a show.
 - `$.ui.open` with `focus` on a shown pane kept its `scroll.offset`.
 - After a close and an open, `$.ui.scroll({ in, to: 'start' })` returned `{}` and raised no `ui.scroll`, so a `ui.scroll` hook could not move the new pane to the old offset that way.
+- With the inbox's fix, which asks for a redraw by writing `$.state`, Go to inbox on a shown pane got its render within 300 ms on the Asks, Status, Finds, help and PRs tabs, and the pane kept its scroll position.
 - `$.ui.scroll` to the key of a `Text` answered "no element of its own is drawn under that key", whether the pane showed or not.
