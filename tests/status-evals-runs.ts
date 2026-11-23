@@ -417,6 +417,9 @@ export const GOOD_RUNS: Record<string, string[]> = {
 
 /** A second right run of a replay whose step allows two right answers, as a recorded model wrote it. */
 export const OTHER_GOOD_RUNS: Record<string, string[]> = {
+  'milestone-last-work-done': [
+    'DONE: s9 | API on main, checks passed\nSET: m2 | working | other branches still outstanding\nHEAD: Notes app | Fixing card animations',
+  ],
   'milestone-dropped': [
     [
       'SET: s5 | queued | own setting, not started',
