@@ -27,6 +27,10 @@ release clears a hold made by take: the one recorded for your terminal, or for
 
 status prints the holder and how long it has held the slot. It changes nothing.
 
+When the holder's terminal is the caller's own, the waiting, refusal and status
+messages say so. For a take hold they name `inbox-slot release`. For a run hold
+they say the slot frees when that command exits.
+
 The record is inbox-slot.json in $FLEET_STATE_DIR, which defaults to
 ~/.local/state/fleet.
 
@@ -102,6 +106,19 @@ def describe(record):
     return f"{who} for {record['purpose']}, held for {age(record['taken_at'])}, tracking pid {record['pid']}"
 
 
+def held_by_this_terminal(record):
+    terminal = os.environ.get("HC_TERMINAL_ID")
+    return bool(terminal) and record["terminal"] == terminal
+
+
+def own_hold_note(record):
+    if not held_by_this_terminal(record):
+        return ""
+    if record["kind"] == "take":
+        return f"\nThis terminal holds it. If the {record['purpose']} job is done, run ./scripts/inbox-slot release."
+    return "\nThis terminal holds it, with an earlier inbox-slot run that is still going. The slot frees when that command exits."
+
+
 def take(purpose, pid, wait, kind):
     if not process_start(pid):
         raise Refused(f"process {pid} is not running")
@@ -118,9 +135,9 @@ def take(purpose, pid, wait, kind):
                 print(f"took the slot for {purpose}")
                 return
         if not wait:
-            raise Refused(f"the slot is held by {describe(current)}")
+            raise Refused(f"the slot is held by {describe(current)}{own_hold_note(current)}")
         if not announced:
-            print(f"waiting for the slot, held by {describe(current)}", file=sys.stderr, flush=True)
+            print(f"waiting for the slot, held by {describe(current)}{own_hold_note(current)}", file=sys.stderr, flush=True)
             announced = True
         time.sleep(POLL_SECONDS)
 
@@ -181,7 +198,7 @@ def main():
             release(args.pid)
         else:
             current = holder()
-            print(f"the slot is held by {describe(current)}" if current else "the slot is free")
+            print(f"the slot is held by {describe(current)}{own_hold_note(current)}" if current else "the slot is free")
         return 0
     except Refused as refusal:
         print(f"refused: {refusal}", file=sys.stderr)
