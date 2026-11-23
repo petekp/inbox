@@ -102,7 +102,7 @@ export function NameLine({
             </>
           ) : null}
           {chevron ? (
-            <span class="muted parent-chevron">
+            <span class={`${levelClass(chevron.level)} parent-chevron`}>
               {' '}
               <Icon name={chevron.isFolded ? 'right' : 'down'} />
               {chevron.isFolded ? <span class="parent-count"> {chevron.count}</span> : null}

@@ -474,7 +474,9 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .when(!isInert, e => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))
     .child(fold?.counts ? countsEl(fold.counts, t) : div().min_w(0).whitespace_normal().child(b.text))
-    .when(fold !== null, e => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })))
+    .when(fold !== null, e =>
+      e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert, level: fold?.level ?? 'muted' })),
+    )
 }
 
 /**

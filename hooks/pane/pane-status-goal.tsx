@@ -225,9 +225,7 @@ export function paneStatusGoal(
       mark,
       padY: milestonePad(m),
       content: [
-        m.foldCount > 0
-          ? parentName(m.id, name, stall, 0, { isCollapsed: isFolded, count: m.foldCount })
-          : statusNameLine(`goal-${m.id}-name`, name, stall, 0),
+        m.foldCount > 0 ? parentName(m, name, stall, 0, isFolded) : statusNameLine(`goal-${m.id}-name`, name, stall, 0),
         ...(x?.waitsOn ? [statusPageText(`goal-${m.id}-waits-on`, [{ text: x.waitsOn, isNeedsYou: true }], 0)] : []),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [levelSpan(m.text, textLevelOf(m), isRowSelected)], 0)] : []),
         ...(x?.merged

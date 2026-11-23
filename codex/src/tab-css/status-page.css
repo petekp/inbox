@@ -336,6 +336,15 @@
 .status-page .milestone-fold .icon {
   margin-left: 0;
 }
+.status-page .name-fold {
+  color: var(--faint);
+}
+.status-page .name-fold:hover {
+  color: var(--text);
+}
+.still .status-page .name-fold:not(:active):hover {
+  color: var(--faint);
+}
 /* "Other work" at the mark column, as the Goal heading is, then a solid rule to the tab's edge. The head's title takes its place, with its
    description under it. It sits `section` under the item above and `head` over the row under it, each side counting the
    rows' padding, which the list sets as `--row-above-pad` and `--row-below-pad`. */
@@ -398,8 +407,8 @@
 .status-page .fold-row .fold {
   margin: 0 0 0 calc(var(--text-x) - var(--mark-x) - var(--unit));
 }
-/* A parent's name line takes the click that folds its rows. Its chevron and count sit after the name, in the muted tone, and
-   brighten while the line is hovered. */
+/* A parent's name line takes the click that folds its rows. Its chevron and count sit after the name, at the name's level
+   (muted, or faint once the row is done), and brighten while the line is hovered. */
 .status-page .parent-name {
   margin: 0 calc(-1 * var(--unit));
   padding: 0 var(--unit);
@@ -410,6 +419,9 @@
 }
 .still .status-page .parent-name:not(:active):hover .parent-chevron {
   color: var(--muted);
+}
+.still .status-page .parent-name:not(:active):hover .parent-chevron.faint {
+  color: var(--faint);
 }
 .status-page .parent-name:focus-visible {
   outline: 1px solid var(--soft);
@@ -425,4 +437,8 @@
 }
 .status-page .parent-count {
   opacity: 0.75;
+}
+/* Faint is the floor text reads at, so a faint count takes no further fade. */
+.status-page .parent-chevron.faint .parent-count {
+  opacity: 1;
 }

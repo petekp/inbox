@@ -6,12 +6,18 @@ import type { PaneStatusLines } from './pane-status-lines'
 import { desktopTextLines, exactly } from './pane-status-tops'
 import type { Drawn } from './pane-status-tops'
 import { parentChevron } from '../../core/view/status-folds'
+import { foldLevelOf } from '../../core/view/status-page-parts'
+import type { TextLevel } from '../../core/view/status-page-parts'
+import type { StatusTone } from '../../core/view/help'
 import { type StatusStall, STATUS_TEXT_LINES } from '../../core/view/status-page'
-import { type TerminalSpan, terminalSpanLines } from './terminal-text'
+import { levelSpan, type TerminalSpan, terminalSpanLines } from './terminal-text'
 import { cellWidth } from '../../core/domain/text'
 
 /** The element name a parent's name line and its chevron press under. */
 export const PARENT_PREFIX = 'parent-'
+
+/** How a parent's chevron and count draw: at the level `foldLevelOf` gives, and whether on the selected row. */
+type ChevronPaint = { level: TextLevel; isOnSelection: boolean }
 
 /** The space between the end of a parent's name and stall word and its chevron. */
 const CHEVRON_GAP = ' '
@@ -39,8 +45,11 @@ export function paneStatusParent(
     Pick<PaneStatusLines, 'statusNameLine' | 'nameLineSpans' | 'statusTextWidth'>,
   { toggleParent }: Pick<PaneHandlers, 'toggleParent'>,
 ) {
-  const chevronButton = (id: string, chevron: string) => (
-    <Button plain dimColor key={`${PARENT_PREFIX}${id}`} label={chevron} onPress={() => void toggleParent(id)} />
+  /** The chevron as a plain button. A faint one carries its color in its text, since a Button takes no color. */
+  const chevronButton = (id: string, chevron: string, paint: ChevronPaint) => (
+    <Button plain dimColor key={`${PARENT_PREFIX}${id}`} label={chevron} onPress={() => void toggleParent(id)}>
+      {paint.level === 'faint' ? terminalText([[levelSpan(chevron, 'faint', paint.isOnSelection)]]) : undefined}
+    </Button>
   )
   const desktopName = (
     id: string,
@@ -48,6 +57,7 @@ export function paneStatusParent(
     stall: StatusStall | null,
     depth: number,
     chevron: string,
+    paint: ChevronPaint,
   ): Drawn => {
     const nbsp = (text: string) => text.replaceAll(' ', ' ')
     const after = nbsp(`${CHEVRON_GAP}${chevron}`)
@@ -58,7 +68,7 @@ export function paneStatusParent(
         tone: s.isNeedsYou ? 'needsYou' : s.isMuted ? 'muted' : s.isFaint ? 'faint' : 'plain',
         bold: s.bold === true,
       })),
-      { text: after, tone: 'muted', bold: false },
+      { text: after, tone: paint.level, bold: false },
     ]
     const text = parts.map(p => p.text).join('')
     const lines = desktopTextLines(text, statusTextWidth(depth))
@@ -68,7 +78,7 @@ export function paneStatusParent(
           <Box key={`status-${id}-name`} flexDirection="row">
             {statusNameLine(`status-${id}-name-text`, name, stall, depth).el}
             <Box marginLeft={1} flexShrink={0}>
-              {chevronButton(id, chevron)}
+              {chevronButton(id, chevron, paint)}
             </Box>
           </Box>
         ),
@@ -95,6 +105,7 @@ export function paneStatusParent(
     stall: StatusStall | null,
     depth: number,
     chevron: string,
+    paint: ChevronPaint,
   ): Drawn => {
     const { spans, width } = nameLineSpans(name, stall, depth, CHEVRON_GAP.length + cellWidth(chevron))
     const lines = terminalSpanLines(spans, width, STATUS_TEXT_LINES)
@@ -108,7 +119,7 @@ export function paneStatusParent(
           <Box key="last" flexDirection="row">
             <Text>{terminalText([last])}</Text>
             <Box marginLeft={CHEVRON_GAP.length} flexShrink={0}>
-              {chevronButton(id, chevron)}
+              {chevronButton(id, chevron, paint)}
             </Box>
           </Box>
         </Box>
@@ -116,19 +127,21 @@ export function paneStatusParent(
       lines: exactly(Math.max(1, lines.length)),
     }
   }
-  /** `name`'s line, with the chevron of a parent folded or open over `foldCount` rows. */
+  /** `p`'s name line, with the chevron of its fold, folded or open over its `foldCount` rows, at `foldLevelOf`'s level. */
   const parentName = (
-    id: string,
+    p: { id: string; tone: StatusTone; foldCount: number },
     name: TerminalSpan,
     stall: StatusStall | null,
     depth: number,
-    fold: { isCollapsed: boolean; count: number },
+    isCollapsed: boolean,
   ): Drawn => {
-    const chevron = parentChevron(fold.isCollapsed, fold.count)
+    const { id } = p
+    const chevron = parentChevron(isCollapsed, p.foldCount)
+    const paint = { level: foldLevelOf(p), isOnSelection: name.isOnSelection === true }
 
     return look === 'desktop'
-      ? desktopName(id, name, stall, depth, chevron)
-      : terminalName(id, name, stall, depth, chevron)
+      ? desktopName(id, name, stall, depth, chevron, paint)
+      : terminalName(id, name, stall, depth, chevron, paint)
   }
 
   return { parentName }

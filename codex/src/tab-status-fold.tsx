@@ -2,6 +2,9 @@ import type { ComponentChildren } from 'preact'
 import { clickFold } from './tab-fold-all'
 import { tabState } from './tab-state'
 import { dispatch } from './tab-ui'
+import { foldLevelOf } from '../../core/view/status-page-parts'
+import type { TextLevel } from '../../core/view/status-page-parts'
+import type { StatusTone } from '../../core/view/help'
 
 /** Whether the person folded the Status parent `id` by its name, as the drawn view says. */
 export const isParentFolded = (id: string) => tabState.view?.collapsed.includes(id) ?? false
@@ -9,11 +12,14 @@ export const isParentFolded = (id: string) => tabState.view?.collapsed.includes(
 /** Folds the Status parent `id`, or opens it once folded. The tab's selection stays where it was. */
 export const toggleParentFold = (id: string) => dispatch([{ type: 'collapse', id, isCollapsed: !isParentFolded(id) }])
 
-/** What follows a parent's name: whether its rows are folded, and how many the fold hides. Null for a row that is no parent. */
-export type ParentChevron = { isFolded: boolean; count: number }
+/**
+ * What follows a parent's name: whether its rows are folded, how many the fold hides, and the level both draw at. Null for
+ * a row that is no parent.
+ */
+export type ParentChevron = { isFolded: boolean; count: number; level: TextLevel }
 
-export const chevronOf = (p: { id: string; foldCount: number }): ParentChevron | null =>
-  p.foldCount > 0 ? { isFolded: isParentFolded(p.id), count: p.foldCount } : null
+export const chevronOf = (p: { id: string; foldCount: number; tone: StatusTone }): ParentChevron | null =>
+  p.foldCount > 0 ? { isFolded: isParentFolded(p.id), count: p.foldCount, level: foldLevelOf(p) } : null
 
 /** A parent's name line, which takes the click that folds its rows or opens them, as a keyboard press on it does. */
 export function ParentName({

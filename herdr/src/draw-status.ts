@@ -4,7 +4,7 @@ import type { StatusKey } from '../../core/view/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, nameLevelOf, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
+import { foldLevelOf, mergedLine, nameLevelOf, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { COUNTS_LABEL, countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../core/view/status-folds'
 import { statusGaps } from '../../core/view/status-gaps'
@@ -45,7 +45,7 @@ function keyButtons(id: string, keys: StatusKey[], from = 0): Button[] {
 
 /** A parent's fold, drawn after its name and stall. Null for a row with nothing under it. */
 function foldOf(
-  p: { id: string; foldCount: number },
+  p: { id: string; foldCount: number; tone: StatusTone },
   isCollapsed: IsCollapsed,
 ): Pick<Extract<Block, { kind: 'status' }>, 'fold'> {
   if (p.foldCount === 0) return {}
@@ -56,7 +56,7 @@ function foldOf(
     isCollapsed: !isFolded,
   })
 
-  return { fold: { isFolded, count: p.foldCount, toggle } }
+  return { fold: { isFolded, count: p.foldCount, level: foldLevelOf(p), toggle } }
 }
 
 type UnderLine = StatusLine['under'][number]
