@@ -108,3 +108,25 @@ test('with no goal and one open subject, named alike, the head drops its title a
   expect(headPart(after(alone, 'NEW: queued | Demo script | not started', 20))).toMatchObject({ text: 'Import' })
   expect(headPart(after(alone, 'HEAD: CSV export | Writing rows out', 20))).toMatchObject({ text: 'CSV export' })
 })
+
+test('with no goal and no other open subject, the head drops a title named like a finished subject drawn as a row, and keeps it once that subject folds', () => {
+  const finished = after(
+    after(null, 'HEAD: Import | Making CSV import ready\nNEW: working | CSV import | bad rows skipped', 10),
+    'DONE: s1 | bad rows skipped',
+    20,
+  )
+  const second = after(
+    after(finished, 'HEAD: Dark mode | Drawing the toggle\nNEW: working | Dark mode | toggle drawn', 30),
+    'DONE: s2 | toggle drawn',
+    40,
+  )
+  const working = after(second, 'NEW: working | Search | index built', 50)
+
+  const title = (o: SessionStatus) => {
+    const row = headPart(o)
+    return row?.kind === 'part' ? row.text : null
+  }
+
+  expect([finished, second, working].map(title)).toEqual([null, null, null])
+  expect(title({ ...second, lastLookAt: 45 })).toBe('Dark mode')
+})

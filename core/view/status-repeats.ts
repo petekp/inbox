@@ -49,12 +49,17 @@ export function subjectInPlaceOf(o: SessionStatus, m: Milestone, items: readonly
   return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null
 }
 
-/** Whether the head's title repeats the one open subject, while no goal is set, so its part draws no title. */
-export function isTitleRepeated(title: string, subjects: readonly Subject[]): boolean {
-  const open = subjects.filter(x => x.into === null && isOpen(x))
-  const only = open.length === 1 ? open[0] : undefined
+/**
+ * Whether the head's title repeats a subject, while no goal is set, so its part draws no title: with at most one open
+ * subject, the title is named alike with that subject or with a closed one `rows` draws. Beside a second open subject
+ * the title stays.
+ */
+export function isTitleRepeated(title: string, subjects: readonly Subject[], rows: readonly StatusRow[]): boolean {
+  const drawnIds = new Set(rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+  const work = subjects.filter(x => x.into === null)
+  if (work.filter(isOpen).length > 1) return false
 
-  return only !== undefined && isNamedAlike(title, only.name)
+  return work.some(x => (isOpen(x) || drawnIds.has(x.id)) && isNamedAlike(title, x.name))
 }
 
 /**
