@@ -86,9 +86,9 @@ itself needs Codex quit and reopened. The tab says when its page and the running
 come from different builds.
 
 Codex closes the server's input when it quits, and sends no signal. The loader
-then stops the companion listener and the handler's watchers on the Herdr
-presses and the saved sessions. The process ends once the PR reads and saves
-in flight have finished.
+then stops the companion listener, and the handler stops its watchers on the
+Herdr presses and the saved sessions. The process ends once the PR reads and
+saves in flight have finished.
 
 `../scripts/check.sh` checks the bundles are current, the types and the
 tests. The design and what was measured are in

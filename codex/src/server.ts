@@ -80,13 +80,13 @@ export type ServerDeps = {
   }
   /** Reports each state the server writes to the Herdr app terminal Codex runs in. */
   onWrite?: OnWrite
-  /** Starts applying the presses the Herdr look writes, with `apply`, and returns how to stop. */
-  followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>) => () => void
+  /** Starts applying the presses the Herdr look writes, with `apply`. */
+  followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>) => void
   /**
    * Starts calling `heard` with each session whose saved state changed, as when a hook saved it. The server then reads
-   * the PRs when the save shows a PR on the tab that no read has tried. Returns how to stop.
+   * the PRs when the save shows a PR on the tab that no read has tried.
    */
-  followSaves?: (heard: (sessionId: string) => void) => () => void
+  followSaves?: (heard: (sessionId: string) => void) => void
   /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
   herdrAsk?: CodexHerdrAsk
   /** The delegate session Codex runs as, as `core/remote/hc-terminals.ts:delegateSession` reads it. Without it, none. */
@@ -107,12 +107,10 @@ export type PressReply = {
 
 /**
  * Answers one message. `settled` resolves once the PR fetches, their state updates, the prune, the delegate check and
- * the reads of heard saves it started have ended. `close` stops following the Herdr presses and the saves, and resolves
- * once `settled` does.
+ * the reads of heard saves it started have ended.
  */
 export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) & {
   settled(): Promise<void>
-  close(): Promise<void>
   companion: CompanionHandler
 }
 
@@ -138,14 +136,8 @@ export function makeServer(given: ServerDeps): Server {
   )
   const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)
   const linkedPrs = linkedPrReads(id => readState(dir, id), fetchPrsNow)
-  const stopFollowing = [
-    deps.followHerdrPresses?.(onHerdrFile),
-    deps.followSaves?.(id => background.track(linkedPrs.heard(id))),
-  ]
-  const close = () => {
-    for (const stop of stopFollowing) stop?.()
-    return background.settled()
-  }
+  deps.followHerdrPresses?.(onHerdrFile)
+  deps.followSaves?.(id => background.track(linkedPrs.heard(id)))
 
   const isHerdrCheckDue = herdrCheckGate()
 
@@ -323,5 +315,5 @@ export function makeServer(given: ServerDeps): Server {
       fetchPrsWhenDue(id, state, isPrsTabViewed((await readViewers(deps.dir, id)).leases, now())),
     trust: hooksTrustNow,
   })
-  return Object.assign(handle, { settled: background.settled, close, companion })
+  return Object.assign(handle, { settled: background.settled, companion })
 }

@@ -48,20 +48,35 @@ function devPageIn(dir: string): () => Promise<string | null> {
  */
 /**
  * Where the running handler keeps how to stop its press watcher and its watch on the saved sessions, so a reloaded
- * handler stops the ones before it.
+ * handler stops the ones before it. A handler from before keeps the watch's stop as `{ stop }`.
  */
 const HERDR_PRESSES = Symbol.for('inbox.herdrPresses')
 const CODEX_SAVES = Symbol.for('inbox.codexSaves')
+const STOPS_ON_INPUT_END = Symbol.for('inbox.stopsOnInputEnd')
 
-type Stops = { [HERDR_PRESSES]?: (() => void) | null; [CODEX_SAVES]?: (() => void) | null }
+type Stop = (() => void) | { stop: (() => void) | null } | null | undefined
+type Shared = { [HERDR_PRESSES]?: Stop; [CODEX_SAVES]?: Stop; [STOPS_ON_INPUT_END]?: true }
 
+const stopIn = (stop: Stop) => (typeof stop === 'function' ? stop() : stop?.stop?.())
+
+/**
+ * Codex closes this process's input when it quits, and sends no signal. In a Herdr app terminal the watchers would then
+ * keep the process running, applying presses and reading PRs for the next Codex there. So once the input ends, they
+ * stop, and none starts again. The process ends once the work in flight finishes.
+ */
 function following<T>(key: typeof HERDR_PRESSES | typeof CODEX_SAVES, start: (given: T) => (() => void) | null) {
   return (given: T) => {
-    const shared = globalThis as Stops
-    shared[key]?.()
-    const stop = start(given)
-    shared[key] = stop
-    return () => stop?.()
+    const shared = globalThis as Shared
+    stopIn(shared[key])
+    shared[key] = process.stdin.readableEnded ? null : start(given)
+    if (shared[STOPS_ON_INPUT_END]) return
+    shared[STOPS_ON_INPUT_END] = true
+    process.stdin.once('end', () => {
+      for (const each of [HERDR_PRESSES, CODEX_SAVES] as const) {
+        stopIn(shared[each])
+        shared[each] = null
+      }
+    })
   }
 }
 

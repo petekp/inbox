@@ -196,7 +196,6 @@ test('a save another process makes that links a PR reads it before any view, eve
     onWrite: async () => undefined,
     followSaves: given => {
       heard = given
-      return () => undefined
     },
   })
   const queries = () => calls.filter(args => args[0] === 'gh' && args[2] === 'graphql').length
@@ -227,7 +226,6 @@ test('a session first heard of after a restart reads its PRs when one on its tab
   const { dir, calls, call } = await prServer(ghAnswer, () => 100, {
     followSaves: given => {
       heard = given
-      return () => undefined
     },
   })
   await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: ['acme/app#7'] } }))

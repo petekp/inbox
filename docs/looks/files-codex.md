@@ -70,8 +70,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/server-trust.ts` | Codex host. Whether Codex runs the inbox's hooks in a chat's folder. The server asks Codex in the background and caches the answer. |
 | `codex/src/server-catch-up.ts` | Codex host. When the inbox has not seen a chat, the chat's first view copies a fork's ledger and starts a catch-up. |
 | `codex/src/server-demo.ts` | Codex host. The demo session and its presses. |
-| `codex/src/server-main.ts` | Codex host. The loader that Codex starts once per app launch. When Codex closes its input, the loader stops the companion listener and calls the handler's `close`, and the process ends once the handler's background work settles. |
-| `codex/src/server-handler.ts` | Codex host. The request handler the loader reloads. |
+| `codex/src/server-main.ts` | Codex host. The loader that Codex starts once per app launch. |
+| `codex/src/server-handler.ts` | Codex host. The request handler the loader reloads. When Codex closes the server's input, it stops the Herdr press watcher and the watch on the saved sessions, so the process can end. |
 | `codex/src/update.ts` | Codex host. Binds `core/runtime/session-host.ts` update flows to `codex exec`. Reports a failed call with its process, which the shared flow saves in `callFailures`. |
 | `codex/src/diagnostics.ts` | Codex host. Keeps only the diagnostic lines of a `codex exec` call's stderr, its errors and warnings. |
 | `codex/src/update-main.ts` | Codex host. Entry point for the update process. |
