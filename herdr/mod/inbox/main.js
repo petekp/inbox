@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T09:32:20.782Z. 358430 characters follow.
+// Built at 2026-11-23T09:34:04.506Z. 360775 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -453,13 +453,48 @@ function clockTime(ms) {
 }
 
 // ../core/domain/prs.ts
-function namedPrs(text, refs) {
-  const numbers = new Set([...text.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
-  const known = [...new Set(refs)];
-  return [...numbers].flatMap((n) => {
-    const named = known.filter((ref) => parseRef(ref).number === n);
-    return named.length === 1 ? named : [];
-  });
+var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
+function prRefs(text) {
+  return [...new Set([...text.matchAll(PR_URL)].map((m) => `${m[1]}#${m[2]}`))];
+}
+var PR_MENTION = /(?<![\w./-])(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*)\b/g;
+var PR_WORD_BEFORE = /\b(?:prs?|pull requests?|merg(?:e|es|ed|ing)|review(?:s|ed|ing)?|approv(?:e|es|ed|ing)|land(?:s|ed|ing)?)\s*$/i;
+var LIST_JOIN = /^\s*(?:,\s*)?(?:and|or|then|&)?\s*$/i;
+function namedPrs(text, known, repo) {
+  const links = [...text.matchAll(PR_URL)].map((m) => ({
+    at: m.index,
+    end: m.index + m[0].length,
+    ref: `${m[1]}#${m[2]}`,
+    isBare: false,
+    number: m[2] ?? ""
+  }));
+  const linked = new Set(links.map((l) => l.number));
+  const tracked = (n) => {
+    const [first, ...others] = known.filter((ref) => parseRef(ref).number === n);
+    return first && others.length === 0 ? first : null;
+  };
+  const mentions = [...text.matchAll(PR_MENTION)].map((m) => ({
+    at: m.index,
+    end: m.index + m[0].length,
+    ref: m[1] ? `${m[1]}#${m[2]}` : null,
+    isBare: !m[1],
+    number: m[2] ?? ""
+  }));
+  let lastEnd = -1;
+  const named = [];
+  for (const m of [...links, ...mentions].toSorted((a, b) => a.at - b.at)) {
+    const isListed = lastEnd >= 0 && LIST_JOIN.test(text.slice(lastEnd, m.at));
+    const isPrWord = PR_WORD_BEFORE.test(text.slice(0, m.at)) || isListed;
+    const ref = !m.isBare ? m.ref : linked.has(m.number) ? null : tracked(m.number) ?? (isPrWord && repo && !hasTwinIn(known, m.number) ? `${repo}#${m.number}` : null);
+    if (ref)
+      named.push(ref);
+    if (ref || linked.has(m.number))
+      lastEnd = m.end;
+  }
+  return [...new Map(named.map((ref) => [ref.toLowerCase(), ref])).values()];
+}
+function hasTwinIn(known, n) {
+  return known.filter((ref) => parseRef(ref).number === n).length > 1;
 }
 function parseRef(ref) {
   const [repo = "", number = ""] = ref.split("#");
@@ -591,14 +626,31 @@ function steps(helps) {
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
   return helps.filter((h) => h !== copy).map((h) => h === open ? { label: `Copy ${copy.name ?? "snippet"} and open ${baseName(open.path)}`, step: [copy, open] } : { label: helpLabel(h), step: [h] });
 }
-function prSteps(item, tracked) {
+function prLinkName(ref, isTracked, repo) {
+  const { repo: refRepo, name, number } = parseRef(ref);
+  const isSessionRepo = refRepo.toLowerCase() === repo?.toLowerCase();
+  return isTracked ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`;
+}
+function prSteps(item, tracked, repo) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
-    const { repo, number } = parseRef(ref);
-    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
-    return { kind: "link", url, name: `PR #${number}` };
-  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
-  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
+  const isLinked = (ref, url) => item.helps.some((h) => h.kind === "link" && (h.url === url || prRefs(h.url).some((r) => r.toLowerCase() === ref.toLowerCase())));
+  const named = namedPrs([item.ask, item.context ?? ""].join(`
+`), [...urls.keys()], repo).flatMap((ref) => {
+    const { repo: refRepo, number } = parseRef(ref);
+    const url = urls.get(ref) ?? `https://github.com/${refRepo}/pull/${number}`;
+    return isLinked(ref, url) ? [] : [{ ref, url }];
+  });
+  const links = named.map(({ ref, url }) => ({
+    kind: "link",
+    url,
+    name: prLinkName(ref, urls.has(ref), repo)
+  }));
+  const [only] = links;
+  if (!only)
+    return [];
+  const isAllTracked = named.every(({ ref }) => urls.has(ref));
+  const label = links.length === 1 ? helpLabel(only) : isAllTracked ? `Open ${links.length} PRs` : clipLabel(`Open ${links.map((l) => l.name).join(", ")}`, COMMAND_LABEL_CHARS);
+  return [{ label, step: links }];
 }
 function stepsOf(item, extraSteps) {
   return [...steps(item.helps), ...extraSteps];
@@ -1924,9 +1976,12 @@ function tabPrs(links) {
   const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
   return [...links.prs, ...ranked];
 }
-function itemPrSteps(item, prState, linked) {
-  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
-  return prSteps(item, refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null })));
+function itemPrSteps(item, s) {
+  const { branchRef, views } = s.prViews;
+  const linked = tabPrs(s.ledger);
+  const refs = branchRef ? [...linked, branchRef] : linked;
+  const repo = branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null;
+  return prSteps(item, refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })), repo);
 }
 function isLeftOut(prState, ref) {
   const view = prState.views[ref];
@@ -4142,7 +4197,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
+    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s)])),
     settleWindowMs,
     status: perTurnStatus(sync.ledger),
     now,
