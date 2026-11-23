@@ -137,7 +137,7 @@ export const FAINT_TEXT_CONTRAST = 3
 
 /**
  * The faint text level over `under`: `muted` faded toward `under` until it reads at `FAINT_TEXT_CONTRAST`, or `muted`
- * itself where it already reads at that or less. A done Status row's line under its name draws in it.
+ * itself where it already reads at that or less.
  */
 export function faintOver(muted: string, under: string): string {
   if (contrastRatio(muted, under) <= FAINT_TEXT_CONTRAST) return muted

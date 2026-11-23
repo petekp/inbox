@@ -341,7 +341,8 @@ export function paneStatus(
     if (r.kind === 'subject') {
       const mark = statusMark(r)
       const isFolded = isParentCollapsed(r, isCollapsed)
-      const name = levelSpan(r.name, nameLevelOf(r, 'plain'))
+      const isRowSelected = look === 'terminal' && r.id === statusKeyRow?.id
+      const name = levelSpan(r.name, nameLevelOf(r, 'plain'), isRowSelected)
       const content = [
         r.foldCount > 0
           ? parentName(r.id, name, r.stall, r.depth, { isCollapsed: isFolded, count: r.foldCount })
@@ -349,7 +350,9 @@ export function paneStatus(
         ...(r.waitsOn
           ? [statusPageText(`status-${r.id}-waits-on`, [{ text: r.waitsOn, isNeedsYou: true }], r.depth)]
           : []),
-        ...(r.text ? [statusPageText(`status-${r.id}-text`, [levelSpan(r.text, textLevelOf(r))], r.depth)] : []),
+        ...(r.text
+          ? [statusPageText(`status-${r.id}-text`, [levelSpan(r.text, textLevelOf(r), isRowSelected)], r.depth)]
+          : []),
         ...(r.merged
           ? [
               statusPageText(
@@ -373,7 +376,7 @@ export function paneStatus(
           r.hasChildren && !isFolded
             ? statusTree(`status-${r.id}-tree`, 'down', r.depth, pad.padY, pad.padBelow)
             : null,
-        isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
+        isSelected: isRowSelected,
         ...pad,
       })
 
