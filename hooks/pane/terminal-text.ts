@@ -2,7 +2,7 @@ import { desktopLines, desktopTextPt } from './desktop-metrics'
 import { cutForEllipsis } from '../../core/domain/text'
 import { DOT } from '../../core/view/rows'
 import { parseInline, type Span } from '../../core/view/inline'
-import type { TextLevel } from '../../core/view/status-page-parts'
+import type { NameLevel } from '../../core/view/status-page-parts'
 
 /**
  * `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. With `isCutAtWord`, the
@@ -231,6 +231,6 @@ export function settledTitleLine(title: string, label: string, fits: (text: stri
   return { title: shown, after: statusAfterTitle(`${DOT}${cut(label)}`, shown, fits) }
 }
 
-/** A Status line's text as one span at its level, muted or faint. */
-export const levelSpan = (text: string, level: TextLevel): TerminalSpan =>
-  level === 'faint' ? { text, isFaint: true } : { text, isMuted: true }
+/** A Status name or line as one span at its level: plain, muted or faint. */
+export const levelSpan = (text: string, level: NameLevel): TerminalSpan =>
+  level === 'faint' ? { text, isFaint: true } : level === 'muted' ? { text, isMuted: true } : { text }

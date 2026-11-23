@@ -8,7 +8,7 @@ import type { StatusKey } from '../../core/view/status-keys'
 import type { StatusRow } from '../../core/view/status-page'
 import { closingFolds, tabState } from './tab-state'
 import type { Key } from './tab-state'
-import { NameLine } from './tab-status-name'
+import { NameLine, nameClassOf } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName, toggleParentFold } from './tab-status-fold'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
@@ -113,7 +113,7 @@ export function StatusLine({
           <MarkGlyph text={row.mark} />
         </span>
         <div class="content tight">
-          <ParentName id={row.id} foldCount={row.foldCount}>
+          <ParentName id={row.id} foldCount={row.foldCount} class={nameClassOf(row, 'plain')}>
             <NameLine name={row.name} stall={row.stall} chevron={chevronOf(row)} />
           </ParentName>
           {row.waitsOn ? (
@@ -150,8 +150,10 @@ export function StatusLine({
         <span class={markClassOf(row.tone, row.isRunning)} ref={row.isRunning ? pulseInStep : undefined}>
           <MarkGlyph text={row.mark} />
         </span>
-        <div class="content tight muted">
-          <NameLine name={row.name} stall={null} />
+        <div class="content tight">
+          <div class={nameClassOf(row, 'muted')}>
+            <NameLine name={row.name} stall={null} />
+          </div>
           {row.text ? (
             <div class={`${textLevelOf(row)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
               {row.text}
@@ -242,7 +244,7 @@ export function StatusLine({
       <span class={markClassOf(row.tone, false)}>
         <MarkGlyph text={row.mark} />
       </span>
-      <div class="content tight muted">{row.text}</div>
+      <div class={`content tight ${nameClassOf(row, 'muted')}`}>{row.text}</div>
     </div>
   )
 }

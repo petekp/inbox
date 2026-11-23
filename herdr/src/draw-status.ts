@@ -4,7 +4,7 @@ import type { StatusKey } from '../../core/view/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, textLevelOf } from '../../core/view/status-page-parts'
+import { mergedLine, nameLevelOf, textLevelOf } from '../../core/view/status-page-parts'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { COUNTS_LABEL, countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../core/view/status-folds'
 import { statusGaps } from '../../core/view/status-gaps'
@@ -84,7 +84,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
         mark: markOf(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
-        isMuted: false,
+        nameLevel: nameLevelOf(row, 'plain'),
         stall: row.stall,
         ...(row.waitsOn ? { waitsOn: row.waitsOn } : {}),
         under,
@@ -103,7 +103,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
         mark: markOf(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
-        isMuted: true,
+        nameLevel: nameLevelOf(row, 'muted'),
         stall: null,
         under: underLines(row.text ? { text: row.text, level: textLevelOf(row) } : null, null, null),
         buttons: [],
@@ -152,7 +152,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
       mark: markOf(row.mark, row.tone, false),
       name: row.text,
       isBold: false,
-      isMuted: true,
+      nameLevel: nameLevelOf(row, 'muted'),
       stall: null,
       under: [],
       buttons: [],
@@ -194,6 +194,7 @@ function milestoneBlock(
       text: m.name,
       isOpen: isUnfolded(m.foldId),
       change: { toggleFold: m.foldId },
+      level: textLevelOf(m),
       mark,
       path,
       ...tree,
@@ -206,7 +207,7 @@ function milestoneBlock(
     mark,
     name: m.name,
     isBold: m.isBold,
-    isMuted: m.isMuted,
+    nameLevel: nameLevelOf(m, m.isMuted ? 'muted' : 'plain'),
     stall: x?.stall ?? null,
     ...(x?.waitsOn ? { waitsOn: x.waitsOn } : {}),
     under: underLines(m.text ? { text: m.text, level: textLevelOf(m) } : null, x?.merged ?? null, m.was),

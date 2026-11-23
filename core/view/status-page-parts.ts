@@ -137,8 +137,18 @@ const comparableName = (name: string) =>
 /** A text level below the body's: muted, or faint, a step quieter, from `core/view/tones.ts:FAINT_TEXT_CONTRAST`. */
 export type TextLevel = 'muted' | 'faint'
 
-/** The level of the line under a Status row's name: faint once the row is done (✓), so finished work reads settled. */
-export const textLevelOf = (row: { tone: StatusTone }): TextLevel => (row.tone === 'done' ? 'faint' : 'muted')
+/** The level of a Status row's name: plain, muted, or faint, as `TextLevel` gives the quieter two. */
+export type NameLevel = 'plain' | TextLevel
+
+/** Whether a Status row is done (✓), so its name and the line under it draw faint and finished work reads settled. */
+const isSettled = (row: { tone: StatusTone }) => row.tone === 'done'
+
+/** The level of the line under a Status row's name: faint once the row is done, else muted. */
+export const textLevelOf = (row: { tone: StatusTone }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
+
+/** The level of a Status row's name: faint once the row is done, else `otherwise`, the level its kind draws its name in. */
+export const nameLevelOf = (row: { tone: StatusTone }, otherwise: NameLevel): NameLevel =>
+  isSettled(row) ? 'faint' : otherwise
 
 /** `text`, or `null` when it only repeats the row's `name`, as `comparableName` compares them. */
 export const textBeyondName = (name: string, text: string | null | undefined): string | null =>

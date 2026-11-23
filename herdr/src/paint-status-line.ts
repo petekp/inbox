@@ -36,7 +36,7 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   if (s.does !== undefined) return keyEl(s, s.does, t)
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)
     .when(s.isBold, e => e.font_semibold())
-    .when(s.isMuted, e => e.text_color(t.muted))
+    .when(s.nameLevel !== 'plain', e => e.text_color(s.nameLevel === 'faint' ? faintOf(t) : t.muted))
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : []
   const toggle = s.fold?.toggle
   const chevron = s.fold

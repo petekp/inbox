@@ -2,10 +2,12 @@ import type { ClientModule } from 'claude-code'
 
 export type ParentProps = {
   /** The name line in order: the name, the stall word, then the fold's chevron and count. */
-  parts: { text: string; tone: 'plain' | 'muted' | 'needsYou'; bold: boolean }[]
+  parts: { text: string; tone: PartTone; bold: boolean }[]
   /** A null color is the theme's own. */
-  colors: { muted: string | null; needsYou: string | null; hoverText: string | null }
+  colors: { muted: string | null; faint: string | null; needsYou: string | null; hoverText: string | null }
 }
+
+type PartTone = 'plain' | 'muted' | 'faint' | 'needsYou'
 
 type State = { hover: boolean }
 
@@ -27,10 +29,10 @@ const Parent: ClientModule<ParentProps, State> = (props, surface) => {
       surface.post({ isAll: e.alt === true })
     } else if (e.type === 'up' || e.type === 'move' || e.type === 'enter') set({ hover: inside })
   })
-  const colorOf = (tone: 'plain' | 'muted' | 'needsYou', isChevron: boolean) => {
+  const colorOf = (tone: PartTone, isChevron: boolean) => {
     if (hover && isChevron && props.colors.hoverText) return props.colors.hoverText
 
-    return tone === 'muted' ? props.colors.muted : tone === 'needsYou' ? props.colors.needsYou : null
+    return tone === 'plain' ? null : props.colors[tone]
   }
 
   return Box({

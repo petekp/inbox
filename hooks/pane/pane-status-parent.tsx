@@ -54,7 +54,7 @@ export function paneStatusParent(
     const parts: ParentProps['parts'] = [
       ...spans.map((s): ParentProps['parts'][number] => ({
         text: s.text,
-        tone: s.isNeedsYou ? 'needsYou' : s.isMuted ? 'muted' : 'plain',
+        tone: s.isNeedsYou ? 'needsYou' : s.isMuted ? 'muted' : s.isFaint ? 'faint' : 'plain',
         bold: s.bold === true,
       })),
       { text: after, tone: 'muted', bold: false },
@@ -77,6 +77,7 @@ export function paneStatusParent(
       parts,
       colors: {
         muted: pal.muted ?? null,
+        faint: pal.faint ?? null,
         needsYou: pal.tone.needsYou ?? pal.mark.needsYou ?? null,
         hoverText: 'text',
       },

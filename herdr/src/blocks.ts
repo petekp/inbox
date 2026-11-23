@@ -7,7 +7,7 @@ import type { RowPress } from '../../core/domain/presses'
 import { DOT, shortAgo } from '../../core/view/rows'
 import type { ActionEmphasis } from '../../core/view/rows'
 import type { StatusStall } from '../../core/view/status-page'
-import type { TextLevel } from '../../core/view/status-page-parts'
+import type { NameLevel, TextLevel } from '../../core/view/status-page-parts'
 import type { PathLine } from '../../core/view/status-path'
 import type { EmptyTab, EmptyText } from '../../core/view/empty-tab'
 import type { ShownTab } from '../../core/view/tabs'
@@ -182,8 +182,11 @@ export type StatusLine = {
   mark: Mark | null
   name: string
   isBold: boolean
-  /** A child or a plain line, or a milestone that waits or was dropped, whose name draws quiet. */
-  isMuted: boolean
+  /**
+   * The name's level: muted for a child, a plain line or a milestone that waits or was dropped, faint once its row is
+   * done (✓), else plain.
+   */
+  nameLevel: NameLevel
   stall: { text: string; tone: StatusStall['tone'] } | null
   /** What a subject waits on, in the needs-you tone, as its first line under the name. */
   waitsOn?: string
@@ -294,6 +297,8 @@ export type Block =
       change: ViewChange
       /** Other work's counts fold: its words are drawn as `label`, then each mark in its tone with its count. `text` still names it. */
       counts?: { label: string; items: { mark: Mark; text: string }[] }
+      /** The label's level: muted, or faint for a done milestone folded to its name. */
+      level?: TextLevel
       mark?: Mark
       path?: PathSide
       tree?: TreeStroke[]

@@ -1,8 +1,22 @@
 import { Icon } from './row-actions'
 import type { ParentChevron } from './tab-status-fold'
 import { STATUS_TEXT_LINES } from '../../core/view/status-page'
-import { nameBeforeStall, STALL_GAP } from '../../core/view/status-page-parts'
+import { nameBeforeStall, nameLevelOf, STALL_GAP } from '../../core/view/status-page-parts'
+import type { NameLevel } from '../../core/view/status-page-parts'
+import type { StatusTone } from '../../core/view/help'
+import type { MilestoneRow } from '../../core/view/status-goal-page'
 import type { StatusStall } from '../../core/view/status-page'
+
+/** The class that draws a Status row's name at the level `nameLevelOf` gives it: none for plain, else the level's own. */
+export function nameClassOf(row: { tone: StatusTone }, otherwise: NameLevel): string {
+  const level = nameLevelOf(row, otherwise)
+
+  return level === 'plain' ? '' : level
+}
+
+/** A milestone name's classes: `bold` when it draws bold, then its level. */
+export const milestoneNameClass = (m: Pick<MilestoneRow, 'isBold' | 'isMuted' | 'tone'>) =>
+  `${m.isBold ? 'bold ' : ''}${nameClassOf(m, m.isMuted ? 'muted' : 'plain')}`
 
 /** A name's words before its last, with the space after them, and its last word, which stays with the stall word. */
 function nameParts(name: string): { head: string; last: string } {

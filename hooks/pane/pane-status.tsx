@@ -30,7 +30,7 @@ import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from '../../core/view/status-keys'
 import { seenSubjectIds, type StatusRow, WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, textLevelOf } from '../../core/view/status-page-parts'
+import { mergedLine, nameLevelOf, textLevelOf } from '../../core/view/status-page-parts'
 import { countsText, countsUnits, isParentCollapsed, unfoldedRows } from '../../core/view/status-folds'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import { statusRowPads } from '../../core/view/status-gaps'
@@ -341,10 +341,11 @@ export function paneStatus(
     if (r.kind === 'subject') {
       const mark = statusMark(r)
       const isFolded = isParentCollapsed(r, isCollapsed)
+      const name = levelSpan(r.name, nameLevelOf(r, 'plain'))
       const content = [
         r.foldCount > 0
-          ? parentName(r.id, { text: r.name }, r.stall, r.depth, { isCollapsed: isFolded, count: r.foldCount })
-          : statusNameLine(`status-${r.id}-name`, { text: r.name }, r.stall, r.depth),
+          ? parentName(r.id, name, r.stall, r.depth, { isCollapsed: isFolded, count: r.foldCount })
+          : statusNameLine(`status-${r.id}-name`, name, r.stall, r.depth),
         ...(r.waitsOn
           ? [statusPageText(`status-${r.id}-waits-on`, [{ text: r.waitsOn, isNeedsYou: true }], r.depth)]
           : []),
@@ -386,7 +387,7 @@ export function paneStatus(
         depth: r.depth,
         mark,
         content: [
-          statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, null, r.depth),
+          statusNameLine(`status-${r.id}-name`, levelSpan(r.name, nameLevelOf(r, 'muted')), null, r.depth),
           ...(r.text ? [statusPageText(`status-${r.id}-text`, [levelSpan(r.text, textLevelOf(r))], r.depth)] : []),
         ],
         tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1, pad.padY, pad.padBelow) : null,
@@ -435,7 +436,11 @@ export function paneStatus(
       key: `status-${r.id}`,
       depth: r.depth,
       mark: <Text color={r.tone ? pal.mark[r.tone] : pal.muted}>{r.mark}</Text>,
-      content: plainText(<Text color={pal.muted}>{r.text}</Text>, r.text, r.depth),
+      content: plainText(
+        <Text color={nameLevelOf(r, 'muted') === 'faint' ? pal.faint : pal.muted}>{r.text}</Text>,
+        r.text,
+        r.depth,
+      ),
       ...pad,
     })
 

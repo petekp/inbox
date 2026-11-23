@@ -26,7 +26,7 @@ import { GOAL_KEYS_ID, goalKeyGroups, milestoneKeyPlan, type StatusKey } from '.
 import type { StatusKeyTarget } from '../../core/view/status-keys'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, STALL_GAP, textLevelOf } from '../../core/view/status-page-parts'
+import { mergedLine, nameLevelOf, STALL_GAP, textLevelOf } from '../../core/view/status-page-parts'
 import { levelSpan } from './terminal-text'
 import { isParentCollapsed, milestoneRows } from '../../core/view/status-folds'
 import type { IsCollapsed } from '../../core/view/status-folds'
@@ -212,9 +212,8 @@ export function paneStatusGoal(
         : statusRowLine({ key: `status-${m.id}`, mark, content: [fold], isSelected: isSelected(m.id) })
     }
     const name = {
-      text: m.name,
+      ...levelSpan(m.name, nameLevelOf(m, m.isMuted ? 'muted' : 'plain')),
       ...(m.isBold ? { bold: true as const } : {}),
-      ...(m.isMuted ? { isMuted: true as const } : {}),
     }
 
     const isFolded = isParentCollapsed(m, isCollapsed)
