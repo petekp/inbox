@@ -27,7 +27,15 @@ import {
   stopFadeOut,
   waitLeftMs,
 } from './tab-glide'
-import { fadeFaintPanel, fadeThrough, fadingParts, shownPanel, trunkBeside } from './tab-panel-fade'
+import {
+  closeHoldsUp,
+  fadeFaintPanel,
+  fadeThrough,
+  fadingParts,
+  openHoldsUp,
+  shownPanel,
+  trunkBeside,
+} from './tab-panel-fade'
 import { showConnectors } from './tab-connectors'
 
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
@@ -271,15 +279,18 @@ function moveRow(
  */
 function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
   if (!wasDrawn) {
-    for (const el of [part, ...trunkBeside(part)])
-      fade(el, 0, 1, ENTER_FADE_MS, false, false, delay + enterDelayMs(target, from))
+    const shows = delay + enterDelayMs(target, from)
+    for (const el of [part, ...trunkBeside(part)]) fade(el, 0, 1, ENTER_FADE_MS, false, false, shows)
+    openHoldsUp(part, shows)
     return
   }
+  const steps = turnBackFades(target, from)
   for (const el of new Set([part, ...fadingParts(part), ...trunkBeside(part)])) {
     const opacity = opacityOf(el)
-    if (opacity < 0.99) fadeThrough(el, opacity, turnBackFades(target, from), delay)
+    if (opacity < 0.99) fadeThrough(el, opacity, steps, delay)
     else stopFadeOut(el)
   }
+  openHoldsUp(part, delay + steps.slice(0, -1).reduce((ms, step) => ms + step.ms, 0))
 }
 
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */
@@ -346,6 +357,7 @@ function collapse(
   else if (shown)
     for (const p of [...fadingParts(shown), ...trunkBeside(shown, true)]) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
   else if (part && state === 'closing') for (const p of [part, ...trunkBeside(part, true)]) fade(p, 0, 0, 0, true)
+  if (part && state === 'closing') closeHoldsUp(part, shown !== null)
   const opacity = opacityOf(el)
   const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0)
   glide(el, 'height', from, target, true, false, shrinksAfter)
