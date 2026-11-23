@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T22:53:53.465Z. 373448 characters follow.
+// Built at 2026-11-23T23:19:33.823Z. 373603 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -6982,14 +6982,19 @@ var pathOf = (isOpen) => {
 };
 var FOLDED_PATH = pathOf(false);
 var OPEN_PATH = pathOf(true);
+var hoverCopy = (copy) => div8().absolute().top(0).left(0).size_full().opacity(0).hover((x) => x.opacity(1)).child(copy);
 function chevronEl(isOpen, t, isLive, color) {
   const path = isOpen ? OPEN_PATH : FOLDED_PATH;
   const shape = (color) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`);
-  return div8().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(color)).when(isLive, (e) => e.child(div8().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
+  return div8().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(color)).when(isLive, (e) => e.child(hoverCopy(shape(t.foreground))));
+}
+function countEl(count, t, isLive) {
+  const text = `${count}`;
+  return div8().relative().flex_none().ml(SMALL_GAP).child(text).when(isLive, (e) => e.child(hoverCopy(text).text_color(t.foreground)));
 }
 function foldChevronEl(t, fold) {
   const color = fold.level === "faint" ? faintOf(t) : t.muted;
-  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(color).child(chevronEl(fold.isOpen, t, fold.isLive, color)).when(fold.count !== undefined, (e) => e.child(div8().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
+  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(color).child(chevronEl(fold.isOpen, t, fold.isLive, color)).children(fold.count === undefined ? [] : [countEl(fold.count, t, fold.isLive)]);
 }
 
 // src/paint-status-line.ts
