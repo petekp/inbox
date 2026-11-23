@@ -1,6 +1,6 @@
 import { HELD_MARK } from '../core/view/help'
 import { findMilestone, restatesGoal } from '../core/domain/status-goal-ops'
-import { isNumberOnly, isOpen, nameKey } from '../core/domain/status-limits'
+import { isNumberOnly, isOpen } from '../core/domain/status-limits'
 import { parseStatus } from '../core/domain/status'
 import type { Op } from '../core/domain/status'
 import { drawnStatusRows } from '../core/view/status-folds'
@@ -48,15 +48,10 @@ function isOtherWork(serves: Record<string, string>, page: StatusPage, id: strin
   return to === 'none' || (shown.size > 0 && (to === undefined || !shown.has(to)))
 }
 
-/** Whether `op` closes the milestone `id` itself: a DONE line for it, or a MILESTONE or GOAL line that names it done. */
+/** Whether `op` closes the milestone `id` itself, as a DONE line for it or a MILESTONE line that names it done. */
 function closesMilestone(op: Op, id: string, before: SessionStatus): boolean {
-  const m = before.milestones.find(x => x.id === id)
-  if (!m) return false
-  const isNamedDone = (x: { name: string; status: string }) =>
-    x.status === 'done' && nameKey(x.name) === nameKey(m.name)
   if (op.kind === 'done') return findMilestone(before, op.ref)?.id === id
-  if (op.kind === 'milestone') return isNamedDone(op)
-  return op.kind === 'goal' && op.milestones.some(isNamedDone)
+  return op.kind === 'milestone' && op.status === 'done' && findMilestone(before, op.name)?.id === id
 }
 
 /** The holds the code keeps, checked at every step of every run. Any failure blocks. */
@@ -127,7 +122,7 @@ export const HOLD_RULES: Rule[] = [
       const was = before.overview
       if (!o || !was) return []
       const ops = result.calls
-        .filter(c => c.kind === 'status')
+        .filter(c => c.kind === 'status' && c.overLimit === null)
         .flatMap(c => c.answers)
         .flatMap(a => {
           const parsed = parseStatus(a)

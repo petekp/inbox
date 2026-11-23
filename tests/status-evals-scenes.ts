@@ -277,7 +277,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
   'work-closed-milestone-text': {
     good: s => {
       workClosedMilestone(s)
-      const answer = 'DONE: s1 | syncs on reconnect\nDONE: m1 | under way'
+      const answer = 'DONE: s1 | syncs on reconnect\nMILESTONE: done | m1 | under way'
       s.calls = [{ ...statusCall(answer), answers: [answer, 'SUGGEST: -'] }]
     },
     bad: workClosedMilestone,
