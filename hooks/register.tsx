@@ -24,7 +24,7 @@ import { NO_SESSION, PRESENT } from './mod/mod-sessions'
 import { inboxCommand } from './mod/mod-command'
 import { ensureOn, registerInboxCommand, sessionEnded, sessionStarted } from './mod/mod-lifecycle'
 import { nextBuildMarkPath } from './mod/mod-plugin-files'
-import { cancelUndoScroll, mod, paneState, sessionState } from './mod/mod-state'
+import { cancelUndoScroll, mod, sessionState } from './mod/mod-state'
 import { agentSpawned, runTool, toolCalled } from './mod/mod-tool-calls'
 import { noteStopFailure, noteTurnEnd, noteTurnStart } from './mod/mod-turns'
 import { sendUi } from './mod/mod-ui-loop'
@@ -410,7 +410,7 @@ export const register: Register = on => {
   })
 
   on('ui.close', { id: PANE }, async ($, e, next) => {
-    if (paneState.isClosingToShow) return next(e)
+    if (e.origin.kind === 'plugin') return next(e)
     cancelUndoScroll()
     const r = await next(e)
     await paneClosed(modOf($))

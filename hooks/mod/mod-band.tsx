@@ -100,7 +100,7 @@ export async function band(
       <Button
         key="open-inbox"
         label={bandOpenLabel(ui.shownSince !== null)}
-        onPress={() => void openInbox(m, isDemo)}
+        onPress={() => void openInbox(m, isDemo, e.surface)}
       />
     </Box>
   )

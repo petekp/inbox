@@ -21,8 +21,6 @@ class PaneState {
   isOpenUnheard = false
   /** The pane was asked to open and waits undrawn, so its first render tells the controller that it opened. */
   isOpenWaiting = false
-  /** The mod closes the pane only to open it again, so the controller keeps it open. */
-  isClosingToShow = false
   /** The load revision of a conversation still loading. Until it ends, the controller sees the pane closed. */
   loadingRevision: number | null = null
   /**

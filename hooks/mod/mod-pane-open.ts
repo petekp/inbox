@@ -9,6 +9,7 @@ import { wakeForHeldSends } from './mod-press-run'
 import { findPrs } from './mod-prs'
 import { currentOwner } from './mod-sessions'
 import { cancelUndoScroll, paneState } from './mod-state'
+import type { RenderSurface } from 'claude-code'
 import { fieldKey, openedField, openFields, paneHasKeys } from '../pane/pane-keys'
 import { takeShownRows } from '../pane/pane-status-shown'
 import { upgradeSession } from '../../core/view/session-files'
@@ -106,34 +107,36 @@ export async function matchPaneEscape(m: PaneOpenCalls) {
 
 /**
  * The desktop app's Hide Side Panel hides the pane without a `ui.close`, `ui.panes` still reads it shown, and
- * `ui.open` leaves it hidden. An open after a close shows it again.
+ * `ui.open` leaves it hidden. An open after a close shows it again. `surface` is where the press came from; a
+ * command names none, so it reopens only when the desktop app alone draws the pane.
  */
-async function closeDesktopPane(m: PaneOpenCalls) {
-  paneState.isClosingToShow = true
-  await m.pane
-    .close()
-    .catch(() => undefined)
-    .finally(() => {
-      paneState.isClosingToShow = false
-    })
+function mayBeHiddenByDesktop(surface: RenderSurface | undefined) {
+  const isDesktopPress = surface === undefined ? paneHasKeys.size === 1 : surface === 'desktop'
+
+  return isDesktopPress && paneHasKeys.has('desktop')
+}
+
+async function closeToShowAgain(m: PaneOpenCalls) {
+  openFields.clear()
+  await m.pane.close().catch(() => undefined)
 }
 
 export async function showInbox(m: PaneOpenCalls, opening: HerdrOpened | Promise<HerdrOpened | null> | null) {
   const herdr = await opening
   if (herdr?.isShown) return herdr.text
-  if (paneHasKeys.has('desktop')) await closeDesktopPane(m)
+  if (mayBeHiddenByDesktop(undefined)) await closeToShowAgain(m)
   await openPane(m)
 
   return herdr?.text
 }
 
-export async function openInbox(m: PaneOpenCalls, isDemo: boolean) {
+export async function openInbox(m: PaneOpenCalls, isDemo: boolean, surface: RenderSurface) {
   const opening = isDemo ? null : openInHerdr(m.herdr)
   if (opening instanceof Promise && (await opening).isShown) return
-  // Opened before any other await unless the Herdr look is opening or the desktop app draws the pane. After one, the
-  // engine no longer counts the press as asking for the pane, and below 144 columns, once the person has closed it,
-  // leaves it unplaced. The desktop app places a pane at any width.
-  if (paneHasKeys.has('desktop')) await closeDesktopPane(m)
+  // Opened before any other await unless the Herdr look is opening or the press came from the desktop app. After one,
+  // the engine no longer counts the press as asking for the pane, and below 144 columns, once the person has closed
+  // it, leaves it unplaced. The desktop app places a pane at any width.
+  if (mayBeHiddenByDesktop(surface)) await closeToShowAgain(m)
   await openPane(m)
   if ((await readUi(m)).tab === 'prs') await findPrs(m)
 }
