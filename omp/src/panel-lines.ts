@@ -1,5 +1,5 @@
 import type { GoalPart } from './panel-goal'
-import type { FoldKind } from '../../types'
+import type { FoldKind, PressKind } from '../../types'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import type { PrAction } from '../../core/view/pr-press'
 import {
@@ -42,6 +42,7 @@ export type Button = {
   press: PanelPress
   isRecommended: boolean
   isFollowUp: boolean
+  kind?: PressKind
   /** Its press is out, so it draws dim and its key does nothing. */
   isOut?: boolean
   /** It holds up nothing, so it draws dim until focused. */
@@ -182,6 +183,7 @@ function rowButtons(row: RowView, isAllShown: boolean): Button[] {
     press: o.action.press,
     isRecommended: o.action.press.option === recommended,
     isFollowUp: false,
+    kind: o.action.kind,
     isOut: o.action.isOut,
     option: { note: o.note },
   }))
@@ -201,7 +203,7 @@ function rowButtons(row: RowView, isAllShown: boolean): Button[] {
           },
         ]
       if (k.slot === 'retry')
-        return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }]
+        return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false, kind: k.kind }]
       const { press } = k.action
       const key = k.hotkey ?? null
 
@@ -212,6 +214,7 @@ function rowButtons(row: RowView, isAllShown: boolean): Button[] {
           press,
           isRecommended: false,
           isFollowUp: k.slot === 'action' && k.action.isFollowUp,
+          kind: k.action.kind,
           isOut: k.action.isOut,
         },
       ]
@@ -226,6 +229,7 @@ export function prButtons(actions: PrAction[]): Button[] {
     press: a.press,
     isRecommended: false,
     isFollowUp: a.isFollowUp === true,
+    kind: a.kind,
     isOut: a.isOut,
   }))
 }

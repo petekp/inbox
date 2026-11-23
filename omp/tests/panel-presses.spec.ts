@@ -1,13 +1,14 @@
 import { expect, test } from 'bun:test'
 
 import { closeItem } from '../../core/domain/ledger-close'
-import { SETTLED_MS, NO_HOLDS } from '../../core/view/timing'
+import { SETTLED_MS, NO_HOLDS, PRESS_GUARD_MS } from '../../core/view/timing'
 import type { RowView } from '../../core/view/rows'
 import { sessionView } from '../../core/view/session-view'
 import { demoSource, demoState } from '../src/demo'
 import { holdsOf } from '../../core/view/ui-controller-reply'
 import { INITIAL_UI } from '../src/panel'
 import { applyEvents } from '../src/panel-keys'
+import { prMarkId } from '../../core/view/pr-rows'
 import {
   cursorOf,
   drawn,
@@ -22,6 +23,7 @@ import {
   strip,
   text,
   waiting,
+  withCursorOn,
 } from './panel-harness'
 
 test('t opens a reply field in place of the buttons, and Enter sends the typed words as a type press', () => {
@@ -247,4 +249,28 @@ test('a failed send shows why and offers Try again first', () => {
   const row = waiting(screen, 'i11')
   expect(text(screen, onRow(row))).toContain('Not sent: omp is busy')
   expect(text(screen, onRow(row))).toContain('Try again')
+})
+
+test('Enter on a ready PR’s Open PR keeps the focus there, so a second Enter opens the page again instead of merging', () => {
+  const state = demoState(NOW)
+  const ref = 'acme/visor#31'
+  const view = state.prViews.views[ref]
+  if (!view) throw new Error('the demo has no acme/visor#31')
+  state.prViews.views[ref] = {
+    ...view,
+    mergeable: 'MERGEABLE',
+    reviewDecision: 'APPROVED',
+    checks: [{ name: 'test', bucket: 'pass', url: null }],
+    threads: [],
+    fetchedAt: NOW,
+  }
+  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
+  const onBlock = withCursorOn({ ...INITIAL_UI, tab: 'prs' }, prMarkId(ref))
+  expect(keyed(screen, onBlock, 'enter', NOW).press).toEqual({ action: 'pr-merge', ref })
+  const onOpen = keyed(screen, onBlock, 'right', NOW).ui
+  const opened = keyed(screen, onOpen, 'enter', NOW)
+  expect(opened.press).toEqual({ action: 'pr-open', ref })
+  const outcome = { error: null, note: null, isUnconfirmed: false }
+  const settled = applyEvents(screen, opened.ui, [{ type: 'press-settled', pressId: 1, outcome }], NOW).ui
+  expect(keyed(screen, settled, 'enter', NOW + PRESS_GUARD_MS).press).toEqual({ action: 'pr-open', ref })
 })

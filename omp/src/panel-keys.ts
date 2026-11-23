@@ -123,7 +123,10 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button):
   if (!isPrPress(press) && press.action === 'discard')
     return { events: [{ type: 'close-field', id: line.id, isDiscard: true }], patch: { focus: null } }
 
-  return { events: [{ type: 'press', press, by: 'key' }], patch: { focus: null } }
+  const keepsButtons = button.kind === 'local'
+  const focus = keepsButtons ? { rowId: line.id, index: line.buttons.indexOf(button) } : null
+
+  return { events: [{ type: 'press', press, by: 'key' }], patch: { focus } }
 }
 
 function typingKey(ui: PanelUi, id: string, key: string, text: string | undefined): KeyPlan {
