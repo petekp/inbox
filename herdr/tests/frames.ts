@@ -316,6 +316,10 @@ export function layoutAtRest(blocks: Block[], measuredWidths: Record<string, num
 }
 
 class Frames {
+  private reports: { at: number; node: Painted; height: number }[] = []
+
+  constructor(private measureLagMs: number) {}
+
   private tracks = NO_TRACKS
   private heights = new Heights()
   private linesAbove = NO_LINES_ABOVE
@@ -406,7 +410,11 @@ class Frames {
       const isBoxResting = this.springs.isResting(box)
       this.titles.push({ at: now, id, tall, short, box: shown.get(box) ?? NaN, isBoxResting })
     }
-    for (const { node, height } of [...sized, ...floating]) node.onSize?.({ width: PANE_WIDTH, height }, null)
+    const reports = [...sized, ...floating].map(({ node, height }) => ({ at: now + this.measureLagMs, node, height }))
+    this.reports.push(...reports)
+    for (const { node, height } of this.reports.filter(r => r.at <= now))
+      node.onSize?.({ width: PANE_WIDTH, height }, null)
+    this.reports = this.reports.filter(r => r.at > now)
     this.lastShown = shown
     this.springs.step(FRAME_MS)
     this.fades.step(FRAME_MS)
@@ -419,6 +427,7 @@ export type Step = [number, Block[]] | [number, Block[], 'input']
 export function framesOf(
   steps: Step[],
   ms = 1500,
+  measureLagMs = 0,
 ): {
   jumps: Jump[]
   titles: TitleForm[]
@@ -429,7 +438,7 @@ export function framesOf(
   fading: Fading[]
   shown: Shown[]
 } {
-  const frames = new Frames()
+  const frames = new Frames(measureLagMs)
   const [first] = steps
   if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [], shown: [] }
   const start = 1_000_000

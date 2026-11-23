@@ -16,7 +16,8 @@ export type PanelStep = FadeStep & { at: number; from: number }
  */
 export type PanelSpace = { box: SpringState; at: number; to: number }
 
-const spaceNow = (s: PanelSpace, now: number): SpringState => springStep(s.box, s.to, now - s.at)
+/** Where the panel space is at `now`, and how fast it moves. */
+export const spaceNow = (s: PanelSpace, now: number): SpringState => springStep(s.box, s.to, now - s.at)
 
 /** The panel space with its target set to `to` px in this draw, from where it is, or at rest there if it is new. */
 export function aimSpace(last: PanelSpace | null, to: number, now: number): PanelSpace {

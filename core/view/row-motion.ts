@@ -111,7 +111,9 @@ export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
 /**
  * A row's state, when it entered it, and whether its open form is part of its move: `hasOpenForm` holds for an open
  * row, one opening or growing in open, and a row closing, settling or leaving from the open form. `entersSettled` marks
- * a row growing in settled, and `leavesSettled` a row opening or closing from its settled form, as after Undo.
+ * a row growing in settled, and `leavesSettled` a row opening or closing from its settled form, as after Undo. A row
+ * Undo brought back closed that opens while its settled form still fades out keeps that fade: it opens as if Undo had
+ * opened it, from when Undo did (`isSettledFormFading`).
  */
 export type RowTrack = {
   state: RowState
@@ -224,10 +226,15 @@ function formOf({ state, hasOpenForm, entersSettled }: RowTrack): Form {
   }
 }
 
+/** Whether a row Undo brought back closed still fades out its settled form, over the closed form it takes. */
+const isSettledFormFading = (track: RowTrack, now: number): boolean =>
+  track.state === 'closing' && track.leavesSettled === true && now - track.since < LEAVE_FADE_MS
+
 function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
   const leaves = formOf(track) === 'settled' ? { leavesSettled: true as const } : {}
   switch (form) {
     case 'open':
+      if (isSettledFormFading(track, now)) return { ...track, state: 'opening', hasOpenForm: true }
       return { state: 'opening', since: now, hasOpenForm: true, ...leaves }
     case 'closed':
       return track.state === 'leaving'

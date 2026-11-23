@@ -2,8 +2,7 @@ import { LEAVE_FADE_MS, ROW_STATE_MS, drawsPanel, enterDelayMs, isMoving, stepRo
 import type { RowState, RowTarget, RowTrack } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
-import type { TabCell } from './draw'
-import { MOVED_TO, NO_SIZES, copyIdOf, panelId, titleId } from './heights'
+import { MOVED_TO, NO_SIZES, copyIdOf, panelId, restId, titleId } from './heights'
 import type { Sizes } from './heights'
 import { titleRestOf } from './title-cut'
 import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce } from './block-glide'
@@ -15,8 +14,10 @@ import type { TitleGlide, TitleMotion } from './title-motion'
 import { stepUnder, underId, underMotion, underTimes } from './under-line'
 import { movedOf } from './moved-blocks'
 import type { UnderLine, UnderMotion } from './under-line'
-import { stepSwap, swapHoldsUntil, swapMotion, swapTimes, swapWaitsUntil, takeSwap } from './form-swap'
+import { panelShownOf, stepSwap, swapHoldsUntil, swapMotion, swapTimes, swapWaitsUntil } from './form-swap'
+import { takeSwap, waitSwap } from './form-swap'
 import type { FormSwap, SwapMotion } from './form-swap'
+import { heldForm } from './held-form'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
@@ -27,7 +28,8 @@ import type { FormSwap, SwapMotion } from './form-swap'
  * it comes and goes. `panelSpace` is the spring of the row's panel space, and `panelSteps` the steps an opening row's
  * panel fades in, each with its start, when the open turned a close back, or the steps a closing row's panel fades out
  * in when the close started while that panel was still faint (`faintCloseFades`). `panelHeldUntil` is when a closing row's
- * panel has faded out, so its box lets go of the panel's height.
+ * panel has faded out, so its box lets go of the panel's height. `restSpace` is the spring of the part of a row's box
+ * under its title.
  */
 type Tracked = {
   track: RowTrack
@@ -42,6 +44,7 @@ type Tracked = {
   panelSteps: PanelStep[] | null
   panelHeldUntil: number
   swap: FormSwap | null
+  restSpace: PanelSpace | null
 }
 
 /**
@@ -182,7 +185,8 @@ export function moveRows(
   const swaps = new Map(
     blocks.map(b => {
       const old = moved.has(b.id) ? undefined : was.rows.get(b.id)
-      return [b.id, stepSwap(old?.swap ?? null, old?.block, b, now)] as const
+      const shown = old ? panelShownOf(old.track, old.panelSteps, heightOf(panelId(b.id)) ?? 0, now) : 1
+      return [b.id, stepSwap(old?.swap ?? null, old?.block, b, now, shown)] as const
     }),
   )
   const closeHoldsUntil = Math.max(
@@ -240,16 +244,22 @@ export function moveRows(
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
     const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove
+    const rest = heightOf(restId(block.id))
     const swap = takeSwap(
       swaps.has(block.id) ? (swaps.get(block.id) ?? null) : stepSwap(last?.swap ?? null, last?.block, block, now),
       block,
       now,
+      rest,
     )
     const closeHeldUntil = closing === null ? 0 : Math.max(isHeldForLeave ? holdsUntil : 0, panelHeldUntil)
     const heldUntil = Math.max(closeHeldUntil, swapHoldsUntil(swap, now))
     const isHeld = heldUntil > now
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))
     const holdsPanel = drawsPanel(track) && !isLeftOut
+    const isPanelLeftOut = isLeftOut || (wasClosing && block.kind === 'row')
+    const leftOut = isPanelLeftOut ? (panelHeight ?? 0) : 0
+    const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now)
+    const waited = waitSwap(swap, restSpace, rest, now)
     const panelSpace = aimSpace(
       last?.panelSpace ?? null,
       holdsPanel ? (panelHeight ?? last?.panelSpace?.to ?? 0) : 0,
@@ -278,7 +288,8 @@ export function moveRows(
       panelSpace,
       panelSteps,
       panelHeldUntil,
-      swap,
+      swap: waited,
+      restSpace,
     })
     motion.set(block.id, {
       state: track.state,
@@ -292,13 +303,13 @@ export function moveRows(
       isPanelWaiting: track.state === 'opening',
       panelFadeMs: panelStep?.ms ?? null,
       closing,
-      isPanelLeftOut: isLeftOut || (wasClosing && block.kind === 'row'),
+      isPanelLeftOut,
       title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,
       under: underMotion(under, now, heightOf(underId(block.id))),
       former: last && last.block.kind !== block.kind ? last.block : null,
-      swap: swapMotion(swap, now),
+      swap: swapMotion(waited, now),
     })
   }
   for (const b of blocks) {
@@ -359,34 +370,6 @@ export function moveRows(
     motion,
     nextAt: ends.length ? Math.min(...ends) : null,
   }
-}
-
-/**
- * A block at rest that changed in a draw that starts a move, such as a group's title as its count changes, keeps its
- * last form for that draw. The move's first draw only sets where its boxes move from, so the change lands in the draw
- * that sets them moving. Rows and an empty tab's text take their new form at once, since a press or a field on a row
- * must show at once.
- */
-function heldForm(b: Block, was: Tracks, motion: ReadonlyMap<string, RowMotion>): Block {
-  const last = was.rows.get(b.id)?.block
-  const state = motion.get(b.id)?.state
-  const isHeld = last !== undefined && b.kind !== 'row' && b.kind !== 'empty' && state !== undefined && !isMoving(state)
-
-  return isHeld && JSON.stringify(last) !== JSON.stringify(b) ? last : b
-}
-
-/**
- * The tab bar a draw shows. In a draw that starts a move, each tab keeps the count it last drew, or no count if it drew
- * none, so the count changes with the group titles, in the draw that sets the rows moving.
- */
-export function heldTabs(tabs: TabCell[], last: readonly TabCell[], motion: ReadonlyMap<string, RowMotion>): TabCell[] {
-  if (![...motion.values()].some(m => m.isStart)) return tabs
-
-  return tabs.map(t => {
-    const was = last.find(l => l.id === t.id)
-
-    return was ? { ...t, badge: was.badge } : t
-  })
 }
 
 /** Where a leaving block goes: just after the last of the blocks that were above it that is still shown, else first. */

@@ -30,9 +30,9 @@ import { underId } from './under-line'
 import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
 import type { SwapMotion } from './form-swap'
-import { padOf, restId, sizeEl, titleEl } from './paint-space'
+import { padOf, sizeEl, titleEl } from './paint-space'
 import { PATH_X, lineColor } from './paint-strokes'
-import { panelId } from './heights'
+import { panelId, restId } from './heights'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
@@ -295,10 +295,11 @@ function panelEl(
 
 /**
  * `el` fading as the row's panel fades while the row opens or closes. The trunk beside a wrapped title fades with the
- * panel, so the tree comes and goes whole with the lines it joins.
+ * panel, so the tree comes and goes whole with the lines it joins. The panel of a form a row leaves keeps what it
+ * showed while it fades out with that form's lines.
  */
 function panelFadeEl(r: RowBlock, m: RowMotion | undefined, p: Paint, el: Element): Element {
-  const opacity = m?.panel ?? null
+  const opacity = m?.swap?.panel ?? m?.panel ?? null
   if (opacity === null) return el
   const height = p.heights.get(panelId(r.id)) ?? 0
   const turnBackFadeMs = m?.panelFadeMs ?? null
