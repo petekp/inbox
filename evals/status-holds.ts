@@ -52,7 +52,8 @@ function isOtherWork(serves: Record<string, string>, page: StatusPage, id: strin
 function closesMilestone(op: Op, id: string, before: SessionStatus): boolean {
   const m = before.milestones.find(x => x.id === id)
   if (!m) return false
-  const isNamedDone = (x: { name: string; status: string }) => x.status === 'done' && nameKey(x.name) === nameKey(m.name)
+  const isNamedDone = (x: { name: string; status: string }) =>
+    x.status === 'done' && nameKey(x.name) === nameKey(m.name)
   if (op.kind === 'done') return findMilestone(before, op.ref)?.id === id
   if (op.kind === 'milestone') return isNamedDone(op)
   return op.kind === 'goal' && op.milestones.some(isNamedDone)
