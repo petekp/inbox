@@ -292,16 +292,32 @@ function rowsWith(session: ReturnType<typeof demoSession>, selected: string | nu
   return tabBlocks({ ...demoScreen(), view, shownSince: NOW - 1000 }, uiOn('needsYou', { selected }))
 }
 
-test('a row that settles or comes back through Undo fades its mark and every line under its title out and in, so none pops', () => {
+function settleCases(): [string, Step[]][] {
   const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
   const closed = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd15' }))
   const dismissed = tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd15' }))
+  const dismissedOpen = tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd13' }))
   const discussedOpen = rowsWith(demoSession(NOW, AGENT), 'd13')
   const discussedDismissed = rowsWith(dismissedSession('d13', NOW), 'd15')
   const treeOpen = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
   const treeDismissed = tabBlocks(withDismissedAsk('d11', NOW), uiOn('needsYou', { selected: 'd12' }))
   const cases: [string, Step[]][] = [
     ['settle', [[0, dismissed]]],
+    ['settle from closed', [[0, dismissed]]],
+    [
+      'settle 40 ms into an open',
+      [
+        [0, open, 'input'],
+        [40, dismissedOpen],
+      ],
+    ],
+    [
+      'settle 200 ms into an open',
+      [
+        [0, open, 'input'],
+        [200, dismissedOpen],
+      ],
+    ],
     ['undo to open', [[0, open]]],
     ['undo to closed', [[0, closed]]],
     [
@@ -330,19 +346,52 @@ test('a row that settles or comes back through Undo fades its mark and every lin
     ['undo to Holds up and context', [[0, treeOpen]]],
   ]
   const startOf = (name: string) =>
-    name.startsWith('undo to Holds')
-      ? treeDismissed
-      : name.startsWith('undo')
-        ? dismissed
-        : name.includes('✓')
-          ? discussedOpen
-          : name.includes('Holds up')
-            ? treeOpen
-            : open
-  for (const [name, moves] of cases) {
-    const steps: Step[] = [[0, [...startOf(name)]], ...moves]
+    name.includes('from closed') || name.includes('into an open')
+      ? closed
+      : name.startsWith('undo to Holds')
+        ? treeDismissed
+        : name.startsWith('undo')
+          ? dismissed
+          : name.includes('✓')
+            ? discussedOpen
+            : name.includes('Holds up')
+              ? treeOpen
+              : open
+
+  return cases.map(([name, moves]) => [name, [[0, [...startOf(name)]], ...moves]])
+}
+
+for (const [name, steps] of settleCases())
+  test(`a row that settles or comes back through Undo fades its mark and every line under its title out and in, so none pops or is cut: ${name}`, () => {
     const rows = steps.flatMap(([, blocks]) => blocks.flatMap(b => (b.kind === 'row' ? [b.id] : [])))
     const cuts = framesOf(steps, 900).cuts.filter(c => c.at >= 0)
-    expect({ name, pops: popsOf(steps, [...new Set(rows)]), cuts }).toEqual({ name, pops: [], cuts: [] })
+    expect({ pops: popsOf(steps, [...new Set(rows)]), cuts }).toEqual({ pops: [], cuts: [] })
+  })
+
+test('a row that settles while its new form reports its height a frame late shows no line under its title until its box has room for it', () => {
+  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
+  const closed = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd15' }))
+  const dismissed = tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd15' }))
+  const dismissedOpen = tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd13' }))
+  const cases: [string, Step[]][] = [
+    [
+      'from closed',
+      [
+        [0, closed],
+        [0, dismissed],
+      ],
+    ],
+    [
+      '40 ms into an open',
+      [
+        [0, closed],
+        [0, open, 'input'],
+        [40, dismissedOpen],
+      ],
+    ],
+  ]
+  for (const [name, steps] of cases) {
+    const cuts = framesOf(steps, 900, FRAME_MS).cuts.filter(c => c.at >= 0)
+    expect({ name, cuts }).toEqual({ name, cuts: [] })
   }
 })

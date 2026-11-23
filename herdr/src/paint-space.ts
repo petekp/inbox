@@ -16,7 +16,7 @@ import {
   SECTION_GAP,
 } from './paint-theme'
 import type { Paint } from './paint-theme'
-import { panelId, titleId } from './heights'
+import { panelId, restId, titleId } from './heights'
 import { shortTitleOf } from './title-cut'
 import { shutTo } from './block-glide'
 import { contentStrokeEls, feedsOf, passingOf, runsIn, spaceColumnEl, strokeFadesOf } from './paint-strokes'
@@ -95,9 +95,6 @@ function aboveOf(prev: Block | null, b: Block, section: number | null): number {
 
   return Math.max(0, gap - padOf(prev) - padOf(b))
 }
-
-/** The key a row's lines under its title, with its panel, are measured under. */
-export const restId = (id: string): string => `rest ${id}`
 
 /** A drawn block and the space above it. */
 type Space = { block: Block; above: number }
