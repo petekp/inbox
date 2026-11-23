@@ -100,7 +100,7 @@ export const slideOffset = (opacity: number): number => -SLIDE_PX * (1 - Math.mi
  * A row's state. The resting states draw one form: `closed` its line, `open` its line and panel, `settled` its
  * settled line, `undoing` that line while an Undo press is out. The moving states animate toward a form, and each
  * keeps what it moves away from drawn: `closing` keeps the panel, and `leaving` keeps the row's last form while it fades
- * and collapses. `settling` swaps the settled line in for the whole open row at once, and the height shrinks under it.
+ * and collapses. `settling` keeps the form it leaves drawn while its lines fade out (`drawsFormLeft`).
  */
 export type RowState =
   'entering' | 'closed' | 'opening' | 'open' | 'closing' | 'settling' | 'settled' | 'undoing' | 'leaving'
@@ -111,17 +111,33 @@ export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
 /**
  * A row's state, when it entered it, and whether its open form is part of its move: `hasOpenForm` holds for an open
  * row, one opening or growing in open, and a row closing, settling or leaving from the open form. `entersSettled` marks
- * a row growing in settled.
+ * a row growing in settled, and `leavesSettled` a row opening or closing from its settled form, as after Undo.
  */
-export type RowTrack = { state: RowState; since: number; hasOpenForm: boolean; entersSettled?: true }
+export type RowTrack = {
+  state: RowState
+  since: number
+  hasOpenForm: boolean
+  entersSettled?: true
+  leavesSettled?: true
+}
 
 /**
- * Whether a row draws the open row's panel: while its open form is part of its move, except as it settles. A settling
- * row swaps its settled line and Undo in for its whole open row at once, with no panel and no glide of its title, and
- * only its height moves. A closing or leaving row keeps the panel drawn while it fades out, and its height shrinks
- * once the fade ends.
+ * Whether a row draws the open row's panel in the form it takes: while its open form is part of its move, except as it
+ * settles, when the panel belongs to the form it leaves (`drawsFormLeft`). A closing or leaving row keeps the panel
+ * drawn while it fades out, and its height shrinks once the fade ends.
  */
 export const drawsPanel = (track: RowTrack): boolean => track.hasOpenForm && track.state !== 'settling'
+
+const swapsForm = (track: RowTrack): boolean => track.state === 'settling' || track.leavesSettled === true
+
+/**
+ * Whether a row that changes between its settled form and another, as it settles or as Undo brings it back, still
+ * draws the form it leaves, over the form it takes: until its move ends. The lines of the form it leaves fade out over
+ * `LEAVE_FADE_MS` while its height holds. Then the height moves to the new form's and the new form's lines fade in, so
+ * no line pops in either direction.
+ */
+export const drawsFormLeft = (track: RowTrack, now: number): boolean =>
+  swapsForm(track) && now - track.since < moveMs(track)
 
 /** How long each state's fade lasts, in ms. Resting states are 0. */
 export const ROW_FADE_MS: Record<RowState, number> = {
@@ -155,6 +171,10 @@ export function isMoving(state: RowState): boolean {
   return ROW_STATE_MS[state] > 0
 }
 
+/** How long a row's move lasts, in ms: its state's length, and `LEAVE_FADE_MS` more while the form it leaves fades. */
+export const moveMs = (track: RowTrack): number =>
+  ROW_STATE_MS[track.state] + (isMoving(track.state) && swapsForm(track) ? LEAVE_FADE_MS : 0)
+
 /**
  * A row's next track, at each draw. A new target starts the move toward it from wherever the row is drawn. A moving
  * state comes to rest once its length has passed, so an animation that never reports its end cannot hold a row.
@@ -174,7 +194,7 @@ export function stepRow(
     return rest(undefined, form, target, now)
   }
   const next = formOf(track) === form ? track : moveToward(track, form, now)
-  if (isMoving(next.state) && !isReduced && now - next.since < ROW_STATE_MS[next.state]) return next
+  if (isMoving(next.state) && !isReduced && now - next.since < moveMs(next)) return next
 
   return rest(next, form, target, now)
 }
@@ -205,13 +225,14 @@ function formOf({ state, hasOpenForm, entersSettled }: RowTrack): Form {
 }
 
 function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
+  const leaves = formOf(track) === 'settled' ? { leavesSettled: true as const } : {}
   switch (form) {
     case 'open':
-      return { state: 'opening', since: now, hasOpenForm: true }
+      return { state: 'opening', since: now, hasOpenForm: true, ...leaves }
     case 'closed':
       return track.state === 'leaving'
         ? entering('closed', now)
-        : { state: 'closing', since: now, hasOpenForm: track.hasOpenForm }
+        : { state: 'closing', since: now, hasOpenForm: track.hasOpenForm, ...leaves }
     case 'settled':
       return { state: 'settling', since: now, hasOpenForm: track.hasOpenForm }
     case 'gone':

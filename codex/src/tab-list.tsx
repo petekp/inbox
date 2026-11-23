@@ -12,7 +12,7 @@ import { newRowsOf } from '../../core/view/ui-controller-tabs'
 import type { InputKind } from '../../core/view/ui-controller-types'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
-import { drawsPanel, stepRow } from '../../core/view/row-motion'
+import { drawsFormLeft, drawsPanel, stepRow } from '../../core/view/row-motion'
 import type { RowTarget, RowTrack } from '../../core/view/row-motion'
 import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
 import type { Key, Row, Entry, Lists } from './tab-state'
@@ -67,10 +67,12 @@ export function stepLists(v: View): {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
     const entries = [...listed]
-    for (const [n, last] of (tabState.lastLists?.[LIST_OF[group]] ?? []).entries()) {
+    const lastDrawn = tabState.lastLists?.[LIST_OF[group]] ?? []
+    for (const [n, last] of lastDrawn.entries()) {
       const id = entryId(last)
       if (!listedIds.has(id) && drawnRows.has(id)) entries.splice(Math.min(n, entries.length), 0, last)
     }
+    const lastOf = new Map(lastDrawn.map(last => [entryId(last), last]))
     const drawn: Entry[] = []
     for (const x of entries) {
       const id = entryId(x)
@@ -87,15 +89,21 @@ export function stepLists(v: View): {
       const track = stepRow(before?.track, target, now, entering.has(id), reducedMotion.matches)
       if (!track) continue
       if (track !== before?.track) changed.add(id)
-      drawnRows.set(id, { track })
+      const left = formLeftOf(before, track, lastOf.get(id), x, now)
+      drawnRows.set(id, left ? { track, left } : { track })
       kept.add(id)
       drawn.push(x)
-      if (drawsPanel(track) && 'row' in x) {
-        const { text, tone } = statusUnderOf(x.row)
-        const lines = text ? [{ id: x.row.id, text, tone }] : []
-        pressLines.set(x.row.id, stepLines(lines, lastPressLines.get(x.row.id), pressMotion, now, changed, kept))
-        const status = statusLinesOf(x.row.id, statusTextOf(x.row))
-        statusLines.set(x.row.id, stepLines(status, lastStatusLines.get(x.row.id), statusMotion, now, changed, kept))
+      const ownRow = drawsPanel(track) && 'row' in x ? x.row : null
+      const panelRow = ownRow ?? (left && 'row' in left && track.hasOpenForm ? left.row : null)
+      if (panelRow) {
+        const { text, tone } = statusUnderOf(panelRow, ownRow ? undefined : drawnPresses.get(panelRow.id))
+        const lines = text ? [{ id: panelRow.id, text, tone }] : []
+        pressLines.set(panelRow.id, stepLines(lines, lastPressLines.get(panelRow.id), pressMotion, now, changed, kept))
+        const status = statusLinesOf(panelRow.id, statusTextOf(panelRow))
+        statusLines.set(
+          panelRow.id,
+          stepLines(status, lastStatusLines.get(panelRow.id), statusMotion, now, changed, kept),
+        )
       }
     }
     lists[LIST_OF[group]] = drawn
@@ -105,7 +113,27 @@ export function stepLists(v: View): {
     entries: lists.findings.filter(x => ('row' in x ? x.row.kind : x.settled.finding?.kind) === g.kind),
   }))
   for (const id of [...drawnRows.keys()]) if (!kept.has(id)) drawnRows.delete(id)
+  for (const id of [...drawnPresses.keys()]) if (!drawnRows.has(id)) drawnPresses.delete(id)
   return { lists, prs, status, banners, changed }
+}
+
+/**
+ * The entry of the form a row leaves as it changes between its settled form and another, `last`, the entry the tab
+ * drew before `x`, while `drawsFormLeft` holds. A change turned back while the row still draws a form it leaves draws
+ * its new form at once.
+ */
+function formLeftOf(
+  before: { track: RowTrack; left?: Entry } | undefined,
+  track: RowTrack,
+  last: Entry | undefined,
+  x: Entry,
+  now: number,
+): Entry | undefined {
+  if (!drawsFormLeft(track, now)) return undefined
+  if (before?.track === track) return before.left
+  const isFormChanged = last !== undefined && 'row' in last !== 'row' in x
+
+  return isFormChanged && !before?.left ? last : undefined
 }
 
 const undo = (r: RowView, by: InputKind) => pressRow({ action: 'undo', id: r.id }, by)
@@ -118,7 +146,7 @@ export function rowActions(row: Row): { options: Key[]; keys: Key[]; more: Key[]
 }
 
 /** A row's press as its line draws it: whether one is out or still sending, and the status it shows. */
-function pressOf(row: Row) {
+function pressOf(row: Row): Press {
   const out = outOn(row.id)
   const isPressing = out !== null
   const pending = outPending(tabState.view, row.id)
@@ -130,9 +158,21 @@ function pressOf(row: Row) {
   return { isPressing, pending, isSending, f, label, tone }
 }
 
+type Press = {
+  isPressing: boolean
+  pending: ReturnType<typeof outPending>
+  isSending: boolean
+  f: Row['feedback']
+  label: string | null
+  tone: FeedbackTone
+}
+
+/** The press each row's line last drew, which the form a row leaves keeps while it fades out. */
+const drawnPresses = new Map<string, Press>()
+
 /** The status an open row draws under its buttons, while its press is out, and its tone. */
-function statusUnderOf(row: Row): { text: string | null; tone: FeedbackTone } {
-  const { pending, isSending, f, label, tone } = pressOf(row)
+function statusUnderOf(row: Row, press = pressOf(row)): { text: string | null; tone: FeedbackTone } {
+  const { pending, isSending, f, label, tone } = press
 
   return { text: !isSending && isStatusUnderActions(pending ?? f, true) ? label : null, tone }
 }
@@ -155,12 +195,15 @@ export function ListRow({
   track,
   onSelect,
   now,
+  isLeft = false,
 }: {
   row: Row
   track: RowTrack
   /** A press on the row's line, and whether Option was held. */
   onSelect: (isAll: boolean, by: InputKind) => void
   now: number
+  /** The row draws the form it leaves as it settles, with the press its line last drew. */
+  isLeft?: boolean
 }) {
   const isClosing = drawsPanel(track) && (track.state === 'closing' || track.state === 'leaving')
   const isSelected = drawsPanel(track) && !isClosing
@@ -183,7 +226,9 @@ export function ListRow({
     </span>
   )
 
-  const { isPressing, pending, isSending, f, label, tone } = pressOf(row)
+  const press = isLeft ? (drawnPresses.get(row.id) ?? pressOf(row)) : pressOf(row)
+  if (!isLeft) drawnPresses.set(row.id, press)
+  const { isPressing, pending, isSending, f, label, tone } = press
   const ageAt = !isPressing && f && hasAge(f) ? f.at : null
   const lineForm = (isOpen: boolean): LineForm => {
     const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
@@ -400,22 +445,34 @@ export function Entries({ entries, now }: { entries: Entry[]; now: number }) {
         const id = entryId(x)
         // stepLists tracked every entry it returned.
         const drawn = drawnRows.get(id)!
+        const { track, left } = drawn
 
         return (
-          <div class="entry" key={id} data-motion={id}>
+          <div class={left ? 'entry swaps-form' : 'entry'} key={id} data-motion={id}>
             {'row' in x ? (
-              <ListRow
-                row={x.row}
-                track={drawn.track}
-                now={now}
-                onSelect={(isAll, by) => pressTitle(x.row.id, isAll, by)}
-              />
+              <ListRow row={x.row} track={track} now={now} onSelect={(isAll, by) => pressTitle(x.row.id, isAll, by)} />
             ) : (
-              <SettledView settled={x.settled} wasOpen={drawn.track.hasOpenForm} />
+              <SettledView settled={x.settled} wasOpen={track.hasOpenForm} />
             )}
+            {left ? (
+              <div class="form-left" inert>
+                {'row' in left ? (
+                  <ListRow row={left.row} track={leftTrack(track)} now={now} onSelect={() => undefined} isLeft />
+                ) : (
+                  <SettledView settled={left.settled} wasOpen={false} />
+                )}
+              </div>
+            ) : null}
           </div>
         )
       })}
     </div>
   )
 }
+
+/** The track a row's form it leaves draws with: at rest, open or closed as the row was. */
+const leftTrack = ({ since, hasOpenForm }: RowTrack): RowTrack => ({
+  state: hasOpenForm ? 'open' : 'closed',
+  since,
+  hasOpenForm,
+})

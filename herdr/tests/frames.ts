@@ -26,6 +26,7 @@ type ColumnGap = { at: number; id: string; x: number; y: number }
 type Cut = { at: number; box: string; text: string; share: number; opacity: number }
 type Fading = { at: number; id: string; height: number; opacity: number }
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
+type Shown = { at: number; block: string; text: string; opacity: number; share: number; isFormPart: boolean }
 
 const linesOf = (n: Painted): number =>
   n.style.isTruncated ? 1 : Math.max(1, Math.ceil((n.text ?? '').length / WRAP_AT))
@@ -156,7 +157,7 @@ class Springs {
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
 
-const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'status ', 'wrapped ', 'one line ']
+const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'status ', 'wrapped ', 'one line ', 'form ', 'trunk ', 'mark ']
 const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))
 
 function boxOf(n: Painted): string | null {
@@ -166,6 +167,33 @@ function boxOf(n: Painted): string | null {
 
 const isThroughLetters = (hidden: number, line: number): boolean =>
   hidden % line > LEADING_PX && hidden % line < line - LEADING_PX
+
+function blockOf(n: Painted): string {
+  for (let up: Painted | null = n; up; up = up.parent) if (up.id?.startsWith('box ')) return up.id.slice(4)
+  return ''
+}
+
+function isFormPart(n: Painted): boolean {
+  for (let up: Painted | null = n; up; up = up.parent)
+    if (up.id?.startsWith('size rest ') || up.id?.startsWith('mark ')) return true
+  return false
+}
+
+function shownTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[] {
+  return [...placed].flatMap(([n, b]) => {
+    const isText = n.text !== null || n.field !== null
+    if (!isText || n.kids.some(k => !k.style.isAbsolute) || b.height <= 0) return []
+    let top = b.top
+    let bottom = b.top + b.height
+    for (let up = n.parent; up; up = up.parent) {
+      const clip = placed.get(up)
+      if (!up.style.isClipped || !clip) continue
+      top = Math.max(top, clip.top)
+      bottom = Math.min(bottom, clip.top + clip.height)
+    }
+    return [{ node: n, share: Math.max(0, bottom - top) / b.height }]
+  })
+}
 
 function cutTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[] {
   return [...placed].flatMap(([n, b]) => {
@@ -300,6 +328,7 @@ class Frames {
   slides: number[][] = []
   cuts: Cut[] = []
   fading: Fading[] = []
+  shown: Shown[] = []
 
   draw(blocks: Block[], now: number, isInput = false) {
     const isFirst = this.last === null
@@ -332,6 +361,13 @@ class Frames {
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
       const maxOpacity = turnedBackPanels.has(box ?? '') ? TURNED_BACK_CUT_OPACITY : CUT_OPACITY
       if (opacity > maxOpacity) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
+    }
+    for (const { node, share } of shownTexts(placed)) {
+      let plain = 1
+      for (let up: Painted | null = node; up; up = up.parent) if (!fadesOn(up.id)) plain *= up.style.opacity ?? 1
+      const opacity = this.fades.opacityOf(node) * plain
+      const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
+      this.shown.push({ at: now, block: blockOf(node), text, opacity, share, isFormPart: isFormPart(node) })
     }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
@@ -386,10 +422,11 @@ export function framesOf(
   slides: number[][]
   cuts: Cut[]
   fading: Fading[]
+  shown: Shown[]
 } {
   const frames = new Frames()
   const [first] = steps
-  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [] }
+  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [], shown: [] }
   const start = 1_000_000
   let drawn: Step | null = null
   for (let at = -500; at < ms; at += FRAME_MS) {
@@ -406,6 +443,7 @@ export function framesOf(
     slides: frames.slides,
     cuts: frames.cuts.map(c => ({ ...c, at: c.at - start })),
     fading: frames.fading.map(f => ({ ...f, at: f.at - start })),
+    shown: frames.shown.map(s => ({ ...s, at: s.at - start })),
   }
 }
 

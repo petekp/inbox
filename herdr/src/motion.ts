@@ -13,6 +13,8 @@ import type { TitleGlide, TitleMotion } from './title-motion'
 import { stepUnder, underId, underMotion, underTimes } from './under-line'
 import { movedOf } from './moved-blocks'
 import type { UnderLine, UnderMotion } from './under-line'
+import { stepSwap, swapHoldsUntil, swapMotion, swapTimes, swapWaitsUntil, takeSwap } from './form-swap'
+import type { FormSwap, SwapMotion } from './form-swap'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
@@ -37,6 +39,7 @@ type Tracked = {
   panelSpace: PanelSpace | null
   panelSteps: PanelStep[] | null
   panelHeldUntil: number
+  swap: FormSwap | null
 }
 
 /**
@@ -90,6 +93,7 @@ export type RowMotion = {
   springId: string | null
   under: UnderMotion | null
   former: Block | null
+  swap: SwapMotion | null
 }
 
 const targetOf = (b: Block): RowTarget =>
@@ -170,8 +174,15 @@ export function moveRows(
       return old && isClosing && isPanelShown(old, b.id) ? [[b.id, now + panelFadeWaitMs(old) + LEAVE_FADE_MS]] : []
     }),
   )
+  const swaps = new Map(
+    blocks.map(b => {
+      const old = moved.has(b.id) ? undefined : was.rows.get(b.id)
+      return [b.id, stepSwap(old?.swap ?? null, old?.block, b, now)] as const
+    }),
+  )
   const closeHoldsUntil = Math.max(
     0,
+    ...[...swaps.values()].map(swapWaitsUntil),
     ...blocks.map(b => {
       const old = was.rows.get(b.id)
       const isStillClosing = old !== undefined && targetOf(b) === 'closed'
@@ -189,7 +200,6 @@ export function moveRows(
   const add = (block: Block, track: RowTrack, last: Tracked | undefined, springId: string | null = null) => {
     const isOpen = block.kind === 'row' && isOpenRow(block)
     const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
-    const isOpenFormSwapped = track.hasOpenForm && !drawsPanel(track)
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const isPressed = block.kind === 'field'
@@ -226,7 +236,13 @@ export function moveRows(
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
     const wasClosing = last?.track.state === 'closing' && last.opened !== null && track.state === 'closed'
     const isHeldForLeave = isHolding && track.since >= holdsUntil - HOLD_MS && !isInputMove
-    const heldUntil = closing === null ? 0 : Math.max(isHeldForLeave ? holdsUntil : 0, panelHeldUntil)
+    const swap = takeSwap(
+      swaps.has(block.id) ? (swaps.get(block.id) ?? null) : stepSwap(last?.swap ?? null, last?.block, block, now),
+      block,
+      now,
+    )
+    const closeHeldUntil = closing === null ? 0 : Math.max(isHeldForLeave ? holdsUntil : 0, panelHeldUntil)
+    const heldUntil = Math.max(closeHeldUntil, swapHoldsUntil(swap, now))
     const isHeld = heldUntil > now
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state))
     const holdsPanel = drawsPanel(track) && !isLeftOut
@@ -236,7 +252,7 @@ export function moveRows(
       now,
     )
     const title =
-      block.kind === 'row' && last && !isOpenFormSwapped
+      block.kind === 'row' && last
         ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now))
         : null
     rows.set(block.id, {
@@ -251,6 +267,7 @@ export function moveRows(
       panelSpace,
       panelSteps,
       panelHeldUntil,
+      swap,
     })
     motion.set(block.id, {
       state: track.state,
@@ -270,6 +287,7 @@ export function moveRows(
       springId,
       under: underMotion(under, now, heightOf(underId(block.id))),
       former: last && last.block.kind !== block.kind ? last.block : null,
+      swap: swapMotion(swap, now),
     })
   }
   for (const b of blocks) {
@@ -314,6 +332,7 @@ export function moveRows(
       ...(t.glide ? [t.glide.endsAt, t.glide.opensAt ?? 0, t.glide.shutAt ?? 0] : []),
       ...titleTimes(t.title),
       ...underTimes(t.under),
+      ...swapTimes(t.swap),
       holdsUntil,
       closeHoldsUntil,
       opensAfterClose,

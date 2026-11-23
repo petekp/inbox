@@ -7,8 +7,10 @@ const { framesOf } = await import('./frames')
 const { FRAME_MS } = await import('../../core/view/springs')
 type Step = import('./frames').Step
 const { tabBlocks } = await import('../src/draw')
-const { AGENT, NOW, demoScreen, dismissedPr, uiOn, withDismissedAsk } = await import('./fixtures')
+const { AGENT, NOW, demoScreen, dismissedPr, dismissedSession, uiOn, withDismissedAsk } = await import('./fixtures')
 const { demoSession } = await import('../../core/view/demo')
+const { sessionView } = await import('../../core/view/session-view')
+const { NO_HOLDS, SETTLED_MS } = await import('../../core/view/timing')
 const { drawOuts } = await import('../src/out')
 const { keyMove } = await import('../src/keys')
 
@@ -245,4 +247,74 @@ test('a Dismiss out on a row the cursor leaves with j before its reply grows no 
     isMoved: true,
     status: statusOf(left),
   })
+})
+
+const POP_OPACITY = 0.3
+
+function popsOf(steps: Step[], ids: string[]) {
+  const { shown } = framesOf(steps, 900)
+  const frames = new Map<number, Map<string, number>>()
+  for (const s of shown) {
+    const frame = frames.get(s.at) ?? new Map<string, number>()
+    frames.set(s.at, frame)
+    if (!s.isFormPart || !ids.includes(s.block)) continue
+    const key = `${s.block} ${s.text}`
+    frame.set(key, Math.max(frame.get(key) ?? 0, s.opacity * s.share))
+  }
+  const ats = [...frames.keys()].filter(at => at >= -16).sort((a, b) => a - b)
+
+  return ats.slice(1).flatMap((at, i) => {
+    const before = frames.get(ats[i] ?? at) ?? new Map<string, number>()
+    const after = frames.get(at) ?? new Map<string, number>()
+    const texts = new Set([...before.keys(), ...after.keys()])
+    return [...texts]
+      .map(text => ({ at, text, from: before.get(text) ?? 0, to: after.get(text) ?? 0 }))
+      .filter(p => Math.abs(p.to - p.from) > POP_OPACITY)
+  })
+}
+
+const discussed: import('../../types').LastAction = {
+  kind: 'talk',
+  action: 'discuss',
+  text: 'Discuss',
+  at: NOW - 1000,
+  turnsStarted: 14,
+}
+
+function rowsWith(session: ReturnType<typeof demoSession>, selected: string | null): Block[] {
+  const s = {
+    ...session,
+    lastActions: { ...session.lastActions, d13: discussed },
+    presence: { ...session.presence, turnsStarted: 14, turnsApplied: 15 },
+  }
+  const view = sessionView(s, NOW, SETTLED_MS, { ...NO_HOLDS, shownSince: NOW - 1000 })
+
+  return tabBlocks({ ...demoScreen(), view, shownSince: NOW - 1000 }, uiOn('needsYou', { selected }))
+}
+
+test('a row that settles or comes back through Undo fades its mark and every line under its title out and in, so none pops', () => {
+  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
+  const closed = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd15' }))
+  const dismissed = tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd15' }))
+  const discussedOpen = rowsWith(demoSession(NOW, AGENT), 'd13')
+  const discussedDismissed = rowsWith(dismissedSession('d13', NOW), 'd15')
+  const treeOpen = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
+  const treeDismissed = tabBlocks(withDismissedAsk('d11', NOW), uiOn('needsYou', { selected: 'd12' }))
+  const cases = [
+    ['settle', open, dismissed],
+    ['undo to open', dismissed, open],
+    ['undo to closed', dismissed, closed],
+    ['settle from ✓ Discussed', discussedOpen, discussedDismissed],
+    ['settle with Holds up and context', treeOpen, treeDismissed],
+    ['undo to Holds up and context', treeDismissed, treeOpen],
+  ] as const
+  for (const [name, from, to] of cases) {
+    const rows = [...from, ...to].flatMap(b => (b.kind === 'row' ? [b.id] : []))
+    const steps: Step[] = [
+      [0, [...from]],
+      [0, [...to]],
+    ]
+    const cuts = framesOf(steps, 900).cuts.filter(c => c.at >= 0)
+    expect({ name, pops: popsOf(steps, rows), cuts }).toEqual({ name, pops: [], cuts: [] })
+  }
 })
