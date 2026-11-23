@@ -97,10 +97,17 @@ export function paneRowLines({
       ? { text, age: ago(now - f.at), isAfterTitle: true, tone, doneText, feedback: f }
       : { text, age: '', isAfterTitle: isAfterTitle(f), tone, doneText, feedback: f }
   }
-  const lastActionText = (id: string) => {
+  /** A press's result line on the PRs tab: its text in its result color, then its age, faint. */
+  const pressLine = (id: string) => {
     const f = feedbackLabel(id)
+    if (!f) return null
 
-    return f ? { text: [f.text, f.age].filter(Boolean).join(DOT), tone: f.tone, doneText: f.doneText } : null
+    return (
+      <Text color={f.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
+        {withDoneText(f.text, f.doneText)}
+        {f.age ? <Text color={pal.faint}>{`${DOT}${f.age}`}</Text> : null}
+      </Text>
+    )
   }
   /** A press result's color: the error color, the done color of the ✓ it carries, or muted. */
   const feedbackColor = (tone: FeedbackTone) =>
@@ -375,7 +382,7 @@ export function paneRowLines({
 
   return {
     feedbackLabel,
-    lastActionText,
+    pressLine,
     pressedAge,
     branch,
     desktopHairline,

@@ -215,6 +215,8 @@ const DESKTOP_AGE = '#85837e'
  * One translucent color serves both of the app's themes: faint text reads 3:1 on white and on the dark page, #191919.
  */
 const DESKTOP_FAINT = 'rgba(123, 121, 116, 0.8)'
+/** Faint text on the selection fill: 3:1 on it over white and over the dark page. */
+const DESKTOP_SELECTION_FAINT = 'rgba(123, 121, 116, 0.88)'
 /**
  * Needs-you text in the app's own `warning` key draws amber, so a count would not match the orange mark beside it. The
  * app resolves a hex the same in both its themes, so one orange serves: 4.7:1 on the dark page, 3.7:1 on white.
@@ -226,6 +228,7 @@ const DESKTOP_PALETTE: Palette = {
   selection: 'rgba(128, 120, 105, 0.14)',
   muted: 'inactive',
   faint: DESKTOP_FAINT,
+  selectionFaint: DESKTOP_SELECTION_FAINT,
   age: DESKTOP_AGE,
   key: 'remember',
   // The tree lines. One alpha serves both of the app's themes, about as strong as the Codex tab's and Herdr's tree lines.

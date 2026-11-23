@@ -402,7 +402,7 @@ export function paneRows(
                 ) : (
                   <Text>{row.handle}</Text>
                 ))),
-            side: <Text color={pal.faint}>{sideAge(row)}</Text>,
+            side: <Text color={pal.selectionFaint ?? pal.faint}>{sideAge(row)}</Text>,
             fill: pal.selection,
             gapY: selectedGapY,
             children: [

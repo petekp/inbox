@@ -3,7 +3,8 @@
 .row {
   --row-bg: var(--bg);
   --tree-line: color-mix(in srgb, var(--text) 32%, var(--row-bg));
-  /* Faint text mixed into the row's background, as the tree line is, so a selected row's age reads at 3:1 on it. */
+  /* Faint text mixed into the row's background, as the tree line is, so a selected row's age reads about 3:1 on it:
+     2.9:1 on Codex's colors. */
   --row-faint: color-mix(in srgb, var(--muted) var(--faint-share), var(--row-bg));
   display: grid;
   grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
@@ -63,6 +64,10 @@
 .mark.needsYou,
 .side.tone-needsYou {
   color: var(--needs-you);
+}
+/* "Sending…" is a press status, which draws muted as the other statuses do. */
+.side.sending {
+  color: var(--muted);
 }
 .side[data-room]::after {
   content: attr(data-room);

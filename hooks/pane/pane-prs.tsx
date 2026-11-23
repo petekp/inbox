@@ -206,8 +206,7 @@ export function panePrBlocks({
   desktopFrame,
   markGlyph,
   divided,
-  lastActionText,
-  withDoneText,
+  pressLine,
   listRow,
   prKeyAction,
   desktopLabel,
@@ -238,7 +237,7 @@ export function panePrBlocks({
 > &
   Pick<PaneRowParts, 'section' | 'undoPlace' | 'settledContent' | 'groupTitle' | 'titleGap' | 'sections'> &
   Pick<PaneRowFrame, 'desktopFrame'> &
-  Pick<PaneRowLines, 'markGlyph' | 'divided' | 'lastActionText' | 'withDoneText'> &
+  Pick<PaneRowLines, 'markGlyph' | 'divided' | 'pressLine'> &
   Pick<PaneRows, 'listRow'> &
   Pick<PanePrRows, 'prKeyAction'> &
   Pick<PaneRowKeys, 'desktopLabel' | 'desktopRowTextPt' | 'keyRow'> &
@@ -293,7 +292,7 @@ export function panePrBlocks({
     const statusHead = shown?.head ?? ''
     const tone = shown ? PR_TONES[shown.status] : null
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
-    const prLast = isPrLastShown ? lastActionText(prMarkId(pr.ref)) : null
+    const prLast = isPrLastShown ? pressLine(prMarkId(pr.ref)) : null
     const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses, sync).map(a =>
       prKeyAction(a, pr.ref),
     )
@@ -354,13 +353,7 @@ export function panePrBlocks({
             ),
           )}
         </Box>
-        {prLast ? (
-          <Box marginTop={look === 'desktop' ? 1 : 0}>
-            <Text color={prLast.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
-              {withDoneText(prLast.text, prLast.doneText)}
-            </Text>
-          </Box>
-        ) : null}
+        {prLast ? <Box marginTop={look === 'desktop' ? 1 : 0}>{prLast}</Box> : null}
       </Box>
     )
 
@@ -412,7 +405,7 @@ export function panePrBlocks({
     const order = view.prs.order
     if (!order) return []
     const changed = order.changed
-    const pressed = changed?.showsPress ? lastActionText(RANK_AGAIN_ID) : null
+    const pressed = changed?.showsPress ? pressLine(RANK_AGAIN_ID) : null
     const lines = (
       <Box flexDirection="column">
         <Text wrap="wrap">{order.title}</Text>
@@ -423,11 +416,7 @@ export function panePrBlocks({
               {changed.text ? <Text wrap="wrap">{changed.text}</Text> : null}
               {prOrderKeys.length > 0 ? keyRow(RANK_AGAIN_ID, prOrderKeys) : null}
             </Box>
-            {pressed ? (
-              <Text color={pressed.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
-                {withDoneText(pressed.text, pressed.doneText)}
-              </Text>
-            ) : null}
+            {pressed}
           </Box>
         ) : null}
       </Box>
@@ -439,13 +428,7 @@ export function panePrBlocks({
   const isRefreshInBanner = ghNotice !== null && refresh !== null && refresh.text === null
   const prRefreshButtons = () => (prRefreshKeys.length > 0 ? keyRow(PR_REFRESH_ID, prRefreshKeys) : null)
   const prRefreshStatus = () => {
-    const pressed = refresh?.showsPress ? lastActionText(PR_REFRESH_ID) : null
-
-    return pressed ? (
-      <Text color={pressed.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
-        {withDoneText(pressed.text, pressed.doneText)}
-      </Text>
-    ) : null
+    return refresh?.showsPress ? pressLine(PR_REFRESH_ID) : null
   }
   /**
    * The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. While a

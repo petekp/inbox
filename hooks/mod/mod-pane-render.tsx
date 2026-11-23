@@ -212,7 +212,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
   )
   const {
     feedbackLabel,
-    lastActionText,
+    pressLine,
     pressedAge,
     branch,
     desktopHairline,
@@ -438,8 +438,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     desktopFrame,
     markGlyph,
     divided,
-    lastActionText,
-    withDoneText,
+    pressLine,
     ...rowFns,
     prKeyAction,
     desktopLabel,
