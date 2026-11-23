@@ -1,9 +1,12 @@
 import { HELD_MARK } from '../core/view/help'
-import { restatesGoal } from '../core/domain/status-goal-ops'
+import { findMilestone, restatesGoal } from '../core/domain/status-goal-ops'
 import { isNumberOnly, isOpen } from '../core/domain/status-limits'
+import { parseStatus } from '../core/domain/status'
+import type { Op } from '../core/domain/status'
 import { drawnStatusRows } from '../core/view/status-folds'
 import type { MilestoneRow } from '../core/view/status-goal-page'
 import type { StatusPage } from '../core/view/status-page'
+import type { SessionStatus } from '../types'
 import type { Rule } from './status-rules'
 
 /** A hold the code keeps. It reads the page and the saved Status at every step, and counts toward no rate. */
@@ -43,6 +46,12 @@ function isOtherWork(serves: Record<string, string>, page: StatusPage, id: strin
   const to = serves[id]
 
   return to === 'none' || (shown.size > 0 && (to === undefined || !shown.has(to)))
+}
+
+/** Whether `op` closes the milestone `id` itself, as a DONE line for it or a MILESTONE line that names it done. */
+function closesMilestone(op: Op, id: string, before: SessionStatus): boolean {
+  if (op.kind === 'done') return findMilestone(before, op.ref)?.id === id
+  return op.kind === 'milestone' && op.status === 'done' && findMilestone(before, op.name)?.id === id
 }
 
 /** The holds the code keeps, checked at every step of every run. Any failure blocks. */
@@ -102,6 +111,28 @@ export const HOLD_RULES: Rule[] = [
       return [
         shown.isMet ? 'the goal shows met with a milestone open' : 'every milestone is done and the goal is not met',
       ]
+    },
+  }),
+  hold({
+    id: 'work-closed-milestone-text',
+    property: 15,
+    text: 'A milestone that closes because its linked work closed, with no line of the answer closing it, shows no text.',
+    failures: ({ result, before }) => {
+      const o = result.session.ledger.overview
+      const was = before.overview
+      if (!o || !was) return []
+      const ops = result.calls
+        .filter(c => c.kind === 'status' && c.overLimit === null)
+        .flatMap(c => c.answers)
+        .flatMap(a => {
+          const parsed = parseStatus(a)
+          return parsed?.kind === 'ops' ? parsed.ops : []
+        })
+      const wasOpen = (id: string) => was.milestones.some(x => x.id === id && isOpen(x))
+      return o.milestones
+        .filter(m => m.status === 'done' && m.text.trim() !== '' && wasOpen(m.id))
+        .filter(m => !ops.some(op => closesMilestone(op, m.id, was)))
+        .map(m => `"${m.name}" closed with its work and still reads "${m.text}"`)
     },
   }),
   hold({

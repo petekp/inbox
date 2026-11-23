@@ -10,7 +10,7 @@ export function forgetSeenWas(m: Milestone, lastLookAt: number | null): void {
  * Closes each open milestone whose linked work closed: at least one subject is linked, every one is closed and one is
  * done, and one closed no earlier than the milestone last changed, so a SET in the answer that closes the work does
  * not hold it open. A milestone an earlier answer opened again after its work closed stays open until another linked
- * subject closes.
+ * subject closes. A milestone this closes drops its text, which said what was left.
  */
 export function withWorkDoneMilestones(o: SessionStatus, now: number): SessionStatus {
   let isChanged = false
@@ -24,7 +24,7 @@ export function withWorkDoneMilestones(o: SessionStatus, now: number): SessionSt
       linked.some(s => (s.closedAt ?? -Infinity) >= m.changedAt)
     if (!isWorkDone) return m
     isChanged = true
-    return { ...m, status: 'done' as const, closedAt: now, changedAt: now, was: null }
+    return { ...m, status: 'done' as const, text: '', closedAt: now, changedAt: now, was: null }
   })
 
   return isChanged ? { ...o, milestones } : o
