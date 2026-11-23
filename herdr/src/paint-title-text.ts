@@ -13,11 +13,7 @@ import type { TitleFade } from '../../core/view/row-motion'
 export function titleTextEl(r: RowBlock, p: Paint, color: Color): Element {
   const isOpen = isOpenRow(r)
   const m = p.motion.get(r.id)?.title ?? null
-  const text = div()
-    .flex_1()
-    .min_w(0)
-    .text_color(color)
-    .when(isOpen, e => e.font_semibold())
+  const text = div().flex_1().min_w(0).text_color(color)
   if (m === null) return text.when(!isOpen, e => e.truncate()).child(r.title)
   const form = (id: string, isShown: boolean, fade: TitleFade): Element =>
     div()

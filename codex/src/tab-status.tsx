@@ -12,7 +12,7 @@ import { unfoldedRows } from '../../core/view/status-folds'
 import { isSpacedAbove, LATER_TEXT, workJoints } from '../../core/view/status-path'
 import type { WorkJoint } from '../../core/view/status-path'
 import type { TabView as View } from './core'
-import { closingFolds, tabState } from './tab-state'
+import { closingFolds, entering, tabState } from './tab-state'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
 import { dispatch, errorOf, pressRow } from './tab-ui'
 import { outOn } from './tab-press'
@@ -22,6 +22,7 @@ import { markClassOf, MarkGlyph, EmptyState, pulseInStep } from './tab-parts'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
 import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
+import type { ConnectorMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
 import { fitMergedLine, Keys, rowPads, StatusLine } from './tab-status-line'
 import type { RowPad } from './tab-status-line'
@@ -173,7 +174,7 @@ function JointedLine({
   joint: WorkJoint | undefined
   motion?: string
   under?: string[]
-  column?: 'leaving' | null
+  column?: ConnectorMotion
   pad: RowPad | undefined
 }) {
   const line = <StatusLine row={row} motion={motion} under={under} pad={pad} />
@@ -182,7 +183,7 @@ function JointedLine({
   const columnMotion = joint.arm === 'elbow' ? own : joint.beside === 'connector' ? (column ?? null) : null
   const classes = [
     'work-joint',
-    own ? 'arm-leaving' : '',
+    own ? `arm-${own}` : '',
     connectorClass(columnMotion),
     joint.arm ? `arm-${joint.arm}` : '',
     joint.beside === 'connector' ? 'beside-connector' : '',
@@ -208,9 +209,10 @@ function milestoneGroups(lines: DrawnStatus['goal']): MilestoneGroupLines[] {
   return groups
 }
 
-/** How the connector under a done milestone moves while its fold shuts, as its list fades with it. */
-function foldConnectorMotion(fold: string | null, motion: string): 'leaving' | null {
-  if (fold === null || tabState.ui.statusUnfolded.includes(fold)) return null
+/** How the connector under a done milestone moves while its fold opens or shuts, as its list fades with it. */
+function foldConnectorMotion(fold: string | null, motion: string): ConnectorMotion {
+  if (fold === null) return null
+  if (tabState.ui.statusUnfolded.includes(fold)) return entering.has(`closed-${motion}`) ? 'entering' : null
 
   return closingFolds.has(motion) ? 'leaving' : null
 }

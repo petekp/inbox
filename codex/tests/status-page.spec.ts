@@ -384,7 +384,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.deepEqual(presses.at(-1), { action: 'collapse', id: 's4', isCollapsed: false })
     assert.match(parentName().textContent ?? '', /^Status page\s*$/)
     assert.ok(rowNames().includes('Read the draw code'))
-    assert.ok(root.querySelector('.row.has-children') !== null)
+    assert.ok(root.querySelector('.row.has-children.connector-entering') !== null)
 
     await click('Edit')
     const field = window.document.querySelector('#type-goal')!

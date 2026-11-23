@@ -1,4 +1,4 @@
-import { enterDelayMs, slideOffset } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, enterDelayMs, slideOffset } from '../../core/view/row-motion'
 import { FRAME_MS, springFrames, springStep } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
 import { tabState, animations } from './tab-state'
@@ -24,14 +24,22 @@ type Glide = {
 
 export const glides = new WeakMap<HTMLElement, Glide>()
 
-function play(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions): Animation {
-  el.style.overflow = 'clip'
+/** Size moves under way. Each clips its element while it plays, so the moving edge cuts its content cleanly. */
+const sizeMoves = new WeakSet<Animation>()
+
+/**
+ * Plays an animation on `el`. A size move clips the element while it plays. A fade does not, so strokes drawn past
+ * the element's box, such as a tree's lines left of a row's panel, fade with it rather than vanish.
+ */
+function play(el: HTMLElement, frames: Keyframe[], timing: KeyframeAnimationOptions, isSize = false): Animation {
+  if (isSize) el.style.overflow = 'clip'
   const a = el.animate(frames, timing)
   animations.add(a)
+  if (isSize) sizeMoves.add(a)
   const done = () => {
     animations.delete(a)
     if (tabState.isDisposed) return
-    if (el.getAnimations().length === 0) el.style.overflow = ''
+    if (!el.getAnimations().some(b => sizeMoves.has(b))) el.style.overflow = ''
   }
   a.onfinish = done
   a.oncancel = done
@@ -117,12 +125,17 @@ export function glide(
   const edges = style ? EDGES.map(edge => parseFloat(style[edge]) || 0) : null
   const xs = springFrames(from, to)
   if (xs.length < 2) xs.push(to)
-  const anim = play(el, sizeFrames(size, xs, edges, Math.max(from.x, to)), {
-    duration: (xs.length - 1) * FRAME_MS,
-    delay,
-    easing: 'linear',
-    fill: fillOf(hold, delay),
-  })
+  const anim = play(
+    el,
+    sizeFrames(size, xs, edges, Math.max(from.x, to)),
+    {
+      duration: (xs.length - 1) * FRAME_MS,
+      delay,
+      easing: 'linear',
+      fill: fillOf(hold, delay),
+    },
+    true,
+  )
   glides.set(el, { size, from, to, delay, startsAt: Date.now() + delay, anim, scalesEdges })
 }
 
@@ -134,7 +147,7 @@ export function opacityOf(el: HTMLElement): number {
 }
 
 /** A fade under way, and the opacity it goes to. */
-const fades = new WeakMap<HTMLElement, { to: number; anim: Animation }>()
+const fades = new WeakMap<HTMLElement, { from: number; to: number; anim: Animation }>()
 
 /** Elements that enter, leave or fold: their fades also slide them, so a fade that restores one slides it back. */
 const slides = new WeakSet<HTMLElement>()
@@ -165,7 +178,7 @@ export function fade(
     easing: FADE_EASING,
     fill: fillOf(hold, delay),
   })
-  fades.set(el, { to, anim })
+  fades.set(el, { from, to, anim })
   return anim
 }
 
@@ -181,6 +194,27 @@ export function fadeShown(el: HTMLElement): number | null {
 export function stopFadeOut(el: HTMLElement) {
   const f = fades.get(el)
   if (f?.to === 0) f.anim.cancel()
+}
+
+/**
+ * Fades `el`'s `pseudo` in on the timing of `row`'s fade in, from the opacity that fade starts at, so a connector
+ * drawn as a pseudo-element shows as the row it joins does. With no row fading in, it fades in at once.
+ */
+export function fadePseudoWith(el: HTMLElement, pseudo: string, row: HTMLElement | undefined): Animation {
+  const f = row ? fades.get(row) : undefined
+  const anim = f?.anim
+  const timing = anim?.effect?.getTiming()
+  const from = f?.from ?? 0
+  const delay = Math.max(0, Number(timing?.delay ?? 0) - Number(anim?.currentTime ?? 0))
+  const duration = Number(timing?.duration ?? ENTER_FADE_MS)
+
+  return play(el, [{ opacity: from }, { opacity: 1 }], {
+    pseudoElement: pseudo,
+    duration,
+    delay,
+    easing: FADE_EASING,
+    fill: fillOf(false, delay),
+  })
 }
 
 export const isFadingIn = (el: HTMLElement) => {
