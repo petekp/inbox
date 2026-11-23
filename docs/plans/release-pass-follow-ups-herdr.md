@@ -1,0 +1,11 @@
+# Scripted release pass: Herdr frame harness follow-ups
+
+Part of [Scripted release pass: follow-ups](release-pass-follow-ups.md).
+
+Status: building. Each item stays until the change that does it lands.
+
+The Herdr frame harness, `herdr/tests/frames.ts`, draws the Herdr pane frame by frame with a stand-in for gpui-kit. These are the ways it passes while the app fails.
+
+- **The Herdr frame harness read a tree row's mark as its title.** Until the title fade change, the harness took `node.kids[1]` as a row's title text. In a tree row that node is the row's mark, so the title tests in `herdr/tests/glide.spec.ts` checked the mark and passed while every wrapped title was cut. The harness now finds the title by its text and its layer's id. No check fails when the harness reads the wrong node: a spec that asserts the title text it read is the row's title would catch it.
+- **The Herdr frame harness draws only every 16 ms.** `framesOf` in `herdr/tests/frames.ts` draws on a fixed grid, but the app also draws at each time the mod schedules, such as a closing panel's `panelHeldUntil`. Drawing at those times too would have caught a row reopened 150 ms into its close: the box lets go at 136 ms in the app and keeps its speed, so the panel shows nothing at full height for about 300 ms. The harness let go at 156 ms instead, where the reopen came first and passed.
+- **The Herdr frame harness does not model element identity.** gpui-kit keys a transition to its element's id. An element with no id is known by its place in the tree, so when a block enters or leaves above it, its fade does not run and it pops. In the app, a Status fold's nested rows and every tree line vanished in one frame as the fold shut, and drew at full opacity, clipped, as it opened ([#743](https://github.com/petekp/inbox/issues/743)). `framesOf` in `herdr/tests/frames.ts` takes an element's opacity from its `.transition()` alone, so `herdr/tests` passed. A stand-in for gpui-kit that throws on `.transition()` for an element with no id, or a harness that drops a transition when an element's place in the tree changes, would catch it.
