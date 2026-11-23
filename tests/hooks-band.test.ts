@@ -129,6 +129,49 @@ test('the band is [Open inbox] and the counts with full-brightness labels, the s
   expect(await pane.find({ key: 'explain-i2-key' })).toBeUndefined()
 })
 
+test('Open inbox keeps its label while the engine leaves the pane undrawn, and reads Go to inbox once it draws the pane', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
+  const label = async () => (await band.find({ key: 'open-inbox' }))?.props.label
+
+  w.paneOpenResult = {
+    isPlaced: false,
+    reason: 'the terminal is 120 columns wide, under the 144 an unasked pane needs',
+  }
+  await band.press({ key: 'open-inbox' })
+  await clock.settle()
+  expect(w.panesOpened).toEqual(['inbox'])
+  expect(await label()).toBe('Open inbox')
+
+  await $.ui.mount(PANE)
+  await clock.settle()
+  expect(await label()).toBe('Go to inbox')
+  await band.press({ key: 'open-inbox' })
+  await clock.settle()
+  expect(w.panesClosed).toEqual([])
+})
+
+test('in the desktop app, Go to inbox closes the pane and opens it again, since the app can hide it without a close', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  await $.session.start({ cwd: '/tmp/project', surface: 'desktop', isInteractive: true })
+  await clock.settle()
+  const band = await $.ui.mount({ plugin: 'inbox', surface: 'desktop', ...BAND })
+  await band.press({ key: 'open-inbox' })
+  await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, placement: 'dock' } })
+  await clock.settle()
+  expect(w.panesClosed).toEqual([])
+
+  await band.press({ key: 'open-inbox' })
+  await clock.settle()
+  expect(w.panesClosed).toEqual(['inbox'])
+  expect(w.panesOpened).toEqual(['inbox', 'inbox'])
+  expect((await band.find({ key: 'open-inbox' }))?.props.label).toBe('Go to inbox')
+})
+
 test('a new session shows the band with Nothing needed and Open inbox before its first reply, in the terminal and the desktop app', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])

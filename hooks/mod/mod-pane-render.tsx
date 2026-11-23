@@ -8,7 +8,7 @@ import { setDemo } from './mod-demo'
 import { drawnState, later } from './mod-drawn'
 import { closeField } from './mod-pane-input'
 import { noteStatusTop, paneHandlers, paneViewKeys, restoreDesktopFocus } from './mod-pane-handlers'
-import { matchPaneEscape } from './mod-pane-open'
+import { matchPaneEscape, paneOpened } from './mod-pane-open'
 import { scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { cancelUndoScroll, paneState } from './mod-state'
@@ -94,6 +94,10 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
   const opening: UiEvent[] = [{ type: 'opened' }, { type: 'read', host: hostFactsOf(drawn) }]
   const isOpenUnheard = paneState.isOpenUnheard && drawn.ui.shownSince === null
   const ui = isOpenUnheard ? applyUiEvents(drawn.ui, drawn.view, opening, now).ui : drawn.ui
+  if (paneState.isOpenWaiting) {
+    paneState.isOpenWaiting = false
+    later(m, 0, () => paneOpened(m))
+  }
   if (look === 'terminal') landTerminalFrame(m, ui, drawn.view, now)
   // A collapse the person made draws at once, before its save reaches the view.
   const view = { ...drawn.view, collapsed: collapsedOf(ui, drawn.view) }

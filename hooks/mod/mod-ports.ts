@@ -96,6 +96,7 @@ type Clock = {
 type PaneCalls = {
   /** Opens the pane, or raises it. */
   open: (opts: { focus?: true; closeOnEscape?: true }) => Promise<UiOpenResult>
+  close: () => Promise<void>
   /** The inbox pane as the surface reports it, or undefined when it is not open. */
   find: () => Promise<UiPane | undefined>
   focus: (key: string) => Promise<UiFocusResult>

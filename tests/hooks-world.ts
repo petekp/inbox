@@ -1,5 +1,5 @@
 import type { Engine, MockClock } from 'claude-code/testing'
-import type { On, PaneOpenArgs, PromptOrigin, RenderSurface } from 'claude-code'
+import type { On, PaneOpenArgs, PromptOrigin, RenderSurface, UiOpenResult } from 'claude-code'
 import { GH_TIMEOUT_MS } from '../core/domain/gh'
 import { STATUS_SYSTEM } from '../core/domain/status-prompt'
 import { parseStatus } from '../core/domain/status'
@@ -86,7 +86,9 @@ class World {
   toolRefusal: string | undefined
   commandRefusal: string | undefined
   panesOpened: string[] = []
+  panesClosed: string[] = []
   paneOpens: PaneOpenArgs[] = []
+  paneOpenResult: UiOpenResult = { isPlaced: true }
   paneState: { isShown: boolean; isFocused: boolean } | null = null
   missingFiles: string[] = []
 }
@@ -314,7 +316,9 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   w.toolRefusal = undefined
   w.commandRefusal = undefined
   w.panesOpened = []
+  w.panesClosed = []
   w.paneOpens = []
+  w.paneOpenResult = { isPlaced: true }
   w.paneState = null
   w.missingFiles = []
   on('store.get', async (_$, e) => {
@@ -376,12 +380,15 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
   on('ui.open', (_$, e) => {
     w.panesOpened.push(e.id)
     w.paneOpens.push(e)
-    return { value: { isPlaced: true as const } }
+    return { value: w.paneOpenResult }
   })
   on('ui.panes', () => ({
     value: w.paneState ? [{ id: 'inbox', title: 'Inbox', ...w.paneState, isPlaced: w.paneState.isShown }] : [],
   }))
-  on('ui.close', () => ({ value: undefined }))
+  on('ui.close', (_$, e) => {
+    w.panesClosed.push(e.id)
+    return { value: undefined }
+  })
   on('ui.toast', (_$, e) => {
     w.toasts.push(e.text)
     return { value: undefined }
