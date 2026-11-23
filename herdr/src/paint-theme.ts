@@ -81,8 +81,8 @@ export const colorOf = (t: Theme, tone: Tone): Color =>
     ? ((isLightTheme(t) ? LIGHT_TONES : DARK_TONES)[tone] as Color)
     : t[tone === null ? 'foreground' : TONE_COLORS[tone]]
 
-/** The faint text level in `t`: its muted color faded toward its background, as `faintOver` gives it. */
-export const faintOf = (t: Theme): Color => faintOver(t.muted, t.background) as Color
+/** The faint text level in `t`: its muted color, made opaque, faded toward its background, as `faintOver` gives it. */
+export const faintOf = (t: Theme): Color => faintOver(flatten(t.muted, t.background), t.background) as Color
 
 /** A theme color at a share of its strength, for a banner's fill and border. Tone colors are opaque `#rrggbb`. */
 export const tint = (c: Color, share: number): Color =>
