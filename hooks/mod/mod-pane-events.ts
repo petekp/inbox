@@ -1,6 +1,7 @@
 import type { Hook } from 'claude-code'
 
 import { pressTitle, setFold, toggleHelp, toggleParent } from './mod-pane-input'
+import { redraw } from './mod-drawn'
 import { showTab } from './mod-pane-open'
 import { type Mod, PANE } from './mod-ports'
 import { cancelUndoScroll, paneState, suspendUndoReveal } from './mod-state'
@@ -53,7 +54,6 @@ export async function paneScrolled(m: PaneEventCalls, isByPerson: boolean) {
 /** A message a Client in the pane posted: a tab, Help, fold, title or parent press, or a press it passes on. */
 export async function paneMessaged(m: PaneEventCalls, e: UiMessageEvent) {
   if (e.requestId !== PANE) return
-  await m.sendUi([{ type: 'list-input' }])
   const data = e.data as {
     tab?: unknown
     isUnfolded?: unknown
@@ -61,7 +61,14 @@ export async function paneMessaged(m: PaneEventCalls, e: UiMessageEvent) {
     key?: unknown
     isPointer?: unknown
     isHelp?: unknown
+    isRunning?: unknown
   } | null
+  if (e.element === 'tabs' && paneState.isTabsClientNew) {
+    paneState.isTabsClientNew = false
+    await redraw(m)
+  }
+  if (data?.isRunning === true) return
+  await m.sendUi([{ type: 'list-input' }])
   if (data?.isPointer === true) return
   const shown = isShownTab(data?.tab) ? data.tab : null
   const followUp = typeof data?.key === 'string' ? followUpPresses.get(data.key) : undefined
@@ -96,6 +103,7 @@ export async function paneMessaged(m: PaneEventCalls, e: UiMessageEvent) {
 /** The pane closed: it has no keys and no terminal frame, the controller hears it, and the Status look ends. */
 export async function paneClosed(m: PaneEventCalls) {
   paneHasKeys.clear()
+  paneState.isTabsClientNew = true
   paneState.drawsTerminal = false
   paneState.isOpenWaiting = false
   await m.sendUi([{ type: 'closed' }])

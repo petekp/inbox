@@ -144,6 +144,7 @@ async function isDrawnOnDesktop(m: PaneOpenCalls): Promise<boolean> {
 async function showAgainIfHidden(m: PaneOpenCalls) {
   if (await isDrawnOnDesktop(m)) return
   openFields.clear()
+  paneState.isTabsClientNew = true
   await m.pane.close().catch(() => undefined)
 }
 
