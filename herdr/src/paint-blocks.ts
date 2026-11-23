@@ -19,6 +19,7 @@ import {
   SEP,
   TEXT_X,
   colorOf,
+  faintOf,
 } from './paint-theme'
 import { fieldEl } from './paint-field'
 import { emptyEl } from './paint-empty'
@@ -445,7 +446,7 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
     .pr(EDGE)
     .py(padOf(b))
     .items_start()
-    .text_color(t.muted)
+    .text_color(fold?.level === 'faint' ? faintOf(t) : t.muted)
     .accessibility_label(b.text)
     .when(!isInert, e => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt)))
     .when(mark !== undefined, e => e.child(markEl(mark ?? null, t)))

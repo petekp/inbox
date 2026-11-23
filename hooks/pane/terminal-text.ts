@@ -2,6 +2,7 @@ import { desktopLines, desktopTextPt } from './desktop-metrics'
 import { cutForEllipsis } from '../../core/domain/text'
 import { DOT } from '../../core/view/rows'
 import { parseInline, type Span } from '../../core/view/inline'
+import type { NameLevel } from '../../core/view/status-page-parts'
 
 /**
  * `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. With `isCutAtWord`, the
@@ -29,9 +30,17 @@ export function desktopSpanLines(
     kept.push({ ...s, text: s.text.slice(0, room) })
     room -= s.text.length
   }
-  const isMuted = kept.at(-1)?.isMuted
+  const { isMuted, isFaint, isOnSelection } = kept.at(-1) ?? {}
 
-  return [...kept, { text: '…', ...(isMuted ? { isMuted } : {}) }]
+  return [
+    ...kept,
+    {
+      text: '…',
+      ...(isMuted ? { isMuted } : {}),
+      ...(isFaint ? { isFaint } : {}),
+      ...(isOnSelection ? { isOnSelection } : {}),
+    },
+  ]
 }
 /** The most words from the start of `line` that `fit` with an ellipsis after them, or null when not even one does. */
 function cutAtWord(line: string, fits: (withEllipsis: string) => boolean): string | null {
@@ -72,6 +81,9 @@ export function lineCount(text: string, width: number): number {
 export type TerminalSpan = Span & {
   isLinkAddress?: true
   isMuted?: true
+  isFaint?: true
+  /** The span sits on the selection color, so faint text takes the palette's `selectionFaint`. */
+  isOnSelection?: true
   isNeedsYou?: true
   isDone?: true
   isUnbroken?: true
@@ -141,8 +153,13 @@ export function terminalSpanLines(spans: TerminalSpan[], width: number, limit = 
     const last = kept.at(-1)!
     const shown = cutForEllipsis(last.map(c => c.text).join(''), t => t.length <= size)
     while (columns(last) > shown.length) last.pop()
-    const isMuted = last.at(-1)?.span.isMuted
-    last.push({ text: '…', span: { text: '…', ...(isMuted ? { isMuted } : {}) } })
+    const { isMuted, isFaint, isOnSelection } = last.at(-1)?.span ?? {}
+    const marks = {
+      ...(isMuted ? { isMuted } : {}),
+      ...(isFaint ? { isFaint } : {}),
+      ...(isOnSelection ? { isOnSelection } : {}),
+    }
+    last.push({ text: '…', span: { text: '…', ...marks } })
   }
   return kept.map(characters => {
     const runs: TerminalSpan[] = []
@@ -228,3 +245,11 @@ export function settledTitleLine(title: string, label: string, fits: (text: stri
 
   return { title: shown, after: statusAfterTitle(`${DOT}${cut(label)}`, shown, fits) }
 }
+
+/** A Status name or line as one span at its level: plain, muted or faint, on the selection color when `isOnSelection`. */
+export const levelSpan = (text: string, level: NameLevel, isOnSelection = false): TerminalSpan =>
+  level === 'faint'
+    ? { text, isFaint: true, ...(isOnSelection ? { isOnSelection: true as const } : {}) }
+    : level === 'muted'
+      ? { text, isMuted: true }
+      : { text }

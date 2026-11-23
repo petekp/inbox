@@ -1,6 +1,6 @@
 import { Icon } from './row-actions'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
-import { STALL_GAP } from '../../core/view/status-page-parts'
+import { STALL_GAP, textLevelOf } from '../../core/view/status-page-parts'
 import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, goalSubmitLabel, milestoneKeyPlan } from '../../core/view/status-keys'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, suggestedGoalOffer } from '../../core/view/status-goal-page'
@@ -16,7 +16,7 @@ import { closingFolds, entering, tabState } from './tab-state'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
 import { dispatch, errorOf, pressRow } from './tab-ui'
 import { outOn } from './tab-press'
-import { NameLine } from './tab-status-name'
+import { milestoneNameClass, NameLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, EmptyState, pulseInStep } from './tab-parts'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
@@ -103,7 +103,7 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
     connector === null ? '' : 'connector-down',
     connector ?? '',
   ]
-  const nameClass = [m.isBold ? 'bold' : '', m.isMuted ? 'muted' : ''].filter(Boolean).join(' ')
+  const nameClass = milestoneNameClass(m)
 
   return (
     <div
@@ -128,7 +128,7 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
             data-fold={foldMotion(fold)}
             onClick={e => clickFold(e, tabState.ui.statusUnfolded.includes(fold), () => toggleStatusFold(fold))}
           >
-            {m.name}
+            <span class="faint">{m.name}</span>
             <Icon name={tabState.ui.statusUnfolded.includes(fold) ? 'down' : 'right'} />
           </button>
         )}
@@ -138,7 +138,7 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
           </div>
         ) : null}
         {m.text ? (
-          <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
+          <div class={`${textLevelOf(m)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
             {m.text}
           </div>
         ) : null}

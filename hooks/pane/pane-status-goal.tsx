@@ -26,7 +26,8 @@ import { GOAL_KEYS_ID, goalKeyGroups, milestoneKeyPlan, type StatusKey } from '.
 import type { StatusKeyTarget } from '../../core/view/status-keys'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, STALL_GAP } from '../../core/view/status-page-parts'
+import { mergedLine, nameLevelOf, STALL_GAP, textLevelOf } from '../../core/view/status-page-parts'
+import { levelSpan } from './terminal-text'
 import { isParentCollapsed, milestoneRows } from '../../core/view/status-folds'
 import type { IsCollapsed } from '../../core/view/status-folds'
 import type { PaneStatusParent } from './pane-status-parent'
@@ -210,10 +211,10 @@ export function paneStatusGoal(
         ? fold
         : statusRowLine({ key: `status-${m.id}`, mark, content: [fold], isSelected: isSelected(m.id) })
     }
+    const isRowSelected = isSelected(m.id)
     const name = {
-      text: m.name,
+      ...levelSpan(m.name, nameLevelOf(m, m.isMuted ? 'muted' : 'plain'), isRowSelected),
       ...(m.isBold ? { bold: true as const } : {}),
-      ...(m.isMuted ? { isMuted: true as const } : {}),
     }
 
     const isFolded = isParentCollapsed(m, isCollapsed)
@@ -227,7 +228,7 @@ export function paneStatusGoal(
           ? parentName(m.id, name, stall, 0, { isCollapsed: isFolded, count: m.foldCount })
           : statusNameLine(`goal-${m.id}-name`, name, stall, 0),
         ...(x?.waitsOn ? [statusPageText(`goal-${m.id}-waits-on`, [{ text: x.waitsOn, isNeedsYou: true }], 0)] : []),
-        ...(m.text ? [statusPageText(`goal-${m.id}-text`, [{ text: m.text, isMuted: true }], 0)] : []),
+        ...(m.text ? [statusPageText(`goal-${m.id}-text`, [levelSpan(m.text, textLevelOf(m), isRowSelected)], 0)] : []),
         ...(x?.merged
           ? [
               statusPageText(
@@ -240,7 +241,7 @@ export function paneStatusGoal(
         ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),
       ],
-      isSelected: isSelected(m.id),
+      isSelected: isRowSelected,
     })
 
     return x ? { ...line, tops: seenTops(x, milestonePad(m)) } : line

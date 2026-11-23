@@ -36,9 +36,13 @@ export function paneText({ Text, pal }: Pick<PaneBase, 'Text' | 'pal'>) {
                 ? (pal.tone.done ?? pal.mark.done)
                 : span.isLinkAddress || span.isMuted
                   ? pal.muted
-                  : span.code
-                    ? 'permission'
-                    : undefined
+                  : span.isFaint
+                    ? span.isOnSelection
+                      ? (pal.selectionFaint ?? pal.faint)
+                      : pal.faint
+                    : span.code
+                      ? 'permission'
+                      : undefined
           }
         >
           {span.text}
