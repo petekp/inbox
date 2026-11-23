@@ -205,8 +205,7 @@ const THEME_KEY_PALETTE: Palette = {
 // The app refuses an hsl() alpha or color-mix() color.
 const DESKTOP_AGE = '#85837e'
 /**
- * One hex serves both of the app's themes, so faint text reads 3.9:1 on white and on the dark page: no one color reads
- * nearer `FAINT_TEXT_CONTRAST` on both.
+ * One hex serves both of the app's themes: faint text reads 3.9:1 on white and 4.5:1 on the dark page, #191919.
  */
 const DESKTOP_FAINT = '#83817c'
 /**

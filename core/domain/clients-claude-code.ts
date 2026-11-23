@@ -91,7 +91,7 @@ export const CLAUDE_CODE: Client = {
     'status-faint-text': {
       kind: 'different',
       reason:
-        "Desktop draws faint text in one hex for both of the app's themes, at 3.9:1. The ANSI themes, and a theme the mod does not know, draw it in the muted theme key.",
+        "Desktop draws faint text in one hex for both of the app's themes, at 3.9:1 in light and 4.5:1 in dark. The ANSI themes, and a theme the mod does not know, draw it in the muted theme key.",
     },
     'status-parent-fold': { kind: 'full' },
     'seen-on-screen': { kind: 'full' },
