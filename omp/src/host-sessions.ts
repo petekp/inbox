@@ -384,6 +384,10 @@ export function sessionCalls(context: HostContext) {
     )
   }
 
+  function fetchPrsNow(ctx: OmpContext): void {
+    deps.background(prFetches.fetchNow(sessionIdOf(ctx), () => fetchPrs(hostFor(ctx), true)))
+  }
+
   function fetchPrsWhenDue(ctx: OmpContext, isTabShown: boolean): void {
     const id = sessionIdOf(ctx)
     if (prFetches.isFetching(id)) return
@@ -412,6 +416,7 @@ export function sessionCalls(context: HostContext) {
     prepare,
     continueFork,
     catchUpUnseen,
+    fetchPrsNow,
     fetchPrsWhenDue,
     checkDelegatesWhenDue,
     wakeLater,

@@ -40,6 +40,7 @@ import { makeBackground } from './background'
 import { pruneSessions, readState, recordMatchesNow, updateState } from './state'
 import { readViewers } from './viewers'
 import { isPrsTabViewed } from '../../core/runtime/remote-viewers'
+import { addsTabPr } from '../../core/runtime/host-prs'
 import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
 import type { CodexHerdrAsk } from './server-herdr'
@@ -117,7 +118,7 @@ export function makeServer(given: ServerDeps): Server {
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
   const background = makeBackground()
-  const { wakeAfterSettle, fetchPrsWhenDue, served, onPress, onHerdrFile } = makeSessionHost(
+  const { wakeAfterSettle, fetchPrsNow, fetchPrsWhenDue, served, onPress, onHerdrFile } = makeSessionHost(
     deps,
     newestTurns,
     hooksTrustNow,
@@ -155,13 +156,16 @@ export function makeServer(given: ServerDeps): Server {
       case 'close':
       case 'order_prs': {
         let result = ''
+        let addsPr = false
         const delegate = (await deps.delegate?.().catch(() => null)) ?? null
         const earlier = name === 'record' ? await recordMatchesNow(args, now()) : []
         await codexStore(dir, id, now, deps.onWrite).update(s => {
           const r = recorded(CODEX, s, name, args, now(), listedToolFields(), delegate, earlier)
           result = r.result
+          addsPr = addsTabPr(s, r.state)
           return heard(r.state)
         })
+        if (addsPr) fetchPrsNow(id)
         return text(result)
       }
       case 'inbox': {
