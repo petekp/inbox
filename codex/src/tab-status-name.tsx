@@ -1,11 +1,24 @@
 import { Icon } from './row-actions'
 import type { ParentChevron } from './tab-status-fold'
-import { STATUS_TEXT_LINES } from '../../core/view/status-page'
-import { nameBeforeStall, nameLevelOf, STALL_GAP } from '../../core/view/status-page-parts'
-import type { NameLevel } from '../../core/view/status-page-parts'
+import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { nameBeforeStall, nameLevelOf, STALL_GAP, WAS_LEVEL } from '../../core/view/status-page-parts'
+import type { NameLevel, TextLevel } from '../../core/view/status-page-parts'
 import type { StatusTone } from '../../core/view/help'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import type { StatusStall } from '../../core/view/status-page'
+
+const LEVEL_CLASS: Record<TextLevel, string> = { muted: 'muted', faint: 'faint' }
+
+/** The class that draws a line at a text level. */
+export const levelClass = (level: TextLevel): string => LEVEL_CLASS[level]
+
+/** A Prev line, which says what a Status row or milestone was before it changed. */
+export const WasLine = ({ was }: { was: string }) => (
+  <div class={`${levelClass(WAS_LEVEL)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
+    {WAS_PREFIX}
+    {was}
+  </div>
+)
 
 /** The class that draws a Status row's name at the level `nameLevelOf` gives it: none for plain, else the level's own. */
 export function nameClassOf(row: { tone: StatusTone }, otherwise: NameLevel): string {

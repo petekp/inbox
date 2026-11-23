@@ -144,7 +144,7 @@ export function paneStatusGoal(
   const muted = (key: string, text: string, width = blockWidth, level: TextLevel = 'muted') =>
     wrapped(
       <Box key={key}>
-        <Text wrap="wrap" color={level === 'faint' ? pal.faint : pal.muted}>
+        <Text wrap="wrap" color={pal[level]}>
           {text}
         </Text>
       </Box>,

@@ -321,6 +321,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
 /** The line under the notices while a PR could not be read: which ones, Refresh PRs, and its press status. */
 function refreshEntries(screen: PanelScreen, refresh: PrRefreshView, now: number): Entry[] {
   const buttons = prButtons(refresh.actions)
+  const refreshFeedback = refresh.showsPress ? pressFeedback(screen, PR_REFRESH_ID, now) : null
 
   return [
     {
@@ -329,7 +330,8 @@ function refreshEntries(screen: PanelScreen, refresh: PrRefreshView, now: number
         ...blankLine(PR_REFRESH_ID),
         lead: null,
         title: refresh.text ?? '',
-        feedback: refresh.showsPress ? pressFeedback(screen, PR_REFRESH_ID, now) : null,
+        feedback: refreshFeedback,
+        age: doneAt(refreshFeedback),
         buttons,
         isStatic: buttons.length === 0,
         isWaiting: false,
@@ -346,13 +348,15 @@ function orderEntries(screen: PanelScreen, order: PrOrderView, now: number): Ent
   const changed = order.changed
   if (!changed) return out
   const buttons = prButtons(changed.actions)
+  const rankFeedback = changed.showsPress ? pressFeedback(screen, RANK_AGAIN_ID, now) : null
   out.push({
     kind: 'row',
     line: {
       ...blankLine(RANK_AGAIN_ID),
       lead: null,
       title: changed.text ?? '',
-      feedback: changed.showsPress ? pressFeedback(screen, RANK_AGAIN_ID, now) : null,
+      feedback: rankFeedback,
+      age: doneAt(rankFeedback),
       buttons,
       isStatic: buttons.length === 0,
       isWaiting: false,
