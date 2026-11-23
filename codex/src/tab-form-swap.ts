@@ -43,7 +43,7 @@ function partsOf(row: Element, skip: string | null): HTMLElement[] {
  * nearly open, so the moving edge never cuts it. A row Undo opens from its settled form never drew its Holds up line
  * in the closed form, so that form stays hidden and the line comes with the panel. The panel of the form it leaves
  * fades out from `panelShown`, the opacity the row's panel showed before this draw, as when the row was still opening.
- * A change already fading, as when a row Undo brought back closed opens while its settled form fades, keeps the fades of
+ * A change already fading, as when a row Undo brought back opens or closes while its settled form fades, keeps the fades of
  * the form it leaves, and the form it takes fades in from what it shows.
  */
 export function fadeForms(el: HTMLElement, panelShown: number) {

@@ -342,6 +342,13 @@ function settleCases(): [string, Step[]][] {
       ],
     ],
     [
+      'undo to open, then closed',
+      [
+        [0, open],
+        [32, closed, 'input'],
+      ],
+    ],
+    [
       'settle turned back to open',
       [
         [0, dismissed],

@@ -6,7 +6,7 @@ import {
   LEAVE_FADE_MS,
   turnBackFades,
 } from '../../core/view/row-motion'
-import type { RowState } from '../../core/view/row-motion'
+import type { RowTrack } from '../../core/view/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
@@ -253,7 +253,8 @@ function moveRow(
   closeWait: number,
 ) {
   const key = el.dataset.motion!
-  const state = drawnRows.get(key)?.track.state
+  const track = drawnRows.get(key)?.track
+  const state = track?.state
   const isFresh = !was || was.el !== el
   const part = drawnRows.has(key) ? el.querySelector<HTMLElement>(OPEN_PART) : null
   if (part && !part.classList.contains('closing')) part.style.marginTop = ''
@@ -263,7 +264,7 @@ function moveRow(
   const scalesEdges = isScalingEdges(el)
   const waitsForLeave = state === 'opening' || waitLeft > 0 || el.querySelector(NEW_NOTE) !== null
   const delay = Math.max(isOwnMove ? 0 : Math.max(waitsForLeave ? heightWaitMs : 0, waitLeft), closeWait)
-  if (state && changed.has(key) && startState(el, state, from, isFresh, was?.openTop ?? null)) return
+  if (track && changed.has(key) && startState(el, track, from, isFresh, was?.openTop ?? null)) return
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
     if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, Math.max(heightWaitMs, closeWaitMs))
@@ -304,7 +305,8 @@ function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: 
 }
 
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */
-function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh: boolean, openTop: number | null) {
+function startState(el: HTMLElement, track: RowTrack, from: SpringState, isFresh: boolean, openTop: number | null) {
+  const { state } = track
   switch (state) {
     case 'entering': {
       const isTurn = !isFresh && el.getAnimations().length > 0
@@ -319,7 +321,7 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
         from,
         state,
         openTop,
-        Math.max(tabState.isReadDraw ? heightWaitMs : 0, swapsForm(el) ? LEAVE_FADE_MS : 0),
+        Math.max(tabState.isReadDraw ? heightWaitMs : 0, swapsForm(el) ? track.since + LEAVE_FADE_MS - Date.now() : 0),
       )
       return true
     case 'leaving':
