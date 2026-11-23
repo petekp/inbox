@@ -755,7 +755,7 @@ function withWorkDoneMilestones(o, now) {
   const milestones = o.milestones.map((m) => {
     if (!isOpen(m)) return m;
     const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
-    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
+    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) >= m.changedAt);
     if (!isWorkDone) return m;
     isChanged = true;
     return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
@@ -3558,10 +3558,13 @@ function subjectInPlaceOf(o, m, items) {
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
   return only !== void 0 && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
 }
-function isTitleRepeated(title, subjects) {
-  const open2 = subjects.filter((x) => x.into === null && isOpen(x));
-  const only = open2.length === 1 ? open2[0] : void 0;
-  return only !== void 0 && isNamedAlike(title, only.name);
+function isTitleRepeated(title, subjects, rows) {
+  const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
+  const work = subjects.filter((x) => x.into === null);
+  if (work.filter(isOpen).length > 1) return false;
+  return work.some(
+    (x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name)
+  );
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -3729,7 +3732,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects) ? null : head.title;
+  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows2) ? null : head.title;
   const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
   const rows = [
     ...headPart,
