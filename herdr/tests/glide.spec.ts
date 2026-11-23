@@ -227,14 +227,15 @@ test.each([1, 0.9])(
       const list = allOf(root).find(n => n.id === 'inbox-list')!
       const [chrome, inList] = [layout(root, () => undefined), layout(list, () => undefined, LINE_HEIGHT)]
       const placed = new Map([...chrome.placed, ...inList.placed])
-      return { root, placed, fits: [...chrome.fits, ...inList.fits] }
+      const floating = new Map([...chrome.floating, ...inList.floating].map(f => [f.node, f.height]))
+      return { root, placed, floating, fits: [...chrome.fits, ...inList.fits] }
     }
     const misfitsIn = (tab: string) => {
       click(allOf(paint()).find(n => n.label?.startsWith(tab))!)
       for (let i = 0; i < 3; i++) {
-        const { root, placed } = laidOut()
+        const { root, placed, floating } = laidOut()
         const heightOf = (n: Parameters<typeof placed.get>[0]) =>
-          n.id === 'inbox-list' ? 100_000 : (placed.get(n)?.height ?? 0)
+          n.id === 'inbox-list' ? 100_000 : (placed.get(n)?.height ?? floating.get(n) ?? 0)
         measure(n => ({ width: 300 * zoom, height: heightOf(n) * zoom }), root)
       }
       const { fits } = laidOut()

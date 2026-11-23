@@ -3,7 +3,9 @@ import type { RowState, RowTarget, RowTrack } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import type { TabCell } from './draw'
-import { MOVED_TO, copyIdOf, panelId, titleId } from './heights'
+import { MOVED_TO, NO_SIZES, copyIdOf, panelId, titleId } from './heights'
+import type { Sizes } from './heights'
+import { titleRestOf } from './title-cut'
 import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce } from './block-glide'
 import { aimSpace, faintCloseSteps, opacityAt, stepsFrom } from './panel-steps'
 import type { PanelSpace, PanelStep } from './panel-steps'
@@ -129,8 +131,8 @@ function panelOf(state: RowState, isStart: boolean, last: Tracked | undefined, c
  * The opened row's panel still fades in once its space is nearly open. When their input opens a row, a row whose close
  * a publish began lets go of its height, so both move together. A block that leaves in the draw a press's field enters,
  * or comes back as it leaves, is what the field replaces: it hides at once and shuts without holding anything.
- * `isFirst` forgets the tracks and draws every block at rest, as a newly shown tab does. `heightOf` gives the height
- * measured under a key, as the look measures it. `nextAt` is when a move ends, a box opens or shuts, or a box's glide
+ * `isFirst` forgets the tracks and draws every block at rest, as a newly shown tab does. `sizes` gives the sizes the
+ * look measured, by key. `nextAt` is when a move ends, a box opens or shuts, or a box's glide
  * comes to rest, so the look draws again then.
  */
 export function moveRows(
@@ -139,8 +141,9 @@ export function moveRows(
   now: number,
   isFirst: boolean,
   isInput = false,
-  heightOf: (key: string) => number | undefined = () => undefined,
+  sizes: Sizes = NO_SIZES,
 ): { blocks: Block[]; tracks: Tracks; motion: ReadonlyMap<string, RowMotion>; nextAt: number | null } {
+  const heightOf = (key: string) => sizes.get(key)
   const was = isFirst ? NO_TRACKS : last
   const wasDrawn = new Set(was.order)
   const moved = movedOf(blocks, was)
@@ -201,7 +204,6 @@ export function moveRows(
   const motion = new Map<string, RowMotion>()
   const add = (block: Block, track: RowTrack, last: Tracked | undefined, springId: string | null = null) => {
     const isOpen = block.kind === 'row' && isOpenRow(block)
-    const wasOpen = last?.block.kind === 'row' && isOpenRow(last.block)
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
     const isPressed = block.kind === 'field'
@@ -255,7 +257,14 @@ export function moveRows(
     )
     const title =
       block.kind === 'row' && last
-        ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now))
+        ? stepTitle(
+            last.title,
+            titleRestOf(last.block, last.swap, sizes),
+            titleRestOf(block, swap, sizes),
+            now,
+            heightOf(titleId(block.id)),
+            Math.max(0, heldUntil - now),
+          )
         : null
     rows.set(block.id, {
       track,

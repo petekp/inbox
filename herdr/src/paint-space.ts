@@ -11,13 +11,13 @@ import {
   HEAD_GAP,
   INSIDE_GAP,
   ITEM_GAP,
-  LINE_HEIGHT,
   LIST_GAP,
   LIST_MARGIN,
   SECTION_GAP,
 } from './paint-theme'
 import type { Paint } from './paint-theme'
 import { panelId, titleId } from './heights'
+import { shortTitleOf } from './title-cut'
 import { shutTo } from './block-glide'
 import { contentStrokeEls, feedsOf, passingOf, runsIn, spaceColumnEl, strokeFadesOf } from './paint-strokes'
 import { SLIDE_PX, enterDelayMs } from '../../core/view/row-motion'
@@ -171,13 +171,17 @@ export function fitEl(key: string, p: Paint, el: Element, isPaneSized = false): 
 }
 
 /**
- * The height a row's title box moves to: the title's measured height while the row is open or a closing row holds its
- * height, which is undefined until its first measure, else one line.
+ * The height a row's title box moves to: the title's measured height while the row is open or holds its height, which
+ * is undefined until its first measure, and never under the height its short form rests at. Else that height, which
+ * is undefined until the whole title is measured (`shortTitleOf`).
  */
 const titleHeightOf = (r: RowBlock, p: Paint): number | undefined => {
-  const isWrapped = isOpenRow(r) || p.motion.get(r.id)?.isHeightHeld === true
+  const m = p.motion.get(r.id)
+  const rest = shortTitleOf(r, m?.swap?.from ?? null, p.heights).height
+  if (!isOpenRow(r) && m?.isHeightHeld !== true) return rest
+  const measured = p.heights.get(titleId(r.id))
 
-  return isWrapped ? p.heights.get(titleId(r.id)) : LINE_HEIGHT
+  return measured === undefined || rest === undefined ? measured : Math.max(measured, rest)
 }
 
 /**

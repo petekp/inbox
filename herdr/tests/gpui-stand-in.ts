@@ -23,7 +23,7 @@ export type Painted = {
   kids: Painted[]
   flow: 'row' | 'column'
   text: string | null
-  style: Partial<Record<Side | 'h' | 'w' | 'gap' | 'line' | 'top' | 'bottom' | 'left', number>> & {
+  style: Partial<Record<Side | 'h' | 'maxH' | 'w' | 'gap' | 'line' | 'top' | 'bottom' | 'left', number>> & {
     opacity?: number
     isTruncated?: boolean
     isAbsolute?: boolean
@@ -188,6 +188,7 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
           if (key === 'h' || key === 'w' || key === 'gap' || key === 'top' || key === 'bottom' || key === 'left')
             node.style[key] = first as number
           if (key === 'opacity') node.style.opacity = first as number
+          if (key === 'max_h') node.style.maxH = first as number
           if (key === 'overflow_hidden') node.style.isClipped = true
           if (key === 'line_height') node.style.line = parseFloat(String(first))
           if (key === 'truncate') node.style.isTruncated = true
