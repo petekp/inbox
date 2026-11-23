@@ -18,6 +18,12 @@ export type LinesAbove = ReadonlyMap<string, LineAbove | null>
 
 export const NO_LINES_ABOVE: LinesAbove = new Map()
 
+/**
+ * Where a row's held line is kept: a settled row apart from its open form. Undo takes the place of a settled row's
+ * buttons, so the row holds nothing from its open form, and its box shrinks to the settled height as it settles.
+ */
+const heldKey = (r: RowBlock): string => (r.settled ? `settled ${r.id}` : r.id)
+
 const hasActions = (r: RowBlock): boolean => r.buttons.length > 0 || r.field !== null
 
 /** Whether a row's status goes under its buttons: where `isStatusUnderActions` places it, or held there. */
@@ -51,33 +57,34 @@ const drawn = (l: LineAbove, now: number): NonNullable<RowBlock['heldLine']> => 
  *   as with "✓ Explained".
  *
  * A row drawn without buttons during its press, such as one deselected, keeps what it holds for when it shows them
- * again.
+ * again. A row that settles or comes back from settled starts holding afresh.
  */
 export function holdLinesAbove(blocks: Block[], held: LinesAbove, now: number): { blocks: Block[]; held: LinesAbove } {
   const next = new Map<string, LineAbove | null>()
   const shown = blocks.map((b): Block => {
     if (b.kind !== 'row') return b
-    const kept = held.get(b.id)
+    const key = heldKey(b)
+    const kept = held.get(key)
     const f = b.feedback
     if (!hasActions(b)) {
-      if (kept !== undefined && isUnderWay(f?.source ?? null)) next.set(b.id, kept)
+      if (kept !== undefined && isUnderWay(f?.source ?? null)) next.set(key, kept)
       return b
     }
     if (f === null) {
       if (kept === undefined) return b
       const empty = kept && { ...kept, isHidden: true }
-      next.set(b.id, empty)
+      next.set(key, empty)
       return empty ? { ...b, heldLine: drawn(empty, now) } : b
     }
     if (!isStatusUnder(b)) {
-      next.set(b.id, kept === null ? null : lineOf(f))
+      next.set(key, kept === null ? null : lineOf(f))
       return kept === null ? { ...b, isStatusHeldUnder: true } : b
     }
     if (kept === undefined) {
-      if (isUnderWay(f.source)) next.set(b.id, null)
+      if (isUnderWay(f.source)) next.set(key, null)
       return b
     }
-    next.set(b.id, kept)
+    next.set(key, kept)
 
     return kept ? { ...b, heldLine: drawn(kept, now) } : b
   })
