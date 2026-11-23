@@ -919,6 +919,19 @@ function cutForEllipsis(line, fits) {
     parts.pop();
   return parts.join("").replace(/[\s.,;:]+$/, "");
 }
+function wordCuts(line) {
+  const words = line.split(" ");
+  const cuts = words.map((_, n) => words.slice(0, words.length - n).join(" ").replace(/[\s.,;:]+$/, ""));
+  return [...new Set(cuts.filter(Boolean).map((head) => `${head}\u2026`))];
+}
+function cutAtWord(line, fits) {
+  return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
+}
+function cutLine(line, fits) {
+  if (fits(line))
+    return line;
+  return `${cutAtWord(line, fits) ?? cutForEllipsis(line, fits)}\u2026`;
+}
 var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
 function cutAtPhrase(text, fits) {
   if (fits(text))
@@ -9967,7 +9980,7 @@ function titleLines(title, first, next, maxLines) {
   if (after.length < maxLines)
     return [head, ...after];
   const last = after.slice(maxLines - 2).join(" ");
-  const cut = cellWidth(last) <= next ? last : `${cutForEllipsis(last, (t) => cellWidth(t) <= next)}\u2026`;
+  const cut = cutLine(last, (t) => cellWidth(t) <= next);
   return [head, ...after.slice(0, maxLines - 2), cut];
 }
 function indented(text, indent, width, maxLines, paint) {

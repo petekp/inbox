@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T10:49:15.526Z. 364191 characters follow.
+// Built at 2026-11-23T11:45:25.551Z. 368972 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -401,6 +401,14 @@ function blockingChecks(pr) {
 // ../core/domain/text.ts
 function clipLabel(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+function wordCuts(line) {
+  const words = line.split(" ");
+  const cuts = words.map((_, n) => words.slice(0, words.length - n).join(" ").replace(/[\s.,;:]+$/, ""));
+  return [...new Set(cuts.filter(Boolean).map((head) => `${head}…`))];
+}
+function cutAtWord(line, fits) {
+  return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
 }
 var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
 function cutAtPhrase(text, fits) {
@@ -5604,6 +5612,11 @@ function zoomOf(settings) {
   const zoom = settings.zoom;
   return typeof zoom === "number" && zoom > 0 ? zoom : 1;
 }
+var NO_SIZES = { get: () => {
+  return;
+}, widthOf: () => {
+  return;
+} };
 
 class Heights {
   sizes = new Map;
@@ -5613,7 +5626,7 @@ class Heights {
     return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.height;
   }
   widthOf(key) {
-    return this.sizes.get(key)?.width;
+    return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.width;
   }
   measure(key, reported, zoom, isWidthDrawn = false) {
     const size = { width: reported.width / zoom, height: reported.height / zoom };
@@ -5638,6 +5651,114 @@ class Heights {
 }
 var titleId = (id) => `title ${id}`;
 var panelId = (id) => `panel ${id}`;
+
+// ../core/view/layout.ts
+var SPACE_UNIT = 4;
+var LINE_PT = 5 * SPACE_UNIT;
+var INSIDE_GAP_PT = 0;
+var LIST_GAP_PT = SPACE_UNIT;
+var ITEM_GAP_PT = 3 * SPACE_UNIT;
+var CHILD_GAP_PT = 2 * SPACE_UNIT;
+var HEAD_GAP_PT = 2 * SPACE_UNIT;
+var LIST_MARGIN_PT = SPACE_UNIT;
+var CONTROL_GAP_PT = 2 * SPACE_UNIT;
+var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
+var BUTTON_BORDER_PT = 1;
+var QUIET_BUTTON_GAP_PT = CONTROL_GAP_PT + 2 * (SPACE_UNIT + BUTTON_BORDER_PT);
+var SECTION_GAP_PT = 6 * SPACE_UNIT;
+var EDGE_PT = 4 * SPACE_UNIT;
+var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
+var MARK_PT = 6 * SPACE_UNIT;
+var ROW_PAD_PT = ITEM_GAP_PT / 2;
+var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
+
+// ../core/view/row-parts.ts
+var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
+var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
+var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
+var TITLE_PARTS = ["title", "titleStatus"];
+var gap = (step, rows = 0) => ({ step, rows });
+var UNDER_TITLE = gap("inside");
+var UNDER_TEXT = gap("control", 1);
+var GAP_ABOVE = {
+  titleStatus: () => UNDER_TITLE,
+  holdsUp: () => UNDER_TITLE,
+  context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
+  earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
+  detail: () => UNDER_TITLE,
+  file: (above) => above === "detail" ? gap("list") : UNDER_TITLE,
+  answer: (above) => TITLE_PARTS.includes(above) ? gap("control") : above === "answer" || above === "note" ? gap("item") : gap("child"),
+  note: () => gap("list"),
+  answers: (above) => TITLE_PARTS.includes(above) ? gap("control") : gap("child"),
+  reason: () => gap("list"),
+  status: () => UNDER_TEXT,
+  buttons: (above) => above === "status" ? gap("list") : UNDER_TEXT,
+  field: (above) => above === "status" ? gap("list") : UNDER_TEXT,
+  result: () => gap("list"),
+  copy: () => gap("control")
+};
+function partGap(above, below) {
+  return GAP_ABOVE[below](above);
+}
+function partPt(above, below) {
+  return STEP_PT[partGap(above, below).step];
+}
+var COLLAPSED_TITLE_LINES = 2;
+
+// src/title-cut.ts
+var CLIPPED_HEIGHT = COLLAPSED_TITLE_LINES * LINE_PT;
+var CUT_ROOM = CLIPPED_HEIGHT + 0.5;
+var wholeId = (id) => `whole title ${id}`;
+var cutId = (id, cut) => `title cut "${cut}" ${id}`;
+var isOneLineRow = (r) => r.settled !== null || r.depth === 1;
+function isCutMeasured(r, sizes) {
+  const width = sizes.widthOf(wholeId(r.id));
+  return width !== undefined && wordCuts(r.title).every((cut) => sizes.widthOf(cutId(r.id, cut)) === width);
+}
+function cutTitleOf(r, sizes) {
+  const whole = sizes.get(wholeId(r.id));
+  if (whole !== undefined && whole <= CUT_ROOM)
+    return { text: r.title, isOneLine: false, isClipped: false, height: whole };
+  if (whole === undefined || !isCutMeasured(r, sizes))
+    return {
+      text: r.title,
+      isOneLine: false,
+      isClipped: true,
+      height: whole === undefined ? undefined : CLIPPED_HEIGHT
+    };
+  const heightOf = (cut) => sizes.get(cutId(r.id, cut)) ?? Infinity;
+  const head = cutAtWord(r.title, (cut) => heightOf(cut) <= CUT_ROOM);
+  if (head === null)
+    return { text: r.title, isOneLine: true, isClipped: false, height: LINE_PT };
+  const height = heightOf(`${head}…`);
+  const lineEnd = r.title.indexOf(" ", head.length);
+  if (height <= LINE_PT + 0.5 && lineEnd > 0)
+    return {
+      text: r.title.slice(0, lineEnd),
+      secondLine: r.title.slice(lineEnd + 1),
+      isOneLine: false,
+      isClipped: false,
+      height: CLIPPED_HEIGHT
+    };
+  return { text: `${head}…`, isOneLine: false, isClipped: false, height };
+}
+function shortTitleOf(r, fromShown, sizes) {
+  const isOneLine = isOneLineRow(r) || fromShown !== null && isOneLineRow(fromShown);
+  return isOneLine ? { text: r.title, isOneLine, isClipped: false, height: LINE_PT } : cutTitleOf(r, sizes);
+}
+var fromShownOf = (s) => s !== null && s.inAt === null ? s.from : null;
+function titleRestOf(b, swap, sizes) {
+  if (b?.kind !== "row")
+    return null;
+  const short = shortTitleOf(b, fromShownOf(swap), sizes);
+  return { isOpen: isOpenRow(b), isOneLine: short.isOneLine, height: short.height ?? LINE_PT };
+}
+function titleCopiesOf(r, sizes) {
+  const whole = sizes.get(wholeId(r.id));
+  const isCutDrawn = !isOneLineRow(r) && whole !== undefined && whole > CUT_ROOM && !isCutMeasured(r, sizes);
+  const cuts = isCutDrawn ? wordCuts(r.title).map((cut) => ({ key: cutId(r.id, cut), text: cut })) : [];
+  return [{ key: wholeId(r.id), text: r.title }, ...cuts];
+}
 
 // src/block-glide.ts
 var NEXT_FRAME_MS = 16;
@@ -5740,70 +5861,75 @@ function opacityAt(steps, now) {
   return step.from + (step.to - step.from) * easeOut(share);
 }
 
-// ../core/view/layout.ts
-var SPACE_UNIT = 4;
-var LINE_PT = 5 * SPACE_UNIT;
-var INSIDE_GAP_PT = 0;
-var LIST_GAP_PT = SPACE_UNIT;
-var ITEM_GAP_PT = 3 * SPACE_UNIT;
-var CHILD_GAP_PT = 2 * SPACE_UNIT;
-var HEAD_GAP_PT = 2 * SPACE_UNIT;
-var LIST_MARGIN_PT = SPACE_UNIT;
-var CONTROL_GAP_PT = 2 * SPACE_UNIT;
-var BUTTON_PAD_X_PT = 3 * SPACE_UNIT;
-var BUTTON_BORDER_PT = 1;
-var QUIET_BUTTON_GAP_PT = CONTROL_GAP_PT + 2 * (SPACE_UNIT + BUTTON_BORDER_PT);
-var SECTION_GAP_PT = 6 * SPACE_UNIT;
-var EDGE_PT = 4 * SPACE_UNIT;
-var EMPTY_STATE_MAX_WIDTH_PT = 90 * SPACE_UNIT;
-var MARK_PT = 6 * SPACE_UNIT;
-var ROW_PAD_PT = ITEM_GAP_PT / 2;
-var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
-
 // src/title-motion.ts
 var AT_ONCE = { delayMs: 0, ms: 0 };
-var wraps = (height) => height !== undefined && height > LINE_PT + 0.5;
+var isAbove = (height, low) => height !== undefined && height > low + 0.5;
 var boxNow = (g, now) => springStep(g.box, g.boxTo, now - g.boxAt);
 function aimed(g, to, now) {
-  if (to === g.boxTo && (g.swapsAt !== null || !g.isWrapped))
+  if (to === g.boxTo && (g.swapsAt !== null || !g.isTaller))
     return g;
   const box = boxNow(g, now);
   const restsAt = now + titleSwapMs(to, box);
-  const swapsAt = !g.isWrapped ? g.swapsAt : wraps(to) ? restsAt : null;
-  const fadesUntil = g.isWrapped ? restsAt + ENTER_FADE_MS : restsAt;
+  const swapsAt = !g.isTaller ? g.swapsAt : isAbove(to, g.low) ? restsAt : null;
+  const fadesUntil = g.isTaller ? restsAt + ENTER_FADE_MS : restsAt;
   return { ...g, box, boxAt: now, boxTo: to, swapsAt, endsAt: Math.max(g.endsAt, fadesUntil + FRAME_MS) };
 }
-function stepTitle(last, wasOpen, isOpen, now, height, heldMs = 0) {
-  const isHeld = heldMs > 0;
+function growing({ live, tallForm, low, to, now }, from) {
+  const box = live ? boxNow(live, now) : { x: from, v: 0 };
+  const endsAt = now + 2 * FRAME_MS + HEIGHT_SETTLE_MS;
+  return aimed({
+    isTaller: true,
+    tallForm,
+    low,
+    isFaded: true,
+    since: now,
+    swapsAt: null,
+    box,
+    boxAt: now,
+    boxTo: live?.boxTo ?? from,
+    endsAt
+  }, to, now);
+}
+function shrinking({ live, tallForm, low, to, now }, height, heldMs) {
+  const box = live ? boxNow(live, now) : { x: height, v: 0 };
+  const endsAt = now + HEIGHT_SETTLE_MS + FRAME_MS;
+  const isFaded = heldMs >= LEAVE_FADE_MS;
+  const swapsAt = isFaded ? now + FRAME_MS : now;
+  return aimed({
+    isTaller: false,
+    tallForm,
+    low,
+    isFaded,
+    since: now,
+    swapsAt,
+    box,
+    boxAt: now,
+    boxTo: live?.boxTo ?? height,
+    endsAt
+  }, to, now);
+}
+function stepTitle(last, was, is, now, height, heldMs = 0) {
+  if (is === null)
+    return null;
   const live = last !== null && now < last.endsAt ? last : null;
-  const to = (isOpen || isHeld) && wraps(height) ? height : LINE_PT;
-  if (isOpen && !wasOpen) {
-    const box = live ? boxNow(live, now) : { x: LINE_PT, v: 0 };
-    const endsAt = now + 2 * FRAME_MS + HEIGHT_SETTLE_MS;
-    const opening = {
-      isWrapped: true,
-      isFaded: true,
-      since: now,
-      swapsAt: null,
-      box,
-      boxAt: now,
-      boxTo: live?.boxTo ?? LINE_PT,
-      endsAt
-    };
-    return aimed(opening, to, now);
-  }
-  if (!isOpen && wasOpen) {
-    if (!wraps(height))
-      return null;
-    const box = live ? boxNow(live, now) : { x: height, v: 0 };
-    const endsAt = now + HEIGHT_SETTLE_MS + FRAME_MS;
-    const isFaded = heldMs >= LEAVE_FADE_MS;
-    const swapsAt = isFaded ? now + FRAME_MS : now;
-    return aimed({ isWrapped: false, isFaded, since: now, swapsAt, box, boxAt: now, boxTo: live?.boxTo ?? height, endsAt }, to, now);
-  }
+  const rest = is.height;
+  const to = (is.isOpen || heldMs > 0) && isAbove(height, rest) ? height : rest;
+  const wasOpen = was?.isOpen ?? false;
+  const whole = { live, tallForm: "whole", low: rest, to, now };
+  const from = was?.height ?? rest;
+  if (is.isOpen && !wasOpen)
+    return growing({ ...whole, low: Math.min(from, live?.low ?? from) }, from);
+  if (!is.isOpen && wasOpen)
+    return isAbove(height, rest) ? shrinking(whole, height, heldMs) : null;
+  const cut = { live, tallForm: "cut", low: LINE_PT, to, now };
+  const isLineChange = !is.isOpen && was !== null && was.isOneLine !== is.isOneLine;
+  if (isLineChange && !is.isOneLine)
+    return isAbove(rest, LINE_PT) ? growing(cut, LINE_PT) : null;
+  if (isLineChange)
+    return isAbove(height, LINE_PT) ? shrinking(cut, height, heldMs) : null;
   if (!live)
     return null;
-  if (live.isWrapped && live.swapsAt === null && now !== live.since && !wraps(height))
+  if (live.isTaller && live.swapsAt === null && now !== live.since && !isAbove(height, live.low))
     return null;
   return aimed(live, to, now);
 }
@@ -5811,11 +5937,13 @@ function titleMotion(g, now) {
   if (g === null)
     return null;
   const hasSwapped = g.swapsAt !== null && now >= g.swapsAt;
-  const fades = g.isFaded ? titleFades(g.isWrapped) : { taken: AT_ONCE, left: AT_ONCE };
+  const fades = g.isFaded ? titleFades(g.isTaller) : { taken: AT_ONCE, left: AT_ONCE };
   return {
-    isWrapShown: g.isWrapped === hasSwapped,
-    wrapped: g.isWrapped ? fades.taken : fades.left,
-    oneLine: g.isWrapped ? fades.left : fades.taken
+    tallForm: g.tallForm,
+    isShortOneLine: !isAbove(g.low, LINE_PT),
+    isTallShown: g.isTaller === hasSwapped,
+    tall: g.isTaller ? fades.taken : fades.left,
+    short: g.isTaller ? fades.left : fades.taken
   };
 }
 var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
@@ -5934,9 +6062,8 @@ function panelOf(state, isStart, last, closing) {
     return isFrom ? 1 : 0;
   return null;
 }
-function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => {
-  return;
-}) {
+function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES) {
+  const heightOf = (key) => sizes.get(key);
   const was = isFirst ? NO_TRACKS : last;
   const wasDrawn = new Set(was.order);
   const moved = movedOf(blocks, was);
@@ -5984,7 +6111,6 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
   const motion = new Map;
   const add = (block, track, last, springId = null) => {
     const isOpen = block.kind === "row" && isOpenRow(block);
-    const wasOpen = last?.block.kind === "row" && isOpenRow(last.block);
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
     const isPressed = block.kind === "field";
@@ -6009,7 +6135,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, heightOf = () => 
     const isLeftOut = closing !== null && !isHeld && (!isStart || isFolding(last?.track.state));
     const holdsPanel = drawsPanel(track) && !isLeftOut;
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
-    const title = block.kind === "row" && last ? stepTitle(last.title, wasOpen, isOpen, now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now)) : null;
+    const title = block.kind === "row" && last ? stepTitle(last.title, titleRestOf(last.block, last.swap, sizes), titleRestOf(block, swap, sizes), now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now)) : null;
     rows.set(block.id, {
       track,
       block,
@@ -6152,38 +6278,6 @@ function nextDrawAt(now, moved) {
 // src/paint-blocks.ts
 import { div as div15 } from "gpui-kit";
 import { h_flex as h_flex9, v_flex as v_flex6 } from "gpui-base";
-
-// ../core/view/row-parts.ts
-var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
-var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
-var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
-var TITLE_PARTS = ["title", "titleStatus"];
-var gap = (step, rows = 0) => ({ step, rows });
-var UNDER_TITLE = gap("inside");
-var UNDER_TEXT = gap("control", 1);
-var GAP_ABOVE = {
-  titleStatus: () => UNDER_TITLE,
-  holdsUp: () => UNDER_TITLE,
-  context: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
-  earlier: (above) => TITLE_PARTS.includes(above) ? UNDER_TITLE : gap("child"),
-  detail: () => UNDER_TITLE,
-  file: (above) => above === "detail" ? gap("list") : UNDER_TITLE,
-  answer: (above) => TITLE_PARTS.includes(above) ? gap("control") : above === "answer" || above === "note" ? gap("item") : gap("child"),
-  note: () => gap("list"),
-  answers: (above) => TITLE_PARTS.includes(above) ? gap("control") : gap("child"),
-  reason: () => gap("list"),
-  status: () => UNDER_TEXT,
-  buttons: (above) => above === "status" ? gap("list") : UNDER_TEXT,
-  field: (above) => above === "status" ? gap("list") : UNDER_TEXT,
-  result: () => gap("list"),
-  copy: () => gap("control")
-};
-function partGap(above, below) {
-  return GAP_ABOVE[below](above);
-}
-function partPt(above, below) {
-  return STEP_PT[partGap(above, below).step];
-}
 
 // ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
@@ -6599,12 +6693,12 @@ function padOf(b) {
 }
 var LIST_MARGIN_TO_TEXT = LIST_MARGIN + ROW_PAD_PT;
 var isTitle = (b) => b.kind === "heading" && !b.isLabel || b.kind === "caption";
-var isOneLineRow = (r) => !r.isSelected && r.body.length === 0 && r.settled === null && r.feedback === null && r.heldLine === undefined;
+var isOneLineRow2 = (r) => !r.isSelected && r.body.length === 0 && r.settled === null && r.feedback === null && r.heldLine === undefined;
 function isOneLine(b) {
   if (b.kind === "status")
     return b.under.length === 0 && b.buttons.length === 0;
   if (b.kind === "row")
-    return isOneLineRow(b);
+    return isOneLineRow2(b);
   return b.kind === "note" || b.kind === "fold" || b.kind === "more";
 }
 var depthOf2 = (b) => ("depth" in b) ? b.depth : 0;
@@ -6671,8 +6765,12 @@ function fitEl(key, p, el, isPaneSized = false) {
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
 }
 var titleHeightOf = (r, p) => {
-  const isWrapped = isOpenRow(r) || p.motion.get(r.id)?.isHeightHeld === true;
-  return isWrapped ? p.heights.get(titleId(r.id)) : LINE_HEIGHT;
+  const m = p.motion.get(r.id);
+  const rest = shortTitleOf(r, m?.swap?.from ?? null, p.heights).height;
+  if (!isOpenRow(r) && m?.isHeightHeld !== true)
+    return rest;
+  const measured = p.heights.get(titleId(r.id));
+  return measured === undefined || rest === undefined ? measured : Math.max(measured, rest);
 };
 function titleEl(r, p, el) {
   const key = titleId(r.id);
@@ -6898,13 +6996,25 @@ function markTintOf(r, p) {
 // src/paint-title-text.ts
 import { div as div11 } from "gpui-kit";
 function titleTextEl(r, p, color) {
-  const isOpen = isOpenRow(r);
-  const m = p.motion.get(r.id)?.title ?? null;
-  const text = div11().flex_1().min_w(0).text_color(color);
-  if (m === null)
-    return text.when(!isOpen, (e) => e.truncate()).child(r.title);
+  const m = p.motion.get(r.id);
+  const g = m?.title ?? null;
+  const short = shortTitleOf(r, m?.swap?.from ?? null, p.heights);
+  const text = div11().flex_1().min_w(0).relative().text_color(color).children(titleCopiesOf(r, p.heights).map((c) => copyEl(c.key, c.text, p)));
+  if (g === null)
+    return text.child(isOpenRow(r) ? div11().child(r.title) : shortTitleEl(short));
   const form = (id, isShown, fade) => div11().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: fade.ms, delay: fade.delayMs, easing: "ease-out" });
-  return text.relative().child(form(`wrapped ${r.id}`, m.isWrapShown, m.wrapped).child(r.title)).child(div11().absolute().top(0).left(0).w_full().child(form(`one line ${r.id}`, !m.isWrapShown, m.oneLine).truncate().child(r.title)));
+  const isCutTall = g.tallForm === "cut";
+  const tall = isCutTall ? shortTitleEl(cutTitleOf(r, p.heights)) : div11().child(r.title);
+  const shortForm = shortTitleEl(g.isShortOneLine ? { ...short, text: r.title, isOneLine: true } : short);
+  return text.child(form(`tall ${r.id}`, g.isTallShown, g.tall).child(tall)).child(div11().absolute().top(0).left(0).w_full().child(form(`short ${r.id}`, !g.isTallShown, g.short).child(shortForm)));
+}
+var copyEl = (key, text, p) => div11().id(`copy ${key}`).absolute().top(0).left(0).w_full().opacity(0).on_size_change((size, cx) => p.measure(key, size, cx, true)).child(text);
+function shortTitleEl(s) {
+  if (s.isOneLine)
+    return div11().truncate().child(s.text);
+  if (s.secondLine !== undefined)
+    return div11().child(div11().child(s.text)).child(div11().truncate().child(s.secondLine));
+  return div11().when(s.isClipped, (e) => e.max_h(CLIPPED_HEIGHT).overflow_hidden()).child(s.text);
 }
 
 // src/paint-notes.ts
@@ -8765,7 +8875,7 @@ class Inbox extends View {
     const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits);
     this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map((o) => o.rowId) };
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt;
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, (key) => this.heights.get(key));
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights);
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
