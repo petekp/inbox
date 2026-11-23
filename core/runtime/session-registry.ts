@@ -36,7 +36,7 @@ export type RegistryFiles = {
   list(folder: string): Promise<string[]>
   /** The file's text, or null when it does not exist. */
   read(path: string): Promise<string | null>
-  /** Writes a new file at `path` that only its owner can read, after making its folder readable by its owner only. */
+  /** Writes a new file at `path` that only its owner can read, first making its folder, owner-only, when it is missing. */
   write(path: string, text: string): Promise<void>
   /** Moves the file at `from` over the one at `to` in one step. */
   move(from: string, to: string): Promise<void>

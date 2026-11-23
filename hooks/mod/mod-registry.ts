@@ -53,10 +53,7 @@ function registryFiles(m: RegistryCalls, ownPid: number | null): RegistryFiles {
   }
 }
 
-/**
- * The name earlier builds gave a registry write's temporary file: `<entry>.<time in base 36>-<count>.tmp`. macOS's
- * chmod refused their `chmod 600 -- <file>`, so the file was never moved over its entry.
- */
+/** The name earlier builds gave a registry write's temporary file: `<entry>.<time in base 36>-<count>.tmp`. */
 const EARLIER_TEMPORARY = /^claude-code-.+\.json\.([0-9a-z]{1,12})-\d{1,15}\.tmp$/
 /** An earlier build's temporary file younger than this may be one that build is still writing. */
 const LEFTOVER_AGE_MS = 60_000
@@ -64,23 +61,22 @@ const LEFTOVER_AGE_MS = 60_000
 const REMOVE_BATCH = 200
 
 let isSwept = false
+let isSweeping = false
 
 /**
- * Once per process, removes the temporary files an earlier build's registry writes left in `folder`: the names
- * `EARLIER_TEMPORARY` matches whose time is `LEFTOVER_AGE_MS` or more before `now`. A failure is logged.
+ * Once per process, removes the temporary files earlier builds' registry writes left in `folder`: the names
+ * `EARLIER_TEMPORARY` matches whose time is `LEFTOVER_AGE_MS` or more before `now`. A failed listing is logged and
+ * tried again at the next write. A failed removal is logged.
  */
 async function removeEarlierTemporaries(m: RegistryCalls, folder: string, now: number) {
-  if (isSwept) return
-  isSwept = true
   const isLeftover = (name: string) => {
     const writtenAt = EARLIER_TEMPORARY.exec(name)?.[1]
     return writtenAt !== undefined && now - parseInt(writtenAt, 36) >= LEFTOVER_AGE_MS
   }
-  const paths = (await m.history.fs.list(folder).catch(() => []))
-    .map(entry => entry.name)
-    .filter(isLeftover)
-    .map(name => `${folder}/${name}`)
   try {
+    const names = (await m.history.fs.list(folder)).map(entry => entry.name)
+    isSwept = true
+    const paths = names.filter(isLeftover).map(name => `${folder}/${name}`)
     for (let i = 0; i < paths.length; i += REMOVE_BATCH)
       await run(m, ['rm', '-f', '--', ...paths.slice(i, i + REMOVE_BATCH)])
     if (paths.length > 0) m.herdr.log(`inbox: removed ${paths.length} temporary files earlier builds left in ${folder}`)
@@ -153,7 +149,12 @@ export function writeModRegistry(
     }
     const view = sessionView(session, now, SETTLED_MS)
     await writeRegistryEntry(registryFiles(m, ownPid), folder, source, session, view, now, ownPid)
-    await removeEarlierTemporaries(m, folder, now)
+    if (!isSwept && !isSweeping) {
+      isSweeping = true
+      void removeEarlierTemporaries(m, folder, now).finally(() => {
+        isSweeping = false
+      })
+    }
   })
 }
 
