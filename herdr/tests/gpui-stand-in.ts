@@ -224,17 +224,11 @@ function drawnBy(n: Painted): string {
   let anchor: Painted | null = n.parent
   while (anchor && anchor.id === null) anchor = anchor.parent
   const textOf = (k: Painted): string => (k.text ?? '') + k.kids.map(textOf).join('')
-  const what = n.style.isAbsolute ? `a stroke at ${n.style.left ?? 0}, ${n.style.top ?? 0}` : `"${textOf(n)}"`
+  const what = n.style.isAbsolute ? `a stroke at x ${n.style.left ?? 0}` : `"${textOf(n)}"`
 
   return `${what} in ${anchor?.id ?? 'the root'}, moving ${motionOf(n).join(' and ')}`
 }
 
-/**
- * Checks a draw against how gpui-kit runs `.transition()` and `.spring()`: from the state it keeps under the element's
- * identity. That is its id, or with no id its place in the tree, which shifts as rows above it come and go. An element
- * that takes a new identity starts at its new target, so its move never runs. Throws on a moving element with no id, and
- * on one whose id changed since `last` while it draws the same thing. Returns what this draw's moving elements draw, by id.
- */
 export function checkMotionIds(root: Painted, last: Map<string, string> | null): Map<string, string> {
   const moving = allOf(root).filter(n => motionOf(n).length > 0)
   const unnamed = moving.find(n => n.id === null)
