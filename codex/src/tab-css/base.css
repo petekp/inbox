@@ -51,6 +51,12 @@
 * {
   box-sizing: border-box;
 }
+/* The document scrolls. Its gutter stays whether or not the list overflows, so a classic scrollbar coming or going does
+   not change the content's width. An overlay scrollbar takes no gutter. Chrome leaves an empty gutter unpainted in an
+   iframe, so the host's panel shows through it. */
+html {
+  scrollbar-gutter: stable;
+}
 body {
   margin: 0;
   background: var(--bg);

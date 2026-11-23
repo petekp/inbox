@@ -456,6 +456,10 @@ var CLAUDE_CODE = {
     "status-goal": { kind: "full" },
     "status-done-fold": { kind: "full" },
     "status-named-fold": { kind: "full" },
+    "status-faint-text": {
+      kind: "different",
+      reason: "Desktop draws faint text in one translucent color for both of the app's themes, at 3:1 on each. The ANSI themes, and a theme the mod does not know, draw it in the muted theme key."
+    },
     "status-parent-fold": { kind: "full" },
     "seen-on-screen": { kind: "full" },
     "status-idle-age": { kind: "full" },
@@ -619,6 +623,7 @@ var CODEX = {
       reason: "A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking."
     },
     "status-named-fold": { kind: "full" },
+    "status-faint-text": { kind: "full" },
     "status-parent-fold": {
       kind: "different",
       reason: "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection."
@@ -746,6 +751,10 @@ var OMP = {
     "status-goal": { kind: "full" },
     "status-done-fold": { kind: "full" },
     "status-named-fold": { kind: "full" },
+    "status-faint-text": {
+      kind: "different",
+      reason: "omp draws muted text with the terminal's dim attribute, which terminals draw at about half strength, near the faint level's 3:1. So faint text there is dim too."
+    },
     "status-parent-fold": { kind: "full" },
     "seen-on-screen": { kind: "full" },
     "status-idle-age": { kind: "full" },
@@ -2553,6 +2562,8 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,\u2026]+$/, "");
+var isSettled = (row) => row.tone === "done";
+var nameLevelOf = (row, otherwise) => isSettled(row) ? "faint" : otherwise;
 var textBeyondName = (name, text) => text && comparableName(text) !== comparableName(name) ? text : null;
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
@@ -10469,7 +10480,8 @@ function drawPageRow(row, d, isSelected = false) {
     const mark = paintMark(row, now, s);
     const chevron = foldChevron(row, d, isSelected);
     const isFolded = isParentCollapsed(row, collapsedIn(d.screen.view));
-    const out = pageLine(d, at, mark, row.name, chevron && isSelected ? s.bold : (t) => t, {
+    const quiet = nameLevelOf(row, "plain") === "plain" ? (t) => t : s.dim;
+    const out = pageLine(d, at, mark, row.name, (t) => quiet(chevron && isSelected ? s.bold(t) : t), {
       stall: row.stall,
       waitsOn: row.waitsOn,
       text: row.text,
@@ -14378,13 +14390,43 @@ var LIGHT_BANNER_TINTS = {
   notice: LIGHT_BLUE_TINT,
   ask: LIGHT_BLUE_TINT
 };
+var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
 var THEME_TEXT = { dark: "#ececec", light: "#1b1b1b" };
 var MUTED_TEXT = { dark: "#bdbdbd", light: "#595959" };
+function contrastRatio(a, b) {
+  const luminance = (hex) => {
+    const [r = 0, g = 0, bl = 0] = [0, 1, 2].map((i) => {
+      const c = Number.parseInt(hex.slice(1 + 2 * i, 3 + 2 * i), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [lighter = 0, darker = 0] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+var FAINT_TEXT_CONTRAST = 3;
+function faintOver(muted, under) {
+  if (contrastRatio(muted, under) <= FAINT_TEXT_CONTRAST)
+    return muted;
+  let [weaker, stronger] = [0, 1];
+  for (let step = 0;step < 16; step++) {
+    const share = (weaker + stronger) / 2;
+    if (contrastRatio(fadedOver(muted, under, share), under) >= FAINT_TEXT_CONTRAST)
+      stronger = share;
+    else
+      weaker = share;
+  }
+  return fadedOver(muted, under, stronger);
+}
 function fadedOver(hex, under, share) {
   const channel = (c, i) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
   const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
   return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
+var FAINT_TEXT = {
+  dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),
+  light: faintOver(MUTED_TEXT.light, THEME_BACKGROUND.light)
+};
 
 // src/theme.ts
 var ESC = "\x1B[";

@@ -132,3 +132,13 @@ On 2026-11-22, a probe mod in a test VM opened a pane with `focus` and `closeOnE
 - `$.ui.close`, then `$.ui.open`, showed the pane again in the right column. The probe's `ui.close` hook logged nothing for that close.
 - The expand button and "Show session" change only the pane's width, as a render with new `bodyColumns` (26, then 109).
 - View > Close Pane moved the keys out of the pane and left it shown.
+
+On 2026-11-23, a second probe in the same VM, app 6.28899.6 with engine 2.1.330, drew a 150-line pane with a `Client` that posted every 200 ms. It logged each Pane render with its `scroll`, each `ui.scroll` and each post.
+
+- While the pane showed, `$.ui.invalidate('ui.render')` drew it again 4 ms later. While Hide Side Panel hid it, no render came within 400 ms.
+- The `Client` stopped posting while the side panel was hidden.
+- View > Show Side Panel drew the pane again, with a new `Client` instance and `scroll.offset` 0. The pane loses its scroll position across a hide and a show.
+- `$.ui.open` with `focus` on a shown pane kept its `scroll.offset`.
+- After a close and an open, `$.ui.scroll({ in, to: 'start' })` returned `{}` and raised no `ui.scroll`, so a `ui.scroll` hook could not move the new pane to the old offset that way.
+- With the inbox's fix, which asks for a redraw by writing `$.state`, Go to inbox on a shown pane got its render within 300 ms on the Asks, Status, Finds, help and PRs tabs, and the pane kept its scroll position.
+- `$.ui.scroll` to the key of a `Text` answered "no element of its own is drawn under that key", whether the pane showed or not.
