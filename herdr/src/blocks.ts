@@ -316,6 +316,8 @@ export type Block =
       id: string
       text: string
       tone: Tone
+      /** Faint draws the text at the faint level in place of its tone's color, as a Prev line. */
+      level?: TextLevel
       isHead: boolean
       isAtEdge: boolean
       isStrong: boolean

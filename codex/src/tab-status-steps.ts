@@ -3,6 +3,7 @@ import { shownMilestones } from '../../core/view/status-goal-page'
 import type { GoalBlock, MilestoneRow } from '../../core/view/status-goal-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
+import { WAS_LEVEL } from '../../core/view/status-page-parts'
 import { tabState } from './tab-state'
 import { isParentFolded } from './tab-status-fold'
 import { stepLines } from './tab-line-steps'
@@ -42,7 +43,7 @@ function goalHead(page: StatusPage): TextLine[] {
   const g = page.suggestedGoal === null ? page.goal : null
 
   return [
-    ...(g?.was ? [{ id: 'was', text: `${WAS_PREFIX}${g.was}` }] : []),
+    ...(g?.was ? [{ id: 'was', text: `${WAS_PREFIX}${g.was}`, level: WAS_LEVEL }] : []),
     ...(g?.now ? [{ id: 'now', text: g.now }] : []),
     ...(g?.awaiting ? [{ id: 'awaiting', text: g.awaiting }] : []),
   ]

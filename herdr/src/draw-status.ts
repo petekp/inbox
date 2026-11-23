@@ -4,7 +4,7 @@ import type { StatusKey } from '../../core/view/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, nameLevelOf, textLevelOf } from '../../core/view/status-page-parts'
+import { mergedLine, nameLevelOf, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { COUNTS_LABEL, countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../core/view/status-folds'
 import { statusGaps } from '../../core/view/status-gaps'
@@ -61,14 +61,14 @@ function foldOf(
 
 type UnderLine = StatusLine['under'][number]
 
-/** The lines under a Status name: where it stands at its level, then the merged and was lines, muted. */
+/** The lines under a Status name: where it stands at its level, then the merged line, muted, and the Prev line. */
 function underLines(text: UnderLine | null, merged: string | null, was: string | null): UnderLine[] {
   const muted = (t: string | null): UnderLine[] => (t === null ? [] : [{ text: t, level: 'muted' }])
 
   return [
     ...(text ? [text] : []),
     ...muted(merged ? mergedLine(merged, t => cellWidth(t) <= MERGED_CELLS) : null),
-    ...muted(was ? `${WAS_PREFIX}${was}` : null),
+    ...(was ? [{ text: `${WAS_PREFIX}${was}`, level: WAS_LEVEL }] : []),
   ]
 }
 
@@ -312,7 +312,7 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
         ? suggestion
         : [
             headTitle('goal text', g.text),
-            ...(g.was ? [headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted')] : []),
+            ...(g.was ? [{ ...headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted'), level: WAS_LEVEL }] : []),
             ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
             ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
           ]

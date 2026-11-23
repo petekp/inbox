@@ -26,7 +26,8 @@ import { GOAL_KEYS_ID, goalKeyGroups, milestoneKeyPlan, type StatusKey } from '.
 import type { StatusKeyTarget } from '../../core/view/status-keys'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, nameLevelOf, STALL_GAP, textLevelOf } from '../../core/view/status-page-parts'
+import { mergedLine, nameLevelOf, STALL_GAP, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
+import type { TextLevel } from '../../core/view/status-page-parts'
 import { levelSpan } from './terminal-text'
 import { isParentCollapsed, milestoneRows } from '../../core/view/status-folds'
 import type { IsCollapsed } from '../../core/view/status-folds'
@@ -140,10 +141,10 @@ export function paneStatusGoal(
     el,
     lines: look === 'desktop' ? desktopTextLines(text, width) : inkLines(text, width),
   })
-  const muted = (key: string, text: string, width = blockWidth) =>
+  const muted = (key: string, text: string, width = blockWidth, level: TextLevel = 'muted') =>
     wrapped(
       <Box key={key}>
-        <Text wrap="wrap" color={pal.muted}>
+        <Text wrap="wrap" color={level === 'faint' ? pal.faint : pal.muted}>
           {text}
         </Text>
       </Box>,
@@ -237,7 +238,7 @@ export function paneStatusGoal(
               ),
             ]
           : []),
-        ...(m.was ? [statusPageText(`goal-${m.id}-was`, [{ text: `${WAS_PREFIX}${m.was}`, isMuted: true }], 0)] : []),
+        ...(m.was ? [statusPageText(`goal-${m.id}-was`, [levelSpan(`${WAS_PREFIX}${m.was}`, WAS_LEVEL)], 0)] : []),
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),
       ],
       isSelected: isSelected(m.id),
@@ -420,7 +421,7 @@ export function paneStatusGoal(
         : suggestion !== null
           ? offerLines(suggestion, groups.offer, width)
           : [goalText]),
-      ...(shownGoal?.was ? [muted('goal-was', `${WAS_PREFIX}${shownGoal.was}`, width)] : []),
+      ...(shownGoal?.was ? [muted('goal-was', `${WAS_PREFIX}${shownGoal.was}`, width, WAS_LEVEL)] : []),
       ...(shownGoal?.now ? [muted('goal-now', shownGoal.now, width)] : []),
       ...(shownGoal?.awaiting ? [muted('goal-awaiting', shownGoal.awaiting, width)] : []),
     ]
