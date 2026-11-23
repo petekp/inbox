@@ -1,4 +1,6 @@
-import type { ClientModule } from 'claude-code'
+import type { ClientElements, ClientModule } from 'claude-code'
+
+import type { OverCopy } from './client-copy'
 
 export type FoldProps = {
   markCells: number
@@ -23,26 +25,16 @@ const NO_BREAK = '\u00a0'
 
 type State = { hover: boolean }
 
-const Fold: ClientModule<FoldProps, State> = (props, surface) => {
-  const { Box, Text } = surface.elements
-  const hover = surface.state?.hover ?? false
-  // Reads the state when an event arrives: two events can both arrive before the next call.
-  const set = (next: State) => {
-    if (next.hover === (surface.state?.hover ?? false)) return
-    surface.setState(next)
-  }
-  surface.onPointer(e => {
-    if (e.type === 'leave') return set({ hover: false })
-    // While a button is held, moves arrive past the region's edges too. `surface.rows` rounds the
-    // padded height down, so the padding is added back.
-    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows + 2 * props.padY
-    if (e.type === 'down' && e.button === 'left') {
-      // The target comes from the drawn props, so a second click before the redraw asks for the same state.
-      set({ hover: true })
-      surface.post({ isUnfolded: !props.isUnfolded, isAll: e.alt === true })
-    } else if (e.type === 'up' || e.type === 'move' || e.type === 'enter') set({ hover: inside })
-  })
-
+/**
+ * The fold's line, drawn by the Client or, until the Client posts, by the pane with its own elements. `padScale` turns
+ * the line's padding into the drawing's units.
+ */
+export function foldTree(
+  props: FoldProps,
+  { Box, Text }: Pick<ClientElements, 'Box' | 'Text'>,
+  hover: boolean,
+  padScale = 1,
+) {
   const background = props.colors.rest
   const color = hover && props.colors.hoverText ? props.colors.hoverText : props.colors.text
 
@@ -50,7 +42,7 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
     flexDirection: 'row',
     borderStyle: 'single',
     borderColor: '#0000',
-    paddingY: props.padY,
+    paddingY: props.padY * padScale,
     ...(background ? { backgroundColor: background } : {}),
     children: [
       Box({
@@ -85,6 +77,30 @@ const Fold: ClientModule<FoldProps, State> = (props, surface) => {
         : Text({ ...(color ? { color } : {}), children: `${props.label}${NO_BREAK}${props.chevron}` }),
     ],
   })
+}
+
+const Fold: ClientModule<FoldProps & OverCopy, State> = (props, surface) => {
+  const hover = surface.state?.hover ?? false
+  // Reads the state when an event arrives: two events can both arrive before the next call.
+  const set = (next: State) => {
+    if (next.hover === (surface.state?.hover ?? false)) return
+    surface.setState(next)
+  }
+  surface.onPointer(e => {
+    if (e.type === 'leave') return set({ hover: false })
+    // While a button is held, moves arrive past the region's edges too. `surface.rows` rounds the
+    // padded height down, so the padding is added back.
+    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows + 2 * props.padY
+    if (e.type === 'down' && e.button === 'left') {
+      // The target comes from the drawn props, so a second click before the redraw asks for the same state.
+      set({ hover: true })
+      surface.post({ isUnfolded: !props.isUnfolded, isAll: e.alt === true })
+    } else if (e.type === 'up' || e.type === 'move' || e.type === 'enter') set({ hover: inside })
+  })
+
+  if (props.isOverCopy) surface.post({ isRunning: true })
+
+  return foldTree(props, surface.elements, hover)
 }
 
 export default Fold

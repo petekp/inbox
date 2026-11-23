@@ -1,5 +1,6 @@
 import { desktopTextPt } from './desktop-metrics'
 import type { ParentProps } from './parent-client'
+import { parentClient } from './pane-row-clients'
 import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import type { PaneStatusLines } from './pane-status-lines'
 import { desktopTextLines, exactly } from './pane-status-tops'
@@ -84,7 +85,7 @@ export function paneStatusParent(
     }
 
     return {
-      el: <elements.Client key={`${PARENT_PREFIX}${id}`} module="./parent-client.tsx" width="100%" props={props} />,
+      el: parentClient(elements, `${PARENT_PREFIX}${id}`, props),
       lines,
     }
   }

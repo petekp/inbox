@@ -2,6 +2,7 @@ import { actionLines, answersFitLine } from '../../core/view/action-plan'
 import type { AnswerRow } from '../../core/view/action-plan'
 import { desktopButtonPt, desktopTextPt } from './desktop-metrics'
 import type { LinksProps } from './links-client'
+import { linksClient } from './pane-row-clients'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { followUpPresses, type KeyAction } from './pane-keys'
 import {
@@ -136,7 +137,7 @@ export function paneRowKeys(
     // it to the line.
     return (
       <Box flexGrow={1} flexShrink={1} minWidth={0} width={linksWidth}>
-        <elements.Client key={`links-${rowId}`} module="./links-client.tsx" width="100%" props={props} />
+        {linksClient(elements, `links-${rowId}`, props)}
       </Box>
     )
   }

@@ -1,4 +1,6 @@
-import type { ClientModule } from 'claude-code'
+import type { ClientElements, ClientModule } from 'claude-code'
+
+import type { OverCopy } from './client-copy'
 
 /** `isOut`: its press is out, so it draws dim and does not highlight under the pointer. */
 type ClientLink = { key: string; label: string; width: number; isOut?: boolean }
@@ -56,18 +58,13 @@ function linkAt(props: LinksProps, columns: number, x: number, y: number): strin
   return null
 }
 
-const Links: ClientModule<LinksProps, State> = (props, surface) => {
-  const { Box, Text } = surface.elements
-  const hover = surface.state?.hover ?? null
-  const columns = surface.columns || props.fallbackColumns
-  // Set on every call, so the listener reads this call's props; a later call replaces it.
-  surface.onPointer(e => {
-    const at =
-      e.type === 'leave' || e.y < 0 || e.y >= Math.max(1, surface.rows) ? null : linkAt(props, columns, e.x, e.y)
-    if (at !== (surface.state?.hover ?? null)) surface.setState({ hover: at })
-    if (e.type === 'down' && e.button === 'left' && at !== null) surface.post({ key: at })
-  })
-
+/** The links, drawn by the Client or, until the Client posts, by the pane with its own elements. */
+export function linksTree(
+  props: LinksProps,
+  { Box, Text }: Pick<ClientElements, 'Box' | 'Text'>,
+  hover: string | null,
+  columns: number,
+) {
   return Box({
     flexDirection: 'column',
     children: linkLines(props, columns).map((line, i) =>
@@ -93,6 +90,21 @@ const Links: ClientModule<LinksProps, State> = (props, surface) => {
       }),
     ),
   })
+}
+
+const Links: ClientModule<LinksProps & OverCopy, State> = (props, surface) => {
+  const hover = surface.state?.hover ?? null
+  const columns = surface.columns || props.fallbackColumns
+  // Set on every call, so the listener reads this call's props; a later call replaces it.
+  surface.onPointer(e => {
+    const at =
+      e.type === 'leave' || e.y < 0 || e.y >= Math.max(1, surface.rows) ? null : linkAt(props, columns, e.x, e.y)
+    if (at !== (surface.state?.hover ?? null)) surface.setState({ hover: at })
+    if (e.type === 'down' && e.button === 'left' && at !== null) surface.post({ key: at })
+  })
+  if (props.isOverCopy) surface.post({ isRunning: true })
+
+  return linksTree(props, surface.elements, hover, columns)
 }
 
 export default Links
