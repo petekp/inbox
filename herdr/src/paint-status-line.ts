@@ -44,6 +44,7 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         foldChevronEl(t, {
           isOpen: !s.fold.isFolded,
           isLive: toggle !== undefined && !isInert,
+          level: s.fold.level,
           ...(s.fold.isFolded ? { count: s.fold.count } : {}),
         }),
       ]

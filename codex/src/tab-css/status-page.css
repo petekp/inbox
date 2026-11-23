@@ -336,6 +336,15 @@
 .status-page .milestone-fold .icon {
   margin-left: 0;
 }
+.status-page .milestone-fold {
+  color: var(--faint);
+}
+.status-page .milestone-fold:hover {
+  color: var(--text);
+}
+.still .status-page .milestone-fold:not(:active):hover {
+  color: var(--faint);
+}
 /* "Other work" at the mark column, as the Goal heading is, then a solid rule to the tab's edge. The head's title takes its place, with its
    description under it. It sits `section` under the item above and `head` over the row under it, each side counting the
    rows' padding, which the list sets as `--row-above-pad` and `--row-below-pad`. */
@@ -411,6 +420,9 @@
 .still .status-page .parent-name:not(:active):hover .parent-chevron {
   color: var(--muted);
 }
+.still .status-page .parent-name:not(:active):hover .parent-chevron.faint {
+  color: var(--faint);
+}
 .status-page .parent-name:focus-visible {
   outline: 1px solid var(--soft);
 }
@@ -425,4 +437,8 @@
 }
 .status-page .parent-count {
   opacity: 0.75;
+}
+/* Faint is the floor text reads at, so a faint count takes no further fade. */
+.status-page .parent-chevron.faint .parent-count {
+  opacity: 1;
 }

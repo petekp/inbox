@@ -2,7 +2,9 @@ import { PathBuilder, div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
 import { LINE_HEIGHT, SMALL_GAP } from './paint-theme'
+import { faintOf } from './paint-theme'
 import type { Theme } from './paint-theme'
+import type { TextLevel } from '../../core/view/status-page-parts'
 
 const SIZE_PX = 12
 const STROKE_PX = 1
@@ -35,10 +37,10 @@ const FOLDED_PATH = pathOf(false)
 const OPEN_PATH = pathOf(true)
 
 /**
- * A fold's chevron, drawn from the same path as the Codex tab's icon, muted. When `isLive`, hovering it draws a
+ * A fold's chevron, drawn from the same path as the Codex tab's icon, in `color`. When `isLive`, hovering it draws a
  * second copy in the foreground color over it, since the kit styles an element only on its own hover.
  */
-function chevronEl(isOpen: boolean, t: Theme, isLive: boolean): Element {
+function chevronEl(isOpen: boolean, t: Theme, isLive: boolean, color: Theme['muted']): Element {
   const path = isOpen ? OPEN_PATH : FOLDED_PATH
   const shape = (color: Theme['muted']) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`)
 
@@ -47,7 +49,7 @@ function chevronEl(isOpen: boolean, t: Theme, isLive: boolean): Element {
     .flex_none()
     .w(SIZE_PX)
     .h(SIZE_PX)
-    .child(shape(t.muted))
+    .child(shape(color))
     .when(isLive, e =>
       e.child(
         div()
@@ -63,15 +65,23 @@ function chevronEl(isOpen: boolean, t: Theme, isLive: boolean): Element {
     )
 }
 
-/** A fold's chevron at the end of its line, after a gap, with the count of the rows it hides while folded. */
-export function foldChevronEl(t: Theme, fold: { isOpen: boolean; isLive: boolean; count?: number }): Element {
+/**
+ * A fold's chevron at the end of its line, after a gap, with the count of the rows it hides while folded, both at
+ * `level`.
+ */
+export function foldChevronEl(
+  t: Theme,
+  fold: { isOpen: boolean; isLive: boolean; level: TextLevel; count?: number },
+): Element {
+  const color = fold.level === 'faint' ? faintOf(t) : t.muted
+
   return h_flex()
     .flex_none()
     .items_center()
     .h(LINE_HEIGHT)
     .ml(SMALL_GAP)
-    .text_color(t.muted)
-    .child(chevronEl(fold.isOpen, t, fold.isLive))
+    .text_color(color)
+    .child(chevronEl(fold.isOpen, t, fold.isLive, color))
     .when(fold.count !== undefined, e =>
       e.child(
         div()

@@ -345,7 +345,7 @@ export function paneStatus(
       const name = levelSpan(r.name, nameLevelOf(r, 'plain'), isRowSelected)
       const content = [
         r.foldCount > 0
-          ? parentName(r.id, name, r.stall, r.depth, { isCollapsed: isFolded, count: r.foldCount })
+          ? parentName(r, name, r.stall, r.depth, isFolded)
           : statusNameLine(`status-${r.id}-name`, name, r.stall, r.depth),
         ...(r.waitsOn
           ? [statusPageText(`status-${r.id}-waits-on`, [{ text: r.waitsOn, isNeedsYou: true }], r.depth)]
