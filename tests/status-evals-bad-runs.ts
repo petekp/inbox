@@ -186,5 +186,15 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     answer: 'SET: s1 | waits-on-other | Page text done, screenshots needed\nSUGGEST: Website notes page live',
     breaks: 'goal-suggested',
   },
+  'milestone-reply-landed': {
+    at: 0,
+    answer: GOOD_RUNS['milestone-reply-landed']![0]!.replace('DONE: m2 | all six branches on main\n', ''),
+    breaks: 'milestones-true',
+  },
+  'milestone-last-work-done': {
+    at: 0,
+    answer: `${GOOD_RUNS['milestone-last-work-done']![0]!}\nNEW: working | Branch checks | checks running\nSERVES: Branch checks | m2`,
+    breaks: 'milestones-true',
+  },
   'head-after-done': { at: 2, answer: 'HEAD: Greet flags | Adding options to greet', breaks: 'head-follows' },
 }
