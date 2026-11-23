@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T06:10:21.037Z. 356085 characters follow.
+// Built at 2026-11-23T08:50:46.464Z. 358281 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -889,6 +889,9 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,…]+$/, "");
+var isSettled = (row) => row.tone === "done";
+var textLevelOf = (row) => isSettled(row) ? "faint" : "muted";
+var nameLevelOf = (row, otherwise) => isSettled(row) ? "faint" : otherwise;
 var textBeyondName = (name, text) => text && comparableName(text) !== comparableName(name) ? text : null;
 function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
@@ -5242,7 +5245,7 @@ function helpBlocks(version) {
       mark: null,
       name: k.keys,
       isBold: true,
-      isMuted: false,
+      nameLevel: "plain",
       stall: null,
       does: k.does,
       under: [],
@@ -5256,7 +5259,7 @@ function helpBlocks(version) {
       mark: { text: m.mark, tone: m.tone, isRunning: m.isRunning },
       name: "",
       isBold: false,
-      isMuted: false,
+      nameLevel: "plain",
       stall: null,
       does: m.words,
       under: [],
@@ -6103,6 +6106,42 @@ var LIGHT_TONES = {
   errorMark: "#a5293d",
   key: "#243bf5"
 };
+var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
+var MUTED_TEXT = { dark: "#bdbdbd", light: "#595959" };
+function contrastRatio(a, b) {
+  const luminance = (hex) => {
+    const [r = 0, g = 0, bl = 0] = [0, 1, 2].map((i) => {
+      const c = Number.parseInt(hex.slice(1 + 2 * i, 3 + 2 * i), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [lighter = 0, darker = 0] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+var FAINT_TEXT_CONTRAST = 3;
+function faintOver(muted, under) {
+  if (contrastRatio(muted, under) <= FAINT_TEXT_CONTRAST)
+    return muted;
+  let [weaker, stronger] = [0, 1];
+  for (let step = 0;step < 16; step++) {
+    const share = (weaker + stronger) / 2;
+    if (contrastRatio(fadedOver(muted, under, share), under) >= FAINT_TEXT_CONTRAST)
+      stronger = share;
+    else
+      weaker = share;
+  }
+  return fadedOver(muted, under, stronger);
+}
+function fadedOver(hex, under, share) {
+  const channel = (c, i) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
+  const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
+  return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+var FAINT_TEXT = {
+  dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),
+  light: faintOver(MUTED_TEXT.light, THEME_BACKGROUND.light)
+};
 
 // src/paint-theme.ts
 var TONE_COLORS = {
@@ -6123,6 +6162,7 @@ var isLightTheme = (t) => {
   return (r * 299 + g * 587 + b * 114) / 1000 > 128;
 };
 var colorOf = (t, tone) => tone === "tasks" || tone === "needsYou" ? (isLightTheme(t) ? LIGHT_TONES : DARK_TONES)[tone] : t[tone === null ? "foreground" : TONE_COLORS[tone]];
+var faintOf = (t) => faintOver(flatten(t.muted, t.background), t.background);
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 function flatten(c, under) {
   const alpha = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1;
@@ -6669,7 +6709,7 @@ function statusEl(s, p, isInert) {
   const { t } = p;
   if (s.does !== undefined)
     return keyEl(s, s.does, t);
-  const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.isMuted, (e) => e.text_color(t.muted));
+  const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.nameLevel !== "plain", (e) => e.text_color(s.nameLevel === "faint" ? faintOf(t) : t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
   const toggle = s.fold?.toggle;
   const chevron = s.fold ? [
@@ -6679,7 +6719,7 @@ function statusEl(s, p, isInert) {
       ...s.fold.isFolded ? { count: s.fold.count } : {}
     })
   ] : [];
-  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l, t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 
 // src/paint-chrome.ts
@@ -6960,7 +7000,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex9().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div15().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
+  return h_flex9().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div15().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -7627,13 +7667,17 @@ function foldOf(p, isCollapsed) {
   });
   return { fold: { isFolded, count: p.foldCount, toggle } };
 }
+function underLines(text, merged, was) {
+  const muted = (t) => t === null ? [] : [{ text: t, level: "muted" }];
+  return [
+    ...text ? [text] : [],
+    ...muted(merged ? mergedLine(merged, (t) => cellWidth(t) <= MERGED_CELLS) : null),
+    ...muted(was ? `${WAS_PREFIX}${was}` : null)
+  ];
+}
 function rowBlocks(row, isUnfolded, isCollapsed) {
   if (row.kind === "subject") {
-    const under = [
-      row.text,
-      row.merged ? mergedLine(row.merged, (t) => cellWidth(t) <= MERGED_CELLS) : null,
-      row.was ? `${WAS_PREFIX}${row.was}` : null
-    ].filter((l) => l !== null);
+    const under = underLines(row.text ? { text: row.text, level: textLevelOf(row) } : null, row.merged, row.was);
     return [
       {
         kind: "status",
@@ -7642,7 +7686,7 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
         mark: markOf2(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
-        isMuted: false,
+        nameLevel: nameLevelOf(row, "plain"),
         stall: row.stall,
         ...row.waitsOn ? { waitsOn: row.waitsOn } : {},
         under,
@@ -7661,9 +7705,9 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
         mark: markOf2(row.mark, row.tone, row.isRunning),
         name: row.name,
         isBold: false,
-        isMuted: true,
+        nameLevel: nameLevelOf(row, "muted"),
         stall: null,
-        under: row.text ? [row.text] : [],
+        under: underLines(row.text ? { text: row.text, level: textLevelOf(row) } : null, null, null),
         buttons: [],
         ...row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}
       }
@@ -7707,7 +7751,7 @@ function rowBlocks(row, isUnfolded, isCollapsed) {
       mark: markOf2(row.mark, row.tone, false),
       name: row.text,
       isBold: false,
-      isMuted: true,
+      nameLevel: nameLevelOf(row, "muted"),
       stall: null,
       under: [],
       buttons: []
@@ -7732,6 +7776,7 @@ function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
       text: m.name,
       isOpen: isUnfolded(m.foldId),
       change: { toggleFold: m.foldId },
+      level: textLevelOf(m),
       mark,
       path,
       ...tree
@@ -7743,14 +7788,10 @@ function milestoneBlock(m, lineAbove, hasWork, isUnfolded, isCollapsed) {
     mark,
     name: m.name,
     isBold: m.isBold,
-    isMuted: m.isMuted,
+    nameLevel: nameLevelOf(m, m.isMuted ? "muted" : "plain"),
     stall: x?.stall ?? null,
     ...x?.waitsOn ? { waitsOn: x.waitsOn } : {},
-    under: [
-      m.text,
-      x?.merged ? mergedLine(x.merged, (t) => cellWidth(t) <= MERGED_CELLS) : null,
-      m.was ? `${WAS_PREFIX}${m.was}` : null
-    ].filter((l) => l !== null),
+    under: underLines(m.text ? { text: m.text, level: textLevelOf(m) } : null, x?.merged ?? null, m.was),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
     ...foldOf(m, isCollapsed),
     path,
