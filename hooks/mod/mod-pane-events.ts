@@ -63,11 +63,12 @@ export async function paneMessaged(m: PaneEventCalls, e: UiMessageEvent) {
     isHelp?: unknown
     isRunning?: unknown
   } | null
-  if (!paneState.runningClients.has(e.element)) {
+  if (data?.isRunning === true) {
+    if (paneState.runningClients.has(e.element)) return
     paneState.runningClients.add(e.element)
     await redraw(m)
+    return
   }
-  if (data?.isRunning === true) return
   await m.sendUi([{ type: 'list-input' }])
   if (data?.isPointer === true) return
   const shown = isShownTab(data?.tab) ? data.tab : null

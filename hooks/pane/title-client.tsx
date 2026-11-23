@@ -49,7 +49,6 @@ export function titleTree(
 }
 
 /** The open row's title in the desktop pane. A click anywhere on it collapses the row. */
-
 const Title: ClientModule<TitleProps & OverCopy, State> = (props, surface) => {
   const hover = surface.state?.hover ?? false
   const pressed = surface.state?.pressed ?? false
