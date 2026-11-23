@@ -10,18 +10,29 @@ export function prRefs(text: string): string[] {
   return [...new Set([...text.matchAll(PR_URL)].map(m => `${m[1]}#${m[2]}`))]
 }
 
-/**
- * The PRs of `refs` that the text names as "#123", in its order. A number two
- * of `refs` share names neither, since the text does not say which repo.
- */
-export function namedPrs(text: string, refs: string[]): string[] {
-  const numbers = new Set([...text.matchAll(/#(\d+)\b/g)].map(m => m[1]))
-  const known = [...new Set(refs)]
+/** "#123" or "owner/repo#123", not part of a longer word or path. */
+const PR_MENTION = /(?<![\w./-])(?:([\w.-]+\/[\w.-]+))?#(\d+)\b/g
 
-  return [...numbers].flatMap(n => {
-    const named = known.filter(ref => parseRef(ref).number === n)
-    return named.length === 1 ? named : []
-  })
+/**
+ * The PRs the text names, as "owner/repo#123", in its order, without repeats: by a GitHub PR link, as "owner/repo#123",
+ * or as "#123". A bare number names the one PR of `known` with that number, else that number in `repo`, the
+ * session's repository. A number two of `known` share names neither, since the text does not say which repo.
+ */
+export function namedPrs(text: string, known: string[], repo: string | null): string[] {
+  const refs = new Set(known)
+  const bare = (n: string): string | null => {
+    const [first, ...others] = [...refs].filter(ref => parseRef(ref).number === n)
+    if (first) return others.length === 0 ? first : null
+    return repo ? `${repo}#${n}` : null
+  }
+  const links = [...text.matchAll(PR_URL)].map(m => ({ at: m.index, ref: `${m[1]}#${m[2]}` }))
+  const mentions = [...text.matchAll(PR_MENTION)].map(m => ({
+    at: m.index,
+    ref: m[1] ? `${m[1]}#${m[2]}` : bare(m[2] ?? ''),
+  }))
+  const named = [...links, ...mentions].toSorted((a, b) => a.at - b.at).flatMap(m => (m.ref ? [m.ref] : []))
+
+  return [...new Set(named)]
 }
 
 export function parseRef(ref: string): { repo: string; owner: string; name: string; number: string } {

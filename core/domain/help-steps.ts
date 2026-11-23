@@ -2,7 +2,7 @@ import type { Help, Item } from '../../types'
 import { baseName } from './open-targets'
 import { messages } from './press-messages'
 import type { Effect } from '../view/press-reducer'
-import { namedPrs, parseRef } from './prs'
+import { namedPrs, parseRef, prRefs } from './prs'
 import { clipLabel } from './text'
 
 /**
@@ -44,19 +44,45 @@ function steps(helps: Help[]): HelpStep[] {
 
 type TrackedPr = { ref: string; url: string | null }
 
-export function prSteps(item: Item, tracked: TrackedPr[]): HelpStep[] {
-  const urls = new Map(tracked.map(pr => [pr.ref, pr.url]))
-  const links = namedPrs(item.ask, [...urls.keys()])
-    .map(ref => {
-      const { repo, number } = parseRef(ref)
-      const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`
-      return { kind: 'link' as const, url, name: `PR #${number}` }
-    })
-    .filter(l => !item.helps.some(h => h.kind === 'link' && h.url === l.url))
+/**
+ * The name a PR link takes on its button. A PR the session tracks is "PR #12". One it does not track may be an issue,
+ * since GitHub sends a pull link of an issue's number to the issue, so it is "#12", or "repo#12" outside `repo`.
+ */
+function prLinkName(ref: string, isTracked: boolean, repo: string | null): string {
+  const { repo: refRepo, name, number } = parseRef(ref)
 
-  return links.length === 0
-    ? []
-    : [{ label: links.length === 1 ? helpLabel(links[0]!) : `Open ${links.length} PRs`, step: links }]
+  return isTracked ? `PR #${number}` : refRepo === repo ? `#${number}` : `${name}#${number}`
+}
+
+/**
+ * One step that opens each PR the item's ask or context names, by `namedPrs`, that none of its steps links already.
+ * `repo` is the session's repository, for a PR named by its number alone.
+ */
+export function prSteps(item: Item, tracked: TrackedPr[], repo: string | null): HelpStep[] {
+  const urls = new Map(tracked.map(pr => [pr.ref, pr.url]))
+  const isLinked = (ref: string, url: string) =>
+    item.helps.some(h => h.kind === 'link' && (h.url === url || prRefs(h.url).includes(ref)))
+  const named = namedPrs([item.ask, item.context ?? ''].join('\n'), [...urls.keys()], repo).flatMap(ref => {
+    const { repo: refRepo, number } = parseRef(ref)
+    const url = urls.get(ref) ?? `https://github.com/${refRepo}/pull/${number}`
+    return isLinked(ref, url) ? [] : [{ ref, url }]
+  })
+  const links = named.map(({ ref, url }) => ({
+    kind: 'link' as const,
+    url,
+    name: prLinkName(ref, urls.has(ref), repo),
+  }))
+  const [only] = links
+  if (!only) return []
+  const isAllTracked = named.every(({ ref }) => urls.has(ref))
+  const label =
+    links.length === 1
+      ? helpLabel(only)
+      : isAllTracked
+        ? `Open ${links.length} PRs`
+        : clipLabel(`Open ${links.map(l => l.name).join(', ')}`, COMMAND_LABEL_CHARS)
+
+  return [{ label, step: links }]
 }
 
 export function stepsOf(item: Item, extraSteps: HelpStep[]): HelpStep[] {

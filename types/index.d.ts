@@ -189,8 +189,12 @@ export type SessionStatus = {
   quietCalls: number
 }
 
-/** The folder a session runs in, and its branch when the host last read it. A host keeps the first folder it saves until the session moves away from it or that folder is gone. */
-export type Place = { folder: string; branch: string | null }
+/**
+ * The folder a session runs in, and its branch and the GitHub repository of its `origin` remote, as "owner/name", when
+ * the host last read them. A host keeps the first folder it saves until the session moves away from it or that folder
+ * is gone. `repo` is null when the remote is not on GitHub, and absent from a place saved before hosts read it.
+ */
+export type Place = { folder: string; branch: string | null; repo?: string | null }
 
 export type Item = {
   id: string

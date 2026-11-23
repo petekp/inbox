@@ -20,11 +20,32 @@ export const TIMED_OUT_CODE = -2
 
 const GIT_TIMEOUT_MS = 5000
 
-/** The branch `folder` is on now. Null when git names none, as outside a repository or on a detached HEAD. */
-export async function branchIn(run: Run, folder: string): Promise<string | null> {
-  const r = await run(['git', 'branch', '--show-current'], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS })
+/**
+ * Where `folder` is in Git now: its branch, null when git names none, as outside a repository or on a detached HEAD,
+ * and the GitHub repository of its `origin` remote as "owner/name", null when it has none on GitHub.
+ */
+export type GitPlace = { branch: string | null; repo: string | null }
 
-  return r.code === 0 ? r.stdout.trim() || null : null
+export async function gitPlaceIn(run: Run, folder: string): Promise<GitPlace> {
+  const opts = { cwd: folder, timeoutMs: GIT_TIMEOUT_MS }
+  const [branch, remote] = await Promise.all([
+    run(['git', 'branch', '--show-current'], opts),
+    run(['git', 'remote', 'get-url', 'origin'], opts),
+  ])
+
+  return {
+    branch: branch.code === 0 ? branch.stdout.trim() || null : null,
+    repo: remote.code === 0 ? githubRepoOf(remote.stdout.trim()) : null,
+  }
+}
+
+/** The forms of a GitHub remote's URL that git accepts: https, ssh and scp-like, each with or without ".git". */
+const GITHUB_REMOTE =
+  /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/git@github\.com(?::\d+)?\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/
+
+/** "owner/name" of a GitHub remote's URL, or null for a remote elsewhere. */
+export function githubRepoOf(url: string): string | null {
+  return GITHUB_REMOTE.exec(url)?.[1] ?? null
 }
 
 /**

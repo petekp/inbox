@@ -1,7 +1,17 @@
 import { describe, expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { inPrOrder, commentLine, prRefs, prNeedsYou, prompts, readableComment, readiness } from '../core/domain/prs'
+import {
+  inPrOrder,
+  commentLine,
+  namedPrs,
+  prRefs,
+  prNeedsYou,
+  prompts,
+  readableComment,
+  readiness,
+} from '../core/domain/prs'
+import { githubRepoOf } from '../core/domain/gh'
 import { readPrNode } from '../core/domain/pr-query'
 import { prNodeOf } from './gh-answers'
 import { checkActions } from '../core/view/pr-tab'
@@ -158,6 +168,29 @@ describe('prs', () => {
     expect(
       prRefs('see https://github.com/acme/greet/pull/12 and https://github.com/acme/greet/pull/12#r1, not /issues/3'),
     ).toEqual(['acme/greet#12'])
+  })
+
+  test('names PRs by link, by owner/repo#n and by a bare #n, which a known PR claims before the session repo', () => {
+    const text = 'Merge #45 after acme/lib#7 and https://github.com/acme/web/pull/9, then #12; not C#3 or pull/5#r1'
+    expect(namedPrs(text, ['other/greet#12'], 'acme/greet')).toEqual([
+      'acme/greet#45',
+      'acme/lib#7',
+      'acme/web#9',
+      'other/greet#12',
+    ])
+    expect(namedPrs('Merge #45?', [], null)).toEqual([])
+    expect(namedPrs('Merge #12?', ['a/x#12', 'b/y#12'], 'acme/greet')).toEqual([])
+  })
+
+  test('reads the repository of a GitHub remote in each URL form git takes, and none of another host', () => {
+    for (const url of [
+      'git@github.com:acme/greet.git',
+      'https://github.com/acme/greet',
+      'https://token@github.com/acme/greet.git',
+      'ssh://git@github.com/acme/greet.git',
+    ])
+      expect(githubRepoOf(url)).toBe('acme/greet')
+    expect(githubRepoOf('git@gitlab.com:acme/greet.git')).toBeNull()
   })
 
   test('reads checks and open threads; threads where someone else spoke last block the merge', () => {

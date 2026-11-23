@@ -8,7 +8,7 @@ import {
   delegateSteps,
   delegateWaitsEnded,
 } from '../../core/domain/children'
-import { branchIn } from '../../core/domain/gh'
+import { gitPlaceIn } from '../../core/domain/gh'
 import type { Run } from '../../core/domain/gh'
 import { delegatesInHerdr, herdrTarget } from '../../core/remote/herdr'
 import { dialogActivity, toolActivity } from '../../core/domain/catch-up-text'
@@ -136,11 +136,11 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const endsTurn = (s: SessionState) =>
         input.source === 'compact' ? s : statusChanged(turnEnded(s, null, now()), o => childrenCutOff(o, now()))
       const folder = rolloutPath === null ? null : meta.folder
-      const [branch, withHistory] = await Promise.all([
-        folder === null ? null : branchIn(deps.run, folder),
+      const [git, withHistory] = await Promise.all([
+        folder === null ? null : gitPlaceIn(deps.run, folder),
         readHistoryAhead(read),
       ])
-      const withPlace = (s: SessionState) => (folder === null ? s : placed(s, folder, branch))
+      const withPlace = (s: SessionState) => (folder === null || git === null ? s : placed(s, folder, git))
       // Another session may have labelled this terminal since, so each start labels it again.
       const unreported = ({ herdrReport: _, ...s }: SessionState): SessionState => s
       const s = await write(async s =>
@@ -244,9 +244,9 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const before = read()
       // Herdr is asked outside the write: its run can last its whole timeout, and the server's views and presses wait
       // on the state lock.
-      const [tail, branch, inHerdr] = await Promise.all([
+      const [tail, git, inHerdr] = await Promise.all([
         rolloutTail(input.transcript_path),
-        folder ? branchIn(deps.run, folder) : null,
+        folder ? gitPlaceIn(deps.run, folder) : null,
         before.then(
           s => delegatesInHerdr(s.ledger.overview, deps.run, herdrTarget(env)),
           () => null,
@@ -269,7 +269,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
           commands.reduce((x, c) => delegateWaitsEnded(x, c.command, now()), o),
         )
         const withDelegates = inHerdr ? statusChanged(waited, o => delegatesSettled(o, inHerdr, now())) : waited
-        const withPlace = folder ? placed(withDelegates, folder, branch) : withDelegates
+        const withPlace = folder && git ? placed(withDelegates, folder, git) : withDelegates
 
         const ended = withCoveredTurn(noteHook(turnEnded(endTurn(withPlace, reply, now()), now()), 'stop', now()))
 

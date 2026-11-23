@@ -4,6 +4,34 @@ import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../core/view/timing
 import { w, arrive, world } from './hooks-world'
 import { PANE, sidebarTokens } from './hooks-helpers'
 
+test('a question naming a PR the session does not track offers it from the row, by the folder’s GitHub remote, and its press shows its result', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.folders = ['/tmp/project']
+  w.ghAnswers.push({
+    match: argv => argv.join(' ') === 'git remote get-url origin',
+    stdout: 'git@github.com:acme/greet.git\n',
+  })
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'fix the retry test', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Fixed it.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await $.tool.call({
+    tool: 'mcp__inbox__record',
+    kind: 'question',
+    ask: 'Merge #45, the fix for the retry test, now?',
+    options: ['Merge it', 'Hold'],
+  })
+  await clock.settle()
+
+  const pane = await $.ui.mount(PANE)
+  expect((await pane.find({ key: 'help-i1-0-key' }))?.props.label).toBe('Open #45')
+  await pane.press({ key: 'help-i1-0' })
+  await clock.settle()
+  expect(w.ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/45'])
+  expect(await pane.find({ text: /✓\sOpened\s#45$/ })).toBeDefined()
+})
+
 test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, its buttons send its conflicts and thread and say so, and its failing check waits on the person', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const vars: Record<string, string> = {}
