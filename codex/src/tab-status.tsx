@@ -124,7 +124,7 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
         ) : (
           <button
             type="button"
-            class="fold milestone-fold"
+            class="fold milestone-fold name-fold"
             data-fold={foldMotion(fold)}
             onClick={e => clickFold(e, tabState.ui.statusUnfolded.includes(fold), () => toggleStatusFold(fold))}
           >
