@@ -2,7 +2,7 @@
 // Built by omp/build.ts with Bun 1.4.4 from omp/src and core/. Do not edit.
 
 // src/host.ts
-import { randomUUID as randomUUID2 } from "crypto";
+import { randomUUID } from "crypto";
 
 // ../core/domain/gh.ts
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
@@ -14639,10 +14639,22 @@ async function writeRegistryEntry(files, folder, source, s, view, now, pid) {
     if (isUnchanged)
       return;
     const entry = { ...fields, writtenAt: now };
-    await files.write(path, JSON.stringify(entry));
+    await replaceFile(files, path, JSON.stringify(entry), now);
     await pruneEnded(files, folder, source.host, path);
   } catch (error) {
     files.log(`inbox: the session registry entry could not be written: ${error instanceof Error ? error.message : error}`);
+  }
+}
+async function replaceFile(files, path, text, now) {
+  const temporary = `${path}.${now}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files.write(temporary, text);
+    await files.move(temporary, path);
+  } catch (error) {
+    await files.remove(temporary).catch(() => {
+      return;
+    });
+    throw error;
   }
 }
 async function pruneEnded(files, folder, host, own) {
@@ -16914,7 +16926,6 @@ function panelCalls(context, sessions, herdrAsk) {
 }
 
 // src/registry.ts
-import { randomUUID } from "crypto";
 import { mkdir as mkdir6, readdir as readdir4, readFile as readFile5, rename as rename5, rm as rm3, writeFile as writeFile6 } from "fs/promises";
 import { dirname as dirname4 } from "path";
 var registryFiles = (log) => ({
@@ -16922,10 +16933,9 @@ var registryFiles = (log) => ({
   read: (path) => readFile5(path, "utf8").catch(missingAsNull),
   write: async (path, text) => {
     await mkdir6(dirname4(path), { recursive: true, mode: 448 });
-    const tmp = `${path}.${process.pid}-${randomUUID()}.tmp`;
-    await writeFile6(tmp, text, { mode: 384 });
-    await rename5(tmp, path);
+    await writeFile6(path, text, { mode: 384 });
   },
+  move: (from, to) => rename5(from, to),
   remove: (path) => rm3(path, { force: true }),
   livePids: async (pids) => new Set(pids.filter(isPidRunning)),
   log
@@ -17492,7 +17502,7 @@ async function copyToClipboard(text) {
 var defaultDeps = {
   stateDir: (pi) => join7(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
-  newId: randomUUID2,
+  newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
   isNextBuild: existsSync(join7(dirname6(dirname6(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
