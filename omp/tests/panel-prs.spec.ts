@@ -4,6 +4,7 @@ import {
   GH_MISSING_TEXT,
   GH_SIGNED_OUT_TEXT,
   CLEAR_FINISHED_ID,
+  RANK_AGAIN_ID,
   prCheckId,
   prMarkId,
   PR_REFRESH_ID,
@@ -23,9 +24,10 @@ import { withFetchedPrs } from '../../core/runtime/session-presses'
 import { sessionView } from '../../core/view/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
-import type { PanelScreen } from '../src/panel'
+import type { PanelScreen, PanelUi } from '../src/panel'
+import { withShared } from '../src/panel-keys'
 import { emptyState } from '../src/state'
-import { drawn, ESC, keyed, NOW, screenOf, text, withCursorOn } from './panel-harness'
+import { cursorOf, drawn, ESC, keyed, keys, NOW, screenOf, text, withCursorOn } from './panel-harness'
 
 function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAction> = {}): PanelScreen {
   const s = demoState(NOW)
@@ -153,6 +155,101 @@ test('Clear merged and closed does not show when the only finished PR is the bra
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   expect(text(screen, ui)).not.toContain('Clear merged and closed')
   expect(keyed(screen, ui, 'm', NOW).press).toBeUndefined()
+})
+
+const refreshDone = (at: number): LastAction => ({
+  kind: 'local',
+  action: 'pr-refresh',
+  text: 'Refresh PRs',
+  at,
+  result: { state: 'done', at, parts: [{ kind: 'refresh-prs', name: 'PRs', error: null, isCommand: false }] },
+})
+
+const cursorLine = (screen: PanelScreen, ui: PanelUi) =>
+  text(screen, ui)
+    .split('\n')
+    .find(l => l.includes('❯'))
+
+function steppedTo(screen: PanelScreen, ui: PanelUi, id: string): PanelUi {
+  let at = ui
+  for (let n = 0; n < 20 && cursorOf(at) !== id; n++) at = keys(screen, at, 'k')
+  if (cursorOf(at) !== id) throw new Error(`k never reached ${id}`)
+
+  return at
+}
+
+test('after Refresh PRs reads the PR that could not be read, the cursor stays on its line, Enter presses nothing, and the tab shown again opens at its first waiting row', () => {
+  const failed = demoState(NOW)
+  const [first] = screenOf().view.prs.drawn
+  if (!first) throw new Error('the demo draws no PR')
+  const ref = first.pr.ref
+  const view = failed.prViews.views[ref]
+  if (!view) throw new Error(`the demo has no view of ${ref}`)
+  failed.prViews.views[ref] = { ...view, error: 'HTTP 502' }
+  const shownSince = NOW - 60_000
+  const before = screenOf({ view: sessionView(failed, NOW, SETTLED_MS, { ...NO_HOLDS, shownSince }) })
+  const onRefresh = steppedTo(before, { ...INITIAL_UI, tab: 'prs', shownSince }, PR_REFRESH_ID)
+  expect(keyed(before, onRefresh, 'enter', NOW).press).toEqual({ action: 'pr-refresh' })
+
+  const read = demoState(NOW)
+  read.lastActions[PR_REFRESH_ID] = refreshDone(NOW - 1_000)
+  const after = screenOf({ view: sessionView(read, NOW, SETTLED_MS, { ...NO_HOLDS, shownSince }) })
+  expect(cursorLine(after, onRefresh)).toContain('Refreshed PRs')
+  expect(keyed(after, onRefresh, 'enter', NOW).press).toBeUndefined()
+  expect(keyed(after, onRefresh, 'enter', NOW).sent).toEqual([])
+
+  const back = keys(after, onRefresh, '2', '4')
+  expect(cursorOf(back)).toBeNull()
+  expect(cursorLine(after, back)).toBe(cursorLine(after, { ...INITIAL_UI, tab: 'prs', shownSince }))
+  expect(cursorLine(after, back)).not.toContain('Refreshed PRs')
+  expect(withShared(onRefresh, { ...onRefresh, shownSince: NOW }).selection.prs.id).toBeNull()
+})
+
+test('after Clear merged and closed leaves the PRs tab, the cursor rests on no line and Enter presses nothing', () => {
+  const finished = withFinished({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' })
+  const onClear = steppedTo(finished, { ...INITIAL_UI, tab: 'prs' }, CLEAR_FINISHED_ID)
+  expect(keyed(finished, onClear, 'enter', NOW).press).toEqual({ action: 'pr-clear-finished' })
+
+  const cleared = screenOf()
+  expect(text(cleared, onClear)).not.toContain('Clear merged and closed')
+  expect(cursorLine(cleared, onClear)).toBeUndefined()
+  expect(keyed(cleared, onClear, 'enter', NOW).press).toBeUndefined()
+})
+
+test('after Rank again, the cursor stays on the changed line while it draws and Enter presses nothing', () => {
+  const views = demoState(NOW).prViews.views
+  const ranked = (ref: string) => {
+    const view = views[ref]
+    if (!view) throw new Error(`the demo has no view of ${ref}`)
+    return rankedStatusOf(view)
+  }
+  const was = ranked('acme/visor#29')
+  const changed = withOrder({
+    statuses: {
+      'acme/visor#29': { ...was, status: was.status === 'ready' ? 'waiting' : 'ready' },
+      'acme/visor#33': ranked('acme/visor#33'),
+    },
+  })
+  const onOrder = steppedTo(changed, { ...INITIAL_UI, tab: 'prs' }, RANK_AGAIN_ID)
+  expect(keyed(changed, onOrder, 'enter', NOW).press).toEqual({ action: 'pr-rank-again' })
+
+  const reranked = withOrder(
+    { statuses: { 'acme/visor#29': ranked('acme/visor#29'), 'acme/visor#33': ranked('acme/visor#33') } },
+    {
+      [RANK_AGAIN_ID]: {
+        kind: 'talk',
+        action: 'pr-rank-again',
+        text: 'Rank again',
+        at: NOW - 1_000,
+        turnsStarted: demoState(NOW).presence.turnsStarted,
+      },
+    },
+  )
+  expect(text(reranked, onOrder)).not.toContain('g Rank again')
+  const lines = text(reranked, onOrder).split('\n')
+  expect(lines[lines.findIndex(l => l.includes('❯')) + 1]).toContain('Ranking…')
+  expect(keyed(reranked, onOrder, 'enter', NOW).press).toBeUndefined()
+  expect(keyed(reranked, onOrder, 'enter', NOW).sent).toEqual([])
 })
 
 test('a PR a fetch finds merged settles as ✓ Merged while the PRs tab shows, and u presses its Undo', () => {
