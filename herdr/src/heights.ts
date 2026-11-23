@@ -42,9 +42,9 @@ export class Heights {
     return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.height
   }
 
-  /** The width a box last measured, at zoom 1. */
+  /** The width a box last measured, at zoom 1, or its original's for a copy that has not measured yet, as `get`. */
   widthOf(key: string): number | undefined {
-    return this.sizes.get(key)?.width
+    return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.width
   }
 
   /**

@@ -23,7 +23,7 @@ export function titleTextEl(r: RowBlock, p: Paint, color: Color): Element {
     .min_w(0)
     .relative()
     .text_color(color)
-    .children(titleCopiesOf(r, p.heights).map(c => copyEl(c.key, c.text, c.isWidthDrawn, p)))
+    .children(titleCopiesOf(r, p.heights).map(c => copyEl(c.key, c.text, p)))
   if (g === null) return text.child(isOpenRow(r) ? div().child(r.title) : shortTitleEl(short))
   const form = (id: string, isShown: boolean, fade: TitleFade): Element =>
     div()
@@ -44,8 +44,11 @@ export function titleTextEl(r: RowBlock, p: Paint, color: Color): Element {
   )
 }
 
-/** A copy of a row's title, drawn hidden at the title's width, that reports its size under `key`. */
-const copyEl = (key: string, text: string, isWidthDrawn: boolean, p: Paint): Element =>
+/**
+ * A copy of a row's title, drawn hidden at the title's width, that reports its size under `key`. A change of its width
+ * alone draws again, since the cut the title draws is chosen from copies measured at one width.
+ */
+const copyEl = (key: string, text: string, p: Paint): Element =>
   div()
     .id(`copy ${key}`)
     .absolute()
@@ -53,12 +56,13 @@ const copyEl = (key: string, text: string, isWidthDrawn: boolean, p: Paint): Ele
     .left(0)
     .w_full()
     .opacity(0)
-    .on_size_change((size, cx) => p.measure(key, size, cx, isWidthDrawn))
+    .on_size_change((size, cx) => p.measure(key, size, cx, true))
     .child(text)
 
-/** A short title's text: on one line with an ellipsis, clipped to its lines, or wrapped. */
+/** A short title's text: on one line with an ellipsis, on a line and a cut line, clipped to its lines, or wrapped. */
 function shortTitleEl(s: ShortTitle): Element {
   if (s.isOneLine) return div().truncate().child(s.text)
+  if (s.secondLine !== undefined) return div().child(div().child(s.text)).child(div().truncate().child(s.secondLine))
 
   return div()
     .when(s.isClipped, e => e.max_h(CLIPPED_HEIGHT).overflow_hidden())

@@ -186,7 +186,7 @@ const titleHeightOf = (r: RowBlock, p: Paint): number | undefined => {
 
 /**
  * A row's title in a box whose height springs to `titleHeightOf`. The box clips. An opening title fades to its wrapped
- * form once its box comes to rest, and a closing title fades to one line while its box holds, before the box shrinks
+ * form once its box comes to rest, and a closing title fades to its closed form while its box holds, before the box shrinks
  * (`stepTitle`). An open row's title box takes its content's height in a draw that takes heights at once.
  */
 export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
