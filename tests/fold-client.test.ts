@@ -19,7 +19,7 @@ function draw(props: FoldProps): unknown {
     },
   }
 
-  return Fold(props, surface as never)
+  return Fold({ ...props, isOverCopy: false }, surface as never)
 }
 
 function collect(node: unknown): string[] {

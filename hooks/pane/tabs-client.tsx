@@ -1,5 +1,7 @@
 import type { ClientElements, ClientModule } from 'claude-code'
 
+import type { OverCopy } from './client-copy'
+
 type ClientTab = {
   id: string
   label: string
@@ -11,7 +13,7 @@ type ClientTab = {
 }
 
 /** A null color is the theme's own. */
-export type TabsProps = {
+export type TabsProps = OverCopy & {
   tabs: ClientTab[]
   shown: string
   /** While Help shows, the Help tab is the shown one and the tabs above it are not. */
@@ -23,11 +25,6 @@ export type TabsProps = {
   isEachFramed: boolean
   columns: number
   colors: { tab: string | null; raised: string; raisedText: string | null; muted: string | null }
-  /**
-   * The desktop app draws a new Client only after the pane's own elements, so the pane draws these tabs itself until
-   * the Client posts. The Client then draws nothing, and the two never show at once.
-   */
-  isDrawnByPane: boolean
 }
 
 type State = { hover: string | null }
@@ -137,10 +134,9 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
     if (at === HELP_TAB_ID) surface.post({ isHelp: true })
     else if (props.isHelpShown || at !== props.shown) surface.post({ tab: at })
   })
-  if (!props.isDrawnByPane) return tabsTree(props, surface.elements, surface.state?.hover ?? null)
-  surface.post({ isRunning: true })
+  if (props.isOverCopy) surface.post({ isRunning: true })
 
-  return surface.elements.Box({})
+  return tabsTree(props, surface.elements, surface.state?.hover ?? null)
 }
 
 export default Tabs

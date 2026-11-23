@@ -7,6 +7,7 @@ import { desktopTextPt } from './desktop-metrics'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import type { CountsUnits } from '../../core/view/status-folds'
 import type { FoldProps } from './fold-client'
+import { foldClient } from './pane-row-clients'
 import { LIST_MARGIN_PT, ROW_PAD_PT } from '../../core/view/layout'
 import type { Tone } from './palettes'
 import type { Entry, PaneBase, PaneClient, PaneHandlers } from './pane-context'
@@ -319,29 +320,22 @@ export function paneRowParts(
   ) =>
     hasClient ? (
       <Box key={`fold-row-${key}`} position="relative" width="100%">
-        <elements.Client
-          key={`fold-${key}`}
-          module="./fold-client.tsx"
-          width="100%"
-          props={
-            {
-              markCells: DESKTOP_MARK_CELLS,
-              label,
-              ...(units
-                ? { units: units.map(unit => unit.map(part => ({ text: part.text, color: unitColor(part.tone) }))) }
-                : {}),
-              isUnfolded,
-              chevron: foldGlyph(isUnfolded),
-              padY,
-              ...(status ? { status } : {}),
-              colors: {
-                rest: isInline ? null : (pal.card ?? null),
-                text: pal.age,
-                hoverText: 'text',
-              },
-            } satisfies FoldProps
-          }
-        />
+        {foldClient(elements, `fold-${key}`, {
+          markCells: DESKTOP_MARK_CELLS,
+          label,
+          ...(units
+            ? { units: units.map(unit => unit.map(part => ({ text: part.text, color: unitColor(part.tone) }))) }
+            : {}),
+          isUnfolded,
+          chevron: foldGlyph(isUnfolded),
+          padY,
+          ...(status ? { status } : {}),
+          colors: {
+            rest: isInline ? null : (pal.card ?? null),
+            text: pal.age,
+            hoverText: 'text',
+          },
+        })}
       </Box>
     ) : (
       treeRow(

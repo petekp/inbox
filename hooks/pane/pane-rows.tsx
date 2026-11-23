@@ -12,6 +12,7 @@ import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { settledScrollKey } from './pane-selection'
+import { rowClient, titleClient } from './pane-row-clients'
 import {
   DESKTOP_CELL_PT,
   DESKTOP_FIELD_PT,
@@ -186,12 +187,7 @@ export function paneRows(
             </Box>
           ) : null}
           <Box position="relative" width="100%">
-            <elements.Client
-              key={`select-${row.id}`}
-              module="./row-client.tsx"
-              width="100%"
-              props={rowClientProps(row, desktopRowTextPt, newTitleColor(row.id))}
-            />
+            {rowClient(elements, `select-${row.id}`, rowClientProps(row, desktopRowTextPt, newTitleColor(row.id)))}
           </Box>
         </Box>
       )
@@ -344,23 +340,18 @@ export function paneRows(
     const desktopAfter =
       f?.isAfterTitle && !isStatusUnder ? statusAfterTitle(`${DOT}${f.text}`, row.title, fitsTitleLine) : null
     const desktopTitle = hasClient ? (
-      <elements.Client
-        key={`collapse-${row.id}`}
-        module="./title-client.tsx"
-        width="100%"
-        props={{
-          title: row.title,
-          titleColor: newTitleColor(row.id) ?? null,
-          after: desktopAfter?.text ?? '',
-          isAfterUnder: desktopAfter?.isUnder ?? false,
-          colors: {
-            muted: pal.muted,
-            hover: pal.raised,
-            hoverText: pal.raisedText ?? null,
-            pressed: pal.selection ?? pal.raised,
-          },
-        }}
-      />
+      titleClient(elements, `collapse-${row.id}`, {
+        title: row.title,
+        titleColor: newTitleColor(row.id) ?? null,
+        after: desktopAfter?.text ?? '',
+        isAfterUnder: desktopAfter?.isUnder ?? false,
+        colors: {
+          muted: pal.muted,
+          hover: pal.raised,
+          hoverText: pal.raisedText ?? null,
+          pressed: pal.selection ?? pal.raised,
+        },
+      })
     ) : (
       <Box flexDirection="column">
         <Text wrap="wrap">

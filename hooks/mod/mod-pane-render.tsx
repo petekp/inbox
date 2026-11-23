@@ -52,6 +52,7 @@ import { noticeOf, rowErrorOf } from '../../core/view/ui-controller'
 import { collapsedOf, selectedOf } from '../../core/view/ui-controller-selection'
 import type { UiEvent } from '../../core/view/ui-controller-types'
 import { footerError } from '../../core/view/view'
+import { endClientDrawing, startClientDrawing } from '../pane/client-copy'
 
 /** Draws the inbox pane in the terminal and desktop looks, from the drawn session and the controller's state. */
 export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Elements[RenderSurface]) {
@@ -90,6 +91,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     look === 'terminal' ? m.atoms.runningFrame.read() : null,
   ])
   const { prViews: prState, lastActions, notes, turns, stop, isDemo, showsDemoNotices, isUnread, now } = drawn
+  if (hasClient) startClientDrawing()
   paneState.paintedVersions = { owner: currentOwner(), versions: drawn.view.drawnVersions }
   // The pane can draw before the controller hears that it opened, so the first frame shows the tab the open moves to.
   const opening: UiEvent[] = [{ type: 'opened' }, { type: 'read', host: hostFactsOf(drawn) }]
@@ -605,6 +607,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
       )}
     </Box>
   )
+  endClientDrawing()
   if (look === 'desktop') restoreDesktopFocus(m, tree)
 
   return tree

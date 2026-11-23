@@ -63,8 +63,8 @@ export async function paneMessaged(m: PaneEventCalls, e: UiMessageEvent) {
     isHelp?: unknown
     isRunning?: unknown
   } | null
-  if (e.element === 'tabs' && paneState.isTabsClientNew) {
-    paneState.isTabsClientNew = false
+  if (!paneState.runningClients.has(e.element)) {
+    paneState.runningClients.add(e.element)
     await redraw(m)
   }
   if (data?.isRunning === true) return
@@ -103,7 +103,7 @@ export async function paneMessaged(m: PaneEventCalls, e: UiMessageEvent) {
 /** The pane closed: it has no keys and no terminal frame, the controller hears it, and the Status look ends. */
 export async function paneClosed(m: PaneEventCalls) {
   paneHasKeys.clear()
-  paneState.isTabsClientNew = true
+  paneState.runningClients.clear()
   paneState.drawsTerminal = false
   paneState.isOpenWaiting = false
   await m.sendUi([{ type: 'closed' }])
