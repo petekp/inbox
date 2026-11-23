@@ -29,7 +29,8 @@ const ciFix: Child = {
 
 /**
  * A reply says every branch a milestone is for is on main, while one branch's subject still has a failing check. In a
- * real session the Status call closed the finished subjects but not the milestone, and linked the new CI fix to it.
+ * real session the Status call closed the finished subjects but not the milestone. The CI fix may stay under the
+ * editor change's subject, which is done or still working, or get a subject of its own.
  */
 export const milestoneReplyLanded: Replay = {
   name: 'milestone-reply-landed',
@@ -87,8 +88,8 @@ export const milestoneReplyLanded: Replay = {
         piece({ id: 'export', names: ['Export API'], match: 'export', state: 'working', stands: 'step one built' }),
         piece({
           id: 'editor',
-          names: ['Editor speedups'],
-          match: 'speedup',
+          names: ['Editor speedups', 'Editor CI fix', 'editor reorder test'],
+          match: 'speedup|\\bci\\b|reorder|browser test',
           state: 'working',
           stands: 'both upstream issues posted',
         }),
@@ -149,22 +150,19 @@ export const milestoneReplyLanded: Replay = {
         pieces: [
           { id: 'landing', state: 'done', stands: 'all six branches on main' },
           { id: 'export', state: 'done', stands: 'on main' },
-          { id: 'editor', state: 'done', stands: 'on main, its browser test fails on GitHub', alsoRight: ['working'] },
+          {
+            id: 'editor',
+            state: 'working',
+            stands: 'on main, its browser test fails on GitHub, fix under way',
+            alsoRight: ['done'],
+          },
           { id: 'log', state: 'done', stands: 'on main' },
           { id: 'deps', state: 'done', stands: 'on main' },
           { id: 'stale', state: 'done', stands: 'fix on main' },
-          piece({
-            id: 'ci',
-            names: ['Editor CI fix', 'editor reorder test'],
-            match: '\\bci\\b|reorder|browser',
-            state: 'working',
-            stands: 'browser test fails on GitHub, fix under way',
-            serves: 'none',
-          }),
         ],
-        children: [{ ref: 'herdr:editor-ci-fix', does: 'fixes the editor reorder test in CI', serves: 'ci' }],
+        children: [{ ref: 'herdr:editor-ci-fix', does: 'fixes the editor reorder test in CI', serves: 'editor' }],
       },
-      targets: ['milestones-true', 'serves-linked'],
+      targets: ['milestones-true'],
     },
   ],
 }
