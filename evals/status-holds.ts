@@ -125,10 +125,13 @@ export const HOLD_RULES: Rule[] = [
       const o = result.session.ledger.overview
       const was = before.overview
       if (!o || !was) return []
-      const call = result.calls.find(c => c.kind === 'status')
-      const answer = call?.overLimit === null ? (call.answers.at(-1) ?? null) : null
-      const parsed = parseStatus(answer)
-      const ops = parsed?.kind === 'ops' ? parsed.ops : []
+      const ops = result.calls
+        .filter(c => c.kind === 'status')
+        .flatMap(c => c.answers)
+        .flatMap(a => {
+          const parsed = parseStatus(a)
+          return parsed?.kind === 'ops' ? parsed.ops : []
+        })
       const wasOpen = (id: string) => was.milestones.some(x => x.id === id && isOpen(x))
       return o.milestones
         .filter(m => m.status === 'done' && m.text.trim() !== '' && wasOpen(m.id))
