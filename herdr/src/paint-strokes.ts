@@ -195,6 +195,9 @@ export function feedsOf(blocks: Block[], moves: StrokeMove[]): Column[][] {
   })
 }
 
+/** How far a nesting column reaches beside a block: to its end, to the arm, or from `lowerFrom` down. */
+type Reach = { isDashed: boolean; toEnd: boolean; toArm: boolean; lowerFrom: number | null }
+
 /** A column drawn across the space of the block drawn under `key`, which the column joins from above. */
 export const spaceColumnEl = (key: string, c: Column, f: StrokeFades, t: Theme): Element =>
   f.above(c.depth)(lineEl(`space column ${key} ${c.depth}`, c, 0, null, t))
@@ -204,9 +207,10 @@ export const spaceColumnEl = (key: string, c: Column, f: StrokeFades, t: Theme):
  * its depth, the column the path's line takes at depth 0. An arm starts a pixel right of its column, and a column that
  * ends at an arm takes the arm's row, so no two strokes cover the same pixel. Arms belong to their row and fade with it.
  * A column fades above and below the block's first line as `f` says, split at the arm where the two differ. `top` is
- * the block's padding above its first line. Each stroke is named for the block's `key` and for what it is, so it keeps
- * its name, and the state of its fade, while the block's form changes. A column's lower part is drawn at no height while
- * the two fades agree, so it is there to fade when they part.
+ * the block's padding above its first line. Each stroke is named for the block's `key`, its depth and its part, never
+ * for the row or column it serves, so a line keeps its name, and the state of its fade, while what it joins changes.
+ * Each depth draws one upper and one lower part, the reach of every stroke at that depth, and a part it lacks at no
+ * height, so it is there to fade when it shows.
  */
 export function contentStrokeEls(
   key: string,
@@ -240,32 +244,56 @@ export function contentStrokeEls(
           ...pathColumn(side.above).map(c => upper(c, 'path', top)),
           ...pathColumn(side.below).map(c => below(c, 'path')),
         ]
-  const treeEls = tree.flatMap(({ depth, is }): Element[] => {
-    const c = { depth, isDashed: false }
-    const name = `tree ${depth}`
-    const arm = f.own(
-      div()
-        .id(idOf(name, 'arm'))
-        .absolute()
-        .left(PATH_X + depth * NEST + 1)
-        .top(armAt)
-        .w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP)
-        .h(1)
-        .border_t_1()
-        .border_color(lineColor(t)),
-    )
-    if (is === 'down') return [below(c, name)]
-    if (is === 'past') return whole(c, name)
-    if (is === 'arm') return [arm]
-    if (is === 'last') return [upper(c, name, armAt + 1), arm]
+  const reaches = new Map<number, Reach>()
+  const reachOf = (c: Column): Reach => {
+    const r = reaches.get(c.depth) ?? { isDashed: true, toEnd: false, toArm: false, lowerFrom: null }
+    r.isDashed &&= c.isDashed
+    reaches.set(c.depth, r)
 
-    return [...whole(c, name), arm]
+    return r
+  }
+  const reachWhole = (c: Column) => void (reachOf(c).toEnd = true)
+  const reachBelow = (c: Column) => {
+    const r = reachOf(c)
+    r.lowerFrom = Math.min(r.lowerFrom ?? Infinity, top + LINE_HEIGHT)
+  }
+  const arms = tree.flatMap(({ depth, is }): Element[] => {
+    const c = { depth, isDashed: false }
+    if (is === 'down') reachBelow(c)
+    else if (is === 'last') reachOf(c).toArm = true
+    else if (is !== 'arm') reachWhole(c)
+    if (is === 'down' || is === 'past') return []
+
+    return [
+      f.own(
+        div()
+          .id(`stroke ${key} arm ${depth}`)
+          .absolute()
+          .left(PATH_X + depth * NEST + 1)
+          .top(armAt)
+          .w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP)
+          .h(1)
+          .border_t_1()
+          .border_color(lineColor(t)),
+      ),
+    ]
+  })
+  passes.forEach(reachWhole)
+  feeds.forEach(reachBelow)
+  const columnEls = [...reaches].flatMap(([depth, r]): Element[] => {
+    const c = { depth, isDashed: r.isDashed }
+    const isSplit = f.above(depth) !== f.below(depth)
+    const hasUpper = r.toEnd || r.toArm
+    const upperHeight = r.toEnd && !isSplit ? null : hasUpper ? armAt + 1 : 0
+    const lowerFrom = r.toEnd ? armAt + 1 : (r.lowerFrom ?? armAt + 1)
+    const lowerHeight = r.toEnd ? (isSplit ? null : 0) : r.lowerFrom === null ? 0 : null
+    const id = (part: 'top' | 'bottom') => `stroke ${key} column ${depth} ${part}`
+
+    return [
+      f.above(depth)(lineEl(id('top'), c, hasUpper ? 0 : armAt + 1, upperHeight, t)),
+      f.below(depth)(lineEl(id('bottom'), c, lowerFrom, lowerHeight, t)),
+    ]
   })
 
-  return [
-    ...(path ? pathEls(path) : []),
-    ...treeEls,
-    ...passes.flatMap(c => whole(c, `pass ${c.depth}`)),
-    ...feeds.map(c => below(c, `feed ${c.depth}`)),
-  ]
+  return [...(path ? pathEls(path) : []), ...columnEls, ...arms]
 }
