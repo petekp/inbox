@@ -10,7 +10,7 @@ import type { Host } from '../domain/model-text'
 import { applyPrPress, withFinishedPrsSettled } from '../view/pr-tab'
 import { isPrPress, lastPressOf, pressRowId } from '../view/pr-press'
 import { isViewKept } from '../view/pr-views'
-import { itemPrSteps, tabPrs } from '../domain/pr-fetch'
+import { itemPrSteps } from '../domain/pr-fetch'
 import { withOrderStatuses } from '../view/pr-order'
 import type { Applied, PrPress } from '../view/pr-press'
 import { actionId } from '../domain/press-labels'
@@ -68,7 +68,7 @@ export function pressOn(
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
     holdMs: drawn.settleWindowMs,
-    extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
+    extraSteps: item ? itemPrSteps(item, s) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
     compareInBackground: texts.compareInBackground,

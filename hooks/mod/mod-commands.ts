@@ -1,5 +1,5 @@
 import type { Session } from '../../types'
-import { branchIn, GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE, type Run } from '../../core/domain/gh'
+import { gitPlaceIn, GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE, type Run } from '../../core/domain/gh'
 import type { PathProbe } from '../../core/domain/open-targets'
 import { placed } from '../../core/runtime/session-turns'
 
@@ -47,9 +47,9 @@ export async function placeChange<S extends Session>(
 ): Promise<(s: S) => S> {
   const isOtherFolder = saved !== null && saved !== folder
   const isMoved = isOtherFolder && (saved === left || (await isGone(calls, saved)))
-  const branch = await branchIn(runOf(calls), folder)
+  const git = await gitPlaceIn(runOf(calls), folder)
 
-  return s => placed(isMoved && s.place?.folder === saved ? { ...s, place: null } : s, folder, branch)
+  return s => placed(isMoved && s.place?.folder === saved ? { ...s, place: null } : s, folder, git)
 }
 
 /**

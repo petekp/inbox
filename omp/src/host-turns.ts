@@ -1,6 +1,6 @@
 import { isSameTaskList, ompTodoFromBranch } from '../../core/domain/host-tasks'
 import { guidanceText } from '../../core/domain/model-text'
-import { branchIn } from '../../core/domain/gh'
+import { gitPlaceIn } from '../../core/domain/gh'
 import { delegatesInHerdr } from '../../core/remote/herdr'
 import { messageTyped, notePrompt, turnStarted, placed, cutOffTurn } from '../../core/runtime/session-turns'
 import { needsUpdate, statusChanged } from '../../core/runtime/session-status'
@@ -96,10 +96,8 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
         .catch(() => undefined)
         .then(async () => {
           const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
-          const branch = await branchIn(run, ctx.cwd)
-          await change(id, s =>
-            placed(isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }, ctx.cwd, branch),
-          )
+          const git = await gitPlaceIn(run, ctx.cwd)
+          await change(id, s => placed(isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }, ctx.cwd, git))
         })
         .catch(() => undefined)
         .then(() => catchUpUnseen(ctx)),
@@ -226,18 +224,18 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
     // Herdr and git are asked outside the change: each run can last its whole timeout, and the session's changes run
     // one at a time.
-    const [inHerdr, branch] = await Promise.all([
+    const [inHerdr, git] = await Promise.all([
       readState(dir, id)
         .catch(() => null)
         .then(saved => delegatesInHerdr(saved?.ledger.overview ?? null, run, deps.herdrTarget)),
-      branchIn(run, ctx.cwd),
+      gitPlaceIn(run, ctx.cwd),
     ])
     const endedAt = deps.now()
     const written = await change(id, s => {
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed })
       const settled = inHerdr ? statusChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
 
-      return { ...placed(settled, ctx.cwd, branch), stop }
+      return { ...placed(settled, ctx.cwd, git), stop }
     }).catch(() => null)
     if (!written) return
     const host = hostFor(ctx)

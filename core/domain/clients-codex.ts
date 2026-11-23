@@ -187,6 +187,7 @@ export const CODEX: Client = {
     'done-press-age': { kind: 'full' },
     'delegate-asks': { kind: 'full' },
     'record-earlier-answers': { kind: 'full' },
+    'named-pr-link': { kind: 'full' },
     'session-registry': {
       kind: 'different',
       reason:

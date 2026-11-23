@@ -78,6 +78,7 @@ export type FeatureId =
   | 'done-press-age'
   | 'delegate-asks'
   | 'record-earlier-answers'
+  | 'named-pr-link'
   | 'session-registry'
   | 'press-preconditions'
 

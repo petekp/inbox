@@ -20,11 +20,47 @@ export const TIMED_OUT_CODE = -2
 
 const GIT_TIMEOUT_MS = 5000
 
-/** The branch `folder` is on now. Null when git names none, as outside a repository or on a detached HEAD. */
-export async function branchIn(run: Run, folder: string): Promise<string | null> {
-  const r = await run(['git', 'branch', '--show-current'], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS })
+/**
+ * Where `folder` is in Git now. `branch` is null when git names none, as outside a repository or on a detached HEAD.
+ * `repo` is the GitHub repository gh would pick among the remotes, as "owner/name": `upstream`, then `github`, then
+ * `origin`, then any other. It is null when no remote is on GitHub, and undefined when git could not list them.
+ */
+export type GitPlace = { branch: string | null; repo: string | null | undefined }
 
-  return r.code === 0 ? r.stdout.trim() || null : null
+const REMOTE_ORDER = ['upstream', 'github', 'origin']
+
+export async function gitPlaceIn(run: Run, folder: string): Promise<GitPlace> {
+  const opts = { cwd: folder, timeoutMs: GIT_TIMEOUT_MS }
+  const [branch, remotes] = await Promise.all([
+    run(['git', 'branch', '--show-current'], opts),
+    run(['git', 'remote', '-v'], opts),
+  ])
+
+  return {
+    branch: branch.code === 0 ? branch.stdout.trim() || null : null,
+    repo: remotes.code === 0 ? githubRepoIn(remotes.stdout) : undefined,
+  }
+}
+
+/** The GitHub repository of the first remote in `REMOTE_ORDER` that is on GitHub, from `git remote -v`. */
+function githubRepoIn(listed: string): string | null {
+  const onGithub = listed.split('\n').flatMap(line => {
+    const [name = '', url = ''] = line.split(/\s+/)
+    const repo = githubRepoOf(url)
+    return repo ? [{ name, repo }] : []
+  })
+  const rank = (name: string) => (REMOTE_ORDER.includes(name) ? REMOTE_ORDER.indexOf(name) : REMOTE_ORDER.length)
+
+  return onGithub.toSorted((a, b) => rank(a.name) - rank(b.name))[0]?.repo ?? null
+}
+
+/** The forms of a GitHub remote's URL that git accepts: https, ssh and scp-like, each with or without ".git". */
+const GITHUB_REMOTE =
+  /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/git@github\.com(?::\d+)?\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/
+
+/** "owner/name" of a GitHub remote's URL, or null for a remote elsewhere. */
+export function githubRepoOf(url: string): string | null {
+  return GITHUB_REMOTE.exec(url)?.[1] ?? null
 }
 
 /**

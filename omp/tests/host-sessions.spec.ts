@@ -257,14 +257,14 @@ test('the folder and branch show from the session’s start, and a checkout duri
   w.execResults.set('git', { code: 0, stdout: 'main\n' })
   await call('session_start', { type: 'session_start' })
   await settle()
-  expect(state().place).toEqual({ folder: '/work', branch: 'main' })
+  expect(state().place).toEqual({ folder: '/work', branch: 'main', repo: null })
 
   await prompt('switch to a feature branch')
   await call('agent_start', { type: 'agent_start' })
   w.execResults.set('git', { code: 0, stdout: 'feature\n' })
   await endAgent('Switched.')
   await settle()
-  expect(state().place).toEqual({ folder: '/work', branch: 'feature' })
+  expect(state().place).toEqual({ folder: '/work', branch: 'feature', repo: null })
 })
 
 test('the session omp shows has a registry entry with its counts, which moves to the next session shown and goes at shutdown', async () => {
