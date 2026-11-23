@@ -36,7 +36,8 @@ function isGone(calls: CommandCalls, path: string): Promise<boolean> {
 }
 
 /**
- * The change that saves `folder` and its branch as the session's place. A place keeps the folder it first saved,
+ * The change that saves `folder`, its branch and its GitHub repository as the session's place. The place keeps the
+ * repository it saved when git cannot list the remotes. A place keeps the folder it first saved,
  * unless the session moved away from that folder (`left` is the folder it was last seen in) or that folder is gone.
  */
 export async function placeChange<S extends Session>(
