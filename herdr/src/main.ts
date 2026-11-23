@@ -400,7 +400,7 @@ export default class Inbox extends View {
     const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits)
     this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map(o => o.rowId) }
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion

@@ -20,6 +20,12 @@ export function zoomOf(settings: Record<string, unknown>): number {
   return typeof zoom === 'number' && zoom > 0 ? zoom : 1
 }
 
+/** The sizes the look last measured, by key: each box's height and width. */
+export type Sizes = { get: (key: string) => number | undefined; widthOf: (key: string) => number | undefined }
+
+/** No measured sizes, as before a look's first measure. */
+export const NO_SIZES: Sizes = { get: () => undefined, widthOf: () => undefined }
+
 /**
  * The size each list block and each row's panel last measured, by key, at zoom 1, the scale every size the look sets
  * is in. A block's box draws at its measured height so a change to its content glides from the old height to the new
@@ -36,9 +42,9 @@ export class Heights {
     return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.height
   }
 
-  /** The width a box last measured, at zoom 1. */
+  /** The width a box last measured, at zoom 1, or its original's for a copy that has not measured yet, as `get`. */
   widthOf(key: string): number | undefined {
-    return this.sizes.get(key)?.width
+    return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.width
   }
 
   /**

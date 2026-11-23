@@ -1,5 +1,5 @@
 import type { IsCollapsed } from '../../core/view/status-folds'
-import { cellWidth, cutForEllipsis, cutToCells } from '../../core/domain/text'
+import { cellWidth, cutForEllipsis, cutLine, cutToCells } from '../../core/domain/text'
 
 const ANSI = /\x1b\[[0-9;]*m/g
 export const visibleLength = (s: string): number => cellWidth(s.replace(ANSI, ''))
@@ -72,7 +72,7 @@ export function titleLines(title: string, first: number, next: number, maxLines:
   const after = wrapText(rest, next)
   if (after.length < maxLines) return [head, ...after]
   const last = after.slice(maxLines - 2).join(' ')
-  const cut = cellWidth(last) <= next ? last : `${cutForEllipsis(last, t => cellWidth(t) <= next)}…`
+  const cut = cutLine(last, t => cellWidth(t) <= next)
 
   return [head, ...after.slice(0, maxLines - 2), cut]
 }

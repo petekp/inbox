@@ -46,6 +46,37 @@ export function cutForEllipsis(line: string, fits: (withEllipsis: string) => boo
   return parts.join('').replace(/[\s.,;:]+$/, '')
 }
 
+/**
+ * The cuts of `line` at a word, longest first: each start of it that ends with one of its words, less any space or
+ * punctuation before the ellipsis, then the ellipsis. The first is the whole line with an ellipsis.
+ */
+export function wordCuts(line: string): string[] {
+  const words = line.split(' ')
+  const cuts = words.map((_, n) =>
+    words
+      .slice(0, words.length - n)
+      .join(' ')
+      .replace(/[\s.,;:]+$/, ''),
+  )
+
+  return [...new Set(cuts.filter(Boolean).map(head => `${head}…`))]
+}
+
+/** The most words from the start of `line` that `fit` with an ellipsis after them, or null when not even one does. */
+export function cutAtWord(line: string, fits: (withEllipsis: string) => boolean): string | null {
+  return wordCuts(line).find(fits)?.slice(0, -1) ?? null
+}
+
+/**
+ * `line` whole when it `fits`, or else cut with an ellipsis after its last word that fits, and inside a word only when
+ * not even its first word fits beside the ellipsis.
+ */
+export function cutLine(line: string, fits: (text: string) => boolean): string {
+  if (fits(line)) return line
+
+  return `${cutAtWord(line, fits) ?? cutForEllipsis(line, fits)}…`
+}
+
 /** Where a phrase ends: after a comma or semicolon, or before "and". */
 const PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g
 

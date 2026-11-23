@@ -15,6 +15,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-title-motion.ts` | Codex adapter. When a row's title fades between its full and clamped forms while its line grows or shrinks, so the fade runs while the line rests and the line never cuts a line of the title that shows. |
 | `codex/src/tab-page-variables.ts` | Codex adapter. The shared spacing scale and motion lengths, set as the CSS variables the tab's styles read. |
 | `codex/src/tab-fold-all.ts` | Codex adapter. `toggleStatusFold` opens or shuts a Status fold, with `foldMotion`, its list's motion key. `foldAllHere` applies a fold-all to the tab's folds through each fold's own toggle, so each animates and saves as a single click would, and `clickFold` turns an Option-click on a fold into a fold-all. |
+| `codex/src/tab-title-cut.tsx` | Codex adapter. A row's title part, whose clamped form cuts the title at a word (`cutLine`), measured in a hidden copy at the part's width. |
 | `codex/src/tab-title-tint.tsx` | Codex adapter. A row's title in a span whose tint a Web Animation fades from the clock's point, so a row drawn again mid-fade does not start over. |
 | `codex/src/tab-line-steps.ts` | Codex adapter. Steps lines that come and go, such as banners and a press's status, through the row states, so a line enters and leaves from its place. Says how a Status connector moves with the rows it joins. |
 | `codex/src/tab-connectors.ts` | Codex adapter. Fades a Status connector in on the fade of the first row it joins, so the line waits with that row for its space to open. |

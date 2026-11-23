@@ -38,6 +38,7 @@ import {
   UndoPlace,
 } from './tab-parts'
 import { TitleTint } from './tab-title-tint'
+import { TitlePart } from './tab-title-cut'
 import { StatusLines, statusLinesOf, statusMotion, type StatusLine } from './tab-status-part'
 import { Sep } from './tab-parted'
 
@@ -252,18 +253,14 @@ export function ListRow({
   const isSideSplit = closed !== null && closed.side !== drawn.side
   // An open row keeps its clamped title drawn, hidden, since the title's fade can outlast the opening state.
   const drawsClampedTitle = isClosing || drawsPanel(track)
-  const textParts = () => (
+  const textParts = (isClamped: boolean) => (
     <>
-      <span class="part title-part">
-        {row.lead ? (
-          <>
-            <span class="lead">{row.lead}</span>{' '}
-          </>
-        ) : null}
-        <TitleTint row={newRowIn(newRowsOf(tabState.ui), row.id, drawnTab())} tone="key">
-          {row.title}
-        </TitleTint>
-      </span>
+      <TitlePart
+        lead={row.lead}
+        title={row.title}
+        tint={newRowIn(newRowsOf(tabState.ui), row.id, drawnTab())}
+        isClamped={isClamped}
+      />
       {after(drawn, closed ? 'open' : undefined)}
       {closed ? after(closed, 'closed') : null}
     </>
@@ -282,10 +279,10 @@ export function ListRow({
           aria-expanded={isSelected}
           onClick={isSelected ? e => onSelect(e.altKey, inputOf(e)) : undefined}
         >
-          <span class="text parted">{textParts()}</span>
+          <span class="text parted">{textParts(!isSelected && !isClosing)}</span>
           {drawsClampedTitle ? (
             <span class="text parted short" aria-hidden="true">
-              {textParts()}
+              {textParts(true)}
             </span>
           ) : null}
           {row.meta ? (
