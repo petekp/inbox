@@ -57,10 +57,9 @@ export function settleAnswers(root: HTMLElement): boolean {
 }
 
 /**
- * Calls `redraw` in the next frame when a tree's width changes its answers' form, as a window resize or a classic
- * scrollbar appearing does. A redraw inside the observer's callback would resize the trees it observes, which the
- * browser reports as a ResizeObserver loop error. Returns the call that watches the trees drawn now, which each draw
- * makes.
+ * Calls `redraw` in the next frame when a tree's width changes its answers' form, as a window resize does. A redraw
+ * inside the observer's callback would resize the trees it observes, which the browser reports as a ResizeObserver loop
+ * error. Returns the call that watches the trees drawn now, which each draw makes.
  */
 export function watchAnswerWidths(root: HTMLElement, redraw: () => void, signal: AbortSignal): () => void {
   const observer = new ResizeObserver(() => requestAnimationFrame(() => settleAnswers(root) && redraw()))
