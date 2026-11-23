@@ -203,6 +203,7 @@ var NEEDS_YOU_GROUPS = [
   { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
 var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var QUEUED_RESULT = { text: SUBJECT_MARKS.queued.mark, isRunning: false };
 
 // ../core/view/session-files.ts
 var SESSION_FILE = /^[\w-]{1,100}\.json$/;

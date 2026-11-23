@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T11:45:25.551Z. 368972 characters follow.
+// Built at 2026-11-23T16:50:22.667Z. 369289 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -951,6 +951,7 @@ function isChildWorking(c) {
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,…]+$/, "");
 var isSettled = (row) => row.tone === "done";
 var textLevelOf = (row) => isSettled(row) ? "faint" : "muted";
+var WAS_LEVEL = "faint";
 var nameLevelOf = (row, otherwise) => isSettled(row) ? "faint" : otherwise;
 var textBeyondName = (name, text) => text && comparableName(text) !== comparableName(name) ? text : null;
 function isNamedLikeSubject(x, under) {
@@ -2138,9 +2139,6 @@ var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
 function rowMark(row) {
   return rowResultMark(row) ?? (row.state.is === "open" && row.type !== "finding" ? ASK_MARK : null);
 }
-function isSendMoving(delivery) {
-  return delivery === "sending" || delivery === "queued";
-}
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
 }
@@ -2196,9 +2194,12 @@ function deliveryLabel(step, label, reply) {
 function settledMark(state) {
   return closedMark(state.closedAs, state.delivery);
 }
+var QUEUED_RESULT = { text: SUBJECT_MARKS.queued.mark, isRunning: false };
 function closedMark(state, delivery) {
-  if (isSendMoving(delivery))
+  if (delivery === "sending")
     return RUNNING_RESULT;
+  if (delivery === "queued")
+    return QUEUED_RESULT;
   return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
 }
 function canUndoRefused(delivery) {
@@ -4006,7 +4007,9 @@ function milestoneAsSubject(m, subjectRows) {
 
 // ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
-var WAS_PREFIX = "Prev: ";
+var WAS_LABEL = "Prev: ";
+var WAS_MARK = "↩";
+var WAS_PREFIX = `${WAS_MARK} ${WAS_LABEL}`;
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now, turn = { is: "fresh" }) {
@@ -6366,7 +6369,10 @@ var isLightTheme = (t) => {
   return (r * 299 + g * 587 + b * 114) / 1000 > 128;
 };
 var colorOf = (t, tone) => tone === "tasks" || tone === "needsYou" ? (isLightTheme(t) ? LIGHT_TONES : DARK_TONES)[tone] : t[tone === null ? "foreground" : TONE_COLORS[tone]];
-var faintOf = (t) => faintOver(flatten(t.muted, t.background), t.background);
+function faintOf(t, under = t.background) {
+  const page = flatten(under, t.background);
+  return faintOver(flatten(t.muted, page), page);
+}
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 function flatten(c, under) {
   const alpha = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1;
@@ -7027,7 +7033,7 @@ function ruleEl(b, t) {
   return h_flex6().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(div12().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t, buttons = []) {
-  const text = div12().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+  const text = div12().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : b.level === "faint" ? faintOf(t) : colorOf(t, b.tone)).child(b.text);
   return h_flex6().flex_wrap().gap_x(CONTROL_GAP).items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex6().flex_none().items_center().gap(CONTROL_GAP).children(buttons)));
 }
 
@@ -7074,7 +7080,7 @@ function feedbackEl(f, t) {
   const cut = f.aged?.lead.length ?? f.text.length;
   if (f.tone === "muted" || cut >= f.text.length)
     return partedTextEl(f.text, colorOf(t, f.tone), 0, t).pt(CONTROL_GAP);
-  return h_flex9().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), t.muted)]);
+  return h_flex9().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), faintOf(t))]);
 }
 var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
   const color = lineColor(t, isSelected ? t.selected : t.background);
@@ -7099,7 +7105,7 @@ function rowEl(r, p) {
   const hasTree = (m?.closing ?? shown).body.some((l) => l.tree !== undefined);
   const mark = markEl(shown.mark, t, markTintOf(shown, p)).id(`mark ${r.id}`);
   const trunk = trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`);
-  const line = h_flex9().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div15().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex9().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div15().flex_none().ml(INSET).text_color(faintOf(t, r.isSelected ? t.selected : t.background)).child(r.age ?? "")));
   const lines = [
     ...shown.settled ? [{ text: shown.settled.label, tone: shown.settled.tone }] : [],
     ...shown.feedback && !isStatusUnder(shown) ? [shown.feedback] : [],
@@ -7898,7 +7904,7 @@ function underLines(text, merged, was) {
   return [
     ...text ? [text] : [],
     ...muted(merged ? mergedLine(merged, (t) => cellWidth(t) <= MERGED_CELLS) : null),
-    ...muted(was ? `${WAS_PREFIX}${was}` : null)
+    ...was ? [{ text: `${WAS_PREFIX}${was}`, level: WAS_LEVEL }] : []
   ];
 }
 function rowBlocks(row, isUnfolded, isCollapsed) {
@@ -8089,7 +8095,7 @@ function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
   const atText = (b) => g.mark && b.kind === "note" ? { ...b, isAtEdge: false } : b;
   const lines = goalField ? field : (isSuggested ? suggestion : [
     headTitle("goal text", g.text),
-    ...g.was ? [headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted")] : [],
+    ...g.was ? [{ ...headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted"), level: WAS_LEVEL }] : [],
     ...g.now ? [headNote("goal now", g.now, "muted")] : [],
     ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
   ]).map(atText);

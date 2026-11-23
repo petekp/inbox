@@ -1259,9 +1259,6 @@ function isWaitingRow(row) {
 }
 var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
 var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
-function isSendMoving(delivery) {
-  return delivery === "sending" || delivery === "queued";
-}
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
 }
@@ -1291,8 +1288,10 @@ function deliveryLabel(step, label, reply) {
       return label;
   }
 }
+var QUEUED_RESULT = { text: SUBJECT_MARKS.queued.mark, isRunning: false };
 function closedMark(state, delivery) {
-  if (isSendMoving(delivery)) return RUNNING_RESULT;
+  if (delivery === "sending") return RUNNING_RESULT;
+  if (delivery === "queued") return QUEUED_RESULT;
   return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
 }
 function outcomeLabel(c) {
@@ -2875,6 +2874,9 @@ function milestoneAsSubject(m, subjectRows) {
 
 // ../core/view/status-page.ts
 var OTHER_WORK = "Other work";
+var WAS_LABEL = "Prev: ";
+var WAS_MARK = "\u21A9";
+var WAS_PREFIX = `${WAS_MARK} ${WAS_LABEL}`;
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
 function statusPage(s, now, turn = { is: "fresh" }) {
