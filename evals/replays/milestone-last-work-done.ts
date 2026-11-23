@@ -118,7 +118,7 @@ export const milestoneLastWorkDone: Replay = {
         milestones: [{ id: 'ms-branches', state: 'done' }],
         pieces: [{ id: 'design', state: 'done', stands: 'API on main, checks passed' }],
       },
-      targets: ['milestones-true'],
+      targets: ['milestones-true', 'work-closed-milestone-text'],
     },
   ],
 }

@@ -274,6 +274,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       for (const m of s.after.milestones) m.status = 'done'
     },
   },
+  'work-closed-milestone-text': {
+    good: s => {
+      workClosedMilestone(s)
+      s.after.milestones[0]!.text = ''
+    },
+    bad: workClosedMilestone,
+  },
   'held-milestone': {
     good: withGoal,
     bad: s => {
@@ -334,6 +341,17 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s1Of(s).name = 'PR 3655'
     },
   },
+}
+
+function workClosedMilestone(s: Scene) {
+  withGoalBefore(s)
+  s.after = {
+    ...s.after,
+    milestones: s.after.milestones.map(m =>
+      m.id === 'm1' ? { ...m, status: 'done' as const, changedAt: minutes(10), closedAt: minutes(10) } : m,
+    ),
+  }
+  s.calls = [statusCall('DONE: s1 | syncs on reconnect')]
 }
 
 function milestoneOnly(s: Scene) {

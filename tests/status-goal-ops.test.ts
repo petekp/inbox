@@ -137,7 +137,7 @@ test('a typed goal is neither replaced nor retired before it is met, and takes a
   expect(met.goal).toMatchObject({ text: 'Search under 100 ms', source: 'inferred' })
 })
 
-test('code closes a milestone once its linked work closed with one done, also when the same answer sets the milestone, and leaves one a call opened again until more of its work closes', () => {
+test('code closes a milestone once its linked work closed with one done, also when the same answer sets the milestone, drops its text, and leaves one a call opened again until more of its work closes', () => {
   const linked = after(
     withGoal(),
     'SERVES: s1 | m2\nSERVES: s2 | m3\nNEW: queued | Docs | not started\nSERVES: s3 | m2',
@@ -159,10 +159,10 @@ test('code closes a milestone once its linked work closed with one done, also wh
   expect(
     applyStatus(reopened, parseStatus('NO CHANGE')!, 55, NO_ASKS)!.milestones.find(m => m.id === 'm2')?.status,
   ).toBe('working')
-  expect(more.milestones.find(m => m.id === 'm2')).toMatchObject({ status: 'done', closedAt: 70 })
+  expect(more.milestones.find(m => m.id === 'm2')).toMatchObject({ status: 'done', text: '', closedAt: 70 })
   expect(more.goal?.metAt).toBeNull()
   const set = after(after(withGoal(), 'SERVES: s1 | m2', 30), 'DONE: s1 | merged\nSET: m2 | working | errors left', 40)
-  expect(set.milestones.find(m => m.id === 'm2')).toMatchObject({ status: 'done', closedAt: 40 })
+  expect(set.milestones.find(m => m.id === 'm2')).toMatchObject({ status: 'done', text: '', closedAt: 40 })
 })
 
 test('Remove goal clears the goal, its milestones and links, and the call does not set it again, until Undo brings them back', () => {
