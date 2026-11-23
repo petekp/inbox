@@ -10,7 +10,15 @@ import { viewOf } from '../src/core'
 import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { NO_HOLDS } from '../../core/view/timing'
-import { ENTER_FADE_MS, ROW_STATE_MS, SLIDE_PX, drawsPanel, enterDelayMs, stepRow } from '../../core/view/row-motion'
+import {
+  ENTER_FADE_MS,
+  ROW_STATE_MS,
+  SLIDE_PX,
+  drawsPanel,
+  enterDelayMs,
+  moveMs,
+  stepRow,
+} from '../../core/view/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS, springStep } from '../../core/view/springs'
 import { LINE_PT } from '../../core/view/layout'
 import type { RowState, RowTarget, RowTrack } from '../../core/view/row-motion'
@@ -47,7 +55,7 @@ test('every row state reaches every target, a row drawing its panel keeps it unt
       if (first?.state === 'settling') assert.equal(drawsPanel(first), false, `${state} toward ${target}`)
       let track = first
       for (let n = 0; n < 2 && track && track.state !== RESTS[target]; n++)
-        track = stepRow(track, target, track.since + ROW_STATE_MS[track.state])
+        track = stepRow(track, target, track.since + moveMs(track))
       assert.equal(track?.state ?? null, RESTS[target], `${state} toward ${target}`)
       if (track) assert.equal(track.hasOpenForm, track.state === 'open', `${state} toward ${target}`)
     }

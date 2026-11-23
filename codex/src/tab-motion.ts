@@ -4,14 +4,14 @@ import {
   FADE_MS,
   isMoving,
   LEAVE_FADE_MS,
-  ROW_STATE_MS,
   turnBackFades,
 } from '../../core/view/row-motion'
 import type { RowState } from '../../core/view/row-motion'
 import { FRAME_MS, HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
-import { later, cancelTimer } from './tab-host'
+import { later } from './tab-host'
+import { fadeForms, swapsForm } from './tab-form-swap'
 import { atEndLines, closeTitle, openTitle, releaseLine, LINE } from './tab-title-motion'
 import {
   fade,
@@ -41,7 +41,13 @@ import { showConnectors } from './tab-connectors'
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
 /** An element's height before a draw, and the top of the part it draws open, a row's panel or a PR block's body. */
-type Drawn = { el: HTMLElement; height: number; openTop: number | null; openPart: Element | null }
+type Drawn = {
+  el: HTMLElement
+  height: number
+  openTop: number | null
+  openPart: Element | null
+  openShown: number
+}
 type TabWidth = { el: HTMLElement; width: number; isShown: boolean }
 type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; fieldKeys: Set<Element> }
 
@@ -61,6 +67,7 @@ export function measure(): Drawing {
       height: el.getBoundingClientRect().height,
       openTop: part ? topIn(el, part) : null,
       openPart: part,
+      openShown: part instanceof HTMLElement ? opacityOf(part) : 1,
     })
   }
   const tabWidths = new Map<string, TabWidth>()
@@ -168,6 +175,7 @@ function closeWaitOf(els: HTMLElement[], changed: ReadonlySet<string>): number {
     if (state === 'opening') closeHolds.delete(key)
     const isFaint = state === 'closing' && isOpeningShort(el, springOf(el, el.getBoundingClientRect().height))
     if (state === 'closing' && !isFaint && shownPanel(el)) closeHolds.set(key, now + LEAVE_FADE_MS)
+    if (state && swapsForm(el)) closeHolds.set(key, now + LEAVE_FADE_MS)
   }
   for (const [key, until] of closeHolds) if (until <= now) closeHolds.delete(key)
 
@@ -233,6 +241,7 @@ function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   moveRow(el, was, changed, carried, closeWait)
   const wait = Math.max(tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0, closeWait)
   if (state === 'opening' && (held || changed.has(key))) openTitle(el, wait, held)
+  if (changed.has(key) && swapsForm(el)) fadeForms(el, was?.openShown ?? 1)
 }
 
 function moveRow(
@@ -304,7 +313,13 @@ function startState(el: HTMLElement, state: RowState, from: SpringState, isFresh
     }
     case 'closing':
     case 'settling':
-      collapse(el, from, state, openTop, tabState.isReadDraw ? heightWaitMs : 0)
+      collapse(
+        el,
+        from,
+        state,
+        openTop,
+        Math.max(tabState.isReadDraw ? heightWaitMs : 0, swapsForm(el) ? LEAVE_FADE_MS : 0),
+      )
       return true
     case 'leaving':
       fadeAway(el, from, !isInsideLeaving(el), restOf(el))
@@ -328,7 +343,8 @@ function isInsideLeaving(el: HTMLElement): boolean {
  * once and holds nothing. A turned-back panel that shows faint while its space is still short of open holds nothing
  * either, and fades out in the steps of `faintCloseFades` while the height shrinks. A settling PR
  * block's dismissed head replaces the line above its body, so the body keeps the top it had at `openTop` while the
- * height shrinks over it. A settling row draws only its settled line.
+ * height shrinks over it. A settling row draws its settled line, under the form it leaves while that form fades
+ * (`fadeForms`).
  */
 function collapse(
   el: HTMLElement,
@@ -411,36 +427,5 @@ export function foldMove(motion: string, isOpening: boolean, isOpen: () => boole
       if (isOpen() || !closingFolds.delete(motion)) return
       tabState.draw()
     }, LEAVE_FADE_MS + HEIGHT_SETTLE_MS)
-  }
-}
-
-/** Scrolls the open row into view, and again once its height has come to rest. */
-export function revealSelected() {
-  if (tabState.isDisposed) return
-  const behavior: ScrollBehavior = reducedMotion.matches ? 'auto' : 'smooth'
-  const reveal = () => root.querySelector('.row.selected')?.scrollIntoView({ block: 'nearest', behavior })
-  reveal()
-  if (!reducedMotion.matches) later(reveal, HEIGHT_SETTLE_MS)
-}
-
-const TIMER_SLACK_MS = 50
-
-let moveWake: { at: number; timer: ReturnType<typeof later> } | null = null
-
-export function wakeForMoves() {
-  const now = Date.now()
-  const ends = [...drawnRows.values()].flatMap(({ track: t }) =>
-    isMoving(t.state) ? [t.since + ROW_STATE_MS[t.state]] : [],
-  )
-  if (ends.length === 0) return
-  const at = Math.min(...ends) + TIMER_SLACK_MS
-  if (moveWake && moveWake.at <= at) return
-  if (moveWake) cancelTimer(moveWake.timer)
-  moveWake = {
-    at,
-    timer: later(() => {
-      moveWake = null
-      tabState.draw()
-    }, at - now),
   }
 }

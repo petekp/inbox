@@ -63,6 +63,21 @@
   align-items: center;
   min-width: 0;
 }
+/* While a row settles, or Undo brings it back, the form it leaves is drawn over the form it takes, without a fill, as
+   its lines fade out. */
+.entry.swaps-form {
+  position: relative;
+}
+.form-left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+.form-left .row {
+  background-color: transparent;
+  transition: none;
+}
 .row.settled.was-open {
   transition: background-color var(--fade);
   @starting-style {
