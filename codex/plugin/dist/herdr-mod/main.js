@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T23:19:33.823Z. 373603 characters follow.
+// Built at 2026-11-23T23:25:52.355Z. 373513 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -6982,19 +6982,16 @@ var pathOf = (isOpen) => {
 };
 var FOLDED_PATH = pathOf(false);
 var OPEN_PATH = pathOf(true);
-var hoverCopy = (copy) => div8().absolute().top(0).left(0).size_full().opacity(0).hover((x) => x.opacity(1)).child(copy);
 function chevronEl(isOpen, t, isLive, color) {
   const path = isOpen ? OPEN_PATH : FOLDED_PATH;
   const shape = (color) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`);
-  return div8().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(color)).when(isLive, (e) => e.child(hoverCopy(shape(t.foreground))));
-}
-function countEl(count, t, isLive) {
-  const text = `${count}`;
-  return div8().relative().flex_none().ml(SMALL_GAP).child(text).when(isLive, (e) => e.child(hoverCopy(text).text_color(t.foreground)));
+  return div8().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(color)).when(isLive, (e) => e.child(div8().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
 }
 function foldChevronEl(t, fold) {
   const color = fold.level === "faint" ? faintOf(t) : t.muted;
-  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(color).child(chevronEl(fold.isOpen, t, fold.isLive, color)).children(fold.count === undefined ? [] : [countEl(fold.count, t, fold.isLive)]);
+  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(color).child(chevronEl(fold.isOpen, t, fold.isLive, color)).children(fold.count === undefined ? [] : [
+    div8().id(fold.count.id).ml(SMALL_GAP).child(`${fold.count.value}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))
+  ]);
 }
 
 // src/paint-status-line.ts
@@ -7016,7 +7013,7 @@ function statusEl(s, p, isInert) {
       isOpen: !s.fold.isFolded,
       isLive: toggle !== undefined && !isInert,
       level: s.fold.level,
-      ...s.fold.isFolded ? { count: s.fold.count } : {}
+      ...s.fold.isFolded ? { count: { id: `fold count ${s.id}`, value: s.fold.count } } : {}
     })
   ] : [];
   return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
