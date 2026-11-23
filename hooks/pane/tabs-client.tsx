@@ -1,4 +1,4 @@
-import type { ClientModule } from 'claude-code'
+import type { ClientElements, ClientModule } from 'claude-code'
 
 type ClientTab = {
   id: string
@@ -23,6 +23,11 @@ export type TabsProps = {
   isEachFramed: boolean
   columns: number
   colors: { tab: string | null; raised: string; raisedText: string | null; muted: string | null }
+  /**
+   * The desktop app draws a new Client only after the pane's own elements, so the pane draws these tabs itself until
+   * the Client posts. The Client then draws nothing, and the two never show at once.
+   */
+  isDrawnByPane: boolean
 }
 
 type State = { hover: string | null }
@@ -70,17 +75,8 @@ function tabAt(props: TabsProps, x: number, y: number): string | null {
   return null
 }
 
-const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
-  const { Box, Text } = surface.elements
-  const hover = surface.state?.hover ?? null
-  // Set on every call, so the listener reads this call's props; a later call replaces it.
-  surface.onPointer(e => {
-    const at = e.type === 'leave' ? null : tabAt(props, e.x, e.y)
-    if (at !== (surface.state?.hover ?? null)) surface.setState({ hover: at })
-    if (e.type !== 'down' || e.button === 'right' || at === null) return
-    if (at === HELP_TAB_ID) surface.post({ isHelp: true })
-    else if (props.isHelpShown || at !== props.shown) surface.post({ tab: at })
-  })
+/** The tab row, drawn by the Client or, until the Client posts, by the pane with its own elements. */
+export function tabsTree(props: TabsProps, { Box, Text }: Pick<ClientElements, 'Box' | 'Text'>, hover: string | null) {
   const { colors } = props
 
   const tabBox = (tab: ClientTab) => {
@@ -130,6 +126,21 @@ const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
       })
     }),
   })
+}
+
+const Tabs: ClientModule<TabsProps, State> = (props, surface) => {
+  // Set on every call, so the listener reads this call's props; a later call replaces it.
+  surface.onPointer(e => {
+    const at = e.type === 'leave' ? null : tabAt(props, e.x, e.y)
+    if (at !== (surface.state?.hover ?? null)) surface.setState({ hover: at })
+    if (e.type !== 'down' || e.button === 'right' || at === null) return
+    if (at === HELP_TAB_ID) surface.post({ isHelp: true })
+    else if (props.isHelpShown || at !== props.shown) surface.post({ tab: at })
+  })
+  if (!props.isDrawnByPane) return tabsTree(props, surface.elements, surface.state?.hover ?? null)
+  surface.post({ isRunning: true })
+
+  return surface.elements.Box({})
 }
 
 export default Tabs

@@ -54,6 +54,11 @@ class PaneState {
   focusHint: string | null = null
   paneLook: ModLook = 'terminal'
   paneClosesOnEscape = true
+  /**
+   * The next desktop drawing gets a new tabs Client, as the pane's first drawing in this process does and a drawing
+   * after a close does. The app draws a new Client late, so the pane draws the tabs itself until the Client posts.
+   */
+  isTabsClientNew = true
   /** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
   fieldWithoutKeys: string | null = null
   herdrCheckTimer: Timer | null = null
