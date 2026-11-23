@@ -28,21 +28,26 @@ test('Open inbox keeps its label while the engine leaves the pane undrawn, and r
   expect(w.panesClosed).toEqual([])
 })
 
-test('Go to inbox on the desktop band closes the pane and opens it again, since the app can hide it without a close, and on the terminal band only opens it', async ($, on) => {
+test('Go to inbox on the desktop band only opens a pane the app draws, closes and opens again one the app hid without a close, and on the terminal band only opens it', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   await $.session.start({ cwd: '/tmp/project', surface: 'desktop', isInteractive: true })
   await clock.settle()
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'desktop', ...BAND })
   await band.press({ key: 'open-inbox' })
-  await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, placement: 'dock' } })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, placement: 'dock' } })
   await clock.settle()
-  expect(w.panesClosed).toEqual([])
 
   await band.press({ key: 'open-inbox' })
-  await clock.settle()
-  expect(w.panesClosed).toEqual(['inbox'])
+  await clock.advance(1000)
+  expect(w.panesClosed).toEqual([])
   expect(w.panesOpened).toEqual(['inbox', 'inbox'])
+
+  await pane.unmount()
+  await band.press({ key: 'open-inbox' })
+  await clock.advance(1000)
+  expect(w.panesClosed).toEqual(['inbox'])
+  expect(w.panesOpened).toEqual(['inbox', 'inbox', 'inbox'])
   expect((await band.find({ key: 'open-inbox' }))?.props.label).toBe('Go to inbox')
 
   const terminalBand = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
