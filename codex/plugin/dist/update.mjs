@@ -510,13 +510,46 @@ function clockTime(ms) {
 }
 
 // ../core/domain/prs.ts
-function namedPrs(text2, refs) {
-  const numbers = new Set([...text2.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
-  const known = [...new Set(refs)];
-  return [...numbers].flatMap((n) => {
-    const named = known.filter((ref) => parseRef(ref).number === n);
-    return named.length === 1 ? named : [];
-  });
+var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
+function prRefs(text2) {
+  return [...new Set([...text2.matchAll(PR_URL)].map((m) => `${m[1]}#${m[2]}`))];
+}
+var PR_MENTION = /(?<![\w./-])(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*)\b/g;
+var PR_WORD_BEFORE = /\b(?:prs?|pull requests?|merg(?:e|es|ed|ing)|review(?:s|ed|ing)?|approv(?:e|es|ed|ing)|land(?:s|ed|ing)?)\s*$/i;
+var LIST_JOIN = /^\s*(?:,\s*)?(?:and|or|then|&)?\s*$/i;
+function namedPrs(text2, known, repo) {
+  const links = [...text2.matchAll(PR_URL)].map((m) => ({
+    at: m.index,
+    end: m.index + m[0].length,
+    ref: `${m[1]}#${m[2]}`,
+    isBare: false,
+    number: m[2] ?? ""
+  }));
+  const linked = new Set(links.map((l) => l.number));
+  const tracked = (n) => {
+    const [first, ...others] = known.filter((ref) => parseRef(ref).number === n);
+    return first && others.length === 0 ? first : null;
+  };
+  const mentions = [...text2.matchAll(PR_MENTION)].map((m) => ({
+    at: m.index,
+    end: m.index + m[0].length,
+    ref: m[1] ? `${m[1]}#${m[2]}` : null,
+    isBare: !m[1],
+    number: m[2] ?? ""
+  }));
+  let lastEnd = -1;
+  const named = [];
+  for (const m of [...links, ...mentions].toSorted((a, b) => a.at - b.at)) {
+    const isListed = lastEnd >= 0 && LIST_JOIN.test(text2.slice(lastEnd, m.at));
+    const isPrWord = PR_WORD_BEFORE.test(text2.slice(0, m.at)) || isListed;
+    const ref = !m.isBare ? m.ref : linked.has(m.number) ? null : tracked(m.number) ?? (isPrWord && repo && !hasTwinIn(known, m.number) ? `${repo}#${m.number}` : null);
+    if (ref) named.push(ref);
+    if (ref || linked.has(m.number)) lastEnd = m.end;
+  }
+  return [...new Map(named.map((ref) => [ref.toLowerCase(), ref])).values()];
+}
+function hasTwinIn(known, n) {
+  return known.filter((ref) => parseRef(ref).number === n).length > 1;
 }
 function parseRef(ref) {
   const [repo = "", number = ""] = ref.split("#");
@@ -628,14 +661,31 @@ function steps(helps) {
     (h) => h === open2 ? { label: `Copy ${copy.name ?? "snippet"} and open ${baseName(open2.path)}`, step: [copy, open2] } : { label: helpLabel(h), step: [h] }
   );
 }
-function prSteps(item, tracked) {
+function prLinkName(ref, isTracked2, repo) {
+  const { repo: refRepo, name, number } = parseRef(ref);
+  const isSessionRepo = refRepo.toLowerCase() === repo?.toLowerCase();
+  return isTracked2 ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`;
+}
+function prSteps(item, tracked, repo) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
-    const { repo, number } = parseRef(ref);
-    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
-    return { kind: "link", url, name: `PR #${number}` };
-  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
-  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
+  const isLinked = (ref, url) => item.helps.some(
+    (h) => h.kind === "link" && (h.url === url || prRefs(h.url).some((r) => r.toLowerCase() === ref.toLowerCase()))
+  );
+  const named = namedPrs([item.ask, item.context ?? ""].join("\n"), [...urls.keys()], repo).flatMap((ref) => {
+    const { repo: refRepo, number } = parseRef(ref);
+    const url = urls.get(ref) ?? `https://github.com/${refRepo}/pull/${number}`;
+    return isLinked(ref, url) ? [] : [{ ref, url }];
+  });
+  const links = named.map(({ ref, url }) => ({
+    kind: "link",
+    url,
+    name: prLinkName(ref, urls.has(ref), repo)
+  }));
+  const [only] = links;
+  if (!only) return [];
+  const isAllTracked = named.every(({ ref }) => urls.has(ref));
+  const label = links.length === 1 ? helpLabel(only) : isAllTracked ? `Open ${links.length} PRs` : clipLabel(`Open ${links.map((l) => l.name).join(", ")}`, COMMAND_LABEL_CHARS);
+  return [{ label, step: links }];
 }
 function stepsOf(item, extraSteps) {
   return [...steps(item.helps), ...extraSteps];
@@ -755,7 +805,7 @@ function withWorkDoneMilestones(o, now) {
   const milestones = o.milestones.map((m) => {
     if (!isOpen(m)) return m;
     const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
-    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
+    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) >= m.changedAt);
     if (!isWorkDone) return m;
     isChanged = true;
     return { ...m, status: "done", closedAt: now, changedAt: now, was: null };
@@ -1878,11 +1928,15 @@ function tabPrs(links) {
   const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
   return [...links.prs, ...ranked];
 }
-function itemPrSteps(item, prState, linked) {
-  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
+function itemPrSteps(item, s) {
+  const { branchRef, views } = s.prViews;
+  const linked = tabPrs(s.ledger);
+  const refs = branchRef ? [...linked, branchRef] : linked;
+  const repo = branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null;
   return prSteps(
     item,
-    refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null }))
+    refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })),
+    repo
   );
 }
 function isLeftOut(prState, ref) {
@@ -3558,10 +3612,13 @@ function subjectInPlaceOf(o, m, items) {
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
   return only !== void 0 && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
 }
-function isTitleRepeated(title, subjects) {
-  const open2 = subjects.filter((x) => x.into === null && isOpen(x));
-  const only = open2.length === 1 ? open2[0] : void 0;
-  return only !== void 0 && isNamedAlike(title, only.name);
+function isTitleRepeated(title, subjects, rows) {
+  const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
+  const work = subjects.filter((x) => x.into === null);
+  if (work.filter(isOpen).length > 1) return false;
+  return work.some(
+    (x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name)
+  );
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -3729,7 +3786,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects) ? null : head.title;
+  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows2) ? null : head.title;
   const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
   const rows = [
     ...headPart,
@@ -3798,7 +3855,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
+    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s)])),
     settleWindowMs,
     status: perTurnStatus(sync.ledger),
     now,

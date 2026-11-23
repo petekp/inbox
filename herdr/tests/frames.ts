@@ -21,11 +21,12 @@ const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
 type Jump = { at: number; id: string; by: number }
-type TitleForm = { at: number; id: string; wrapped: number; oneLine: number; box: number; isBoxResting: boolean }
+type TitleForm = { at: number; id: string; tall: number; short: number; box: number; isBoxResting: boolean }
 type ColumnGap = { at: number; id: string; x: number; y: number }
 type Cut = { at: number; box: string; text: string; share: number; opacity: number }
 type Fading = { at: number; id: string; height: number; opacity: number }
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
+type Shown = { at: number; block: string; text: string; opacity: number; share: number; isFormPart: boolean }
 
 const linesOf = (n: Painted): number =>
   n.style.isTruncated ? 1 : Math.max(1, Math.ceil((n.text ?? '').length / WRAP_AT))
@@ -34,11 +35,15 @@ export function layout(root: Painted, shown: (id: string) => number | undefined,
   const boxes = new Map<string, Box>()
   const placed = new Map<Painted, Box>()
   const sized: { node: Painted; height: number }[] = []
+  const floating: { node: Painted; height: number }[] = []
   const fits: { id: string | null; height: number; content: number }[] = []
   const place = (n: Painted, top: number, line: number): number => {
     const lh = n.style.line ?? line
     const pt = n.style.pt ?? 0
     const flow = n.kids.filter(k => !k.style.isAbsolute)
+    for (const k of n.kids)
+      if (k.style.isAbsolute && k.onSize && k.text !== null)
+        floating.push({ node: k, height: (k.style.line ?? lh) * linesOf(k) })
     let content = 0
     if (flow.length === 0 && (n.text !== null || n.field !== null)) content = lh * linesOf(n)
     else if (n.flow === 'row')
@@ -53,8 +58,8 @@ export function layout(root: Painted, shown: (id: string) => number | undefined,
     }
     const sprung = n.id !== null && n.springs.has('height') ? shown(n.id) : undefined
     const natural = pt + content + (n.style.pb ?? 0)
-    const height = sprung ?? n.style.h ?? natural
-    const isSet = sprung !== undefined || n.style.h !== undefined
+    const height = sprung ?? n.style.h ?? Math.min(natural, n.style.maxH ?? Infinity)
+    const isSet = sprung !== undefined || n.style.h !== undefined || n.style.maxH !== undefined
     if (n.style.isClipped && isSet) fits.push({ id: n.id, height, content: natural })
     sized.push({ node: n, height })
     placed.set(n, { top, height })
@@ -64,7 +69,7 @@ export function layout(root: Painted, shown: (id: string) => number | undefined,
   }
   place(root, 0, line)
 
-  return { boxes, sized, placed, fits }
+  return { boxes, sized, floating, placed, fits }
 }
 
 const lengthIn = (length: number | string, height: number): number =>
@@ -156,7 +161,7 @@ class Springs {
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
 
-const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'status ', 'wrapped ', 'one line ']
+const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'status ', 'tall ', 'short ', 'form ', 'trunk ', 'mark ']
 const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))
 
 function boxOf(n: Painted): string | null {
@@ -166,6 +171,33 @@ function boxOf(n: Painted): string | null {
 
 const isThroughLetters = (hidden: number, line: number): boolean =>
   hidden % line > LEADING_PX && hidden % line < line - LEADING_PX
+
+function blockOf(n: Painted): string {
+  for (let up: Painted | null = n; up; up = up.parent) if (up.id?.startsWith('box ')) return up.id.slice(4)
+  return ''
+}
+
+function isFormPart(n: Painted): boolean {
+  for (let up: Painted | null = n; up; up = up.parent)
+    if (up.id?.startsWith('size rest ') || up.id?.startsWith('mark ')) return true
+  return false
+}
+
+function shownTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[] {
+  return [...placed].flatMap(([n, b]) => {
+    const isText = n.text !== null || n.field !== null
+    if (!isText || n.kids.some(k => !k.style.isAbsolute) || b.height <= 0) return []
+    let top = b.top
+    let bottom = b.top + b.height
+    for (let up = n.parent; up; up = up.parent) {
+      const clip = placed.get(up)
+      if (!up.style.isClipped || !clip) continue
+      top = Math.max(top, clip.top)
+      bottom = Math.min(bottom, clip.top + clip.height)
+    }
+    return [{ node: n, share: Math.max(0, bottom - top) / b.height }]
+  })
+}
 
 function cutTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[] {
   return [...placed].flatMap(([n, b]) => {
@@ -271,7 +303,7 @@ export function layoutAtRest(blocks: Block[], measuredWidths: Record<string, num
   for (const [key, width] of Object.entries(measuredWidths))
     heights.measure(key, { width, height: LINE_HEIGHT }, 1, true)
   const now = 1_000_000
-  const moved = moveRows(blocks, NO_TRACKS, now, true, false, key => heights.get(key))
+  const moved = moveRows(blocks, NO_TRACKS, now, true, false, heights)
   const paint = paintOf(moved.motion, heights, () => true, now, new Map(), rowTextRoom)
 
   return layout(
@@ -300,13 +332,14 @@ class Frames {
   slides: number[][] = []
   cuts: Cut[] = []
   fading: Fading[] = []
+  shown: Shown[] = []
 
   draw(blocks: Block[], now: number, isInput = false) {
     const isFirst = this.last === null
     const resized = this.heights.takeResized()
     const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
     this.linesAbove = held.held
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, key => this.heights.get(key))
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
     this.tracks = moved.tracks
     const turnedBackPanels = new Set(
       [...moved.tracks.rows]
@@ -323,7 +356,7 @@ class Frames {
     this.springs.declare(tree)
     const shown = this.springs.shown()
     this.fades.declare(tree)
-    const { boxes, sized, placed } = layout(tree, id => shown.get(id))
+    const { boxes, sized, floating, placed } = layout(tree, id => shown.get(id))
     for (const [id, fade] of this.fades.states)
       this.fading.push({ at: now, id, height: boxes.get(id)?.height ?? 0, opacity: fade.shown })
     for (const { node, share } of cutTexts(placed)) {
@@ -332,6 +365,13 @@ class Frames {
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
       const maxOpacity = turnedBackPanels.has(box ?? '') ? TURNED_BACK_CUT_OPACITY : CUT_OPACITY
       if (opacity > maxOpacity) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
+    }
+    for (const { node, share } of shownTexts(placed)) {
+      let plain = 1
+      for (let up: Painted | null = node; up; up = up.parent) if (!fadesOn(up.id)) plain *= up.style.opacity ?? 1
+      const opacity = this.fades.opacityOf(node) * plain
+      const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
+      this.shown.push({ at: now, block: blockOf(node), text, opacity, share, isFormPart: isFormPart(node) })
     }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
@@ -351,21 +391,22 @@ class Frames {
     }
     for (const { node } of sized) {
       const id = node.id?.match(/^title (.+)$/)?.[1]
-      const isTitleText = (k: Painted) => k.kids.some(c => c.id === `wrapped ${id}`) || (k.text?.length ?? 0) > 3
-      const text = node.kids.find(isTitleText)
+      const text = node.kids.find(k => k.kids.some(c => c.id === `copy whole title ${id}`))
       if (id === undefined || !text) continue
       const box = `fit title ${id}`
       const formShown = (form: string) => {
         const layer = text.kids.flatMap(c => [c, ...c.kids]).find(c => c.id === `${form} ${id}`)
         return this.fades.states.get(`${form} ${id}`)?.shown ?? layer?.style.opacity ?? NaN
       }
-      const isOneLine = text.style.isTruncated ? 1 : 0
-      const wrapped = text.text !== null ? 1 - isOneLine : formShown('wrapped')
-      const oneLine = text.text !== null ? isOneLine : formShown('one line')
+      const atRest = text.kids.find(k => !k.style.isAbsolute && k.id === null)
+      const whole = text.kids.find(k => k.id === `copy whole title ${id}`)?.text
+      const isWholeAtRest = atRest?.text === whole && !atRest?.style.isTruncated && atRest?.style.maxH === undefined
+      const tall = atRest ? (isWholeAtRest ? 1 : 0) : formShown('tall')
+      const short = atRest ? 1 - tall : formShown('short')
       const isBoxResting = this.springs.isResting(box)
-      this.titles.push({ at: now, id, wrapped, oneLine, box: shown.get(box) ?? NaN, isBoxResting })
+      this.titles.push({ at: now, id, tall, short, box: shown.get(box) ?? NaN, isBoxResting })
     }
-    for (const { node, height } of sized) node.onSize?.({ width: PANE_WIDTH, height }, null)
+    for (const { node, height } of [...sized, ...floating]) node.onSize?.({ width: PANE_WIDTH, height }, null)
     this.lastShown = shown
     this.springs.step(FRAME_MS)
     this.fades.step(FRAME_MS)
@@ -386,10 +427,11 @@ export function framesOf(
   slides: number[][]
   cuts: Cut[]
   fading: Fading[]
+  shown: Shown[]
 } {
   const frames = new Frames()
   const [first] = steps
-  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [] }
+  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [], shown: [] }
   const start = 1_000_000
   let drawn: Step | null = null
   for (let at = -500; at < ms; at += FRAME_MS) {
@@ -406,6 +448,7 @@ export function framesOf(
     slides: frames.slides,
     cuts: frames.cuts.map(c => ({ ...c, at: c.at - start })),
     fading: frames.fading.map(f => ({ ...f, at: f.at - start })),
+    shown: frames.shown.map(s => ({ ...s, at: s.at - start })),
   }
 }
 

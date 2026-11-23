@@ -31,7 +31,7 @@ import type { RowProps } from './row-client'
 import { COLLAPSED_TITLE_LINES } from '../../core/view/row-parts'
 import { DOT, type ResultMark, rowMark, rowResultMark, type RowView, shortAgo } from '../../core/view/rows'
 import { desktopSpanLines, LEADING_DOT, partedLines, statusAfterTitle, type TreePos, treeText } from './terminal-text'
-import { ago, cellWidth, clipLabel } from '../../core/domain/text'
+import { ago, cellWidth, clipLabel, cutLine } from '../../core/domain/text'
 import { resultGlyph, runningMark } from '../../core/view/timing'
 
 const holdsUpLineOf = (r: RowView | undefined) => r?.holdsUpLine ?? null
@@ -238,7 +238,8 @@ export function paneRowLines({
     const space = text.lastIndexOf(' ', room)
     const isWrapped = look === 'terminal' && text.length > room && space > 0
     const first = isWrapped ? text.slice(0, space) : clipLabel(text, room)
-    const second = isWrapped ? clipLabel(text.slice(space + 1), Math.max(12, width)) : null
+    const secondRoom = Math.max(12, width)
+    const second = isWrapped ? cutLine(text.slice(space + 1), t => t.length <= secondRoom) : null
     const afterRoom = budget - first.length
     const after = meta
       ? undefined

@@ -7,12 +7,15 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab.tsx` | Codex adapter. The tab's entry: `App`, `draw`, the key and pointer listeners, and the start that connects to Codex. |
 | `codex/src/tab-state.ts` | Codex adapter. The page's state. `tabState` holds each value that more than one tab file sets, and the file also holds the shared maps and sets and the row types. |
 | `codex/src/tab-host.ts` | Codex adapter. The bridge to Codex: timers, `request` and `callTool`, the message listener, the host's theme, and `dispose`. |
-| `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the animation each row state starts, tab widths, folds, and the draws that end a move. |
+| `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the animation each row state starts, tab widths and folds. |
 | `codex/src/tab-panel-fade.ts` | Codex adapter. A row's panel fades: through a list of steps, the parts of a closing panel that fade, and a faint turned-back panel's close. |
+| `codex/src/tab-form-swap.ts` | Codex adapter. The fades of a row's change between its settled form and another: the form it leaves, drawn over the form it takes, fades out while the height holds, and the new form's lines fade in once the height moves. |
+| `codex/src/tab-wake.ts` | Codex adapter. The timed work after a draw: scrolling the open row into view, and the draw when the next move ends. |
 | `codex/src/tab-glide.ts` | Codex adapter. The Web Animations each move plays: the spring glide of a height or offset, and fades. |
 | `codex/src/tab-title-motion.ts` | Codex adapter. When a row's title fades between its full and clamped forms while its line grows or shrinks, so the fade runs while the line rests and the line never cuts a line of the title that shows. |
 | `codex/src/tab-page-variables.ts` | Codex adapter. The shared spacing scale and motion lengths, set as the CSS variables the tab's styles read. |
 | `codex/src/tab-fold-all.ts` | Codex adapter. `toggleStatusFold` opens or shuts a Status fold, with `foldMotion`, its list's motion key. `foldAllHere` applies a fold-all to the tab's folds through each fold's own toggle, so each animates and saves as a single click would, and `clickFold` turns an Option-click on a fold into a fold-all. |
+| `codex/src/tab-title-cut.tsx` | Codex adapter. A row's title part, whose clamped form cuts the title at a word (`cutLine`), measured in a hidden copy at the part's width. |
 | `codex/src/tab-title-tint.tsx` | Codex adapter. A row's title in a span whose tint a Web Animation fades from the clock's point, so a row drawn again mid-fade does not start over. |
 | `codex/src/tab-line-steps.ts` | Codex adapter. Steps lines that come and go, such as banners and a press's status, through the row states, so a line enters and leaves from its place. Says how a Status connector moves with the rows it joins. |
 | `codex/src/tab-connectors.ts` | Codex adapter. Fades a Status connector in on the fade of the first row it joins, so the line waits with that row for its space to open. |

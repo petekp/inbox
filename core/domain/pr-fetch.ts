@@ -1,4 +1,4 @@
-import type { Item, Ledger, PrFetchFailure, PrView, PrViews } from '../../types'
+import type { Item, Ledger, PrFetchFailure, PrView, PrViews, Session } from '../../types'
 import { GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE } from './gh'
 import { prSteps } from './help-steps'
 import type { HelpStep } from './help-steps'
@@ -62,12 +62,20 @@ export function tabPrs(links: PrLinks): string[] {
   return [...links.prs, ...ranked]
 }
 
-export function itemPrSteps(item: Item, prState: PrViews, linked: string[]): HelpStep[] {
-  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked
+/**
+ * The item's step that opens the PRs it names. A PR named by its number alone is looked up among the PRs on the tab and
+ * the branch's PR, then in the session's repository: the branch PR's, which gh read, else its folder's GitHub remote.
+ */
+export function itemPrSteps(item: Item, s: Pick<Session, 'ledger' | 'prViews' | 'place'>): HelpStep[] {
+  const { branchRef, views } = s.prViews
+  const linked = tabPrs(s.ledger)
+  const refs = branchRef ? [...linked, branchRef] : linked
+  const repo = branchRef ? parseRef(branchRef).repo : (s.place?.repo ?? null)
 
   return prSteps(
     item,
-    refs.map(ref => ({ ref, url: prState.views[ref]?.url ?? null })),
+    refs.map(ref => ({ ref, url: views[ref]?.url ?? null })),
+    repo,
   )
 }
 

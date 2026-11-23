@@ -64,9 +64,9 @@ Code closes it. After an answer applies, `settleGoal` marks a milestone done whe
 
 - At least one subject is linked to it.
 - Every linked subject is done or dropped, and at least one is done.
-- A linked subject closed after the milestone last changed.
+- A linked subject closed no earlier than the milestone last changed.
 
-The last condition lets the model reopen a milestone. When the exchange shows part of it still has work no subject tracks, the call writes SET to open it again. That SET changes the milestone after its subjects closed, so code leaves it open until another linked subject closes.
+The last condition lets the model reopen a milestone. When the exchange shows part of it still has work no subject tracks, the call writes SET to open it again. That SET changes the milestone after its subjects closed, so code leaves it open until another linked subject closes. A SET in the same answer that closes the last linked subject does not hold the milestone open, since that subject closed at the same time.
 
 The rule the call reads: "Code closes a milestone once all its linked work is done. When part of it still has work left, write SET to open it again, and NEW for the work."
 

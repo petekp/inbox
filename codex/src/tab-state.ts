@@ -87,8 +87,11 @@ export const copies = new Map<string, { name: string; text: string }>()
 export const entering = new Set<string>()
 /** Folds whose list still shrinks after a press folded them, by the list's motion key after `closed-`. */
 export const closingFolds = new Set<string>()
-/** A row's or PR block's track, and the PR block it drew open, which it still draws while its height shrinks over it. */
-type DrawnRow = { track: RowTrack; openBlock?: OpenPrBlock }
+/**
+ * A row's or PR block's track, the PR block it drew open, which it still draws while its height shrinks over it, and
+ * the entry of the form a row leaves, which it draws over the form it takes while `drawsFormLeft` holds.
+ */
+type DrawnRow = { track: RowTrack; openBlock?: OpenPrBlock; left?: Entry }
 export const drawnRows = new Map<string, DrawnRow>()
 
 export type Kept = {

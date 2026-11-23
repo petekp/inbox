@@ -17,6 +17,8 @@ import { goalWait } from './replays/goal-wait'
 import { goalWorkLeft } from './replays/goal-work-left'
 import { idleWork } from './replays/idle-work'
 import { milestoneWorkDone } from './replays/milestone-work-done'
+import { milestoneReplyLanded } from './replays/milestone-reply-landed'
+import { milestoneLastWorkDone } from './replays/milestone-last-work-done'
 import { noGoalYet } from './replays/no-goal-yet'
 import { typedGoalKept } from './replays/typed-goal-kept'
 import { goalTypedWhileRunning } from './replays/goal-typed-while-running'
@@ -51,6 +53,8 @@ export const REPLAYS: Replay[] = [
   askHoldsTwo,
   oneTaskPlan,
   milestoneWorkDone,
+  milestoneReplyLanded,
+  milestoneLastWorkDone,
   goalMetNext,
   goalWait,
   noGoalYet,

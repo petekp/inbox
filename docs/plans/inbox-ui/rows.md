@@ -36,8 +36,8 @@ A row has two forms:
 
 | Row | Where | Closed form | Open form adds |
 |---|---|---|---|
-| Question | Asks | `ask · 3m ago`. The terminal adds `1)` or `•` before it (see numbers below) | Full ask, one button per option with the recommended one first, styled primary and labeled "(recommended)", help steps |
-| Task | Asks | `ask · 3m ago`. The terminal adds `•` before it | Help steps (open, copy, run, terminal, link), "Open PR #N" when the ask names a tracked PR |
+| Question | Asks | `ask · 3m ago`. The terminal adds `1)` or `•` before it (see numbers below) | Full ask, one button per option with the recommended one first, styled primary and labeled "(recommended)", help steps, and "Open #N" when the ask or context names a PR (`named-pr-link`) |
+| Task | Asks | `ask · 3m ago`. The terminal adds `•` before it | Help steps (open, copy, run, terminal, link), "Open PR #N" when the ask or context names a tracked PR, and "Open #N" when it names one the session does not track (`named-pr-link`) |
 | Finding | Finds, under Issues or Opportunities | The kind's mark as the handle (▲ for an issue, ✦ for an opportunity), the title and the age | Detail, and "Relevant file: " with the file's base name |
 | PR block | PRs | Always open: `#12 title`, readiness, one line of facts | PR actions |
 | PR check | PRs, inside the PR block | Two lines: `✗ Failing check`, then the check's name. | Fix, Open log |

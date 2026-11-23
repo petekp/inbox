@@ -123,6 +123,7 @@ export const OMP: Client = {
     'done-press-age': { kind: 'full' },
     'delegate-asks': { kind: 'full' },
     'record-earlier-answers': { kind: 'full' },
+    'named-pr-link': { kind: 'full' },
     'session-registry': { kind: 'full' },
     'press-preconditions': { kind: 'full' },
   },

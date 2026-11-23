@@ -1,5 +1,5 @@
 import { desktopLines, desktopTextPt } from './desktop-metrics'
-import { cutForEllipsis } from '../../core/domain/text'
+import { cutAtWord, cutForEllipsis } from '../../core/domain/text'
 import { DOT } from '../../core/view/rows'
 import { parseInline, type Span } from '../../core/view/inline'
 import type { NameLevel } from '../../core/view/status-page-parts'
@@ -41,18 +41,6 @@ export function desktopSpanLines(
       ...(isOnSelection ? { isOnSelection } : {}),
     },
   ]
-}
-/** The most words from the start of `line` that `fit` with an ellipsis after them, or null when not even one does. */
-function cutAtWord(line: string, fits: (withEllipsis: string) => boolean): string | null {
-  const lineWords = line.split(' ')
-  for (let n = lineWords.length; n > 0; n--) {
-    const head = lineWords
-      .slice(0, n)
-      .join(' ')
-      .replace(/[\s.,;:]+$/, '')
-    if (head && fits(`${head}…`)) return head
-  }
-  return null
 }
 export const LEADING_DOT = new RegExp(`^${DOT}`)
 export type TreePos = 'mid' | 'last' | 'pass'

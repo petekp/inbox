@@ -29,6 +29,7 @@ import { isStatusUnder } from './held-line'
 import { underId } from './under-line'
 import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
+import type { SwapMotion } from './form-swap'
 import { padOf, restId, sizeEl, titleEl } from './paint-space'
 import { PATH_X, lineColor } from './paint-strokes'
 import { panelId } from './heights'
@@ -132,15 +133,17 @@ function rowEl(r: RowBlock, p: Paint): Element {
   const isLeaving = m?.state === 'leaving'
   const isOpen = isOpenRow(r)
   const isPressable = r.isSelectable && !isLeaving
-  const hasTree = (m?.closing ?? r).body.some(l => l.tree !== undefined)
+  const swap = m?.swap ?? null
+  const shown = swap?.from ?? r
+  const hasTree = (m?.closing ?? shown).body.some(l => l.tree !== undefined)
+  const mark = markEl(shown.mark, t, markTintOf(shown, p)).id(`mark ${r.id}`)
+  const trunk = trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`)
   const line = h_flex()
     .id(`title ${r.id}`)
     .items_start()
     .when(isPressable && isOpen, e => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt)))
-    .when(hasTree, e =>
-      e.relative().child(panelFadeEl(r, m, p, trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`))),
-    )
-    .child(markEl(r.mark, t, markTintOf(r, p)))
+    .when(hasTree, e => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk)))
+    .child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark)
     .child(titleTextEl(r, p, titleColorOf(r, p)))
     .when(r.age !== null, e =>
       e.child(
@@ -152,9 +155,9 @@ function rowEl(r: RowBlock, p: Paint): Element {
       ),
     )
   const lines = [
-    ...(r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : []),
-    ...(r.feedback && !isStatusUnder(r) ? [r.feedback] : []),
-    ...(r.heldLine ? [r.heldLine] : []),
+    ...(shown.settled ? [{ text: shown.settled.label, tone: shown.settled.tone }] : []),
+    ...(shown.feedback && !isStatusUnder(shown) ? [shown.feedback] : []),
+    ...(shown.heldLine ? [shown.heldLine] : []),
   ]
   const titleEnd: RowPart = lines.length > 0 ? 'titleStatus' : 'title'
 
@@ -175,6 +178,8 @@ function rowEl(r: RowBlock, p: Paint): Element {
         restId(r.id),
         p,
         v_flex()
+          .id(`form ${r.id}`)
+          .when(swap !== null, e => swapFadeEl(swap, e))
           .children(
             lines.map((l, n) => {
               const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
@@ -183,7 +188,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
               return 'isHidden' in l && l.isHidden ? el.opacity(0) : el
             }),
           )
-          .children(panelEl(r, m, p, isLeaving, titleEnd)),
+          .children(panelEl(r, shown, m, p, isLeaving, titleEnd)),
       ),
     )
 }
@@ -237,12 +242,27 @@ function bodyEls(
 }
 
 /**
- * A row's panel: its body, its buttons or text field, and a status its buttons put under them, each `partGap` under
- * the part above. A closing row keeps the panel of its open form drawn, without clicks, while it fades. The panel's
- * opacity glides as the row opens or closes, and it reports its height, so a closing row's box can leave it out.
+ * `el` fading as a row changes form between settled and not settled: the lines under the title of the form it leaves,
+ * or its mark, fade out, and those of the form it takes fade in (`swapMotion`).
  */
-function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boolean, titleEnd: RowPart): Element[] {
-  const from = m?.closing ?? r
+const swapFadeEl = (swap: SwapMotion | null, el: Element): Element =>
+  swap ? el.opacity(swap.opacity).transition('opacity', { duration: swap.fadeMs, easing: 'ease-out' }) : el
+
+/**
+ * A row's panel: its body, its buttons or text field, and a status its buttons put under them, each `partGap` under
+ * the part above. A closing row keeps the panel of its open form drawn, without clicks, while it fades, and a row that
+ * changes form keeps the panel of the form it leaves, `shown`, while its lines fade. The panel's opacity glides as the
+ * row opens or closes, and it reports its height, so a closing row's box can leave it out.
+ */
+function panelEl(
+  r: RowBlock,
+  shown: RowBlock,
+  m: RowMotion | undefined,
+  p: Paint,
+  isLeaving: boolean,
+  titleEnd: RowPart,
+): Element[] {
+  const from = m?.closing ?? shown
   const isInert = isLeaving || from !== r
   const actions = from.buttons.filter(b => !b.isOption)
   const hasAnswers = from.buttons.some(b => b.isOption)
@@ -255,7 +275,7 @@ function panelEl(r: RowBlock, m: RowMotion | undefined, p: Paint, isLeaving: boo
       ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons'))]
       : []),
     ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field'))] : []),
-    ...underEls(r, m, p, partPt(end, 'result')),
+    ...underEls(r, shown, m, p, partPt(end, 'result')),
   ]
   if (parts.length === 0) return []
   const key = panelId(r.id)
@@ -290,10 +310,12 @@ function panelFadeEl(r: RowBlock, m: RowMotion | undefined, p: Paint, el: Elemen
 
 /**
  * The status under a row's buttons, such as "Sending…". It fades in once the row's box is nearly open, and out while
- * the box holds, as `underMotion` says. A row drawn with no motion, as a tab's first draw, shows it at rest.
+ * the box holds, as `underMotion` says. A row drawn with no motion, as a tab's first draw, shows it at rest, and so
+ * does the form a row leaves as it changes form, `from`, which fades with that form's lines.
  */
-function underEls(r: RowBlock, m: RowMotion | undefined, p: Paint, above: number): Element[] {
-  const u = m ? m.under : isStatusUnder(r) ? { line: r.feedback, opacity: null, fadeMs: 0, delayMs: 0 } : null
+function underEls(r: RowBlock, from: RowBlock, m: RowMotion | undefined, p: Paint, above: number): Element[] {
+  const atRest = isStatusUnder(from) ? { line: from.feedback, opacity: null, fadeMs: 0, delayMs: 0 } : null
+  const u = m && from === r ? m.under : atRest
   if (!u?.line) return []
   const key = underId(r.id)
   const glide = { duration: u.fadeMs, delay: u.delayMs, easing: 'ease-out' as const }

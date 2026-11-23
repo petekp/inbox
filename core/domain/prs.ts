@@ -10,18 +10,65 @@ export function prRefs(text: string): string[] {
   return [...new Set([...text.matchAll(PR_URL)].map(m => `${m[1]}#${m[2]}`))]
 }
 
-/**
- * The PRs of `refs` that the text names as "#123", in its order. A number two
- * of `refs` share names neither, since the text does not say which repo.
- */
-export function namedPrs(text: string, refs: string[]): string[] {
-  const numbers = new Set([...text.matchAll(/#(\d+)\b/g)].map(m => m[1]))
-  const known = [...new Set(refs)]
+/** "#123" or "owner/repo#123", not part of a longer word or path, and not a number with a leading zero. */
+const PR_MENTION = /(?<![\w./-])(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*)\b/g
 
-  return [...numbers].flatMap(n => {
-    const named = known.filter(ref => parseRef(ref).number === n)
-    return named.length === 1 ? named : []
-  })
+/** A word that makes the bare "#123" after it a PR, as in "PR #12", "pull request #12", "merge #12" or "review #12". */
+const PR_WORD_BEFORE =
+  /\b(?:prs?|pull requests?|merg(?:e|es|ed|ing)|review(?:s|ed|ing)?|approv(?:e|es|ed|ing)|land(?:s|ed|ing)?)\s*$/i
+
+/** What joins the PRs of a list after its first, as in "#12, #13 and #14". */
+const LIST_JOIN = /^\s*(?:,\s*)?(?:and|or|then|&)?\s*$/i
+
+type Mention = { at: number; end: number; ref: string | null; isBare: boolean; number: string }
+
+/**
+ * The PRs the text names, as "owner/repo#123", in its order, without repeats: by a GitHub PR link, as "owner/repo#123",
+ * or as "#123". A bare number names the one PR of `known` with that number. Otherwise it names that number in `repo`,
+ * the session's repository, only after a PR word or in a list that follows one, since "#333" can be a color and
+ * "Option #1" a choice. A number two of `known` share names neither, since the text does not say which repo, and a
+ * bare number a PR link in the text also names is that link's PR.
+ */
+export function namedPrs(text: string, known: string[], repo: string | null): string[] {
+  const links: Mention[] = [...text.matchAll(PR_URL)].map(m => ({
+    at: m.index,
+    end: m.index + m[0].length,
+    ref: `${m[1]}#${m[2]}`,
+    isBare: false,
+    number: m[2] ?? '',
+  }))
+  const linked = new Set(links.map(l => l.number))
+  const tracked = (n: string): string | null => {
+    const [first, ...others] = known.filter(ref => parseRef(ref).number === n)
+    return first && others.length === 0 ? first : null
+  }
+  const mentions: Mention[] = [...text.matchAll(PR_MENTION)].map(m => ({
+    at: m.index,
+    end: m.index + m[0].length,
+    ref: m[1] ? `${m[1]}#${m[2]}` : null,
+    isBare: !m[1],
+    number: m[2] ?? '',
+  }))
+  let lastEnd = -1
+  const named: string[] = []
+  for (const m of [...links, ...mentions].toSorted((a, b) => a.at - b.at)) {
+    const isListed = lastEnd >= 0 && LIST_JOIN.test(text.slice(lastEnd, m.at))
+    const isPrWord = PR_WORD_BEFORE.test(text.slice(0, m.at)) || isListed
+    const ref = !m.isBare
+      ? m.ref
+      : linked.has(m.number)
+        ? null
+        : (tracked(m.number) ?? (isPrWord && repo && !hasTwinIn(known, m.number) ? `${repo}#${m.number}` : null))
+    if (ref) named.push(ref)
+    if (ref || linked.has(m.number)) lastEnd = m.end
+  }
+
+  return [...new Map(named.map(ref => [ref.toLowerCase(), ref])).values()]
+}
+
+/** Whether two PRs of `known` share the number, so a bare mention of it names neither. */
+function hasTwinIn(known: string[], n: string): boolean {
+  return known.filter(ref => parseRef(ref).number === n).length > 1
 }
 
 export function parseRef(ref: string): { repo: string; owner: string; name: string; number: string } {

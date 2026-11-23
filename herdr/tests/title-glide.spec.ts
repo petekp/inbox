@@ -6,7 +6,13 @@ import { FRAME_MS } from '../../core/view/springs'
 const { framesOf, jumpsOf } = await import('./frames')
 type Step = import('./frames').Step
 const { LINE_HEIGHT } = await import('../src/paint-theme')
-const { ALL, asks } = await import('./fixtures')
+const fixtures = await import('./fixtures')
+const { tabBlocks } = await import('../src/draw')
+const { ALL } = fixtures
+const LONG_TITLE = 'Dismiss a glance with a pinch, a flick of the wrist, or a nod of the head while you walk?'
+const withLongTitle = (blocks: import('../src/blocks').Block[]) =>
+  blocks.map(b => (b.kind === 'row' && b.id === 'd11' ? { ...b, title: LONG_TITLE } : b))
+const asks = (...args: Parameters<typeof fixtures.asks>) => withLongTitle(fixtures.asks(...args))
 
 test('when the selection moves between rows whose titles wrap open, the rows close and open on their springs', () => {
   expect(
@@ -27,26 +33,22 @@ test('when the selection moves between rows whose titles wrap open, the rows clo
 function titleOf(steps: Step[]) {
   const { jumps, titles, cuts } = framesOf(steps, 900)
   const d11 = titles.filter(t => t.id === 'd11' && t.at >= 0)
-  const wrappedHeight = Math.max(...d11.map(t => t.box))
+  const tallHeight = Math.max(...d11.map(t => t.box))
 
   return {
     jumps,
-    wrapsAtFirst: d11[0]?.wrapped,
-    wrapsAtEnd: d11.at(-1)?.wrapped,
+    tallAtFirst: d11[0]?.tall,
+    tallAtEnd: d11.at(-1)?.tall,
     boxAtEnd: Math.round(d11.at(-1)?.box ?? NaN),
-    isWrapShownOnlyOpen: d11.every(t => t.wrapped < 0.02 || t.box >= wrappedHeight - 0.5),
-    bothFormsWhileBoxMoves: d11
-      .filter(t => t.wrapped > 0.02 && t.oneLine > 0.02 && t.box < wrappedHeight - 0.5)
-      .map(t => t.at),
-    fadeFrames: d11.filter(t => t.wrapped > 0.02 && t.wrapped < 0.98).length,
-    boxShrinksAt: d11.find(t => t.box < wrappedHeight - 0.5)?.at ?? null,
-    titleCuts: cuts.filter(c => c.text === TITLE_D11),
+    isTallShownOnlyOpen: d11.every(t => t.tall < 0.02 || t.box >= tallHeight - 0.5),
+    bothFormsWhileBoxMoves: d11.filter(t => t.tall > 0.02 && t.short > 0.02 && t.box < tallHeight - 0.5).map(t => t.at),
+    fadeFrames: d11.filter(t => t.tall > 0.02 && t.tall < 0.98).length,
+    boxShrinksAt: d11.find(t => t.box < tallHeight - 0.5)?.at ?? null,
+    titleCuts: cuts.filter(c => c.text === LONG_TITLE),
   }
 }
 
-const TITLE_D11 = asks(ALL).flatMap(b => (b.kind === 'row' && b.id === 'd11' ? [b.title] : []))[0]
-
-test('a closing row fades its title to one line while its title box holds, and the box shrinks after its panel fades', () => {
+test('a closing row fades its title to its two-line cut while its title box holds, and the box shrinks after its panel fades', () => {
   const closes: [string, Step[]][] = [
     [
       'the open row collapses',
@@ -69,10 +71,10 @@ test('a closing row fades its title to one line while its title box holds, and t
       name,
       jumps: [],
       boxShrinksAt: title.boxShrinksAt,
-      wrapsAtFirst: 1,
-      wrapsAtEnd: 0,
-      boxAtEnd: LINE_HEIGHT,
-      isWrapShownOnlyOpen: true,
+      tallAtFirst: 1,
+      tallAtEnd: 0,
+      boxAtEnd: 2 * LINE_HEIGHT,
+      isTallShownOnlyOpen: true,
       bothFormsWhileBoxMoves: [],
       fadeFrames: title.fadeFrames,
       titleCuts: [],
@@ -82,7 +84,7 @@ test('a closing row fades its title to one line while its title box holds, and t
   }
 })
 
-test('an opening row keeps its title on one line until the title box is open, then fades it to its wrapped form', () => {
+test('an opening row keeps its title cut until the title box is open, then fades it to the whole title', () => {
   const opens: [string, Step[]][] = [
     [
       'the person opens the row',
@@ -111,16 +113,16 @@ test('an opening row keeps its title on one line until the title box is open, th
     expect({ name, ...title }).toEqual({
       name,
       jumps: [],
-      wrapsAtFirst: 0,
-      wrapsAtEnd: 1,
+      tallAtFirst: 0,
+      tallAtEnd: 1,
       boxAtEnd: title.boxAtEnd,
       boxShrinksAt: title.boxShrinksAt,
-      isWrapShownOnlyOpen: true,
+      isTallShownOnlyOpen: true,
       bothFormsWhileBoxMoves: [],
       fadeFrames: title.fadeFrames,
       titleCuts: [],
     })
-    expect(title.boxAtEnd).toBeGreaterThan(LINE_HEIGHT)
+    expect(title.boxAtEnd).toBeGreaterThan(2 * LINE_HEIGHT)
     expect(title.fadeFrames).toBeGreaterThan(2)
   }
 })
@@ -140,24 +142,24 @@ test('a row whose close or open turns back moves its title from where it is and 
     expect({ at, ...reopens }).toMatchObject({
       at,
       jumps: [],
-      wrapsAtEnd: 1,
-      isWrapShownOnlyOpen: true,
+      tallAtEnd: 1,
+      isTallShownOnlyOpen: true,
       bothFormsWhileBoxMoves: [],
       titleCuts: [],
     })
     expect({ at, ...recloses }).toMatchObject({
       at,
       jumps: [],
-      wrapsAtEnd: 0,
-      boxAtEnd: LINE_HEIGHT,
+      tallAtEnd: 0,
+      boxAtEnd: 2 * LINE_HEIGHT,
       bothFormsWhileBoxMoves: [],
       titleCuts: [],
     })
-    expect(recloses.isWrapShownOnlyOpen).toBe(true)
+    expect(recloses.isTallShownOnlyOpen).toBe(true)
   }
 })
 
-test('a row closed, opened and closed again a frame apart ends on one line and never cuts its title', () => {
+test('a row closed, opened and closed again a frame apart ends on its two-line cut and never cuts its title', () => {
   for (const gap of [FRAME_MS, 2 * FRAME_MS]) {
     const closesTwice = titleOf([
       [0, asks(ALL, 'd11')],
@@ -167,15 +169,15 @@ test('a row closed, opened and closed again a frame apart ends on one line and n
     ])
     expect({ gap, ...closesTwice }).toMatchObject({
       gap,
-      wrapsAtEnd: 0,
-      boxAtEnd: LINE_HEIGHT,
+      tallAtEnd: 0,
+      boxAtEnd: 2 * LINE_HEIGHT,
       bothFormsWhileBoxMoves: [],
       titleCuts: [],
     })
   }
 })
 
-test('a row opened, closed before its panel shows and opened again fades to its wrapped title only once the title box rests', () => {
+test('a row opened, closed before its panel shows and opened again fades to its whole title only once the title box rests', () => {
   const shut = asks(ALL, 'd11', null, ['d11'])
   const open = asks(ALL, 'd11')
   const sequences: Step[][] = [
@@ -202,10 +204,63 @@ test('a row opened, closed before its panel shows and opened again fades to its 
     expect({ steps: steps.map(s => s[0]), ...title }).toMatchObject({
       steps: steps.map(s => s[0]),
       jumps: [],
-      wrapsAtEnd: 1,
-      isWrapShownOnlyOpen: true,
+      tallAtEnd: 1,
+      isTallShownOnlyOpen: true,
       bothFormsWhileBoxMoves: [],
       titleCuts: [],
+    })
+  }
+})
+
+test('a collapsed row shows a title of one or two lines whole and cuts a longer one at a word at the end of its second line', () => {
+  const { shown, titles } = framesOf([[0, asks(ALL, 'd15')]], 400)
+  const end = Math.max(...shown.map(s => s.at))
+  const titleOf = (id: string) => shown.find(s => s.at === end && s.block === id && s.text.length > 20)?.text
+  const boxOf = (id: string) => titles.findLast(t => t.id === id)?.box
+  expect(['d16', 'd12', 'd11'].map(id => ({ id, title: titleOf(id), box: boxOf(id) }))).toEqual([
+    { id: 'd16', title: 'Check the glances outdoors in bright sun', box: LINE_HEIGHT },
+    { id: 'd12', title: 'Bring a dismissed glance back when you look at it?', box: 2 * LINE_HEIGHT },
+    {
+      id: 'd11',
+      title: 'Dismiss a glance with a pinch, a flick of the wrist, or a nod of the head while…',
+      box: 2 * LINE_HEIGHT,
+    },
+  ])
+})
+
+test('a row whose collapsed title is cut fades to one line as it settles and back through Undo, without a jump or a cut', () => {
+  const { NOW, demoScreen, uiOn, withDismissedAsk } = fixtures
+  const dismissed = withLongTitle(tabBlocks(withDismissedAsk('d11', NOW), uiOn('needsYou', { selected: 'd12' })))
+  const collapsed = withLongTitle(tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd12' })))
+  const moves: [string, Step[], number][] = [
+    [
+      'settle',
+      [
+        [0, collapsed],
+        [0, dismissed],
+      ],
+      LINE_HEIGHT,
+    ],
+    [
+      'undo',
+      [
+        [0, dismissed],
+        [0, collapsed],
+      ],
+      2 * LINE_HEIGHT,
+    ],
+  ]
+  for (const [name, steps, box] of moves) {
+    const { jumps, cuts, titles } = framesOf(steps, 900)
+    const titleCuts = cuts.filter(c => c.at >= 0 && c.text.startsWith('Dismiss a glance'))
+    const d11 = titles.filter(t => t.id === 'd11' && t.at >= 0)
+    const isFaded = d11.some(t => t.tall > 0.02 && t.tall < 0.98)
+    expect({ name, jumps, titleCuts, isFaded, box: d11.at(-1)?.box }).toEqual({
+      name,
+      jumps: [],
+      titleCuts: [],
+      isFaded: true,
+      box,
     })
   }
 })

@@ -136,6 +136,7 @@ export const HERDR: LookTable = {
     },
     'delegate-asks': { kind: 'host' },
     'record-earlier-answers': { kind: 'host' },
+    'named-pr-link': { kind: 'full' },
     'session-registry': { kind: 'host' },
     'press-preconditions': { kind: 'full' },
   },

@@ -87,16 +87,16 @@ test('a session moved out of its spare folder saves the project as its folder, w
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   await startInSpare($, clock)
-  expect(savedPlace()).toEqual({ folder: SPARE, branch: null })
+  expect(savedPlace()).toEqual({ folder: SPARE, branch: null, repo: null })
 
   await moveToProject($, clock)
-  expect(savedPlace()).toEqual({ folder: PROJECT, branch: 'main' })
+  expect(savedPlace()).toEqual({ folder: PROJECT, branch: 'main', repo: null })
 
   w.branches = { [PROJECT]: 'feature' }
   await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
   await $.turn.complete({ answer: 'Hello.', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
   await clock.settle()
-  expect(savedPlace()).toEqual({ folder: PROJECT, branch: 'feature' })
+  expect(savedPlace()).toEqual({ folder: PROJECT, branch: 'feature', repo: null })
 })
 
 test('a session loaded with a saved folder that is gone saves the folder it runs in', async ($, on) => {
@@ -108,7 +108,7 @@ test('a session loaded with a saved folder that is gone saves the folder it runs
   await $.session.start({ cwd: '/tmp/project', surface: 'desktop', isInteractive: true })
   await clock.settle()
 
-  expect(savedPlace()).toEqual({ folder: '/tmp/project', branch: 'main' })
+  expect(savedPlace()).toEqual({ folder: '/tmp/project', branch: 'main', repo: null })
 })
 
 for (const surface of ['terminal', 'desktop'] as const) {
@@ -131,6 +131,6 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const projectRuns = w.ranIn.filter(r => (r.argv[0] === 'gh' && r.argv[1] !== '--version') || r.argv[0] === 'git')
     expect(projectRuns.length).toBeGreaterThan(0)
     expect(projectRuns.filter(r => r.cwd !== '/tmp/project')).toEqual([])
-    expect(savedPlace()).toEqual({ folder: '/tmp/project', branch: 'main' })
+    expect(savedPlace()).toEqual({ folder: '/tmp/project', branch: 'main', repo: null })
   })
 }

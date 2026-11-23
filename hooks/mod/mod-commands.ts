@@ -1,5 +1,5 @@
 import type { Session } from '../../types'
-import { branchIn, GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE, type Run } from '../../core/domain/gh'
+import { gitPlaceIn, GH_TIMEOUT_MS, TIMED_OUT_CODE, UNSTARTABLE_CODE, type Run } from '../../core/domain/gh'
 import type { PathProbe } from '../../core/domain/open-targets'
 import { placed } from '../../core/runtime/session-turns'
 
@@ -36,7 +36,8 @@ function isGone(calls: CommandCalls, path: string): Promise<boolean> {
 }
 
 /**
- * The change that saves `folder` and its branch as the session's place. A place keeps the folder it first saved,
+ * The change that saves `folder`, its branch and its GitHub repository as the session's place. The place keeps the
+ * repository it saved when git cannot list the remotes. A place keeps the folder it first saved,
  * unless the session moved away from that folder (`left` is the folder it was last seen in) or that folder is gone.
  */
 export async function placeChange<S extends Session>(
@@ -47,9 +48,9 @@ export async function placeChange<S extends Session>(
 ): Promise<(s: S) => S> {
   const isOtherFolder = saved !== null && saved !== folder
   const isMoved = isOtherFolder && (saved === left || (await isGone(calls, saved)))
-  const branch = await branchIn(runOf(calls), folder)
+  const git = await gitPlaceIn(runOf(calls), folder)
 
-  return s => placed(isMoved && s.place?.folder === saved ? { ...s, place: null } : s, folder, branch)
+  return s => placed(isMoved && s.place?.folder === saved ? { ...s, place: null } : s, folder, git)
 }
 
 /**

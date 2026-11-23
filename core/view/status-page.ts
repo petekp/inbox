@@ -104,7 +104,7 @@ export type StatusRow = {
   /**
    * Where the work the goal does not need starts, under its own rule: "Other work", or the head's title with its
    * description under it while the head is apart from the goal (`StatusPage.head`). The text is null, and the rule
-   * draws with no label, while no goal is set and the title repeats the one open subject's name.
+   * draws with no label, while no goal is set and the title repeats a subject's name (`isTitleRepeated`).
    */
   | { kind: 'part'; id: string; text: string | null; description: string | null; isTitle: boolean }
   /**
@@ -353,7 +353,7 @@ export function statusPage(
         ]
       : []),
   ]
-  const title = head === null || (g === null && isTitleRepeated(head.title, subjects)) ? null : head.title
+  const title = head === null || (g === null && isTitleRepeated(head.title, subjects, listRows)) ? null : head.title
   const headPart: StatusRow[] =
     isHeadApart && head && (title ?? head.description) !== null
       ? [{ kind: 'part', id: 'head', depth: 0, text: title, description: head.description, isTitle: true }]

@@ -327,12 +327,14 @@ async function nextPanelDelay(isPressed: boolean) {
     panel.publish(dismissedSession(rowId, at))
     tick()
     panel.measure(() => ({ width: 300, height: 40 }))
-    setSystemTime(new Date(at + NEXT_FRAME_MS))
-    expect(openRow(blocks())).not.toBe(rowId)
+    for (let ms = NEXT_FRAME_MS; ms <= ROW_STATE_MS.closing; ms += NEXT_FRAME_MS) {
+      setSystemTime(new Date(at + ms))
+      panel.measure(() => ({ width: 300, height: 40 }))
+      const drawn = allOf(panel.paint()).find(n => n.id === `panel ${openRow(blocks())}`)
+      if (drawn) return openRow(blocks()) === rowId ? undefined : drawn.delays.get('opacity')
+    }
 
-    return allOf(panel.paint())
-      .find(n => n.id === `panel ${openRow(blocks())}`)
-      ?.delays.get('opacity')
+    return undefined
   } finally {
     setSystemTime(new Date(NOW))
   }

@@ -362,7 +362,7 @@ test('in the terminal, a collapsed row’s title takes two lines and ends in an 
     ...new Set((await pane.findAll({ type: 'Text', text: /glance|away|seconds|dismissed/ })).map(t => t.text)),
   ]
 
-  expect(await titleLines()).toEqual(['Should the glance fade', 'out when you look away …'])
+  expect(await titleLines()).toEqual(['Should the glance fade', 'out when you look away…'])
   await selectRow(pane, 'i2')
   expect((await titleLines()).join(' ')).toMatch(/until dismissed\?$/)
 })

@@ -8,6 +8,7 @@ import { carryText, promptNotes, screenText, START_TITLE } from '../domain/inbox
 import { guidanceText } from '../domain/model-text'
 import type { ScreenTab } from '../domain/inbox-text'
 import type { Host } from '../domain/model-text'
+import type { GitPlace } from '../domain/gh'
 import { linkedPrs } from '../domain/pr-fetch'
 import { isDismissed } from '../view/pr-views'
 import { withArrival, withUnconfirmed } from '../view/press-reducer'
@@ -172,10 +173,17 @@ export function cutOffTurn<S extends Session>(s: S, now: number): S {
   return s.presence.isTurnRunning ? turnEnded(s, null, now) : s
 }
 
-/** The session with the folder it started in, kept from the first time a host names it, and the branch it is on now. */
-export function placed<S extends Session>(s: S, folder: string, branch: string | null): S {
-  const place = { folder: s.place?.folder || folder, branch: branch === 'HEAD' ? null : branch }
-  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch
+/**
+ * The session with the folder it started in, kept from the first time a host names it, and the branch and GitHub
+ * repository the host read in its folder now. A repository git could not list keeps the one saved before.
+ */
+export function placed<S extends Session>(s: S, folder: string, git: GitPlace): S {
+  const place = {
+    folder: s.place?.folder || folder,
+    branch: git.branch === 'HEAD' ? null : git.branch,
+    repo: git.repo === undefined ? (s.place?.repo ?? null) : git.repo,
+  }
+  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch && s.place.repo === place.repo
 
   return isSame ? s : { ...s, place }
 }

@@ -10,9 +10,31 @@ var GH_TIMEOUT_MS = 20000;
 var UNSTARTABLE_CODE = -1;
 var TIMED_OUT_CODE = -2;
 var GIT_TIMEOUT_MS = 5000;
-async function branchIn(run, folder) {
-  const r = await run(["git", "branch", "--show-current"], { cwd: folder, timeoutMs: GIT_TIMEOUT_MS });
-  return r.code === 0 ? r.stdout.trim() || null : null;
+var REMOTE_ORDER = ["upstream", "github", "origin"];
+async function gitPlaceIn(run, folder) {
+  const opts = { cwd: folder, timeoutMs: GIT_TIMEOUT_MS };
+  const [branch, remotes] = await Promise.all([
+    run(["git", "branch", "--show-current"], opts),
+    run(["git", "remote", "-v"], opts)
+  ]);
+  return {
+    branch: branch.code === 0 ? branch.stdout.trim() || null : null,
+    repo: remotes.code === 0 ? githubRepoIn(remotes.stdout) : undefined
+  };
+}
+function githubRepoIn(listed) {
+  const onGithub = listed.split(`
+`).flatMap((line) => {
+    const [name = "", url = ""] = line.split(/\s+/);
+    const repo = githubRepoOf(url);
+    return repo ? [{ name, repo }] : [];
+  });
+  const rank = (name) => REMOTE_ORDER.includes(name) ? REMOTE_ORDER.indexOf(name) : REMOTE_ORDER.length;
+  return onGithub.toSorted((a, b) => rank(a.name) - rank(b.name))[0]?.repo ?? null;
+}
+var GITHUB_REMOTE = /^(?:https:\/\/(?:[^@/]+@)?github\.com\/|ssh:\/\/git@github\.com(?::\d+)?\/|git@github\.com:)([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/;
+function githubRepoOf(url) {
+  return GITHUB_REMOTE.exec(url)?.[1] ?? null;
 }
 function ghFinder(exec) {
   let found = null;
@@ -479,6 +501,7 @@ var CLAUDE_CODE = {
     "done-press-age": { kind: "full" },
     "delegate-asks": { kind: "full" },
     "record-earlier-answers": { kind: "full" },
+    "named-pr-link": { kind: "full" },
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" }
   }
@@ -649,6 +672,7 @@ var CODEX = {
     "done-press-age": { kind: "full" },
     "delegate-asks": { kind: "full" },
     "record-earlier-answers": { kind: "full" },
+    "named-pr-link": { kind: "full" },
     "session-registry": {
       kind: "different",
       reason: "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process."
@@ -774,6 +798,7 @@ var OMP = {
     "done-press-age": { kind: "full" },
     "delegate-asks": { kind: "full" },
     "record-earlier-answers": { kind: "full" },
+    "named-pr-link": { kind: "full" },
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" }
   }
@@ -894,6 +919,19 @@ function cutForEllipsis(line, fits) {
     parts.pop();
   return parts.join("").replace(/[\s.,;:]+$/, "");
 }
+function wordCuts(line) {
+  const words = line.split(" ");
+  const cuts = words.map((_, n) => words.slice(0, words.length - n).join(" ").replace(/[\s.,;:]+$/, ""));
+  return [...new Set(cuts.filter(Boolean).map((head) => `${head}\u2026`))];
+}
+function cutAtWord(line, fits) {
+  return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
+}
+function cutLine(line, fits) {
+  if (fits(line))
+    return line;
+  return `${cutAtWord(line, fits) ?? cutForEllipsis(line, fits)}\u2026`;
+}
 var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
 function cutAtPhrase(text, fits) {
   if (fits(text))
@@ -967,13 +1005,44 @@ var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 function prRefs(text) {
   return [...new Set([...text.matchAll(PR_URL)].map((m) => `${m[1]}#${m[2]}`))];
 }
-function namedPrs(text, refs) {
-  const numbers = new Set([...text.matchAll(/#(\d+)\b/g)].map((m) => m[1]));
-  const known = [...new Set(refs)];
-  return [...numbers].flatMap((n) => {
-    const named = known.filter((ref) => parseRef(ref).number === n);
-    return named.length === 1 ? named : [];
-  });
+var PR_MENTION = /(?<![\w./-])(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*)\b/g;
+var PR_WORD_BEFORE = /\b(?:prs?|pull requests?|merg(?:e|es|ed|ing)|review(?:s|ed|ing)?|approv(?:e|es|ed|ing)|land(?:s|ed|ing)?)\s*$/i;
+var LIST_JOIN = /^\s*(?:,\s*)?(?:and|or|then|&)?\s*$/i;
+function namedPrs(text, known, repo) {
+  const links = [...text.matchAll(PR_URL)].map((m) => ({
+    at: m.index,
+    end: m.index + m[0].length,
+    ref: `${m[1]}#${m[2]}`,
+    isBare: false,
+    number: m[2] ?? ""
+  }));
+  const linked = new Set(links.map((l) => l.number));
+  const tracked = (n) => {
+    const [first, ...others] = known.filter((ref) => parseRef(ref).number === n);
+    return first && others.length === 0 ? first : null;
+  };
+  const mentions = [...text.matchAll(PR_MENTION)].map((m) => ({
+    at: m.index,
+    end: m.index + m[0].length,
+    ref: m[1] ? `${m[1]}#${m[2]}` : null,
+    isBare: !m[1],
+    number: m[2] ?? ""
+  }));
+  let lastEnd = -1;
+  const named = [];
+  for (const m of [...links, ...mentions].toSorted((a, b) => a.at - b.at)) {
+    const isListed = lastEnd >= 0 && LIST_JOIN.test(text.slice(lastEnd, m.at));
+    const isPrWord = PR_WORD_BEFORE.test(text.slice(0, m.at)) || isListed;
+    const ref = !m.isBare ? m.ref : linked.has(m.number) ? null : tracked(m.number) ?? (isPrWord && repo && !hasTwinIn(known, m.number) ? `${repo}#${m.number}` : null);
+    if (ref)
+      named.push(ref);
+    if (ref || linked.has(m.number))
+      lastEnd = m.end;
+  }
+  return [...new Map(named.map((ref) => [ref.toLowerCase(), ref])).values()];
+}
+function hasTwinIn(known, n) {
+  return known.filter((ref) => parseRef(ref).number === n).length > 1;
 }
 function parseRef(ref) {
   const [repo = "", number = ""] = ref.split("#");
@@ -1159,14 +1228,31 @@ function steps(helps) {
     return helps.map((h) => ({ label: helpLabel(h), step: [h] }));
   return helps.filter((h) => h !== copy).map((h) => h === open ? { label: `Copy ${copy.name ?? "snippet"} and open ${baseName(open.path)}`, step: [copy, open] } : { label: helpLabel(h), step: [h] });
 }
-function prSteps(item, tracked) {
+function prLinkName(ref, isTracked, repo) {
+  const { repo: refRepo, name, number } = parseRef(ref);
+  const isSessionRepo = refRepo.toLowerCase() === repo?.toLowerCase();
+  return isTracked ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`;
+}
+function prSteps(item, tracked, repo) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const links = namedPrs(item.ask, [...urls.keys()]).map((ref) => {
-    const { repo, number } = parseRef(ref);
-    const url = urls.get(ref) ?? `https://github.com/${repo}/pull/${number}`;
-    return { kind: "link", url, name: `PR #${number}` };
-  }).filter((l) => !item.helps.some((h) => h.kind === "link" && h.url === l.url));
-  return links.length === 0 ? [] : [{ label: links.length === 1 ? helpLabel(links[0]) : `Open ${links.length} PRs`, step: links }];
+  const isLinked = (ref, url) => item.helps.some((h) => h.kind === "link" && (h.url === url || prRefs(h.url).some((r) => r.toLowerCase() === ref.toLowerCase())));
+  const named = namedPrs([item.ask, item.context ?? ""].join(`
+`), [...urls.keys()], repo).flatMap((ref) => {
+    const { repo: refRepo, number } = parseRef(ref);
+    const url = urls.get(ref) ?? `https://github.com/${refRepo}/pull/${number}`;
+    return isLinked(ref, url) ? [] : [{ ref, url }];
+  });
+  const links = named.map(({ ref, url }) => ({
+    kind: "link",
+    url,
+    name: prLinkName(ref, urls.has(ref), repo)
+  }));
+  const [only] = links;
+  if (!only)
+    return [];
+  const isAllTracked = named.every(({ ref }) => urls.has(ref));
+  const label = links.length === 1 ? helpLabel(only) : isAllTracked ? `Open ${links.length} PRs` : clipLabel(`Open ${links.map((l) => l.name).join(", ")}`, COMMAND_LABEL_CHARS);
+  return [{ label, step: links }];
 }
 function stepsOf(item, extraSteps) {
   return [...steps(item.helps), ...extraSteps];
@@ -1428,9 +1514,12 @@ function tabPrs(links) {
   const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
   return [...links.prs, ...ranked];
 }
-function itemPrSteps(item, prState, linked) {
-  const refs = prState.branchRef ? [...linked, prState.branchRef] : linked;
-  return prSteps(item, refs.map((ref) => ({ ref, url: prState.views[ref]?.url ?? null })));
+function itemPrSteps(item, s) {
+  const { branchRef, views } = s.prViews;
+  const linked = tabPrs(s.ledger);
+  const refs = branchRef ? [...linked, branchRef] : linked;
+  const repo = branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null;
+  return prSteps(item, refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })), repo);
 }
 function isLeftOut(prState, ref) {
   const view = prState.views[ref];
@@ -1968,7 +2057,7 @@ function withWorkDoneMilestones(o, now) {
     if (!isOpen(m))
       return m;
     const linked = o.subjects.filter((s) => o.serves[s.id] === m.id);
-    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) > m.changedAt);
+    const isWorkDone = linked.length > 0 && linked.every((s) => !isOpen(s)) && linked.some((s) => s.status === "done") && linked.some((s) => (s.closedAt ?? -Infinity) >= m.changedAt);
     if (!isWorkDone)
       return m;
     isChanged = true;
@@ -8436,10 +8525,12 @@ function subjectInPlaceOf(o, m, items) {
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
   return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
 }
-function isTitleRepeated(title, subjects) {
-  const open = subjects.filter((x) => x.into === null && isOpen(x));
-  const only = open.length === 1 ? open[0] : undefined;
-  return only !== undefined && isNamedAlike(title, only.name);
+function isTitleRepeated(title, subjects, rows) {
+  const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
+  const work = subjects.filter((x) => x.into === null);
+  if (work.filter(isOpen).length > 1)
+    return false;
+  return work.some((x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name));
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -8595,7 +8686,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects) ? null : head.title;
+  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows) ? null : head.title;
   const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
   const rows = [
     ...headPart,
@@ -8664,7 +8755,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s.prViews, tabPrs(l))])),
+    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s)])),
     settleWindowMs,
     status: perTurnStatus(sync.ledger),
     now,
@@ -8745,7 +8836,7 @@ function pressOn(s, p, at, drawn, texts, localPressId) {
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
     holdMs: drawn.settleWindowMs,
-    extraSteps: item ? itemPrSteps(item, s.prViews, tabPrs(s.ledger)) : [],
+    extraSteps: item ? itemPrSteps(item, s) : [],
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
     compareInBackground: texts.compareInBackground
@@ -9889,7 +9980,7 @@ function titleLines(title, first, next, maxLines) {
   if (after.length < maxLines)
     return [head, ...after];
   const last = after.slice(maxLines - 2).join(" ");
-  const cut = cellWidth(last) <= next ? last : `${cutForEllipsis(last, (t) => cellWidth(t) <= next)}\u2026`;
+  const cut = cutLine(last, (t) => cellWidth(t) <= next);
   return [head, ...after.slice(0, maxLines - 2), cut];
 }
 function indented(text, indent, width, maxLines, paint) {
@@ -11266,12 +11357,16 @@ var withCollapses = (screen, ui) => ({
   ...screen,
   view: { ...screen.view, collapsed: collapsedOf(ui, screen.view) }
 });
+var PR_TAB_LINE_IDS = [PR_REFRESH_ID, CLEAR_FINISHED_ID, RANK_AGAIN_ID];
 var cursorOf = (ui) => isRowTab(ui.tab) ? ui.selection[ui.tab].id : ui.statusSelection;
 function withShared(before, shared) {
-  const cursor = cursorOf(shared);
   const isTabChanged = shared.tab !== before.tab;
+  const isStartedShowing = isTabChanged || shared.shownSince !== before.shownSince;
+  const isOnPrTabLine = PR_TAB_LINE_IDS.includes(shared.selection.prs.id ?? "");
+  const shown = isStartedShowing && shared.tab === "prs" && isOnPrTabLine ? { ...shared, selection: { ...shared.selection, prs: { id: null, index: -1, guard: null } } } : shared;
+  const cursor = cursorOf(shown);
   return {
-    ...shared,
+    ...shown,
     focus: before.focus?.rowId === cursor && !isTabChanged ? before.focus : null,
     resuming: before.resuming,
     opened: before.opened === cursor && !isTabChanged ? before.opened : null,
@@ -11297,8 +11392,11 @@ function selectedLine(lines, ui) {
   const id = ui.selection[ui.tab].id;
   const current = id === null ? undefined : lines.find((l) => l.id === id);
   const isCloseHeld = current !== undefined && ui.heldClose[ui.tab] === current.id;
-  if (current && (isSelectable(current) || isCloseHeld))
+  const isPrTabLine = id !== null && PR_TAB_LINE_IDS.includes(id);
+  if (current && (isSelectable(current) || isCloseHeld || isPrTabLine))
     return current;
+  if (isPrTabLine)
+    return null;
   const waiting = firstWaiting(waitsOf(lines));
   return lines.find((l) => l.id === waiting) ?? lines.filter(isSelectable).find((l) => l.id !== CLEAR_FINISHED_ID) ?? null;
 }
@@ -12727,9 +12825,13 @@ function messageTyped(s, at) {
 function cutOffTurn(s, now) {
   return s.presence.isTurnRunning ? turnEnded(s, null, now) : s;
 }
-function placed(s, folder, branch) {
-  const place = { folder: s.place?.folder || folder, branch: branch === "HEAD" ? null : branch };
-  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch;
+function placed(s, folder, git) {
+  const place = {
+    folder: s.place?.folder || folder,
+    branch: git.branch === "HEAD" ? null : git.branch,
+    repo: git.repo === undefined ? s.place?.repo ?? null : git.repo
+  };
+  const isSame = s.place?.folder === place.folder && s.place.branch === place.branch && s.place.repo === place.repo;
   return isSame ? s : { ...s, place };
 }
 function startTurn(s) {
@@ -17198,8 +17300,8 @@ function turnHandlers(context, sessions) {
       return;
     }).then(async () => {
       const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
-      const branch = await branchIn(run, ctx.cwd);
-      await change(id, (s) => placed(isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }, ctx.cwd, branch));
+      const git = await gitPlaceIn(run, ctx.cwd);
+      await change(id, (s) => placed(isSameTaskList(s.hostTasks, hostTasks) ? s : { ...s, hostTasks }, ctx.cwd, git));
     }).catch(() => {
       return;
     }).then(() => catchUpUnseen(ctx)));
@@ -17327,15 +17429,15 @@ function turnHandlers(context, sessions) {
     const reply = stop === null ? turnReply(texts, last ? textOfBlocks(last.content) : "") : "";
     const isDialogDismissed = event.messages.some(isDismissedAsk);
     const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
-    const [inHerdr, branch] = await Promise.all([
+    const [inHerdr, git] = await Promise.all([
       readState(dir, id).catch(() => null).then((saved) => delegatesInHerdr(saved?.ledger.overview ?? null, run, deps.herdrTarget)),
-      branchIn(run, ctx.cwd)
+      gitPlaceIn(run, ctx.cwd)
     ]);
     const endedAt = deps.now();
     const written = await change(id, (s) => {
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed });
       const settled = inHerdr ? statusChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
-      return { ...placed(settled, ctx.cwd, branch), stop };
+      return { ...placed(settled, ctx.cwd, git), stop };
     }).catch(() => null);
     if (!written)
       return;

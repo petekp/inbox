@@ -322,6 +322,20 @@ export const GOOD_RUNS: Record<string, string[]> = {
     'DONE: s2 | long strings kept whole',
     'NO CHANGE',
   ],
+  'milestone-reply-landed': [
+    [
+      'DONE: s1 | all six branches on main',
+      'DONE: s2 | landed on main',
+      'DONE: s4 | landed on main',
+      'DONE: s5 | landed on main',
+      'DONE: s6 | fix landed on main',
+      'SET: s3 | working | on main, browser test failing in CI',
+      'LINK: c2 | s3',
+      'DONE: m2 | all six branches on main',
+      'HEAD: Notes app | Fixing the editor CI test',
+    ].join('\n'),
+  ],
+  'milestone-last-work-done': ['DONE: s9 | API on main, checks passed\nHEAD: Notes app | Fixing card animations'],
   'finished-pass': [
     'DONE: s2 | fix merged and pushed\nDONE: m1 | review delivered\nSET: s1 | waits-on-other | Page text done, screenshots needed',
     'SET: s1 | waits-on-other | Page text done, screenshots needed\nSUGGEST: Editor focus pass done',
@@ -403,6 +417,9 @@ export const GOOD_RUNS: Record<string, string[]> = {
 
 /** A second right run of a replay whose step allows two right answers, as a recorded model wrote it. */
 export const OTHER_GOOD_RUNS: Record<string, string[]> = {
+  'milestone-last-work-done': [
+    'DONE: s9 | API on main, checks passed\nSET: m2 | working | other branches still outstanding\nHEAD: Notes app | Fixing card animations',
+  ],
   'milestone-dropped': [
     [
       'SET: s5 | queued | own setting, not started',
