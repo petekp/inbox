@@ -22,6 +22,7 @@ import type { OnWrite } from './host'
 import { makeCatchUpOnOpen } from './server-catch-up'
 import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
+import { linkedPrReads } from './server-pr-links'
 import {
   holdsOf,
   listedToolFields,
@@ -81,6 +82,11 @@ export type ServerDeps = {
   onWrite?: OnWrite
   /** Starts applying the presses the Herdr look writes, with `apply`. */
   followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>) => void
+  /**
+   * Starts calling `heard` with each session whose saved state changed, as when a hook saved it. The server then reads
+   * the PRs when the save shows a PR on the tab that no read has tried.
+   */
+  followSaves?: (heard: (sessionId: string) => void) => void
   /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
   herdrAsk?: CodexHerdrAsk
   /** The delegate session Codex runs as, as `core/remote/hc-terminals.ts:delegateSession` reads it. Without it, none. */
@@ -99,7 +105,10 @@ export type PressReply = {
   delivery?: 'unconfirmed'
 }
 
-/** Answers one message. `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. */
+/**
+ * Answers one message. `settled` resolves once the PR fetches, their state updates, the prune, the delegate check and
+ * the reads of heard saves it started have ended.
+ */
 export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) & {
   settled(): Promise<void>
   companion: CompanionHandler
@@ -126,7 +135,9 @@ export function makeServer(given: ServerDeps): Server {
     background,
   )
   const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)
+  const linkedPrs = linkedPrReads(id => readState(dir, id), fetchPrsNow)
   deps.followHerdrPresses?.(onHerdrFile)
+  deps.followSaves?.(id => background.track(linkedPrs.heard(id)))
 
   const isHerdrCheckDue = herdrCheckGate()
 
@@ -156,16 +167,19 @@ export function makeServer(given: ServerDeps): Server {
       case 'close':
       case 'order_prs': {
         let result = ''
-        let addsPr = false
+        let added = null as SessionState | null
         const delegate = (await deps.delegate?.().catch(() => null)) ?? null
         const earlier = name === 'record' ? await recordMatchesNow(args, now()) : []
         await codexStore(dir, id, now, deps.onWrite).update(s => {
           const r = recorded(CODEX, s, name, args, now(), listedToolFields(), delegate, earlier)
           result = r.result
-          addsPr = addsTabPr(s, r.state)
+          if (addsTabPr(s, r.state)) added = r.state
           return heard(r.state)
         })
-        if (addsPr) fetchPrsNow(id)
+        if (added) {
+          linkedPrs.asked(added)
+          fetchPrsNow(id)
+        }
         return text(result)
       }
       case 'inbox': {

@@ -112,8 +112,8 @@ export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
  * A row's state, when it entered it, and whether its open form is part of its move: `hasOpenForm` holds for an open
  * row, one opening or growing in open, and a row closing, settling or leaving from the open form. `entersSettled` marks
  * a row growing in settled, and `leavesSettled` a row opening or closing from its settled form, as after Undo. A row
- * Undo brought back closed that opens while its settled form still fades out keeps that fade: it opens as if Undo had
- * opened it, from when Undo did (`isSettledFormFading`).
+ * Undo brought back that opens or closes while its settled form still fades out keeps that fade: it moves as if Undo
+ * had moved it there, from when Undo did (`isSettledFormFading`).
  */
 export type RowTrack = {
   state: RowState
@@ -226,9 +226,9 @@ function formOf({ state, hasOpenForm, entersSettled }: RowTrack): Form {
   }
 }
 
-/** Whether a row Undo brought back closed still fades out its settled form, over the closed form it takes. */
+/** Whether a row Undo brought back still fades out its settled form, over the form it takes. */
 const isSettledFormFading = (track: RowTrack, now: number): boolean =>
-  track.state === 'closing' && track.leavesSettled === true && now - track.since < LEAVE_FADE_MS
+  track.leavesSettled === true && now - track.since < LEAVE_FADE_MS
 
 function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
   const leaves = formOf(track) === 'settled' ? { leavesSettled: true as const } : {}
@@ -237,6 +237,7 @@ function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
       if (isSettledFormFading(track, now)) return { ...track, state: 'opening', hasOpenForm: true }
       return { state: 'opening', since: now, hasOpenForm: true, ...leaves }
     case 'closed':
+      if (isSettledFormFading(track, now)) return { ...track, state: 'closing' }
       return track.state === 'leaving'
         ? entering('closed', now)
         : { state: 'closing', since: now, hasOpenForm: track.hasOpenForm, ...leaves }

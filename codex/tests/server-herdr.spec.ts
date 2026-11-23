@@ -7,7 +7,7 @@ import type { HerdrFile, PressFile } from '../../core/remote/herdr-press-file'
 import { isSubjectSeen } from '../../core/domain/status-children'
 import { EMPTY_SESSION_STATUS } from '../../core/domain/status-limits'
 import { makeServer } from '../src/server'
-import { codexHerdrAsk, followCodexPresses } from '../src/server-herdr'
+import { codexHerdrAsk, followCodexPresses, followCodexSaves } from '../src/server-herdr'
 import { builtAtLine } from '../../core/remote/herdr-install'
 import { readState, updateState } from '../src/state'
 import { codexCommandStore } from '../src/command-log'
@@ -320,4 +320,46 @@ test('a remote typed reply retains its outcome and does not queue twice after th
   assert.equal(calls.filter(args => args.includes('queue')).length, 1)
   assert.deepEqual((await log()).commands[command.id], first)
   assert.equal(after.ledger.items[0]?.id, 'i1')
+})
+
+test("the server hears each save of this terminal's Codex sessions, and no other session's save or another file's", async () => {
+  const [appHome, dir] = [tempDir(), tempDir()]
+  publish(appHome, 's1', 'codex', 't1')
+  publish(appHome, 's2', 'codex', 't2')
+  const heard: string[] = []
+  const save = (name: string) => {
+    mkdirSync(join(dir, 'sessions'), { recursive: true })
+    writeFileSync(join(dir, 'sessions', name), '{}')
+  }
+  const env = { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' }
+  const stop = followCodexSaves(
+    env,
+    dir,
+    id => heard.push(id),
+    () => undefined,
+  )
+  try {
+    await until(() => {
+      save('s1.json')
+      return heard.length > 0
+    })
+    heard.length = 0
+    save('s2.json')
+    save('s1.json.123.tmp')
+    save('s1.json')
+    await until(() => heard.includes('s1'))
+    await new Promise(r => setTimeout(r, 200))
+    assert.deepEqual([...new Set(heard)], ['s1'])
+  } finally {
+    stop?.()
+  }
+  assert.equal(
+    followCodexSaves(
+      { HERDR_PANE_ID: 'p1' },
+      dir,
+      () => undefined,
+      () => undefined,
+    ),
+    null,
+  )
 })

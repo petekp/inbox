@@ -1,5 +1,6 @@
 import type { Feedback } from '../../core/view/feedback'
 import { makeServer } from '../src/server'
+import type { ServerDeps } from '../src/server'
 import { updateState } from '../src/state'
 import { fakeRunner, tempDir } from './helpers'
 import { prNodeOf, prsAnswerOf } from '../../tests/gh-answers'
@@ -127,6 +128,7 @@ export type PrReply = { result: { structuredContent: PrView & { error: string | 
 export async function prServer(
   answer: (args: string[]) => { code: number; stdout: string; stderr: string },
   now = () => 100,
+  extra: Partial<ServerDeps> = {},
 ) {
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
@@ -138,6 +140,7 @@ export async function prServer(
     exec: runner.exec,
     tabHtml: '<html></html>',
     fallbackCli: async () => 'codex',
+    ...extra,
   })
   const callOnly = (name: string, args: Record<string, unknown>) =>
     handle({
