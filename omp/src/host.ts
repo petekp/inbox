@@ -20,7 +20,7 @@ import { herdrPanelOpener } from '../../core/remote/herdr-open'
 import type { Run } from '../../core/domain/gh'
 import { COMPARE_PAGE_FILE } from '../../core/domain/press-messages'
 import { recorded } from '../../core/runtime/session-presses'
-import { prFetchTracker } from '../../core/runtime/host-prs'
+import { addsTabPr, prFetchTracker } from '../../core/runtime/host-prs'
 import type { SessionHost } from '../../core/runtime/session-host'
 import { agentTools } from '../../core/runtime/tools'
 import { TOOL_FIELDS } from '../../core/domain/tool-schemas'
@@ -288,7 +288,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       ),
   }
   const sessions = sessionCalls(context)
-  const { change } = sessions
+  const { change, fetchPrsNow } = sessions
   const turns = turnHandlers(context, sessions)
   const { start } = turns
   const activity = activityHandlers(context, sessions)
@@ -345,12 +345,15 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         const delegate = await context.delegate()
         const input = args as Record<string, unknown>
         const earlier = name === 'record' ? await recordMatchesNow(input, deps.now()) : []
+        let addsPr = false
         await change(sessionIdOf(ctx), s => {
           const r = recorded(OMP, s, name, input, deps.now(), TOOL_FIELDS, delegate, earlier)
           answer = r
+          addsPr = addsTabPr(s, r.state)
 
           return r.state
         })
+        if (addsPr) fetchPrsNow(ctx)
         const details: ToolDetails = { personLine: answer.personLine }
 
         return { content: [{ type: 'text', text: answer.result }], details }

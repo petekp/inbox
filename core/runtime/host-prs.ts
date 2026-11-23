@@ -28,6 +28,16 @@ function untriedPrs(s: Session): string[] {
 }
 
 /**
+ * True when a change put a PR on the PRs tab that it did not show before: one the session linked, or one the agent's
+ * order ranks. A host then reads the PRs at once rather than wait for `isPrFetchDue`.
+ */
+export function addsTabPr(before: Pick<Session, 'ledger'>, after: Pick<Session, 'ledger'>): boolean {
+  const shown = new Set(tabPrs(before.ledger))
+
+  return tabPrs(after.ledger).some(ref => !shown.has(ref))
+}
+
+/**
  * True when the PRs are due for a fetch: none was fetched yet, the last is old, or, once `NEW_PR_FETCH_MS` has passed
  * since the last, a tracked PR no fetch has tried waits for its first read or the agent replied since, as after a push
  * that fixed a PR. A PR a fetch could not read is in `unread`, so it waits for the PRs to be old, and so does every PR
@@ -71,8 +81,8 @@ export function prFetchTracker(
    */
   fetchWhenDue(id: string, s: Session, isTabShown: boolean, fetch: () => Promise<void>): Promise<void> | null
   /**
-   * Runs `fetch` as a press asks: now, or once the fetch running for `id` ends, since that fetch may have read the PRs
-   * before the press. Presses during one running fetch share the fetch after it. Returns the run, which never rejects.
+   * Runs `fetch` as a press or a new PR on the tab asks: now, or once the fetch running for `id` ends, since that fetch
+   * may have read the PRs before the ask. Presses during one running fetch share the fetch after it. Returns the run, which never rejects.
    */
   fetchNow(id: string, fetch: () => Promise<void>): Promise<void>
 } {

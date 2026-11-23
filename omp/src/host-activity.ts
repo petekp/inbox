@@ -19,10 +19,11 @@ import { isUnattended, sessionIdOf } from './host-context'
 import type { HostContext, OmpContext } from './host-context'
 import type { SessionCalls } from './host-sessions'
 import { textOfBlocks } from './omp-messages'
+import { addsTabPr } from '../../core/runtime/host-prs'
 
 export function activityHandlers(context: HostContext, sessions: SessionCalls) {
   const { deps, memory } = context
-  const { change, updateHostFor, fetchPrsWhenDue, notifyChanged } = sessions
+  const { change, updateHostFor, fetchPrsNow, notifyChanged } = sessions
 
   const isActivityWorthSaving = activityGate()
 
@@ -132,18 +133,18 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
     if (event.toolName === 'bash') {
       const command = (event.input as { command?: unknown }).command
       if (typeof command !== 'string') return
-      let isLinked = false
+      let addsPr = false
       const at = deps.now()
       try {
         await change(sessionIdOf(ctx), s => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content))
-          isLinked = after.ledger !== s.ledger
+          addsPr = addsTabPr(s, after)
           return statusChanged(after, o => delegatesRan(o, command, at))
         })
       } catch {
         return
       }
-      if (isLinked) fetchPrsWhenDue(ctx, false)
+      if (addsPr) fetchPrsNow(ctx)
       return
     }
     if (event.toolName !== 'ask') return

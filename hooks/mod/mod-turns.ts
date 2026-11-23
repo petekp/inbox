@@ -6,7 +6,7 @@ import { delegatesSettled, subagentsSettled } from '../../core/domain/children'
 import { resetTime, stopKindOf, stopOfMessage } from './claude'
 import { withApiError } from '../../core/domain/stops'
 import { withReplyWaitEnded } from './explanation-reply'
-import { isPrFetchDue } from '../../core/runtime/host-prs'
+import { addsTabPr, isPrFetchDue } from '../../core/runtime/host-prs'
 import { closeDialogs } from './mod-dialogs'
 import { isPaneShown, isPrsTabShown, redraw, shownScreenTab } from './mod-drawn'
 import { delegatesAsked } from './mod-herdr'
@@ -137,8 +137,8 @@ export async function noteTurnEnd(m: Mod, e: TurnCompleteEvent) {
   await m.commit(currentOwner(), s => endTurn(CLAUDE_CODE, s, reply, isShown, { tab: screenTab, queuesEmptyReply }))
   updateLedger(m)
   const after = await m.atoms.session.read()
-  const linksNewPr = after.ledger.prs.some(ref => !before.ledger.prs.includes(ref))
+  const addsPr = addsTabPr(before, after)
   const tracksPrs = tabPrs(after.ledger).length > 0 || after.prViews.branchRef !== null
   const isTabShown = await isPrsTabShown(m)
-  if (linksNewPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now, isTabShown))) void m.fetchPrs(isTabShown)
+  if (addsPr || (tracksPrs && isPrFetchDue(after, mod.prFetchEndedAt, now, isTabShown))) void m.fetchPrs(isTabShown)
 }
