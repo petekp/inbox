@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T21:49:14.344Z. 373231 characters follow.
+// Built at 2026-11-23T22:53:53.465Z. 373448 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -951,6 +951,7 @@ function isChildWorking(c) {
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,…]+$/, "");
 var isSettled = (row) => row.tone === "done";
 var textLevelOf = (row) => isSettled(row) ? "faint" : "muted";
+var foldLevelOf = (row) => isSettled(row) ? "faint" : "muted";
 var WAS_LEVEL = "faint";
 var nameLevelOf = (row, otherwise) => isSettled(row) ? "faint" : otherwise;
 var textBeyondName = (name, text) => text && comparableName(text) !== comparableName(name) ? text : null;
@@ -6981,13 +6982,14 @@ var pathOf = (isOpen) => {
 };
 var FOLDED_PATH = pathOf(false);
 var OPEN_PATH = pathOf(true);
-function chevronEl(isOpen, t, isLive) {
+function chevronEl(isOpen, t, isLive, color) {
   const path = isOpen ? OPEN_PATH : FOLDED_PATH;
   const shape = (color) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`);
-  return div8().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div8().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
+  return div8().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(color)).when(isLive, (e) => e.child(div8().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
 }
 function foldChevronEl(t, fold) {
-  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div8().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
+  const color = fold.level === "faint" ? faintOf(t) : t.muted;
+  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(color).child(chevronEl(fold.isOpen, t, fold.isLive, color)).when(fold.count !== undefined, (e) => e.child(div8().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
 }
 
 // src/paint-status-line.ts
@@ -7008,6 +7010,7 @@ function statusEl(s, p, isInert) {
     foldChevronEl(t, {
       isOpen: !s.fold.isFolded,
       isLive: toggle !== undefined && !isInert,
+      level: s.fold.level,
       ...s.fold.isFolded ? { count: s.fold.count } : {}
     })
   ] : [];
@@ -7311,7 +7314,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex9().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div15().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
+  return h_flex9().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div15().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert, level: fold?.level ?? "muted" })));
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -7976,7 +7979,7 @@ function foldOf(p, isCollapsed) {
     id: p.id,
     isCollapsed: !isFolded
   });
-  return { fold: { isFolded, count: p.foldCount, toggle } };
+  return { fold: { isFolded, count: p.foldCount, level: foldLevelOf(p), toggle } };
 }
 function underLines(text, merged, was) {
   const muted = (t) => t === null ? [] : [{ text: t, level: "muted" }];
