@@ -254,7 +254,9 @@ function spaceEl(s: Space, p: Paint, columns: Element[]): Element {
  * starts where each box is drawn. A block that enters or leaves also fades its own drawing: out while its space holds,
  * and in once its space is nearly open. Its connectors fade with it, and so does a column that joins it to a block that
  * stays, so no connector shows while what it joins does not (`strokeFadesOf`). A column that runs on past it between
- * two blocks that stay does not fade. The list scrolls in a box of fixed height, and a block that could shrink loses its
+ * two blocks that stay does not fade. The fade and slide go on a box named for the block, since gpui-kit keys a
+ * transition to its element's identity, and an element with no id takes its place in the tree as its identity, which
+ * shifts as blocks enter or leave above it. The list scrolls in a box of fixed height, and a block that could shrink loses its
  * space, or the end of its text, whenever the list overflows.
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
@@ -299,6 +301,8 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const f = strokeFades[i]
     if (!look || !f) throw new Error(`no look for block ${b.id}`)
     const { m, isShown, glide, fade } = look
+    const key = m?.springId ?? b.id
+    const drawing = v_flex().id(`drawing ${key}`).child(el(b))
     const slide = (e: Element): Element =>
       m?.box
         ? e
@@ -308,13 +312,13 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
         : e
 
     return v_flex()
-      .id(`box ${m?.springId ?? b.id}`)
+      .id(`box ${key}`)
       .flex_none()
       .child(
         spaceEl(
           s,
           p,
-          intoSpace.map(c => spaceColumnEl(c, f, p.t)),
+          intoSpace.map(c => spaceColumnEl(key, c, f, p.t)),
         ),
       )
       .child(
@@ -322,8 +326,8 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
           b,
           m,
           p,
-          slide(fade(el(b))),
-          contentStrokeEls(b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? []),
+          slide(fade(drawing)),
+          contentStrokeEls(key, b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? []),
         ),
       )
   })

@@ -20,9 +20,10 @@ export const PATH_X = EDGE + 4
 /** A column a stroke takes at `depth`, dashed where it is the path's line into the milestone that reads next. */
 type Column = { depth: number; isDashed: boolean }
 
-/** Column `c` from `top`, down to `height` or to the end of its box. */
-function lineEl(c: Column, top: number, height: number | null, t: Theme): Element {
+/** Column `c` from `top`, down to `height` or to the end of its box, named `id` so its fade keeps its state. */
+function lineEl(id: string, c: Column, top: number, height: number | null, t: Theme): Element {
   const el = div()
+    .id(id)
     .absolute()
     .left(PATH_X + c.depth * NEST)
     .top(top)
@@ -194,17 +195,21 @@ export function feedsOf(blocks: Block[], moves: StrokeMove[]): Column[][] {
   })
 }
 
-/** A column drawn across a block's space, which the column joins from above. */
-export const spaceColumnEl = (c: Column, f: StrokeFades, t: Theme): Element => f.above(c.depth)(lineEl(c, 0, null, t))
+/** A column drawn across the space of the block drawn under `key`, which the column joins from above. */
+export const spaceColumnEl = (key: string, c: Column, f: StrokeFades, t: Theme): Element =>
+  f.above(c.depth)(lineEl(`space column ${key} ${c.depth}`, c, 0, null, t))
 
 /**
  * The path's line and the nesting connectors beside a block's content, each in the column under the marks of rows at
  * its depth, the column the path's line takes at depth 0. An arm starts a pixel right of its column, and a column that
  * ends at an arm takes the arm's row, so no two strokes cover the same pixel. Arms belong to their row and fade with it.
  * A column fades above and below the block's first line as `f` says, split at the arm where the two differ. `top` is
- * the block's padding above its first line.
+ * the block's padding above its first line. Each stroke is named for the block's `key` and for what it is, so it keeps
+ * its name, and the state of its fade, while the block's form changes. A column's lower part is drawn at no height while
+ * the two fades agree, so it is there to fade when they part.
  */
 export function contentStrokeEls(
+  key: string,
   b: Block,
   top: number,
   t: Theme,
@@ -215,23 +220,32 @@ export function contentStrokeEls(
   const path = 'path' in b ? b.path : undefined
   const tree = 'tree' in b ? (b.tree ?? []) : []
   const armAt = Math.round(top + LINE_HEIGHT / 2)
-  const whole = (c: Column): Element[] => {
-    const up = f.above(c.depth)
-    const down = f.below(c.depth)
+  const idOf = (name: string, part: 'top' | 'bottom' | 'arm') => `stroke ${key} ${name} ${part}`
+  const upper = (c: Column, name: string, height: number): Element =>
+    f.above(c.depth)(lineEl(idOf(name, 'top'), c, 0, height, t))
+  const lower = (c: Column, name: string, from: number): Element =>
+    f.below(c.depth)(lineEl(idOf(name, 'bottom'), c, from, null, t))
+  const whole = (c: Column, name: string): Element[] => {
+    const isSplit = f.above(c.depth) !== f.below(c.depth)
+    const abovePart = f.above(c.depth)(lineEl(idOf(name, 'top'), c, 0, isSplit ? armAt + 1 : null, t))
+    const belowPart = f.below(c.depth)(lineEl(idOf(name, 'bottom'), c, armAt + 1, isSplit ? null : 0, t))
 
-    return up === down
-      ? [up(lineEl(c, 0, null, t))]
-      : [up(lineEl(c, 0, armAt + 1, t)), down(lineEl(c, armAt + 1, null, t))]
+    return [abovePart, belowPart]
   }
-  const below = (c: Column): Element => f.below(c.depth)(lineEl(c, top + LINE_HEIGHT, null, t))
+  const below = (c: Column, name: string): Element => lower(c, name, top + LINE_HEIGHT)
   const pathEls = (side: PathSide): Element[] =>
     side.is === 'work'
-      ? pathColumn(side.line).flatMap(whole)
-      : [...pathColumn(side.above).map(c => f.above(0)(lineEl(c, 0, top, t))), ...pathColumn(side.below).map(below)]
+      ? pathColumn(side.line).flatMap(c => whole(c, 'path'))
+      : [
+          ...pathColumn(side.above).map(c => upper(c, 'path', top)),
+          ...pathColumn(side.below).map(c => below(c, 'path')),
+        ]
   const treeEls = tree.flatMap(({ depth, is }): Element[] => {
     const c = { depth, isDashed: false }
+    const name = `tree ${depth}`
     const arm = f.own(
       div()
+        .id(idOf(name, 'arm'))
         .absolute()
         .left(PATH_X + depth * NEST + 1)
         .top(armAt)
@@ -240,13 +254,18 @@ export function contentStrokeEls(
         .border_t_1()
         .border_color(lineColor(t)),
     )
-    if (is === 'down') return [below(c)]
-    if (is === 'past') return whole(c)
+    if (is === 'down') return [below(c, name)]
+    if (is === 'past') return whole(c, name)
     if (is === 'arm') return [arm]
-    if (is === 'last') return [f.above(depth)(lineEl(c, 0, armAt + 1, t)), arm]
+    if (is === 'last') return [upper(c, name, armAt + 1), arm]
 
-    return [...whole(c), arm]
+    return [...whole(c, name), arm]
   })
 
-  return [...(path ? pathEls(path) : []), ...treeEls, ...passes.flatMap(whole), ...feeds.map(below)]
+  return [
+    ...(path ? pathEls(path) : []),
+    ...treeEls,
+    ...passes.flatMap(c => whole(c, `pass ${c.depth}`)),
+    ...feeds.map(c => below(c, `feed ${c.depth}`)),
+  ]
 }
