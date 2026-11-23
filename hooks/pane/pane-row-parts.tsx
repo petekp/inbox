@@ -53,7 +53,7 @@ import {
   settledTone,
   shortAgo,
 } from '../../core/view/rows'
-import { settledTitleLine, type TreePos } from './terminal-text'
+import { settledTitleLine, terminalSettledTitle, type TreePos } from './terminal-text'
 import { SETTLED_MS } from '../../core/view/timing'
 import type { PressAreaProps } from './press-client'
 
@@ -529,7 +529,13 @@ export function paneRowParts(
         {treeRow(
           pos,
           r.type === 'finding' ? null : <Text> </Text>,
-          settledContent(rowTitle(r, look), state, undo, mark, closedTitleColor(r.id, state)),
+          settledContent(
+            terminalSettledTitle(rowTitle(r, look), listColumns, r.type !== 'finding'),
+            state,
+            undo,
+            mark,
+            closedTitleColor(r.id, state),
+          ),
         )}
       </Box>
     )

@@ -32,6 +32,13 @@ export function cutTitle(title: string, room: number): string {
   return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}…`
 }
 
+/** A settled row's title cut at a word (`cutLine`) to `room` cells, but never below `MARKED_TITLE_CELLS`, as every look cuts it. */
+export function cutSettledTitle(title: string, room: number): string {
+  const cells = Math.max(MARKED_TITLE_CELLS, room)
+
+  return cutLine(title, text => cellWidth(text) <= cells)
+}
+
 export function spread(left: string, right: string, width: number): string {
   const gap = width - visibleLength(left) - visibleLength(right)
 

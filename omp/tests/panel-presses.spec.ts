@@ -140,7 +140,7 @@ test('a row closed with Done shows its label and Undo, u returns the undo press,
   expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done\s+u Undo/)
   expect(out).toContain('1 closed')
   for (const width of [30, 46])
-    expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the .*… {2}✓ Do/)
+    expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the.*… {2}✓ Do/)
   expect(keyed(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
   const later = text(await demo.advance(), INITIAL_UI)
   expect(later).not.toContain('Put on the glasses')

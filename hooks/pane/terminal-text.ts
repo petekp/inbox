@@ -1,5 +1,6 @@
 import { desktopLines, desktopTextPt } from './desktop-metrics'
-import { cutAtWord, cutForEllipsis } from '../../core/domain/text'
+import { cellWidth, cutAtWord, cutForEllipsis, cutLine } from '../../core/domain/text'
+import { ROW_COLUMNS } from './pane-sizes'
 import { DOT } from '../../core/view/rows'
 import { parseInline, type Span } from '../../core/view/inline'
 import type { NameLevel } from '../../core/view/status-page-parts'
@@ -223,15 +224,26 @@ export function partedLines(parts: string[], fits: (text: string) => boolean): s
 }
 
 /**
- * A settled row's title and result label as `fits` measures a line. Every look cuts a settled title to one line, so the
- * list does not jump when the row folds into the one-line Closed fold. The label, cut to one line, follows
- * `statusAfterTitle`.
+ * A settled row's title and result label as `fits` measures a line. Every look cuts a settled title to one line at a
+ * word (`cutLine`), so the list does not jump when the row folds into the one-line Closed fold. The label, cut to one
+ * line, follows `statusAfterTitle`.
  */
 export function settledTitleLine(title: string, label: string, fits: (text: string) => boolean) {
-  const cut = (text: string) => (fits(text) ? text : `${cutForEllipsis(text, fits)}…`)
-  const shown = cut(title)
+  const shown = cutLine(title, fits)
+  const cutLabel = fits(label) ? label : `${cutForEllipsis(label, fits)}…`
 
-  return { title: shown, after: statusAfterTitle(`${DOT}${cut(label)}`, shown, fits) }
+  return { title: shown, after: statusAfterTitle(`${DOT}${cutLabel}`, shown, fits) }
+}
+
+/**
+ * A terminal settled row's title cut at a word to one line (`cutLine`): the cells right of its mark, or of its tree
+ * arm on a row with no mark, less the cell its row keeps at the right edge.
+ */
+export function terminalSettledTitle(title: string, listColumns: number, hasMark: boolean): string {
+  const { handleAt, textAt } = ROW_COLUMNS.tree
+  const cells = listColumns - 1 - (hasMark ? textAt : handleAt)
+
+  return cutLine(title, text => cellWidth(text) <= cells)
 }
 
 /** A Status name or line as one span at its level: plain, muted or faint, on the selection color when `isOnSelection`. */

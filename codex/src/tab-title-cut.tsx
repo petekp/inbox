@@ -37,6 +37,68 @@ function cutTitleOf(el: HTMLElement, title: string): string | null {
 }
 
 /**
+ * The title cut at a word to fit one line `width` px wide (`cutLine`), or null when it fits whole. It tries each cut in
+ * a hidden copy of `el` beside it, so the copy takes the same rules, and drops the copy after.
+ */
+function oneLineCutOf(el: HTMLElement, title: string, width: number): string | null {
+  const copy = el.cloneNode(true) as HTMLElement
+  copy.style.cssText = `position: absolute; visibility: hidden; margin-left: 0; padding-left: 0; text-indent: 0; max-width: none; overflow: hidden; width: ${width}px`
+  const text = copy.querySelector<HTMLElement>('.title-tint') ?? copy
+  el.after(copy)
+  const cut = cutLine(title, shown => {
+    text.textContent = shown
+
+    return copy.scrollWidth <= copy.clientWidth + 0.5
+  })
+  copy.remove()
+
+  return cut === title ? null : cut
+}
+
+/**
+ * A settled row's title part, tinted, and cut at a word to one line, as every look cuts it. The room is its `.parted`
+ * line's width less the first part's separator space. It is read from the line, not the part, since a cut title
+ * narrows the part. Until the first measure, CSS truncates the title.
+ */
+export function SettledTitlePart({
+  title,
+  tint,
+  tone,
+}: {
+  title: string
+  tint: NewRow | undefined
+  tone: Parameters<typeof TitleTint>[0]['tone']
+}) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [cut, setCut] = useState<string | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    const line = el?.parentElement
+    if (!el || !line) return
+    let width = -1
+    const fit = () => {
+      const now = line.getBoundingClientRect().width - parseFloat(getComputedStyle(el).marginLeft)
+      if (Math.abs(now - width) < 0.5) return
+      width = now
+      setCut(oneLineCutOf(el, title, now))
+    }
+    fit()
+    const watch = new ResizeObserver(fit)
+    watch.observe(line)
+
+    return () => watch.disconnect()
+  }, [title])
+
+  return (
+    <span ref={ref} class="part what">
+      <TitleTint row={tint} tone={tone}>
+        {cut ?? title}
+      </TitleTint>
+    </span>
+  )
+}
+
+/**
  * A row's title part: its lead and its tinted title. Where `isClamped`, the closed row's form, a title longer than the
  * clamp's lines is cut at a word at the end of its last line, as every look cuts it, and cut again when the part's
  * width changes. Until the first measure, the clamp cuts it.

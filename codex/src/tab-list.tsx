@@ -38,7 +38,7 @@ import {
   UndoPlace,
 } from './tab-parts'
 import { TitleTint } from './tab-title-tint'
-import { TitlePart } from './tab-title-cut'
+import { SettledTitlePart, TitlePart } from './tab-title-cut'
 import { StatusLines, statusLinesOf, statusMotion, type StatusLine } from './tab-status-part'
 import { Sep } from './tab-parted'
 
@@ -405,11 +405,7 @@ function SettledView({ settled: r, wasOpen }: { settled: RowView; wasOpen: boole
       <div class="content">
         <div class="settled-head">
           <div class="settled-line parted">
-            <span class="part what">
-              <TitleTint row={clock} tone={tone}>
-                {r.title}
-              </TitleTint>
-            </span>
+            <SettledTitlePart title={r.title} tint={clock} tone={tone} />
             <span class="part settled-result">
               <Sep />
               <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>

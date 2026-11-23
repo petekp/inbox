@@ -14,7 +14,7 @@ import type { ResultMark } from '../../core/view/rows'
 import { askTreeLines } from './panel-ask-tree'
 import { AGENT, LEAD_CELLS, focusOf, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
-import { cutTitle, fit, indented, spread, titleLines, visibleLength, wrapText } from './panel-text'
+import { cutSettledTitle, cutTitle, fit, indented, spread, titleLines, visibleLength, wrapText } from './panel-text'
 import type { PanelScreen, PanelUi, Style, Tone } from './panel'
 
 /** The tint a row's title, lead and mark take, at its strength now. */
@@ -239,8 +239,9 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     isRowLine && cellWidth(line.title) + visibleLength(after) > titleRoom
       ? titleLines(line.title, titleRoom, room - indent - 1, isOpen ? Infinity : COLLAPSED_TITLE_LINES)
       : null
+  const cutMarked = line.settled ? cutSettledTitle : cutTitle
   const shownTitle = line.mark
-    ? cutTitle(line.title, titleRoom - visibleLength(status) - visibleLength(after))
+    ? cutMarked(line.title, titleRoom - visibleLength(status) - visibleLength(after))
     : line.title
   const first = wrapped
     ? spread(`${head}${paintTitle(wrapped[0]!)}`, `${age} `, width)
