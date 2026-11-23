@@ -12,6 +12,8 @@
   --raised: color-mix(in srgb, var(--text) 9%, var(--bg));
   --selected: color-mix(in srgb, var(--text) 6%, var(--bg));
   --age: color-mix(in srgb, var(--muted) 90%, var(--bg));
+  /* 3:1 on Codex's light colors, FAINT_TEXT_CONTRAST in core/view/tones.ts. */
+  --faint: color-mix(in srgb, var(--muted) 95%, var(--bg));
   --hover: color-mix(in srgb, var(--key) 14%, transparent);
   --soft: color-mix(in oklab, var(--text) 8%, transparent);
   --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);
@@ -29,6 +31,8 @@
     --raised: color-mix(in srgb, var(--text) 11%, var(--bg));
     --selected: color-mix(in srgb, var(--text) 8%, var(--bg));
     --age: color-mix(in srgb, var(--muted) 85%, var(--bg));
+    /* 3:1 on Codex's dark colors, FAINT_TEXT_CONTRAST in core/view/tones.ts. */
+    --faint: color-mix(in srgb, var(--muted) 51%, var(--bg));
     --soft: color-mix(in oklab, var(--text) 12%, transparent);
     --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);
   }
@@ -39,6 +43,7 @@
   --raised: color-mix(in srgb, var(--text) 11%, var(--bg));
   --selected: color-mix(in srgb, var(--text) 8%, var(--bg));
   --age: color-mix(in srgb, var(--muted) 85%, var(--bg));
+  --faint: color-mix(in srgb, var(--muted) 51%, var(--bg));
   --soft: color-mix(in oklab, var(--text) 12%, transparent);
   --soft-hover: color-mix(in oklab, var(--text) 14%, transparent);
 }
@@ -81,6 +86,9 @@ button {
 }
 .muted {
   color: var(--muted);
+}
+.faint {
+  color: var(--faint);
 }
 .tone-needsYou {
   color: var(--needs-you);

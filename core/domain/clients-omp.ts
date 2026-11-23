@@ -99,6 +99,11 @@ export const OMP: Client = {
     'status-goal': { kind: 'full' },
     'status-done-fold': { kind: 'full' },
     'status-named-fold': { kind: 'full' },
+    'status-faint-text': {
+      kind: 'different',
+      reason:
+        "omp draws muted text with the terminal's dim attribute, which terminals draw at about half strength, near the faint level's 3:1. So faint text there is dim too.",
+    },
     'status-parent-fold': { kind: 'full' },
     'seen-on-screen': { kind: 'full' },
     'status-idle-age': { kind: 'full' },

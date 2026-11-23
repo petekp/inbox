@@ -159,6 +159,7 @@ export const CODEX: Client = {
         'A done fold takes clicks only, as View does: the Codex Status has no row selection and is used by clicking.',
     },
     'status-named-fold': { kind: 'full' },
+    'status-faint-text': { kind: 'full' },
     'status-parent-fold': {
       kind: 'different',
       reason:

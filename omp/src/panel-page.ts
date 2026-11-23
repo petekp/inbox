@@ -2,7 +2,7 @@ import { cellWidth, cutForEllipsis } from '../../core/domain/text'
 import { statusKeyPlan } from '../../core/view/status-keys'
 import type { StatusKeyTarget } from '../../core/view/status-keys'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, nameBeforeStall, STALL_GAP } from '../../core/view/status-page-parts'
+import { mergedLine, nameBeforeStall, nameLevelOf, STALL_GAP } from '../../core/view/status-page-parts'
 import type { StatusBranch, StatusRow, StatusStall } from '../../core/view/status-page'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
@@ -185,7 +185,8 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
     const mark = paintMark(row, now, s)
     const chevron = foldChevron(row, d, isSelected)
     const isFolded = isParentCollapsed(row, collapsedIn(d.screen.view))
-    const out = pageLine(d, at, mark, row.name, chevron && isSelected ? s.bold : t => t, {
+    const quiet = nameLevelOf(row, 'plain') === 'plain' ? (t: string) => t : s.dim
+    const out = pageLine(d, at, mark, row.name, t => quiet(chevron && isSelected ? s.bold(t) : t), {
       stall: row.stall,
       waitsOn: row.waitsOn,
       text: row.text,

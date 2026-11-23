@@ -88,6 +88,11 @@ export const CLAUDE_CODE: Client = {
     'status-goal': { kind: 'full' },
     'status-done-fold': { kind: 'full' },
     'status-named-fold': { kind: 'full' },
+    'status-faint-text': {
+      kind: 'different',
+      reason:
+        "Desktop draws faint text in one translucent color for both of the app's themes, at 3:1 on each. The ANSI themes, and a theme the mod does not know, draw it in the muted theme key.",
+    },
     'status-parent-fold': { kind: 'full' },
     'seen-on-screen': { kind: 'full' },
     'status-idle-age': { kind: 'full' },
