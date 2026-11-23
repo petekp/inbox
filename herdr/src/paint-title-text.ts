@@ -3,7 +3,7 @@ import type { Color, Element } from 'gpui-kit'
 import { isOpenRow } from './blocks'
 import type { RowBlock } from './blocks'
 import type { Paint } from './paint-theme'
-import { CLIPPED_HEIGHT, cutTitleOf, shortTitleOf, titleCopiesOf } from './title-cut'
+import { CLIPPED_HEIGHT, cutTitleOf, oneLineTitleOf, shortTitleOf, titleCopiesOf, wrappedTitleOf } from './title-cut'
 import type { ShortTitle } from './title-cut'
 import type { TitleFade } from '../../core/view/row-motion'
 
@@ -24,15 +24,16 @@ export function titleTextEl(r: RowBlock, p: Paint, color: Color): Element {
     .relative()
     .text_color(color)
     .children(titleCopiesOf(r, p.heights).map(c => copyEl(c.key, c.text, p)))
-  if (g === null) return text.child(isOpenRow(r) ? div().child(r.title) : shortTitleEl(short))
+  const whole = div().child(wrappedTitleOf(r, p.heights))
+  if (g === null) return text.child(isOpenRow(r) ? whole : shortTitleEl(short))
   const form = (id: string, isShown: boolean, fade: TitleFade): Element =>
     div()
       .id(id)
       .opacity(isShown ? 1 : 0)
       .transition('opacity', { duration: fade.ms, delay: fade.delayMs, easing: 'ease-out' })
   const isCutTall = g.tallForm === 'cut'
-  const tall = isCutTall ? shortTitleEl(cutTitleOf(r, p.heights)) : div().child(r.title)
-  const shortForm = shortTitleEl(g.isShortOneLine ? { ...short, text: r.title, isOneLine: true } : short)
+  const tall = isCutTall ? shortTitleEl(cutTitleOf(r, p.heights)) : whole
+  const shortForm = shortTitleEl(g.isShortOneLine ? oneLineTitleOf(r, p.heights) : short)
 
   return text.child(form(`tall ${r.id}`, g.isTallShown, g.tall).child(tall)).child(
     div()
