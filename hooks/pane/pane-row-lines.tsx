@@ -350,6 +350,7 @@ export function paneRowLines({
       },
     }
   }
+  /** A selected row's title with its age beside it, on the selection. */
   const withSideAge = (row: Row, line: JSX.Element) =>
     isAgeInSide ? (
       <Box flexDirection="row">
@@ -357,7 +358,7 @@ export function paneRowLines({
           {line}
         </Box>
         <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end">
-          <Text color={pal.faint}>{sideAge(row)}</Text>
+          <Text color={pal.selectionFaint ?? pal.faint}>{sideAge(row)}</Text>
         </Box>
       </Box>
     ) : (
