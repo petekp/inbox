@@ -343,7 +343,7 @@ export function paneRowLines({
         muted: pal.muted,
         after: f ? (feedbackColor(f.tone) ?? null) : pal.muted,
         afterHover: f ? (feedbackColor(f.tone) ?? null) : pal.muted,
-        side: pal.age,
+        side: pal.faint,
         hover: pal.raised,
         hoverText: pal.raisedText ?? null,
         pressed: pal.selection ?? pal.raised,
@@ -357,7 +357,7 @@ export function paneRowLines({
           {line}
         </Box>
         <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end">
-          <Text color={pal.age}>{sideAge(row)}</Text>
+          <Text color={pal.faint}>{sideAge(row)}</Text>
         </Box>
       </Box>
     ) : (

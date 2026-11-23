@@ -137,7 +137,7 @@ export function paneDesktopCard({
             padY: 0,
             padBelow: 0,
             mark: gutterMark(row),
-            side: <Text color={pal.age}>{sideAge(row)}</Text>,
+            side: <Text color={pal.faint}>{sideAge(row)}</Text>,
             tree: treeBox(`row-${row.id}-trunk`, 'down', 0),
             children: [
               title,

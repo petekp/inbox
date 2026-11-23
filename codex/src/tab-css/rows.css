@@ -3,6 +3,8 @@
 .row {
   --row-bg: var(--bg);
   --tree-line: color-mix(in srgb, var(--text) 32%, var(--row-bg));
+  /* Faint text mixed into the row's background, as the tree line is, so a selected row's age reads at 3:1 on it. */
+  --row-faint: color-mix(in srgb, var(--muted) var(--faint-share), var(--row-bg));
   display: grid;
   grid-template-columns: calc(var(--text-x) - var(--mark-x)) minmax(0, 1fr) auto;
   padding: var(--row-pad) var(--edge) var(--row-pad) var(--mark-x);
@@ -52,7 +54,7 @@
 .side {
   align-self: start;
   margin-left: var(--item-gap);
-  color: var(--age);
+  color: var(--row-faint, var(--faint));
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   text-align: right;

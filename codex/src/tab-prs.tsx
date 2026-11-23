@@ -265,7 +265,7 @@ function PrLine({ line }: { line: PressLine }) {
   return (
     <div class={line.tone === 'muted' ? 'pr-last muted' : 'pr-last'}>
       {line.tone === 'muted' ? line.text : <span class={`tone-${line.tone}`}>{line.text}</span>}
-      {line.age ? <span class="muted">{line.age}</span> : null}
+      {line.age ? <span class="age">{line.age}</span> : null}
     </div>
   )
 }

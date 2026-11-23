@@ -41,6 +41,8 @@ type Palette = {
   muted: string
   /** The faint text level, a step below `muted`: `core/view/tones.ts:faintOver`. */
   faint: string
+  /** Faint text on `selection`, as `selectionLine` is a connector there: `core/view/tones.ts:faintOver` over it. */
+  selectionFaint?: string
   age: string
   key: string
   line: string
@@ -76,6 +78,7 @@ const DARK_PALETTE: Palette = {
   key: DARK_TONES.key,
   line: '#505050',
   selectionLine: '#5a6f88',
+  selectionFaint: faintOver(MUTED_TEXT.dark, '#3b4654'),
   divider: '#444444',
   tone: DARK_TONES,
   mark: { ...DARK_TONES, working: WORKING, error: DARK_TONES.errorMark },
@@ -94,6 +97,7 @@ const LIGHT_PALETTE: Palette = {
   key: LIGHT_TONES.key,
   line: '#afafaf',
   selectionLine: '#7490b8',
+  selectionFaint: faintOver(MUTED_TEXT.light, '#b4d5ff'),
   divider: '#c8c8c8',
   tone: LIGHT_TONES,
   mark: { ...LIGHT_TONES, working: WORKING },
