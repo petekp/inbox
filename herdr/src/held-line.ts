@@ -18,10 +18,7 @@ export type LinesAbove = ReadonlyMap<string, LineAbove | null>
 
 export const NO_LINES_ABOVE: LinesAbove = new Map()
 
-/**
- * Where a row's held line is kept: a settled row apart from its open form. Undo takes the place of a settled row's
- * buttons, so the row holds nothing from its open form, and its box shrinks to the settled height as it settles.
- */
+/** Undo takes the place of a settled row's buttons, so a settled row holds nothing from its open form. */
 const heldKey = (r: RowBlock): string => (r.settled ? `settled ${r.id}` : r.id)
 
 const hasActions = (r: RowBlock): boolean => r.buttons.length > 0 || r.field !== null
