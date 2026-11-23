@@ -10,8 +10,11 @@ const TITLE = '.title-part, .what'
 /** An opening row's Holds up line in its closed form, which shows while its row opens from the closed form. */
 const CLOSED_HOLDS_UP = '.content > .holds-up'
 
+/** A row's panel: its body and buttons. */
+const PANEL = '.panel'
+
 /** The parts the opening path fades on its own: an opening row's panel, and its Holds up line. */
-const OWN_FADES = `.panel, ${CLOSED_HOLDS_UP}`
+const OWN_FADES = `${PANEL}, ${CLOSED_HOLDS_UP}`
 
 /** Whether an entry draws the form its row leaves over the form it takes. */
 export const swapsForm = (el: HTMLElement): boolean => el.querySelector(LEFT) !== null
@@ -38,14 +41,15 @@ function partsOf(row: Element, skip: string | null): HTMLElement[] {
  * fades in over `LEAVE_FADE_MS`, so the words both titles share never dim, and its other parts fade in over
  * `ENTER_FADE_MS` once the height starts to move. A part below the height the row holds waits until its space is
  * nearly open, so the moving edge never cuts it. A row Undo opens from its settled form never drew its Holds up line
- * in the closed form, so that form stays hidden and the line comes with the panel.
+ * in the closed form, so that form stays hidden and the line comes with the panel. The panel of the form it leaves
+ * fades out from `panelShown`, the opacity the row's panel showed before this draw, as when the row was still opening.
  */
-export function fadeForms(el: HTMLElement) {
+export function fadeForms(el: HTMLElement, panelShown: number) {
   const left = el.querySelector<HTMLElement>(LEFT)
   const taken = el.firstElementChild
   if (!left || !taken) return
   const { taken: titleIn, left: titleOut } = titleFades(false)
-  for (const part of partsOf(left, null)) fade(part, 1, 0, LEAVE_FADE_MS, true)
+  for (const part of partsOf(left, null)) fade(part, part.matches(PANEL) ? panelShown : 1, 0, LEAVE_FADE_MS, true)
   for (const title of left.querySelectorAll<HTMLElement>(TITLE))
     fade(title, 1, 0, titleOut.ms, true, false, titleOut.delayMs)
   const g = glides.get(el)

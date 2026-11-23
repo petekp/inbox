@@ -41,7 +41,13 @@ import { showConnectors } from './tab-connectors'
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
 /** An element's height before a draw, and the top of the part it draws open, a row's panel or a PR block's body. */
-type Drawn = { el: HTMLElement; height: number; openTop: number | null; openPart: Element | null }
+type Drawn = {
+  el: HTMLElement
+  height: number
+  openTop: number | null
+  openPart: Element | null
+  openShown: number
+}
 type TabWidth = { el: HTMLElement; width: number; isShown: boolean }
 type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; fieldKeys: Set<Element> }
 
@@ -61,6 +67,7 @@ export function measure(): Drawing {
       height: el.getBoundingClientRect().height,
       openTop: part ? topIn(el, part) : null,
       openPart: part,
+      openShown: part instanceof HTMLElement ? opacityOf(part) : 1,
     })
   }
   const tabWidths = new Map<string, TabWidth>()
@@ -234,7 +241,7 @@ function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   moveRow(el, was, changed, carried, closeWait)
   const wait = Math.max(tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0, closeWait)
   if (state === 'opening' && (held || changed.has(key))) openTitle(el, wait, held)
-  if (changed.has(key) && swapsForm(el)) fadeForms(el)
+  if (changed.has(key) && swapsForm(el)) fadeForms(el, was?.openShown ?? 1)
 }
 
 function moveRow(
@@ -336,7 +343,8 @@ function isInsideLeaving(el: HTMLElement): boolean {
  * once and holds nothing. A turned-back panel that shows faint while its space is still short of open holds nothing
  * either, and fades out in the steps of `faintCloseFades` while the height shrinks. A settling PR
  * block's dismissed head replaces the line above its body, so the body keeps the top it had at `openTop` while the
- * height shrinks over it. A settling row draws only its settled line.
+ * height shrinks over it. A settling row draws its settled line, under the form it leaves while that form fades
+ * (`fadeForms`).
  */
 function collapse(
   el: HTMLElement,

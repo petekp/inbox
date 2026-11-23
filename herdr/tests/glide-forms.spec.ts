@@ -300,21 +300,49 @@ test('a row that settles or comes back through Undo fades its mark and every lin
   const discussedDismissed = rowsWith(dismissedSession('d13', NOW), 'd15')
   const treeOpen = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
   const treeDismissed = tabBlocks(withDismissedAsk('d11', NOW), uiOn('needsYou', { selected: 'd12' }))
-  const cases = [
-    ['settle', open, dismissed],
-    ['undo to open', dismissed, open],
-    ['undo to closed', dismissed, closed],
-    ['settle from ✓ Discussed', discussedOpen, discussedDismissed],
-    ['settle with Holds up and context', treeOpen, treeDismissed],
-    ['undo to Holds up and context', treeDismissed, treeOpen],
-  ] as const
-  for (const [name, from, to] of cases) {
-    const rows = [...from, ...to].flatMap(b => (b.kind === 'row' ? [b.id] : []))
-    const steps: Step[] = [
-      [0, [...from]],
-      [0, [...to]],
-    ]
+  const cases: [string, Step[]][] = [
+    ['settle', [[0, dismissed]]],
+    ['undo to open', [[0, open]]],
+    ['undo to closed', [[0, closed]]],
+    [
+      'undo to closed, then opened',
+      [
+        [0, closed],
+        [32, open, 'input'],
+      ],
+    ],
+    [
+      'settle turned back to open',
+      [
+        [0, dismissed],
+        [32, open],
+      ],
+    ],
+    [
+      'settle turned back to closed',
+      [
+        [0, dismissed],
+        [80, closed],
+      ],
+    ],
+    ['settle from ✓ Discussed', [[0, discussedDismissed]]],
+    ['settle with Holds up and context', [[0, treeDismissed]]],
+    ['undo to Holds up and context', [[0, treeOpen]]],
+  ]
+  const startOf = (name: string) =>
+    name.startsWith('undo to Holds')
+      ? treeDismissed
+      : name.startsWith('undo')
+        ? dismissed
+        : name.includes('✓')
+          ? discussedOpen
+          : name.includes('Holds up')
+            ? treeOpen
+            : open
+  for (const [name, moves] of cases) {
+    const steps: Step[] = [[0, [...startOf(name)]], ...moves]
+    const rows = steps.flatMap(([, blocks]) => blocks.flatMap(b => (b.kind === 'row' ? [b.id] : [])))
     const cuts = framesOf(steps, 900).cuts.filter(c => c.at >= 0)
-    expect({ name, pops: popsOf(steps, rows), cuts }).toEqual({ name, pops: [], cuts: [] })
+    expect({ name, pops: popsOf(steps, [...new Set(rows)]), cuts }).toEqual({ name, pops: [], cuts: [] })
   }
 })

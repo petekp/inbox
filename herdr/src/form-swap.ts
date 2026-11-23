@@ -1,4 +1,5 @@
 import { ENTER_FADE_MS, LEAVE_FADE_MS } from '../../core/view/row-motion'
+import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import { NEXT_FRAME_MS } from './block-glide'
 
@@ -6,8 +7,9 @@ import { NEXT_FRAME_MS } from './block-glide'
  * A row's change between its settled form and another, as it settles or as Undo brings it back. `from` is the form it
  * leaves, as last drawn. Its lines under the title, and its mark when `isMarkSwapped` says the two forms' marks differ,
  * fade out from the draw after `since`, while the row's height holds, until `showsAt`. `isSettled` is the form the row
- * goes to. `inAt` is the first draw of that form's lines, which show no opacity there and fade in from the next draw. It is null until the row draws that form, which a row the
- * selection opens does only once the panel it waits for has faded.
+ * goes to. `inAt` is the first draw of that form's lines, which show no opacity there and fade in from the next draw.
+ * It is null until the row draws that form, which a row the selection opens does only once the panel it waits for has
+ * faded.
  */
 export type FormSwap = {
   from: RowBlock
@@ -37,14 +39,14 @@ export function stepSwap(last: FormSwap | null, was: Block | undefined, b: Block
   const live = last !== null && now < endsAt(last) ? last : null
   const isSettled = isSettledRow(b)
   if (isSettled === (live ? live.isSettled : isSettledRow(was))) return live
-  const isFadingOut = live?.inAt === null
-  if (live && isFadingOut && isSettledRow(live.from) === isSettled)
-    return { ...live, isSettled, showsAt: now, inAt: now - NEXT_FRAME_MS }
-  const from = live && isFadingOut ? live.from : was
+  if (live?.inAt === null) {
+    const isBack = isSettledRow(live.from) === isSettled && isOpenRow(live.from) === isOpenRow(b)
+    if (isBack) return { ...live, isSettled, showsAt: now, inAt: now - NEXT_FRAME_MS }
+    return { ...live, isSettled, isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text }
+  }
+  const isMarkSwapped = was.mark?.text !== b.mark?.text
 
-  const isMarkSwapped = from.mark?.text !== b.mark?.text
-
-  return { from, isSettled, isMarkSwapped, since: now, showsAt: now + NEXT_FRAME_MS + LEAVE_FADE_MS, inAt: null }
+  return { from: was, isSettled, isMarkSwapped, since: now, showsAt: now + NEXT_FRAME_MS + LEAVE_FADE_MS, inAt: null }
 }
 
 /** The change with its new form's first draw set, once the row draws that form, `drawn`, and its old lines have faded. */

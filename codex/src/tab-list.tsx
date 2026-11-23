@@ -12,7 +12,7 @@ import { newRowsOf } from '../../core/view/ui-controller-tabs'
 import type { InputKind } from '../../core/view/ui-controller-types'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
-import { drawsFormLeft, drawsPanel, stepRow } from '../../core/view/row-motion'
+import { LEAVE_FADE_MS, drawsFormLeft, drawsPanel, stepRow } from '../../core/view/row-motion'
 import type { RowTarget, RowTrack } from '../../core/view/row-motion'
 import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
 import type { Key, Row, Entry, Lists } from './tab-state'
@@ -119,8 +119,8 @@ export function stepLists(v: View): {
 
 /**
  * The entry of the form a row leaves as it changes between its settled form and another, `last`, the entry the tab
- * drew before `x`, while `drawsFormLeft` holds. A change turned back while the row still draws a form it leaves draws
- * its new form at once.
+ * drew before `x`, while `drawsFormLeft` holds. A change turned back while the form it leaves still fades out draws its
+ * new form at once.
  */
 function formLeftOf(
   before: { track: RowTrack; left?: Entry } | undefined,
@@ -131,9 +131,10 @@ function formLeftOf(
 ): Entry | undefined {
   if (!drawsFormLeft(track, now)) return undefined
   if (before?.track === track) return before.left
+  const isLeftFading = before?.left !== undefined && now - before.track.since < LEAVE_FADE_MS
   const isFormChanged = last !== undefined && 'row' in last !== 'row' in x
 
-  return isFormChanged && !before?.left ? last : undefined
+  return isFormChanged && !isLeftFading ? last : undefined
 }
 
 const undo = (r: RowView, by: InputKind) => pressRow({ action: 'undo', id: r.id }, by)
