@@ -21,7 +21,7 @@ export const PRS_HIDDEN_REFRESH_MS = 10 * 60_000
 const NEW_PR_FETCH_MS = 15_000
 
 /** The tracked PRs no fetch has tried: those with no view and no `unread` entry. */
-function untriedPrs(s: Session): string[] {
+export function untriedPrs(s: Pick<Session, 'ledger' | 'prViews'>): string[] {
   const { views, unread = {} } = s.prViews
 
   return splitLinked(s.prViews, s.ledger).tracked.filter(ref => !(ref in views) && !(ref in unread))

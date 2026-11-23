@@ -62,7 +62,8 @@ Part of [the look map](../looks.md#files).
 | `codex/src/server.ts` | Codex host. The MCP server: `makeServer`, which takes `ServerDeps` and answers each JSON-RPC call. Its `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. |
 | `codex/src/background.ts` | Codex host. `makeBackground`, which tracks the work the server starts and does not wait for, such as a PR fetch's state update, so `settled` can wait for it. |
 | `codex/src/server-tools.ts` | Codex host. The tools and tab page the server lists, the tool fields of the last list it gave, and the readers of a call's session, turn and arguments. |
-| `codex/src/server-herdr.ts` | Codex host. `followCodexPresses`: in a Herdr app terminal, the MCP server watches the presses folder and applies the presses for the Codex sessions this terminal publishes. |
+| `codex/src/server-herdr.ts` | Codex host. `followCodexPresses`: in a Herdr app terminal, the MCP server watches the presses folder and applies the presses for the Codex sessions this terminal publishes. `followCodexSaves`: there it also watches the saved sessions this terminal publishes. |
+| `codex/src/server-pr-links.ts` | Codex host. `linkedPrReads`: reads the PRs when a saved state shows a PR on the tab that no fetch has tried, as after a hook linked one. |
 | `codex/src/clipboard.ts` | Codex host. Puts a copy press's text on the clipboard of the machine the server runs on, through `core/runtime/clipboard-commands.ts`, since the tab's frame gets no clipboard permission. |
 | `codex/src/server-host.ts` | Codex host. The bindings `core/runtime/session-host.ts` runs on for presses, opening, sending a press's message and the session's background PR fetch. Also the tab view each answer carries. |
 | `codex/src/app-steer.ts` | Codex host. Puts a press's message into a turn the ChatGPT app runs, through the app's IPC socket. The only code that speaks that socket. |

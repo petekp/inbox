@@ -189,3 +189,48 @@ test('Clear merged and closed unlinks the merged and closed PRs and settles each
   assert.deepEqual(r.result.structuredContent.view.prs.clear, [])
   assert.deepEqual((await readState(dir, 's1')).ledger.prs, [d.prViews.branchRef])
 })
+
+test('a save another process makes that links a PR reads it before any view, even after a server save that already holds the link, while a first save with no PR, a save that adds none and the server’s own order_prs save read nothing more', async () => {
+  let heard: (id: string) => void = () => undefined
+  const { dir, calls, call } = await prServer(ghAnswer, () => 100, {
+    onWrite: async () => undefined,
+    followSaves: given => {
+      heard = given
+    },
+  })
+  const queries = () => calls.filter(args => args[0] === 'gh' && args[2] === 'graphql').length
+  heard('s1')
+  await call.settled()
+  assert.equal(queries(), 0)
+
+  await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: ['acme/app#7'] } }))
+  await call('record', { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' })
+  heard('s1')
+  await call.settled()
+  assert.equal(queries(), 1)
+  assert.deepEqual(Object.keys((await readState(dir, 's1')).prViews.views), ['acme/app#7'])
+
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo2' }))
+  heard('s1')
+  await call.settled()
+  assert.equal(queries(), 1)
+
+  await call('order_prs', { repo: 'acme/app', numbers: [9], label: 'Merge first', why: 'It is small.' })
+  heard('s1')
+  await call.settled()
+  assert.equal(queries(), 2)
+})
+
+test('a session first heard of after a restart reads its PRs when one on its tab has no view yet', async () => {
+  let heard: (id: string) => void = () => undefined
+  const { dir, calls, call } = await prServer(ghAnswer, () => 100, {
+    followSaves: given => {
+      heard = given
+    },
+  })
+  await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: ['acme/app#7'] } }))
+  heard('s1')
+  await call.settled()
+  assert.equal(calls.filter(args => args[0] === 'gh' && args[2] === 'graphql').length, 1)
+  assert.deepEqual(Object.keys((await readState(dir, 's1')).prViews.views), ['acme/app#7'])
+})
