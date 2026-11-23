@@ -56,5 +56,5 @@ test('faint text reads at the faint contrast, under muted text, and is muted whe
     expect(ratio >= FAINT_TEXT_CONTRAST && ratio < FAINT_TEXT_CONTRAST + 0.1).toBe(true)
     expect(ratio < contrast(MUTED_TEXT[mode], THEME_BACKGROUND[mode])).toBe(true)
   }
-  expect(faintOver('#8e8f90', '#ffffff')).toBe('#8e8f90')
+  expect(faintOver('#999999', '#ffffff')).toBe('#999999')
 })

@@ -132,8 +132,8 @@ function contrastRatio(a: string, b: string): number {
   return (lighter + 0.05) / (darker + 0.05)
 }
 
-/** The contrast faint text reads at over its background: a step below muted text, above the 3:1 floor. */
-export const FAINT_TEXT_CONTRAST = 3.5
+/** The contrast faint text reads at over its background: a step below muted text, at the 3:1 floor. */
+export const FAINT_TEXT_CONTRAST = 3
 
 /**
  * The faint text level over `under`: `muted` faded toward `under` until it reads at `FAINT_TEXT_CONTRAST`, or `muted`
