@@ -97,6 +97,13 @@ let heightWaitMs = 0
 const closeHolds = new Map<string, number>()
 let closeWaitMs = 0
 
+/**
+ * When this draw stepped its rows, on the clock of their tracks' `since`. A row whose form it leaves still fades
+ * from an earlier draw counts its wait on that clock, so a fresh fade waits exactly `LEAVE_FADE_MS`, however long
+ * the draw took.
+ */
+let drawnAt = 0
+
 /** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. */
 function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
@@ -138,7 +145,8 @@ function fadeAway(el: HTMLElement, from: SpringState, slide: boolean, to = 0) {
  * Starts each element's move after a draw. Children go first: an element with a gliding element inside it follows
  * that glide at its own height, unless it moves itself, so the two never pull against each other.
  */
-export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
+export function animateDraw(before: Drawing, changed: ReadonlySet<string>, stepAt: number) {
+  drawnAt = stepAt
   if (reducedMotion.matches) {
     entering.clear()
     return
@@ -176,7 +184,7 @@ function closeWaitOf(els: HTMLElement[], changed: ReadonlySet<string>): number {
     if (state === 'opening') closeHolds.delete(key)
     const isFaint = state === 'closing' && isOpeningShort(el, springOf(el, el.getBoundingClientRect().height))
     if (state === 'closing' && !isFaint && shownPanel(el)) closeHolds.set(key, now + LEAVE_FADE_MS)
-    if (track && swapsForm(el)) closeHolds.set(key, track.since + LEAVE_FADE_MS)
+    if (track && swapsForm(el)) closeHolds.set(key, now + track.since + LEAVE_FADE_MS - drawnAt)
   }
   for (const [key, until] of closeHolds) if (until <= now) closeHolds.delete(key)
 
@@ -321,7 +329,7 @@ function startState(el: HTMLElement, track: RowTrack, from: SpringState, isFresh
         from,
         state,
         openTop,
-        Math.max(tabState.isReadDraw ? heightWaitMs : 0, swapsForm(el) ? track.since + LEAVE_FADE_MS - Date.now() : 0),
+        Math.max(tabState.isReadDraw ? heightWaitMs : 0, swapsForm(el) ? track.since + LEAVE_FADE_MS - drawnAt : 0),
       )
       return true
     case 'leaving':
