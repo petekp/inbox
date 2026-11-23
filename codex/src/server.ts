@@ -22,6 +22,7 @@ import type { OnWrite } from './host'
 import { makeCatchUpOnOpen } from './server-catch-up'
 import { makeDemo } from './server-demo'
 import { makeSessionHost } from './server-host'
+import { linkedPrReads } from './server-pr-links'
 import {
   holdsOf,
   listedToolFields,
@@ -81,6 +82,11 @@ export type ServerDeps = {
   onWrite?: OnWrite
   /** Starts applying the presses the Herdr look writes, with `apply`. */
   followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>) => void
+  /**
+   * Starts calling `heard` with each session whose saved state another process may have changed. The server then reads
+   * the PRs when the save put a PR on the tab. Only the saves that go through `onWrite` count as the server's own.
+   */
+  followSaves?: (heard: (sessionId: string) => void) => void
   /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
   herdrAsk?: CodexHerdrAsk
   /** The delegate session Codex runs as, as `core/remote/hc-terminals.ts:delegateSession` reads it. Without it, none. */
@@ -99,7 +105,10 @@ export type PressReply = {
   delivery?: 'unconfirmed'
 }
 
-/** Answers one message. `settled` resolves once the PR fetches, their state updates, the prune and the delegate check it started have ended. */
+/**
+ * Answers one message. `settled` resolves once the PR fetches, their state updates, the prune, the delegate check and
+ * the reads of heard saves it started have ended.
+ */
 export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) & {
   settled(): Promise<void>
   companion: CompanionHandler
@@ -107,9 +116,17 @@ export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) &
 
 export function makeServer(given: ServerDeps): Server {
   const { onWrite } = given
+  const { dir, now } = given
+  const linkedPrs = linkedPrReads(
+    id => readState(dir, id),
+    id => fetchPrsNow(id),
+  )
   // Each report reads the newest state itself, so a tool call or press answers without waiting on `hc label`.
-  const deps = { ...given, onWrite: onWrite && (async (s: SessionState) => void onWrite(s).catch(() => undefined)) }
-  const { dir, now } = deps
+  const reported = (s: SessionState) => {
+    linkedPrs.saved(s)
+    void onWrite?.(s).catch(() => undefined)
+  }
+  const deps = { ...given, onWrite: onWrite && (async (s: SessionState) => reported(s)) }
   const prunedFor = new Set<string>()
   /** Each chat's newest turn in its rollout, as its last view read it. */
   const newestTurns = new Map<string, string>()
@@ -127,6 +144,7 @@ export function makeServer(given: ServerDeps): Server {
   )
   const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)
   deps.followHerdrPresses?.(onHerdrFile)
+  deps.followSaves?.(id => background.track(linkedPrs.heard(id)))
 
   const isHerdrCheckDue = herdrCheckGate()
 

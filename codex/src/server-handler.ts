@@ -16,7 +16,7 @@ import { listHooksTrust } from './hook-trust'
 import { herdrOnWrite } from './host'
 import { eachOnWrite, registryOnWrite } from './registry'
 import { herdrLog } from './herdr-log'
-import { codexHerdrAsk, followCodexPresses, startCodexInHerdrApp } from './server-herdr'
+import { codexHerdrAsk, followCodexPresses, followCodexSaves, startCodexInHerdrApp } from './server-herdr'
 import { COMPARE_PAGE_FILE } from '../../core/domain/press-messages'
 import { NEXT_BUILD_MARK } from '../../core/view/banners'
 import { delegateReader } from '../../core/remote/hc-terminals'
@@ -57,6 +57,21 @@ function followHerdrPresses(log: (text: string) => void) {
   }
 }
 
+/** Where the running handler keeps how to stop its watch on the saved sessions, so a reloaded handler stops the one before it. */
+const CODEX_SAVES = Symbol.for('inbox.codexSaves')
+
+function followSaves(dir: string, log: (text: string) => void) {
+  return (heard: (sessionId: string) => void) => {
+    const shared = globalThis as { [CODEX_SAVES]?: (() => void) | null }
+    shared[CODEX_SAVES]?.()
+    const stop = followCodexSaves(process.env, dir, heard, log)
+    shared[CODEX_SAVES] = stop
+    // Codex closes this process's input when it quits but can leave the process running, and a server left running
+    // would go on reading PRs for the next Codex in the same terminal.
+    process.stdin.once('end', () => stop?.())
+  }
+}
+
 export function createHandler(
   dir: string,
   loadError: () => string | null = () => null,
@@ -89,6 +104,7 @@ export function createHandler(
       registryOnWrite(process.env, dir, Date.now, process.ppid, log),
     ),
     followHerdrPresses: followHerdrPresses(log),
+    followSaves: followSaves(dir, log),
     herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
     delegate: delegateReader(herdrTarget(process.env), run),
     openCatchUp: startUpdate && {
