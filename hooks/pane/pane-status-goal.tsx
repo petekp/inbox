@@ -212,8 +212,9 @@ export function paneStatusGoal(
         ? fold
         : statusRowLine({ key: `status-${m.id}`, mark, content: [fold], isSelected: isSelected(m.id) })
     }
+    const isRowSelected = isSelected(m.id)
     const name = {
-      ...levelSpan(m.name, nameLevelOf(m, m.isMuted ? 'muted' : 'plain')),
+      ...levelSpan(m.name, nameLevelOf(m, m.isMuted ? 'muted' : 'plain'), isRowSelected),
       ...(m.isBold ? { bold: true as const } : {}),
     }
 
@@ -228,7 +229,7 @@ export function paneStatusGoal(
           ? parentName(m.id, name, stall, 0, { isCollapsed: isFolded, count: m.foldCount })
           : statusNameLine(`goal-${m.id}-name`, name, stall, 0),
         ...(x?.waitsOn ? [statusPageText(`goal-${m.id}-waits-on`, [{ text: x.waitsOn, isNeedsYou: true }], 0)] : []),
-        ...(m.text ? [statusPageText(`goal-${m.id}-text`, [levelSpan(m.text, textLevelOf(m))], 0)] : []),
+        ...(m.text ? [statusPageText(`goal-${m.id}-text`, [levelSpan(m.text, textLevelOf(m), isRowSelected)], 0)] : []),
         ...(x?.merged
           ? [
               statusPageText(
@@ -238,10 +239,12 @@ export function paneStatusGoal(
               ),
             ]
           : []),
-        ...(m.was ? [statusPageText(`goal-${m.id}-was`, [levelSpan(`${WAS_PREFIX}${m.was}`, WAS_LEVEL)], 0)] : []),
+        ...(m.was
+          ? [statusPageText(`goal-${m.id}-was`, [levelSpan(`${WAS_PREFIX}${m.was}`, WAS_LEVEL, isRowSelected)], 0)]
+          : []),
         ...keysLine({ id: m.id, keys: milestoneKeyPlan(m) }),
       ],
-      isSelected: isSelected(m.id),
+      isSelected: isRowSelected,
     })
 
     return x ? { ...line, tops: seenTops(x, milestonePad(m)) } : line

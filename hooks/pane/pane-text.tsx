@@ -37,7 +37,9 @@ export function paneText({ Text, pal }: Pick<PaneBase, 'Text' | 'pal'>) {
                 : span.isLinkAddress || span.isMuted
                   ? pal.muted
                   : span.isFaint
-                    ? pal.faint
+                    ? span.isOnSelection
+                      ? (pal.selectionFaint ?? pal.faint)
+                      : pal.faint
                     : span.code
                       ? 'permission'
                       : undefined
