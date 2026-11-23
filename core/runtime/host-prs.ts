@@ -29,7 +29,7 @@ function untriedPrs(s: Session): string[] {
 
 /**
  * True when a change put a PR on the PRs tab that it did not show before: one the session linked, or one the agent's
- * order ranks. The tab has no view of it, so a host reads the PRs at once rather than wait for `isPrFetchDue`.
+ * order ranks. A host then reads the PRs at once rather than wait for `isPrFetchDue`.
  */
 export function addsTabPr(before: Pick<Session, 'ledger'>, after: Pick<Session, 'ledger'>): boolean {
   const shown = new Set(tabPrs(before.ledger))

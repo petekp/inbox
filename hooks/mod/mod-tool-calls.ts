@@ -19,6 +19,8 @@ import { modDelegate } from './mod-herdr'
 import { modRecordMatches } from './mod-history'
 import type { Mod } from './mod-ports'
 import { linkPrs } from './mod-prs'
+import { isPrsTabShown } from './mod-drawn'
+import { addsTabPr } from '../../core/runtime/host-prs'
 import {
   askedCalls,
   callInput,
@@ -81,11 +83,14 @@ export async function runTool(
   ])
   const owner = currentOwner()
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
+  let addsPr = false
   await m.commit(owner, s => {
     const r = answerToolCall(s, tool, input, now, delegate, earlier)
     answer = r
+    addsPr = addsTabPr(s, r.state)
     return r.state
   })
+  if (addsPr) void m.fetchPrs(await isPrsTabShown(m))
   const { personLine } = answer
   if (personLine !== null && toolUseId)
     await m.atoms.personLines.update(lines =>

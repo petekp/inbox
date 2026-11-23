@@ -71,7 +71,7 @@ test('record, close and order_prs are registered with the shared schemas and sta
   expect(w.tools.get('record').parameters.properties.kind.enum).toEqual(['question', 'task', 'finding'])
 })
 
-test('an order_prs call reads the PRs it ranks while no panel shows the session, and an order of PRs already read reads none', async () => {
+test('an order_prs call reads the PRs it ranks while no panel shows the session, and an order of the same PRs reads none', async () => {
   createInbox(pi(), deps())
   const order = (numbers: number[]) =>
     w.tools
