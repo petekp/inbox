@@ -11266,12 +11266,16 @@ var withCollapses = (screen, ui) => ({
   ...screen,
   view: { ...screen.view, collapsed: collapsedOf(ui, screen.view) }
 });
+var PR_TAB_LINE_IDS = [PR_REFRESH_ID, CLEAR_FINISHED_ID, RANK_AGAIN_ID];
 var cursorOf = (ui) => isRowTab(ui.tab) ? ui.selection[ui.tab].id : ui.statusSelection;
 function withShared(before, shared) {
-  const cursor = cursorOf(shared);
   const isTabChanged = shared.tab !== before.tab;
+  const isStartedShowing = isTabChanged || shared.shownSince !== before.shownSince;
+  const isOnPrTabLine = PR_TAB_LINE_IDS.includes(shared.selection.prs.id ?? "");
+  const shown = isStartedShowing && shared.tab === "prs" && isOnPrTabLine ? { ...shared, selection: { ...shared.selection, prs: { id: null, index: -1, guard: null } } } : shared;
+  const cursor = cursorOf(shown);
   return {
-    ...shared,
+    ...shown,
     focus: before.focus?.rowId === cursor && !isTabChanged ? before.focus : null,
     resuming: before.resuming,
     opened: before.opened === cursor && !isTabChanged ? before.opened : null,
@@ -11297,8 +11301,11 @@ function selectedLine(lines, ui) {
   const id = ui.selection[ui.tab].id;
   const current = id === null ? undefined : lines.find((l) => l.id === id);
   const isCloseHeld = current !== undefined && ui.heldClose[ui.tab] === current.id;
-  if (current && (isSelectable(current) || isCloseHeld))
+  const isPrTabLine = id !== null && PR_TAB_LINE_IDS.includes(id);
+  if (current && (isSelectable(current) || isCloseHeld || isPrTabLine))
     return current;
+  if (isPrTabLine)
+    return null;
   const waiting = firstWaiting(waitsOf(lines));
   return lines.find((l) => l.id === waiting) ?? lines.filter(isSelectable).find((l) => l.id !== CLEAR_FINISHED_ID) ?? null;
 }
