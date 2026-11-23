@@ -29,7 +29,7 @@ Send each command's output to a log file and check its exit status. Each must ex
 
 The evals call models, so they take a while and use your plans.
 
-On a Mac that several sessions share, run one heavy job at a time. `./scripts/inbox-slot run -- ./scripts/check.sh` waits for the slot, runs the command and releases the slot when the command exits. For the `inbox-ui` VM, run `./scripts/inbox-slot take --for vm --pid <the VM's pid>` before booting it, and `./scripts/inbox-slot release` after. `./scripts/inbox-slot status` shows the holder. `check.sh` does not take the slot itself, so CI and other contributors run it unchanged.
+On a Mac that several sessions share, run one heavy job at a time. `./scripts/inbox-slot run -- ./scripts/check.sh` waits for the slot, runs the command and releases the slot when the command exits. For the `inbox-ui` VM, run `./scripts/inbox-slot take --for vm --pid <the VM's pid>` before booting it, and `./scripts/inbox-slot release` after. `./scripts/inbox-slot status` shows the holder. A job that waits prints the holder's terminal or PID, what it holds the slot for and how long it has held it. When the holder is the waiting job's own terminal, the message says so and names `./scripts/inbox-slot release`. `check.sh` does not take the slot itself, so CI and other contributors run it unchanged.
 
 ## 2. List what changed
 
