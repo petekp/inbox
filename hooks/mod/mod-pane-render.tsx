@@ -8,7 +8,7 @@ import { setDemo } from './mod-demo'
 import { drawnState, later } from './mod-drawn'
 import { closeField } from './mod-pane-input'
 import { noteStatusTop, paneHandlers, paneViewKeys, restoreDesktopFocus } from './mod-pane-handlers'
-import { matchPaneEscape, paneOpened } from './mod-pane-open'
+import { matchPaneEscape, paneDrawnOnDesktop, paneOpened } from './mod-pane-open'
 import { scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { cancelUndoScroll, paneState } from './mod-state'
@@ -55,6 +55,7 @@ import { footerError } from '../../core/view/view'
 
 /** Draws the inbox pane in the terminal and desktop looks, from the drawn session and the controller's state. */
 export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Elements[RenderSurface]) {
+  if (e.surface === 'desktop') paneDrawnOnDesktop()
   const hadKeys = paneHasKeys.get(e.surface) ?? false
   paneHasKeys.set(e.surface, e.props.isFocused)
   const isKeyboardHandedBack = hadKeys && !e.props.isFocused

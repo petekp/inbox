@@ -105,18 +105,43 @@ export async function matchPaneEscape(m: PaneOpenCalls) {
   await m.pane.open(closesOnEscape ? { closeOnEscape: true } : {})
 }
 
-/**
- * The desktop app's Hide Side Panel hides the pane without a `ui.close`, `ui.panes` still reads it shown, and
- * `ui.open` leaves it hidden. An open after a close shows it again. `surface` is where the press came from; a
- * command names none, so it reopens only when the desktop app alone draws the pane.
- */
+/** How long a press waits for the desktop app to draw the pane again before it counts the pane as hidden. */
+const DESKTOP_DRAW_WAIT_MS = 300
+
+const desktopDrawWaiters = new Set<() => void>()
+
+/** The desktop app drew the pane. */
+export function paneDrawnOnDesktop() {
+  for (const resolve of desktopDrawWaiters) resolve()
+  desktopDrawWaiters.clear()
+}
+
+/** `surface` is where the press came from. A command names none, so it counts only when the desktop app alone draws the pane. */
 function mayBeHiddenByDesktop(surface: RenderSurface | undefined) {
   const isDesktopPress = surface === undefined ? paneHasKeys.size === 1 : surface === 'desktop'
 
   return isDesktopPress && paneHasKeys.has('desktop')
 }
 
-async function closeToShowAgain(m: PaneOpenCalls) {
+/** A redraw draws a pane the desktop app shows again within milliseconds, and draws nothing while the app hides it. */
+async function isDrawnOnDesktop(m: PaneOpenCalls): Promise<boolean> {
+  let markDrawn = () => {}
+  const drawn = new Promise<boolean>(resolve => (markDrawn = () => resolve(true)))
+  desktopDrawWaiters.add(markDrawn)
+  await redraw(m)
+  const isDrawn = await Promise.race([drawn, m.clock.sleep(DESKTOP_DRAW_WAIT_MS).then(() => false)])
+  desktopDrawWaiters.delete(markDrawn)
+
+  return isDrawn
+}
+
+/**
+ * The desktop app's Hide Side Panel hides the pane without a `ui.close`, `ui.panes` still reads it shown, and
+ * `ui.open` leaves it hidden. An open after a close shows it again, scrolled to the top, so the close runs only for a
+ * pane the app no longer draws.
+ */
+async function showAgainIfHidden(m: PaneOpenCalls, surface: RenderSurface | undefined) {
+  if (!mayBeHiddenByDesktop(surface) || (await isDrawnOnDesktop(m))) return
   openFields.clear()
   await m.pane.close().catch(() => undefined)
 }
@@ -124,7 +149,7 @@ async function closeToShowAgain(m: PaneOpenCalls) {
 export async function showInbox(m: PaneOpenCalls, opening: HerdrOpened | Promise<HerdrOpened | null> | null) {
   const herdr = await opening
   if (herdr?.isShown) return herdr.text
-  if (mayBeHiddenByDesktop(undefined)) await closeToShowAgain(m)
+  await showAgainIfHidden(m, undefined)
   await openPane(m)
 
   return herdr?.text
@@ -136,7 +161,7 @@ export async function openInbox(m: PaneOpenCalls, isDemo: boolean, surface: Rend
   // Opened before any other await unless the Herdr look is opening or the press came from the desktop app. After one,
   // the engine no longer counts the press as asking for the pane, and below 144 columns, once the person has closed
   // it, leaves it unplaced. The desktop app places a pane at any width.
-  if (mayBeHiddenByDesktop(surface)) await closeToShowAgain(m)
+  await showAgainIfHidden(m, surface)
   await openPane(m)
   if ((await readUi(m)).tab === 'prs') await findPrs(m)
 }
