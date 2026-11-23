@@ -8,15 +8,16 @@ import type { PanelSpace, PanelStep } from './panel-steps'
 
 /**
  * A row's change between its settled form and another, as it settles or as Undo brings it back. `from` is the form it
- * leaves, as last drawn. Its lines under the title, and its mark when `isMarkSwapped` says the two forms' marks differ,
- * fade out from the draw after `since`, while the row's height holds, until `showsAt`. `isSettled` is the form the row
- * goes to. `inAt` is the first draw of that form's lines, which show no opacity there and fade in from the next draw.
- * It is null until the row draws that form, which a row the selection opens does only once the panel it waits for has
- * faded. `panelShown` is the opacity `from`'s panel showed as the change started, less than 1 while that panel still
- * waited or faded in as its row opened. `restIn` is the height the part of the row's box under its title measured in
- * that draw, which is still the old form's. `inWait` is the draw that set how long the new form's lines wait, `from`,
- * and that wait, `ms`: until the row's box is nearly at the new form's height, so the edge of a box still growing never
- * cuts them. It is null until a draw after `inAt` has the new form's measured height, and the lines show nothing.
+ * leaves, as last drawn, and `fromShown` the opacity its lines under the title showed then: less than 1 when a change
+ * before this one had not yet shown them whole. Those lines, and its mark when `isMarkSwapped` says the two forms' marks
+ * differ, fade out from the draw after `since`, while the row's height holds, until `showsAt`. `isSettled` is the form
+ * the row goes to. `inAt` is the first draw of that form's lines, which show nothing until their wait ends. It is null
+ * until the row draws that form, which a row the selection opens does only once the panel it waits for has faded.
+ * `panelShown` is the opacity `from`'s panel showed as the change started, less than 1 while that panel still waited
+ * or faded in as its row opened. `restIn` is the height the part of the row's box under its title measured in that
+ * draw, which is still the old form's. `inWait` is the draw that set how long the new form's lines wait, `from`, and
+ * that wait, `ms`: until the row's box is nearly at the new form's height, so the edge of a box still growing never
+ * cuts them. It is null until a draw after `inAt` has the new form's measured height, or `MEASURE_WAIT_MS` has passed.
  */
 export type FormSwap = {
   from: RowBlock
@@ -25,6 +26,7 @@ export type FormSwap = {
   since: number
   showsAt: number
   inAt: number | null
+  fromShown: number
   panelShown: number
   restIn: number | undefined
   inWait: { from: number; ms: number } | null
@@ -44,6 +46,10 @@ export type SwapMotion = {
 }
 
 const isSettledRow = (b: Block | undefined): boolean => b?.kind === 'row' && b.settled !== null
+
+/** The opacity the lines of the form a change takes show at `now`: none until their wait ends, then fading in. */
+const linesShownOf = (s: FormSwap, now: number): number =>
+  s.inWait === null ? 0 : easeOut(Math.min(1, Math.max(0, (now - s.inWait.from - s.inWait.ms) / ENTER_FADE_MS)))
 
 const endsAt = (s: FormSwap): number => (s.inWait === null ? Infinity : s.inWait.from + s.inWait.ms + ENTER_FADE_MS)
 
@@ -88,10 +94,9 @@ export function stepSwap(
     return { ...live, isSettled, isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text }
   }
   const isMarkSwapped = was.mark?.text !== b.mark?.text
-
-  const showsAt = now + NEXT_FRAME_MS + LEAVE_FADE_MS
-
-  const swap = { from: was, isSettled, isMarkSwapped, since: now, showsAt, inAt: null, panelShown }
+  const fromShown = live === null ? 1 : linesShownOf(live, now)
+  const showsAt = now + NEXT_FRAME_MS + (fromShown > 0 ? LEAVE_FADE_MS : 0)
+  const swap = { from: was, isSettled, isMarkSwapped, since: now, showsAt, inAt: null, fromShown, panelShown }
 
   return { ...swap, restIn: undefined, inWait: null }
 }
@@ -138,7 +143,7 @@ export function swapMotion(s: FormSwap | null, now: number): SwapMotion | null {
   if (s.inAt === null) {
     const panel = s.panelShown < 1 ? s.panelShown : null
 
-    return { from, isMarkSwapped, opacity: now === s.since ? 1 : 0, fadeMs: LEAVE_FADE_MS, panel }
+    return { from, isMarkSwapped, opacity: now === s.since ? s.fromShown : 0, fadeMs: LEAVE_FADE_MS, panel }
   }
   const opacity = s.inWait !== null && now >= s.inWait.from + s.inWait.ms ? 1 : 0
 

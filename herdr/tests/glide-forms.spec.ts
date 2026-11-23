@@ -318,6 +318,20 @@ function settleCases(): [string, Step[]][] {
         [200, dismissedOpen],
       ],
     ],
+    [
+      'settle from closed, undone 170 ms later',
+      [
+        [0, dismissed],
+        [170, closed],
+      ],
+    ],
+    [
+      'settle from closed, undone 260 ms later',
+      [
+        [0, dismissed],
+        [260, closed],
+      ],
+    ],
     ['undo to open', [[0, open]]],
     ['undo to closed', [[0, closed]]],
     [
