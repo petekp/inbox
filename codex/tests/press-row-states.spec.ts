@@ -88,17 +88,23 @@ test('a row turned around mid-move starts the new move at once, and with reduced
   assert.equal(stepRow(settledIn!, 'settled', ROW_STATE_MS.entering)?.state, 'settled')
 })
 
-test('a row Undo brought back closed that opens while its settled form fades keeps that fade, opening from when Undo did, and one opened after the fade opens on its own', () => {
-  const undone = stepRow({ state: 'settled', since: 0, hasOpenForm: false }, 'closed', 1000)
-  if (!undone) throw new Error('Undo to closed left no track')
-  const opened = stepRow(undone, 'open', 1000 + LEAVE_FADE_MS / 2)
-  assert.deepEqual(opened, { state: 'opening', since: 1000, hasOpenForm: true, leavesSettled: true })
-  assert.ok(opened && drawsFormLeft(opened, 1000 + LEAVE_FADE_MS))
-  assert.deepEqual(stepRow(undone, 'open', 1000 + LEAVE_FADE_MS), {
-    state: 'opening',
-    since: 1000 + LEAVE_FADE_MS,
-    hasOpenForm: true,
-  })
+test('a row Undo brought back that opens or closes while its settled form fades keeps that fade, moving from when Undo did, and one moved after the fade moves on its own', () => {
+  const settled: RowTrack = { state: 'settled', since: 0, hasOpenForm: false }
+  for (const [undoTo, then, state] of [
+    ['closed', 'open', 'opening'],
+    ['open', 'closed', 'closing'],
+  ] as const) {
+    const undone = stepRow(settled, undoTo, 1000)
+    if (!undone) throw new Error(`Undo to ${undoTo} left no track`)
+    const moved = stepRow(undone, then, 1000 + LEAVE_FADE_MS / 2)
+    assert.deepEqual(moved, { state, since: 1000, hasOpenForm: true, leavesSettled: true }, undoTo)
+    assert.ok(moved && drawsFormLeft(moved, 1000 + LEAVE_FADE_MS), undoTo)
+    assert.deepEqual(stepRow(undone, then, 1000 + LEAVE_FADE_MS), {
+      state,
+      since: 1000 + LEAVE_FADE_MS,
+      hasOpenForm: true,
+    })
+  }
 })
 
 test('an entering space’s content waits until the space is within half the slide of open, and its fade ends as the space rests', () => {

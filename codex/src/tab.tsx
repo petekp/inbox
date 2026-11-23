@@ -112,7 +112,7 @@ function draw() {
   render(app(), root)
   if (settleAnswers(root)) render(app(), root)
   watchAnswers()
-  animateDraw(before, step?.changed ?? new Set())
+  animateDraw(before, step?.changed ?? new Set(), step?.drawnAt ?? Date.now())
   if (isPageSwitch) endPageSwitch()
   noteStatusInView()
   const focusField = tabState.focusField
