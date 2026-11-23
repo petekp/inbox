@@ -197,24 +197,26 @@ export function stopFadeOut(el: HTMLElement) {
 }
 
 /**
- * Fades `el`'s `pseudo` in on the timing of `row`'s fade in, from the opacity that fade starts at, so a connector
- * drawn as a pseudo-element shows as the row it joins does. With no row fading in, it fades in at once.
+ * Fades `el`'s `pseudo` in on `row`'s fade in, from the opacity that fade starts at and at the point it has reached,
+ * so a connector drawn as a pseudo-element shows as the row it joins does. With no row fading in, it fades in over
+ * `ENTER_FADE_MS` from now.
  */
 export function fadePseudoWith(el: HTMLElement, pseudo: string, row: HTMLElement | undefined): Animation {
   const f = row ? fades.get(row) : undefined
   const anim = f?.anim
   const timing = anim?.effect?.getTiming()
-  const from = f?.from ?? 0
-  const delay = Math.max(0, Number(timing?.delay ?? 0) - Number(anim?.currentTime ?? 0))
-  const duration = Number(timing?.duration ?? ENTER_FADE_MS)
-
-  return play(el, [{ opacity: from }, { opacity: 1 }], {
+  const delay = Number(timing?.delay ?? 0)
+  const a = play(el, [{ opacity: f?.from ?? 0 }, { opacity: 1 }], {
     pseudoElement: pseudo,
-    duration,
+    duration: Number(timing?.duration ?? ENTER_FADE_MS),
     delay,
     easing: FADE_EASING,
     fill: fillOf(false, delay),
   })
+  const reached = anim?.currentTime
+  if (reached !== null && reached !== undefined) a.currentTime = reached
+
+  return a
 }
 
 export const isFadingIn = (el: HTMLElement) => {

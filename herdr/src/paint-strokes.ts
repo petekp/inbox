@@ -56,24 +56,52 @@ function runsOn(b: Block): Column[] {
   return [...pathColumn(line), ...columns.map(s => ({ depth: s.depth, isDashed: false }))]
 }
 
+const depthOf = (b: Block): number => ('depth' in b ? b.depth : 0)
+
+/** Whether a block's own mark or arm meets the column at `depth`, so the column ends or branches there. */
+function meetsAt(b: Block, depth: number): boolean {
+  const tree = 'tree' in b ? (b.tree ?? []) : []
+  const isMilestone = 'path' in b && b.path?.is === 'milestone'
+
+  return (isMilestone && depth === 0) || tree.some(s => s.depth === depth && s.is !== 'past')
+}
+
 /**
  * The columns that run past each block where its own strokes do not run on below it: those the nearest block above
- * runs on and the nearest block below runs in. A block between them that enters or leaves, as the Later label or a
- * last row whose column ends at its arm, then keeps the column whole across its gliding box. A block whose box is
- * shutting is no neighbor.
+ * runs on, or has running past it, and the nearest block below runs in. A block nested deeper than a column, with no
+ * stroke in it, is no nearest block for that column. A block between them that enters or leaves, as the Later label
+ * or a last row whose column ends at its arm, then keeps the column whole across its gliding box, and so does each
+ * row nested under the row above it. A block whose box is shutting is no neighbor.
  */
 export function passingOf(blocks: Block[], isShut: (b: Block) => boolean): Column[][] {
-  const isNeighbor = (b: Block) => b.kind !== 'gap' && !isShut(b)
+  const ins = blocks.map(runsIn)
+  const ons = blocks.map(runsOn)
+  const depths = [...new Set([...ins, ...ons].flat().map(c => c.depth))]
+  const out: Column[][] = []
+  const has = (cs: Column[] | undefined, depth: number) => cs?.some(c => c.depth === depth) === true
+  const isNearest = (j: number, depth: number) => {
+    const b = blocks[j]
+    if (!b || b.kind === 'gap' || isShut(b)) return false
 
-  return blocks.map((b, i) => {
-    const above = blocks.slice(0, i).findLast(isNeighbor)
-    const below = blocks.slice(i + 1).find(isNeighbor)
-    if (!above || !below) return []
-    const own = new Set(runsOn(b).map(c => c.depth))
-    const into = new Set(runsIn(below).map(c => c.depth))
+    return depthOf(b) <= depth || meetsAt(b, depth) || has(ins[j], depth) || has(ons[j], depth)
+  }
+  const indices = blocks.map((_, j) => j)
+  for (const i of indices) {
+    const above = (depth: number) => indices.slice(0, i).findLast(j => isNearest(j, depth))
+    const below = (depth: number) => indices.slice(i + 1).find(j => isNearest(j, depth))
+    out.push(
+      depths.flatMap(depth => {
+        const from = above(depth)
+        const into = below(depth)
+        if (has(ons[i], depth) || from === undefined || into === undefined || !has(ins[into], depth)) return []
+        const c = [...(ons[from] ?? []), ...(out[from] ?? [])].find(o => o.depth === depth)
 
-    return runsOn(above).filter(c => !own.has(c.depth) && into.has(c.depth))
-  })
+        return c ? [c] : []
+      }),
+    )
+  }
+
+  return out
 }
 
 /** Gives an element a block's fade, or leaves it as it is. */
@@ -94,19 +122,27 @@ type StrokeMove = { isMoving: boolean; isGone: boolean }
  * Who each block's strokes fade with, so a connector shows only while both things it joins show. A column that runs
  * from a block that stays to another that stays never fades, so it stays whole past a block that comes or goes. A
  * column that ends at a block that enters or leaves fades with that block, in the block's own box and in the box it
- * joins, as a fold's rows fade with the column from their parent. A block that has left joins nothing.
+ * joins, as a fold's rows fade with the column from their parent. A block that stays and that a column only passes,
+ * as a row nested beside it, joins nothing there: the column fades past it as it does at the blocks it joins. A block
+ * that has left joins nothing.
  */
 export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: StrokeMove[], fades: Fade[]): StrokeFades[] {
   const depths = (cs: Column[], i: number) => new Set([...cs, ...(passing[i] ?? [])].map(c => c.depth))
   const ins = blocks.map((b, i) => depths(runsIn(b), i))
   const ons = blocks.map((b, i) => depths(runsOn(b), i))
+  const isPassed = (j: number, depth: number) => {
+    const b = blocks[j]
+
+    return b !== undefined && ins[j]?.has(depth) === true && ons[j]?.has(depth) === true && !meetsAt(b, depth)
+  }
   const reach = (i: number, depth: number, by: 1 | -1): { stays: boolean; first: number | null } => {
     let first: number | null = null
     for (let j = i + by; j >= 0 && j < blocks.length; j += by) {
       const move = moves[j]
       if (move?.isGone) continue
       if (!(by === 1 ? ins[j] : ons[j])?.has(depth)) break
-      if (!move?.isMoving) return { stays: true, first }
+      if (!move?.isMoving && !isPassed(j, depth)) return { stays: true, first }
+      if (!move?.isMoving) continue
       first ??= j
       if (!(by === 1 ? ons[j] : ins[j])?.has(depth)) break
     }
@@ -126,10 +162,15 @@ export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: Strok
 
       return { own, above: side, below: side }
     }
-    const side = (by: 1 | -1) => (depth: number) => {
+    const endOf = (depth: number, by: 1 | -1) => {
       const { stays, first } = reach(i, depth, by)
 
-      return stays || first === null ? NO_FADE : (fades[first] ?? NO_FADE)
+      return stays ? null : first
+    }
+    const side = (by: 1 | -1) => (depth: number) => {
+      const end = isPassed(i, depth) ? (endOf(depth, -1) ?? endOf(depth, 1)) : endOf(depth, by)
+
+      return end === null ? NO_FADE : (fades[end] ?? NO_FADE)
     }
 
     return { own, above: side(-1), below: side(1) }
@@ -146,7 +187,7 @@ export function feedsOf(blocks: Block[], moves: StrokeMove[]): Column[][] {
     const next = blocks.findIndex((_, j) => j > i && moves[j]?.isGone !== true)
     const below = blocks[next]
     if (!below || !moves[next]?.isMoving) return []
-    const depth = 'depth' in b ? b.depth : 0
+    const depth = depthOf(b)
     const own = new Set(runsOn(b).map(c => c.depth))
 
     return runsIn(below).filter(c => c.depth === depth && !c.isDashed && !own.has(c.depth))

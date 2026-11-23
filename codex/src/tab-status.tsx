@@ -161,7 +161,30 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
   )
 }
 
-/** A work row in its joint with the column under its milestone's mark, as `workJoints` places it. */
+/**
+ * How the column beside a work row moves: `above` the row's arm, or along the whole row where it has none, and `below`
+ * a tee's arm, where the column runs on to the rows after it.
+ */
+type ColumnMotion = { above: ConnectorMotion; below: ConnectorMotion }
+
+/**
+ * How the column beside each work row moves. A part of the column joins the arms of the rows after it, so it enters or
+ * leaves only when all of those rows do, and a part between two rows that stay never fades.
+ */
+function columnMotions(rows: StatusRow[], joints: (WorkJoint | undefined)[]): ColumnMotion[] {
+  const armsFrom = (n: number) => rows.flatMap((r, k) => (k >= n && joints[k]?.arm ? [goalLineMotion(r.id)] : []))
+
+  return rows.map((_, n) => {
+    const below = connectorMotion(armsFrom(n + 1))
+
+    return { above: joints[n]?.arm ? connectorMotion(armsFrom(n)) : below, below }
+  })
+}
+
+/**
+ * A work row in its joint with the column under its milestone's mark, as `workJoints` places it. A tee draws the column
+ * below its arm on its own, so that part can fade with the rows after it while the part above stays.
+ */
 function JointedLine({
   row,
   joint,
@@ -174,13 +197,14 @@ function JointedLine({
   joint: WorkJoint | undefined
   motion?: string
   under?: string[]
-  column?: ConnectorMotion
+  column?: ColumnMotion
   pad: RowPad | undefined
 }) {
   const line = <StatusLine row={row} motion={motion} under={under} pad={pad} />
   if (!joint) return line
   const own = motion ? connectorMotion([motion]) : null
-  const columnMotion = joint.arm === 'elbow' ? own : joint.beside === 'connector' ? (column ?? null) : null
+  const isTee = joint.arm === 'tee' && joint.beside === 'connector'
+  const columnMotion = joint.arm === 'elbow' ? own : joint.beside === 'connector' ? (column?.above ?? null) : null
   const classes = [
     'work-joint',
     own ? `arm-${own}` : '',
@@ -192,6 +216,7 @@ function JointedLine({
   return (
     <div class={classes.filter(Boolean).join(' ')} style={pad}>
       {line}
+      {isTee ? <span class={['joint-below', connectorClass(column?.below ?? null)].filter(Boolean).join(' ')} /> : null}
     </div>
   )
 }
@@ -260,6 +285,7 @@ function MilestoneGroup({
   const { m, rows } = group
   const { fold, motion, isFoldShown, shown } = shownRows(group)
   const joints = workJoints(shown, m.line)
+  const columns = columnMotions(rows, joints)
   const pads = rowPads(shown, milestoneRowPads(m, shown))
   const connectorState =
     motion === null ? connectorMotion(rows.map(r => goalLineMotion(r.id))) : foldConnectorMotion(fold, motion)
@@ -286,7 +312,7 @@ function MilestoneGroup({
             joint={joints[n]}
             motion={goalLineMotion(r.id)}
             under={rowsUnder(rows, n, goalLineMotion)}
-            column={connectorState}
+            column={columns[n]}
             pad={pads[n]}
           />
         ))
