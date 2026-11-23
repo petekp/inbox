@@ -50,6 +50,7 @@ export function stepLists(v: View): {
   status: DrawnStatus | null
   banners: BannerLine[]
   changed: Set<string>
+  drawnAt: number
 } {
   const now = Date.now()
   const lists = listsOf(v, shownSettled(v))
@@ -115,7 +116,7 @@ export function stepLists(v: View): {
   }))
   for (const id of [...drawnRows.keys()]) if (!kept.has(id)) drawnRows.delete(id)
   for (const id of [...drawnPresses.keys()]) if (!drawnRows.has(id)) drawnPresses.delete(id)
-  return { lists, prs, status, banners, changed }
+  return { lists, prs, status, banners, changed, drawnAt: now }
 }
 
 /**

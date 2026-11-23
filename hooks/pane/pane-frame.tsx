@@ -4,7 +4,7 @@ import { BANNER_GAP_PT, BANNER_PAD_Y_PT } from '../../core/view/layout'
 import { herdrAskBanner } from '../../core/remote/herdr-ask'
 import { herdrAskButtons } from './pane-herdr-ask'
 import { TOOLS_REFUSED_TEXT } from '../mod/mod-records'
-import { mod, paneState } from '../mod/mod-state'
+import { mod } from '../mod/mod-state'
 import type { PaneBase, PaneClient, PaneHandlers } from './pane-context'
 import {
   DESKTOP_LINE_PT,
@@ -17,6 +17,7 @@ import {
 } from './pane-sizes'
 import { fitTabs, isRowTab, tabName, type ShownTab, type TabNaming } from '../../core/view/tabs'
 import { TAB_HEIGHT, tabLinesOf, tabsTree, type TabsProps } from './tabs-client'
+import { isClientNew } from './client-copy'
 import { cellWidth } from '../../core/domain/text'
 import type { BannerTone } from '../../core/view/tones'
 
@@ -110,7 +111,7 @@ export function paneFrame(
           raisedText: pal.raisedText ?? null,
           muted: pal.muted,
         },
-        isDrawnByPane: paneState.isTabsClientNew,
+        isOverCopy: isClientNew('tabs'),
       }
     : null
   const leadColor: Record<BannerTone, string | undefined> = {
@@ -311,7 +312,7 @@ export function paneFrame(
         {hasClient && tabProps ? (
           <elements.Client key="tabs" module="./tabs-client.tsx" height={desktopTabLines ?? 0} props={tabProps} />
         ) : null}
-        {tabProps?.isDrawnByPane ? (
+        {tabProps?.isOverCopy ? (
           <Box key="tabs-by-pane" position="absolute" top={0} left={0}>
             {tabsTree(tabProps, { Box, Text }, null)}
           </Box>

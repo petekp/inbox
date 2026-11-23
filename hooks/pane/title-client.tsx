@@ -1,6 +1,8 @@
-import type { ClientModule } from 'claude-code'
+import type { ClientElements, ClientModule } from 'claude-code'
 
-type TitleProps = {
+import type { OverCopy } from './client-copy'
+
+export type TitleProps = {
   title: string
   /** The title's tint, or null for the theme's own. */
   titleColor: string | null
@@ -13,24 +15,12 @@ type TitleProps = {
 
 type State = { hover: boolean; pressed: boolean }
 
-/** The open row's title in the desktop pane. A click anywhere on it collapses the row. */
-const Title: ClientModule<TitleProps, State> = (props, surface) => {
-  const { Box, Text } = surface.elements
-  const hover = surface.state?.hover ?? false
-  const pressed = surface.state?.pressed ?? false
-  const set = (next: State) => {
-    if (next.hover !== (surface.state?.hover ?? false) || next.pressed !== (surface.state?.pressed ?? false))
-      surface.setState(next)
-  }
-  surface.onPointer(e => {
-    if (e.type === 'leave') return set({ hover: false, pressed: false })
-    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows
-    if (e.type === 'down' && e.button === 'left') {
-      set({ hover: true, pressed: true })
-      surface.post({ isAll: e.alt === true })
-    } else if (e.type === 'up') set({ hover: inside, pressed: false })
-    else if (e.type === 'move' || e.type === 'enter') set({ hover: inside, pressed: surface.state?.pressed ?? false })
-  })
+/** The open row's title, drawn by the Client or, until the Client posts, by the pane with its own elements. */
+export function titleTree(
+  props: TitleProps,
+  { Box, Text }: Pick<ClientElements, 'Box' | 'Text'>,
+  { hover, pressed }: State,
+) {
   const background = pressed ? props.colors.pressed : hover ? props.colors.hover : null
   const textColor = background !== null && background === props.colors.hover ? props.colors.hoverText : null
   const colored = (own: string | null) => {
@@ -56,6 +46,28 @@ const Title: ClientModule<TitleProps, State> = (props, surface) => {
         : []),
     ],
   })
+}
+
+/** The open row's title in the desktop pane. A click anywhere on it collapses the row. */
+const Title: ClientModule<TitleProps & OverCopy, State> = (props, surface) => {
+  const hover = surface.state?.hover ?? false
+  const pressed = surface.state?.pressed ?? false
+  const set = (next: State) => {
+    if (next.hover !== (surface.state?.hover ?? false) || next.pressed !== (surface.state?.pressed ?? false))
+      surface.setState(next)
+  }
+  surface.onPointer(e => {
+    if (e.type === 'leave') return set({ hover: false, pressed: false })
+    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows
+    if (e.type === 'down' && e.button === 'left') {
+      set({ hover: true, pressed: true })
+      surface.post({ isAll: e.alt === true })
+    } else if (e.type === 'up') set({ hover: inside, pressed: false })
+    else if (e.type === 'move' || e.type === 'enter') set({ hover: inside, pressed: surface.state?.pressed ?? false })
+  })
+  if (props.isOverCopy) surface.post({ isRunning: true })
+
+  return titleTree(props, surface.elements, { hover, pressed })
 }
 
 export default Title

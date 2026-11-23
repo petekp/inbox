@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T18:57:43.932Z. 371320 characters follow.
+// Built at 2026-11-23T20:25:16.494Z. 371381 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -5586,7 +5586,7 @@ function formOf({ state, hasOpenForm, entersSettled }) {
       return "gone";
   }
 }
-var isSettledFormFading = (track, now) => track.state === "closing" && track.leavesSettled === true && now - track.since < LEAVE_FADE_MS;
+var isSettledFormFading = (track, now) => track.leavesSettled === true && now - track.since < LEAVE_FADE_MS;
 function moveToward(track, form, now) {
   const leaves = formOf(track) === "settled" ? { leavesSettled: true } : {};
   switch (form) {
@@ -5595,6 +5595,8 @@ function moveToward(track, form, now) {
         return { ...track, state: "opening", hasOpenForm: true };
       return { state: "opening", since: now, hasOpenForm: true, ...leaves };
     case "closed":
+      if (isSettledFormFading(track, now))
+        return { ...track, state: "closing" };
       return track.state === "leaving" ? entering("closed", now) : { state: "closing", since: now, hasOpenForm: track.hasOpenForm, ...leaves };
     case "settled":
       return { state: "settling", since: now, hasOpenForm: track.hasOpenForm };

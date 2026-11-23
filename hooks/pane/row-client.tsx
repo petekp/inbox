@@ -1,4 +1,6 @@
-import type { ClientModule } from 'claude-code'
+import type { ClientElements, ClientModule } from 'claude-code'
+
+import type { OverCopy } from './client-copy'
 
 export type RowProps = {
   markCells: number
@@ -49,34 +51,17 @@ function clipAtSpace(text: string, max: number): string {
   return `${head.trimEnd()}…`
 }
 
-const Row: ClientModule<RowProps, State> = (props, surface) => {
-  const { Box, Text } = surface.elements
-  const hover = surface.state?.hover ?? false
-  const pressed = surface.state?.pressed ?? false
-  // Reads the state when an event arrives: a down and an up can both arrive before the next call.
-  const set = (next: State) => {
-    if (next.hover !== (surface.state?.hover ?? false) || next.pressed !== (surface.state?.pressed ?? false))
-      surface.setState(next)
-  }
-  surface.onPointer(e => {
-    if (e.type === 'leave') return set({ hover: false, pressed: false })
-    // While a button is held, moves arrive past the region's edges too. `surface.rows` rounds the
-    // padded height down, as 1 for 1.5 lines, so the padding is added back.
-    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows + 2 * props.padY
-    if (e.type === 'down' && e.button === 'left') {
-      set({ hover: true, pressed: true })
-      surface.post({})
-    } else if (e.type === 'up') set({ hover: inside, pressed: false })
-    else if (e.type === 'move' || e.type === 'enter') {
-      set({ hover: inside, pressed: surface.state?.pressed ?? false })
-      if (e.type === 'enter' || ++movesSincePost >= MOVES_PER_POINTER_POST) {
-        movesSincePost = 0
-        surface.post({ isPointer: true })
-      }
-    }
-  })
-
-  const columns = surface.columns || props.fallbackColumns
+/**
+ * The row, drawn by the Client or, until the Client posts, by the pane with its own elements. `padScale` turns the
+ * row's padding into the drawing's units.
+ */
+export function rowTree(
+  props: RowProps,
+  { Box, Text }: Pick<ClientElements, 'Box' | 'Text'>,
+  { hover, pressed }: State,
+  columns: number,
+  padScale = 1,
+) {
   const textCells = columns - FRAME_CELLS - props.markCells - props.sideCells
   const perLine = Math.floor(textCells * props.charsPerCell)
   const note = clipAtSpace(props.note, perLine)
@@ -94,7 +79,7 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
     alignItems: 'flex-start',
     borderStyle: 'single',
     borderColor: '#0000',
-    paddingY: props.padY,
+    paddingY: props.padY * padScale,
     ...(background ? { backgroundColor: background } : {}),
     children: [
       // The hooks module draws the row's mark over this region, hung into the frame's inset, which a Client clips.
@@ -136,6 +121,36 @@ const Row: ClientModule<RowProps, State> = (props, surface) => {
       }),
     ],
   })
+}
+
+const Row: ClientModule<RowProps & OverCopy, State> = (props, surface) => {
+  const hover = surface.state?.hover ?? false
+  const pressed = surface.state?.pressed ?? false
+  // Reads the state when an event arrives: a down and an up can both arrive before the next call.
+  const set = (next: State) => {
+    if (next.hover !== (surface.state?.hover ?? false) || next.pressed !== (surface.state?.pressed ?? false))
+      surface.setState(next)
+  }
+  surface.onPointer(e => {
+    if (e.type === 'leave') return set({ hover: false, pressed: false })
+    // While a button is held, moves arrive past the region's edges too. `surface.rows` rounds the
+    // padded height down, as 1 for 1.5 lines, so the padding is added back.
+    const inside = e.x >= 0 && e.x < surface.columns && e.y >= 0 && e.y < surface.rows + 2 * props.padY
+    if (e.type === 'down' && e.button === 'left') {
+      set({ hover: true, pressed: true })
+      surface.post({})
+    } else if (e.type === 'up') set({ hover: inside, pressed: false })
+    else if (e.type === 'move' || e.type === 'enter') {
+      set({ hover: inside, pressed: surface.state?.pressed ?? false })
+      if (e.type === 'enter' || ++movesSincePost >= MOVES_PER_POINTER_POST) {
+        movesSincePost = 0
+        surface.post({ isPointer: true })
+      }
+    }
+  })
+  if (props.isOverCopy) surface.post({ isRunning: true })
+
+  return rowTree(props, surface.elements, { hover, pressed }, surface.columns || props.fallbackColumns)
 }
 
 export default Row

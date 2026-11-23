@@ -140,3 +140,40 @@ export function followCodexPresses(
     log,
   )
 }
+
+/**
+ * In a Herdr app terminal, calls `heard` with each Codex session this terminal publishes whose state file in `dir`
+ * changed, as when a hook saved it. Returns how to stop, or null outside an app terminal.
+ */
+export function followCodexSaves(
+  env: NodeJS.ProcessEnv,
+  dir: string,
+  heard: (sessionId: string) => void,
+  log: (text: string) => void,
+): (() => void) | null {
+  const target = herdrTarget(env)
+  if (target?.kind !== 'terminal' || !target.appHome) return null
+  const { appHome, terminal } = target
+  const root = join(dir, 'sessions')
+  const onChange = (name: string | null) => {
+    if (!name || !isSessionFile(name)) return
+    const id = name.slice(0, -'.json'.length)
+    void isPublishedHere(path => readFile(path, 'utf8'), appHome, id, 'codex', terminal).then(isHere => {
+      if (isHere) heard(id)
+    })
+  }
+  let isStopped = false
+  let watcher: FSWatcher | null = null
+  void mkdir(root, { recursive: true })
+    .then(() => {
+      if (isStopped) return
+      watcher = watch(root, (_event, name) => onChange(name))
+      watcher.on('error', err => log(`Codex saves not watched: ${message(err)}`))
+    })
+    .catch((err: unknown) => log(`Codex saves not watched: ${message(err)}`))
+
+  return () => {
+    isStopped = true
+    watcher?.close()
+  }
+}
