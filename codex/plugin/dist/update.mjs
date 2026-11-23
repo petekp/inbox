@@ -5916,7 +5916,6 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
 }
 
 // src/registry.ts
-import { randomUUID as randomUUID2 } from "node:crypto";
 import { mkdir as mkdir5, readdir as readdir3, readFile as readFile4, rename as rename6, rm as rm4, writeFile as writeFile6 } from "node:fs/promises";
 import { dirname as dirname4 } from "node:path";
 
@@ -5955,12 +5954,22 @@ async function writeRegistryEntry(files2, folder, source, s, view, now, pid) {
     const isUnchanged2 = kept && JSON.stringify({ ...kept, writtenAt: 0 }) === JSON.stringify({ ...fields2, writtenAt: 0 });
     if (isUnchanged2) return;
     const entry = { ...fields2, writtenAt: now };
-    await files2.write(path, JSON.stringify(entry));
+    await replaceFile(files2, path, JSON.stringify(entry), now);
     await pruneEnded(files2, folder, source.host, path);
   } catch (error) {
     files2.log(
       `inbox: the session registry entry could not be written: ${error instanceof Error ? error.message : error}`
     );
+  }
+}
+async function replaceFile(files2, path, text2, now) {
+  const temporary = `${path}.${now}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files2.write(temporary, text2);
+    await files2.move(temporary, path);
+  } catch (error) {
+    await files2.remove(temporary).catch(() => void 0);
+    throw error;
   }
 }
 async function pruneEnded(files2, folder, host, own) {
@@ -5979,10 +5988,9 @@ var registryFiles = (log) => ({
   read: (path) => readFile4(path, "utf8").catch(missingAsNull),
   write: async (path, text2) => {
     await mkdir5(dirname4(path), { recursive: true, mode: 448 });
-    const tmp = `${path}.${process.pid}-${randomUUID2()}.tmp`;
-    await writeFile6(tmp, text2, { mode: 384 });
-    await rename6(tmp, path);
+    await writeFile6(path, text2, { mode: 384 });
   },
+  move: (from, to) => rename6(from, to),
   remove: (path) => rm4(path, { force: true }),
   livePids: async (pids) => new Set(pids.filter(isPidRunning)),
   log
@@ -6099,7 +6107,7 @@ function exitCodeOf(err) {
 }
 
 // src/update.ts
-import { createHash as createHash2, randomUUID as randomUUID3 } from "node:crypto";
+import { createHash as createHash2, randomUUID as randomUUID2 } from "node:crypto";
 import {
   access,
   copyFile,
@@ -7317,7 +7325,7 @@ async function modelHome(dir, personHome) {
     const isLinked = await readlink2(link).catch(() => null) === auth;
     if (isLinked) return home;
     await keepNewerSignIn(link, auth);
-    const made = `${link}.${randomUUID3()}`;
+    const made = `${link}.${randomUUID2()}`;
     await symlink2(auth, made);
     await rename8(made, link);
     return home;
@@ -7335,7 +7343,7 @@ function codexAsk(exec, cli, dir, personHome) {
   return async (prompt, instructions, _kind, report) => {
     const work = join10(dir, "exec");
     const system = join10(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
-    const out = join10(work, `reply-${randomUUID3()}.txt`);
+    const out = join10(work, `reply-${randomUUID2()}.txt`);
     await mkdir7(work, { recursive: true });
     const home = await modelHome(dir, personHome);
     if (await readFile6(system, "utf8").catch(() => "") !== instructions) await writeFile8(system, instructions);

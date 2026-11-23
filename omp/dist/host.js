@@ -2,7 +2,7 @@
 // Built by omp/build.ts with Bun 1.4.4 from omp/src and core/. Do not edit.
 
 // src/host.ts
-import { randomUUID as randomUUID2 } from "crypto";
+import { randomUUID } from "crypto";
 
 // ../core/domain/gh.ts
 var CANDIDATES = ["gh", "/opt/homebrew/bin/gh", "/usr/local/bin/gh"];
@@ -8956,6 +8956,10 @@ function untriedPrs(s) {
   const { views, unread = {} } = s.prViews;
   return splitLinked(s.prViews, s.ledger).tracked.filter((ref) => !(ref in views) && !(ref in unread));
 }
+function addsTabPr(before, after) {
+  const shown = new Set(tabPrs(before.ledger));
+  return tabPrs(after.ledger).some((ref) => !shown.has(ref));
+}
 function isPrFetchDue(s, lastFetchedAt, now, isTabShown) {
   if (lastFetchedAt === undefined)
     return true;
@@ -14639,10 +14643,22 @@ async function writeRegistryEntry(files, folder, source, s, view, now, pid) {
     if (isUnchanged)
       return;
     const entry = { ...fields, writtenAt: now };
-    await files.write(path, JSON.stringify(entry));
+    await replaceFile(files, path, JSON.stringify(entry), now);
     await pruneEnded(files, folder, source.host, path);
   } catch (error) {
     files.log(`inbox: the session registry entry could not be written: ${error instanceof Error ? error.message : error}`);
+  }
+}
+async function replaceFile(files, path, text, now) {
+  const temporary = `${path}.${now}.${Math.random().toString(36).slice(2)}.tmp`;
+  try {
+    await files.write(temporary, text);
+    await files.move(temporary, path);
+  } catch (error) {
+    await files.remove(temporary).catch(() => {
+      return;
+    });
+    throw error;
   }
 }
 async function pruneEnded(files, folder, host, own) {
@@ -15322,7 +15338,7 @@ function shownLine(result) {
 // src/host-activity.ts
 function activityHandlers(context, sessions) {
   const { deps, memory } = context;
-  const { change, updateHostFor, fetchPrsWhenDue, notifyChanged } = sessions;
+  const { change, updateHostFor, fetchPrsNow, notifyChanged } = sessions;
   const isActivityWorthSaving = activityGate();
   const onSubagentLifecycle = async (data) => {
     const frame = data;
@@ -15418,19 +15434,19 @@ function activityHandlers(context, sessions) {
       const command = event.input.command;
       if (typeof command !== "string")
         return;
-      let isLinked = false;
+      let addsPr = false;
       const at = deps.now();
       try {
         await change(sessionIdOf(ctx), (s) => {
           const after = noteCommandOutput(s, command, textOfBlocks(event.content));
-          isLinked = after.ledger !== s.ledger;
+          addsPr = addsTabPr(s, after);
           return statusChanged(after, (o) => delegatesRan(o, command, at));
         });
       } catch {
         return;
       }
-      if (isLinked)
-        fetchPrsWhenDue(ctx, false);
+      if (addsPr)
+        fetchPrsNow(ctx);
       return;
     }
     if (event.toolName !== "ask")
@@ -16914,7 +16930,6 @@ function panelCalls(context, sessions, herdrAsk) {
 }
 
 // src/registry.ts
-import { randomUUID } from "crypto";
 import { mkdir as mkdir6, readdir as readdir4, readFile as readFile5, rename as rename5, rm as rm3, writeFile as writeFile6 } from "fs/promises";
 import { dirname as dirname4 } from "path";
 var registryFiles = (log) => ({
@@ -16922,10 +16937,9 @@ var registryFiles = (log) => ({
   read: (path) => readFile5(path, "utf8").catch(missingAsNull),
   write: async (path, text) => {
     await mkdir6(dirname4(path), { recursive: true, mode: 448 });
-    const tmp = `${path}.${process.pid}-${randomUUID()}.tmp`;
-    await writeFile6(tmp, text, { mode: 384 });
-    await rename5(tmp, path);
+    await writeFile6(path, text, { mode: 384 });
   },
+  move: (from, to) => rename5(from, to),
   remove: (path) => rm3(path, { force: true }),
   livePids: async (pids) => new Set(pids.filter(isPidRunning)),
   log
@@ -17222,6 +17236,9 @@ function sessionCalls(context) {
         await change(id, (s) => statusChanged(s, (o) => delegatesSettled(o, states, deps.now())));
     })());
   }
+  function fetchPrsNow(ctx) {
+    deps.background(prFetches.fetchNow(sessionIdOf(ctx), () => fetchPrs(hostFor(ctx), true)));
+  }
   function fetchPrsWhenDue(ctx, isTabShown) {
     const id = sessionIdOf(ctx);
     if (prFetches.isFetching(id))
@@ -17247,6 +17264,7 @@ function sessionCalls(context) {
     prepare,
     continueFork,
     catchUpUnseen,
+    fetchPrsNow,
     fetchPrsWhenDue,
     checkDelegatesWhenDue,
     wakeLater
@@ -17257,7 +17275,18 @@ function sessionCalls(context) {
 var MESSAGE_TYPE = "inbox";
 function turnHandlers(context, sessions) {
   const { deps, dir, openPanels, prepared, run, memory, dropTools, showBand, sendNotes } = context;
-  const { change, endedTurn, hostFor, updateHostFor, reportCounts, reportEnded, prepare, continueFork, catchUpUnseen } = sessions;
+  const {
+    change,
+    endedTurn,
+    hostFor,
+    updateHostFor,
+    reportCounts,
+    reportEnded,
+    prepare,
+    continueFork,
+    catchUpUnseen,
+    fetchPrsNow
+  } = sessions;
   let noted = null;
   let agentTexts = null;
   async function arrive(ctx, id, text, finishedReply) {
@@ -17440,14 +17469,18 @@ function turnHandlers(context, sessions) {
       gitPlaceIn(run, ctx.cwd)
     ]);
     const endedAt = deps.now();
+    let addsPr = false;
     const written = await change(id, (s) => {
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed });
+      addsPr = addsTabPr(s, ended);
       const settled = inHerdr ? statusChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...placed(settled, ctx.cwd, git), stop };
     }).catch(() => null);
     if (!written)
       return;
     const host = hostFor(ctx);
+    if (addsPr)
+      fetchPrsNow(ctx);
     if (needsUpdate(written))
       deps.background(runUpdates(updateHostFor(ctx)));
     deps.background(wakeAfterSettle(host));
@@ -17492,7 +17525,7 @@ async function copyToClipboard(text) {
 var defaultDeps = {
   stateDir: (pi) => join7(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
-  newId: randomUUID2,
+  newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
   isNextBuild: existsSync(join7(dirname6(dirname6(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
@@ -17622,7 +17655,7 @@ function createInbox(pi, deps = defaultDeps) {
 `), display: false, attribution: "agent" }, { deliverAs: "nextTurn" })
   };
   const sessions = sessionCalls(context);
-  const { change } = sessions;
+  const { change, fetchPrsNow } = sessions;
   const turns = turnHandlers(context, sessions);
   const { start } = turns;
   const activity = activityHandlers(context, sessions);
@@ -17677,11 +17710,15 @@ function createInbox(pi, deps = defaultDeps) {
         const delegate = await context.delegate();
         const input = args;
         const earlier = name === "record" ? await recordMatchesNow(input, deps.now()) : [];
+        let addsPr = false;
         await change(sessionIdOf(ctx), (s) => {
           const r = recorded(OMP2, s, name, input, deps.now(), TOOL_FIELDS, delegate, earlier);
           answer = r;
+          addsPr = addsTabPr(s, r.state);
           return r.state;
         });
+        if (addsPr)
+          fetchPrsNow(ctx);
         const details = { personLine: answer.personLine };
         return { content: [{ type: "text", text: answer.result }], details };
       },

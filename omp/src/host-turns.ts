@@ -7,6 +7,7 @@ import { needsUpdate, statusChanged } from '../../core/runtime/session-status'
 import { childrenCutOff, delegatesSettled } from '../../core/domain/children'
 import { runUpdates } from '../../core/runtime/session-host'
 import { wakeAfterSettle } from '../../core/runtime/host-press'
+import { addsTabPr } from '../../core/runtime/host-prs'
 import { turnReply } from '../../core/domain/text'
 import { readState } from './state'
 import { ompCommandStore } from './command-log'
@@ -24,8 +25,18 @@ export const MESSAGE_TYPE = 'inbox'
 
 export function turnHandlers(context: HostContext, sessions: SessionCalls) {
   const { deps, dir, openPanels, prepared, run, memory, dropTools, showBand, sendNotes } = context
-  const { change, endedTurn, hostFor, updateHostFor, reportCounts, reportEnded, prepare, continueFork, catchUpUnseen } =
-    sessions
+  const {
+    change,
+    endedTurn,
+    hostFor,
+    updateHostFor,
+    reportCounts,
+    reportEnded,
+    prepare,
+    continueFork,
+    catchUpUnseen,
+    fetchPrsNow,
+  } = sessions
 
   let noted: { id: string; prompt: string; notes: string[] } | null = null
 
@@ -231,14 +242,17 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
       gitPlaceIn(run, ctx.cwd),
     ])
     const endedAt = deps.now()
+    let addsPr = false
     const written = await change(id, s => {
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed })
+      addsPr = addsTabPr(s, ended)
       const settled = inHerdr ? statusChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
 
       return { ...placed(settled, ctx.cwd, git), stop }
     }).catch(() => null)
     if (!written) return
     const host = hostFor(ctx)
+    if (addsPr) fetchPrsNow(ctx)
     if (needsUpdate(written)) deps.background(runUpdates(updateHostFor(ctx)))
     deps.background(wakeAfterSettle(host))
   }

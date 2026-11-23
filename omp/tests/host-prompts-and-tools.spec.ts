@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { guidanceText } from '../../core/domain/model-text'
 import { createInbox } from '../src/host'
 import { OMP } from '../src/texts'
-import { call, deps, endWorld, makeCtx, pi, prompt, record, startWorld, state, w } from './host-harness'
+import { call, deps, endWorld, makeCtx, pi, prompt, record, settle, startWorld, state, w } from './host-harness'
 
 beforeEach(startWorld)
 afterEach(endWorld)
@@ -69,6 +69,29 @@ test('record, close and order_prs are registered with the shared schemas and sta
   expect([...w.tools.keys()]).toEqual(['record', 'close', 'order_prs'])
   expect(w.tools.get('record')).toMatchObject({ loadMode: 'essential', approval: 'read' })
   expect(w.tools.get('record').parameters.properties.kind.enum).toEqual(['question', 'task', 'finding'])
+})
+
+test('an order_prs call reads the PRs it ranks while no panel shows the session, and an order of the same PRs reads none', async () => {
+  createInbox(pi(), deps())
+  const order = (numbers: number[]) =>
+    w.tools
+      .get('order_prs')
+      .execute(
+        'call',
+        { repo: 'acme/app', numbers, label: 'Review in this order', why: '#7 builds on #9.' },
+        undefined,
+        undefined,
+        makeCtx(),
+      )
+  const reads = () => w.execCalls.filter(c => c.args.includes('graphql')).length
+  await order([9, 7])
+  await settle()
+  expect(reads()).toBe(1)
+  const { views, unread = {} } = state().prViews
+  expect(['acme/app#9', 'acme/app#7'].every(ref => ref in views || ref in unread)).toBe(true)
+  await order([7, 9])
+  await settle()
+  expect(reads()).toBe(1)
 })
 
 test('a close call closes the recorded item', async () => {

@@ -119,3 +119,44 @@ test('each publish writes the conversation’s registry entry with its pid and r
   await clock.settle()
   expect(Object.keys(w.written).filter(path => path.startsWith(folder))).toEqual([`${folder}/omp-other.json`])
 })
+
+test('a registry write whose move fails removes its temporary file and logs why', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { XDG_STATE_HOME: '/state' })
+  w.sessionFiles = filesOf([])
+  w.isMoveFailing = true
+
+  await firstSave($, clock)
+  expect(Object.keys(w.written).filter(path => path.startsWith('/state/inbox/registry/'))).toEqual([])
+  expect(
+    w.logged.some(
+      text => text.includes('session registry entry could not be written') && text.includes('rename failed'),
+    ),
+  ).toBe(true)
+})
+
+test('the first registry write removes the temporary files earlier builds left in the registry folder, except ones from the last minute', async ($, on) => {
+  const now = 1_000_000
+  const clock = mock.clock(on, { now })
+  world($, on, [], { XDG_STATE_HOME: '/state' })
+  w.sessionFiles = filesOf([])
+  const folder = '/state/inbox/registry'
+  const earlier = (id: string, at: number, count: number) =>
+    `${folder}/claude-code-${id}.json.${at.toString(36)}-${count}.tmp`
+  const leftovers = [earlier('session-1', now - 120_000, 1), earlier('other', 5, 7)]
+  const kept = [
+    earlier('recent', now - 1_000, 2),
+    `${folder}/codex-other.json.123-abc.tmp`,
+    `${folder}/claude-code-unreadable.json`,
+    `${folder}/notes.tmp`,
+  ]
+  for (const path of [...leftovers, ...kept]) w.written[path] = '{}'
+
+  await firstSave($, clock)
+  expect(
+    Object.keys(w.written)
+      .filter(path => path.startsWith(folder))
+      .sort(),
+  ).toEqual([...kept, `${folder}/claude-code-session-1.json`].sort())
+  expect(w.logged).toContain(`inbox: removed 2 temporary files earlier builds left in ${folder}`)
+})

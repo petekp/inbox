@@ -189,6 +189,10 @@ export function makeSessionHost(
     await wakeSessionAfterSettle(hostFor(id), await syncTurn(id))
   }
 
+  function fetchPrsNow(id: string) {
+    background.track(prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true)))
+  }
+
   function fetchPrsWhenDue(id: string, s: SessionState, shown = s.shownTab === 'prs') {
     const seen = { ...s, prViews: { ...s.prViews, isGhMissing } }
     const run = prFetches.fetchWhenDue(id, seen, shown, () => fetchPrs(hostFor(id), true))
@@ -294,5 +298,5 @@ export function makeSessionHost(
   }
   const open = (s: SessionState, target: string) => openTarget(deps.exec, files, target, s.root, s.home)
 
-  return { wakeAfterSettle, fetchPrsWhenDue, served, onPress, onHerdrFile }
+  return { wakeAfterSettle, fetchPrsNow, fetchPrsWhenDue, served, onPress, onHerdrFile }
 }

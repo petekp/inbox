@@ -24,6 +24,15 @@ import {
 beforeEach(startWorld)
 afterEach(endWorld)
 
+test('a reply that names a PR reads it while no panel shows the session', async () => {
+  createInbox(pi(), deps())
+  await prompt('Open a PR for the greeting')
+  await endAgent('Opened https://github.com/acme/app/pull/12 for the greeting.')
+  await settle()
+  expect(state().ledger.prs).toEqual(['acme/app#12'])
+  expect(w.execCalls.filter(c => c.args.includes('graphql'))).toHaveLength(1)
+})
+
 test('Done schedules the wake and the wake tells the agent after the settle window', async () => {
   const inbox = createInbox(pi(), deps())
   await prompt('hello')
