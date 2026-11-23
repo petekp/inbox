@@ -46,29 +46,37 @@ function devPageIn(dir: string): () => Promise<string | null> {
  * needs Codex restarted, and a loader from before `isPluginFolderGone` passes only the first two. `startUpdate` starts
  * an update outside this process; a loader from before it passes none, and a tab then opens without catching its chat up.
  */
-/** Where the running handler keeps how to stop its press watcher, so a reloaded handler stops the one before it. */
+/**
+ * Where the running handler keeps how to stop its press watcher and its watch on the saved sessions, so a reloaded
+ * handler stops the ones before it. A handler from before keeps the watch's stop as `{ stop }`.
+ */
 const HERDR_PRESSES = Symbol.for('inbox.herdrPresses')
-
-function followHerdrPresses(log: (text: string) => void) {
-  return (apply: Parameters<typeof followCodexPresses>[1]) => {
-    const shared = globalThis as { [HERDR_PRESSES]?: (() => void) | null }
-    shared[HERDR_PRESSES]?.()
-    shared[HERDR_PRESSES] = followCodexPresses(process.env, apply, log)
-  }
-}
-
-/** Where the running handler keeps how to stop its watch on the saved sessions, so a reloaded handler stops the one before it. */
 const CODEX_SAVES = Symbol.for('inbox.codexSaves')
+const STOPS_ON_INPUT_END = Symbol.for('inbox.stopsOnInputEnd')
 
-function followSaves(dir: string, log: (text: string) => void) {
-  return (heard: (sessionId: string) => void) => {
-    const shared = globalThis as { [CODEX_SAVES]?: { stop: (() => void) | null } }
-    const following = shared[CODEX_SAVES]
-    following?.stop?.()
-    shared[CODEX_SAVES] = { stop: followCodexSaves(process.env, dir, heard, log) }
-    // Codex closes this process's input when it quits but can leave the process running, and a server left running
-    // would go on reading PRs for the next Codex in the same terminal.
-    if (!following) process.stdin.once('end', () => shared[CODEX_SAVES]?.stop?.())
+type Stop = (() => void) | { stop: (() => void) | null } | null | undefined
+type Shared = { [HERDR_PRESSES]?: Stop; [CODEX_SAVES]?: Stop; [STOPS_ON_INPUT_END]?: true }
+
+const stopIn = (stop: Stop) => (typeof stop === 'function' ? stop() : stop?.stop?.())
+
+/**
+ * Codex closes this process's input when it quits, and sends no signal. In a Herdr app terminal the watchers would then
+ * keep the process running, applying presses and reading PRs for the next Codex there. So once the input ends, they
+ * stop, and none starts again. The process ends once the work in flight finishes.
+ */
+function following<T>(key: typeof HERDR_PRESSES | typeof CODEX_SAVES, start: (given: T) => (() => void) | null) {
+  return (given: T) => {
+    const shared = globalThis as Shared
+    stopIn(shared[key])
+    shared[key] = process.stdin.readableEnded ? null : start(given)
+    if (shared[STOPS_ON_INPUT_END]) return
+    shared[STOPS_ON_INPUT_END] = true
+    process.stdin.once('end', () => {
+      for (const each of [HERDR_PRESSES, CODEX_SAVES] as const) {
+        stopIn(shared[each])
+        shared[each] = null
+      }
+    })
   }
 }
 
@@ -103,8 +111,8 @@ export function createHandler(
       herdrOnWrite(process.env, run, dir, Date.now, log),
       registryOnWrite(process.env, dir, Date.now, process.ppid, log),
     ),
-    followHerdrPresses: followHerdrPresses(log),
-    followSaves: followSaves(dir, log),
+    followHerdrPresses: following(HERDR_PRESSES, apply => followCodexPresses(process.env, apply, log)),
+    followSaves: following(CODEX_SAVES, heard => followCodexSaves(process.env, dir, heard, log)),
     herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
     delegate: delegateReader(herdrTarget(process.env), run),
     openCatchUp: startUpdate && {
