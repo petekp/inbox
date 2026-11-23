@@ -28,6 +28,7 @@ import {
   waitLeftMs,
 } from './tab-glide'
 import { fadeFaintPanel, fadeThrough, fadingParts, shownPanel, trunkBeside } from './tab-panel-fade'
+import { showConnectors } from './tab-connectors'
 
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -141,6 +142,7 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>) {
   glideTabs(before.tabWidths)
   showNotes(before)
   showFieldKeys(before)
+  showConnectors()
   entering.clear()
   heightWaitMs = 0
   closeWaitMs = 0

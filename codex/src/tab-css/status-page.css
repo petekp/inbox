@@ -205,13 +205,17 @@
 .status-page .milestone-group + .row.part-line {
   margin-top: calc(var(--section-gap) / 2 - var(--row-above-pad, calc(var(--item-gap) / 2)) - var(--status-row-pad));
 }
-/* A connector fades with the rows it ties together. It fades in for `--enter-fade` as it is drawn, once a line's
-   space is nearly open, and out for `--leave-fade` through a leaving class while the rows leave, as the rows do. The
-   arm of a row that leaves alone fades through `arm-leaving`, and the column the row passes beside stays. The leaving
-   rule names each connector's own selector with the leaving class, so it outranks that connector's fade in. */
+/* A connector fades with the rows it ties together. One drawn beside rows that rest fades in for `--enter-fade` as it is
+   drawn. While its rows enter it takes an entering class, and `showConnectors` fades it in on the first row's own fade,
+   so it waits with that row for its space to open. It fades out for `--leave-fade` through a leaving class while the
+   rows leave, as the rows do. The arm of a row that comes or goes alone fades through `arm-entering` or `arm-leaving`,
+   and the column the row passes beside stays. A part of a column that runs on only to rows that come or go fades with
+   them, as the part of a tee's column below its arm does while the last row enters or leaves. The entering and leaving rules name each connector's own selector, so
+   they outrank that connector's fade in. */
 .status-page .row.milestone.connector-down::before,
 .status-page .work-joint::before,
 .status-page .work-joint::after,
+.status-page .joint-below::before,
 .status-page .row.has-children::before {
   transition: opacity var(--enter-fade);
 }
@@ -219,9 +223,17 @@
   .status-page .row.milestone.connector-down::before,
   .status-page .work-joint::before,
   .status-page .work-joint::after,
+  .status-page .joint-below::before,
   .status-page .row.has-children::before {
     opacity: 0;
   }
+}
+.status-page .row.milestone.connector-down.connector-entering::before,
+.status-page .row.has-children.connector-entering::before,
+.status-page .work-joint.connector-entering::before,
+.status-page .joint-below.connector-entering::before,
+.status-page .work-joint.arm-entering::after {
+  transition: none;
 }
 .status-page .connector-leaving::before,
 .status-page .row.milestone.connector-down.connector-leaving::before,
@@ -271,6 +283,25 @@
 .status-page .work-joint.beside-connector::before {
   top: 0;
   bottom: 0;
+}
+/* A tee's column stops at its arm, and `joint-below` runs it on from there. */
+.status-page .work-joint.beside-connector.arm-tee::before {
+  bottom: auto;
+  height: calc(var(--status-row-pad) + 0.5lh);
+}
+.status-page .joint-below {
+  position: absolute;
+  left: 0;
+  top: calc(var(--status-row-pad) + 0.5lh);
+  bottom: 0;
+}
+.status-page .joint-below::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--tree-line);
 }
 .status-page .work-joint.arm-elbow::before {
   top: 0;

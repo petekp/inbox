@@ -3,28 +3,23 @@ import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import { ROW_PAD_PT } from '../../core/view/layout'
 import { isOpenRow } from './blocks'
-import type { Block, PathSide, RowBlock, TreeStroke } from './blocks'
-import type { PathLine } from '../../core/view/status-path'
+import type { Block, RowBlock } from './blocks'
 import type { RowMotion } from './motion'
 import {
   CHILD_GAP,
   CONTROL_GAP,
-  EDGE,
   HEAD_GAP,
   INSIDE_GAP,
   ITEM_GAP,
   LINE_HEIGHT,
   LIST_GAP,
   LIST_MARGIN,
-  NEST,
   SECTION_GAP,
-  SMALL_GAP,
-  flatten,
-  mixInto,
 } from './paint-theme'
-import type { Paint, Theme } from './paint-theme'
+import type { Paint } from './paint-theme'
 import { panelId, titleId } from './heights'
 import { shutTo } from './block-glide'
+import { contentStrokeEls, feedsOf, passingOf, runsIn, spaceColumnEl, strokeFadesOf } from './paint-strokes'
 import { SLIDE_PX, enterDelayMs } from '../../core/view/row-motion'
 import { HEIGHT_SPRING } from '../../core/view/springs'
 
@@ -254,132 +249,13 @@ function spaceEl(s: Space, p: Paint, columns: Element[]): Element {
 }
 
 /**
- * The path's line and the nesting connectors: the text mixed into the panel's background at the Codex tab's `--tree-line`
- * share, or into `under`, laid over the panel's background, where a connector runs through a box that has a translucent color of
- * its own, as a selected row's.
- */
-const TREE_LINE_SHARE = 0.2
-export const lineColor = (t: Theme, under: Theme[keyof Theme] = t.background) =>
-  mixInto(t.foreground, flatten(under, t.background), TREE_LINE_SHARE)
-
-/** Where the path's line runs: under the middle of a milestone's mark. */
-export const PATH_X = EDGE + 4
-
-/** A stretch of the path's line from `top`, down to `height` or to the end of its box. Dashed into the milestone that reads next. */
-function pathLineEl(line: PathLine, top: number, height: number | null, t: Theme): Element[] {
-  if (line === null) return []
-  const el = div().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t))
-  const sized = height === null ? el.bottom(0) : el.h(height)
-
-  return [line === 'to-next' ? sized.border_dashed() : sized]
-}
-
-/** A tree column at `depth`, from `top` down to `height` or to the end of its box. */
-const columnEl = (depth: number, top: number, height: number | null, t: Theme): Element => {
-  const el = div()
-    .absolute()
-    .left(PATH_X + depth * NEST)
-    .top(top)
-    .w(1)
-    .border_l_1()
-    .border_color(lineColor(t))
-
-  return height === null ? el.bottom(0) : el.h(height)
-}
-
-/** A column a stroke takes at `depth`, dashed where it is the path's line into the milestone that reads next. */
-type Column = { depth: number; isDashed: boolean }
-
-const pathColumn = (line: PathLine): Column[] => (line === null ? [] : [{ depth: 0, isDashed: line === 'to-next' }])
-
-/** The columns a block's strokes run in on from above it. */
-function runsIn(b: Block): Column[] {
-  const path = 'path' in b ? b.path : undefined
-  const tree = 'tree' in b ? (b.tree ?? []) : []
-  const line = path === undefined ? null : path.is === 'work' ? path.line : path.above
-  const columns = tree.filter(s => s.is === 'past' || s.is === 'mid' || s.is === 'last')
-
-  return [...pathColumn(line), ...columns.map(s => ({ depth: s.depth, isDashed: false }))]
-}
-
-/** The columns a block's strokes run on to below it. */
-function runsOn(b: Block): Column[] {
-  const path = 'path' in b ? b.path : undefined
-  const tree = 'tree' in b ? (b.tree ?? []) : []
-  const line = path === undefined ? null : path.is === 'work' ? path.line : path.below
-  const columns = tree.filter(s => s.is === 'down' || s.is === 'past' || s.is === 'mid')
-
-  return [...pathColumn(line), ...columns.map(s => ({ depth: s.depth, isDashed: false }))]
-}
-
-/**
- * The columns that run past each block where its own strokes do not run on below it: those the nearest block above
- * runs on and the nearest block below runs in. A block between them that enters or leaves, as the Later label or a
- * last row whose column ends at its arm, then keeps the column whole across its gliding box. A block whose box is
- * shutting is no neighbor.
- */
-function passingOf(blocks: Block[], isShut: (b: Block) => boolean): Column[][] {
-  const isNeighbor = (b: Block) => b.kind !== 'gap' && !isShut(b)
-
-  return blocks.map((b, i) => {
-    const above = blocks.slice(0, i).findLast(isNeighbor)
-    const below = blocks.slice(i + 1).find(isNeighbor)
-    if (!above || !below) return []
-    const own = new Set(runsOn(b).map(c => c.depth))
-    const into = new Set(runsIn(below).map(c => c.depth))
-
-    return runsOn(above).filter(c => !own.has(c.depth) && into.has(c.depth))
-  })
-}
-
-/** A column drawn across the whole of its box. */
-const wholeColumnEl = (c: Column, t: Theme): Element =>
-  c.isDashed ? pathLineEl('to-next', 0, null, t)[0]! : columnEl(c.depth, 0, null, t)
-
-/**
- * The path's line and the nesting connectors beside a block's content, each in the column under the marks of rows at
- * its depth, the column the path's line takes at depth 0. An arm starts a pixel right of its column, and a column that
- * ends at an arm takes the arm's row, so no two strokes cover the same pixel. Arms belong to their row and fade with it.
- */
-function contentStrokeEls(b: Block, t: Theme, fade: (el: Element) => Element): Element[] {
-  const path = 'path' in b ? b.path : undefined
-  const tree = 'tree' in b ? (b.tree ?? []) : []
-  const top = Math.round(padOf(b))
-  const armAt = Math.round(top + LINE_HEIGHT / 2)
-  const pathEls = (side: PathSide): Element[] =>
-    side.is === 'work'
-      ? pathLineEl(side.line, 0, null, t)
-      : [...pathLineEl(side.above, 0, top, t), ...pathLineEl(side.below, top + LINE_HEIGHT, null, t)]
-  const treeEls = tree.flatMap(({ depth, is }: TreeStroke): Element[] => {
-    const arm = fade(
-      div()
-        .absolute()
-        .left(PATH_X + depth * NEST + 1)
-        .top(armAt)
-        .w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP)
-        .h(1)
-        .border_t_1()
-        .border_color(lineColor(t)),
-    )
-    if (is === 'down') return [columnEl(depth, top + LINE_HEIGHT, null, t)]
-    if (is === 'past') return [columnEl(depth, 0, null, t)]
-    if (is === 'arm') return [arm]
-    if (is === 'last') return [columnEl(depth, 0, armAt + 1, t), arm]
-
-    return [columnEl(depth, 0, null, t), arm]
-  })
-
-  return [...(path ? pathEls(path) : []), ...treeEls]
-}
-
-/**
  * Each block in a box that never shrinks, with its space above it. Every distance that can change is the height of a
  * box whose spring is declared in every draw: the space, and the content. So a move that starts while another glides
  * starts where each box is drawn. A block that enters or leaves also fades its own drawing: out while its space holds,
- * and in once its space is nearly open.
- * The path's line and the tree columns beside it do not fade, so they stay whole past a block that comes or goes. The
- * list scrolls in a box of fixed height, and a block that could shrink loses its space, or the end of its text,
- * whenever the list overflows.
+ * and in once its space is nearly open. Its connectors fade with it, and so does a column that joins it to a block that
+ * stays, so no connector shows while what it joins does not (`strokeFadesOf`). A column that runs on past it between
+ * two blocks that stay does not fade. The list scrolls in a box of fixed height, and a block that could shrink loses its
+ * space, or the end of its text, whenever the list overflows.
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
   const isShut = (b: Block) => p.motion.get(b.id)?.box === 'shut'
@@ -391,22 +267,38 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     return isNewFormUnmeasured ? m.former : b
   }
   const spaces = spacesOf(blocks, isShut, heldForm)
-  const passing = passingOf(
-    spaces.map(s => s.block),
-    isShut,
-  )
-
-  return spaces.map((s, i) => {
-    const b = s.block
-    const passes = passing[i] ?? []
-    const comesIn = runsIn(b)
-    const intoSpace = [...comesIn, ...passes.filter(c => !comesIn.some(o => o.depth === c.depth))]
+  const drawn = spaces.map(s => s.block)
+  const passing = passingOf(drawn, isShut)
+  const looks = drawn.map(b => {
     const m = p.motion.get(b.id)
     const height = fitHeight(b, m, p)
     const isShown = m?.box === 'open' && m.isShown && height !== undefined
     const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: 'ease-out' as const }
     const fade = (e: Element): Element => (m?.box ? e.opacity(isShown ? 1 : 0).transition('opacity', glide) : e)
+    const isMoving = m?.box != null
+    const move = { isMoving, isGone: isMoving && m?.state === 'leaving' && m.box === 'shut' }
+
+    return { m, isShown, glide, fade, move }
+  })
+  const moves = looks.map(l => l.move)
+  const strokeFades = strokeFadesOf(
+    drawn,
+    passing,
+    moves,
+    looks.map(l => l.fade),
+  )
+  const feeds = feedsOf(drawn, moves)
+
+  return spaces.map((s, i) => {
+    const b = s.block
+    const passes = passing[i] ?? []
+    const comesIn = runsIn(b)
+    const intoSpace = [...comesIn, ...passes.filter(c => !comesIn.some(o => o.depth === c.depth))]
+    const look = looks[i]
+    const f = strokeFades[i]
+    if (!look || !f) throw new Error(`no look for block ${b.id}`)
+    const { m, isShown, glide, fade } = look
     const slide = (e: Element): Element =>
       m?.box
         ? e
@@ -422,14 +314,17 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
         spaceEl(
           s,
           p,
-          intoSpace.map(c => wholeColumnEl(c, p.t)),
+          intoSpace.map(c => spaceColumnEl(c, f, p.t)),
         ),
       )
       .child(
-        contentEl(b, m, p, slide(fade(el(b))), [
-          ...contentStrokeEls(b, p.t, fade),
-          ...passes.map(c => wholeColumnEl(c, p.t)),
-        ]),
+        contentEl(
+          b,
+          m,
+          p,
+          slide(fade(el(b))),
+          contentStrokeEls(b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? []),
+        ),
       )
   })
 }

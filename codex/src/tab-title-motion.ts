@@ -24,24 +24,6 @@ function titleOf(line: HTMLElement): { full: HTMLElement; short: HTMLElement } |
 }
 
 /**
- * Fits a moving title's closed form to the closed row's height. The closed form draws the open form's weight, at which
- * its title can need a line more, or push the label beside it to a line of its own. So the title is clamped to the
- * lines it takes at the closed weight, with "…" in place of the rest, and a label that shares its line keeps it.
- */
-function fitClosedForm(short: HTMLElement) {
-  const part = short.querySelector<HTMLElement>('.title-part')
-  if (!part) return
-  part.style.removeProperty('-webkit-line-clamp')
-  delete short.dataset.oneLine
-  short.style.fontWeight = 'inherit'
-  const closedHeight = short.getBoundingClientRect().height
-  const lines = Math.round(part.getBoundingClientRect().height / parseFloat(getComputedStyle(part).lineHeight))
-  short.style.fontWeight = ''
-  if (lines > 0) part.style.setProperty('-webkit-line-clamp', String(lines))
-  if (short.getBoundingClientRect().height - closedHeight >= 0.5) short.dataset.oneLine = ''
-}
-
-/**
  * Fades a title from its closed form to its open form, or back, after `delay` ms, as `titleFades` times it, or in one
  * frame when not `isFaded`. Each form fades from the opacity it shows now, so a fade that turns back never blinks.
  */
@@ -70,7 +52,6 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
   const title = line && titleOf(line)
   if (!line || !title) return
   glides.get(line)?.anim.cancel()
-  fitClosedForm(title.short)
   const to = line.getBoundingClientRect().height
   const from: SpringState = held ?? { x: Math.min(title.short.getBoundingClientRect().height, to), v: 0 }
   if (to - from.x < 0.5 && Math.abs(from.v) * FRAME_MS < 0.5) {
@@ -89,7 +70,6 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
  */
 export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
   const title = titleOf(line)
-  if (title) fitClosedForm(title.short)
   const end = title ? Math.max(to, title.short.getBoundingClientRect().height) : to
   if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null))
     swapTitle(title, false, 0, delay >= LEAVE_FADE_MS)

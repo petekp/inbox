@@ -5,7 +5,7 @@ import { answersFitLine } from '../../core/view/action-plan'
 import type { Button, RowBlock } from './blocks'
 import { CONTROL_GAP, EDGE, MARK_W, NEST, SMALL_GAP } from './paint-theme'
 import { buttonEl } from './paint-parts'
-import { PATH_X, lineColor } from './paint-space'
+import { PATH_X, lineColor } from './paint-strokes'
 import type { Paint, Theme } from './paint-theme'
 
 /** The trunk of a row's tree under the middle of the row's mark, from `top` to the end of its box or down to `height`. */
