@@ -45,7 +45,7 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
           isOpen: !s.fold.isFolded,
           isLive: toggle !== undefined && !isInert,
           level: s.fold.level,
-          ...(s.fold.isFolded ? { count: s.fold.count } : {}),
+          ...(s.fold.isFolded ? { count: { id: `fold count ${s.id}`, value: s.fold.count } } : {}),
         }),
       ]
     : []

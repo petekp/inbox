@@ -36,20 +36,9 @@ const pathOf = (isOpen: boolean) => {
 const FOLDED_PATH = pathOf(false)
 const OPEN_PATH = pathOf(true)
 
-/** A copy laid over its element, shown while the copy is hovered. */
-const hoverCopy = (copy: Element | string): Element =>
-  div()
-    .absolute()
-    .top(0)
-    .left(0)
-    .size_full()
-    .opacity(0)
-    .hover(x => x.opacity(1))
-    .child(copy)
-
 /**
- * A fold's chevron, drawn from the same path as the Codex tab's icon, in `color`. When `isLive`, hovering it shows a
- * copy in the foreground color over it.
+ * A fold's chevron, drawn from the same path as the Codex tab's icon, in `color`. When `isLive`, hovering it draws a
+ * second copy in the foreground color over it, since the kit styles an element only on its own hover.
  */
 function chevronEl(isOpen: boolean, t: Theme, isLive: boolean, color: Theme['muted']): Element {
   const path = isOpen ? OPEN_PATH : FOLDED_PATH
@@ -61,22 +50,19 @@ function chevronEl(isOpen: boolean, t: Theme, isLive: boolean, color: Theme['mut
     .w(SIZE_PX)
     .h(SIZE_PX)
     .child(shape(color))
-    .when(isLive, e => e.child(hoverCopy(shape(t.foreground))))
-}
-
-/**
- * The count of the rows a folded parent hides. A hover text color on it draws no change in Herdr, so when `isLive`,
- * hovering it shows a copy in the foreground color over it.
- */
-function countEl(count: number, t: Theme, isLive: boolean): Element {
-  const text = `${count}`
-
-  return div()
-    .relative()
-    .flex_none()
-    .ml(SMALL_GAP)
-    .child(text)
-    .when(isLive, e => e.child(hoverCopy(text).text_color(t.foreground)))
+    .when(isLive, e =>
+      e.child(
+        div()
+          .absolute()
+          .top(0)
+          .left(0)
+          .w(SIZE_PX)
+          .h(SIZE_PX)
+          .opacity(0)
+          .hover(x => x.opacity(1))
+          .child(shape(t.foreground)),
+      ),
+    )
 }
 
 /**
@@ -85,7 +71,7 @@ function countEl(count: number, t: Theme, isLive: boolean): Element {
  */
 export function foldChevronEl(
   t: Theme,
-  fold: { isOpen: boolean; isLive: boolean; level: TextLevel; count?: number },
+  fold: { isOpen: boolean; isLive: boolean; level: TextLevel; count?: { id: string; value: number } },
 ): Element {
   const color = fold.level === 'faint' ? faintOf(t) : t.muted
 
@@ -96,5 +82,16 @@ export function foldChevronEl(
     .ml(SMALL_GAP)
     .text_color(color)
     .child(chevronEl(fold.isOpen, t, fold.isLive, color))
-    .children(fold.count === undefined ? [] : [countEl(fold.count, t, fold.isLive)])
+    .children(
+      fold.count === undefined
+        ? []
+        : [
+            div()
+              // A hover text color takes effect only on an element with an id.
+              .id(fold.count.id)
+              .ml(SMALL_GAP)
+              .child(`${fold.count.value}`)
+              .when(fold.isLive, c => c.hover(x => x.text_color(t.foreground))),
+          ],
+    )
 }
