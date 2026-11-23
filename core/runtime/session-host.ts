@@ -112,6 +112,11 @@ export type SessionHost<S extends Session> = {
    * session's `prViews` then says why, which the press's result reads.
    */
   refreshPrs(): Promise<void>
+  /**
+   * Starts a fetch of the session's PRs and returns at once. It runs once any fetch running for the session ends, and
+   * fetches as a poll does: a limit error stops it until the limit resets.
+   */
+  fetchPrsInBackground(): void
   refreshPrsIfDue?(): Promise<void>
   gh: {
     /**

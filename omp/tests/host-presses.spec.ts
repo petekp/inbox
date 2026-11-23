@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { isSubjectSeen } from '../../core/domain/status-children'
 import { NO_HOLDS } from '../../core/view/timing'
 import { createInbox } from '../src/host'
+import { updateState } from '../src/state'
+import { BLOCKED_PR, FIX_REF } from '../../tests/session-helpers'
 import {
   call,
   deps,
@@ -384,4 +386,24 @@ test('a Compare press in omp lets the agent hand the comparison to a background 
 
   expect(w.sent.at(-1)!.text).toContain('If you can run a subagent in the background, hand it this work')
   expect(w.sent.at(-1)!.text).not.toContain('reply with the result before this turn ends')
+})
+
+test('Open PR opens the PR’s page, then reads the PRs', async () => {
+  const inbox = createInbox(pi(), deps())
+  await prompt('fix the PR')
+  await settle()
+  await updateState(w.dir, 's1', s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: [FIX_REF] },
+    prViews: { ...s.prViews, views: { [FIX_REF]: { ...BLOCKED_PR, fetchedAt: w.clock } } },
+  }))
+  const before = w.execCalls.length
+  const outcome = await inbox.press(makeCtx(), { action: 'pr-open', ref: FIX_REF }, NO_HOLDS)
+  await settle()
+
+  expect(outcome.error).toBeNull()
+  const after = w.execCalls.slice(before)
+  const opened = after.findIndex(c => c.args.includes(BLOCKED_PR.url))
+  expect(opened).toBeGreaterThanOrEqual(0)
+  expect(after.findIndex(c => c.args.includes('graphql'))).toBeGreaterThan(opened)
 })

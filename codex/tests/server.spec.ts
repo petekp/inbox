@@ -57,7 +57,9 @@ test('a bulk PR prompt arrives on every affected row without acknowledging a new
 })
 
 test('tracked PR steps are drawn and open the same linked and branch PRs without duplicate links', async () => {
-  const { dir, calls, call } = await prServer(ghAnswer)
+  const { dir, calls, call } = await prServer(args =>
+    args[0] === 'open' ? { code: 0, stdout: '', stderr: '' } : { code: -1, stdout: '', stderr: '' },
+  )
   const d = demoView(100, 'Codex')
   assert.ok(d.prViews.branchRef)
   const branch = d.prViews.views[d.prViews.branchRef]!
@@ -92,10 +94,13 @@ test('tracked PR steps are drawn and open the same linked and branch PRs without
     const reply = await call('inbox_press', { press: action.press, thread: 's1' })
     assert.equal(reply.result.structuredContent.error, null)
   }
-  assert.deepEqual(calls, [
-    ['open', linked.url],
-    ['open', branch.url],
-  ])
+  assert.deepEqual(
+    calls.filter(c => c[0] === 'open'),
+    [
+      ['open', linked.url],
+      ['open', branch.url],
+    ],
+  )
 })
 
 test('a PR press with an unknown queue outcome keeps its receipt and unconfirmed feedback', async () => {

@@ -140,7 +140,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   w.ghAnswers.push({ match: argv => argv[0] === 'open', stdout: '', hold: () => new Promise(r => (opened = r)) })
   const pressing = pane.press({ key: 'help-i1-0' })
   await clock.settle()
-  expect(w.ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12'])
+  expect(w.ran.filter(argv => argv[0] === 'open').at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12'])
   expect(await pane.find({ text: 'Opening PR #12…' })).toBeDefined()
   expect(await pane.find({ text: /\u2007·\sOpening/ })).toBeUndefined()
   await clock.advance(SETTLED_MS / 2)
@@ -232,7 +232,7 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect((await pane.find({ key: 'address-T1-key' }))?.props.label).toBe('Address')
   await pane.press({ key: 'open-T1' })
   await clock.settle()
-  expect(w.ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12#r1'])
+  expect(w.ran.filter(argv => argv[0] === 'open').at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12#r1'])
   expect(await pane.find({ text: /^\u2007·\s✓\sOpened\sthe\scomment$/ })).toBeDefined()
   expect(await pane.find({ text: /^ 1$/ })).toBeDefined()
   hasReply = true

@@ -29,7 +29,7 @@ import {
 } from '../view/press-reducer'
 import type { Effect } from '../view/press-reducer'
 import { finishedResult, withResult, runSends, runLocalEffects } from './press-effects'
-import { rerunRun } from './host-prs'
+import { opensTrackedPr, rerunRun } from './host-prs'
 import { refreshProblem } from '../view/pr-refresh'
 import type { EffectHost } from './press-effects'
 import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from '../view/pressed'
@@ -184,6 +184,7 @@ export type PressHost<S extends Session> = Pick<
   | 'perform'
   | 'refreshPrs'
   | 'refreshPrsIfDue'
+  | 'fetchPrsInBackground'
   | 'gh'
   | 'newId'
   | 'isDeliveryHeldUntilRun'
@@ -472,6 +473,8 @@ export async function startPress<S extends Session>(
         isUnconfirmed = true
       }
       await runLocalEffects(effectHost, r.effects, Object.keys(r.lasts), r.lasts[rowId]?.result)
+      const hasOpen = r.effects.some(e => e.kind === 'open')
+      if (hasOpen && opensTrackedPr(await host.read(), r.effects)) host.fetchPrsInBackground()
 
       const isDone = !isPrPress(p) && p.action === 'done'
       const isHeld = Object.values(r.lasts).some(isHeldSend)

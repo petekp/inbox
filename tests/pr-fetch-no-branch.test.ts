@@ -64,6 +64,7 @@ function hostOf(prLookup: { exitCode: number; stderr: string }, start: Session =
     deliver: async () => ({ state: 'accepted' as const, queuedId: null }),
     perform: async () => null,
     refreshPrs: () => fetchPrs(host, true, true),
+    fetchPrsInBackground: () => {},
     newId: () => 'id',
     comparePage: '',
     compareInBackground: false,

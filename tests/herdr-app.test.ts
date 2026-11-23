@@ -18,6 +18,7 @@ import type { RemoteCommand } from '../core/remote/remote-commands'
 import { remoteReceipts } from '../core/runtime/remote-command-state'
 import { memoryCommandStore } from './memory-command-store'
 import { PRESS_LIFETIME_MS } from '../core/domain/preconditions'
+import { BLOCKED_PR, FIX_REF } from './session-helpers'
 
 const SOURCE: EnvelopeSource = { host: 'omp', agent: 'omp', sessionId: 's1', terminal: 't1', writtenAt: 5 }
 
@@ -477,4 +478,37 @@ test('a Herdr press older than its lifetime sends nothing, and the session names
     { id: 'p1', outcome: 'refused', why: 'This press is too old to run. Nothing was sent.' },
     [],
   ])
+})
+
+test('a Herdr Open PR press the look opened itself reads the PRs once the host applies it', async () => {
+  const { host: base, performed } = fakeHost(async () => null)
+  let reads = 0
+  const host = {
+    ...base,
+    viewers: memoryViewerStores().of('s1', () => undefined),
+    commands: memoryCommandStore(),
+    readDurable: () => base.read(),
+    fetchPrsInBackground: () => void (reads += 1),
+  }
+  await host.update(s => ({
+    ...s,
+    ledger: { ...s.ledger, prs: [FIX_REF] },
+    prViews: { ...s.prViews, views: { [FIX_REF]: BLOCKED_PR } },
+  }))
+  const pressedAt = await host.now()
+
+  await startHerdrFile(
+    host,
+    {
+      format: 1,
+      id: 'p1',
+      pressedAt,
+      press: { action: 'pr-open', ref: FIX_REF },
+      holds: { ...HOLDS, listInput: null },
+      result: { error: null },
+    },
+    's1',
+  )
+
+  expect([(await host.read()).lastHerdrPress, performed, reads]).toEqual([{ id: 'p1', outcome: 'applied' }, [], 1])
 })

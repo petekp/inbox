@@ -178,3 +178,32 @@ test('when the save that ends a fetch fails, the poll still fetches the PRs agai
   expect(refused).toBeGreaterThan(0)
   expect(fetches).toBeGreaterThanOrEqual(before + 2)
 })
+
+test('Open PR opens the PR’s page and reads the PR again, so the tab shows a change made on GitHub', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  let title = 'Linked work'
+  w.ghAnswers.push(
+    {
+      match: isPr12View,
+      get stdout() {
+        return JSON.stringify({ ...JSON.parse(PR_12_VIEW), title })
+      },
+    },
+    NO_THREADS,
+  )
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await linkPr12($)
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+  await pane.press({ key: 'tab-prs' })
+  await clock.settle()
+  expect(await pane.find({ text: /Linked work$/ })).toBeDefined()
+
+  title = 'Linked work, renamed'
+  await pane.press({ key: 'open-acme/greet#12' })
+  await clock.settle()
+
+  expect(w.ran).toContainEqual(['open', 'https://github.com/acme/greet/pull/12'])
+  expect(await pane.find({ text: /Linked work, renamed$/ })).toBeDefined()
+})
