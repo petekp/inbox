@@ -1,4 +1,4 @@
-import { DARK_TONES, LIGHT_TONES } from '../../core/view/tones'
+import { DARK_TONES, faintOver, LIGHT_TONES } from '../../core/view/tones'
 import {
   BUTTON_BORDER_PT,
   BUTTON_PAD_X_PT,
@@ -80,6 +80,9 @@ export const colorOf = (t: Theme, tone: Tone): Color =>
   tone === 'tasks' || tone === 'needsYou'
     ? ((isLightTheme(t) ? LIGHT_TONES : DARK_TONES)[tone] as Color)
     : t[tone === null ? 'foreground' : TONE_COLORS[tone]]
+
+/** The faint text level in `t`: its muted color faded toward its background, as `faintOver` gives it. */
+export const faintOf = (t: Theme): Color => faintOver(t.muted, t.background) as Color
 
 /** A theme color at a share of its strength, for a banner's fill and border. Tone colors are opaque `#rrggbb`. */
 export const tint = (c: Color, share: number): Color =>

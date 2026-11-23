@@ -106,6 +106,7 @@ export const HERDR: LookTable = {
       reason: 'A done fold takes clicks only, since the Status page selects no row.',
     },
     'status-named-fold': { kind: 'full' },
+    'status-faint-text': { kind: 'full' },
     'status-parent-fold': {
       kind: 'different',
       reason:

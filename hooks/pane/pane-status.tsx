@@ -30,11 +30,11 @@ import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from '../../core/view/status-keys'
 import { seenSubjectIds, type StatusRow, WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine } from '../../core/view/status-page-parts'
+import { mergedLine, textLevelOf } from '../../core/view/status-page-parts'
 import { countsText, countsUnits, isParentCollapsed, unfoldedRows } from '../../core/view/status-folds'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import { statusRowPads } from '../../core/view/status-gaps'
-import { SELECTION_BAR } from './terminal-text'
+import { levelSpan, SELECTION_BAR } from './terminal-text'
 
 export function paneStatus(
   {
@@ -348,7 +348,7 @@ export function paneStatus(
         ...(r.waitsOn
           ? [statusPageText(`status-${r.id}-waits-on`, [{ text: r.waitsOn, isNeedsYou: true }], r.depth)]
           : []),
-        ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], r.depth)] : []),
+        ...(r.text ? [statusPageText(`status-${r.id}-text`, [levelSpan(r.text, textLevelOf(r))], r.depth)] : []),
         ...(r.merged
           ? [
               statusPageText(
@@ -387,7 +387,7 @@ export function paneStatus(
         mark,
         content: [
           statusNameLine(`status-${r.id}-name`, { text: r.name, isMuted: true }, null, r.depth),
-          ...(r.text ? [statusPageText(`status-${r.id}-text`, [{ text: r.text, isMuted: true }], r.depth)] : []),
+          ...(r.text ? [statusPageText(`status-${r.id}-text`, [levelSpan(r.text, textLevelOf(r))], r.depth)] : []),
         ],
         tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1, pad.padY, pad.padBelow) : null,
         ...pad,

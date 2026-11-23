@@ -2,6 +2,7 @@ import { desktopLines, desktopTextPt } from './desktop-metrics'
 import { cutForEllipsis } from '../../core/domain/text'
 import { DOT } from '../../core/view/rows'
 import { parseInline, type Span } from '../../core/view/inline'
+import type { TextLevel } from '../../core/view/status-page-parts'
 
 /**
  * `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. With `isCutAtWord`, the
@@ -29,9 +30,9 @@ export function desktopSpanLines(
     kept.push({ ...s, text: s.text.slice(0, room) })
     room -= s.text.length
   }
-  const isMuted = kept.at(-1)?.isMuted
+  const { isMuted, isFaint } = kept.at(-1) ?? {}
 
-  return [...kept, { text: '…', ...(isMuted ? { isMuted } : {}) }]
+  return [...kept, { text: '…', ...(isMuted ? { isMuted } : {}), ...(isFaint ? { isFaint } : {}) }]
 }
 /** The most words from the start of `line` that `fit` with an ellipsis after them, or null when not even one does. */
 function cutAtWord(line: string, fits: (withEllipsis: string) => boolean): string | null {
@@ -72,6 +73,7 @@ export function lineCount(text: string, width: number): number {
 export type TerminalSpan = Span & {
   isLinkAddress?: true
   isMuted?: true
+  isFaint?: true
   isNeedsYou?: true
   isDone?: true
   isUnbroken?: true
@@ -141,8 +143,8 @@ export function terminalSpanLines(spans: TerminalSpan[], width: number, limit = 
     const last = kept.at(-1)!
     const shown = cutForEllipsis(last.map(c => c.text).join(''), t => t.length <= size)
     while (columns(last) > shown.length) last.pop()
-    const isMuted = last.at(-1)?.span.isMuted
-    last.push({ text: '…', span: { text: '…', ...(isMuted ? { isMuted } : {}) } })
+    const { isMuted, isFaint } = last.at(-1)?.span ?? {}
+    last.push({ text: '…', span: { text: '…', ...(isMuted ? { isMuted } : {}), ...(isFaint ? { isFaint } : {}) } })
   }
   return kept.map(characters => {
     const runs: TerminalSpan[] = []
@@ -228,3 +230,7 @@ export function settledTitleLine(title: string, label: string, fits: (text: stri
 
   return { title: shown, after: statusAfterTitle(`${DOT}${cut(label)}`, shown, fits) }
 }
+
+/** A Status line's text as one span at its level, muted or faint. */
+export const levelSpan = (text: string, level: TextLevel): TerminalSpan =>
+  level === 'faint' ? { text, isFaint: true } : { text, isMuted: true }

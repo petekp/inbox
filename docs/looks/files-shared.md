@@ -88,6 +88,6 @@ Part of [the look map](../looks.md#files).
 | `core/view/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
 | `core/view/row-parts.ts` | Shared module. The parts of an open question, task or finding in order (`rowParts`), and the gap between two neighboring parts (`partGap`): its step of the scale and the docked terminal's blank rows. Every look spaces a row's parts from it. |
 | `core/view/marks.ts` | Shared module. Shapes and glyphs for marks a font draws poorly: desktop draws its toned Svg marks from `markShape`, desktop and Codex draw ✗, ◌ and ⊘ from `mutedMarkShape`, and the terminal and omp draw ✗ as ⊘ from `textMark`. |
-| `core/view/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. Also the banner tints the terminal and omp draw. |
+| `core/view/tones.ts` | Shared module. Status colors for native marks and terminal palettes. The Codex build writes them into CSS, and omp draws them as true color. Also the banner tints the terminal and omp draw, and the faint text level. |
 | `core/view/inline.ts` | Shared module. Inline markdown in the agent's text, as spans each look draws. |
 | `core/view/session-presentation.ts` | Shared module. Selects presentation state, excluding private commands, viewers and model answers. |

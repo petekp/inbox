@@ -4,7 +4,7 @@ import type { StatusKey } from '../../core/view/status-keys'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine } from '../../core/view/status-page-parts'
+import { mergedLine, textLevelOf } from '../../core/view/status-page-parts'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { COUNTS_LABEL, countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../core/view/status-folds'
 import { statusGaps } from '../../core/view/status-gaps'
@@ -15,7 +15,7 @@ import { button, emptyBlock } from './blocks'
 import { emptyTab } from '../../core/view/empty-tab'
 import type { SessionView } from '../../core/view/session-view'
 import type { IsCollapsed } from '../../core/view/status-folds'
-import type { Block, Button, Does, Field, Mark, PathSide, Tone, TreeStroke } from './blocks'
+import type { Block, Button, Does, Field, Mark, PathSide, StatusLine, Tone, TreeStroke } from './blocks'
 
 /** The most cells a merged line holds before it cuts its names: three lines of the pane at its usual width. */
 const MERGED_CELLS = 150
@@ -59,13 +59,22 @@ function foldOf(
   return { fold: { isFolded, count: p.foldCount, toggle } }
 }
 
+type UnderLine = StatusLine['under'][number]
+
+/** The lines under a Status name: where it stands at its level, then the merged and was lines, muted. */
+function underLines(text: UnderLine | null, merged: string | null, was: string | null): UnderLine[] {
+  const muted = (t: string | null): UnderLine[] => (t === null ? [] : [{ text: t, level: 'muted' }])
+
+  return [
+    ...(text ? [text] : []),
+    ...muted(merged ? mergedLine(merged, t => cellWidth(t) <= MERGED_CELLS) : null),
+    ...muted(was ? `${WAS_PREFIX}${was}` : null),
+  ]
+}
+
 function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollapsed: IsCollapsed): Block[] {
   if (row.kind === 'subject') {
-    const under = [
-      row.text,
-      row.merged ? mergedLine(row.merged, t => cellWidth(t) <= MERGED_CELLS) : null,
-      row.was ? `${WAS_PREFIX}${row.was}` : null,
-    ].filter(l => l !== null)
+    const under = underLines(row.text ? { text: row.text, level: textLevelOf(row) } : null, row.merged, row.was)
 
     return [
       {
@@ -96,7 +105,7 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
         isBold: false,
         isMuted: true,
         stall: null,
-        under: row.text ? [row.text] : [],
+        under: underLines(row.text ? { text: row.text, level: textLevelOf(row) } : null, null, null),
         buttons: [],
         ...(row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}),
       },
@@ -200,11 +209,7 @@ function milestoneBlock(
     isMuted: m.isMuted,
     stall: x?.stall ?? null,
     ...(x?.waitsOn ? { waitsOn: x.waitsOn } : {}),
-    under: [
-      m.text,
-      x?.merged ? mergedLine(x.merged, t => cellWidth(t) <= MERGED_CELLS) : null,
-      m.was ? `${WAS_PREFIX}${m.was}` : null,
-    ].filter(l => l !== null),
+    under: underLines(m.text ? { text: m.text, level: textLevelOf(m) } : null, x?.merged ?? null, m.was),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
     ...foldOf(m, isCollapsed),
     path,

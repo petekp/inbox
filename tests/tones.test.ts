@@ -5,6 +5,9 @@ import {
   DARK_DALTONIZED_TONES,
   DARK_TONES,
   fadedOver,
+  FAINT_TEXT,
+  FAINT_TEXT_CONTRAST,
+  faintOver,
   LIGHT_DALTONIZED_TONES,
   LIGHT_TONES,
   MUTED_TEXT,
@@ -45,4 +48,13 @@ test('a faded color is the color at full share, the color under it at none, and 
   expect(fadedOver('#ff8000', '#000000', 1)).toBe('#ff8000')
   expect(fadedOver('#ff8000', '#000000', 0)).toBe('#000000')
   expect(fadedOver('#ff8000', '#204060', 0.5)).toBe('#906030')
+})
+
+test('faint text reads at the faint contrast, under muted text, and is muted where muted already reads at it or less', () => {
+  for (const mode of ['dark', 'light'] as const) {
+    const ratio = contrast(FAINT_TEXT[mode], THEME_BACKGROUND[mode])
+    expect(ratio >= FAINT_TEXT_CONTRAST && ratio < FAINT_TEXT_CONTRAST + 0.1).toBe(true)
+    expect(ratio < contrast(MUTED_TEXT[mode], THEME_BACKGROUND[mode])).toBe(true)
+  }
+  expect(faintOver('#8e8f90', '#ffffff')).toBe('#8e8f90')
 })

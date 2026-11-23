@@ -118,10 +118,49 @@ export const THEME_TEXT = { dark: '#ececec', light: '#1b1b1b' }
 /** Muted text over `THEME_BACKGROUND`, in the terminal's light and dark palettes and in omp's. */
 export const MUTED_TEXT = { dark: '#bdbdbd', light: '#595959' }
 
+/** The WCAG contrast ratio of two opaque `#rrggbb` colors, from 1 to 21. */
+function contrastRatio(a: string, b: string): number {
+  const luminance = (hex: string) => {
+    const [r = 0, g = 0, bl = 0] = [0, 1, 2].map(i => {
+      const c = Number.parseInt(hex.slice(1 + 2 * i, 3 + 2 * i), 16) / 255
+      return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+    })
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+  }
+  const [lighter = 0, darker = 0] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+/** The contrast faint text reads at over its background: a step below muted text, above the 3:1 floor. */
+export const FAINT_TEXT_CONTRAST = 3.5
+
+/**
+ * The faint text level over `under`: `muted` faded toward `under` until it reads at `FAINT_TEXT_CONTRAST`, or `muted`
+ * itself where it already reads at that or less. A done Status row's line under its name draws in it.
+ */
+export function faintOver(muted: string, under: string): string {
+  if (contrastRatio(muted, under) <= FAINT_TEXT_CONTRAST) return muted
+  let [weaker, stronger] = [0, 1]
+  for (let step = 0; step < 16; step++) {
+    const share = (weaker + stronger) / 2
+    if (contrastRatio(fadedOver(muted, under, share), under) >= FAINT_TEXT_CONTRAST) stronger = share
+    else weaker = share
+  }
+
+  return fadedOver(muted, under, stronger)
+}
+
 /** `hex` at `share` of its strength over `under`, as one opaque color, for a fade a terminal draws in steps. */
 export function fadedOver(hex: string, under: string, share: number): string {
   const channel = (c: string, i: number) => Number.parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16)
   const mixed = [0, 1, 2].map(i => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)))
 
   return `#${mixed.map(c => c.toString(16).padStart(2, '0')).join('')}`
+}
+
+/** Faint text over `THEME_BACKGROUND`, in the terminal's light and dark palettes. */
+export const FAINT_TEXT = {
+  dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),
+  light: faintOver(MUTED_TEXT.light, THEME_BACKGROUND.light),
 }

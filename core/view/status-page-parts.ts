@@ -134,6 +134,12 @@ const comparableName = (name: string) =>
     .replace(/[\s\-_]+/g, '')
     .replace(/[.!?:;,…]+$/, '')
 
+/** A text level below the body's: muted, or faint, a step quieter, from `core/view/tones.ts:FAINT_TEXT_CONTRAST`. */
+export type TextLevel = 'muted' | 'faint'
+
+/** The level of the line under a Status row's name: faint once the row is done (✓), so finished work reads settled. */
+export const textLevelOf = (row: { tone: StatusTone }): TextLevel => (row.tone === 'done' ? 'faint' : 'muted')
+
 /** `text`, or `null` when it only repeats the row's `name`, as `comparableName` compares them. */
 export const textBeyondName = (name: string, text: string | null | undefined): string | null =>
   text && comparableName(text) !== comparableName(name) ? text : null

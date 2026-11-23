@@ -7,6 +7,7 @@ import type { RowPress } from '../../core/domain/presses'
 import { DOT, shortAgo } from '../../core/view/rows'
 import type { ActionEmphasis } from '../../core/view/rows'
 import type { StatusStall } from '../../core/view/status-page'
+import type { TextLevel } from '../../core/view/status-page-parts'
 import type { PathLine } from '../../core/view/status-path'
 import type { EmptyTab, EmptyText } from '../../core/view/empty-tab'
 import type { ShownTab } from '../../core/view/tabs'
@@ -196,8 +197,8 @@ export type StatusLine = {
    * the whole name line takes.
    */
   fold?: { isFolded: boolean; count: number; toggle: Button }
-  /** Lines under the name, dim: where it stands, what it merged, the plan it replaced. */
-  under: string[]
+  /** Lines under the name, each at its text level: where it stands, what it merged, the plan it replaced. */
+  under: { text: string; level: TextLevel }[]
   buttons: Button[]
   path?: PathSide
   tree?: TreeStroke[]

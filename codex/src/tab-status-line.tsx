@@ -1,6 +1,6 @@
 import { Icon, RowActions } from './row-actions'
 import { seenSubjectIds, STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine } from '../../core/view/status-page-parts'
+import { mergedLine, textLevelOf } from '../../core/view/status-page-parts'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../core/view/status-keys'
 import { COUNTS_GAP, COUNTS_LABEL, countWords, unfoldedRows } from '../../core/view/status-folds'
 import { statusRowPads } from '../../core/view/status-gaps'
@@ -122,7 +122,7 @@ export function StatusLine({
             </div>
           ) : null}
           {row.text ? (
-            <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
+            <div class={`${textLevelOf(row)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
               {row.text}
             </div>
           ) : null}
@@ -153,7 +153,7 @@ export function StatusLine({
         <div class="content tight muted">
           <NameLine name={row.name} stall={null} />
           {row.text ? (
-            <div class="muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
+            <div class={`${textLevelOf(row)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
               {row.text}
             </div>
           ) : null}

@@ -9,6 +9,8 @@ import {
   LIGHT_BANNER_TINTS,
   LIGHT_DALTONIZED_TONES,
   LIGHT_TONES,
+  FAINT_TEXT,
+  faintOver,
   MUTED_TEXT,
   THEME_BACKGROUND,
   THEME_TEXT,
@@ -37,6 +39,8 @@ type Palette = {
   raisedText?: string
   selection?: string
   muted: string
+  /** The faint text level, a step below `muted`: `core/view/tones.ts:faintOver`. */
+  faint: string
   age: string
   key: string
   line: string
@@ -67,6 +71,7 @@ const DARK_PALETTE: Palette = {
   raised: '#4c4c4c',
   selection: '#3b4654',
   muted: MUTED_TEXT.dark,
+  faint: FAINT_TEXT.dark,
   age: '#a3a3a3',
   key: DARK_TONES.key,
   line: '#505050',
@@ -84,6 +89,7 @@ const LIGHT_PALETTE: Palette = {
   raised: '#d0d0d0',
   selection: '#b4d5ff',
   muted: MUTED_TEXT.light,
+  faint: FAINT_TEXT.light,
   age: '#666666',
   key: LIGHT_TONES.key,
   line: '#afafaf',
@@ -98,6 +104,7 @@ const DARK_ANSI_PALETTE: Palette = {
   raised: 'inactive',
   raisedText: 'inverseText',
   muted: 'inactive',
+  faint: 'inactive',
   age: 'inactive',
   key: 'suggestion',
   line: 'userMessageBackground',
@@ -122,6 +129,7 @@ const LIGHT_ANSI_PALETTE: Palette = {
   raised: 'text',
   raisedText: 'userMessageBackgroundHover',
   muted: 'inactive',
+  faint: 'inactive',
   age: 'inactive',
   key: 'suggestion',
   line: 'userMessageBackground',
@@ -158,6 +166,7 @@ const PALETTES: Record<string, Palette> = {
     tab: '#dcdcdc',
     raised: '#c8c8c8',
     muted: '#545454',
+    faint: faintOver('#545454', THEME_BACKGROUND.light),
     age: '#5e5e5e',
     key: LIGHT_DALTONIZED_TONES.key,
     divider: '#c0c0c0',
@@ -172,6 +181,7 @@ const THEME_KEY_PALETTE: Palette = {
   raised: 'subtle',
   raisedText: 'text',
   muted: 'inactive',
+  faint: 'inactive',
   age: 'inactive',
   key: 'remember',
   line: 'subtle',
@@ -195,6 +205,11 @@ const THEME_KEY_PALETTE: Palette = {
 // The app refuses an hsl() alpha or color-mix() color.
 const DESKTOP_AGE = '#85837e'
 /**
+ * One hex serves both of the app's themes, so faint text reads 3.9:1 on white and on the dark page: no one color reads
+ * nearer `FAINT_TEXT_CONTRAST` on both.
+ */
+const DESKTOP_FAINT = '#83817c'
+/**
  * Needs-you text in the app's own `warning` key draws amber, so a count would not match the orange mark beside it. The
  * app resolves a hex the same in both its themes, so one orange serves: 4.7:1 on the dark page, 3.7:1 on white.
  */
@@ -204,6 +219,7 @@ const DESKTOP_PALETTE: Palette = {
   raisedText: 'text',
   selection: 'rgba(128, 120, 105, 0.14)',
   muted: 'inactive',
+  faint: DESKTOP_FAINT,
   age: DESKTOP_AGE,
   key: 'remember',
   // The tree lines. One alpha serves both of the app's themes, about as strong as the Codex tab's and Herdr's tree lines.

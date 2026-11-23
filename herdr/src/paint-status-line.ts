@@ -3,7 +3,7 @@ import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import { STALL_GAP } from '../../core/view/status-page-parts'
 import type { StatusLine } from './blocks'
-import { EDGE, HELP_COLUMN, HELP_INDENT, LIST_GAP, MARK_W, NEST, colorOf } from './paint-theme'
+import { EDGE, HELP_COLUMN, HELP_INDENT, LIST_GAP, MARK_W, NEST, colorOf, faintOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { buttonsEl, lineEl, markEl } from './paint-parts'
 import { foldChevronEl } from './paint-chevron'
@@ -63,6 +63,6 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
     )
     .when(s.waitsOn !== undefined, e => e.child(lineEl(s.waitsOn ?? '', colorOf(t, 'needsYou'))))
-    .children(s.under.map(l => lineEl(l, t.muted)))
+    .children(s.under.map(l => lineEl(l.text, l.level === 'faint' ? faintOf(t) : t.muted)))
     .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)))
 }
