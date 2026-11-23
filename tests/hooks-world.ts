@@ -5,6 +5,7 @@ import { STATUS_SYSTEM } from '../core/domain/status-prompt'
 import { parseStatus } from '../core/domain/status'
 import { answersNextGoal } from '../core/domain/status-suggest'
 import { prNodeOf, prsAnswerOf, queriedPrs } from './gh-answers'
+import { fileCommand } from './hooks-world-files'
 import type { PrAnswer, ThreadsJson, ViewJson } from './gh-answers'
 
 export const LEDGER_REPLY = `NEW: decide | 1 | Use Node or Python? | Node / Python | Node
@@ -196,24 +197,10 @@ async function gh(argv: readonly string[]) {
   const hit = w.ghAnswers.find(a => a.match(argv))
   if (isPrsQuery(argv) && (!hit || isThreadsAnswer(hit))) return prsQueryAnswer(argv)
   await hit?.hold?.()
-  if (
-    !hit &&
-    (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc' || argv[0] === 'mkdir' || argv[0] === 'chmod')
-  )
+  if (!hit && (argv[0] === 'open' || argv[0] === 'herdr' || argv[0] === 'hc' || argv[0] === 'mkdir'))
     return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
   return answerOf(hit)
-}
-
-function fileCommand(argv: readonly string[]) {
-  const paths = argv.slice(argv.indexOf('--') + 1)
-  const [from = '', to = ''] = paths
-  if (argv[0] === 'mv' && w.isMoveFailing)
-    return { exitCode: 1, stdout: '', stderr: 'mv: rename failed', isStdoutTruncated: false, isStderrTruncated: false }
-  if (argv[0] === 'mv') w.written[to] = w.written[from] ?? ''
-  for (const path of argv[0] === 'mv' ? [from] : paths) delete w.written[path]
-
-  return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 }
 
 async function runBeforeAct() {
@@ -452,7 +439,8 @@ export function world($: Engine, on: On, prompts: string[], vars: Record<string,
         value: { exitCode: 0, stdout: `${branch}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
       }
     if (e.argv[0] === 'mv') await w.holdMove?.()
-    if (e.argv[0] === 'mv' || e.argv[0] === 'rm') return { value: fileCommand(e.argv) }
+    if (['mv', 'rm', 'chmod'].includes(e.argv[0] ?? ''))
+      return { value: fileCommand(e.argv, w.written, w.isMoveFailing) }
     if (w.isGhMissing && e.argv[0] === 'gh') throw new Error('spawn gh ENOENT')
     if (w.slowGhClock && e.argv[0] === 'gh') {
       await w.slowGhClock.sleep(GH_TIMEOUT_MS)
