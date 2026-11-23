@@ -83,8 +83,8 @@ export type ServerDeps = {
   /** Starts applying the presses the Herdr look writes, with `apply`. */
   followHerdrPresses?: (apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>) => void
   /**
-   * Starts calling `heard` with each session whose saved state another process may have changed. The server then reads
-   * the PRs when the save put a PR on the tab. Only the saves that go through `onWrite` count as the server's own.
+   * Starts calling `heard` with each session whose saved state changed, as when a hook saved it. The server then reads
+   * the PRs when the save shows a PR on the tab that no read has tried.
    */
   followSaves?: (heard: (sessionId: string) => void) => void
   /** The question before the tab installs the inbox's Herdr mod. Without it, the tab never asks. */
@@ -116,17 +116,9 @@ export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) &
 
 export function makeServer(given: ServerDeps): Server {
   const { onWrite } = given
-  const { dir, now } = given
-  const linkedPrs = linkedPrReads(
-    id => readState(dir, id),
-    id => fetchPrsNow(id),
-  )
   // Each report reads the newest state itself, so a tool call or press answers without waiting on `hc label`.
-  const reported = (s: SessionState) => {
-    linkedPrs.saved(s)
-    void onWrite?.(s).catch(() => undefined)
-  }
-  const deps = { ...given, onWrite: onWrite && (async (s: SessionState) => reported(s)) }
+  const deps = { ...given, onWrite: onWrite && (async (s: SessionState) => void onWrite(s).catch(() => undefined)) }
+  const { dir, now } = deps
   const prunedFor = new Set<string>()
   /** Each chat's newest turn in its rollout, as its last view read it. */
   const newestTurns = new Map<string, string>()
@@ -143,6 +135,7 @@ export function makeServer(given: ServerDeps): Server {
     background,
   )
   const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)
+  const linkedPrs = linkedPrReads(id => readState(dir, id), fetchPrsNow)
   deps.followHerdrPresses?.(onHerdrFile)
   deps.followSaves?.(id => background.track(linkedPrs.heard(id)))
 
@@ -174,16 +167,19 @@ export function makeServer(given: ServerDeps): Server {
       case 'close':
       case 'order_prs': {
         let result = ''
-        let addsPr = false
+        let added = null as SessionState | null
         const delegate = (await deps.delegate?.().catch(() => null)) ?? null
         const earlier = name === 'record' ? await recordMatchesNow(args, now()) : []
         await codexStore(dir, id, now, deps.onWrite).update(s => {
           const r = recorded(CODEX, s, name, args, now(), listedToolFields(), delegate, earlier)
           result = r.result
-          addsPr = addsTabPr(s, r.state)
+          if (addsTabPr(s, r.state)) added = r.state
           return heard(r.state)
         })
-        if (addsPr) fetchPrsNow(id)
+        if (added) {
+          linkedPrs.asked(added)
+          fetchPrsNow(id)
+        }
         return text(result)
       }
       case 'inbox': {

@@ -190,7 +190,7 @@ test('Clear merged and closed unlinks the merged and closed PRs and settles each
   assert.deepEqual((await readState(dir, 's1')).ledger.prs, [d.prViews.branchRef])
 })
 
-test('a save another process makes that links a PR reads it before any view, while a first save with no PR, a save that adds none and the server’s own order_prs save read nothing more', async () => {
+test('a save another process makes that links a PR reads it before any view, even after a server save that already holds the link, while a first save with no PR, a save that adds none and the server’s own order_prs save read nothing more', async () => {
   let heard: (id: string) => void = () => undefined
   const { dir, calls, call } = await prServer(ghAnswer, () => 100, {
     onWrite: async () => undefined,
@@ -204,6 +204,7 @@ test('a save another process makes that links a PR reads it before any view, whi
   assert.equal(queries(), 0)
 
   await updateState(dir, 's1', s => ({ ...s, ledger: { ...s.ledger, prs: ['acme/app#7'] } }))
+  await call('record', { kind: 'finding', finding_kind: 'issue', title: 'No lint script', detail: 'Only tests run.' })
   heard('s1')
   await call.settled()
   assert.equal(queries(), 1)

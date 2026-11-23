@@ -62,13 +62,13 @@ const CODEX_SAVES = Symbol.for('inbox.codexSaves')
 
 function followSaves(dir: string, log: (text: string) => void) {
   return (heard: (sessionId: string) => void) => {
-    const shared = globalThis as { [CODEX_SAVES]?: (() => void) | null }
-    shared[CODEX_SAVES]?.()
-    const stop = followCodexSaves(process.env, dir, heard, log)
-    shared[CODEX_SAVES] = stop
+    const shared = globalThis as { [CODEX_SAVES]?: { stop: (() => void) | null } }
+    const following = shared[CODEX_SAVES]
+    following?.stop?.()
+    shared[CODEX_SAVES] = { stop: followCodexSaves(process.env, dir, heard, log) }
     // Codex closes this process's input when it quits but can leave the process running, and a server left running
     // would go on reading PRs for the next Codex in the same terminal.
-    process.stdin.once('end', () => stop?.())
+    if (!following) process.stdin.once('end', () => shared[CODEX_SAVES]?.stop?.())
   }
 }
 
