@@ -46,29 +46,22 @@ function devPageIn(dir: string): () => Promise<string | null> {
  * needs Codex restarted, and a loader from before `isPluginFolderGone` passes only the first two. `startUpdate` starts
  * an update outside this process; a loader from before it passes none, and a tab then opens without catching its chat up.
  */
-/** Where the running handler keeps how to stop its press watcher, so a reloaded handler stops the one before it. */
+/**
+ * Where the running handler keeps how to stop its press watcher and its watch on the saved sessions, so a reloaded
+ * handler stops the ones before it.
+ */
 const HERDR_PRESSES = Symbol.for('inbox.herdrPresses')
-
-function followHerdrPresses(log: (text: string) => void) {
-  return (apply: Parameters<typeof followCodexPresses>[1]) => {
-    const shared = globalThis as { [HERDR_PRESSES]?: (() => void) | null }
-    shared[HERDR_PRESSES]?.()
-    shared[HERDR_PRESSES] = followCodexPresses(process.env, apply, log)
-  }
-}
-
-/** Where the running handler keeps how to stop its watch on the saved sessions, so a reloaded handler stops the one before it. */
 const CODEX_SAVES = Symbol.for('inbox.codexSaves')
 
-function followSaves(dir: string, log: (text: string) => void) {
-  return (heard: (sessionId: string) => void) => {
-    const shared = globalThis as { [CODEX_SAVES]?: { stop: (() => void) | null } }
-    const following = shared[CODEX_SAVES]
-    following?.stop?.()
-    shared[CODEX_SAVES] = { stop: followCodexSaves(process.env, dir, heard, log) }
-    // Codex closes this process's input when it quits but can leave the process running, and a server left running
-    // would go on reading PRs for the next Codex in the same terminal.
-    if (!following) process.stdin.once('end', () => shared[CODEX_SAVES]?.stop?.())
+type Stops = { [HERDR_PRESSES]?: (() => void) | null; [CODEX_SAVES]?: (() => void) | null }
+
+function following<T>(key: typeof HERDR_PRESSES | typeof CODEX_SAVES, start: (given: T) => (() => void) | null) {
+  return (given: T) => {
+    const shared = globalThis as Stops
+    shared[key]?.()
+    const stop = start(given)
+    shared[key] = stop
+    return () => stop?.()
   }
 }
 
@@ -103,8 +96,8 @@ export function createHandler(
       herdrOnWrite(process.env, run, dir, Date.now, log),
       registryOnWrite(process.env, dir, Date.now, process.ppid, log),
     ),
-    followHerdrPresses: followHerdrPresses(log),
-    followSaves: followSaves(dir, log),
+    followHerdrPresses: following(HERDR_PRESSES, apply => followCodexPresses(process.env, apply, log)),
+    followSaves: following(CODEX_SAVES, heard => followCodexSaves(process.env, dir, heard, log)),
     herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
     delegate: delegateReader(herdrTarget(process.env), run),
     openCatchUp: startUpdate && {

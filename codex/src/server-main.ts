@@ -130,8 +130,14 @@ const companion = herdrTarget(process.env)
       herdrLog(dir)(error instanceof Error ? error.message : 'Companion could not start.')
       return async () => {}
     })
+// Codex closes this process's input when it quits, and sends no signal. The process then ends once the handler has
+// stopped its watchers and its background work has settled. A handler from before `close` leaves its watchers running.
 process.stdin.once('end', () => {
   void companion.then(stop => stop())
+  void ready
+    .then(() => current?.handle)
+    .then(handle => handle?.close?.())
+    .catch(() => undefined)
 })
 
 createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', line => {

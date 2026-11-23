@@ -153,6 +153,7 @@ test("a press the look ran itself records the look's result, and each look press
     fallbackCli: async () => 'codex',
     followHerdrPresses: given => {
       apply = async (id, file) => void (await (await given(id, file)).waiting?.())
+      return () => undefined
     },
   })
   const look = (id: string, press: PressFile['press'], result?: PressFile['result']): PressFile => ({
@@ -202,6 +203,7 @@ test('a look file the Herdr look wrote counts the Status subjects it showed as s
     fallbackCli: async () => 'codex',
     followHerdrPresses: given => {
       apply = async (id, file) => void (await (await given(id, file)).waiting?.())
+      return () => undefined
     },
   })
 
@@ -296,6 +298,7 @@ test('a remote typed reply retains its outcome and does not queue twice after th
       fallbackCli: async () => 'codex',
       followHerdrPresses: given => {
         apply = async (id, file) => void (await (await given(id, file)).waiting?.())
+        return () => undefined
       },
     })
     return (file: HerdrFile) => apply!('remote-session', file)
