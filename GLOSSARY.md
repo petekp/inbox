@@ -96,7 +96,8 @@ Help calls them Indicators.
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
 lapsed (⊘ in the terminal and omp), as when the agent closed it because the work overtook it. It runs, as
-a Status mark does, while what the row sent is on its way to the agent.
+a Status mark does, while what the row sent is sending to the agent, and is
+the queued ○ while the message waits for the agent's turn to end.
 
 **Finding**:
 An issue or opportunity the agent noticed outside the current task.

@@ -301,11 +301,6 @@ export function rowMark(row: Pick<RowView, 'state' | 'feedback' | 'type'>): Resu
   return rowResultMark(row) ?? (row.state.is === 'open' && row.type !== 'finding' ? ASK_MARK : null)
 }
 
-/** Whether what a row sent is still on its way to the agent: `unconfirmed` and a refused send are not. */
-function isSendMoving(delivery: ClosedDelivery): boolean {
-  return delivery === 'sending' || delivery === 'queued'
-}
-
 export function allRows(v: InboxView): RowView[] {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows]
 }
@@ -390,9 +385,15 @@ export function settledMark(state: Pick<SettledState, 'delivery' | 'closedAs'>):
   return closedMark(state.closedAs, state.delivery)
 }
 
-/** A closed row's mark, as `CLOSED_MARKS` gives it: running while what it sent is on its way, else blank until it arrives. */
+const QUEUED_RESULT: ResultMark = { text: SUBJECT_MARKS.queued.mark, isRunning: false }
+
+/**
+ * A closed row's mark, as `CLOSED_MARKS` gives it: running while what it sent is sending, the still queued mark while
+ * the message waits for the agent's turn to end, so a closed row never reads as active, else blank until it arrives.
+ */
 export function closedMark(state: ClosedState, delivery: ClosedDelivery): ResultMark {
-  if (isSendMoving(delivery)) return RUNNING_RESULT
+  if (delivery === 'sending') return RUNNING_RESULT
+  if (delivery === 'queued') return QUEUED_RESULT
   return { text: delivery === null ? CLOSED_MARKS[state] : '', isRunning: false }
 }
 
