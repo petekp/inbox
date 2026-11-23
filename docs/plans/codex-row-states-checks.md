@@ -1,5 +1,7 @@
 # Checks on the Codex row states
 
+Status: built.
+
 These are the checks run on the row states that [codex-row-states.md](codex-row-states.md) describes.
 
 - Tests in `codex/tests/press-row-states.spec.ts`: every state reaches every target, a row drawing its panel never drops it except through `closing`, `settling` or `leaving`, a row turned around mid-move, and reduced motion. On the PRs tab of the real tab: a PR row closing with its panel, rows leaving from their places with their group and title, the press line growing in, a dismissed block settling under its settled line and growing back on Undo, Clear merged and closed settling two blocks while its buttons leave, a block leaving once the view drops it, and reduced motion.
