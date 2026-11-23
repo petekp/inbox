@@ -1,8 +1,8 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-22T20:28:30.211Z. 350487 characters follow.
+// Built at 2026-11-23T01:18:52.274Z. 354314 characters follow.
 
 // src/main.ts
-import { View, div as div15 } from "gpui-kit";
+import { View, div as div16 } from "gpui-kit";
 import { InputState, Scrollbar, v_flex as v_flex7 } from "gpui-base";
 import {
   appHome,
@@ -6035,7 +6035,7 @@ function nextDrawAt(now, moved) {
 }
 
 // src/paint-blocks.ts
-import { div as div14 } from "gpui-kit";
+import { div as div15 } from "gpui-kit";
 import { h_flex as h_flex9, v_flex as v_flex6 } from "gpui-base";
 
 // ../core/view/row-parts.ts
@@ -6249,12 +6249,158 @@ function fieldEl(f, p, indent, isInert = false, opening = null) {
 }
 
 // src/paint-empty.ts
-import { div as div6 } from "gpui-kit";
+import { div as div7 } from "gpui-kit";
 import { h_flex as h_flex2, v_flex as v_flex3 } from "gpui-base";
 
 // src/paint-space.ts
-import { div as div5 } from "gpui-kit";
+import { div as div6 } from "gpui-kit";
 import { v_flex as v_flex2 } from "gpui-base";
+
+// src/paint-strokes.ts
+import { div as div5 } from "gpui-kit";
+var TREE_LINE_SHARE = 0.2;
+var lineColor = (t, under = t.background) => mixInto(t.foreground, flatten(under, t.background), TREE_LINE_SHARE);
+var PATH_X = EDGE + 4;
+function lineEl2(c, top, height, t) {
+  const el = div5().absolute().left(PATH_X + c.depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const sized = height === null ? el.bottom(0) : el.h(height);
+  return c.isDashed ? sized.border_dashed() : sized;
+}
+var pathColumn = (line) => line === null ? [] : [{ depth: 0, isDashed: line === "to-next" }];
+function runsIn(b) {
+  const path = "path" in b ? b.path : undefined;
+  const tree = "tree" in b ? b.tree ?? [] : [];
+  const line = path === undefined ? null : path.is === "work" ? path.line : path.above;
+  const columns = tree.filter((s) => s.is === "past" || s.is === "mid" || s.is === "last");
+  return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
+}
+function runsOn(b) {
+  const path = "path" in b ? b.path : undefined;
+  const tree = "tree" in b ? b.tree ?? [] : [];
+  const line = path === undefined ? null : path.is === "work" ? path.line : path.below;
+  const columns = tree.filter((s) => s.is === "down" || s.is === "past" || s.is === "mid");
+  return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
+}
+var depthOf = (b) => ("depth" in b) ? b.depth : 0;
+function meetsAt(b, depth) {
+  const tree = "tree" in b ? b.tree ?? [] : [];
+  const isMilestone = "path" in b && b.path?.is === "milestone";
+  return isMilestone && depth === 0 || tree.some((s) => s.depth === depth && s.is !== "past");
+}
+function passingOf(blocks, isShut) {
+  const ins = blocks.map(runsIn);
+  const ons = blocks.map(runsOn);
+  const depths = [...new Set([...ins, ...ons].flat().map((c) => c.depth))];
+  const out = [];
+  const has = (cs, depth) => cs?.some((c) => c.depth === depth) === true;
+  const isNearest = (j, depth) => {
+    const b = blocks[j];
+    if (!b || b.kind === "gap" || isShut(b))
+      return false;
+    return depthOf(b) <= depth || meetsAt(b, depth) || has(ins[j], depth) || has(ons[j], depth);
+  };
+  const indices = blocks.map((_, j) => j);
+  for (const i of indices) {
+    const above = (depth) => indices.slice(0, i).findLast((j) => isNearest(j, depth));
+    const below = (depth) => indices.slice(i + 1).find((j) => isNearest(j, depth));
+    out.push(depths.flatMap((depth) => {
+      const from = above(depth);
+      const into = below(depth);
+      if (has(ons[i], depth) || from === undefined || into === undefined || !has(ins[into], depth))
+        return [];
+      const c = [...ons[from] ?? [], ...out[from] ?? []].find((o) => o.depth === depth);
+      return c ? [c] : [];
+    }));
+  }
+  return out;
+}
+var NO_FADE = (el) => el;
+function strokeFadesOf(blocks, passing, moves, fades) {
+  const depths = (cs, i) => new Set([...cs, ...passing[i] ?? []].map((c) => c.depth));
+  const ins = blocks.map((b, i) => depths(runsIn(b), i));
+  const ons = blocks.map((b, i) => depths(runsOn(b), i));
+  const isPassed = (j, depth) => {
+    const b = blocks[j];
+    return b !== undefined && ins[j]?.has(depth) === true && ons[j]?.has(depth) === true && !meetsAt(b, depth);
+  };
+  const reach = (i, depth, by) => {
+    let first = null;
+    for (let j = i + by;j >= 0 && j < blocks.length; j += by) {
+      const move = moves[j];
+      if (move?.isGone)
+        continue;
+      if (!(by === 1 ? ins[j] : ons[j])?.has(depth))
+        break;
+      if (!move?.isMoving && !isPassed(j, depth))
+        return { stays: true, first };
+      if (!move?.isMoving)
+        continue;
+      first ??= j;
+      if (!(by === 1 ? ons[j] : ins[j])?.has(depth))
+        break;
+    }
+    return { stays: false, first };
+  };
+  return blocks.map((_, i) => {
+    const own = fades[i] ?? NO_FADE;
+    if (moves[i]?.isMoving) {
+      const isThrough = (depth) => ins[i]?.has(depth) === true && ons[i]?.has(depth) === true && reach(i, depth, -1).stays && reach(i, depth, 1).stays;
+      const side = (depth) => isThrough(depth) ? NO_FADE : own;
+      return { own, above: side, below: side };
+    }
+    const endOf = (depth, by) => {
+      const { stays, first } = reach(i, depth, by);
+      return stays ? null : first;
+    };
+    const side = (by) => (depth) => {
+      const end = isPassed(i, depth) ? endOf(depth, -1) ?? endOf(depth, 1) : endOf(depth, by);
+      return end === null ? NO_FADE : fades[end] ?? NO_FADE;
+    };
+    return { own, above: side(-1), below: side(1) };
+  });
+}
+function feedsOf(blocks, moves) {
+  return blocks.map((b, i) => {
+    if (moves[i]?.isMoving || moves[i]?.isGone)
+      return [];
+    const next = blocks.findIndex((_, j) => j > i && moves[j]?.isGone !== true);
+    const below = blocks[next];
+    if (!below || !moves[next]?.isMoving)
+      return [];
+    const depth = depthOf(b);
+    const own = new Set(runsOn(b).map((c) => c.depth));
+    return runsIn(below).filter((c) => c.depth === depth && !c.isDashed && !own.has(c.depth));
+  });
+}
+var spaceColumnEl = (c, f, t) => f.above(c.depth)(lineEl2(c, 0, null, t));
+function contentStrokeEls(b, top, t, f, passes, feeds) {
+  const path = "path" in b ? b.path : undefined;
+  const tree = "tree" in b ? b.tree ?? [] : [];
+  const armAt = Math.round(top + LINE_HEIGHT / 2);
+  const whole = (c) => {
+    const up = f.above(c.depth);
+    const down = f.below(c.depth);
+    return up === down ? [up(lineEl2(c, 0, null, t))] : [up(lineEl2(c, 0, armAt + 1, t)), down(lineEl2(c, armAt + 1, null, t))];
+  };
+  const below = (c) => f.below(c.depth)(lineEl2(c, top + LINE_HEIGHT, null, t));
+  const pathEls = (side) => side.is === "work" ? pathColumn(side.line).flatMap(whole) : [...pathColumn(side.above).map((c) => f.above(0)(lineEl2(c, 0, top, t))), ...pathColumn(side.below).map(below)];
+  const treeEls = tree.flatMap(({ depth, is }) => {
+    const c = { depth, isDashed: false };
+    const arm = f.own(div5().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)));
+    if (is === "down")
+      return [below(c)];
+    if (is === "past")
+      return whole(c);
+    if (is === "arm")
+      return [arm];
+    if (is === "last")
+      return [f.above(depth)(lineEl2(c, 0, armAt + 1, t)), arm];
+    return [...whole(c), arm];
+  });
+  return [...path ? pathEls(path) : [], ...treeEls, ...passes.flatMap(whole), ...feeds.map(below)];
+}
+
+// src/paint-space.ts
 var isClosedFold = (b) => b.kind === "fold" && ("closedFold" in b.change);
 var isSettledPr = (b) => b.kind === "row" && b.settled !== null && b.id.startsWith("pr:");
 function padOf(b) {
@@ -6274,11 +6420,11 @@ function isOneLine(b) {
     return isOneLineRow(b);
   return b.kind === "note" || b.kind === "fold" || b.kind === "more";
 }
-var depthOf = (b) => ("depth" in b) ? b.depth : 0;
+var depthOf2 = (b) => ("depth" in b) ? b.depth : 0;
 function itemGap(prev, b) {
   if (isOneLine(prev) && isOneLine(b))
     return LIST_GAP;
-  return depthOf(b) > 0 ? CHILD_GAP : ITEM_GAP;
+  return depthOf2(b) > 0 ? CHILD_GAP : ITEM_GAP;
 }
 var isMilestone = (b) => ("path" in b) && b.path?.is === "milestone";
 function gapBetween(prev, b) {
@@ -6332,7 +6478,7 @@ function spacesOf(blocks, isShut, formOf = (b) => b) {
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
 var springBox = (id, height) => springHeight(v_flex2().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
-var sizeEl = (key, p, el) => div5().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
+var sizeEl = (key, p, el) => div6().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
 function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
@@ -6370,70 +6516,8 @@ function contentEl(b, m, p, el, strokes) {
 }
 function spaceEl(s, p, columns) {
   const id = `space ${p.motion.get(s.block.id)?.springId ?? s.block.id}`;
-  const box = springHeight(div5().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
+  const box = springHeight(div6().id(id).flex_none()).when(columns.length > 0, (e) => e.relative()).children(columns);
   return p.isAtOnce(id) ? box.pt(s.above) : box.h(s.above);
-}
-var TREE_LINE_SHARE = 0.2;
-var lineColor = (t, under = t.background) => mixInto(t.foreground, flatten(under, t.background), TREE_LINE_SHARE);
-var PATH_X = EDGE + 4;
-function pathLineEl(line, top, height, t) {
-  if (line === null)
-    return [];
-  const el = div5().absolute().left(PATH_X).top(top).w(1).border_l_1().border_color(lineColor(t));
-  const sized = height === null ? el.bottom(0) : el.h(height);
-  return [line === "to-next" ? sized.border_dashed() : sized];
-}
-var columnEl = (depth, top, height, t) => {
-  const el = div5().absolute().left(PATH_X + depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
-  return height === null ? el.bottom(0) : el.h(height);
-};
-var pathColumn = (line) => line === null ? [] : [{ depth: 0, isDashed: line === "to-next" }];
-function runsIn(b) {
-  const path = "path" in b ? b.path : undefined;
-  const tree = "tree" in b ? b.tree ?? [] : [];
-  const line = path === undefined ? null : path.is === "work" ? path.line : path.above;
-  const columns = tree.filter((s) => s.is === "past" || s.is === "mid" || s.is === "last");
-  return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
-}
-function runsOn(b) {
-  const path = "path" in b ? b.path : undefined;
-  const tree = "tree" in b ? b.tree ?? [] : [];
-  const line = path === undefined ? null : path.is === "work" ? path.line : path.below;
-  const columns = tree.filter((s) => s.is === "down" || s.is === "past" || s.is === "mid");
-  return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
-}
-function passingOf(blocks, isShut) {
-  const isNeighbor = (b) => b.kind !== "gap" && !isShut(b);
-  return blocks.map((b, i) => {
-    const above = blocks.slice(0, i).findLast(isNeighbor);
-    const below = blocks.slice(i + 1).find(isNeighbor);
-    if (!above || !below)
-      return [];
-    const own = new Set(runsOn(b).map((c) => c.depth));
-    const into = new Set(runsIn(below).map((c) => c.depth));
-    return runsOn(above).filter((c) => !own.has(c.depth) && into.has(c.depth));
-  });
-}
-var wholeColumnEl = (c, t) => c.isDashed ? pathLineEl("to-next", 0, null, t)[0] : columnEl(c.depth, 0, null, t);
-function contentStrokeEls(b, t, fade) {
-  const path = "path" in b ? b.path : undefined;
-  const tree = "tree" in b ? b.tree ?? [] : [];
-  const top = Math.round(padOf(b));
-  const armAt = Math.round(top + LINE_HEIGHT / 2);
-  const pathEls = (side) => side.is === "work" ? pathLineEl(side.line, 0, null, t) : [...pathLineEl(side.above, 0, top, t), ...pathLineEl(side.below, top + LINE_HEIGHT, null, t)];
-  const treeEls = tree.flatMap(({ depth, is }) => {
-    const arm = fade(div5().absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)));
-    if (is === "down")
-      return [columnEl(depth, top + LINE_HEIGHT, null, t)];
-    if (is === "past")
-      return [columnEl(depth, 0, null, t)];
-    if (is === "arm")
-      return [arm];
-    if (is === "last")
-      return [columnEl(depth, 0, armAt + 1, t), arm];
-    return [columnEl(depth, 0, null, t), arm];
-  });
-  return [...path ? pathEls(path) : [], ...treeEls];
 }
 function spacedEls(blocks, p, el) {
   const isShut = (b) => p.motion.get(b.id)?.box === "shut";
@@ -6445,23 +6529,34 @@ function spacedEls(blocks, p, el) {
     return isNewFormUnmeasured ? m.former : b;
   };
   const spaces = spacesOf(blocks, isShut, heldForm);
-  const passing = passingOf(spaces.map((s) => s.block), isShut);
-  return spaces.map((s, i) => {
-    const b = s.block;
-    const passes = passing[i] ?? [];
-    const comesIn = runsIn(b);
-    const intoSpace = [...comesIn, ...passes.filter((c) => !comesIn.some((o) => o.depth === c.depth))];
+  const drawn = spaces.map((s) => s.block);
+  const passing = passingOf(drawn, isShut);
+  const looks = drawn.map((b) => {
     const m = p.motion.get(b.id);
     const height = fitHeight(b, m, p);
     const isShown = m?.box === "open" && m.isShown && height !== undefined;
     const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0;
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
     const fade = (e) => m?.box ? e.opacity(isShown ? 1 : 0).transition("opacity", glide) : e;
+    const isMoving = m?.box != null;
+    const move = { isMoving, isGone: isMoving && m?.state === "leaving" && m.box === "shut" };
+    return { m, isShown, glide, fade, move };
+  });
+  const moves = looks.map((l) => l.move);
+  const strokeFades = strokeFadesOf(drawn, passing, moves, looks.map((l) => l.fade));
+  const feeds = feedsOf(drawn, moves);
+  return spaces.map((s, i) => {
+    const b = s.block;
+    const passes = passing[i] ?? [];
+    const comesIn = runsIn(b);
+    const intoSpace = [...comesIn, ...passes.filter((c) => !comesIn.some((o) => o.depth === c.depth))];
+    const look = looks[i];
+    const f = strokeFades[i];
+    if (!look || !f)
+      throw new Error(`no look for block ${b.id}`);
+    const { m, isShown, glide, fade } = look;
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
-    return v_flex2().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => wholeColumnEl(c, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), [
-      ...contentStrokeEls(b, p.t, fade),
-      ...passes.map((c) => wholeColumnEl(c, p.t))
-    ]));
+    return v_flex2().id(`box ${m?.springId ?? b.id}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => spaceColumnEl(c, f, p.t)))).child(contentEl(b, m, p, slide(fade(el(b))), contentStrokeEls(b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? [])));
   });
 }
 
@@ -6476,22 +6571,22 @@ function controlsEl(b, p, isInert) {
   const buttons = b.under?.buttons ?? [];
   const height = p.heights.get(key) ?? 0;
   const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), height };
-  const fieldBox = field ? div6().w_full().pt(CONTROL_GAP).child(fieldEl(field, p, 0, isInert, opening)) : div6();
+  const fieldBox = field ? div7().w_full().pt(CONTROL_GAP).child(fieldEl(field, p, 0, isInert, opening)) : div7();
   return v_flex3().w_full().items_center().child(sizeEl(key, p, fieldBox).w_full()).when(buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(buttons.map((x) => buttonEl(x, p, isInert)))));
 }
 function titleWithMarkEl(title, isRunning, p) {
   const mark = { text: isRunning ? RUNNING_MARK : "", tone: null, isRunning };
-  return h_flex2().justify_center().gap(CONTROL_GAP).child(div6().text_center().whitespace_normal().text_color(p.t.foreground).font_semibold().child(title)).child(markEl(mark, p.t));
+  return h_flex2().justify_center().gap(CONTROL_GAP).child(div7().text_center().whitespace_normal().text_color(p.t.foreground).font_semibold().child(title)).child(markEl(mark, p.t));
 }
 function emptyContentEl(b, p, isInert) {
   const { t } = p;
   const { empty, under } = b;
-  const centred = (text, color = t.foreground) => div6().text_center().whitespace_normal().text_color(color).child(text);
+  const centred = (text, color = t.foreground) => div7().text_center().whitespace_normal().text_color(color).child(text);
   return v_flex3().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(b.titleMark ? titleWithMarkEl(empty.title, b.titleMark.isRunning, p) : centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0 || under?.field != null, (e) => e.child(controlsEl(b, p, isInert))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)));
 }
 
 // src/paint-chevron.ts
-import { PathBuilder as PathBuilder2, div as div7 } from "gpui-kit";
+import { PathBuilder as PathBuilder2, div as div8 } from "gpui-kit";
 import { h_flex as h_flex3 } from "gpui-base";
 var SIZE_PX = 12;
 var STROKE_PX = 1;
@@ -6518,18 +6613,18 @@ var OPEN_PATH = pathOf(true);
 function chevronEl(isOpen, t, isLive) {
   const path = isOpen ? OPEN_PATH : FOLDED_PATH;
   const shape = (color) => window.paint_path(path, color).absolute().top(0).left(0).size(`${SIZE_PX}px`);
-  return div7().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div7().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
+  return div8().relative().flex_none().w(SIZE_PX).h(SIZE_PX).child(shape(t.muted)).when(isLive, (e) => e.child(div8().absolute().top(0).left(0).w(SIZE_PX).h(SIZE_PX).opacity(0).hover((x) => x.opacity(1)).child(shape(t.foreground))));
 }
 function foldChevronEl(t, fold) {
-  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div7().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
+  return h_flex3().flex_none().items_center().h(LINE_HEIGHT).ml(SMALL_GAP).text_color(t.muted).child(chevronEl(fold.isOpen, t, fold.isLive)).when(fold.count !== undefined, (e) => e.child(div8().ml(SMALL_GAP).child(`${fold.count}`).when(fold.isLive, (c) => c.hover((x) => x.text_color(t.foreground)))));
 }
 
 // src/paint-status-line.ts
-import { div as div8 } from "gpui-kit";
+import { div as div9 } from "gpui-kit";
 import { h_flex as h_flex4, v_flex as v_flex4 } from "gpui-base";
-var statusPartEl = (text) => div8().min_w(0).max_w_full().whitespace_normal().child(text);
+var statusPartEl = (text) => div9().min_w(0).max_w_full().whitespace_normal().child(text);
 function keyEl(s, does, t) {
-  return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div8().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div8().font_semibold().child(s.name))).child(div8().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
+  return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div9().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div9().font_semibold().child(s.name))).child(div9().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
 function statusEl(s, p, isInert) {
   const { t } = p;
@@ -6549,7 +6644,7 @@ function statusEl(s, p, isInert) {
 }
 
 // src/paint-chrome.ts
-import { Background, PathBuilder as PathBuilder3, div as div9 } from "gpui-kit";
+import { Background, PathBuilder as PathBuilder3, div as div10 } from "gpui-kit";
 import { h_flex as h_flex5, v_flex as v_flex5 } from "gpui-base";
 var helpButton = {
   id: "help",
@@ -6564,19 +6659,19 @@ function tabsEl(tabs, isHelpShown, p) {
   const { t } = p;
   return h_flex5().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(SMALL_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => {
     const isTabSelected = tab.isSelected && !isHelpShown;
-    return h_flex5().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div9().ml(SMALL_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? "")));
-  })).child(div9().flex_1()).child(h_flex5().id("help").h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(helpButton.label).when(isHelpShown, (e) => e.bg(t.raised).text_color(t.foreground)).when(!isHelpShown, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.press(helpButton, cx)).child(helpIconEl(t, isHelpShown)));
+    return h_flex5().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div10().ml(SMALL_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? "")));
+  })).child(div10().flex_1()).child(h_flex5().id("help").h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(helpButton.label).when(isHelpShown, (e) => e.bg(t.raised).text_color(t.foreground)).when(!isHelpShown, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.press(helpButton, cx)).child(helpIconEl(t, isHelpShown)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
   const tone = colorOf(t, BANNER_TONES2[b.tone]);
-  const text = v_flex5().flex_1().min_w(0).whitespace_normal().child(div9().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div9().child(b.body ?? "")));
+  const text = v_flex5().flex_1().min_w(0).whitespace_normal().child(div10().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div10().child(b.body ?? "")));
   const row = h_flex5().gap(INSET).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex5().flex_none().gap(CONTROL_GAP).children(buttons)));
   return v_flex5().mx(EDGE).px(INSET).py(BANNER_PAD_Y_PT).rounded(BOX_RADIUS).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);
 }
-var sessionNoteEl = (text, t) => div9().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text);
+var sessionNoteEl = (text, t) => div10().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text);
 function messageEl(m, t) {
-  return v_flex5().flex_1().justify_center().items_center().p(END_SPACE).gap(INSIDE_GAP).child(div9().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div9().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+  return v_flex5().flex_1().justify_center().items_center().p(END_SPACE).gap(INSIDE_GAP).child(div10().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div10().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
 }
 var FILL = PathBuilder3.fill().add_polygon([
   [0, 0],
@@ -6612,49 +6707,49 @@ function markTintOf(r, p) {
 }
 
 // src/paint-title-text.ts
-import { div as div10 } from "gpui-kit";
+import { div as div11 } from "gpui-kit";
 function titleTextEl(r, p, color) {
   const isOpen = isOpenRow(r);
   const m = p.motion.get(r.id)?.title ?? null;
-  const text = div10().flex_1().min_w(0).text_color(color).when(isOpen, (e) => e.font_semibold());
+  const text = div11().flex_1().min_w(0).text_color(color);
   if (m === null)
     return text.when(!isOpen, (e) => e.truncate()).child(r.title);
-  const form = (id, isShown, fade) => div10().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: fade.ms, delay: fade.delayMs, easing: "ease-out" });
-  return text.relative().child(form(`wrapped ${r.id}`, m.isWrapShown, m.wrapped).child(r.title)).child(div10().absolute().top(0).left(0).w_full().child(form(`one line ${r.id}`, !m.isWrapShown, m.oneLine).truncate().child(r.title)));
+  const form = (id, isShown, fade) => div11().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: fade.ms, delay: fade.delayMs, easing: "ease-out" });
+  return text.relative().child(form(`wrapped ${r.id}`, m.isWrapShown, m.wrapped).child(r.title)).child(div11().absolute().top(0).left(0).w_full().child(form(`one line ${r.id}`, !m.isWrapShown, m.oneLine).truncate().child(r.title)));
 }
 
 // src/paint-notes.ts
-import { div as div11 } from "gpui-kit";
+import { div as div12 } from "gpui-kit";
 import { h_flex as h_flex6 } from "gpui-base";
-var ruleLine = (t) => div11().flex_1().border_t(1).border_color(t.border);
+var ruleLine = (t) => div12().flex_1().border_t(1).border_color(t.border);
 function ruleEl(b, t) {
   if (b.text === null)
     return h_flex6().pl(EDGE).pr(EDGE).child(ruleLine(t));
-  return h_flex6().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(div11().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
+  return h_flex6().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(div12().flex_none().text_color(b.isTitle ? t.foreground : t.muted).when(b.isTitle, (e) => e.font_semibold()).child(b.text)).child(ruleLine(t));
 }
 function noteEl(b, t, buttons = []) {
-  const text = div11().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
+  const text = div12().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : colorOf(t, b.tone)).child(b.text);
   return h_flex6().flex_wrap().gap_x(CONTROL_GAP).items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex6().flex_none().items_center().gap(CONTROL_GAP).children(buttons)));
 }
 
 // src/paint-parted.ts
-import { div as div12 } from "gpui-kit";
+import { div as div13 } from "gpui-kit";
 import { h_flex as h_flex7 } from "gpui-base";
 var SEP_W = 9.5;
 function partedEl(parts, dotColor) {
   const slot = (n) => h_flex7().flex_none().w(SEP_W).justify_center().text_color(dotColor).when(n > 0, (e) => e.child("·"));
-  const items = parts.map((part, n) => h_flex7().items_start().min_w(0).max_w_full().child(slot(n)).child(div12().min_w(0).child(part)));
-  return div12().overflow_hidden().min_w(0).child(h_flex7().flex_wrap().items_start().ml(-SEP_W).children(items));
+  const items = parts.map((part, n) => h_flex7().items_start().min_w(0).max_w_full().child(slot(n)).child(div13().min_w(0).child(part)));
+  return div13().overflow_hidden().min_w(0).child(h_flex7().flex_wrap().items_start().ml(-SEP_W).children(items));
 }
 
 // src/paint-tree.ts
-import { div as div13 } from "gpui-kit";
+import { div as div14 } from "gpui-kit";
 import { h_flex as h_flex8 } from "gpui-base";
 var trunkEl = (top, height, t, isSelected) => {
-  const el = div13().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
+  const el = div14().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   return height === null ? el.bottom(0) : el.h(height);
 };
-var armEl = (from, to, top, color) => div13().absolute().left(from).top(top).w(to - from).h(1).border_t_1().border_color(color);
+var armEl = (from, to, top, color) => div14().absolute().left(from).top(top).w(to - from).h(1).border_t_1().border_color(color);
 var ARM_END = NEST - SMALL_GAP;
 var answerKey = (buttonId) => `answer ${buttonId}`;
 function isSideBySide(r, p) {
@@ -6675,7 +6770,7 @@ var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
 // src/paint-blocks.ts
 var NO_BREAK_SPACE = " ";
 var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
-var partedTextEl = (text, color, indent, t) => text.includes(DOT) ? div14().pl(indent).pt(INSIDE_GAP).child(partedEl(text.split(DOT).map((part) => statusPartEl(part).text_color(color)), t.muted)) : lineEl(text, color, indent);
+var partedTextEl = (text, color, indent, t) => text.includes(DOT) ? div15().pl(indent).pt(INSIDE_GAP).child(partedEl(text.split(DOT).map((part) => statusPartEl(part).text_color(color)), t.muted)) : lineEl(text, color, indent);
 function feedbackEl(f, t) {
   const cut = f.aged?.lead.length ?? f.text.length;
   if (f.tone === "muted" || cut >= f.text.length)
@@ -6701,7 +6796,7 @@ function rowEl(r, p) {
   const isOpen = isOpenRow(r);
   const isPressable = r.isSelectable && !isLeaving;
   const hasTree = (m?.closing ?? r).body.some((l) => l.tree !== undefined);
-  const line = h_flex9().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(panelFadeEl(r, m, p, trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`)))).child(markEl(r.mark, t, markTintOf(r, p))).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div14().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
+  const line = h_flex9().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(panelFadeEl(r, m, p, trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`)))).child(markEl(r.mark, t, markTintOf(r, p))).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div15().flex_none().ml(INSET).text_color(t.muted).child(r.age ?? "")));
   const lines = [
     ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
     ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
@@ -6786,28 +6881,28 @@ function underEls(r, m, p, above) {
 }
 function prEl(b, p, isInert) {
   const { t } = p;
-  const title = h_flex9().items_start().child(div14().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div14().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
+  const title = h_flex9().items_start().child(div15().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div15().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
   const statusParts = [
-    ...p.isNarrow ? [div14().flex_none().text_color(t.muted).child(b.number)] : [],
+    ...p.isNarrow ? [div15().flex_none().text_color(t.muted).child(b.number)] : [],
     ...b.status ? [statusPartEl(b.status.text).text_color(colorOf(t, b.status.tone))] : [],
     ...b.unlisted.map((u) => statusPartEl(u).text_color(t.muted))
   ];
-  return v_flex6().pl(EDGE).pr(EDGE).child(title).when(statusParts.length > 0, (e) => e.child(div14().pt(INSIDE_GAP).child(partedEl(statusParts, t.muted)))).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
+  return v_flex6().pl(EDGE).pr(EDGE).child(title).when(statusParts.length > 0, (e) => e.child(div15().pt(INSIDE_GAP).child(partedEl(statusParts, t.muted)))).when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex6().pl(EDGE).pr(EDGE).child(h_flex9().gap(CONTROL_GAP).items_center().child(div14().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex9().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
+  return v_flex6().pl(EDGE).pr(EDGE).child(h_flex9().gap(CONTROL_GAP).items_center().child(div15().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex9().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
 function headingEl(b, p, isInert) {
   const { t } = p;
   const buttons = h_flex9().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
     return h_flex9().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex9().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
-  return h_flex9().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div14().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div14().text_color(t.muted).child(`${SEP}${b.count}`))).child(div14().flex_1()).when(b.aside !== undefined, (e) => e.child(div14().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
+  return h_flex9().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div15().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div15().text_color(t.muted).child(`${SEP}${b.count}`))).child(div15().flex_1()).when(b.aside !== undefined, (e) => e.child(div15().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
 var countsEl = (counts, t) => {
   const items = counts.items.map((c) => h_flex9().flex_none().children([
-    div14().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+    div15().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
     statusPartEl(`${NO_BREAK_SPACE}${c.text}`).text_color(t.muted)
   ]));
   const [first, ...rest] = items;
@@ -6826,7 +6921,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex9().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div14().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
+  return h_flex9().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div15().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert })));
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -6852,15 +6947,15 @@ function blockEl(b, p) {
     const isShownAsOpening = m?.state === "entering" && m.box !== null && m.fadeMs === 0;
     const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null;
     const opening = isShownAsOpening ? { isOpen: m.box === "open", height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade;
-    return div14().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
+    return div15().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
   }
   if (b.kind === "note")
     return noteEl(b, t, (b.buttons ?? []).map((x) => buttonEl(x, p, isLeaving)));
   if (b.kind === "caption")
-    return div14().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
+    return div15().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? feedbackEl(b.feedback, t) : null);
-  return div14();
+  return div15();
 }
 
 // src/out.ts
@@ -8493,7 +8588,7 @@ class Inbox extends View {
       if (isNew)
         this.apply([{ type: "list-input" }], cx);
     };
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div15().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
+    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div16().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
