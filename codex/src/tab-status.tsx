@@ -16,11 +16,11 @@ import { closingFolds, entering, tabState } from './tab-state'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
 import { dispatch, errorOf, pressRow } from './tab-ui'
 import { outOn } from './tab-press'
-import { levelClass, milestoneNameClass, NameLine, WasLine } from './tab-status-name'
+import { levelClass, milestoneNameClass, NameLine, WasLine, WasText } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, EmptyState, pulseInStep } from './tab-parts'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
-import { goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
+import { GOAL_WAS_LINE, goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
 import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 import type { ConnectorMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
@@ -441,7 +441,7 @@ function GoalSection({
         </div>
         {head.map(l => (
           <p key={l.id} class={levelClass(l.level ?? 'muted')} {...lineMotion(goalHeadMotion(l.id))}>
-            {l.text}
+            {l.id === GOAL_WAS_LINE ? <WasText was={l.text} /> : l.text}
           </p>
         ))}
         <GoalError />

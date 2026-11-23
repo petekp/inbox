@@ -12,12 +12,19 @@ const LEVEL_CLASS: Record<TextLevel, string> = { muted: 'muted', faint: 'faint' 
 /** The class that draws a line at a text level. */
 export const levelClass = (level: TextLevel): string => LEVEL_CLASS[level]
 
-/** A Prev line, which says what a Status row or milestone was before it changed. */
-export const WasLine = ({ was }: { was: string }) => (
-  <div class={`${levelClass(WAS_LEVEL)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
+/** A Prev line's text: its mark, hidden from screen readers, its word, then what the line replaced. */
+export const WasText = ({ was }: { was: string }) => (
+  <>
     <span aria-hidden="true">{`${WAS_MARK} `}</span>
     {WAS_LABEL}
     {was}
+  </>
+)
+
+/** A Prev line, which says what a Status row or milestone was before it changed. */
+export const WasLine = ({ was }: { was: string }) => (
+  <div class={`${levelClass(WAS_LEVEL)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
+    <WasText was={was} />
   </div>
 )
 
