@@ -242,7 +242,8 @@ _Avoid_: collapsed subject, folded milestone
 **Band**:
 In Claude Code, the line above the prompt with the Asks, Finds and PRs
 counts and [Open inbox], which reads [Go to inbox] while the inbox pane shows and
-moves the keys to it. It shows from the session's start, once the
+moves the keys to it. In the desktop app it also reads [Go to inbox] after the app
+hides the pane, since the app does not tell the mod. It shows from the session's start, once the
 conversation's saved rows have loaded. With no counts it reads "Nothing
 needed", with a running mark while the ledger's sync state is checking, or
 "May be out of date" while it is stale or unavailable. While the agent's own

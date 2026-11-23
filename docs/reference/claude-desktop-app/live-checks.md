@@ -122,3 +122,13 @@ Live, 2026-11-22, app 6.28899.6 with engine 2.1.330, in Manual mode. A Haiku tur
   - With the inbox turning on at the attach, that prompt's `deferred_tools_delta` removed `mcp__inbox__close` and `mcp__inbox__record`, and its `mcp_instructions_delta` removed the `inbox` server. With the inbox turning on at `session.start`, the first prompt kept both tools.
   - Opening a saved session from the app's search started its engine at once. The attach came about 250 ms after `session.start`, before any prompt, so both builds offered the tools on the first prompt.
   - In a new session, the attach came 3 ms before the first prompt, and the inbox's tools still reached that prompt's request.
+
+## Hiding the pane with the app's side panel
+
+On 2026-11-22, a probe mod in a test VM opened a pane with `focus` and `closeOnEscape`. The app docked it in the right column, under a "Plugin" tab. It polled `$.ui.panes()` every 300 ms and logged `ui.close`, each Pane render and each `$.ui.open` result.
+
+- View > Hide Side Panel (⌘.) swapped the right column for the session's Environment and Context cards. The mod got no `ui.close` and no Pane render. `ui.panes` kept reading `isShown: true`, `isFocused: true` and `isPlaced: true`.
+- In that state, `$.ui.open` with or without `focus` returned `isPlaced: true` and left the pane hidden.
+- `$.ui.close`, then `$.ui.open`, showed the pane again in the right column. The probe's `ui.close` hook logged nothing for that close.
+- The expand button and "Show session" change only the pane's width, as a render with new `bodyColumns` (26, then 109).
+- View > Close Pane moved the keys out of the pane and left it shown.

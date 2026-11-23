@@ -191,6 +191,7 @@ function modOf($: EngineInterface): Mod {
     },
     pane: {
       open: opts => $.ui.open({ id: PANE, title: 'Inbox', ...opts }),
+      close: () => $.ui.close({ id: PANE }),
       find: async () => (await $.ui.panes()).find(p => p.id === PANE),
       focus: key => $.ui.focus({ requestId: PANE, key }),
       scrollTo: (key, block) => $.ui.scroll({ in: PANE, to: { key }, block }),
@@ -409,6 +410,7 @@ export const register: Register = on => {
   })
 
   on('ui.close', { id: PANE }, async ($, e, next) => {
+    if (e.origin.kind === 'plugin') return next(e)
     cancelUndoScroll()
     const r = await next(e)
     await paneClosed(modOf($))

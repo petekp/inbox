@@ -9,7 +9,8 @@ import { wakeForHeldSends } from './mod-press-run'
 import { findPrs } from './mod-prs'
 import { currentOwner } from './mod-sessions'
 import { cancelUndoScroll, paneState } from './mod-state'
-import { fieldKey, openedField, openFields } from '../pane/pane-keys'
+import type { RenderSurface } from 'claude-code'
+import { fieldKey, openedField, openFields, paneHasKeys } from '../pane/pane-keys'
 import { takeShownRows } from '../pane/pane-status-shown'
 import { upgradeSession } from '../../core/view/session-files'
 import { statusChanged, withLook } from '../../core/runtime/session-status'
@@ -46,18 +47,24 @@ function openPane(m: PaneOpenCalls, isFieldOpen = false) {
   paneState.isOpenUnheard = true
   const opened = m.pane.open({ focus: true, ...(isFieldOpen ? {} : { closeOnEscape: true as const }) })
   void opened
-    .then(async () => {
-      const isOpenNew = (await readUi(m)).shownSince === null && paneState.loadingRevision === null
-      await m.sendUi(isOpenNew ? [{ type: 'opened' }, 'read'] : ['read'])
-      paneState.isOpenUnheard = false
-      await m.syncLook(true)
-      await wakeForHeldSends(m)
+    .then(async r => {
+      paneState.isOpenWaiting = !r.isPlaced
+      if (r.isPlaced) await paneOpened(m)
     })
     .catch(() => {
       paneState.isOpenUnheard = false
     })
 
   return opened
+}
+
+/** The engine drew the pane: the controller hears that it opened, and the look and held sends follow. */
+export async function paneOpened(m: PaneOpenCalls) {
+  const isOpenNew = (await readUi(m)).shownSince === null && paneState.loadingRevision === null
+  await m.sendUi(isOpenNew ? [{ type: 'opened' }, 'read'] : ['read'])
+  paneState.isOpenUnheard = false
+  await m.syncLook(true)
+  await wakeForHeldSends(m)
 }
 
 /**
@@ -98,19 +105,38 @@ export async function matchPaneEscape(m: PaneOpenCalls) {
   await m.pane.open(closesOnEscape ? { closeOnEscape: true } : {})
 }
 
+/**
+ * The desktop app's Hide Side Panel hides the pane without a `ui.close`, `ui.panes` still reads it shown, and
+ * `ui.open` leaves it hidden. An open after a close shows it again. `surface` is where the press came from; a
+ * command names none, so it reopens only when the desktop app alone draws the pane.
+ */
+function mayBeHiddenByDesktop(surface: RenderSurface | undefined) {
+  const isDesktopPress = surface === undefined ? paneHasKeys.size === 1 : surface === 'desktop'
+
+  return isDesktopPress && paneHasKeys.has('desktop')
+}
+
+async function closeToShowAgain(m: PaneOpenCalls) {
+  openFields.clear()
+  await m.pane.close().catch(() => undefined)
+}
+
 export async function showInbox(m: PaneOpenCalls, opening: HerdrOpened | Promise<HerdrOpened | null> | null) {
   const herdr = await opening
   if (herdr?.isShown) return herdr.text
+  if (mayBeHiddenByDesktop(undefined)) await closeToShowAgain(m)
   await openPane(m)
 
   return herdr?.text
 }
 
-export async function openInbox(m: PaneOpenCalls, isDemo: boolean) {
+export async function openInbox(m: PaneOpenCalls, isDemo: boolean, surface: RenderSurface) {
   const opening = isDemo ? null : openInHerdr(m.herdr)
   if (opening instanceof Promise && (await opening).isShown) return
-  // Opened before any other await unless the Herdr look is opening. After one, the engine no longer counts the press as
-  // asking for the pane, and below 144 columns, once the person has closed it, leaves it unplaced.
+  // Opened before any other await unless the Herdr look is opening or the press came from the desktop app. After one,
+  // the engine no longer counts the press as asking for the pane, and below 144 columns, once the person has closed
+  // it, leaves it unplaced. The desktop app places a pane at any width.
+  if (mayBeHiddenByDesktop(surface)) await closeToShowAgain(m)
   await openPane(m)
   if ((await readUi(m)).tab === 'prs') await findPrs(m)
 }

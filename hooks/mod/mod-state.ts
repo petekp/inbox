@@ -19,6 +19,8 @@ class PaneState {
   isTerminalFrameLanded = false
   /** The pane was asked to open and the controller has not heard yet, so a render draws the open's move. */
   isOpenUnheard = false
+  /** The pane was asked to open and waits undrawn, so its first render tells the controller that it opened. */
+  isOpenWaiting = false
   /** The load revision of a conversation still loading. Until it ends, the controller sees the pane closed. */
   loadingRevision: number | null = null
   /**

@@ -97,6 +97,7 @@ export async function paneMessaged(m: PaneEventCalls, e: UiMessageEvent) {
 export async function paneClosed(m: PaneEventCalls) {
   paneHasKeys.clear()
   paneState.drawsTerminal = false
+  paneState.isOpenWaiting = false
   await m.sendUi([{ type: 'closed' }])
   void m.syncLook(false)
 }
