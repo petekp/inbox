@@ -135,6 +135,12 @@ test('on the Status page, a done milestone’s fold opening and closing, a work 
   for (const [name, from, to] of moves) expect({ name, ...glideOf(from, to) }).toEqual({ name, jumps: [], gaps: [] })
 })
 
+test('a Status subject’s fold shutting and opening glides on its springs, and its nested rows and tree lines keep the ids their fades run under', () => {
+  const open = statusOf()
+  const shut = statusOf(undefined, [], ['s1'])
+  expect({ shuts: glideOf(open, shut).jumps, opens: glideOf(shut, open).jumps }).toEqual({ shuts: [], opens: [] })
+})
+
 test('a dropped milestone moves below the path without the rows between its old and new place jumping', () => {
   const dropped = withMilestones(m => (m.id === 'm3' ? { ...m, status: 'dropped', closedAt: NOW } : m))
   expect(glideOf(statusOf(), statusOf(dropped))).toEqual({ jumps: [], gaps: [] })

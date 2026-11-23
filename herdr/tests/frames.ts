@@ -1,7 +1,7 @@
 import { HEIGHT_SPRING, springStep } from '../../core/view/springs'
 import type { Block } from '../src/blocks'
 import type { Paint } from '../src/paint-theme'
-import { columnOf, fieldOf } from './gpui-stand-in'
+import { checkMotionIds, columnOf, fieldOf } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 
 const { spacedEls } = await import('../src/paint-space')
@@ -292,6 +292,7 @@ class Frames {
   private closedSeen = new Map<string, number>()
   private lastShown = new Map<string, number>()
   private last: Map<string, Box> | null = null
+  private motionIds: Map<string, string> | null = null
   jumps: Jump[] = []
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
@@ -317,6 +318,7 @@ class Frames {
       spacedEls(moved.blocks, paint, b => blockEl(b, paint)),
       LINE,
     )
+    this.motionIds = checkMotionIds(tree, this.motionIds)
     const was = this.springs.shown()
     this.springs.declare(tree)
     const shown = this.springs.shown()
