@@ -218,6 +218,34 @@ export const columnOf = (kids: unknown[], lineHeight: string): Painted =>
 
 export const allOf = (root: Painted): Painted[] => [root, ...root.kids.flatMap(allOf)]
 
+const motionOf = (n: Painted): string[] => [...n.transitions.keys(), ...n.springs].sort()
+
+function drawnBy(n: Painted): string {
+  let anchor: Painted | null = n.parent
+  while (anchor && anchor.id === null) anchor = anchor.parent
+  const textOf = (k: Painted): string => (k.text ?? '') + k.kids.map(textOf).join('')
+  const what = n.style.isAbsolute ? `a stroke at x ${n.style.left ?? 0}` : `"${textOf(n)}"`
+
+  return `${what} in ${anchor?.id ?? 'the root'}, moving ${motionOf(n).join(' and ')}`
+}
+
+export function checkMotionIds(root: Painted, last: Map<string, string> | null): Map<string, string> {
+  const moving = allOf(root).filter(n => motionOf(n).length > 0)
+  const unnamed = moving.find(n => n.id === null)
+  if (unnamed) throw new Error(`an element with no id moves ${drawnBy(unnamed)}, so gpui-kit loses its move`)
+  const drawn = new Map(moving.map(n => [n.id ?? '', drawnBy(n)]))
+  if (last === null) return drawn
+  const countOf = (all: Map<string, string>, what: string) => [...all.values()].filter(w => w === what).length
+  const isOnly = (what: string) => countOf(drawn, what) === 1 && countOf(last, what) === 1
+  const gone = [...last].filter(([id, what]) => !drawn.has(id) && isOnly(what))
+  for (const [was, what] of gone) {
+    const now = [...drawn].find(([id, w]) => w === what && !last.has(id))?.[0]
+    if (now !== undefined) throw new Error(`${was} became ${now} while it drew ${what}, so gpui-kit restarts its move`)
+  }
+
+  return drawn
+}
+
 export const writtenFiles: { path: string; text: string }[] = []
 
 const pathBuilder: Record<string, () => unknown> = new Proxy({}, { get: () => () => pathBuilder })
@@ -281,7 +309,13 @@ export async function openPanel(built?: InboxClass) {
   panel.init(undefined, cx as never)
   rendered(() => panel.render(cx as never))
   await settle()
-  const paint = () => nodeOf(rendered(() => panel.render(cx as never))) as Painted
+  let motionIds: Map<string, string> | null = null
+  const paint = () => {
+    const root = nodeOf(rendered(() => panel.render(cx as never))) as Painted
+    motionIds = checkMotionIds(root, motionIds)
+
+    return root
+  }
   const PLAIN_CLICK = {
     click_count: 1,
     modifiers: { shift: false, control: false, alt: false, platform: false, function: false },
