@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T03:16:39.803Z. 356004 characters follow.
+// Built at 2026-11-23T06:10:21.037Z. 356085 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -5342,6 +5342,7 @@ function emptyBlock(tab, empty, parts = null) {
 
 // src/held-line.ts
 var NO_LINES_ABOVE = new Map;
+var heldKey = (r) => r.settled ? `settled ${r.id}` : r.id;
 var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
 var isStatusUnder = (r) => r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)));
 var isUnderWay2 = (f) => f?.is === "queued" || pressUnderWaySince(f) !== null;
@@ -5361,30 +5362,31 @@ function holdLinesAbove(blocks, held, now) {
   const shown = blocks.map((b) => {
     if (b.kind !== "row")
       return b;
-    const kept = held.get(b.id);
+    const key = heldKey(b);
+    const kept = held.get(key);
     const f = b.feedback;
     if (!hasActions(b)) {
       if (kept !== undefined && isUnderWay2(f?.source ?? null))
-        next.set(b.id, kept);
+        next.set(key, kept);
       return b;
     }
     if (f === null) {
       if (kept === undefined)
         return b;
       const empty = kept && { ...kept, isHidden: true };
-      next.set(b.id, empty);
+      next.set(key, empty);
       return empty ? { ...b, heldLine: drawn(empty, now) } : b;
     }
     if (!isStatusUnder(b)) {
-      next.set(b.id, kept === null ? null : lineOf(f));
+      next.set(key, kept === null ? null : lineOf(f));
       return kept === null ? { ...b, isStatusHeldUnder: true } : b;
     }
     if (kept === undefined) {
       if (isUnderWay2(f.source))
-        next.set(b.id, null);
+        next.set(key, null);
       return b;
     }
-    next.set(b.id, kept);
+    next.set(key, kept);
     return kept ? { ...b, heldLine: drawn(kept, now) } : b;
   });
   return { blocks: shown, held: next };
