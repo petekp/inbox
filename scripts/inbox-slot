@@ -28,8 +28,8 @@ release clears a hold made by take: the one recorded for your terminal, or for
 status prints the holder and how long it has held the slot. It changes nothing.
 
 When the holder's terminal is the caller's own, the waiting, refusal and status
-messages say so. For a take hold they name `inbox-slot release`. The wait then
-ends only when the hold is released.
+messages say so. For a take hold they name `inbox-slot release`. For a run hold
+they say the slot frees when that command exits.
 
 The record is inbox-slot.json in $FLEET_STATE_DIR, which defaults to
 ~/.local/state/fleet.
@@ -115,8 +115,8 @@ def own_hold_note(record):
     if not held_by_this_terminal(record):
         return ""
     if record["kind"] == "take":
-        return f"\nThis terminal holds it, so the wait will not end by itself. If the {record['purpose']} job is done, run ./scripts/inbox-slot release."
-    return "\nThis terminal holds it, with an earlier inbox-slot run that is still going. The wait ends when that command exits."
+        return f"\nThis terminal holds it. If the {record['purpose']} job is done, run ./scripts/inbox-slot release."
+    return "\nThis terminal holds it, with an earlier inbox-slot run that is still going. The slot frees when that command exits."
 
 
 def take(purpose, pid, wait, kind):
