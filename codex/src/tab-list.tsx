@@ -120,8 +120,8 @@ export function stepLists(v: View): {
 
 /**
  * The entry of the form a row leaves as it changes between its settled form and another, `last`, the entry the tab
- * drew before `x`, while `drawsFormLeft` holds. A change turned back while the form it leaves still fades out draws its
- * new form at once.
+ * drew before `x`, while `drawsFormLeft` holds. A move that keeps the change's start keeps the form it leaves. A change
+ * turned back while the form it leaves still fades out draws its new form at once.
  */
 function formLeftOf(
   before: { track: RowTrack; left?: Entry } | undefined,
@@ -131,7 +131,7 @@ function formLeftOf(
   now: number,
 ): Entry | undefined {
   if (!drawsFormLeft(track, now)) return undefined
-  if (before?.track === track) return before.left
+  if (before?.track.since === track.since) return before.left
   const isLeftFading = before?.left !== undefined && now - before.track.since < LEAVE_FADE_MS
   const isFormChanged = last !== undefined && 'row' in last !== 'row' in x
 

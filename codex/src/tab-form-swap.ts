@@ -1,5 +1,5 @@
 import { ENTER_FADE_MS, enterDelayMs, LEAVE_FADE_MS, titleFades } from '../../core/view/row-motion'
-import { fade, glides, isRunning } from './tab-glide'
+import { fade, fadeShown, glides, isRunning } from './tab-glide'
 
 /** The form a row leaves as it settles or as Undo brings it back, drawn over the form it takes. */
 const LEFT = ':scope > .form-left'
@@ -43,15 +43,20 @@ function partsOf(row: Element, skip: string | null): HTMLElement[] {
  * nearly open, so the moving edge never cuts it. A row Undo opens from its settled form never drew its Holds up line
  * in the closed form, so that form stays hidden and the line comes with the panel. The panel of the form it leaves
  * fades out from `panelShown`, the opacity the row's panel showed before this draw, as when the row was still opening.
+ * A change already fading, as when a row Undo brought back closed opens while its settled form fades, keeps the fades of
+ * the form it leaves, and the form it takes fades in from what it shows.
  */
 export function fadeForms(el: HTMLElement, panelShown: number) {
   const left = el.querySelector<HTMLElement>(LEFT)
   const taken = el.firstElementChild
   if (!left || !taken) return
   const { taken: titleIn, left: titleOut } = titleFades(false)
-  for (const part of partsOf(left, null)) fade(part, part.matches(PANEL) ? panelShown : 1, 0, LEAVE_FADE_MS, true)
-  for (const title of left.querySelectorAll<HTMLElement>(TITLE))
+  const isGoingOn = partsOf(left, null).some(part => fadeShown(part) !== null)
+  for (const part of isGoingOn ? [] : partsOf(left, null))
+    fade(part, part.matches(PANEL) ? panelShown : 1, 0, LEAVE_FADE_MS, true)
+  for (const title of isGoingOn ? [] : left.querySelectorAll<HTMLElement>(TITLE))
     fade(title, 1, 0, titleOut.ms, true, false, titleOut.delayMs)
+  const shownOf = (part: HTMLElement) => (isGoingOn ? (fadeShown(part) ?? 0) : 0)
   const g = glides.get(el)
   const isGliding = g !== undefined && isRunning(g.anim)
   const top = el.getBoundingClientRect().top
@@ -61,7 +66,8 @@ export function fadeForms(el: HTMLElement, panelShown: number) {
   const showsAt = (part: HTMLElement, at: number) =>
     part.getBoundingClientRect().bottom - top > held + 0.5 ? Math.max(at, opensAt) : at
   for (const title of taken.querySelectorAll<HTMLElement>(TITLE))
-    fade(title, 0, 1, titleIn.ms, false, false, showsAt(title, titleIn.delayMs))
-  for (const part of partsOf(taken, OWN_FADES)) fade(part, 0, 1, ENTER_FADE_MS, false, false, showsAt(part, movesAt))
+    fade(title, shownOf(title), 1, titleIn.ms, false, false, showsAt(title, titleIn.delayMs))
+  for (const part of partsOf(taken, OWN_FADES))
+    fade(part, shownOf(part), 1, ENTER_FADE_MS, false, false, showsAt(part, movesAt))
   for (const closed of taken.querySelectorAll<HTMLElement>(CLOSED_HOLDS_UP)) fade(closed, 0, 0, 0, true)
 }

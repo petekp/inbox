@@ -12,8 +12,10 @@ import { POLL_MS } from '../src/settle'
 import { NO_HOLDS } from '../../core/view/timing'
 import {
   ENTER_FADE_MS,
+  LEAVE_FADE_MS,
   ROW_STATE_MS,
   SLIDE_PX,
+  drawsFormLeft,
   drawsPanel,
   enterDelayMs,
   moveMs,
@@ -84,6 +86,19 @@ test('a row turned around mid-move starts the new move at once, and with reduced
   const settledIn = stepRow(undefined, 'settled', 0, true)
   assert.equal(settledIn?.state, 'entering')
   assert.equal(stepRow(settledIn!, 'settled', ROW_STATE_MS.entering)?.state, 'settled')
+})
+
+test('a row Undo brought back closed that opens while its settled form fades keeps that fade, opening from when Undo did, and one opened after the fade opens on its own', () => {
+  const undone = stepRow({ state: 'settled', since: 0, hasOpenForm: false }, 'closed', 1000)
+  if (!undone) throw new Error('Undo to closed left no track')
+  const opened = stepRow(undone, 'open', 1000 + LEAVE_FADE_MS / 2)
+  assert.deepEqual(opened, { state: 'opening', since: 1000, hasOpenForm: true, leavesSettled: true })
+  assert.ok(opened && drawsFormLeft(opened, 1000 + LEAVE_FADE_MS))
+  assert.deepEqual(stepRow(undone, 'open', 1000 + LEAVE_FADE_MS), {
+    state: 'opening',
+    since: 1000 + LEAVE_FADE_MS,
+    hasOpenForm: true,
+  })
 })
 
 test('an entering space’s content waits until the space is within half the slide of open, and its fade ends as the space rests', () => {

@@ -171,11 +171,12 @@ function closeWaitOf(els: HTMLElement[], changed: ReadonlySet<string>): number {
   const now = Date.now()
   for (const el of els) {
     const key = el.dataset.motion!
-    const state = changed.has(key) ? drawnRows.get(key)?.track.state : undefined
+    const track = changed.has(key) ? drawnRows.get(key)?.track : undefined
+    const state = track?.state
     if (state === 'opening') closeHolds.delete(key)
     const isFaint = state === 'closing' && isOpeningShort(el, springOf(el, el.getBoundingClientRect().height))
     if (state === 'closing' && !isFaint && shownPanel(el)) closeHolds.set(key, now + LEAVE_FADE_MS)
-    if (state && swapsForm(el)) closeHolds.set(key, now + LEAVE_FADE_MS)
+    if (track && swapsForm(el)) closeHolds.set(key, track.since + LEAVE_FADE_MS)
   }
   for (const [key, until] of closeHolds) if (until <= now) closeHolds.delete(key)
 
