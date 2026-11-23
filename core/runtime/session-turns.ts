@@ -175,10 +175,14 @@ export function cutOffTurn<S extends Session>(s: S, now: number): S {
 
 /**
  * The session with the folder it started in, kept from the first time a host names it, and the branch and GitHub
- * repository the host read in its folder now.
+ * repository the host read in its folder now. A repository git could not list keeps the one saved before.
  */
 export function placed<S extends Session>(s: S, folder: string, git: GitPlace): S {
-  const place = { folder: s.place?.folder || folder, branch: git.branch === 'HEAD' ? null : git.branch, repo: git.repo }
+  const place = {
+    folder: s.place?.folder || folder,
+    branch: git.branch === 'HEAD' ? null : git.branch,
+    repo: git.repo === undefined ? (s.place?.repo ?? null) : git.repo,
+  }
   const isSame = s.place?.folder === place.folder && s.place.branch === place.branch && s.place.repo === place.repo
 
   return isSame ? s : { ...s, place }

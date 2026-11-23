@@ -21,22 +21,37 @@ export const TIMED_OUT_CODE = -2
 const GIT_TIMEOUT_MS = 5000
 
 /**
- * Where `folder` is in Git now: its branch, null when git names none, as outside a repository or on a detached HEAD,
- * and the GitHub repository of its `origin` remote as "owner/name", null when it has none on GitHub.
+ * Where `folder` is in Git now. `branch` is null when git names none, as outside a repository or on a detached HEAD.
+ * `repo` is the GitHub repository gh would pick among the remotes, as "owner/name": `upstream`, then `github`, then
+ * `origin`, then any other. It is null when no remote is on GitHub, and undefined when git could not list them.
  */
-export type GitPlace = { branch: string | null; repo: string | null }
+export type GitPlace = { branch: string | null; repo: string | null | undefined }
+
+const REMOTE_ORDER = ['upstream', 'github', 'origin']
 
 export async function gitPlaceIn(run: Run, folder: string): Promise<GitPlace> {
   const opts = { cwd: folder, timeoutMs: GIT_TIMEOUT_MS }
-  const [branch, remote] = await Promise.all([
+  const [branch, remotes] = await Promise.all([
     run(['git', 'branch', '--show-current'], opts),
-    run(['git', 'remote', 'get-url', 'origin'], opts),
+    run(['git', 'remote', '-v'], opts),
   ])
 
   return {
     branch: branch.code === 0 ? branch.stdout.trim() || null : null,
-    repo: remote.code === 0 ? githubRepoOf(remote.stdout.trim()) : null,
+    repo: remotes.code === 0 ? githubRepoIn(remotes.stdout) : undefined,
   }
+}
+
+/** The GitHub repository of the first remote in `REMOTE_ORDER` that is on GitHub, from `git remote -v`. */
+function githubRepoIn(listed: string): string | null {
+  const onGithub = listed.split('\n').flatMap(line => {
+    const [name = '', url = ''] = line.split(/\s+/)
+    const repo = githubRepoOf(url)
+    return repo ? [{ name, repo }] : []
+  })
+  const rank = (name: string) => (REMOTE_ORDER.includes(name) ? REMOTE_ORDER.indexOf(name) : REMOTE_ORDER.length)
+
+  return onGithub.toSorted((a, b) => rank(a.name) - rank(b.name))[0]?.repo ?? null
 }
 
 /** The forms of a GitHub remote's URL that git accepts: https, ssh and scp-like, each with or without ".git". */

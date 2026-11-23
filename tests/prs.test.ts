@@ -11,7 +11,7 @@ import {
   readableComment,
   readiness,
 } from '../core/domain/prs'
-import { githubRepoOf } from '../core/domain/gh'
+import { githubRepoOf, gitPlaceIn } from '../core/domain/gh'
 import { readPrNode } from '../core/domain/pr-query'
 import { prNodeOf } from './gh-answers'
 import { checkActions } from '../core/view/pr-tab'
@@ -182,6 +182,16 @@ describe('prs', () => {
     expect(namedPrs('Merge #12?', ['a/x#12', 'b/y#12'], 'acme/greet')).toEqual([])
   })
 
+  test('names an untracked bare #n only after a PR word or in a list after one, and takes a PR link’s ref over its number', () => {
+    expect(namedPrs('Use #333 or #000000 for the border? Option #1 or #2?', [], 'acme/greet')).toEqual([])
+    expect(namedPrs('Review PR #12, #13 and #14', [], 'acme/greet')).toEqual([
+      'acme/greet#12',
+      'acme/greet#13',
+      'acme/greet#14',
+    ])
+    expect(namedPrs('Merge [#12](https://github.com/other/x/pull/12)?', [], 'acme/greet')).toEqual(['other/x#12'])
+  })
+
   test('reads the repository of a GitHub remote in each URL form git takes, and none of another host', () => {
     for (const url of [
       'git@github.com:acme/greet.git',
@@ -191,6 +201,14 @@ describe('prs', () => {
     ])
       expect(githubRepoOf(url)).toBe('acme/greet')
     expect(githubRepoOf('git@gitlab.com:acme/greet.git')).toBeNull()
+  })
+
+  test('takes the remote gh would pick, upstream before origin, and leaves the repository unknown when git cannot list them', async () => {
+    const listed = 'origin\tgit@github.com:me/greet.git (fetch)\nupstream\thttps://github.com/acme/greet (fetch)\n'
+    const ok = async (args: string[]) => ({ code: 0, stdout: args.includes('-v') ? listed : 'main\n', stderr: '' })
+    expect(await gitPlaceIn(ok, '/p')).toEqual({ branch: 'main', repo: 'acme/greet' })
+    const failed = async () => ({ code: -2, stdout: '', stderr: '' })
+    expect(await gitPlaceIn(failed, '/p')).toEqual({ branch: null, repo: undefined })
   })
 
   test('reads checks and open threads; threads where someone else spoke last block the merge', () => {

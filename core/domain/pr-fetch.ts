@@ -64,13 +64,13 @@ export function tabPrs(links: PrLinks): string[] {
 
 /**
  * The item's step that opens the PRs it names. A PR named by its number alone is looked up among the PRs on the tab and
- * the branch's PR, then in the session's repository: its folder's GitHub remote, else the branch PR's repository.
+ * the branch's PR, then in the session's repository: the branch PR's, which gh read, else its folder's GitHub remote.
  */
 export function itemPrSteps(item: Item, s: Pick<Session, 'ledger' | 'prViews' | 'place'>): HelpStep[] {
   const { branchRef, views } = s.prViews
   const linked = tabPrs(s.ledger)
   const refs = branchRef ? [...linked, branchRef] : linked
-  const repo = s.place?.repo ?? (branchRef ? parseRef(branchRef).repo : null)
+  const repo = branchRef ? parseRef(branchRef).repo : (s.place?.repo ?? null)
 
   return prSteps(
     item,

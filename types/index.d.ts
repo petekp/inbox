@@ -190,9 +190,10 @@ export type SessionStatus = {
 }
 
 /**
- * The folder a session runs in, and its branch and the GitHub repository of its `origin` remote, as "owner/name", when
- * the host last read them. A host keeps the first folder it saves until the session moves away from it or that folder
- * is gone. `repo` is null when the remote is not on GitHub, and absent from a place saved before hosts read it.
+ * The folder a session runs in, and its branch and the GitHub repository of its remotes, as "owner/name", when the host
+ * last read them (`core/domain/gh.ts:gitPlaceIn`). A host keeps the first folder it saves until the session moves away
+ * from it or that folder is gone. `repo` is null when no remote is on GitHub, and absent from a place saved before
+ * hosts read it.
  */
 export type Place = { folder: string; branch: string | null; repo?: string | null }
 

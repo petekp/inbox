@@ -197,8 +197,8 @@ test('a session takes its folder from the rollout, and the branch and GitHub rem
       ? { code: 1, stdout: '', stderr: 'not a repository' }
       : args.join(' ') === 'git branch --show-current'
         ? { code: 0, stdout: `${branch}\n`, stderr: '' }
-        : args.join(' ') === 'git remote get-url origin'
-          ? { code: 0, stdout: 'https://github.com/acme/greet.git\n', stderr: '' }
+        : args.join(' ') === 'git remote -v'
+          ? { code: 0, stdout: 'origin\thttps://github.com/acme/greet.git (fetch)\n', stderr: '' }
           : { code: 1, stdout: '', stderr: 'unknown command' }
   const place = async () => (await readState(dir, 's1')).place
 

@@ -51,7 +51,9 @@ type TrackedPr = { ref: string; url: string | null }
 function prLinkName(ref: string, isTracked: boolean, repo: string | null): string {
   const { repo: refRepo, name, number } = parseRef(ref)
 
-  return isTracked ? `PR #${number}` : refRepo === repo ? `#${number}` : `${name}#${number}`
+  const isSessionRepo = refRepo.toLowerCase() === repo?.toLowerCase()
+
+  return isTracked ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`
 }
 
 /**
@@ -61,7 +63,9 @@ function prLinkName(ref: string, isTracked: boolean, repo: string | null): strin
 export function prSteps(item: Item, tracked: TrackedPr[], repo: string | null): HelpStep[] {
   const urls = new Map(tracked.map(pr => [pr.ref, pr.url]))
   const isLinked = (ref: string, url: string) =>
-    item.helps.some(h => h.kind === 'link' && (h.url === url || prRefs(h.url).includes(ref)))
+    item.helps.some(
+      h => h.kind === 'link' && (h.url === url || prRefs(h.url).some(r => r.toLowerCase() === ref.toLowerCase())),
+    )
   const named = namedPrs([item.ask, item.context ?? ''].join('\n'), [...urls.keys()], repo).flatMap(ref => {
     const { repo: refRepo, number } = parseRef(ref)
     const url = urls.get(ref) ?? `https://github.com/${refRepo}/pull/${number}`

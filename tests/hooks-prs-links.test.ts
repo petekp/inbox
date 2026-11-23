@@ -9,8 +9,8 @@ test('a question naming a PR the session does not track offers it from the row, 
   world($, on, [])
   w.folders = ['/tmp/project']
   w.ghAnswers.push({
-    match: argv => argv.join(' ') === 'git remote get-url origin',
-    stdout: 'git@github.com:acme/greet.git\n',
+    match: argv => argv.join(' ') === 'git remote -v',
+    stdout: 'origin\tgit@github.com:acme/greet.git (fetch)\norigin\tgit@github.com:acme/greet.git (push)\n',
   })
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
