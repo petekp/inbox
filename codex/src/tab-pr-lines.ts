@@ -17,7 +17,7 @@ import { errorOf } from './tab-ui'
 import { outOn, outPending } from './tab-press'
 import { noteOf } from './tab-parts'
 
-/** A press status, and its age after it, which stays muted. */
+/** A press status, and its age after it, which draws faint. */
 export type PressLine = { text: string; age: string | null; tone: FeedbackTone }
 
 /** A PR block's press status, under its buttons. */

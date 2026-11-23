@@ -2,7 +2,7 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
 import type { Block } from './blocks'
-import { CONTROL_GAP, EDGE, HEAD_LINE, HEAD_TEXT, NEST, TEXT_X, colorOf } from './paint-theme'
+import { CONTROL_GAP, EDGE, HEAD_LINE, HEAD_TEXT, NEST, TEXT_X, colorOf, faintOf } from './paint-theme'
 import type { Theme } from './paint-theme'
 
 /** A rule's line, filling the space beside its text. */
@@ -31,7 +31,7 @@ export function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme, buttons: E
   const text = div()
     .min_w(0)
     .when(b.isStrong, e => e.font_semibold())
-    .text_color(b.isStrong ? t.foreground : colorOf(t, b.tone))
+    .text_color(b.isStrong ? t.foreground : b.level === 'faint' ? faintOf(t) : colorOf(t, b.tone))
     .child(b.text)
 
   return h_flex()

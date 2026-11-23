@@ -146,6 +146,9 @@ const isSettled = (row: { tone: StatusTone }) => row.tone === 'done'
 /** The level of the line under a Status row's name: faint once the row is done, else muted. */
 export const textLevelOf = (row: { tone: StatusTone }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
 
+/** The level of a Prev line, which says what a row or the goal was before it changed: faint under every row. */
+export const WAS_LEVEL: TextLevel = 'faint'
+
 /** The level of a Status row's name: faint once the row is done, else `otherwise`, the level its kind draws its name in. */
 export const nameLevelOf = (row: { tone: StatusTone }, otherwise: NameLevel): NameLevel =>
   isSettled(row) ? 'faint' : otherwise

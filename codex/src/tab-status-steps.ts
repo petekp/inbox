@@ -1,8 +1,8 @@
 import { milestoneRows, unfoldedRows } from '../../core/view/status-folds'
 import { shownMilestones } from '../../core/view/status-goal-page'
 import type { GoalBlock, MilestoneRow } from '../../core/view/status-goal-page'
-import { WAS_PREFIX } from '../../core/view/status-page'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
+import { WAS_LEVEL } from '../../core/view/status-page-parts'
 import { tabState } from './tab-state'
 import { isParentFolded } from './tab-status-fold'
 import { stepLines } from './tab-line-steps'
@@ -26,6 +26,9 @@ export const goalLineMotion = (id: string) => `goal-${id}`
 export const goalHeadMotion = (id: string) => `head-${id}`
 export const metFoldMotion = (id: string) => `met-${id}`
 
+/** The id of the goal's Prev line among the lines under its text. Its text is what the goal was. */
+export const GOAL_WAS_LINE = 'was'
+
 /** Milestones with the rows each draws, in draw order. */
 const milestoneLines = (milestones: MilestoneRow[]): GoalLine[] =>
   milestones.flatMap(m => [
@@ -42,7 +45,7 @@ function goalHead(page: StatusPage): TextLine[] {
   const g = page.suggestedGoal === null ? page.goal : null
 
   return [
-    ...(g?.was ? [{ id: 'was', text: `${WAS_PREFIX}${g.was}` }] : []),
+    ...(g?.was ? [{ id: GOAL_WAS_LINE, text: g.was, level: WAS_LEVEL }] : []),
     ...(g?.now ? [{ id: 'now', text: g.now }] : []),
     ...(g?.awaiting ? [{ id: 'awaiting', text: g.awaiting }] : []),
   ]

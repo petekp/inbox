@@ -1,12 +1,12 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import { RUNNING_FRAME_MS, SETTLED_MS, runningMark } from '../core/view/timing'
-import { IDLE_MARK, RUNNING_FRAMES } from '../core/view/help'
+import { IDLE_MARK, RUNNING_FRAMES, SUBJECT_MARKS } from '../core/view/help'
 import { NEW_FADE_MS, NEW_HOLD_MS } from '../core/view/arrivals'
 import { w, arrive, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('an answer on its way runs its mark each frame in the terminal and as an Svg on desktop, holds the row in place until it arrives, then folds it into Closed with ✓', async ($, on) => {
+test('an answer on its way runs its mark each frame in the terminal and as an Svg on desktop, draws the still queued mark in both once it waits for the turn, holds the row in place until it arrives, then folds it into Closed with ✓', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -26,6 +26,10 @@ test('an answer on its way runs its mark each frame in the terminal and as an Sv
   expect(await markOf()).toBe('')
   expect((await pane.find({ key: 'settled-i1' }))?.text).not.toMatch(/✓/)
   await clock.advance(SETTLED_MS)
+  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+  await clock.settle()
+  expect((await desktop.find({ key: 'settled-i1-mark' }))?.text ?? null).not.toBeNull()
   const drawn: string[] = []
   const moving: string[] = []
   for (let n = 0; n < RUNNING_FRAMES.length; n++) {
@@ -36,10 +40,13 @@ test('an answer on its way runs its mark each frame in the terminal and as an Sv
   expect(new Set(moving).size).toBeGreaterThan(1)
   expect(drawn).toEqual(moving)
 
-  const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
-  await clock.settle()
-  expect((await desktop.find({ key: 'settled-i1-mark' }))?.text ?? null).not.toBeNull()
+  await clock.advance(RUNNING_FRAME_MS * RUNNING_FRAMES.length)
+  await desktop.redraw()
+  for (const look of [pane, desktop]) {
+    const queued = (await look.find({ key: 'settled-i1' }))?.text ?? ''
+    expect(queued).toMatch(new RegExp(`${SUBJECT_MARKS.queued.mark}[^]*Queued`))
+    expect([...queued].some(c => RUNNING_FRAMES.some(f => f === c))).toBe(false)
+  }
 
   await arrive($)
   await clock.settle()

@@ -402,7 +402,7 @@ export function paneRows(
                 ) : (
                   <Text>{row.handle}</Text>
                 ))),
-            side: <Text color={pal.age}>{sideAge(row)}</Text>,
+            side: <Text color={pal.selectionFaint ?? pal.faint}>{sideAge(row)}</Text>,
             fill: pal.selection,
             gapY: selectedGapY,
             children: [
@@ -502,7 +502,7 @@ export function paneRows(
             paddingRight={1}
             paddingTop={isSelected ? space.rowPad : 0}
           >
-            <Text color={pal.age}>{sideAge(row)}</Text>
+            <Text color={isCursorMarked ? (pal.selectionFaint ?? pal.faint) : pal.faint}>{sideAge(row)}</Text>
           </Box>
         ) : null}
         {isSelected ? branch(tree, blankLine, TREE_LINE_AT, pal.selectionLine ?? pal.line) : branch(tree, 0)}

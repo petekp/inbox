@@ -1,5 +1,5 @@
 import { Icon } from './row-actions'
-import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { STATUS_TEXT_LINES } from '../../core/view/status-page'
 import { STALL_GAP, textLevelOf } from '../../core/view/status-page-parts'
 import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, goalSubmitLabel, milestoneKeyPlan } from '../../core/view/status-keys'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
@@ -16,11 +16,11 @@ import { closingFolds, entering, tabState } from './tab-state'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
 import { dispatch, errorOf, pressRow } from './tab-ui'
 import { outOn } from './tab-press'
-import { milestoneNameClass, NameLine } from './tab-status-name'
+import { levelClass, milestoneNameClass, NameLine, WasLine, WasText } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, EmptyState, pulseInStep } from './tab-parts'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
-import { goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
+import { GOAL_WAS_LINE, goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
 import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 import type { ConnectorMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
@@ -149,12 +149,7 @@ function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: stri
             ref={el => fitMergedLine(el, merged)}
           />
         ) : null}
-        {m.was ? (
-          <div class="outcome muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-            {WAS_PREFIX}
-            {m.was}
-          </div>
-        ) : null}
+        {m.was ? <WasLine was={m.was} /> : null}
         {fold === null ? <Keys keys={milestoneKeyPlan(m)} /> : null}
       </div>
     </div>
@@ -445,8 +440,8 @@ function GoalSection({
           {isTyping ? <GoalField page={page} /> : text}
         </div>
         {head.map(l => (
-          <p key={l.id} class="muted" {...lineMotion(goalHeadMotion(l.id))}>
-            {l.text}
+          <p key={l.id} class={levelClass(l.level ?? 'muted')} {...lineMotion(goalHeadMotion(l.id))}>
+            {l.id === GOAL_WAS_LINE ? <WasText was={l.text} /> : l.text}
           </p>
         ))}
         <GoalError />

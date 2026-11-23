@@ -1,5 +1,5 @@
 import { Icon, RowActions } from './row-actions'
-import { seenSubjectIds, STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
+import { seenSubjectIds, STATUS_TEXT_LINES } from '../../core/view/status-page'
 import { mergedLine, textLevelOf } from '../../core/view/status-page-parts'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../core/view/status-keys'
 import { COUNTS_GAP, COUNTS_LABEL, countWords, unfoldedRows } from '../../core/view/status-folds'
@@ -8,7 +8,7 @@ import type { StatusKey } from '../../core/view/status-keys'
 import type { StatusRow } from '../../core/view/status-page'
 import { closingFolds, tabState } from './tab-state'
 import type { Key } from './tab-state'
-import { NameLine, nameClassOf } from './tab-status-name'
+import { NameLine, nameClassOf, WasLine } from './tab-status-name'
 import { chevronOf, isParentFolded, ParentName, toggleParentFold } from './tab-status-fold'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
@@ -133,12 +133,7 @@ export function StatusLine({
               ref={el => fitMergedLine(el, merged)}
             />
           ) : null}
-          {row.was ? (
-            <div class="outcome muted clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-              {WAS_PREFIX}
-              {row.was}
-            </div>
-          ) : null}
+          {row.was ? <WasLine was={row.was} /> : null}
           {keys.length > 0 ? <RowActions keys={keys} more={[]} reply={null} isBlocked={() => false} /> : null}
         </div>
       </div>

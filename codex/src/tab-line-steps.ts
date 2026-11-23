@@ -1,10 +1,11 @@
 import { stepRow } from '../../core/view/row-motion'
 import type { BannerView } from '../../core/view/banners'
+import type { TextLevel } from '../../core/view/status-page-parts'
 import { drawnRows } from './tab-state'
 import { reducedMotion } from './tab-motion'
 
 /** A line of text that comes and goes inside the tab, such as a press's status. */
-export type TextLine = { id: string; text: string }
+export type TextLine = { id: string; text: string; level?: TextLevel }
 
 /** A banner under the tab bar, keyed by its kind. */
 export type BannerLine = { id: string; banner: BannerView }

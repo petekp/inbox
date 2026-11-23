@@ -96,7 +96,8 @@ Help calls them Indicators.
 **Result mark**:
 The mark of what came of a row: ✓ when handled, ✕ when dismissed, ✗ when it
 lapsed (⊘ in the terminal and omp), as when the agent closed it because the work overtook it. It runs, as
-a Status mark does, while what the row sent is on its way to the agent.
+a Status mark does, while what the row sent is sending to the agent. A closed
+row's mark is the queued ○ while its message waits for the agent's turn to end.
 
 **Finding**:
 An issue or opportunity the agent noticed outside the current task.
@@ -151,7 +152,7 @@ check, such as "2.5 in the store". It has 2 to 5 milestones. The Status draws
 it above the head, and the head becomes its Now line. It is met once every
 milestone it keeps is done, and a met goal stays until the next one is set.
 When a new goal replaces one, the old goal's text shows under the new one as
-"Prev: ...", until the person has seen it. A milestone the plan changed shows
+"↩ Prev: ...", until the person has seen it. A milestone the plan changed shows
 its old text the same way. A milestone shows no word or age beside its name:
 its mark says whether it is done, under way or waiting.
 _Avoid_: target, objective

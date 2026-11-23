@@ -30,7 +30,7 @@ import type { Drawn, RowTop } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from '../../core/view/status-keys'
 import { seenSubjectIds, type StatusRow, WAS_PREFIX } from '../../core/view/status-page'
-import { mergedLine, nameLevelOf, textLevelOf } from '../../core/view/status-page-parts'
+import { mergedLine, nameLevelOf, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
 import { countsText, countsUnits, isParentCollapsed, unfoldedRows } from '../../core/view/status-folds'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import { statusRowPads } from '../../core/view/status-gaps'
@@ -363,7 +363,13 @@ export function paneStatus(
             ]
           : []),
         ...(r.was
-          ? [statusPageText(`status-${r.id}-was`, [{ text: `${WAS_PREFIX}${r.was}`, isMuted: true }], r.depth)]
+          ? [
+              statusPageText(
+                `status-${r.id}-was`,
+                [levelSpan(`${WAS_PREFIX}${r.was}`, WAS_LEVEL, isRowSelected)],
+                r.depth,
+              ),
+            ]
           : []),
         ...keysRow({ id: r.id, keys: statusKeyPlan(r) }, statusTextWidth(r.depth)),
       ]

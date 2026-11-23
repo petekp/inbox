@@ -303,7 +303,7 @@ export function ListRow({
           </span>
         ) : null}
       </div>
-      <span class="side" data-room={SENDING}>
+      <span class={isSending ? 'side sending' : 'side'} data-room={SENDING}>
         {isSideSplit ? (
           <>
             <span class="open-only">{drawn.side}</span>

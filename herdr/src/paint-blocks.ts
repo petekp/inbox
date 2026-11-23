@@ -73,7 +73,7 @@ const partedTextEl = (text: string, color: Color, indent: number, t: Theme): Ele
         )
     : lineEl(text, color, indent)
 
-/** A press's result under its buttons. An aged result's age stays muted whatever the result's color. */
+/** A press's result under its buttons. An aged result's age draws faint whatever the result's color. */
 function feedbackEl(f: { text: string; tone: Tone; aged?: Aged }, t: Theme): Element {
   const cut = f.aged?.lead.length ?? f.text.length
   if (f.tone === 'muted' || cut >= f.text.length) return partedTextEl(f.text, colorOf(t, f.tone), 0, t).pt(CONTROL_GAP)
@@ -81,7 +81,7 @@ function feedbackEl(f: { text: string; tone: Tone; aged?: Aged }, t: Theme): Ele
   return h_flex()
     .flex_wrap()
     .pt(CONTROL_GAP)
-    .children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), t.muted)])
+    .children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), faintOf(t))])
 }
 
 /** A line under a row's title, `above` under the part above it, with its part of the tree that hangs from the row's mark. */
@@ -150,7 +150,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
         div()
           .flex_none()
           .ml(INSET)
-          .text_color(t.muted)
+          .text_color(faintOf(t, r.isSelected ? t.selected : t.background))
           .child(r.age ?? ''),
       ),
     )
@@ -329,7 +329,7 @@ function underEls(r: RowBlock, from: RowBlock, m: RowMotion | undefined, p: Pain
 }
 
 /**
- * A PR's title, with its number muted at the line's right end as a row's age is, then where it stands and
+ * A PR's title, with its number muted at the line's right end, then where it stands and
  * its buttons. In a narrow pane the number leads the status line instead, so the title keeps its width.
  */
 function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {

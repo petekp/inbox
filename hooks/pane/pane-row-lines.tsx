@@ -97,10 +97,17 @@ export function paneRowLines({
       ? { text, age: ago(now - f.at), isAfterTitle: true, tone, doneText, feedback: f }
       : { text, age: '', isAfterTitle: isAfterTitle(f), tone, doneText, feedback: f }
   }
-  const lastActionText = (id: string) => {
+  /** A press's result line on the PRs tab: its text in its result color, then its age, faint. */
+  const pressLine = (id: string) => {
     const f = feedbackLabel(id)
+    if (!f) return null
 
-    return f ? { text: [f.text, f.age].filter(Boolean).join(DOT), tone: f.tone, doneText: f.doneText } : null
+    return (
+      <Text color={f.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
+        {withDoneText(f.text, f.doneText)}
+        {f.age ? <Text color={pal.faint}>{`${DOT}${f.age}`}</Text> : null}
+      </Text>
+    )
   }
   /** A press result's color: the error color, the done color of the ✓ it carries, or muted. */
   const feedbackColor = (tone: FeedbackTone) =>
@@ -344,13 +351,14 @@ export function paneRowLines({
         muted: pal.muted,
         after: f ? (feedbackColor(f.tone) ?? null) : pal.muted,
         afterHover: f ? (feedbackColor(f.tone) ?? null) : pal.muted,
-        side: pal.age,
+        side: pal.faint,
         hover: pal.raised,
         hoverText: pal.raisedText ?? null,
         pressed: pal.selection ?? pal.raised,
       },
     }
   }
+  /** A selected row's title with its age beside it, on the selection. */
   const withSideAge = (row: Row, line: JSX.Element) =>
     isAgeInSide ? (
       <Box flexDirection="row">
@@ -358,7 +366,7 @@ export function paneRowLines({
           {line}
         </Box>
         <Box width={TERMINAL_SIDE_CELLS} flexShrink={0} justifyContent="flex-end">
-          <Text color={pal.age}>{sideAge(row)}</Text>
+          <Text color={pal.selectionFaint ?? pal.faint}>{sideAge(row)}</Text>
         </Box>
       </Box>
     ) : (
@@ -375,7 +383,7 @@ export function paneRowLines({
 
   return {
     feedbackLabel,
-    lastActionText,
+    pressLine,
     pressedAge,
     branch,
     desktopHairline,

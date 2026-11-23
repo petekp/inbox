@@ -177,7 +177,7 @@ test('Fix hands a finding off and settles it as the choice made, each press with
   }
   assert.deepEqual(drawnAt(held, 60), ['', 'Fix'])
   assert.deepEqual(drawnAt(sent, 60), ['running', 'Fix'])
-  assert.deepEqual(drawnAt(sent, 50 + QUEUED_AFTER_MS), ['running', 'Queued: Fix'])
+  assert.deepEqual(drawnAt(sent, 50 + QUEUED_AFTER_MS), ['○', 'Queued: Fix'])
   assert.deepEqual(drawnAt({ ...sent, lastActions: withArrival(sent.lastActions, message) }, 80), ['✓', 'Fix'])
   const started = notePrompt(sent, 'Please address this finding you recorded:', 70).state
   const applied = { ...started, presence: { ...started.presence, turnsApplied: started.presence.turnsStarted } }
