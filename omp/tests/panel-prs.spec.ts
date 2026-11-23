@@ -23,9 +23,9 @@ import { withFetchedPrs } from '../../core/runtime/session-presses'
 import { sessionView } from '../../core/view/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
-import type { PanelScreen } from '../src/panel'
+import type { PanelScreen, PanelUi } from '../src/panel'
 import { emptyState } from '../src/state'
-import { drawn, ESC, keyed, NOW, screenOf, text, withCursorOn } from './panel-harness'
+import { cursorOf, drawn, ESC, keyed, keys, NOW, screenOf, text, withCursorOn } from './panel-harness'
 
 function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAction> = {}): PanelScreen {
   const s = demoState(NOW)
@@ -153,6 +153,65 @@ test('Clear merged and closed does not show when the only finished PR is the bra
   const ui = { ...INITIAL_UI, tab: 'prs' as const }
   expect(text(screen, ui)).not.toContain('Clear merged and closed')
   expect(keyed(screen, ui, 'm', NOW).press).toBeUndefined()
+})
+
+const refreshDone = (at: number): LastAction => ({
+  kind: 'local',
+  action: 'pr-refresh',
+  text: 'Refresh PRs',
+  at,
+  result: { state: 'done', at, parts: [{ kind: 'refresh-prs', name: 'PRs', error: null, isCommand: false }] },
+})
+
+const cursorLine = (screen: PanelScreen, ui: PanelUi) =>
+  text(screen, ui)
+    .split('\n')
+    .find(l => l.includes('❯'))
+
+function steppedTo(screen: PanelScreen, ui: PanelUi, id: string): PanelUi {
+  let at = ui
+  for (let n = 0; n < 20 && cursorOf(at) !== id; n++) at = keys(screen, at, 'k')
+  if (cursorOf(at) !== id) throw new Error(`k never reached ${id}`)
+
+  return at
+}
+
+test('after Refresh PRs reads the PR that could not be read, the cursor stays on its line, Enter presses nothing, and the tab shown again opens at its first waiting row', () => {
+  const failed = demoState(NOW)
+  const [first] = screenOf().view.prs.drawn
+  if (!first) throw new Error('the demo draws no PR')
+  const ref = first.pr.ref
+  const view = failed.prViews.views[ref]
+  if (!view) throw new Error(`the demo has no view of ${ref}`)
+  failed.prViews.views[ref] = { ...view, error: 'HTTP 502' }
+  const shownSince = NOW - 60_000
+  const before = screenOf({ view: sessionView(failed, NOW, SETTLED_MS, { ...NO_HOLDS, shownSince }) })
+  const onRefresh = steppedTo(before, { ...INITIAL_UI, tab: 'prs', shownSince }, PR_REFRESH_ID)
+  expect(keyed(before, onRefresh, 'enter', NOW).press).toEqual({ action: 'pr-refresh' })
+
+  const read = demoState(NOW)
+  read.lastActions[PR_REFRESH_ID] = refreshDone(NOW - 1_000)
+  const after = screenOf({ view: sessionView(read, NOW, SETTLED_MS, { ...NO_HOLDS, shownSince }) })
+  expect(cursorLine(after, onRefresh)).toContain('Refreshed PRs')
+  expect(keyed(after, onRefresh, 'enter', NOW).press).toBeUndefined()
+  expect(keyed(after, onRefresh, 'enter', NOW).sent).toEqual([])
+
+  const back = keys(after, onRefresh, '2', '4')
+  expect(cursorOf(back)).toBeNull()
+  expect(cursorLine(after, back)).toBe(cursorLine(after, { ...INITIAL_UI, tab: 'prs', shownSince }))
+  expect(cursorLine(after, back)).not.toContain('Refreshed PRs')
+})
+
+test('after Clear merged and closed leaves the PRs tab, the cursor rests on no line and Enter presses nothing', () => {
+  const finished = withFinished({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' })
+  const onClear = steppedTo(finished, { ...INITIAL_UI, tab: 'prs' }, CLEAR_FINISHED_ID)
+  expect(keyed(finished, onClear, 'enter', NOW).press).toEqual({ action: 'pr-clear-finished' })
+
+  const cleared = screenOf()
+  expect(text(cleared, onClear)).not.toContain('Clear merged and closed')
+  expect(cursorLine(cleared, onClear)).toBeUndefined()
+  expect(keyed(cleared, onClear, 'enter', NOW).press).toBeUndefined()
+  expect(cursorOf(keys(cleared, onClear, 'j'))).not.toBe(CLEAR_FINISHED_ID)
 })
 
 test('a PR a fetch finds merged settles as ✓ Merged while the PRs tab shows, and u presses its Undo', () => {

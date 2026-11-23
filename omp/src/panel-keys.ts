@@ -1,5 +1,5 @@
 import { isPrPress } from '../../core/view/pr-press'
-import { CLEAR_FINISHED_ID } from '../../core/view/pr-rows'
+import { CLEAR_FINISHED_ID, PR_REFRESH_ID, RANK_AGAIN_ID } from '../../core/view/pr-rows'
 import { shownTabs, isRowTab } from '../../core/view/tabs'
 import { firstWaiting, steppedIndex } from '../../core/view/action-plan'
 import { COLLAPSE_KEY, FOLD_ALL_KEY, UNDO_KEY } from '../../core/view/help'
@@ -33,18 +33,30 @@ export const withCollapses = (screen: PanelScreen, ui: UiState): PanelScreen => 
   view: { ...screen.view, collapsed: collapsedOf(ui, screen.view) },
 })
 
+/**
+ * The PRs tab's own lines, above its PR blocks: Refresh PRs, Clear merged and closed, and the changed line with Rank
+ * again.
+ */
+const PR_TAB_LINE_IDS: readonly string[] = [PR_REFRESH_ID, CLEAR_FINISHED_ID, RANK_AGAIN_ID]
+
 const cursorOf = (ui: UiState): string | null => (isRowTab(ui.tab) ? ui.selection[ui.tab].id : ui.statusSelection)
 
 /**
  * `shared`, the controller's state after an event, with the panel's fields from `before`. A button's focus and a
- * reopened row last while the cursor stays on their row. A tab that starts showing starts at its top.
+ * reopened row last while the cursor stays on their row. A tab that starts showing starts at its top, and the PRs tab
+ * at its first waiting row when its cursor was on one of the tab's own lines.
  */
 export function withShared(before: PanelUi, shared: UiState): PanelUi {
-  const cursor = cursorOf(shared)
   const isTabChanged = shared.tab !== before.tab
+  const isOnPrTabLine = PR_TAB_LINE_IDS.includes(shared.selection.prs.id ?? '')
+  const shown: UiState =
+    isTabChanged && shared.tab === 'prs' && isOnPrTabLine
+      ? { ...shared, selection: { ...shared.selection, prs: { id: null, index: -1, guard: null } } }
+      : shared
+  const cursor = cursorOf(shown)
 
   return {
-    ...shared,
+    ...shown,
     focus: before.focus?.rowId === cursor && !isTabChanged ? before.focus : null,
     resuming: before.resuming,
     opened: before.opened === cursor && !isTabChanged ? before.opened : null,
@@ -71,14 +83,18 @@ export function applyEvents(screen: PanelScreen, ui: PanelUi, events: UiEvent[],
 /**
  * The line the shown row tab's cursor is on. A cursor on no row, or on a line it cannot land on, rests on the first
  * line that waits, which may be the stop or the install question, else the first line the cursor can land on. A row
- * the agent closed keeps the cursor while the person's keys hold the close.
+ * the agent closed keeps the cursor while the person's keys hold the close. One of the PRs tab's own lines keeps the
+ * cursor after its press while it draws, though its button is gone. Once it is gone, the cursor rests on no line, so the
+ * first waiting PR's Merge never sits one Enter after Refresh PRs.
  */
 export function selectedLine(lines: Line[], ui: UiState): Line | null {
   if (!isRowTab(ui.tab)) return null
   const id = ui.selection[ui.tab].id
   const current = id === null ? undefined : lines.find(l => l.id === id)
   const isCloseHeld = current !== undefined && ui.heldClose[ui.tab] === current.id
-  if (current && (isSelectable(current) || isCloseHeld)) return current
+  const isPrTabLine = id !== null && PR_TAB_LINE_IDS.includes(id)
+  if (current && (isSelectable(current) || isCloseHeld || isPrTabLine)) return current
+  if (isPrTabLine) return null
   const waiting = firstWaiting(waitsOf(lines))
 
   return lines.find(l => l.id === waiting) ?? lines.filter(isSelectable).find(l => l.id !== CLEAR_FINISHED_ID) ?? null
