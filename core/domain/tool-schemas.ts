@@ -24,7 +24,7 @@ export const RECORD_SCHEMA = {
       type: 'array',
       items: { type: 'string' },
       description:
-        'For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one.',
+        'For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one. For a task that checks something whose outcome you need, such as whether a fix works on their screen: the outcomes the user can report, in the same form. Leave it out for a task you only need done, such as a sign-in.',
     },
     option_notes: {
       type: 'array',

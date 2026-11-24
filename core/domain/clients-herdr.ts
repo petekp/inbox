@@ -139,5 +139,6 @@ export const HERDR: LookTable = {
     'named-pr-link': { kind: 'full' },
     'session-registry': { kind: 'host' },
     'press-preconditions': { kind: 'full' },
+    'task-results': { kind: 'full' },
   },
 }

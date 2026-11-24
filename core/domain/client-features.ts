@@ -81,6 +81,7 @@ export type FeatureId =
   | 'named-pr-link'
   | 'session-registry'
   | 'press-preconditions'
+  | 'task-results'
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */
 export type ClientId = 'claude-code' | 'codex' | 'omp'

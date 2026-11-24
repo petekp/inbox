@@ -27,7 +27,7 @@ function orderDescription(host: Host): string {
 function recordDescription(host: Host): string {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
-- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
+- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. When it is a check whose outcome you need, such as whether a fix works on their screen, give the outcomes they can report as options, with no rec. A task you only need done, such as a sign-in, gets none: the user marks it done. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
 - finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, a PR's checks, conflicts, review threads or readiness, which ${host.prsIn} shows, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
 Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`
 }
@@ -146,7 +146,7 @@ export function recordItem(
     return unchanged(ledger, 'Not recorded: kind must be question, task or finding.')
   const ask = cut(input.ask, MAX_ASK)
   if (ask === '') return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`)
-  const options = input.kind === 'question' ? list(input.options, MAX_OPTIONS, MAX_OPTION) : []
+  const options = list(input.options, MAX_OPTIONS, MAX_OPTION)
   if (input.kind === 'question' && options.length === 0)
     return unchanged(ledger, 'Not recorded: a question needs at least one option.')
   const recInput = input.kind === 'question' ? cut(input.rec, MAX_OPTION) : ''
@@ -190,6 +190,7 @@ export function recordItem(
   if (r.is === 'open') {
     const changes = [
       ...(r.addedSteps > 0 ? ['added its new steps'] : []),
+      ...(r.isNewOptions ? ['gave it your options'] : []),
       ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
       ...(r.newRec ? [`changed its recommendation to ${r.newRec}`] : []),
       ...(r.isNewReason ? ['gave its recommendation your reason'] : []),

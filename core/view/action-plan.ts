@@ -150,7 +150,9 @@ export function actionsOf(
   if (item.kind === 'task')
     return [
       ...stepActions,
-      action({ action: 'done', id }, 'Done', 'mark'),
+      ...(item.options.length > 0
+        ? item.options.map(option => action({ action: 'answer', id, option }, option, 'mark'))
+        : [action({ action: 'done', id }, 'Done', 'mark')]),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       ...explainActions,
       action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
@@ -293,9 +295,10 @@ type ActionKey = { slot: 'action'; action: ActionView; hotkey: string }
 
 export type PlannedKey =
   | { slot: 'retry'; press: RowPress; kind: PressKind; label: string; emphasis: 'normal'; icon: 'retry' }
+  /** A step, or a task's result, which takes the place of Done. */
   | {
       slot: 'choice'
-      action: ActionView & { press: Extract<RowPress, { action: 'step' }> }
+      action: ActionView & { press: Extract<RowPress, { action: 'step' | 'answer' }> }
       hotkey?: string
     }
   | { slot: 'allOptions'; count: number; label: string; emphasis: 'quiet' }
@@ -310,7 +313,8 @@ export type PlannedOption = {
 
 /**
  * A row's options, then its keys, then its follow-ups. A look draws each option as its button in the question's tree
- * with its note under it, in this order. Then it draws the keys, and the follow-ups in one group after them.
+ * with its note under it, in this order. Then it draws the keys, and the follow-ups in one group after them. A task's
+ * results are keys after its steps, since a task has no tree of answers.
  */
 export function rowKeyPlan(
   r: RowView,
@@ -332,7 +336,7 @@ export function rowKeyPlan(
     const { press } = a
     if (press.action === 'answer' || press.action === 'step') {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++]! } : {}
-      if (press.action === 'answer') {
+      if (press.action === 'answer' && r.type !== 'task') {
         const note = optionNote(r.optionDescriptions.find(d => d.option === press.option))
         options.push({ action: { ...a, press }, note, ...hotkey })
       } else keys.push({ slot: 'choice', action: { ...a, press }, ...hotkey })
