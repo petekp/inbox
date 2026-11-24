@@ -198,6 +198,9 @@
 .row.collapsed:not(.closing) .open-only {
   display: none;
 }
+.part.held-hidden {
+  visibility: hidden;
+}
 .quote,
 .pre-line {
   white-space: pre-line;
