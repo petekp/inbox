@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T18:42:18.530Z. 377137 characters follow.
+// Built at 2026-11-24T18:58:20.536Z. 377147 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -8659,7 +8659,7 @@ var LOOK_GAP_MS = 3 * LOOK_TICK_MS;
 function isPaneShown(paneId, panes, spaces, window2) {
   const own = panes.find((p) => p.pane === paneId);
   const tab = spaces.find((s) => s.active)?.tabs.find((t) => t.id === own?.tab);
-  return own !== undefined && window2.active && tab?.active === true && (!tab.zoomed || own.zoomed);
+  return own !== undefined && window2?.active === true && tab?.active === true && (!tab.zoomed || own.zoomed);
 }
 function statusPlaced(blocks, heightOf, page, room) {
   const subjects = new Map(statusListRows(page).map((r) => [r.id, seenSubjectIds(r)]));
