@@ -28,6 +28,7 @@ import type { StatusPage } from './status-page'
 import type { Holds } from './timing'
 import type { ShownTab } from './tabs'
 import type { FoldKind, LastAction, RowNote, Session, Turns } from '../../types'
+import { withDrawableText } from '../domain/text'
 
 export const PRESS_TIMEOUT_MS = 60_000
 
@@ -75,6 +76,13 @@ function withoutStalePending(lastActions: Record<string, LastAction>, now: numbe
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]))
 }
 
+/**
+ * The keys of a view whose values stay as stored: ids, presses, the versions a press is checked against, and the item,
+ * finding and answer text a look matches a press with. A host matches each press against the stored ledger.
+ */
+const STORED_KEYS: ReadonlySet<string> = new Set(['id', 'press', 'drawnVersions', 'item', 'finding', 'option'])
+
+/** What every look draws for session `s`, with every other text in it drawable, as `drawableText` says. */
 export function sessionView(
   s: Session,
   now: number,
@@ -105,8 +113,7 @@ export function sessionView(
 
   const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh)
   const rowIds = [...allRows(inbox).map(r => r.id), GOAL_KEYS_ID]
-
-  return {
+  const view: SessionView = {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
@@ -119,6 +126,8 @@ export function sessionView(
       prs.drawn.map(d => d.pr),
     ),
   }
+
+  return withDrawableText(view, key => STORED_KEYS.has(key))
 }
 
 /**

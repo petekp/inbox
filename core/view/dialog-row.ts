@@ -2,6 +2,7 @@ import type { Dialog } from '../../types'
 import { dialogWaitText } from './band'
 import type { RowView } from './rows'
 import type { SessionView } from './session-view'
+import { drawableText } from '../domain/text'
 
 /**
  * The agent's own dialog that waits on the person, as a host knows it. `text` is null from a Herdr publisher that
@@ -19,7 +20,7 @@ export function dialogRowId(dialog: OpenDialog): string {
 
 /** What the dialog asks, in one line: "Allow npm test?" for a permission, else the question. */
 export function dialogTitle(dialog: Pick<Dialog, 'kind' | 'text'>): string {
-  return dialog.kind === 'permission' ? `Allow ${dialog.text}?` : dialog.text
+  return drawableText(dialog.kind === 'permission' ? `Allow ${dialog.text}?` : dialog.text)
 }
 
 /** Where the person answers the dialog, which the row's context line says. */

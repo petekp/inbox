@@ -2,7 +2,7 @@ import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import { DESKTOP_MARK_CELLS } from '../hooks/pane/pane-sizes'
 import type { TabsProps } from '../hooks/pane/tabs-client'
-import { PRESS_GUARD_MS } from '../core/view/timing'
+import { PRESS_GUARD_MS, SETTLED_MS } from '../core/view/timing'
 import { w, world } from './hooks-world'
 import { PANE, selectRow, replyField, replyKey } from './hooks-helpers'
 
@@ -240,3 +240,32 @@ test('a press on a question Claude closed since the draw sends nothing and says 
   await clock.advance(9000)
   expect(await pane.find({ text: stale })).toBeUndefined()
 })
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`the ${surface} pane draws a question whose ask and answer hold escapes without them, and its answer closes it as the agent wrote it`, async ($, on) => {
+    const clock = mock.clock(on, { now: 1_000_000 })
+    world($, on, [])
+    on('ui.focus', () => ({}))
+    w.surfaces = [surface]
+
+    await $.session.start({ cwd: '/tmp/project', surface, isInteractive: surface === 'terminal' })
+    const option = 'Y\x1b[1mes\x1b[0m'
+    await $.tool.call({
+      tool: 'mcp__inbox__record',
+      kind: 'question',
+      ask: 'Ship \x1b[31mit\x1b]52;c;aGk=\x07?',
+      options: [option, 'no'],
+    })
+    await clock.settle()
+    const pane = await $.ui.mount({ ...PANE, surface, props: { ...PANE.props, bodyColumns: 69 } })
+
+    const tree = JSON.stringify(await pane.findAll({}))
+
+    expect(tree).toContain('Ship it?')
+    expect(tree).not.toContain('\\u001b')
+    expect((await pane.find({ key: 'answer-i1-0' }))?.text).toContain('Yes')
+    await pane.press({ key: 'answer-i1-0' })
+    await clock.advance(SETTLED_MS)
+    expect(w.sent.at(-1)).toContain(option)
+  })
+}
