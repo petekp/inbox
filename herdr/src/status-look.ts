@@ -26,8 +26,8 @@ export const AGE_TICK_MS = 60_000
 const LOOK_GAP_MS = 3 * LOOK_TICK_MS
 
 /**
- * Whether the Herdr app shows the look's pane: it has a window and that window has focus, the pane's tab is the tab its shown space shows,
- * and no other pane in that tab is zoomed. The app does not say whether a window that lost focus is still in view.
+ * Whether the Herdr app shows the look's pane: it has a window and that window has focus, the pane's tab is the tab
+ * its shown space shows, and no other pane in that tab is zoomed. The app does not say whether a window that lost focus is still in view.
  */
 export function isPaneShown(
   paneId: string | undefined,
