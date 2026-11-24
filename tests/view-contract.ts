@@ -146,7 +146,6 @@ const GOAL_FIELDS: Rules<GoalBlock, GoalPlace> = {
   isMet: STYLE,
   was: goalLine(g => g.was && `${WAS_PREFIX}${g.was}`),
   now: goalLine(g => g.now),
-  awaiting: goalLine(g => g.awaiting),
   milestonesFold: text(({ goal }) => [goal.milestonesFold?.text ?? null]),
   milestones: NESTED,
 }

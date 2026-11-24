@@ -204,7 +204,7 @@ export async function currentView(
       ),
       findings: view.findings.rows.map(r => projectRow(binding, `${generation}:${versions.get(r.id)}`, r, allowed)),
       statusTitle: goal?.text ?? view.statusPage.head?.title ?? '',
-      statusDetail: view.statusPage.head?.description ?? goal?.awaiting ?? '',
+      statusDetail: view.statusPage.head?.description ?? '',
       statusRows,
       questionCount: waitingCount(view.needsYou.questions),
       taskCount: waitingCount(view.needsYou.tasks),

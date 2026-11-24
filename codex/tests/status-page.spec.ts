@@ -394,10 +394,6 @@ test('the Codex tab draws the Status page from a release build’s view, and new
     assert.deepEqual(presses.at(-1), { action: 'type', id: 'goal', text: 'Status tab in the store' })
     assert.ok(root.querySelector('#type-goal') === null)
     assert.equal(root.querySelector('.status-head.goal h1')?.textContent, 'Status tab in the store')
-    assert.equal(
-      [...root.querySelectorAll('.status-head.goal p')].at(-1)?.textContent,
-      'Milestones after the next reply',
-    )
 
     await click('Remove')
     assert.deepEqual(presses.at(-1), { action: 'remove-goal', id: 'goal' })
