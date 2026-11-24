@@ -3,7 +3,7 @@ import type { Case, Ev } from './case'
 type Fails = (c: Case) => Promise<boolean>
 
 /** Each case with one chunk of `list` left out, largest chunks first. */
-function* without<T>(list: T[]): Generator<T[]> {
+export function* without<T>(list: T[]): Generator<T[]> {
   for (let size = Math.max(1, Math.floor(list.length / 2)); size >= 1; size = Math.floor(size / 2)) {
     for (let from = 0; from < list.length; from += size) yield [...list.slice(0, from), ...list.slice(from + size)]
     if (size === 1) break

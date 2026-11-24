@@ -8,7 +8,7 @@ import { shrink } from './shrink'
 import { SEEDS } from './seeds'
 
 const USAGE =
-  'usage: fuzz.sh [--look omp|herdr|all] [--seed N] [--runs N] [--case N] [--time S] [--shrinks N] [--replay <case.json>]'
+  'usage: fuzz.sh [--look omp|herdr|rows|all] [--seed N] [--runs N] [--case N] [--time S] [--shrinks N] [--replay <case.json>]'
 
 function argsOf(argv: string[]) {
   const get = (name: string) => {
@@ -16,10 +16,11 @@ function argsOf(argv: string[]) {
     return i >= 0 ? argv[i + 1] : undefined
   }
   const look = get('look') ?? 'all'
-  if (!['omp', 'herdr', 'all'].includes(look)) throw new Error(USAGE)
+  if (!['omp', 'herdr', 'rows', 'all'].includes(look)) throw new Error(USAGE)
 
   return {
-    looks: (look === 'all' ? ['herdr', 'omp'] : [look]) as Look[],
+    looks: (look === 'all' ? ['herdr', 'omp'] : look === 'rows' ? [] : [look]) as Look[],
+    hasRows: look === 'rows' || look === 'all',
     seed: Number(get('seed') ?? Date.now() % 1_000_000),
     runs: Number(get('runs') ?? 100),
     seconds: Number(get('time') ?? Infinity),
@@ -133,10 +134,11 @@ async function main() {
     writeFileSync(join(out, `${name}.md`), report(c, f, notes, { ...from, seed: args.seed, path }))
     console.log(`${name}: ${f.detail}`)
   }
+  const rows = args.hasRows ? (await import('./look-rows')).runRows(args.seed, args.runs * 50, out) : null
   let ran = 0
   const realNow = performance.now.bind(performance)
   const t0 = realNow()
-  for (let i = 0; ran < args.runs && (realNow() - t0) / 1000 < args.seconds; i++) {
+  for (let i = 0; args.looks.length > 0 && ran < args.runs && (realNow() - t0) / 1000 < args.seconds; i++) {
     const n = args.only ?? Math.floor(i / args.looks.length)
     const look = args.looks[i % args.looks.length] ?? 'herdr'
     if (args.only !== null && i >= args.looks.length) break
@@ -174,11 +176,12 @@ async function main() {
     ...seedLines,
     `seed ${args.seed}, ${ran} cases in ${Math.round((realNow() - t0) / 1000)} s`,
     ...lines,
+    ...(rows?.lines ?? []),
   ].join('\n')
   writeFileSync(join(out, 'summary.txt'), summary + '\n')
   console.log(summary)
   console.log(`reports: ${out}`)
-  process.exit(counts.size === 0 && !isSeedBroken ? 0 : 1)
+  process.exit(counts.size === 0 && !rows?.isBroken && !isSeedBroken ? 0 : 1)
 }
 
 await main()

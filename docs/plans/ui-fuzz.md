@@ -1,6 +1,6 @@
 # UI fuzz: pressure-test every look and its motion
 
-Status: building. The omp panel and the Herdr look run, with the rules marked built below. The shared row stepper, the Codex tab, the mod's looks and the arbitrary-state pass come next.
+Status: building. The omp panel, the Herdr look and the shared row stepper run, with the rules marked built below. The Codex tab, the mod's looks and the arbitrary-state pass come next.
 
 ## What it is for
 
@@ -33,7 +33,7 @@ Long sentences, one huge word with no spaces, CJK, emoji and ZWJ sequences, flag
 
 - omp: widths from 10 to 220 columns, with no terminal height. A height is next.
 - Herdr: the frame stand-in in `herdr/tests/frames.ts` lays out at a fixed pane width and wraps text at a fixed count of characters. It models the layout and does not measure glyphs, so Herdr's width rule is not checked. Its glyph rule runs on the painted text.
-- Reduced motion: Herdr has none. The shared row stepper (`stepRow` in `core/view/row-motion.ts`) takes `isReduced`, and the Codex tab reads it. Both get the reduced-motion rule, next.
+- Reduced motion: Herdr has none. The shared row stepper (`stepRow` in `core/view/row-motion.ts`) takes `isReduced`, and the Codex tab reads it. The stepper has the reduced-motion rule; the Codex tab gets it next.
 - Themes: omp's line layout does not depend on its theme. Herdr's paint reads its theme for colors only, so the rule there, next, is that every tone a block names has a color in both themes.
 
 ### The host
@@ -65,7 +65,7 @@ Next, a separate pass, `--look arbitrary`, will build sessions with no regard fo
 | --- | --- | --- | --- |
 | omp | `createPanel` in `omp/src/controller.ts`, over a `PanelSource` the in-memory host backs, `render(width)` after every event and timer | `no-throw`, `bad-text`, `width`, `raw-escape`, `glyph-cut`, `plan-order`, `counts` | `press-steady`. omp draws no glides. |
 | Herdr | the real `Inbox` view in `herdr/src/main.ts`, opened with `openPanel` from `herdr/tests/gpui-stand-in.ts`, with virtual timers, press files and session files kept in memory. Its blocks before motion then go through `framesOf` in `herdr/tests/frames.ts` at 16 ms frames. | `no-throw`, `motion-id`, `bad-text`, `glyph-cut`, `plan-order`, `counts`, `cut`, `jump`, `connector-gap`, `vanish` | `overlap`, `flicker`, `animates` |
-| Shared row stepper | `stepRow` over generated targets and times | none | the stepper rules below, with the Codex tab |
+| Shared row stepper | `stepRow` over generated targets, draw gaps, new rows and reduced motion, 50 cases for each `--runs` case | the four stepper rules below | the same rules on the Codex tab's drawn rows |
 | Codex tab | the built tab in a headless browser page, as `codex/scripts/tab-page.sh` serves it, with `[data-motion]` rects sampled each animation frame, in both themes and with reduced motion emulated | none | all |
 | Terminal and desktop | the mod's render path as `tests/hooks-world.ts` drives it, read as the drawn tree | none | plan order, width in the terminal, counts, no bad text. The terminal does not glide. Desktop pixels need the VM, so desktop stays on the drawn tree. |
 
@@ -94,7 +94,8 @@ Motion rules run on the frames `framesOf` draws from 0 ms, the case's start. The
 - `connector-gap`: the tree connectors leave no gap, as `framesOf` reports `gaps`.
 - `vanish`: a text that shows at 0.2 or more of opacity times share does not go in one frame with no draw then, while its block still shows. A text that goes on as a longer or shorter text in its block, or whose block shows as many texts in the next frame, changed rather than went.
 - Next: `press-steady`, a button whose press is out keeps its place and size while nothing above it changed. `flicker`, within one move a text's opacity does not rise, fall and rise again. `animates`, a box whose resting height changes passes through a height between the two.
-- Next, with the Codex tab: `stepRow` in `core/view/row-motion.ts` never returns a track whose `since` is after its draw, every moving state comes to rest within `moveMs` plus one frame of its last change, `drawsFormLeft` holds only within the move, and with `isReduced` every target is reached in the draw that asks for it.
+- Built for the shared row stepper (`--look rows`, also in `--look all`): `stepper-time`, no track has a `since` after its draw or a `since` that is not finite. `stepper-rest`, a moving state comes to rest within `moveMs` plus one frame of its last change, drawn every 16 ms toward the same target. `stepper-form-left`, `drawsFormLeft` holds only within the move. `stepper-reduced`, with `isReduced` every target is reached in the draw that asks for it. `stepper-form`, a resting row rests in the form it was asked for, and only `gone` drops it. Each rule fails on a broken `stepRow` that breaks it: one that ignores `isReduced`, sets `since` ahead, restarts an opening move each draw, or rests a closed row open. The stepper passes all of them on 10,000 cases.
+- Next, with the Codex tab: the same rules on the rows it draws, read from its `[data-motion]` rects.
 
 `vanish` and the next motion rules leave out the one-draw changes that `docs/looks/differences-herdr-motion.md` keeps on purpose:
 
@@ -136,7 +137,7 @@ None. A seeded PRNG is ten lines, and the shrinker works on the case's own JSON.
 - `run.ts`: arguments, seeds, the loop and reports.
 - `case.ts`, `rng.ts`, `texts.ts`, `gen.ts`: the case format and its generator.
 - `host.ts`: the in-memory host. `agent.ts`: the agent's events through the shared code.
-- `look-omp.ts`, `look-herdr.ts`: each look's driver.
+- `look-omp.ts`, `look-herdr.ts`: each look's driver. `look-rows.ts`: the shared row stepper, with its own generator, rules and shrinking, since a case there is a list of draws rather than a session.
 - `rules-text.ts`, `rules-omp.ts`, `rules-herdr.ts`, `failure.ts`: the rules.
 - `shrink.ts`, `seeds.ts`, `tsconfig.json`.
 
