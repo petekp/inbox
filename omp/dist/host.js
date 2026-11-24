@@ -108,6 +108,41 @@ function dash(value) {
   const v = (value ?? "").trim();
   return v === "" || v === "-" ? null : v;
 }
+var TERMINAL_CONTROL = new RegExp([
+  String.raw`(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)`,
+  String.raw`(?:\x1b\[|\x9b)[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]`,
+  String.raw`\x1b[\x20-\x2f]*[\x30-\x7e]`,
+  String.raw`[\x00-\x08\x0b-\x1f\x7f-\x9f]`
+].join("|"), "g");
+var HAS_CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
+function drawableText(text) {
+  return HAS_CONTROL.test(text) ? text.replace(TERMINAL_CONTROL, "") : text;
+}
+function isPlainObject(value) {
+  if (typeof value !== "object" || value === null)
+    return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+function withDrawableText(value, isKept) {
+  if (typeof value === "string")
+    return drawableText(value);
+  if (Array.isArray(value)) {
+    const drawn = value.map((v) => withDrawableText(v, isKept));
+    return drawn.some((v, i) => v !== value[i]) ? drawn : value;
+  }
+  if (!isPlainObject(value))
+    return value;
+  let drawn = null;
+  for (const [key, v] of Object.entries(value)) {
+    if (isKept(key))
+      continue;
+    const d = withDrawableText(v, isKept);
+    if (d !== v)
+      (drawn ??= { ...value })[key] = d;
+  }
+  return drawn ?? value;
+}
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
@@ -251,7 +286,7 @@ function parseRef(ref) {
   return { repo, owner, name, number };
 }
 function checkKey(c) {
-  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
+  return drawableText(c.workflow ? `${c.workflow} / ${c.name}` : c.name);
 }
 function isKeptPr(pr) {
   return pr.isYours !== false && pr.wasSeenOpen;
@@ -869,7 +904,7 @@ function stopText(stop) {
     case "usage-limit":
       return "usage limit reached";
     default:
-      return stop.apiError?.cause === "rate-limit" ? "the API is limiting requests" : stop.apiError?.cause === "overloaded" ? "the API is overloaded" : `API error (${stop.apiError?.text ?? "unknown"})`;
+      return stop.apiError?.cause === "rate-limit" ? "the API is limiting requests" : stop.apiError?.cause === "overloaded" ? "the API is overloaded" : `API error (${drawableText(stop.apiError?.text ?? "unknown")})`;
   }
 }
 function stopFix(stop) {
@@ -904,7 +939,8 @@ var BANNER_TONES = {
   "herdr-mod-failed": "warning",
   "herdr-mod-ask": "ask"
 };
-function bannerOf(kind, text) {
+function bannerOf(kind, hostText) {
+  const text = drawableText(hostText);
   const end = text.indexOf(". ");
   const lead = end < 0 ? text : text.slice(0, end + 1);
   const body = end < 0 ? null : text.slice(end + 2);
@@ -5419,7 +5455,7 @@ function sessionFields(saved, views) {
 
 // ../core/view/dialog-row.ts
 function dialogTitle(dialog) {
-  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
+  return drawableText(dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text);
 }
 
 // ../core/remote/herdr.ts
@@ -5490,7 +5526,7 @@ function statusLine(stop, dialogs, input) {
   return [stale, focus, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function focusOf(head) {
-  return head ? head.description || head.title : null;
+  return head ? drawableText(head.description || head.title) : null;
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
@@ -8779,6 +8815,15 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
+var STORED_KEYS = new Set([
+  "id",
+  "collapsed",
+  "press",
+  "drawnVersions",
+  "item",
+  "finding",
+  "option"
+]);
 function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canScrollConversation = false, inputs = NO_SYNC_INPUTS) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
@@ -8799,7 +8844,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
   });
   const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
   const rowIds = [...allRows(inbox).map((r) => r.id), GOAL_KEYS_ID];
-  return {
+  const view = {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
@@ -8808,6 +8853,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     sync,
     drawnVersions: drawnVersions(s, rowIds, prs.drawn.map((d) => d.pr))
   };
+  return withDrawableText(view, (key) => STORED_KEYS.has(key));
 }
 function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
   if (isHelpShown)
@@ -11502,7 +11548,7 @@ function typingKey(ui, id, key, text) {
   if (key === "backspace")
     return edit([...draft].slice(0, -1).join(""));
   if (text !== undefined)
-    return edit(draft + text.replace(/[\r\n]+/g, " "));
+    return edit(draft + drawableText(text.replace(/[\r\n]+/g, " ")));
   return {};
 }
 var isUpKey = (key) => key === "up" || key === "k";
