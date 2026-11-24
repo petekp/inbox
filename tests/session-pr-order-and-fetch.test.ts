@@ -406,3 +406,18 @@ test('a fetch a press asks for while another runs starts once that one ends, and
   await Promise.all([first, ...both])
   expect(started).toEqual(['first', 'after'])
 })
+
+test('a press that asks for a fetch while an earlier ask waits behind a running fetch gets its own fetch next', async () => {
+  const tracker = prFetchTracker(() => 1)
+  const started: string[] = []
+  let endFirst = () => {}
+  const first = tracker.fetchNow('s1', () => {
+    started.push('poll')
+    return new Promise<void>(resolve => (endFirst = resolve))
+  })
+  const opened = tracker.fetchNow('s1', async () => void started.push('open'))
+  const refreshed = tracker.fetchNow('s1', async () => void started.push('press'), true)
+  endFirst()
+  await Promise.all([first, opened, refreshed])
+  expect(started).toEqual(['poll', 'press'])
+})

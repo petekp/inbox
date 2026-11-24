@@ -45,6 +45,7 @@ export function fakeHostWith<S extends Session>(
         return null
       },
       refreshPrs: async () => {},
+      fetchPrsInBackground: () => {},
       gh: {
         find: async () => null,
         forget: () => {},

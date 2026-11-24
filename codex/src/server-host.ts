@@ -122,7 +122,8 @@ export function makeSessionHost(
             ? copyToClipboard(deps.exec, e.text)
             : open(s, e.target),
       refreshPrsIfDue: async () => fetchPrsWhenDue(id, await readState(dir, id), true),
-      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true)),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true), true),
+      fetchPrsInBackground: () => fetchPrsNow(id),
       gh: {
         shared: {
           read: async () => prShared,

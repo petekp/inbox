@@ -279,7 +279,8 @@ export function sessionCalls(context: HostContext) {
             ? deps.copy(effect.text)
             : openTarget(run, effect.target, ctx.cwd, deps.home),
       refreshPrsIfDue: async () => fetchPrsWhenDue(ctx, true),
-      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true)),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true), true),
+      fetchPrsInBackground: () => fetchPrsNow(ctx),
       gh: {
         shared: {
           read: async () => memory.prShared,

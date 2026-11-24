@@ -157,6 +157,7 @@ function sessionHost(
     isDeliveryHeldUntilRun: true,
     perform: async (_s, effect) => (opts.surface ? perform(m, effect, opts.surface) : COPY_FAILURES['no-surface']),
     refreshPrs: opts.refreshPrs,
+    fetchPrsInBackground: () => void m.fetchPrs(true).catch(() => undefined),
     gh: {
       shared: prSharedStore(m.saves),
       find: async () => {

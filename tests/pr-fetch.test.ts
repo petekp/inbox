@@ -351,6 +351,7 @@ test('Refresh PRs at the top reads Refreshing, then why it could not refresh, in
     deliver: async () => ({ state: 'accepted' as const, queuedId: null }),
     perform: async () => null,
     refreshPrs: () => fetchPrs(host, true, true),
+    fetchPrsInBackground: () => {},
     newId: () => 'id',
     comparePage: '',
     compareInBackground: false,

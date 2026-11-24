@@ -10,6 +10,7 @@ import {
   tabPrs,
 } from '../domain/pr-fetch'
 import { TIMED_OUT_CODE } from '../domain/gh'
+import { prRefs } from '../domain/prs'
 import { rerunArgs } from '../view/pr-press'
 import type { Effect } from '../view/press-reducer'
 import { withFetchedPrs } from './session-presses'
@@ -25,6 +26,18 @@ export function untriedPrs(s: Pick<Session, 'ledger' | 'prViews'>): string[] {
   const { views, unread = {} } = s.prViews
 
   return splitLinked(s.prViews, s.ledger).tracked.filter(ref => !(ref in views) && !(ref in unread))
+}
+
+/**
+ * True when `effects` open a GitHub page of a PR the session tracks, such as the PR, one of its comments, or its checks.
+ * The person may look at the PR there and come back, so a press that opens one also reads the PRs.
+ */
+export function opensTrackedPr(s: Pick<Session, 'ledger' | 'prViews'>, effects: Effect[]): boolean {
+  const { branchRef } = s.prViews
+  const read = [...splitLinked(s.prViews, s.ledger).tracked, ...(branchRef ? [branchRef] : [])]
+  const refs = new Set(read.map(ref => ref.toLowerCase()))
+
+  return effects.some(e => e.kind === 'open' && prRefs(e.target).some(ref => refs.has(ref.toLowerCase())))
 }
 
 /**
@@ -69,6 +82,9 @@ export function isPrPollDue(
   return isPrFetchDue(s, poll.lastFetchedAt, poll.now, poll.isTabShown)
 }
 
+/** The fetch that runs once a session's running fetch ends, with the run it shares among the asks for it. */
+type Following = { run: Promise<void>; fetch: () => Promise<void>; isPress: boolean }
+
 /** Which sessions have a PR fetch running, and when each last ended. `onChange` hears each start and end, by session. */
 export function prFetchTracker(
   now: () => number,
@@ -81,13 +97,15 @@ export function prFetchTracker(
    */
   fetchWhenDue(id: string, s: Session, isTabShown: boolean, fetch: () => Promise<void>): Promise<void> | null
   /**
-   * Runs `fetch` as a press or a new PR on the tab asks: now, or once the fetch running for `id` ends, since that fetch
-   * may have read the PRs before the ask. Presses during one running fetch share the fetch after it. Returns the run, which never rejects.
+   * Runs `fetch` as a press, an open of a PR's page or a new PR on the tab asks: now, or once the fetch running for `id`
+   * ends, since that fetch may have read the PRs before the ask. Asks during one running fetch share the fetch after
+   * it, which is the first press's `fetch` when `isPress` marks one, else the first ask's. Returns the run, which
+   * never rejects.
    */
-  fetchNow(id: string, fetch: () => Promise<void>): Promise<void>
+  fetchNow(id: string, fetch: () => Promise<void>, isPress?: boolean): Promise<void>
 } {
   const running = new Map<string, Promise<void>>()
-  const following = new Map<string, Promise<void>>()
+  const following = new Map<string, Following>()
   const endedAt = new Map<string, number>()
   const start = (id: string, fetch: () => Promise<void>) => {
     const run = fetch()
@@ -107,18 +125,25 @@ export function prFetchTracker(
     isFetching: id => running.has(id),
     fetchWhenDue: (id, s, isTabShown, fetch) =>
       running.has(id) || !isPrFetchDue(s, endedAt.get(id), now(), isTabShown) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => {
+    fetchNow: (id, fetch, isPress = false) => {
       const current = running.get(id)
       if (!current) return start(id, fetch)
-      const next =
-        following.get(id) ??
-        current.then(() => {
+      const waiting = following.get(id)
+      if (waiting) {
+        if (isPress && !waiting.isPress) Object.assign(waiting, { fetch, isPress })
+        return waiting.run
+      }
+      const next: Following = {
+        fetch,
+        isPress,
+        run: current.then((): Promise<void> => {
           following.delete(id)
-          return running.get(id) ?? start(id, fetch)
-        })
+          return running.get(id) ?? start(id, next.fetch)
+        }),
+      }
       following.set(id, next)
 
-      return next
+      return next.run
     },
   }
 }

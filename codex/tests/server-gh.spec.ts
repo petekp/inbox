@@ -10,6 +10,7 @@ import { readState, updateState } from '../src/state'
 import { run } from '../src/run'
 import { ghAnswer, PRS_STALE_MS, prServer, viewAfterFetch } from './server-fixtures'
 import { PRS_HIDDEN_REFRESH_MS } from '../../core/runtime/host-prs'
+import { LIMIT_ANSWER } from '../../tests/gh-answers'
 
 test('a view starts a fetch of the session’s PRs through gh in its folder, and the next view shows them', async () => {
   const { dir, calls, call } = await prServer(ghAnswer)
@@ -233,4 +234,35 @@ test('while gh is missing, a PR the session tracks but never read sends the PRs 
     await call.settled()
   }
   assert.ok(looks() / perLook <= 6, `looked for gh ${looks() / perLook} times`)
+})
+
+test('Open PR opens the PR’s page, then reads the PRs, and reads none while GitHub’s limit holds', async () => {
+  let at = 100
+  let isLimited = false
+  const limited = { code: LIMIT_ANSWER.exitCode, stdout: LIMIT_ANSWER.stdout, stderr: LIMIT_ANSWER.stderr }
+  const { calls, call } = await prServer(
+    args => (isLimited && args[2] === 'graphql' ? limited : ghAnswer(args)),
+    () => at,
+  )
+  await viewAfterFetch(call)
+  const queries = () => calls.filter(c => c[0] === 'gh' && c[2] === 'graphql').length
+  const openPr = async () => {
+    at += 1_000
+    const r = await call('inbox_press', { press: { action: 'pr-open', ref: 'acme/app#7' }, thread: 's1' })
+    assert.equal(r.result.structuredContent.error, null)
+    await call.settled()
+  }
+  const before = queries()
+  await openPr()
+  const opened = calls.findIndex(c => c[0] === 'open')
+  assert.deepEqual(calls[opened], ['open', 'https://github.com/acme/app/pull/7'])
+  assert.equal(queries(), before + 1)
+  assert.ok(calls.findLastIndex(c => c[2] === 'graphql') > opened)
+
+  isLimited = true
+  await openPr()
+  assert.equal(queries(), before + 2)
+  await openPr()
+  assert.equal(queries(), before + 2)
+  assert.equal(calls.filter(c => c[0] === 'open').length, 3)
 })

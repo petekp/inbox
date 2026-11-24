@@ -87,8 +87,11 @@ export const OMP_LOOK: LookConfig = { runningMarks: 'frames', titleTint: 'steps'
 
 /** What the panel keeps besides the shared controller's state. */
 type PanelLocal = {
-  /** The focused button of one row. Another row's focus starts at its recommended option. */
-  focus: { rowId: string; index: number } | null
+  /**
+   * The focused button of one row. Another row's focus starts at its recommended option. With `press`, the focus
+   * stays on the button with that press while the row's buttons change around it.
+   */
+  focus: { rowId: string; index: number; press?: PanelPress } | null
   /** A Resume press for the stop that began at `stopAt`. */
   resuming: { stopAt: number; is: 'sending' } | { stopAt: number; is: 'refused'; why: string } | null
   /** A handed-off row the person opened again with Enter. Moving the cursor off it folds it again. */

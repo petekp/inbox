@@ -21,6 +21,7 @@ A host is a program that runs the inbox's agent: it reacts to events, keeps stat
 | `prepare` | Throws when `deliver` could not start, before a sent record is saved. |
 | `perform` | Opens a link or path, or copies text. Returns why it could not, or null. |
 | `refreshPrs` | Fetches the session's PRs, and resolves once that fetch ends. `startPress` calls it for a press's `refresh-prs` effect, and before a fix press sends. |
+| `fetchPrsInBackground` | Starts a fetch of the session's PRs and returns at once. It runs once any fetch running for the session ends, and fetches as a poll does, so a GitHub limit error stops it. `startPress` calls it after a press opens a page of a PR the session tracks. |
 | `gh` | Finds gh, drops the one it kept, runs gh for the session, and reports when none starts. |
 | `settleWindowMs`, `newId` | The settle window before Done tells the agent, and delivery ids. |
 | `answerMessage` | Optional. Builds the message an answer press sends when the agent reads answers in its own form. Codex sets it for a question linked to an open dialog. |

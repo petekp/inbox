@@ -29,7 +29,7 @@ import {
 } from '../view/press-reducer'
 import type { Effect } from '../view/press-reducer'
 import { finishedResult, withResult, runSends, runLocalEffects } from './press-effects'
-import { rerunRun } from './host-prs'
+import { opensTrackedPr, rerunRun } from './host-prs'
 import { refreshProblem } from '../view/pr-refresh'
 import type { EffectHost } from './press-effects'
 import { recordPress, pendingResult, localLast, withLasts, isHeldSend } from '../view/pressed'
@@ -184,6 +184,7 @@ export type PressHost<S extends Session> = Pick<
   | 'perform'
   | 'refreshPrs'
   | 'refreshPrsIfDue'
+  | 'fetchPrsInBackground'
   | 'gh'
   | 'newId'
   | 'isDeliveryHeldUntilRun'
@@ -300,7 +301,13 @@ export async function startPress<S extends Session>(
   let copy: PressOutcome['copy'] = null
   let error: string | null = null
   let note: PressOutcome['note'] = isStale ? 'stale' : null
-  const pressed: { r?: Pressed; at?: number; deliveryId?: string; undone?: { id: string; before: S } } = {}
+  const pressed: {
+    r?: Pressed
+    at?: number
+    deliveryId?: string
+    undone?: { id: string; before: S }
+    opensTrackedPr?: boolean
+  } = {}
   const effectHost: EffectHost = {
     now: host.now,
     deliveryId: () => pressed.deliveryId ?? host.newId(),
@@ -417,7 +424,13 @@ export async function startPress<S extends Session>(
         ),
         told: r.reopenedId ? { ...s.told, closed: s.told.closed.filter(id => id !== r.reopenedId) } : s.told,
       }
-      Object.assign(pressed, { r, at, deliveryId, undone: undoneId && { id: undoneId, before: s } })
+      Object.assign(pressed, {
+        r,
+        at,
+        deliveryId,
+        undone: undoneId && { id: undoneId, before: s },
+        opensTrackedPr: opensTrackedPr(s, r.effects),
+      })
       if (!firstSend || !deliveryId) return next
 
       return {
@@ -448,6 +461,7 @@ export async function startPress<S extends Session>(
   const r = pressed.r
   const at = pressed.at
   const undone = pressed.undone
+  const opensPr = pressed.opensTrackedPr === true
   if (r && undone && host.commands)
     await host.commands
       .update(log => cancelledCommand(remoteCommandState(log, undone.before), undone.id))
@@ -472,6 +486,7 @@ export async function startPress<S extends Session>(
         isUnconfirmed = true
       }
       await runLocalEffects(effectHost, r.effects, Object.keys(r.lasts), r.lasts[rowId]?.result)
+      if (opensPr) host.fetchPrsInBackground()
 
       const isDone = !isPrPress(p) && p.action === 'done'
       const isHeld = Object.values(r.lasts).some(isHeldSend)
