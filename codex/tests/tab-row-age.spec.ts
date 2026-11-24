@@ -171,3 +171,63 @@ test('the built tab keeps an open row’s ✓ Explained in its line while a Dism
     await tab.close()
   }
 })
+
+test('the built tab keeps an open row’s ✓ Explained after its title while Explain again is out', async () => {
+  const now = Date.now()
+  const explained: LastAction = { kind: 'talk', action: 'explain', text: 'Explain', at: now - 60_000, turnsStarted: 0 }
+  const tab = await builtTab(
+    task().ledger.items.map(item => ({ ...item, at: now - 120_000 })),
+    { i1: explained },
+  )
+  const row = () => tab.rowWith('Check the build')
+  const explain = () =>
+    [...(row()?.querySelectorAll('.panel button') ?? [])].find(b => /^Explain/.test(b.textContent ?? ''))
+  const pressLine = () => row()?.querySelector('.panel [data-motion^="press-"]')?.textContent ?? null
+  try {
+    await tab.until(() => explain() !== undefined && /✓ Explained/.test(row()?.textContent ?? ''))
+    const button = explain() as { click(): void } | undefined
+    if (!button) throw new Error('the open row has no Explain button')
+    button.click()
+    await tab.until(() => row()?.querySelector('.side')?.textContent?.trim() === 'Sending…')
+    assert.equal(row()?.querySelector('.line .after')?.textContent, '✓ Explained')
+    await tab.until(() => pressLine() !== null)
+    assert.match(pressLine() ?? '', /^(Explaining…|Not confirmed: Explain)$/)
+    assert.equal(row()?.querySelector('.line .after')?.textContent, '✓ Explained')
+    assert.equal(row()?.querySelector('.line .after')?.className, 'after tone-done')
+    assert.equal(row()?.querySelector('.line .held-hidden') === null, true)
+  } finally {
+    await tab.close()
+  }
+})
+
+test('the built tab keeps the space of an open row’s failed open, without its words, while Open is out again', async () => {
+  const now = Date.now()
+  const item = { ...task().ledger.items[0]!, at: now - 120_000, helps: [{ kind: 'open' as const, path: 'plan.md' }] }
+  const effect = { kind: 'open' as const, target: 'plan.md', name: 'plan.md' }
+  const failed = finishedResult(pendingResult([effect], now - 60_000), ['no such file'], now - 60_000)
+  const last: LastAction = {
+    kind: 'local',
+    action: 'step-0',
+    text: 'Open plan.md',
+    at: now - 60_000,
+    result: { ...failed, action: 'step-0' },
+  }
+  const tab = await builtTab([item], { i1: last }, { isPressHeld: true })
+  const row = () => tab.rowWith('Check the build')
+  const open = () => [...(row()?.querySelectorAll('.panel button') ?? [])].find(b => /^Open/.test(b.textContent ?? ''))
+  const pressLine = () =>
+    [...(row()?.querySelectorAll('.panel div') ?? [])].find(d => d.textContent?.trim() === 'Opening plan.md…')
+  try {
+    await tab.until(() => open() !== undefined && /Could not open plan\.md/.test(row()?.textContent ?? ''))
+    const button = open() as { click(): void } | undefined
+    if (!button) throw new Error('the open row has no Open button')
+    button.click()
+    await tab.until(() => pressLine() !== undefined)
+    assert.ok(pressLine() !== undefined, 'the press’s Opening plan.md… is not under the buttons')
+    const held = row()?.querySelector('.line .text:not(.short) .held-hidden')
+    assert.match(held?.textContent ?? '', /Could not open plan\.md/)
+    assert.equal(held?.getAttribute('aria-hidden'), 'true')
+  } finally {
+    await tab.close()
+  }
+})
