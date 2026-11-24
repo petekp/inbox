@@ -841,7 +841,7 @@ import { homedir } from "os";
 import { dirname as dirname6, join as join7 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
-var version = "0.6.0";
+var version = "0.7.0";
 
 // ../core/runtime/clipboard-commands.ts
 function clipboardCommands(platform) {
