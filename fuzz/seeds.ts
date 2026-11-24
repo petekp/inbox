@@ -142,7 +142,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: '"Explaining…"',
     issue: 827,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       { is: 'record', args: { kind: 'task', ask: 'Log in to the registry' } },
       { is: 'wait', ms: 400 },
