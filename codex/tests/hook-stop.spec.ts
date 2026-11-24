@@ -239,6 +239,58 @@ test('a dialog a user message followed in its turn links to no question of the i
   }
 })
 
+test('a Stop writes the questions of a dialog that dialog replies answered in its turn as answered, and the rest as open', async () => {
+  const t = turnRows()
+  const newline = 'Should greet print a trailing newline?'
+  const twoQuestions = {
+    type: 'response_item',
+    payload: {
+      type: 'function_call',
+      name: 'request_user_input_async',
+      call_id: 'call_a',
+      arguments: JSON.stringify({
+        questions: [
+          { title: newline, options: ['Yes', 'No'] },
+          { title: 'Tag a release?', options: ['Yes', 'No'] },
+        ],
+      }),
+    },
+  }
+  const answered =
+    /^asked the user in a dialog: "Should greet[^;]*; answer: "Should greet print a trailing newline\?"="No"$/
+  const open = /^asked the user in a dialog: "Should greet[^;]*; still open, waiting on the user's answer$/
+  const cases = [
+    { dialog: t.dialog('call_a', newline), steered: t.reply('call_a', newline, 'No').text, lines: [answered] },
+    { dialog: t.dialog('call_a', newline), steered: t.reply('call_other', newline, 'No').text, lines: [open] },
+    { dialog: t.dialog('call_a', newline), steered: 'Also check the docs', lines: [open] },
+    {
+      dialog: twoQuestions,
+      steered: t.reply('call_a', newline, 'No').text,
+      lines: [
+        answered,
+        /^asked the user in a dialog: "Tag a release\?"[^;]*; still open, waiting on the user's answer$/,
+      ],
+    },
+  ]
+  for (const { dialog, steered, lines } of cases) {
+    const dir = tempDir()
+    const deps = hookDeps(dir)
+    const transcript = join(tempDir(), 'rollout.jsonl')
+    const message = { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: steered }] } }
+    await handleHook(input('UserPromptSubmit', { prompt: 'Add greet', turn_id: 't1' }), deps)
+    await handleHook(input('UserPromptSubmit', { prompt: steered, turn_id: 't1' }), deps)
+    writeFileSync(transcript, [t.started, dialog, message].map(row => JSON.stringify(row)).join('\n'))
+    await handleHook(
+      input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Done.' }),
+      deps,
+    )
+
+    const written = (await readState(dir, 's1')).pending.flatMap(p => p.ex.activity)
+    assert.equal(written.length, lines.length)
+    lines.forEach((line, n) => assert.match(written[n] ?? '', line))
+  }
+})
+
 test('a Stop’s reply is the ending turn’s agent messages in order, ending with the Stop’s last message when the rollout lacks it', async () => {
   const dir = tempDir()
   const transcript = join(tempDir(), 'rollout.jsonl')
