@@ -105,33 +105,57 @@ test('closing the goal field while its buttons fade in never shows them more tha
 
 test('a press’s status under a row’s buttons shows faint in the press’s own draw, and its growing box cuts it only while faint', () => {
   const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
-  const { cuts, fading } = framesOf(
+  const { cuts, shown } = framesOf(
     [
       [0, open],
       [0, sendingOn(open), 'input'],
     ],
     400,
   )
-  const firstShown = fading.find(f => f.id === 'status d11' && f.at >= 0)?.opacity ?? 0
-  expect({ isShownAtOnce: firstShown > 0, cuts: cuts.filter(c => c.at >= 0) }).toEqual({
-    isShownAtOnce: true,
-    cuts: [],
-  })
+  const pressDrawAt = Math.min(...shown.filter(s => s.at >= 0).map(s => s.at))
+  const pressDraw = shown.filter(s => s.at === pressDrawAt && s.text === 'Sending…')
+  expect({
+    isShownAtOnce: pressDraw.some(s => s.opacity > 0 && s.share > 0),
+    cuts: cuts.filter(c => c.at >= 0),
+  }).toEqual({ isShownAtOnce: true, cuts: [] })
 })
 
 test('a row that comes back through Undo while its Undo’s status fades in cuts no text', () => {
-  const dismissed = tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd13' }))
-  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
-  for (const replyAt of [32, 80, 300]) {
-    const { cuts } = framesOf(
+  const on = (selected: string, collapsed: string[] = []) => {
+    const screen = demoScreen()
+    return tabBlocks({ ...screen, view: { ...screen.view, collapsed } }, uiOn('needsYou', { selected }))
+  }
+  const dismissedOn = (selected: string) => tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected }))
+  const dismissed = dismissedOn('d13')
+  const undo: Step = [0, outOn(dismissed, 'd13', 'undo', 'Undo', 'view'), 'input']
+  const cases: [string, Step[]][] = [
+    ...[32, 80, 300].map((at): [string, Step[]] => [`back open at ${at} ms`, [[at, on('d13')]]]),
+    ['back collapsed', [[32, on('d13', ['d13'])]]],
+    [
+      'collapsed 16 ms after it comes back',
       [
-        [0, dismissed],
-        [0, outOn(dismissed, 'd13', 'undo', 'Undo', 'view'), 'input'],
-        [replyAt, open],
+        [32, on('d13')],
+        [48, on('d13', ['d13']), 'input'],
       ],
-      replyAt + 900,
-    )
-    expect({ replyAt, cuts: cuts.filter(c => c.at >= 0) }).toEqual({ replyAt, cuts: [] })
+    ],
+    [
+      'collapsed 64 ms after it comes back',
+      [
+        [32, on('d13')],
+        [96, on('d13', ['d13']), 'input'],
+      ],
+    ],
+    ...[32, 80].map((at): [string, Step[]] => [
+      `the selection moves on before it comes back at ${at} ms`,
+      [
+        [16, outOn(dismissedOn('d15'), 'd13', 'undo', 'Undo', 'view'), 'input'],
+        [at, on('d15')],
+      ],
+    ]),
+  ]
+  for (const [name, after] of cases) {
+    const { cuts } = framesOf([[0, dismissed], undo, ...after], 1200)
+    expect({ name, cuts: cuts.filter(c => c.at >= 0) }).toEqual({ name, cuts: [] })
   }
 })
 
