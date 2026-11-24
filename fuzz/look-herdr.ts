@@ -35,9 +35,11 @@ mock.module('herdr', () => ({
 const motion = await import('../herdr/src/motion')
 const realMoveRows = motion.moveRows
 let wasInput = false
+let wasFirst = false
 mock.module('../herdr/src/motion', () => ({
   ...motion,
   moveRows: (...args: Parameters<typeof realMoveRows>) => {
+    wasFirst = args[3]
     wasInput = args[4] ?? false
     return realMoveRows(...args)
   },
@@ -70,6 +72,8 @@ export type HerdrDraw = {
 export type HerdrRun = {
   draws: HerdrDraw[]
   steps: Step[]
+  /** The times of the draws that showed a new page, a tab, Help or session, which the view draws at rest. */
+  pageAt: number[]
   notes: string[]
   error: { at: number; after: number; message: string } | null
 }
@@ -122,11 +126,14 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
   const draws: HerdrDraw[] = []
   const notes: string[] = []
   const steps: Step[] = []
+  const pageAt: number[] = []
   let after = -1
   const draw = () => {
     wasInput = false
+    wasFirst = false
     const root = p.paint()
     const isInput = wasInput
+    if (wasFirst && pageAt.at(-1) !== clock - START) pageAt.push(clock - START)
     const blocks = p.panel.blocks
     const view = p.panel.viewAt(clock)
     draws.push({
@@ -210,12 +217,13 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     return {
       draws,
       steps,
+      pageAt,
       notes,
       error: { at: clock - START, after, message: err instanceof Error ? (err.stack ?? err.message) : String(err) },
     }
   }
 
-  return { draws, steps, notes, error: null }
+  return { draws, steps, pageAt, notes, error: null }
 
   async function apply(e: Ev): Promise<string | void> {
     if (e.is === 'wait') return wait(e.ms)

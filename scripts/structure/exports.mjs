@@ -16,6 +16,7 @@ const ENTRY_POINTS = {
   'codex/src/server-handler.ts': { names: '*', why: 'codex/src/server-main.ts loads the built handler by URL.' },
   'codex/src/tab.tsx': { names: '*', why: 'codex/build.mjs bundles it as the tab page script.' },
   'evals/omp-probe.ts': { names: ['default'], why: 'The agent suite loads it into omp with -e.' },
+  'fuzz/mod-look.ts': { names: ['fuzzMod'], why: 'fuzz/look-mod.ts writes the test file that imports it.' },
   'herdr/src/main.ts': { names: ['default'], why: 'The Herdr app loads the built mod and renders its default export.' },
   'core/domain/clients.ts': { names: ['CLIENTS'], why: 'scripts/structure/clients.mjs reads it.' },
   'core/domain/client-features.ts': { names: ['FeatureId'], why: 'scripts/structure/clients.mjs reads it.' },
