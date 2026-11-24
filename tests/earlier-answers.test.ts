@@ -74,6 +74,20 @@ describe('the search for an earlier answer', () => {
       bestEarlier(index, { ask: 'Which font should the receipt printer use?', options: [] }, 'a')?.doc.key,
     ).not.toBe('a')
   })
+
+  test('never matches on a number alone, such as a PR number against a version', () => {
+    const versions = answerIndex([
+      ...HISTORY,
+      doc('v', 'Publish as 1.1.0 or 2.0.0?', '2.0.0, note the break in changelog'),
+    ])
+    const ask = { ask: 'Should I merge PR #2 or close it?', options: ['Merge it', 'Close it'] }
+    expect(bestEarlier(versions, ask, 'x')).toBeNull()
+  })
+
+  test('finds the same PR asked about again, which shares a word as well as its number', () => {
+    const merged = answerIndex([...HISTORY, doc('m', 'Merge PR #2?', 'Merge it')])
+    expect(bestEarlier(merged, { ask: 'Merge PR #2 now?', options: [] }, 'x')?.doc.key).toBe('m')
+  })
 })
 
 describe('the question history', () => {
