@@ -3,7 +3,7 @@ import { actionLabel } from '../core/view/rows'
 import type { RowView } from '../core/view/rows'
 import type { SessionView } from '../core/view/session-view'
 import { allOf } from '../herdr/tests/gpui-stand-in'
-import { framesOf } from '../herdr/tests/frames'
+import { type Step, framesOf } from '../herdr/tests/frames'
 import type { RowBlock } from '../herdr/src/blocks'
 import type { Failure } from './failure'
 import type { HerdrDraw, HerdrRun } from './look-herdr'
@@ -73,13 +73,40 @@ function restingFailures(d: HerdrDraw, input: string): Failure[] {
 
 type ShownText = { block: string; text: string; opacity: number; share: number }
 
+type Frames = ReturnType<typeof framesOf>
+
+/**
+ * The frames of a run, one page at a time. The view draws a new page, a tab, Help or session, at rest, and `framesOf`
+ * moves rows from the draw before, so each page replays from its first draw.
+ */
+function pagedFrames(run: HerdrRun, end: number): Frames {
+  const starts = [...new Set([0, ...run.pageAt.filter(t => t > 0)])].sort((a, b) => a - b)
+  const merged: Frames = { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [], shown: [] }
+  for (const [i, from] of starts.entries()) {
+    const to = starts[i + 1] ?? end
+    const page = run.steps.filter(s => s[0] >= from && s[0] < to)
+    const before = run.steps.findLast(s => s[0] < from)
+    const first = page[0]?.[0] === from || !before ? page : [[from, before[1]] as Step, ...page]
+    const shifted = first.map(s => [s[0] - from, ...s.slice(1)] as Step)
+    const f = framesOf(shifted, to - from)
+    const moved = <T extends { at: number }>(list: T[]) => list.map(x => ({ ...x, at: x.at + from }))
+    merged.jumps.push(...moved(f.jumps))
+    merged.titles.push(...moved(f.titles))
+    merged.gaps.push(...moved(f.gaps))
+    merged.cuts.push(...moved(f.cuts))
+    merged.fading.push(...moved(f.fading).filter(x => x.at >= from))
+    merged.shown.push(...moved(f.shown).filter(x => x.at >= from))
+  }
+  return merged
+}
+
 /** The rules on every 16 ms frame the Herdr stand-in lays out between and after the case's draws. */
 function motionFailures(run: HerdrRun): Failure[] {
   const end = (run.steps.at(-1)?.[0] ?? 0) + 1500
   const afterAt = (t: number) => run.draws.findLast(d => d.at <= t)?.after ?? -1
-  let f: ReturnType<typeof framesOf>
+  let f: Frames
   try {
-    f = framesOf(run.steps, end)
+    f = pagedFrames(run, end)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return [

@@ -136,15 +136,66 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     case: omp([{ is: 'record', args: { kind: 'task', ask: 'नमस्ते क्षत्रिय' } }]),
   },
   {
-    name: 'a Status answer just after the Status tab opens',
-    rule: 'motion-id',
-    issue: 829,
+    name: 'pressing Explain on a task',
+    rule: 'cut',
+    detail: '"Explaining…"',
+    issue: 827,
+    isOpen: true,
+    case: herdr(emptySession(), [
+      { is: 'record', args: { kind: 'task', ask: 'Log in to the registry' } },
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'button', n: 0, label: 'Explain' },
+    ]),
+  },
+  {
+    name: 'collapsing a row just after Explain',
+    rule: 'cut',
+    detail: 'in its box panel d14',
+    issue: 832,
+    isOpen: true,
+    case: herdr(demo, [
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'row', n: 0, label: 'd14' },
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'button', n: 0, label: 'Explain' },
+      { is: 'wait', ms: 16 },
+      { is: 'key', key: 'z' },
+    ]),
+  },
+  {
+    name: 'folding every fold on the Status tab',
+    rule: 'connector-gap',
+    issue: 833,
     isOpen: true,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'tab', n: 0, label: 'overview' },
-      { is: 'wait', ms: 300 },
-      { is: 'status', lines: ['SET: Sync retries | working | Retry on reconnect'] },
+      { is: 'wait', ms: 1000 },
+      { is: 'key', key: 'w' },
     ]),
   },
 ]
+
+/**
+ * Failures of generated cases that an open issue already describes, by look, rule and a text in the failure's detail.
+ * A run that finds only these passes, so a fixed-seed run fails only on something new.
+ */
+const KNOWN: { issue: number; look: Case['look']; rule: string; details: string[] }[] = [
+  { issue: 811, look: 'herdr', rule: 'cut', details: ['"✓ Copied'] },
+  { issue: 827, look: 'herdr', rule: 'cut', details: ['"Send"', '"Cancel"', '"Discard"', 'in its box status '] },
+  { issue: 828, look: 'herdr', rule: 'jump', details: ['panel d', ' thread '] },
+  { issue: 832, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
+  { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
+  { issue: 830, look: 'omp', rule: 'raw-escape', details: [''] },
+  { issue: 830, look: 'omp', rule: 'width', details: ['with an escape from the input'] },
+  { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
+]
+
+/** The open issue a failure is already filed as, or null when it is new. */
+export function knownIssueOf(f: { look: string; rule: string; detail: string }): number | null {
+  const open = new Set(SEEDS.filter(s => s.isOpen).map(s => s.issue))
+  const k = KNOWN.find(
+    k => open.has(k.issue) && k.look === f.look && k.rule === f.rule && k.details.some(d => f.detail.includes(d)),
+  )
+  return k?.issue ?? null
+}

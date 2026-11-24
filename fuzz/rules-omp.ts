@@ -2,10 +2,32 @@ import type { Failure } from './failure'
 import type { OmpRun } from './look-omp'
 import { badText, glyphCut, hasRawEscape } from './rules-text'
 import type { OmpDraw } from './look-omp'
-import { plannedLabels } from '../omp/tests/panel-harness'
+import { rowKeyPlan } from '../core/view/action-plan'
+import type { RowView } from '../core/view/rows'
+import { cellWidth } from '../core/domain/text'
 import { collapsedOf } from '../core/view/ui-controller-selection'
 
 const PLAN_WIDTH = 80
+
+/** A row's planned labels as the panel draws them, all options only once "All N options" was pressed, as `plannedLabels` in `omp/tests/panel-harness.ts` lists them. */
+function drawnPlan(row: RowView, isAllShown: boolean): string[] {
+  const { options, keys, more } = rowKeyPlan(row, isAllShown)
+  return [
+    ...options.map(o => o.action.label),
+    ...[...keys, ...more].flatMap(k =>
+      k.slot === 'allOptions' ? [] : [k.slot === 'retry' ? k.label : k.action.label],
+    ),
+  ]
+}
+
+const SGR = new RegExp(`${String.fromCodePoint(0x1b)}\\[[0-9;]*m`, 'g')
+
+/** Why a line is too wide: an escape from the input, or the panel's own measure undercounting it. */
+function widthCause(line: string, panel: number): string {
+  if (hasRawEscape(line)) return ', with an escape from the input'
+  const counted = cellWidth(line.replace(SGR, ''))
+  return counted <= panel ? `, where cellWidth counts ${counted}` : ''
+}
 
 /** omp's TUI module that measures a line before it cuts one. Its source fails this project's strict type check, so tsc does not follow it. */
 const PI_TUI_UTILS: string = '../omp/node_modules/@oh-my-pi/pi-tui/src/utils'
@@ -30,7 +52,7 @@ function planBreak(d: OmpDraw): string | null {
   if (from < 0) return null
   const drawn = d.lines.slice(from).join('\n')
   let at = 0
-  for (const label of plannedLabels(row)) {
+  for (const label of drawnPlan(row, ui.optionsShown.includes(row.id))) {
     const found = drawn.indexOf(label, at)
     if (found < 0) return `${row.id} draws no "${label}" after its earlier buttons`
     at = found + label.length
@@ -78,7 +100,7 @@ export function ompFailures(run: OmpRun, input: string): Failure[] {
         out.push({
           ...at,
           rule: 'width',
-          detail: `line ${i} is ${width} columns wide in a ${run.width}-column panel`,
+          detail: `line ${i} is ${width} columns wide in a ${run.width}-column panel${widthCause(line, run.width)}`,
           seen: d.lines.join('\n'),
         })
       if (hasRawEscape(line))
