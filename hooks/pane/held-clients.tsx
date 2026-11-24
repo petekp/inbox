@@ -4,6 +4,7 @@ import type { PaneClient } from './pane-context'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { TitleProps } from './title-client'
 import { paneState } from '../mod/mod-state'
+import type { UiState } from '../../core/view/ui-controller-types'
 
 type Elements = Extract<PaneClient, { hasClient: true }>['elements']
 
@@ -15,11 +16,19 @@ export function noteShown(key: string, shown: ShownClient) {
 }
 
 /**
- * The open row's title and links Clients, kept running at zero height while the row is settled with Undo, so Undo
- * shows them again without the pane's copy under them. The Claude app keeps a zero-height Client running with its
- * state, draws nothing for it and gives it no pointer input, and on the next drawing that shows it draws it at once
- * with its last render (drawing-limits.md). They lie in a frame laid out as the open row's, so that render has the
- * open row's width.
+ * Whether row `id` is on its way back from Undo. The ledger reopens the row before the Undo press settles and the
+ * controller selects it, so the pane draws the row collapsed in between.
+ */
+export function isComingBack(ui: UiState, id: string): boolean {
+  return Object.values(ui.pressesOut).some(p => p.action === 'undo' && p.rowId === id) || ui.restoring?.id === id
+}
+
+/**
+ * The open row's title and links Clients, kept running at zero height while the row is settled with Undo and while it
+ * comes back collapsed (`isComingBack`), so Undo shows them again without the pane's copy under them. The Claude app
+ * keeps a zero-height Client running with its state, draws nothing for it and gives it no pointer input, and on the
+ * next drawing that shows it draws it at once with its last render (drawing-limits.md). They lie in a frame laid out as
+ * the open row's, so that render has the open row's width.
  */
 export function heldClients(elements: Elements, desktopFrame: PaneRowFrame['desktopFrame'], rowId: string) {
   const { Box } = elements
