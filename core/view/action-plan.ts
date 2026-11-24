@@ -147,17 +147,21 @@ export function actionsOf(
       action({ action: 'discuss', id }, 'Discuss', 'talk'),
       action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
+  const isFolding = item.options.length > OPTIONS_FOLD_AT
   if (item.kind === 'task')
     return [
       ...stepActions,
       ...(item.options.length > 0
-        ? item.options.map(option => action({ action: 'answer', id, option }, option, 'mark'))
+        ? item.options.map((option, n) =>
+            action({ action: 'answer', id, option }, option, 'mark', {
+              isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1,
+            }),
+          )
         : [action({ action: 'done', id }, 'Done', 'mark')]),
       action({ action: 'type', id, text: '' }, 'Reply', 'handoff'),
       ...explainActions,
       action({ action: 'dismiss', id }, 'Dismiss', 'mark'),
     ]
-  const isFolding = item.options.length > OPTIONS_FOLD_AT
   const options =
     item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter(o => o !== item.rec)] : item.options
 
