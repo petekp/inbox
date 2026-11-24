@@ -30,6 +30,59 @@ export function dash(value: string | undefined): string | null {
   return v === '' || v === '-' ? null : v
 }
 
+/**
+ * What a terminal reads as control rather than text, as ECMA-48 defines it: an OSC, DCS, SOS, PM or APC string up to its
+ * BEL or ST, a CSI sequence, any other escape sequence, and then any C0 control but tab and newline, DEL and any C1
+ * control. An OSC string writes the clipboard (OSC 52) or a link (OSC 8).
+ */
+const TERMINAL_CONTROL = new RegExp(
+  [
+    String.raw`(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)`,
+    String.raw`(?:\x1b\[|\x9b)[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]`,
+    String.raw`\x1b[\x20-\x2f]*[\x30-\x7e]`,
+    String.raw`[\x00-\x08\x0b-\x1f\x7f-\x9f]`,
+  ].join('|'),
+  'g',
+)
+const HAS_CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/
+
+/**
+ * `text` as a look may draw it: without the terminal controls and escape sequences that text from the agent, the inbox
+ * model or GitHub can hold. A terminal would run them, and Claude Code refuses a pane whose text holds one.
+ */
+export function drawableText(text: string): string {
+  return HAS_CONTROL.test(text) ? text.replace(TERMINAL_CONTROL, '') : text
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false
+  const proto = Object.getPrototypeOf(value)
+
+  return proto === Object.prototype || proto === null
+}
+
+/**
+ * `value` with `drawableText` applied to each string in its arrays and plain objects, except under a key `isKept` keeps.
+ * Each array and object that holds no such string comes back as it was.
+ */
+export function withDrawableText<T>(value: T, isKept: (key: string) => boolean): T {
+  if (typeof value === 'string') return drawableText(value) as T
+  if (Array.isArray(value)) {
+    const drawn = value.map(v => withDrawableText(v, isKept))
+
+    return (drawn.some((v, i) => v !== value[i]) ? drawn : value) as T
+  }
+  if (!isPlainObject(value)) return value
+  let drawn: Record<string, unknown> | null = null
+  for (const [key, v] of Object.entries(value)) {
+    if (isKept(key)) continue
+    const d = withDrawableText(v, isKept)
+    if (d !== v) (drawn ??= { ...value })[key] = d
+  }
+
+  return (drawn ?? value) as T
+}
+
 export function clip(text: string, max: number): string {
   return text.length <= max ? text : text.slice(0, max) + ' …[cut]'
 }

@@ -116,7 +116,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     name: 'a finding whose title holds escapes',
     rule: 'raw-escape',
     issue: 830,
-    isOpen: true,
+    isOpen: false,
     case: omp([
       {
         is: 'record',

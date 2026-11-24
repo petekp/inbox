@@ -20,6 +20,23 @@ const SAMPLES = [
   'น้ำ ຄຳ',
 ]
 
+test('drawable text drops every terminal control and escape sequence, and keeps tabs, newlines and every character a reader sees', () => {
+  const cases: [string, string][] = [
+    ['Red \x1b[31mtext\x1b[0m', 'Red text'],
+    ['copy\x1b]52;c;aGk=\x07 this', 'copy this'],
+    ['a \x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\ here', 'a link here'],
+    ['\x1bPq#0;2;0;0;0\x1b\\sixel', 'sixel'],
+    ['\x9b2Jcleared \x9d0;title\x9c', 'cleared '],
+    ['reset\x1bc and \x1b(Bcharset', 'reset and charset'],
+    ['stray\x1b', 'stray'],
+    ['bell\x07, back\x08space, del\x7f', 'bell, backspace, del'],
+    ['line\r\nnext\rover', 'line\nnextover'],
+    ['keep\tthe tab\nand line', 'keep\tthe tab\nand line'],
+    [SAMPLES.join(' '), SAMPLES.join(' ')],
+  ]
+  for (const [text, drawn] of cases) expect(withSegmenter.drawableText(text)).toBe(drawn)
+})
+
 async function loadWithoutIntl(): Promise<typeof withSegmenter> {
   const intl = globalThis.Intl
   Reflect.deleteProperty(globalThis, 'Intl')

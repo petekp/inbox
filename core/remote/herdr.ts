@@ -11,7 +11,7 @@ import type { SessionView } from '../view/session-view'
 import { isWaitingRow } from '../view/rows'
 import { dialogTitle } from '../view/dialog-row'
 import { ROW_TABS } from '../view/tabs'
-import { clipLabel } from '../domain/text'
+import { clipLabel, drawableText } from '../domain/text'
 
 /**
  * The pane tokens the inbox reports to Herdr, by name. A null value clears its token. Herdr takes token names of up to
@@ -157,7 +157,7 @@ function statusLine(stop: Stop | null, dialogs: readonly Dialog[], input: Status
 
 /** The head's description, which says what the session does, or its title when it has none. */
 function focusOf(head: StatusHead | null): string | null {
-  return head ? head.description || head.title : null
+  return head ? drawableText(head.description || head.title) : null
 }
 
 /**

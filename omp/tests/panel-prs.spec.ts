@@ -27,7 +27,7 @@ import { INITIAL_UI } from '../src/panel'
 import type { PanelScreen, PanelUi } from '../src/panel'
 import { withShared } from '../src/panel-keys'
 import { emptyState } from '../src/state'
-import { cursorOf, drawn, ESC, keyed, keys, NOW, screenOf, text, withCursorOn } from './panel-harness'
+import { cursorOf, drawn, ESC, keyed, keys, NOW, screenOf, strip, text, withCursorOn } from './panel-harness'
 
 function withOrder(prOrder: Partial<PrOrder>, lastActions: Record<string, LastAction> = {}): PanelScreen {
   const s = demoState(NOW)
@@ -110,6 +110,20 @@ function withFinished(states: Record<string, 'MERGED' | 'CLOSED'>): PanelScreen 
 
   return screenOf({ view: sessionView({ ...s, prViews: { ...s.prViews, views } }, NOW, SETTLED_MS, NO_HOLDS) })
 }
+
+test('a PR title’s clipboard write and screen clear never reach the terminal, and the title draws without them', () => {
+  const s = demoState(NOW)
+  const ref = 'acme/visor#31'
+  const pr = s.prViews.views[ref]
+  if (!pr) throw new Error('the demo has no PR acme/visor#31')
+  const title = `Add pinch \x1b[2Jto \x1b]52;c;aGk=\x07dismiss`
+  const tainted = { ...s, prViews: { ...s.prViews, views: { ...s.prViews.views, [ref]: { ...pr, title } } } }
+  const ui = { ...INITIAL_UI, tab: 'prs' as const }
+  const lines = drawn(screenOf({ view: sessionView(tainted, NOW, SETTLED_MS, NO_HOLDS) }), ui)
+
+  expect(lines.map(strip).join('\n')).toContain('Add pinch to dismiss')
+  expect(lines.some(l => l.includes('\x07') || l.includes(']52;') || strip(l).includes('\x1b'))).toBe(false)
+})
 
 test('Clear merged and closed draws above the PR blocks, and m from any row or Enter on it returns the press', () => {
   const screen = withFinished({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' })
