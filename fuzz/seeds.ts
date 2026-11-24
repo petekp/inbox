@@ -297,7 +297,7 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   { issue: 830, look: 'mod', rule: 'drawn', details: ['the pane drew nothing'] },
   { issue: 830, look: 'omp', rule: 'width', details: ['with an escape from the input'] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
-  { issue: 834, look: 'codex', rule: 'cut', details: [' thread ', '"Holds up ', '…" shows', '"·" shows'] },
+  { issue: 834, look: 'codex', rule: 'cut', details: [' thread ', '"Holds up ', '…" shows', '"·" shows', '"· '] },
   { issue: 834, look: 'codex', rule: 'jump', details: ['press-'] },
   { issue: 835, look: 'codex', rule: 'jump', details: [' grew '] },
   { issue: 836, look: 'codex', rule: 'jump', details: ['height stood still'] },

@@ -75,7 +75,10 @@ async function open(): Promise<void> {
 
 async function close(): Promise<void> {
   await browse('close')
-  server?.kill()
+  if (!server) return
+  await Bun.$`pkill -TERM -P ${server.pid}`.nothrow().quiet()
+  server.kill()
+  await server.exited
 }
 
 /** Runs one case in a fresh demo, a new thread id, and returns what the page found. */
@@ -198,17 +201,22 @@ export async function runCodex(
         const shrunk = await shrunkOf(c, kind)
         const runs3 = [await runCase(shrunk), await runCase(shrunk), await runCase(shrunk)]
         const isNew = (r: PageRun) => r.failures.some(f => kindOf(f) === kind)
+        const again = runs3.filter(isNew).length
+        const kept = again > 0 ? shrunk : c
         const shown = runs3.find(isNew) ?? run
         const f = shown.failures.find(x => kindOf(x) === kind) ?? first
-        const from = `Found by seed ${seed}, case ${n}. Shrunk from ${c.events.length} events to ${shrunk.events.length}`
-        writeFileSync(join(out, `${name}.json`), JSON.stringify(shrunk, null, 2))
-        const frozen = await runCase(shrunk, rule)
+        const from =
+          again > 0
+            ? `Found by seed ${seed}, case ${n}. Shrunk from ${c.events.length} events to ${shrunk.events.length}`
+            : `Found by seed ${seed}, case ${n}, shown as found. Shrunk to ${shrunk.events.length} events, it did not fail again`
+        writeFileSync(join(out, `${name}.json`), JSON.stringify(kept, null, 2))
+        const frozen = await runCase(kept, rule)
         if (frozen.isFrozen) await browse('screenshot', join(out, `${name}.png`))
         const replay = join('fuzz', 'out', basename(out), `${name}.json`)
         const frame = frozen.isFrozen
           ? `\n## Frame\n\n\`${name}.png\` shows the page paused at the first ${rule} failure of another run.\n`
           : ''
-        const text = report(shrunk, f, shown, from, runs3.filter(isNew).length)
+        const text = report(kept, f, shown, from, again)
         writeFileSync(join(out, `${name}.md`), `${text}\nReplay: \`./scripts/fuzz.sh --replay ${replay}\`\n${frame}`)
         console.log(`${name}: ${f.detail}`)
       }
