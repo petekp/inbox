@@ -2,7 +2,7 @@
 
 The cases that judge the Status tab. [How the Status is judged](plans/status/judging.md) gives the fixed rules, the code holds, the judge and the pass bar.
 
-Three replays and thirty short cases run 3 times each on Sonnet and on Codex, and six short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
+Three replays and thirty short cases run 3 times each on Sonnet and on Codex, and seven short cases run 5 times each. Fixed rules and code holds check the page after every step. The judge reads a few checkpoints. Each call has its host's limits: 45 seconds and 1600 output tokens for Claude, 120 seconds for Codex. A call past its limit fails, as it would in the host: the page stays as it was, and the status line says so.
 
 A step with no call, or a step before its call, can press a goal button as the person would: Remove, or a typed goal. It runs through the host's own press.
 
