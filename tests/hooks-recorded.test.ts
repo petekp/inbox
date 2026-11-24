@@ -217,6 +217,7 @@ test("the result under a record or close call reads the person's line, nothing w
     { use: 'u1', call: question },
     { use: 'u2', call: question },
     { use: 'u3', call: { tool: 'mcp__inbox__close', id: 'i1', answer: 'Redis' } },
+    { use: 'u4', call: { ...question, ask: 'Ship \x1b[31mit\x1b]52;c;aGk=\x07?' } },
   ] as const
   const results: unknown[] = []
   for (const { use, call } of calls) results.push((await $.tool.call({ ...call, tool_use_id: use } as never)).result)
@@ -237,6 +238,7 @@ test("the result under a record or close call reads the person's line, nothing w
   expect(await (await resultRow(0)).find({ text: 'Question: Which cache should the API use?' })).toBeDefined()
   expect(await (await resultRow(1)).find({ text: /./ })).toBeUndefined()
   expect(await (await resultRow(2)).find({ text: 'Closed: Which cache should the API use?' })).toBeDefined()
+  expect(await (await resultRow(3)).find({ text: 'Question: Ship it?' })).toBeDefined()
   expect(
     await (await resultRow(0, true)).find({ text: 'Recorded. The user sees it in the /inbox pane.' }),
   ).toBeDefined()
