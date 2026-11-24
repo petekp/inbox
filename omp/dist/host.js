@@ -1444,7 +1444,8 @@ var CLAUDE_CODE = {
     "record-earlier-answers": { kind: "full" },
     "named-pr-link": { kind: "full" },
     "session-registry": { kind: "full" },
-    "press-preconditions": { kind: "full" }
+    "press-preconditions": { kind: "full" },
+    "task-results": { kind: "full" }
   }
 };
 
@@ -1618,7 +1619,8 @@ var CODEX = {
       kind: "different",
       reason: "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process."
     },
-    "press-preconditions": { kind: "full" }
+    "press-preconditions": { kind: "full" },
+    "task-results": { kind: "full" }
   }
 };
 
@@ -1741,7 +1743,8 @@ var OMP = {
     "record-earlier-answers": { kind: "full" },
     "named-pr-link": { kind: "full" },
     "session-registry": { kind: "full" },
-    "press-preconditions": { kind: "full" }
+    "press-preconditions": { kind: "full" },
+    "task-results": { kind: "full" }
   }
 };
 
@@ -3986,7 +3989,7 @@ function parseReply(text, source = null) {
         newLines.push(undefined);
         continue;
       }
-      const options = rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean);
+      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
@@ -4220,13 +4223,16 @@ function addAgentItem(ledger, entry, now) {
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
     const rec = restatedRec(openItem.options, openItem.rec, entry.rec);
     const reason = entry.recReason && rec === recommendedOption(openItem.options, entry.rec) ? entry.recReason : undefined;
-    const reported = { ...withRec(openItem, rec, reason), helps, isDesignChoice, reportedAt: now };
+    const isNewOptions = openItem.kind === "task" && openItem.options.length === 0 && entry.options.length > 0;
+    const options = isNewOptions ? entry.options : openItem.options;
+    const reported = { ...withRec(openItem, rec, reason), options, helps, isDesignChoice, reportedAt: now };
     const items = ledger.items.map((i) => i === openItem ? reported : i);
     return {
       ledger: { ...ledger, items },
       is: "open",
       id: openItem.id,
       addedSteps: helps.length - openItem.helps.length,
+      isNewOptions,
       isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
       newRec: rec !== openItem.rec ? rec : null,
       isNewReason: reason !== undefined && reason !== openItem.recReason
@@ -7334,10 +7340,17 @@ function isApproval(item) {
 function missingText(item, fields) {
   const canSend = (field) => fields.includes(field);
   if (item?.kind === "task")
-    return item.helps.length === 0 && canSend("steps") ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
+    return taskStepsText(item, canSend) + taskResultsText(item, canSend);
   if (!item)
     return "";
   return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend);
+}
+function taskStepsText(item, canSend) {
+  return item.helps.length === 0 && canSend("steps") ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
+}
+function taskResultsText(item, canSend) {
+  const asksForResult = item.ask.trim().endsWith("?");
+  return asksForResult && item.options.length === 0 && canSend("options") ? " It asks for a result but has no options: record it again with the results the user can report as options." : "";
 }
 function bodyText(item, canSend) {
   const unnoted = canSend("option_notes") ? item.options.filter((o) => !item.optionDescriptions?.[o]) : [];
@@ -7497,7 +7510,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one. For a task that checks something whose outcome you need, such as whether a fix works on their screen: the outcomes the user can report, in the same form. Leave it out for a task you only need done, such as a sign-in."
     },
     option_notes: {
       type: "array",
@@ -7587,7 +7600,7 @@ function orderDescription(host) {
 function recordDescription(host) {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
-- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
+- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. When it is a check whose outcome you need, such as whether a fix works on their screen, give the outcomes they can report as options, with no rec. A task you only need done, such as a sign-in, gets none: the user marks it done. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
 - finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, a PR's checks, conflicts, review threads or readiness, which ${host.prsIn} shows, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
 Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`;
 }
@@ -7637,7 +7650,7 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
   const ask = cut(input.ask, MAX_ASK);
   if (ask === "")
     return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`);
-  const options = input.kind === "question" ? list(input.options, MAX_OPTIONS, MAX_OPTION) : [];
+  const options = list(input.options, MAX_OPTIONS, MAX_OPTION);
   if (input.kind === "question" && options.length === 0)
     return unchanged(ledger, "Not recorded: a question needs at least one option.");
   const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
@@ -7667,6 +7680,7 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
   if (r.is === "open") {
     const changes = [
       ...r.addedSteps > 0 ? ["added its new steps"] : [],
+      ...r.isNewOptions ? ["gave it your options"] : [],
       ...r.isNewlyMarked ? ["marked it as a design choice"] : [],
       ...r.newRec ? [`changed its recommendation to ${r.newRec}`] : [],
       ...r.isNewReason ? ["gave its recommendation your reason"] : [],
@@ -8029,15 +8043,17 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   if (item.kind === "task")
     return [
       ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
+      ...item.options.length > 0 ? item.options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
+        isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+      })) : [action({ action: "done", id }, "Done", "mark")],
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
@@ -8123,7 +8139,7 @@ function rowKeyPlan(r, isAllShown) {
     const { press } = a;
     if (press.action === "answer" || press.action === "step") {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++] } : {};
-      if (press.action === "answer") {
+      if (press.action === "answer" && r.type !== "task") {
         const note = optionNote(r.optionDescriptions.find((d) => d.option === press.option));
         options.push({ action: { ...a, press }, note, ...hotkey });
       } else
@@ -12346,7 +12362,7 @@ function demoView(now, agent) {
           label: null,
           from: "record",
           ask: "Check the glances outdoors in bright sun",
-          options: [],
+          options: ["Readable", "Washed out"],
           rec: null,
           helps: [{ kind: "copy", text: "http://localhost:3000/preview", name: "preview URL" }],
           turn: 14,
@@ -12884,7 +12900,7 @@ Before you hand the user a step, take it yourself when your tools reach it, such
 
 When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
 
-Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
+Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with steps and result options. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
 
 A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
 

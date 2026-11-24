@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T20:52:27.609Z. 377299 characters follow.
+// Built at 2026-11-24T21:54:14.843Z. 377510 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -3474,15 +3474,17 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   if (item.kind === "task")
     return [
       ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
+      ...item.options.length > 0 ? item.options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
+        isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+      })) : [action({ action: "done", id }, "Done", "mark")],
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
@@ -3568,7 +3570,7 @@ function rowKeyPlan(r, isAllShown) {
     const { press } = a;
     if (press.action === "answer" || press.action === "step") {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++] } : {};
-      if (press.action === "answer") {
+      if (press.action === "answer" && r.type !== "task") {
         const note = optionNote(r.optionDescriptions.find((d) => d.option === press.option));
         options.push({ action: { ...a, press }, note, ...hotkey });
       } else
