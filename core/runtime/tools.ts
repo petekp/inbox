@@ -15,7 +15,7 @@ import type { Closed, Help, Item, LastAction, Ledger, ToolFields } from '../../t
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 
-/** Tells the agent the id to close a row by, which the inbox text beside the user's prompt lists only from the next turn. */
+/** The id to close a new row by, which the inbox text beside the user's prompt lists only from the next turn. */
 function closeIdText(id: string): string {
   return ` Its close id is ${id}. ${CLOSE_ID_RULE}`
 }
@@ -197,7 +197,7 @@ export function recordItem(
     ]
     const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
 
-    return unchanged(recorded, `Already open, so this record updated it${updated}.${closeIdText(r.id)}${leftOut}`)
+    return unchanged(recorded, `Already open, so this record updated it${updated}.${leftOut}`)
   }
 
   return {
@@ -226,7 +226,7 @@ function recordFinding(host: Host, ledger: Ledger, input: Record<string, unknown
       ledger,
       `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.`,
     )
-  if (!r.isAdded) return unchanged(r.ledger, `Already recorded.${closeIdText(r.id)}`)
+  if (!r.isAdded) return unchanged(r.ledger, 'Already recorded.')
 
   return {
     ledger: r.ledger,

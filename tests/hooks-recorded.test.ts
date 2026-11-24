@@ -165,11 +165,13 @@ test('a question Claude records waits in the pane with its recommendation, a rep
     why: 'it survives restarts',
   } as const
   const r = await $.tool.call(question)
-  expect(r.result).toBe('Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply.')
+  expect(r.result).toBe(
+    'Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply.',
+  )
   await clock.settle()
   expect(await pane.find({ text: /Which cache should the API use\?/ })).toBeDefined()
   expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe(
-    'Already open, so this record updated it. Its close id is i1. A close id is only for the close tool. Never write one in a reply.',
+    'Already open, so this record updated it.',
   )
   expect((await $.tool.call({ ...question, ask: 'Which cache should it use?', rec: 'Memcached' })).result).toBe(
     'Not recorded: rec must be one of the options.',
@@ -204,7 +206,9 @@ test('a question Claude records waits in the pane with its recommendation, a rep
         why: 'traffic is low at night',
       })
     ).result,
-  ).toBe('Recorded. The user sees it in the /inbox pane. Its close id is i4. A close id is only for the close tool. Never write one in a reply.')
+  ).toBe(
+    'Recorded. The user sees it in the /inbox pane. Its close id is i4. A close id is only for the close tool. Never write one in a reply.',
+  )
 })
 
 test("the result under a record or close call reads the person's line, nothing when the call changed nothing, and the agent's text in the ctrl+o transcript", async ($, on) => {
