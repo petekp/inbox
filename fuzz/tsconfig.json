@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "es2023",
-    "lib": ["es2023", "dom"],
+    "lib": ["es2023", "dom", "dom.iterable"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -17,5 +17,6 @@
       "herdr": ["../herdr/.herdr-types/herdr.d.ts"]
     }
   },
+  "exclude": ["mod-look.ts"],
   "include": ["*.ts", "../herdr/.herdr-types/gpui-kit.d.ts", "../herdr/.herdr-types/herdr.d.ts"]
 }

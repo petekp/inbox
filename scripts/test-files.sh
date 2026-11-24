@@ -4,7 +4,8 @@
 # refuses symlinks, so this copies what the tests import into a temporary
 # folder outside the repo: the manifest, core/, hooks/, types/, evals/, the sources of
 # codex/ and omp/ that evals/ imports, the helper files in tests/ and the named
-# tests. The folder is removed on exit.
+# tests. The folder is removed on exit. A fuzz file, fuzz/**/*.fuzz.ts, runs as a
+# test there, beside the sources in fuzz/.
 #
 # Works from any worktree. Paths are relative to the repo root, or absolute.
 #
@@ -26,9 +27,9 @@ for arg in "$@"; do
     *) file=$DIR/$arg ;;
     esac
     case $file in
-    "$DIR"/tests/*.test.ts | "$DIR"/tests/*.test.tsx) ;;
+    "$DIR"/tests/*.test.ts | "$DIR"/tests/*.test.tsx | "$DIR"/fuzz/*.fuzz.ts) ;;
     *)
-        echo "  x not a mod test file under tests/: $arg" >&2
+        echo "  x not a mod test file under tests/ or a fuzz file under fuzz/: $arg" >&2
         exit 2
         ;;
     esac
@@ -36,7 +37,7 @@ for arg in "$@"; do
         echo "  x no such test file: $arg" >&2
         exit 2
     fi
-    names="$names ${file#"$DIR"/tests/}"
+    names="$names ${file#"$DIR"/}"
 done
 
 scratch=$(mktemp -d)
@@ -48,15 +49,19 @@ cp -R "$DIR/.claude-plugin" "$DIR/core" "$DIR/hooks" "$DIR/types" "$DIR/package.
 copy_sources() {
     # shellcheck disable=SC2016
     (cd "$DIR" && find "$1" -type f ! -name '*.test.ts' ! -name '*.test.tsx' ! -path '*/node_modules/*' \
-        ! -path 'evals/results/*' -print0 |
+        ! -path 'evals/results/*' ! -path 'fuzz/out/*' -print0 |
         xargs -0 -I{} sh -c 'mkdir -p "$2/$(dirname "$1")" && cp "$1" "$2/$1"' _ {} "$scratch")
 }
 copy_sources evals
 copy_sources tests
 copy_sources codex/src
 copy_sources omp/src
+copy_sources fuzz
 for name in $names; do
-    cp "$DIR/tests/$name" "$scratch/tests/$name"
+    case $name in
+    fuzz/*) cp "$DIR/$name" "$scratch/tests/$(basename "$name" .fuzz.ts).test.ts" ;;
+    *) cp "$DIR/$name" "$scratch/$name" ;;
+    esac
 done
 
 status=0

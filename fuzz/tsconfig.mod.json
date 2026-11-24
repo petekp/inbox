@@ -1,0 +1,4 @@
+{
+  "extends": "../tsconfig.json",
+  "include": ["mod-look.ts"]
+}

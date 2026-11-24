@@ -1,6 +1,8 @@
 import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
 import type { Case, Ev } from './case'
+import type { CodexCase } from './look-codex'
+import type { ModCase } from './mod-case'
 import { openIds } from './agent'
 import { START } from './gen'
 import type { HostOutcomes } from './host'
@@ -176,24 +178,140 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
   },
 ]
 
+/** Fixed Codex tab cases, run before each Codex pass. A seed whose issue is open is expected to fail with `rule`. */
+export const CODEX_SEEDS: {
+  name: string
+  issue: number
+  isOpen: boolean
+  rule: string
+  detail?: string
+  case: CodexCase
+}[] = [
+  {
+    name: 'opening a PR comment from its thread',
+    rule: 'cut',
+    detail: '"Open comment"',
+    issue: 834,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'tab', n: 3 },
+        { is: 'click', on: 'button', n: 4 },
+      ],
+    },
+  },
+  {
+    name: 'Explain on a row that is still opening',
+    rule: 'jump',
+    detail: ' grew ',
+    issue: 835,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 2 },
+        { is: 'key', key: 'e' },
+      ],
+    },
+  },
+  {
+    name: 'a row glide that starts again mid-move, in about 2 of 3 runs',
+    rule: 'jump',
+    detail: 'height stood still',
+    issue: 836,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 5 },
+        { is: 'click', on: 'row', n: 1 },
+        { is: 'wait', ms: 350 },
+        { is: 'click', on: 'row', n: 2 },
+      ],
+    },
+  },
+  {
+    name: 'Cancel on the Reply field',
+    rule: 'cut',
+    detail: '"Reply" shows at 1.00',
+    issue: 837,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 7 },
+        { is: 'click', on: 'button', n: 2 },
+        { is: 'wait', ms: 800 },
+        { is: 'click', on: 'button', n: 7 },
+      ],
+    },
+  },
+]
+
+/** Fixed cases for the mod's terminal and desktop looks, run before each mod pass. */
+export const MOD_SEEDS: { name: string; issue: number; isOpen: boolean; rule: string; case: ModCase }[] = [
+  {
+    name: 'a finding whose title holds escapes, in the terminal',
+    rule: 'drawn',
+    issue: 830,
+    isOpen: true,
+    case: {
+      look: 'terminal',
+      columns: 80,
+      records: [
+        {
+          kind: 'finding',
+          finding_kind: 'issue',
+          title: `Red ${ESC}[31mtext${ESC}[0m and ${ESC}]52;c;aGk=${BEL}clipboard`,
+          detail: 'd',
+        },
+      ],
+    },
+  },
+]
+
 /**
  * Failures of generated cases that an open issue already describes, by look, rule and a text in the failure's detail.
  * A run that finds only these passes, so a fixed-seed run fails only on something new.
  */
-const KNOWN: { issue: number; look: Case['look']; rule: string; details: string[] }[] = [
+const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string; details: string[] }[] = [
   { issue: 811, look: 'herdr', rule: 'cut', details: ['"✓ Copied'] },
   { issue: 827, look: 'herdr', rule: 'cut', details: ['"Send"', '"Cancel"', '"Discard"', 'in its box status '] },
   { issue: 828, look: 'herdr', rule: 'jump', details: ['panel d', ' thread '] },
   { issue: 832, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 830, look: 'omp', rule: 'raw-escape', details: [''] },
+  { issue: 830, look: 'mod', rule: 'drawn', details: ['the pane drew nothing'] },
   { issue: 830, look: 'omp', rule: 'width', details: ['with an escape from the input'] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
+  { issue: 834, look: 'codex', rule: 'cut', details: [' thread ', '"Holds up ', '…" shows', '"·" shows'] },
+  { issue: 834, look: 'codex', rule: 'jump', details: ['press-'] },
+  { issue: 835, look: 'codex', rule: 'jump', details: [' grew '] },
+  { issue: 836, look: 'codex', rule: 'jump', details: ['height stood still'] },
+  {
+    issue: 837,
+    look: 'codex',
+    rule: 'cut',
+    details: ['"Reply" shows at 1.00', '"Explain" shows at 1.00', '"Dismiss" shows at 1.00'],
+  },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */
 export function knownIssueOf(f: { look: string; rule: string; detail: string }): number | null {
-  const open = new Set(SEEDS.filter(s => s.isOpen).map(s => s.issue))
+  const open = new Set([...SEEDS, ...CODEX_SEEDS, ...MOD_SEEDS].filter(s => s.isOpen).map(s => s.issue))
   const k = KNOWN.find(
     k => open.has(k.issue) && k.look === f.look && k.rule === f.rule && k.details.some(d => f.detail.includes(d)),
   )

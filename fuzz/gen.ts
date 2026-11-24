@@ -52,7 +52,7 @@ function startSession(rng: Rng): Session {
   return withTexts({ ...demo, ledger }, rng, rng.pick([0, 0.3, 1]))
 }
 
-function recordArgs(rng: Rng): Record<string, unknown> {
+export function recordArgs(rng: Rng): Record<string, unknown> {
   const kind = rng.pick(['question', 'question', 'task', 'finding'] as const)
   if (kind === 'finding')
     return {
