@@ -53,7 +53,7 @@ export function dialogAnswersOf(text: string): DialogAnswer[] {
  * The activity lines for a dialog of a turn: one with the answers dialog replies gave its questions, and one with its
  * questions still open. An inbox reply answers one question, so a dialog can end a turn partly answered.
  */
-export function dialogLines(d: Dialog): string[] {
+export function dialogLines(d: Pick<Dialog, 'questions' | 'answers'>): string[] {
   const isAnswered = (index: number) => d.answers[index] !== undefined
   const answered = d.questions.filter((_, index) => isAnswered(index))
   const open = d.questions.filter((_, index) => !isAnswered(index))

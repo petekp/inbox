@@ -1,6 +1,6 @@
 import { resolve } from 'node:path'
 
-import { dialogActivity, dialogQuestions, toolActivity } from '../../core/domain/catch-up-text'
+import { toolActivity } from '../../core/domain/catch-up-text'
 import { patchFiles } from './core'
 import { isText, jsonRecord, textOf } from './rollout-rows'
 import type { Payload, RowPayload, TranscriptLine } from './rollout-rows'
@@ -114,7 +114,6 @@ export function callLines(p: Payload, hasCommandRows: boolean, cwd: string): str
 
     return line ? [line] : []
   }
-  if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: 'open' })]
   const line = toolActivity(textOf(p.namespace).startsWith('mcp__') ? textOf(p.namespace) + name : name, {})
 
   return line ? [line] : []
