@@ -187,7 +187,7 @@ test('a tool call after a hot reload, before the load converts the ledger, still
   })
   strip = false
   const r = await $.tool.call({ tool: 'mcp__inbox__close', id: 'f1', reason: 'fixed' } as never)
-  expect(r.result).toBe('Closed the finding. Name it by what it says, never by its id.')
+  expect(r.result).toBe('Closed the finding "README is stale". Name it by what it says, never by its id.')
 })
 
 test('a 0.6.0 state loads into the controller once: its tab, cursor, open field and draft, folds and shown options carry over', async ($, on) => {

@@ -1,6 +1,6 @@
 // Notes the dialogs a Codex turn opened, and words an inbox answer so that it answers the dialog its question copies.
 
-import { noteDialog } from '../../core/domain/dialogs'
+import { noteDialogs } from '../../core/domain/dialogs'
 import { messages } from '../../core/domain/press-messages'
 import type { DialogLink, Item, Session } from '../../types'
 import type { Dialog } from './rollout-turns'
@@ -21,7 +21,14 @@ export function answerMessage(item: Item, answer: string): string {
   return item.dialog ? dialogReply(item.dialog, answer) : messages.answer(item, answer)
 }
 
-/** Notes each dialog the agent opened. A dialog row with no call id cannot be answered, so it is left out. */
-export function noteDialogs<S extends Session>(s: S, dialogs: Dialog[]): S {
-  return dialogs.reduce((x, d) => (d.callId === null ? x : noteDialog(x, d.callId, d.questions)), s)
+/**
+ * Notes the dialogs the agent opened in a turn. A dialog row with no call id cannot be answered, so it is left out.
+ * So is a dialog a user message followed in its turn: that message started a new inbox turn, so the dialog's copy is
+ * not in the turn it would be noted in, and a question of the new turn with the same options would pass for it.
+ */
+export function noteTurnDialogs<S extends Session>(s: S, dialogs: Dialog[]): S {
+  return noteDialogs(
+    s,
+    dialogs.filter(d => d.callId !== null && !d.isFollowedByMessage),
+  )
 }

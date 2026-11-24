@@ -10,7 +10,7 @@ import type { Host } from '../domain/model-text'
 import { applyPrPress, withFinishedPrsSettled } from '../view/pr-tab'
 import { isPrPress, lastPressOf, pressRowId } from '../view/pr-press'
 import { isViewKept } from '../view/pr-views'
-import { itemPrSteps } from '../domain/pr-fetch'
+import { sessionPrs } from '../domain/pr-fetch'
 import { withOrderStatuses } from '../view/pr-order'
 import type { Applied, PrPress } from '../view/pr-press'
 import { actionId } from '../domain/press-labels'
@@ -64,11 +64,10 @@ export function pressOn(
   if (isRepeatWhileOut(s, p, at, drawn)) return { ledger: s.ledger, lasts: {}, drop: [], effects: [] }
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId }
   if (isPrPress(p)) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx)
-  const item = s.ledger.items.find(i => i.id === p.id)
   const r = applyPress(s.ledger, s.lastActions[p.id], p, {
     ...ctx,
     holdMs: drawn.settleWindowMs,
-    extraSteps: item ? itemPrSteps(item, s) : [],
+    sessionPrs: sessionPrs(s),
     answerMessage: texts.answerMessage,
     comparePage: texts.comparePage,
     compareInBackground: texts.compareInBackground,

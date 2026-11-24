@@ -28,6 +28,9 @@ codex/.dev/
 # Eval results, written on every run
 evals/results/
 
+# Fuzz reports, written on every run of scripts/fuzz.sh
+fuzz/out/
+
 # The video project's renders, takes and cut clips, which its scripts make again
 videos/out/
 videos/takes

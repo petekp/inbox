@@ -484,11 +484,30 @@ function prLinkName(ref, isTracked2, repo) {
   const isSessionRepo = refRepo.toLowerCase() === repo?.toLowerCase();
   return isTracked2 ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`;
 }
-function prSteps(item, tracked, repo) {
+var GITHUB_PR_OR_ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)/;
+function linkRef(url) {
+  const m = url.match(GITHUB_PR_OR_ISSUE_URL);
+  return m ? `${m[1]}#${m[2]}` : null;
+}
+var GITHUB_PR_OR_ISSUE_PAGE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+\/?(?:\?[^#]*)?$/;
+var isSameRef = (a, b) => a.toLowerCase() === b.toLowerCase();
+var LEADING_OPEN = /^open(?:\s+|$)/i;
+function withLinkName(help, { tracked, repo }) {
+  if (help.kind !== "link") return help;
+  const ref = linkRef(help.url);
+  if (ref && (GITHUB_PR_OR_ISSUE_PAGE.test(help.url) || !help.name)) {
+    const isTracked2 = tracked.some((pr) => isSameRef(pr.ref, ref));
+    return { ...help, name: prLinkName(ref, isTracked2, repo) };
+  }
+  const name = help.name?.replace(LEADING_OPEN, "") || null;
+  return name === help.name ? help : { ...help, name };
+}
+function prSteps(item, { tracked, repo }) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const isLinked = (ref, url) => item.helps.some(
-    (h) => h.kind === "link" && (h.url === url || prRefs(h.url).some((r) => r.toLowerCase() === ref.toLowerCase()))
-  );
+  const isLinked = (ref, url) => item.helps.some((h) => {
+    const linked = h.kind === "link" ? linkRef(h.url) : null;
+    return h.kind === "link" && (h.url === url || linked !== null && isSameRef(linked, ref));
+  });
   const named = namedPrs([item.ask, item.context ?? ""].join("\n"), [...urls.keys()], repo).flatMap((ref) => {
     const { repo: refRepo, number } = parseRef(ref);
     const url = urls.get(ref) ?? `https://github.com/${refRepo}/pull/${number}`;
@@ -505,8 +524,8 @@ function prSteps(item, tracked, repo) {
   const label = links.length === 1 ? helpLabel(only) : isAllTracked ? `Open ${links.length} PRs` : clipLabel(`Open ${links.map((l) => l.name).join(", ")}`, COMMAND_LABEL_CHARS);
   return [{ label, step: links }];
 }
-function stepsOf(item, extraSteps) {
-  return [...steps(item.helps), ...extraSteps];
+function stepsOf(item, prs) {
+  return [...steps(item.helps.map((h) => withLinkName(h, prs))), ...prSteps(item, prs)];
 }
 function stepIconKind(step) {
   if (!step) return void 0;
@@ -1454,16 +1473,14 @@ function tabPrs(links) {
   const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
   return [...links.prs, ...ranked];
 }
-function itemPrSteps(item, s) {
+function sessionPrs(s) {
   const { branchRef, views } = s.prViews;
   const linked = tabPrs(s.ledger);
   const refs = branchRef ? [...linked, branchRef] : linked;
-  const repo = branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null;
-  return prSteps(
-    item,
-    refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })),
-    repo
-  );
+  return {
+    tracked: refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })),
+    repo: branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null
+  };
 }
 function isLeftOut(prState, ref) {
   const view = prState.views[ref];
@@ -1780,10 +1797,12 @@ function linkDialogs(s, now = Date.now()) {
   );
   return { ...s, ledger, dialogQuestions: kept };
 }
-function noteDialog(s, callId, questions) {
-  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
-  const added = questions.flatMap(
-    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+function noteDialogs(s, dialogs) {
+  const isNoted = (callId, index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = dialogs.flatMap(
+    ({ callId, questions }) => questions.flatMap(
+      (q, index) => isNoted(callId, index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+    )
   );
   if (added.length === 0) return s;
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
@@ -2022,13 +2041,16 @@ function answerIndex(docs) {
 function rankedEarlier(index, question, skip, top) {
   const n = index.docs.length;
   const scores = /* @__PURE__ */ new Map();
+  const sharesWord = /* @__PURE__ */ new Set();
   let reachable = 0;
   for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
     const posted = index.postings.get(term);
     if (!posted) continue;
     const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
     reachable += weight * (K1 + 1);
+    const isWord = /[a-z]/.test(term);
     for (const [doc, count] of posted) {
+      if (isWord) sharesWord.add(doc);
       const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
       scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
     }
@@ -2036,7 +2058,7 @@ function rankedEarlier(index, question, skip, top) {
   if (reachable === 0) return [];
   return [...scores].flatMap(([i, score]) => {
     const doc = index.docs[i];
-    return doc && doc.key !== skip ? [{ doc, score: score / reachable }] : [];
+    return doc && doc.key !== skip && sharesWord.has(i) ? [{ doc, score: score / reachable }] : [];
   }).toSorted((a, b) => b.score - a.score).slice(0, top).filter((match) => match.score >= RELATIVE_FLOOR);
 }
 function bestEarlier(index, question, skip) {
@@ -2170,9 +2192,6 @@ var TOOL_FIELDS = {
   close: Object.keys(CLOSE_SCHEMA.properties),
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
-
-// ../core/view/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
 // ../core/domain/inbox-text.ts
 var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
@@ -2321,6 +2340,9 @@ function promptNotes(host, ledger, prompt, told) {
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
 
+// ../core/view/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
+
 // ../core/view/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
 function showsCompare(item) {
@@ -2433,7 +2455,7 @@ function inboxView({
   lastActions,
   notes,
   turns,
-  extraSteps,
+  sessionPrs: sessionPrs2,
   settleWindowMs,
   status,
   now,
@@ -2583,7 +2605,7 @@ function inboxView({
       replyKind: item.kind === "question" ? "answer" : "reply",
       item,
       finding: null,
-      steps: stepsOf(item, extraSteps[item.id] ?? [])
+      steps: stepsOf(item, sessionPrs2)
     });
   };
   const questionRows = questions.map(itemRow);
@@ -3087,7 +3109,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s)])),
+    sessionPrs: sessionPrs(s),
     settleWindowMs,
     status: perTurnStatus(sync.ledger),
     now,
@@ -5376,8 +5398,11 @@ async function withoutSharedTerminal(env, run2, pid, log) {
 import { resolve as resolve3 } from "node:path";
 
 // src/dialogs.ts
-function noteDialogs(s, dialogs) {
-  return dialogs.reduce((x, d) => d.callId === null ? x : noteDialog(x, d.callId, d.questions), s);
+function noteTurnDialogs(s, dialogs) {
+  return noteDialogs(
+    s,
+    dialogs.filter((d) => d.callId !== null && !d.isFollowedByMessage)
+  );
 }
 
 // src/history.ts
@@ -5784,7 +5809,7 @@ function unranCalls(rows) {
 
 // src/rollout-turns.ts
 var PLAN_TOOL = "update_plan";
-var MARKERS = ['"task_started"', DIALOG_TOOL, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
+var MARKERS = ['"task_started"', DIALOG_TOOL, '"user"', '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
   ["task_started", "started"],
   ["task_complete", "completed"],
@@ -5855,7 +5880,13 @@ function turnOf(lines, turnId) {
         } catch {
           continue;
         }
-        turn2.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions) });
+        turn2.dialogs.push({
+          callId: p.call_id ?? null,
+          questions: dialogQuestions(args.questions),
+          isFollowedByMessage: false
+        });
+      } else if (row.type === "response_item" && p.type === "message" && p.role === "user") {
+        turn2.dialogs = turn2.dialogs.map((d) => ({ ...d, isFollowedByMessage: true }));
       } else if (row.type === "response_item" && (p.type === "function_call" || p.type === "local_shell_call")) {
         const command = callCommand(p);
         if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
@@ -6234,7 +6265,7 @@ async function handleHook(input, deps) {
       const written = await write(async (s) => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),
-          withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran)
+          withoutActivity(noteTurnDialogs(withHost(await withHistory(s)), dialogs), unran)
         );
         const withRan = { ...unranDelegatesTakenBack(withLines, unranDelegates), delegateCalls: [] };
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withRan);

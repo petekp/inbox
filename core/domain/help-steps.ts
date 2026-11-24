@@ -2,7 +2,7 @@ import type { Help, Item } from '../../types'
 import { baseName } from './open-targets'
 import { messages } from './press-messages'
 import type { Effect } from '../view/press-reducer'
-import { namedPrs, parseRef, prRefs } from './prs'
+import { namedPrs, parseRef } from './prs'
 import { clipLabel } from './text'
 
 /**
@@ -27,6 +27,13 @@ function helpLabel(help: Help): string {
 
 export type HelpStep = { label: string; step: Help[] }
 
+type TrackedPr = { ref: string; url: string | null }
+
+/** The PRs the session tracks, each with its address once a fetch read it, and the session's repository. */
+export type SessionPrs = { tracked: TrackedPr[]; repo: string | null }
+
+export const NO_SESSION_PRS: SessionPrs = { tracked: [], repo: null }
+
 function steps(helps: Help[]): HelpStep[] {
   const copy = helps.find(h => h.kind === 'copy')
   const open = helps.find(h => h.kind === 'open')
@@ -42,8 +49,6 @@ function steps(helps: Help[]): HelpStep[] {
     )
 }
 
-type TrackedPr = { ref: string; url: string | null }
-
 /**
  * The name a PR link takes on its button. A PR the session tracks is "PR #12". One it does not track may be an issue,
  * since GitHub sends a pull link of an issue's number to the issue, so it is "#12", or "repo#12" outside `repo`.
@@ -56,16 +61,54 @@ function prLinkName(ref: string, isTracked: boolean, repo: string | null): strin
   return isTracked ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`
 }
 
+const GITHUB_PR_OR_ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)/
+
+/**
+ * "owner/repo#12" for a link to a GitHub PR or issue, or null. Issues and PRs share one set of numbers in a repository,
+ * and GitHub sends a pull or issue address of either number to its page.
+ */
+function linkRef(url: string): string | null {
+  const m = url.match(GITHUB_PR_OR_ISSUE_URL)
+
+  return m ? `${m[1]}#${m[2]}` : null
+}
+
+/** A link to a GitHub PR's or issue's own page, not to its diff, checks or one comment. */
+const GITHUB_PR_OR_ISSUE_PAGE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+\/?(?:\?[^#]*)?$/
+
+const isSameRef = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+
+/** A word a link's name may start with that its button and its result already say, as in "Open token page". */
+const LEADING_OPEN = /^open(?:\s+|$)/i
+
+/**
+ * A link named as its button names it. A link to a GitHub PR's or issue's own page takes the name its Open PR step would
+ * have, whatever name it came with, since a name such as "PR" does not say which. A link to a page inside one takes it
+ * only when it has no name. Any other name loses a leading "Open".
+ */
+function withLinkName(help: Help, { tracked, repo }: SessionPrs): Help {
+  if (help.kind !== 'link') return help
+  const ref = linkRef(help.url)
+  if (ref && (GITHUB_PR_OR_ISSUE_PAGE.test(help.url) || !help.name)) {
+    const isTracked = tracked.some(pr => isSameRef(pr.ref, ref))
+    return { ...help, name: prLinkName(ref, isTracked, repo) }
+  }
+  const name = help.name?.replace(LEADING_OPEN, '') || null
+
+  return name === help.name ? help : { ...help, name }
+}
+
 /**
  * One step that opens each PR the item's ask or context names, by `namedPrs`, that none of its steps links already.
- * `repo` is the session's repository, for a PR named by its number alone.
+ * The session's repository is for a PR named by its number alone.
  */
-export function prSteps(item: Item, tracked: TrackedPr[], repo: string | null): HelpStep[] {
+function prSteps(item: Item, { tracked, repo }: SessionPrs): HelpStep[] {
   const urls = new Map(tracked.map(pr => [pr.ref, pr.url]))
   const isLinked = (ref: string, url: string) =>
-    item.helps.some(
-      h => h.kind === 'link' && (h.url === url || prRefs(h.url).some(r => r.toLowerCase() === ref.toLowerCase())),
-    )
+    item.helps.some(h => {
+      const linked = h.kind === 'link' ? linkRef(h.url) : null
+      return h.kind === 'link' && (h.url === url || (linked !== null && isSameRef(linked, ref)))
+    })
   const named = namedPrs([item.ask, item.context ?? ''].join('\n'), [...urls.keys()], repo).flatMap(ref => {
     const { repo: refRepo, number } = parseRef(ref)
     const url = urls.get(ref) ?? `https://github.com/${refRepo}/pull/${number}`
@@ -89,8 +132,8 @@ export function prSteps(item: Item, tracked: TrackedPr[], repo: string | null): 
   return [{ label, step: links }]
 }
 
-export function stepsOf(item: Item, extraSteps: HelpStep[]): HelpStep[] {
-  return [...steps(item.helps), ...extraSteps]
+export function stepsOf(item: Item, prs: SessionPrs): HelpStep[] {
+  return [...steps(item.helps.map(h => withLinkName(h, prs))), ...prSteps(item, prs)]
 }
 
 export function stepIconKind(step: HelpStep | undefined): 'run' | 'copy' | 'open' | undefined {

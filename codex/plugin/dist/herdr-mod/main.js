@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T02:30:35.302Z. 373266 characters follow.
+// Built at 2026-11-24T12:34:07.428Z. 375530 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -462,9 +462,6 @@ function clockTime(ms) {
 
 // ../core/domain/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
-function prRefs(text) {
-  return [...new Set([...text.matchAll(PR_URL)].map((m) => `${m[1]}#${m[2]}`))];
-}
 var PR_MENTION = /(?<![\w./-])(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*)\b/g;
 var PR_WORD_BEFORE = /\b(?:prs?|pull requests?|merg(?:e|es|ed|ing)|review(?:s|ed|ing)?|approv(?:e|es|ed|ing)|land(?:s|ed|ing)?)\s*$/i;
 var LIST_JOIN = /^\s*(?:,\s*)?(?:and|or|then|&)?\s*$/i;
@@ -639,9 +636,31 @@ function prLinkName(ref, isTracked, repo) {
   const isSessionRepo = refRepo.toLowerCase() === repo?.toLowerCase();
   return isTracked ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`;
 }
-function prSteps(item, tracked, repo) {
+var GITHUB_PR_OR_ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)/;
+function linkRef(url) {
+  const m = url.match(GITHUB_PR_OR_ISSUE_URL);
+  return m ? `${m[1]}#${m[2]}` : null;
+}
+var GITHUB_PR_OR_ISSUE_PAGE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+\/?(?:\?[^#]*)?$/;
+var isSameRef = (a, b) => a.toLowerCase() === b.toLowerCase();
+var LEADING_OPEN = /^open(?:\s+|$)/i;
+function withLinkName(help, { tracked, repo }) {
+  if (help.kind !== "link")
+    return help;
+  const ref = linkRef(help.url);
+  if (ref && (GITHUB_PR_OR_ISSUE_PAGE.test(help.url) || !help.name)) {
+    const isTracked = tracked.some((pr) => isSameRef(pr.ref, ref));
+    return { ...help, name: prLinkName(ref, isTracked, repo) };
+  }
+  const name = help.name?.replace(LEADING_OPEN, "") || null;
+  return name === help.name ? help : { ...help, name };
+}
+function prSteps(item, { tracked, repo }) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const isLinked = (ref, url) => item.helps.some((h) => h.kind === "link" && (h.url === url || prRefs(h.url).some((r) => r.toLowerCase() === ref.toLowerCase())));
+  const isLinked = (ref, url) => item.helps.some((h) => {
+    const linked = h.kind === "link" ? linkRef(h.url) : null;
+    return h.kind === "link" && (h.url === url || linked !== null && isSameRef(linked, ref));
+  });
   const named = namedPrs([item.ask, item.context ?? ""].join(`
 `), [...urls.keys()], repo).flatMap((ref) => {
     const { repo: refRepo, number } = parseRef(ref);
@@ -660,8 +679,8 @@ function prSteps(item, tracked, repo) {
   const label = links.length === 1 ? helpLabel(only) : isAllTracked ? `Open ${links.length} PRs` : clipLabel(`Open ${links.map((l) => l.name).join(", ")}`, COMMAND_LABEL_CHARS);
   return [{ label, step: links }];
 }
-function stepsOf(item, extraSteps) {
-  return [...steps(item.helps), ...extraSteps];
+function stepsOf(item, prs) {
+  return [...steps(item.helps.map((h) => withLinkName(h, prs))), ...prSteps(item, prs)];
 }
 function stepIconKind(step) {
   if (!step)
@@ -1983,12 +2002,14 @@ function tabPrs(links) {
   const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
   return [...links.prs, ...ranked];
 }
-function itemPrSteps(item, s) {
+function sessionPrs(s) {
   const { branchRef, views } = s.prViews;
   const linked = tabPrs(s.ledger);
   const refs = branchRef ? [...linked, branchRef] : linked;
-  const repo = branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null;
-  return prSteps(item, refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })), repo);
+  return {
+    tracked: refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })),
+    repo: branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null
+  };
 }
 function isLeftOut(prState, ref) {
   const view = prState.views[ref];
@@ -3590,7 +3611,7 @@ function inboxView({
   lastActions,
   notes,
   turns,
-  extraSteps,
+  sessionPrs,
   settleWindowMs,
   status,
   now,
@@ -3715,7 +3736,7 @@ function inboxView({
       replyKind: item.kind === "question" ? "answer" : "reply",
       item,
       finding: null,
-      steps: stepsOf(item, extraSteps[item.id] ?? [])
+      steps: stepsOf(item, sessionPrs)
     });
   };
   const questionRows = questions.map(itemRow);
@@ -4206,7 +4227,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s)])),
+    sessionPrs: sessionPrs(s),
     settleWindowMs,
     status: perTurnStatus(sync.ledger),
     now,
@@ -6011,14 +6032,14 @@ function stepUnder(last, b, now, isInput = false) {
 function underMotion(u, now, height) {
   if (!u)
     return null;
-  if (u.isInput && !u.isLeaving)
-    return { line: u.line, opacity: null, fadeMs: 0, delayMs: 0 };
   const isStart = now === u.since;
   if (u.isLeaving)
     return { line: u.line, opacity: isStart ? 1 : 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 };
   if (now >= u.since + ROW_STATE_MS.entering)
     return { line: u.line, opacity: null, fadeMs: 0, delayMs: 0 };
-  return { line: u.line, opacity: isStart ? 0 : 1, fadeMs: ENTER_FADE_MS, delayMs: enterDelayMs(height ?? 0) };
+  if (isStart)
+    return { line: u.line, opacity: u.isInput ? CUT_OPACITY : 0, fadeMs: 0, delayMs: 0 };
+  return { line: u.line, opacity: 1, fadeMs: ENTER_FADE_MS, delayMs: enterDelayMs(height ?? 0) };
 }
 var underTimes = (u) => !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS] : [u.since + NEXT_FRAME_MS, u.since + ROW_STATE_MS.entering];
 var underId = (id) => `status ${id}`;
@@ -6349,10 +6370,46 @@ function timeLeftNextAt(blocks, now) {
 }
 
 // src/wake.ts
-function nextDrawAt(now, moved) {
+function nextDrawAt(now, moved, heldFadeAt) {
   const isStarting = [...moved.motion.values()].some((m) => m.isStart);
-  const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, timeLeftNextAt(moved.blocks, now)].filter((at) => at !== null);
+  const wakeAt = [
+    isStarting ? now + NEXT_FRAME_MS : null,
+    moved.nextAt,
+    timeLeftNextAt(moved.blocks, now),
+    heldFadeAt
+  ].filter((at) => at !== null);
   return wakeAt.length === 0 ? null : Math.min(...wakeAt);
+}
+
+// src/held-fades.ts
+class HeldFades {
+  held = new Map;
+  draw = 0;
+  fade(name, opacity, ms, delayMs, now) {
+    const next = nextHeld(this.held.get(name), { opacity, ms }, delayMs, now);
+    this.held.set(name, { ...next, drawnIn: this.draw });
+    return next.handed;
+  }
+  drew() {
+    for (const [name, h] of this.held)
+      if (h.drawnIn !== this.draw)
+        this.held.delete(name);
+    this.draw += 1;
+    const starts = [...this.held.values()].flatMap((h) => h.waiting ? [h.waiting.at] : []);
+    return starts.length === 0 ? null : Math.min(...starts);
+  }
+}
+function nextHeld(was, to, delayMs, now) {
+  if (!was)
+    return { handed: to, waiting: null };
+  if (to.opacity === was.handed.opacity)
+    return { handed: was.handed, waiting: null };
+  const waiting = was.waiting;
+  if (waiting && to.opacity === waiting.opacity)
+    return now >= waiting.at ? { handed: { opacity: waiting.opacity, ms: waiting.ms }, waiting: null } : was;
+  if (delayMs <= 0)
+    return { handed: to, waiting: null };
+  return { handed: was.handed, waiting: { ...to, at: now + delayMs } };
 }
 
 // src/paint-blocks.ts
@@ -6561,6 +6618,10 @@ var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, ab
 };
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
+function fadeEl(el, name, opacity, glide, p) {
+  const handed = p.fades.fade(name, opacity, glide.duration, glide.delay, p.now);
+  return el.opacity(handed.opacity).transition("opacity", { duration: handed.ms, easing: "ease-out" });
+}
 
 // src/paint-field.ts
 function fieldEl(f, p, indent, isInert = false, opening = null) {
@@ -6569,12 +6630,9 @@ function fieldEl(f, p, indent, isInert = false, opening = null) {
   const input = state ? [
     div4().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
-  const glide = {
-    duration: ENTER_FADE_MS,
-    delay: opening ? enterDelayMs(opening.height) : 0,
-    easing: "ease-out"
-  };
-  return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => e.id(`buttons ${f.rowId}`).opacity(opening?.isOpen ? 1 : 0).transition("opacity", glide)));
+  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0 };
+  const key = `buttons ${f.rowId}`;
+  return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => fadeEl(e.id(key), key, opening?.isOpen ? 1 : 0, glide, p)));
 }
 
 // src/paint-empty.ts
@@ -6904,7 +6962,7 @@ function spacedEls(blocks, p, el) {
     const isShown = m?.box === "open" && m.isShown && height !== undefined;
     const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0;
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
-    const fade = (e) => m?.box ? e.opacity(isShown ? 1 : 0).transition("opacity", glide) : e;
+    const fade = (e) => m?.box ? fadeEl(e, `box ${m.springId ?? b.id}`, isShown ? 1 : 0, glide, p) : e;
     const isMoving = m?.box != null;
     const move = { isMoving, isGone: isMoving && m?.state === "leaving" && m.box === "shut" };
     return { m, isShown, glide, fade, move };
@@ -7089,7 +7147,7 @@ function titleTextEl(r, p, color) {
   const whole = div11().child(wrappedTitleOf(r, p.heights));
   if (g === null)
     return text.child(isOpenRow(r) ? whole : shortTitleEl(short));
-  const form = (id, isShown, fade) => div11().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: fade.ms, delay: fade.delayMs, easing: "ease-out" });
+  const form = (id, isShown, fade) => fadeEl(div11().id(id), id, isShown ? 1 : 0, { duration: fade.ms, delay: fade.delayMs }, p);
   const isCutTall = g.tallForm === "cut";
   const tall = isCutTall ? shortTitleEl(cutTitleOf(r, p.heights)) : whole;
   const shortForm = shortTitleEl(g.isShortOneLine ? oneLineTitleOf(r, p.heights) : short);
@@ -7258,17 +7316,19 @@ function panelFadeEl(r, m, p, el) {
   const turnBackFadeMs = m?.panelFadeMs ?? null;
   const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0;
   const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? "open"];
-  return el.opacity(opacity).transition("opacity", { duration, delay, easing: "ease-out" });
+  return fadeEl(el, panelId(r.id), opacity, { duration, delay }, p);
 }
 function underEls(r, from, m, p, above) {
-  const atRest = isStatusUnder(from) ? { line: from.feedback, opacity: null, fadeMs: 0, delayMs: 0 } : null;
-  const u = m && from === r ? m.under : atRest;
+  const line = isStatusUnder(from) ? from.feedback : null;
+  const isLeftForm = from !== r;
+  const leaving = line && { line, opacity: 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 };
+  const atRest = line && { line, opacity: null, fadeMs: 0, delayMs: 0 };
+  const u = isLeftForm ? leaving : m ? m.under : atRest;
   if (!u?.line)
     return [];
   const key = underId(r.id);
-  const glide = { duration: u.fadeMs, delay: u.delayMs, easing: "ease-out" };
   return [
-    bodyLineEl(u.line, above, p.t, r.isSelected).id(key).on_size_change((size, cx) => p.measure(key, size, cx)).when(u.opacity !== null, (e) => e.opacity(u.opacity ?? 1).transition("opacity", glide))
+    bodyLineEl(u.line, above, p.t, r.isSelected).id(key).on_size_change((size, cx) => p.measure(key, size, cx)).when(u.opacity !== null, (e) => fadeEl(e, key, u.opacity ?? 1, { duration: u.fadeMs, delay: u.delayMs }, p))
   ];
 }
 function prEl(b, p, isInert) {
@@ -8701,6 +8761,7 @@ class Inbox extends View {
   movedAt = 0;
   outTimer = null;
   drawTimer = null;
+  fades = new HeldFades;
   wake = null;
   look = new LookReports;
   init(_props, cx) {
@@ -8942,7 +9003,8 @@ class Inbox extends View {
       tab: ui.tab,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
-      ...paneFit(this, zoomOf(settings()))
+      ...paneFit(this, zoomOf(settings())),
+      fades: this.fades
     };
     const root = v_flex7().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
     if (screen.is === "message") {
@@ -8951,6 +9013,7 @@ class Inbox extends View {
       this.blocks = [];
       this.lastDraw = { tab: ui.tab, rows: null, pressed: [] };
       this.look.status.drew(null, now);
+      this.fades.drew();
       return root.child(messageEl(screen.message, t));
     }
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
@@ -8971,22 +9034,23 @@ class Inbox extends View {
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
-    const wakeAt = nextDrawAt(now, moved);
-    if (wakeAt !== null)
-      this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
     const listInput = (cx) => {
       const isNew = Date.now() - (this.ui.listInput?.last ?? 0) >= LIST_INPUT_STEP_MS;
       if (isNew)
         this.apply([{ type: "list-input" }], cx);
     };
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div16().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
+    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div16().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
       else
         this.focus?.focus();
     }).children(spacedEls(moved.blocks, paint, (b) => blockEl(b, paint)))).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    const wakeAt = nextDrawAt(now, moved, this.fades.drew());
+    if (wakeAt !== null)
+      this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
+    return drawn;
   }
 }
 export {

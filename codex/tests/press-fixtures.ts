@@ -6,6 +6,7 @@ import type { RowPress } from '../../core/domain/presses'
 import { NO_HOLDS } from '../../core/view/timing'
 import { emptyState } from '../src/state'
 import type { SessionState } from '../src/state'
+import { NO_SESSION_PRS } from '../../core/domain/help-steps'
 
 export const SHOWN = { ...NO_HOLDS, shownSince: 0 }
 
@@ -55,7 +56,7 @@ export function pressed(s: SessionState, p: RowPress): PressResult {
   return applyPress(s.ledger, s.lastActions[p.id], p, {
     now: 50,
     turnsStarted: s.presence.turnsStarted,
-    extraSteps: [],
+    sessionPrs: NO_SESSION_PRS,
     comparePage: '/plugin/dist/compare-page.html',
     compareInBackground: false,
     holdMs: 1000,

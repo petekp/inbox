@@ -6,6 +6,7 @@ import { closeItem, closedState, reopenFinding } from '../core/domain/ledger-clo
 import { addAgentItem, addFinding, applyUpdate } from '../core/domain/ledger-update'
 import { parseReply } from '../core/domain/reply-parse'
 import { applyPress } from '../core/view/press-reducer'
+import { NO_SESSION_PRS } from '../core/domain/help-steps'
 
 describe('a finding replaced by a question', () => {
   const finding = (title: string, detail = 'd') => ({
@@ -19,7 +20,7 @@ describe('a finding replaced by a question', () => {
     now: 9,
     turnsStarted: 1,
     holdMs: 1000,
-    extraSteps: [],
+    sessionPrs: NO_SESSION_PRS,
     comparePage: '/plugin/hooks/compare-page.html',
     compareInBackground: true,
   }

@@ -143,3 +143,31 @@ test('the built tab draws an open row’s pending open muted, not in the error c
     await tab.close()
   }
 })
+
+test('the built tab keeps an open row’s ✓ Explained in its line while a Dismiss press is out', async () => {
+  const now = Date.now()
+  const explained: LastAction = { kind: 'talk', action: 'explain', text: 'Explain', at: now - 60_000, turnsStarted: 0 }
+  const tab = await builtTab(
+    task().ledger.items.map(item => ({ ...item, at: now - 120_000 })),
+    { i1: explained },
+    { isPressHeld: true },
+  )
+  const row = () => tab.rowWith('Check the build')
+  const dismiss = () =>
+    [...(row()?.querySelectorAll('.panel button') ?? [])].find(b => b.textContent?.trim() === 'Dismiss')
+  try {
+    await tab.until(() => dismiss() !== undefined && /✓ Explained/.test(row()?.textContent ?? ''))
+    const button = dismiss() as { click(): void } | undefined
+    if (!button) throw new Error('the open row has no Dismiss button')
+    button.click()
+    await tab.until(() => row()?.querySelector('.side')?.textContent?.trim() === 'Sending…')
+    assert.equal(row()?.querySelector('.side')?.textContent?.trim(), 'Sending…')
+    assert.equal(row()?.querySelector('.line .after')?.textContent, '✓ Explained')
+    assert.ok(
+      row()?.querySelector('.line .after')?.classList.contains('tone-done'),
+      'the held status lost its done tone',
+    )
+  } finally {
+    await tab.close()
+  }
+})

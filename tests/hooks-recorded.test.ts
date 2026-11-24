@@ -35,20 +35,22 @@ test("Claude is asked for a question's context, notes and reason in a new conver
         rec: 'Redis',
       })
     ).result
-  const recorded = 'Recorded. The user sees it in the /inbox pane.'
-  const fullAsk = `${recorded} It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does). It has no why: record it again with why, so the user sees your reason.`
+  const recorded = (id: string) =>
+    `Recorded. The user sees it in the /inbox pane. Its close id is ${id}. A close id is only for the close tool. Never write one in a reply.`
+  const fullAsk = (id: string) =>
+    `${recorded(id)} It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does). It has no why: record it again with why, so the user sees your reason.`
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  expect(await recordAsk('Which cache should the API use?')).toBe(fullAsk)
+  expect(await recordAsk('Which cache should the API use?')).toBe(fullAsk('i1'))
   await clock.settle()
   turns = 3
   await $.session.end({ reason: 'resume', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'resume', session_id: 'session-2' })
-  expect(await recordAsk('Which queue should jobs use?')).toBe(recorded)
+  expect(await recordAsk('Which queue should jobs use?')).toBe(recorded('i2'))
   await clock.settle()
   await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
   await $.classic.SessionStart({ source: 'resume', session_id: 'session-1' })
-  expect(await recordAsk('Which log store should we use?')).toBe(fullAsk)
+  expect(await recordAsk('Which log store should we use?')).toBe(fullAsk('i2'))
 })
 
 test("a conversation /resume opens with no saved inbox state is asked only for what 0.3.0's record takes, one /clear begins is asked for everything while the turn count still names the last conversation, and a fork asks as its parent's saved record says", async ($, on) => {
@@ -65,22 +67,24 @@ test("a conversation /resume opens with no saved inbox state is asked only for w
         rec: 'Redis',
       })
     ).result
-  const recorded = 'Recorded. The user sees it in the /inbox pane.'
-  const fullAsk = `${recorded} It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does). It has no why: record it again with why, so the user sees your reason.`
+  const recorded = (id: string) =>
+    `Recorded. The user sees it in the /inbox pane. Its close id is ${id}. A close id is only for the close tool. Never write one in a reply.`
+  const fullAsk = (id: string) =>
+    `${recorded(id)} It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does). It has no why: record it again with why, so the user sees your reason.`
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
   await $.session.end({ reason: 'clear', sessionId: 'session-1', resume: { id: 'session-1' } })
   await $.classic.SessionStart({ source: 'clear', session_id: 'session-2' })
-  expect(await recordAsk('Which cache should the API use?')).toBe(fullAsk)
+  expect(await recordAsk('Which cache should the API use?')).toBe(fullAsk('i1'))
   await clock.settle()
   await $.session.end({ reason: 'resume', sessionId: 'session-2', resume: { id: 'session-2' } })
   await $.classic.SessionStart({ source: 'resume', session_id: 'session-3' })
-  expect(await recordAsk('Which queue should jobs use?')).toBe(recorded)
+  expect(await recordAsk('Which queue should jobs use?')).toBe(recorded('i1'))
   await clock.settle()
   w.stored.set('s:session-3', JSON.stringify({ ...SAVED_SESSION, toolFields: TOOL_FIELDS }))
   await $.session.end({ reason: 'resume', sessionId: 'session-3', resume: { id: 'session-3' } })
   await $.classic.SessionStart({ source: 'fork', session_id: 'session-4' })
-  expect(await recordAsk('Which log store should we use?')).toBe(fullAsk)
+  expect(await recordAsk('Which log store should we use?')).toBe(fullAsk('i2'))
 })
 
 test('a finding Claude records while the pane shows an empty tab brings the pane to it, and Fix hands it to Claude, settles its row as the choice made until its Undo ends, then moves it to the Closed fold even when Claude’s reply leaves it open', async ($, on) => {
@@ -100,7 +104,9 @@ test('a finding Claude records while the pane shows an empty tab brings the pane
     detail: 'The fetch retry spins with no delay and can hammer the API.',
     path: 'src/api.ts',
   })
-  expect(r.result).toBe('Recorded. The user sees it in the Finds tab of the /inbox pane.')
+  expect(r.result).toBe(
+    'Recorded. The user sees it in the Finds tab of the /inbox pane. Its close id is f1. A close id is only for the close tool. Never write one in a reply.',
+  )
   await clock.settle()
   expect(await pane.find({ text: /Retry loop never backs off/ })).toBeDefined()
 
@@ -159,7 +165,9 @@ test('a question Claude records waits in the pane with its recommendation, a rep
     why: 'it survives restarts',
   } as const
   const r = await $.tool.call(question)
-  expect(r.result).toBe('Recorded. The user sees it in the /inbox pane.')
+  expect(r.result).toBe(
+    'Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply.',
+  )
   await clock.settle()
   expect(await pane.find({ text: /Which cache should the API use\?/ })).toBeDefined()
   expect((await $.tool.call({ ...question, ask: 'Which cache should the API use?' })).result).toBe(
@@ -176,7 +184,7 @@ test('a question Claude records waits in the pane with its recommendation, a rep
     steps: ['npm login', 'Then tell me when it is done.'],
   })
   expect(task.result).toBe(
-    'Recorded. The user sees it in the /inbox pane. Some steps were not a command, a file path or a link, so they are left out.',
+    'Recorded. The user sees it in the /inbox pane. Its close id is i2. A close id is only for the close tool. Never write one in a reply. Some steps were not a command, a file path or a link, so they are left out.',
   )
 
   await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', answer: 'Redis' })
@@ -198,7 +206,9 @@ test('a question Claude records waits in the pane with its recommendation, a rep
         why: 'traffic is low at night',
       })
     ).result,
-  ).toBe('Recorded. The user sees it in the /inbox pane.')
+  ).toBe(
+    'Recorded. The user sees it in the /inbox pane. Its close id is i4. A close id is only for the close tool. Never write one in a reply.',
+  )
 })
 
 test("the result under a record or close call reads the person's line, nothing when the call changed nothing, and the agent's text in the ctrl+o transcript", async ($, on) => {
@@ -238,7 +248,11 @@ test("the result under a record or close call reads the person's line, nothing w
   expect(await (await resultRow(1)).find({ text: /./ })).toBeUndefined()
   expect(await (await resultRow(2)).find({ text: 'Closed: Which cache should the API use?' })).toBeDefined()
   expect(
-    await (await resultRow(0, true)).find({ text: 'Recorded. The user sees it in the /inbox pane.' }),
+    await (
+      await resultRow(0, true)
+    ).find({
+      text: 'Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply.',
+    }),
   ).toBeDefined()
 })
 
