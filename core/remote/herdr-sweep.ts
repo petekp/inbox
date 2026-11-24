@@ -1,9 +1,10 @@
 import type { Run } from '../domain/gh'
 import { HERDR_FORMAT, publishedSessionsFolder } from './herdr'
 import { SESSION_LABEL } from './herdr-labels'
-import { unpublishSession } from './herdr-app'
+import { isPublishedHere, unpublishSession } from './herdr-app'
 import { modTemporaryWrittenAt } from './herdr-install'
 import type { PublishFiles } from './herdr-app'
+import type { ClientId } from '../domain/client-features'
 import { isSessionFile } from '../view/session-files'
 
 /** How old a published session must be before a sweep may remove it. */
@@ -117,6 +118,27 @@ export async function sweepPublished(
     await unpublishSession(files, appHome, id)
     removed.push(id)
   }
+
+  return removed
+}
+
+/**
+ * Removes each published session of `host` other than `sessionId` whose file names `terminal`, with its press folder,
+ * as when `sessionId` starts in a terminal where an earlier session of that host ran. No host then applies a press for
+ * those sessions. Resolves with the ids it removed.
+ */
+export async function unpublishOthersHere(
+  files: SweepFiles,
+  appHome: string,
+  host: ClientId,
+  terminal: string,
+  sessionId: string,
+): Promise<string[]> {
+  const names = (await files.list(publishedSessionsFolder(appHome)).catch(() => [])).filter(isSessionFile)
+  const others = names.map(name => name.slice(0, -'.json'.length)).filter(id => id !== sessionId)
+  const here = await Promise.all(others.map(id => isPublishedHere(files.read, appHome, id, host, terminal)))
+  const removed = others.filter((_, i) => here[i])
+  await Promise.all(removed.map(id => unpublishSession(files, appHome, id)))
 
   return removed
 }

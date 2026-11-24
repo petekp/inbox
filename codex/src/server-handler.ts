@@ -111,7 +111,7 @@ export function createHandler(
       herdrOnWrite(process.env, run, dir, Date.now, log),
       registryOnWrite(process.env, dir, Date.now, process.ppid, log),
     ),
-    followHerdrPresses: following(HERDR_PRESSES, apply => followCodexPresses(process.env, apply, log)),
+    followHerdrPresses: following(HERDR_PRESSES, apply => followCodexPresses(process.env, dir, apply, log)),
     followSaves: following(CODEX_SAVES, heard => followCodexSaves(process.env, dir, heard, log)),
     herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
     delegate: delegateReader(herdrTarget(process.env), run),

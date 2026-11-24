@@ -33,6 +33,7 @@ import { codexStore } from './host'
 import { codexCommandStore } from './command-log'
 import { markArrived } from '../../core/runtime/remote-command-state'
 import type { OnWrite } from './host'
+import type { HerdrTerminal } from './herdr-terminal'
 import type { SessionState } from './state'
 import { CODEX } from './texts'
 import { delegateCallNoted, unranDelegatesTakenBack } from './delegate-calls'
@@ -74,12 +75,19 @@ export type HookDeps = {
   /** Starts the Status call a hook claimed for the running turn, in a process of its own. */
   startStatusRefresh: (sessionId: string) => void
   onWrite?: OnWrite
+  /** What the session's start and end do to the Herdr app terminal it runs in. Undefined outside one. */
+  herdrTerminal?: HerdrTerminal
 }
 
 export async function handleHook(input: HookInput, deps: HookDeps): Promise<Record<string, unknown> | null> {
   const id = input.session_id
   const { dir, env, now } = deps
   if (!id) return null
+  if (input.hook_event_name === 'SessionEnd') {
+    await deps.herdrTerminal?.end(id)
+
+    return null
+  }
   const meta = await rolloutMeta(input.transcript_path)
   // INBOX_IN_EXEC lets a test drive a whole session through `codex exec`.
   if (!env.INBOX_IN_EXEC && meta.isNonInteractive) return null
@@ -143,6 +151,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const withPlace = (s: SessionState) => (folder === null || git === null ? s : placed(s, folder, git))
       // Another session may have labelled this terminal since, so each start labels it again.
       const unreported = ({ herdrReport: _, ...s }: SessionState): SessionState => s
+      await deps.herdrTerminal?.start(id)
       const s = await write(async s =>
         noteHook(
           withHost(

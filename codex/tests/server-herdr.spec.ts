@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -14,6 +15,7 @@ import { codexCommandStore } from '../src/command-log'
 import { remoteRowVersion } from '../../core/remote/remote-commands'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
 import { NO_HOLDS } from '../../core/view/timing'
+import { herdrTerminal } from '../src/herdr-terminal'
 import { tempDir } from './helpers'
 
 const DONE = { waiting: null }
@@ -54,6 +56,7 @@ test("the server applies presses for this terminal's Codex sessions, at start an
   const applied: [string, string][] = []
   const stop = followCodexPresses(
     { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' },
+    tempDir(),
     async (sessionId: string, file: HerdrFile) => {
       applied.push([sessionId, file.id])
       return DONE
@@ -76,6 +79,42 @@ test("the server applies presses for this terminal's Codex sessions, at start an
   }
 })
 
+test('the server applies no press for a session whose Codex ended in this terminal, and applies the next one', async () => {
+  const appHome = tempDir()
+  const dir = tempDir()
+  const env = { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' }
+  const run = async () => ({ code: 1, stdout: '', stderr: 'no hc' })
+  const endedPid = spawnSync('true').pid
+  assert.ok(endedPid)
+  await herdrTerminal(env, run, dir, endedPid, () => undefined)?.start('ended')
+  publish(appHome, 'ended', 'codex', 't1')
+  const waiting = writePress(appHome, 'ended', 'p1')
+  const applied: [string, string][] = []
+  const stop = followCodexPresses(
+    env,
+    dir,
+    async (sessionId: string, file: HerdrFile) => {
+      applied.push([sessionId, file.id])
+      return DONE
+    },
+    () => undefined,
+  )
+  try {
+    await new Promise(r => setTimeout(r, 300))
+    assert.deepEqual(applied, [])
+    assert.ok(existsSync(waiting))
+
+    await herdrTerminal(env, run, dir, process.pid, () => undefined)?.start('next')
+    publish(appHome, 'next', 'codex', 't1')
+    writePress(appHome, 'next', 'p2')
+    await until(() => applied.length === 1)
+    assert.deepEqual(applied, [['next', 'p2']])
+    assert.equal(existsSync(waiting), false)
+  } finally {
+    stop?.()
+  }
+})
+
 test('a press folder named outside the session-id rule, or a press file too large to read, stops no other press', async () => {
   const appHome = tempDir()
   publish(appHome, 's1', 'codex', 't1')
@@ -88,6 +127,7 @@ test('a press folder named outside the session-id rule, or a press file too larg
   const logged: string[] = []
   const stop = followCodexPresses(
     { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' },
+    tempDir(),
     async (_sessionId: string, file: HerdrFile) => {
       applied.push(file.id)
       return DONE
@@ -107,6 +147,7 @@ test('outside an app terminal the server follows no presses', () => {
   assert.equal(
     followCodexPresses(
       { HERDR_PANE_ID: 'p1' },
+      tempDir(),
       async () => DONE,
       () => undefined,
     ),

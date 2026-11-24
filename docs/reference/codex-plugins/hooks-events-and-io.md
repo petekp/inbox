@@ -55,7 +55,8 @@ Notes per event:
   doesn't end the session right away." "Your hook can still read the session
   transcript while it runs." `reason` is always `other`. It does not run for
   subagents. The example payload has `"session_id": "thr_123"`.
-  (L/hooks#sessionend)
+  (L/hooks#sessionend) The inbox's SessionEnd hook asks for the most time, 3
+  seconds, and removes the session's Herdr file (codex/src/herdr-terminal.ts).
 - **Interrupt.** "doesn't run for idle threads or subagents". "Hook output
   can't prevent the interruption or restart the turn." (L/hooks#interrupt)
 - **PermissionRequest.** "runs when Codex is about to ask for approval, such
