@@ -1,4 +1,12 @@
-import { LEAVE_FADE_MS, ROW_STATE_MS, drawsPanel, enterDelayMs, isMoving, stepRow } from '../../core/view/row-motion'
+import {
+  LEAVE_FADE_MS,
+  ROW_STATE_MS,
+  drawsPanel,
+  enterDelayMs,
+  isMoving,
+  placeAfter,
+  stepRow,
+} from '../../core/view/row-motion'
 import type { RowState, RowTarget, RowTrack } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
@@ -340,7 +348,7 @@ export function moveRows(
     add(block, track, old, copyId === undefined ? old.springId : null)
     shown.splice(
       placeAfter(
-        shown,
+        shown.map(b => b.id),
         was.order.slice(0, i).map(above => copies.get(above) ?? above),
       ),
       0,
@@ -370,13 +378,4 @@ export function moveRows(
     motion,
     nextAt: ends.length ? Math.min(...ends) : null,
   }
-}
-
-/** Where a leaving block goes: just after the last of the blocks that were above it that is still shown, else first. */
-function placeAfter(shown: Block[], above: readonly string[]): number {
-  for (let i = above.length - 1; i >= 0; i--) {
-    const at = shown.findIndex(b => b.id === above[i])
-    if (at >= 0) return at + 1
-  }
-  return 0
 }

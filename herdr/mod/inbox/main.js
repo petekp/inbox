@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T07:06:31.786Z. 374041 characters follow.
+// Built at 2026-11-24T13:22:48.162Z. 375535 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -5623,6 +5623,14 @@ function moveToward(track, form, now) {
       return { state: "leaving", since: now, hasOpenForm: track.hasOpenForm };
   }
 }
+function placeAfter(drawn, above) {
+  for (let i = above.length - 1;i >= 0; i--) {
+    const at = drawn.indexOf(above[i] ?? "");
+    if (at >= 0)
+      return at + 1;
+  }
+  return 0;
+}
 function rest(track, form, target, now) {
   if (form === "gone")
     return null;
@@ -6032,14 +6040,14 @@ function stepUnder(last, b, now, isInput = false) {
 function underMotion(u, now, height) {
   if (!u)
     return null;
-  if (u.isInput && !u.isLeaving)
-    return { line: u.line, opacity: null, fadeMs: 0, delayMs: 0 };
   const isStart = now === u.since;
   if (u.isLeaving)
     return { line: u.line, opacity: isStart ? 1 : 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 };
   if (now >= u.since + ROW_STATE_MS.entering)
     return { line: u.line, opacity: null, fadeMs: 0, delayMs: 0 };
-  return { line: u.line, opacity: isStart ? 0 : 1, fadeMs: ENTER_FADE_MS, delayMs: enterDelayMs(height ?? 0) };
+  if (isStart)
+    return { line: u.line, opacity: u.isInput ? CUT_OPACITY : 0, fadeMs: 0, delayMs: 0 };
+  return { line: u.line, opacity: 1, fadeMs: ENTER_FADE_MS, delayMs: enterDelayMs(height ?? 0) };
 }
 var underTimes = (u) => !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS] : [u.since + NEXT_FRAME_MS, u.since + ROW_STATE_MS.entering];
 var underId = (id) => `status ${id}`;
@@ -6312,7 +6320,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       return;
     const block = copyId === undefined ? old.block : { ...old.block, id: copyId };
     add(block, track, old, copyId === undefined ? old.springId : null);
-    shown.splice(placeAfter(shown, was.order.slice(0, i).map((above) => copies.get(above) ?? above)), 0, block);
+    shown.splice(placeAfter(shown.map((b) => b.id), was.order.slice(0, i).map((above) => copies.get(above) ?? above)), 0, block);
   });
   const isStarting = [...motion.values()].some((m) => m.isStart);
   const drawn = isStarting ? shown.map((b) => heldForm(b, was, motion)) : shown;
@@ -6334,14 +6342,6 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     motion,
     nextAt: ends.length ? Math.min(...ends) : null
   };
-}
-function placeAfter(shown, above) {
-  for (let i = above.length - 1;i >= 0; i--) {
-    const at = shown.findIndex((b) => b.id === above[i]);
-    if (at >= 0)
-      return at + 1;
-  }
-  return 0;
 }
 
 // src/time-left.ts
@@ -6370,10 +6370,46 @@ function timeLeftNextAt(blocks, now) {
 }
 
 // src/wake.ts
-function nextDrawAt(now, moved) {
+function nextDrawAt(now, moved, heldFadeAt) {
   const isStarting = [...moved.motion.values()].some((m) => m.isStart);
-  const wakeAt = [isStarting ? now + NEXT_FRAME_MS : null, moved.nextAt, timeLeftNextAt(moved.blocks, now)].filter((at) => at !== null);
+  const wakeAt = [
+    isStarting ? now + NEXT_FRAME_MS : null,
+    moved.nextAt,
+    timeLeftNextAt(moved.blocks, now),
+    heldFadeAt
+  ].filter((at) => at !== null);
   return wakeAt.length === 0 ? null : Math.min(...wakeAt);
+}
+
+// src/held-fades.ts
+class HeldFades {
+  held = new Map;
+  draw = 0;
+  fade(name, opacity, ms, delayMs, now) {
+    const next = nextHeld(this.held.get(name), { opacity, ms }, delayMs, now);
+    this.held.set(name, { ...next, drawnIn: this.draw });
+    return next.handed;
+  }
+  drew() {
+    for (const [name, h] of this.held)
+      if (h.drawnIn !== this.draw)
+        this.held.delete(name);
+    this.draw += 1;
+    const starts = [...this.held.values()].flatMap((h) => h.waiting ? [h.waiting.at] : []);
+    return starts.length === 0 ? null : Math.min(...starts);
+  }
+}
+function nextHeld(was, to, delayMs, now) {
+  if (!was)
+    return { handed: to, waiting: null };
+  if (to.opacity === was.handed.opacity)
+    return { handed: was.handed, waiting: null };
+  const waiting = was.waiting;
+  if (waiting && to.opacity === waiting.opacity)
+    return now >= waiting.at ? { handed: { opacity: waiting.opacity, ms: waiting.ms }, waiting: null } : was;
+  if (delayMs <= 0)
+    return { handed: to, waiting: null };
+  return { handed: was.handed, waiting: { ...to, at: now + delayMs } };
 }
 
 // src/paint-blocks.ts
@@ -6582,6 +6618,10 @@ var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, ab
 };
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
+function fadeEl(el, name, opacity, glide, p) {
+  const handed = p.fades.fade(name, opacity, glide.duration, glide.delay, p.now);
+  return el.opacity(handed.opacity).transition("opacity", { duration: handed.ms, easing: "ease-out" });
+}
 
 // src/paint-field.ts
 function fieldEl(f, p, indent, isInert = false, opening = null) {
@@ -6590,12 +6630,9 @@ function fieldEl(f, p, indent, isInert = false, opening = null) {
   const input = state ? [
     div4().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
-  const glide = {
-    duration: ENTER_FADE_MS,
-    delay: opening ? enterDelayMs(opening.height) : 0,
-    easing: "ease-out"
-  };
-  return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => e.id(`buttons ${f.rowId}`).opacity(opening?.isOpen ? 1 : 0).transition("opacity", glide)));
+  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0 };
+  const key = `buttons ${f.rowId}`;
+  return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => fadeEl(e.id(key), key, opening?.isOpen ? 1 : 0, glide, p)));
 }
 
 // src/paint-empty.ts
@@ -6925,7 +6962,7 @@ function spacedEls(blocks, p, el) {
     const isShown = m?.box === "open" && m.isShown && height !== undefined;
     const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0;
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
-    const fade = (e) => m?.box ? e.opacity(isShown ? 1 : 0).transition("opacity", glide) : e;
+    const fade = (e) => m?.box ? fadeEl(e, `box ${m.springId ?? b.id}`, isShown ? 1 : 0, glide, p) : e;
     const isMoving = m?.box != null;
     const move = { isMoving, isGone: isMoving && m?.state === "leaving" && m.box === "shut" };
     return { m, isShown, glide, fade, move };
@@ -7110,7 +7147,7 @@ function titleTextEl(r, p, color) {
   const whole = div11().child(wrappedTitleOf(r, p.heights));
   if (g === null)
     return text.child(isOpenRow(r) ? whole : shortTitleEl(short));
-  const form = (id, isShown, fade) => div11().id(id).opacity(isShown ? 1 : 0).transition("opacity", { duration: fade.ms, delay: fade.delayMs, easing: "ease-out" });
+  const form = (id, isShown, fade) => fadeEl(div11().id(id), id, isShown ? 1 : 0, { duration: fade.ms, delay: fade.delayMs }, p);
   const isCutTall = g.tallForm === "cut";
   const tall = isCutTall ? shortTitleEl(cutTitleOf(r, p.heights)) : whole;
   const shortForm = shortTitleEl(g.isShortOneLine ? oneLineTitleOf(r, p.heights) : short);
@@ -7279,17 +7316,19 @@ function panelFadeEl(r, m, p, el) {
   const turnBackFadeMs = m?.panelFadeMs ?? null;
   const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0;
   const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? "open"];
-  return el.opacity(opacity).transition("opacity", { duration, delay, easing: "ease-out" });
+  return fadeEl(el, panelId(r.id), opacity, { duration, delay }, p);
 }
 function underEls(r, from, m, p, above) {
-  const atRest = isStatusUnder(from) ? { line: from.feedback, opacity: null, fadeMs: 0, delayMs: 0 } : null;
-  const u = m && from === r ? m.under : atRest;
+  const line = isStatusUnder(from) ? from.feedback : null;
+  const isLeftForm = from !== r;
+  const leaving = line && { line, opacity: 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 };
+  const atRest = line && { line, opacity: null, fadeMs: 0, delayMs: 0 };
+  const u = isLeftForm ? leaving : m ? m.under : atRest;
   if (!u?.line)
     return [];
   const key = underId(r.id);
-  const glide = { duration: u.fadeMs, delay: u.delayMs, easing: "ease-out" };
   return [
-    bodyLineEl(u.line, above, p.t, r.isSelected).id(key).on_size_change((size, cx) => p.measure(key, size, cx)).when(u.opacity !== null, (e) => e.opacity(u.opacity ?? 1).transition("opacity", glide))
+    bodyLineEl(u.line, above, p.t, r.isSelected).id(key).on_size_change((size, cx) => p.measure(key, size, cx)).when(u.opacity !== null, (e) => fadeEl(e, key, u.opacity ?? 1, { duration: u.fadeMs, delay: u.delayMs }, p))
   ];
 }
 function prEl(b, p, isInert) {
@@ -8722,6 +8761,7 @@ class Inbox extends View {
   movedAt = 0;
   outTimer = null;
   drawTimer = null;
+  fades = new HeldFades;
   wake = null;
   look = new LookReports;
   init(_props, cx) {
@@ -8963,7 +9003,8 @@ class Inbox extends View {
       tab: ui.tab,
       timeLeft: new Map,
       input: (rowId) => this.input?.rowId === rowId ? this.input.state : null,
-      ...paneFit(this, zoomOf(settings()))
+      ...paneFit(this, zoomOf(settings())),
+      fades: this.fades
     };
     const root = v_flex7().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
     if (screen.is === "message") {
@@ -8972,6 +9013,7 @@ class Inbox extends View {
       this.blocks = [];
       this.lastDraw = { tab: ui.tab, rows: null, pressed: [] };
       this.look.status.drew(null, now);
+      this.fades.drew();
       return root.child(messageEl(screen.message, t));
     }
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
@@ -8992,22 +9034,23 @@ class Inbox extends View {
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now);
     paint.timeLeft = this.timeLeft;
-    const wakeAt = nextDrawAt(now, moved);
-    if (wakeAt !== null)
-      this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     const focus = this.focus;
     const listInput = (cx) => {
       const isNew = Date.now() - (this.ui.listInput?.last ?? 0) >= LIST_INPUT_STEP_MS;
       if (isNew)
         this.apply([{ type: "list-input" }], cx);
     };
-    return root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div16().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
+    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div16().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
       else
         this.focus?.focus();
     }).children(spacedEls(moved.blocks, paint, (b) => blockEl(b, paint)))).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    const wakeAt = nextDrawAt(now, moved, this.fades.drew());
+    if (wakeAt !== null)
+      this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
+    return drawn;
   }
 }
 export {

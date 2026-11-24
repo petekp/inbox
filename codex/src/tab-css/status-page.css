@@ -102,6 +102,12 @@
 /* A section ends half of `section` under its last row's text, counting the row's padding. */
 .status-page section {
   padding-bottom: calc(var(--section-gap) / 2 - var(--last-row-pad, 0px));
+  transition: padding-bottom var(--settle);
+}
+/* While every milestone leaves, the goal's section ends as it will without them, once their fade ends. */
+.status-page section[data-step='leaving'] {
+  padding-bottom: calc(var(--section-gap) / 2);
+  transition-delay: var(--leave-fade-time);
 }
 .status-page section.unruled::before {
   content: none;
@@ -184,6 +190,18 @@
    own name than to the next milestone. */
 .status-head.goal + .list {
   margin-top: calc(var(--item-gap) / 2);
+  transition: margin-top var(--settle);
+}
+/* The list's space above grows from none when its milestones enter, and shrinks once their fade ends when they all
+   leave, so the rows below never jump by it. */
+.status-head.goal + .list:has(> [data-step='entering']) {
+  @starting-style {
+    margin-top: 0;
+  }
+}
+.status-page section[data-step='leaving'] > .status-head.goal + .list {
+  margin-top: 0;
+  transition-delay: var(--leave-fade-time);
 }
 @property --space-above {
   syntax: '<length>';
@@ -200,6 +218,17 @@
 }
 .status-page .milestone-group.spaced {
   --space-above: var(--space-size, calc(var(--item-gap) - var(--list-gap)));
+}
+/* A milestone that enters grows its space from none, and one that leaves shrinks it once its fade ends, so the rows
+   below never jump by it. */
+.status-page .milestone-group.spaced[data-step='entering'] {
+  @starting-style {
+    --space-above: 0px;
+  }
+}
+.status-page .milestone-group[data-step='leaving'] {
+  --space-above: 0px;
+  transition-delay: var(--leave-fade-time);
 }
 /* Later sits half of `section` under the row above, as around a rule. */
 .status-page .milestone-group + .row.part-line {
@@ -353,10 +382,16 @@
   padding-right: 0;
   padding-bottom: calc(var(--head-gap) - var(--row-below-pad, calc(var(--item-gap) / 2)));
   margin-top: calc(var(--section-gap) - var(--row-above-pad, calc(var(--item-gap) / 2)) - var(--status-row-pad));
+  transition: margin-top var(--settle);
 }
-/* A part that starts its section sits under the section's own space, without its padding above. */
-.status-page .list > .row.part-line:first-child {
+/* A part that starts its section sits under the section's own space, without its padding above. Rows leaving above it
+   (inert) do not count, so it glides up as they close, once their fade ends, rather than jumping when they go. */
+.status-page .list > .row.part-line:first-child,
+.status-page .list > .row.part-line:nth-child(1 of :not([inert])) {
   margin-top: calc(-1 * var(--status-row-pad));
+}
+.status-page .list > [inert] ~ .row.part-line:nth-child(1 of :not([inert])) {
+  transition-delay: var(--leave-fade-time);
 }
 .status-page .part-rule {
   grid-column: 1 / -1;

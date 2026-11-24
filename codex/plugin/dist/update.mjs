@@ -3056,9 +3056,6 @@ var TOOL_FIELDS = {
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
-// ../core/view/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-
 // ../core/domain/inbox-text.ts
 function surfaceAtStart(host) {
   return host.surface.charAt(0).toUpperCase() + host.surface.slice(1);
@@ -3095,6 +3092,9 @@ function questionNumbers(ledger, promptTurn) {
   return numbers;
 }
 var TOLD_NOTHING = { inbox: null, closed: [] };
+
+// ../core/view/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
 // ../core/view/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];

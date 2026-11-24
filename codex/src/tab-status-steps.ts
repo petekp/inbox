@@ -16,15 +16,25 @@ type FoldLine = { id: string; fold: NonNullable<GoalBlock['milestonesFold']> }
 
 /**
  * The Status page's lists as the tab draws them, with the lines still leaving in the places they had: the lines under
- * the goal's text, the line a met goal's milestones fold into, the goal's milestones with their rows, and the rows
- * after the goal.
+ * the goal's text, the line a met goal's milestones fold into, the goal's milestones with their rows, the Later label
+ * above the first milestone that starts later, and the rows after the goal.
  */
-export type DrawnStatus = { head: TextLine[]; fold: FoldLine[]; goal: GoalLine[]; rows: StatusRow[] }
+export type DrawnStatus = {
+  head: TextLine[]
+  fold: FoldLine[]
+  goal: GoalLine[]
+  later: LaterLine[]
+  rows: StatusRow[]
+}
+
+/** The Later label, keyed by the milestone it sits above. A label that moves to another milestone leaves and enters. */
+type LaterLine = { id: string }
 
 export const statusRowMotion = (id: string) => `status-${id}`
 export const goalLineMotion = (id: string) => `goal-${id}`
 export const goalHeadMotion = (id: string) => `head-${id}`
 export const metFoldMotion = (id: string) => `met-${id}`
+export const laterMotion = (id: string) => `later-${id}`
 
 /** The id of the goal's Prev line among the lines under its text. Its text is what the goal was. */
 export const GOAL_WAS_LINE = 'was'
@@ -36,9 +46,16 @@ const milestoneLines = (milestones: MilestoneRow[]): GoalLine[] =>
     ...(m.foldId === null ? milestoneRows(m, () => false, isParentFolded) : []).map(r => ({ id: r.id, row: r })),
   ])
 
-/** The goal's lines that step: the milestones it draws, none while a met goal's fold is shut. */
-const goalLines = (page: StatusPage): GoalLine[] =>
-  page.goal ? milestoneLines(shownMilestones(page.goal, id => tabState.ui.statusUnfolded.includes(id))) : []
+/** The milestones the goal draws: none while a met goal's fold is shut. */
+const goalMilestones = (page: StatusPage): MilestoneRow[] =>
+  page.goal ? shownMilestones(page.goal, id => tabState.ui.statusUnfolded.includes(id)) : []
+
+/** The Later label, above the first milestone it draws that waits under it. */
+const laterLines = (milestones: MilestoneRow[]): LaterLine[] => {
+  const first = milestones.find(m => m.startsLater)
+
+  return first ? [{ id: first.id }] : []
+}
 
 /** The lines under the goal's text: what it was and where it stands now. None under a suggestion. */
 function goalHead(page: StatusPage): TextLine[] {
@@ -57,11 +74,13 @@ function goalHead(page: StatusPage): TextLine[] {
 export function stepStatus(page: StatusPage, now: number, changed: Set<string>, kept: Set<string>): DrawnStatus {
   const last = tabState.lastStatus
   const fold = page.goal?.milestonesFold ?? null
+  const milestones = goalMilestones(page)
 
   return {
     head: stepLines(goalHead(page), last?.head, goalHeadMotion, now, changed, kept),
     fold: stepLines(fold ? [{ id: 'milestones', fold }] : [], last?.fold, metFoldMotion, now, changed, kept),
-    goal: stepLines(goalLines(page), last?.goal, goalLineMotion, now, changed, kept),
+    goal: stepLines(milestoneLines(milestones), last?.goal, goalLineMotion, now, changed, kept),
+    later: stepLines(laterLines(milestones), last?.later, laterMotion, now, changed, kept),
     rows: stepLines(
       unfoldedRows(page.rows, () => false, isParentFolded),
       last?.rows,

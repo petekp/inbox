@@ -46,7 +46,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'Copied npm login',
     issue: 811,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       { is: 'record', args: { kind: 'task', ask: 'Log in to the registry', steps: ['npm login'] } },
       { is: 'wait', ms: 400 },
@@ -60,7 +60,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'Sending…',
     issue: 827,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       { is: 'record', args: { kind: 'task', ask: 'Run npm login to authenticate with the npm registry' } },
       { is: 'wait', ms: 400 },

@@ -4,7 +4,14 @@ import { partAttrs } from './tab-part-gap'
 import { closedTitleTone, DOT, settledMark, fieldExit, settledLabel, shortAgo } from '../../core/view/rows'
 import { entryId } from '../../core/view/action-plan'
 import { isRowTab } from '../../core/view/tabs'
-import { feedbackText, feedbackTone, hasAge, isStatusUnderActions, type FeedbackTone } from '../../core/view/feedback'
+import {
+  feedbackText,
+  feedbackTone,
+  hasAge,
+  holdsStatusWhileOut,
+  isStatusUnderActions,
+  type FeedbackTone,
+} from '../../core/view/feedback'
 import type { RowView } from '../../core/view/rows'
 import { TAB_OF } from './arrivals'
 import { closedTitleClock, newRowIn } from '../../core/view/arrivals'
@@ -12,7 +19,7 @@ import { newRowsOf } from '../../core/view/ui-controller-tabs'
 import type { InputKind } from '../../core/view/ui-controller-types'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
-import { LEAVE_FADE_MS, drawsFormLeft, drawsPanel, stepRow } from '../../core/view/row-motion'
+import { LEAVE_FADE_MS, drawsFormLeft, drawsPanel, stepRow, withLeaving } from '../../core/view/row-motion'
 import type { RowTarget, RowTrack } from '../../core/view/row-motion'
 import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
 import type { Key, Row, Entry, Lists } from './tab-state'
@@ -68,12 +75,8 @@ export function stepLists(v: View): {
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
-    const entries = [...listed]
     const lastDrawn = tabState.lastLists?.[LIST_OF[group]] ?? []
-    for (const [n, last] of lastDrawn.entries()) {
-      const id = entryId(last)
-      if (!listedIds.has(id) && drawnRows.has(id)) entries.splice(Math.min(n, entries.length), 0, last)
-    }
+    const entries = withLeaving(listed, lastDrawn, entryId, last => drawnRows.has(entryId(last)))
     const lastOf = new Map(lastDrawn.map(last => [entryId(last), last]))
     const drawn: Entry[] = []
     for (const x of entries) {
@@ -148,23 +151,30 @@ export function rowActions(row: Row): { options: Key[]; keys: Key[]; more: Key[]
   return { options: row.options, keys: row.keys, more: row.more }
 }
 
-/** A row's press as its line draws it: whether one is out or still sending, and the status it shows. */
+/**
+ * A row's press as its line draws it: whether one is out or still sending, and the status it shows. A Mark press out
+ * keeps the status the row drew before it, as `holdsStatusWhileOut` says, and only its side column reads "Sending…".
+ */
 function pressOf(row: Row): Press {
   const out = outOn(row.id)
-  const isPressing = out !== null
-  const pending = outPending(tabState.view, row.id)
+  const isStatusOut = out !== null && !holdsStatusWhileOut(out.kind)
+  const pending = outPending(tabState.view, row.id, out !== null && !isStatusOut)
   const isSending = out !== null && out.pending === null
+  const isStatusSending = isSending && isStatusOut
   const f = isFeedbackShown(row) ? row.feedback : null
-  const label = isSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
-  const tone: FeedbackTone = isPressing ? 'muted' : feedbackTone(f)
+  const label = isStatusSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
+  const tone: FeedbackTone = isStatusOut ? 'muted' : feedbackTone(f)
 
-  return { isPressing, pending, isSending, f, label, tone }
+  return { isStatusOut, pending, isSending, isStatusSending, f, label, tone }
 }
 
 type Press = {
-  isPressing: boolean
+  /** A press is out and its status takes the row's. */
+  isStatusOut: boolean
   pending: ReturnType<typeof outPending>
   isSending: boolean
+  /** The press is sending and its status takes the row's: the line draws none until the reply. */
+  isStatusSending: boolean
   f: Row['feedback']
   label: string | null
   tone: FeedbackTone
@@ -175,9 +185,9 @@ const drawnPresses = new Map<string, Press>()
 
 /** The status an open row draws under its buttons, while its press is out, and its tone. */
 function statusUnderOf(row: Row, press = pressOf(row)): { text: string | null; tone: FeedbackTone } {
-  const { pending, isSending, f, label, tone } = press
+  const { pending, isStatusSending, f, label, tone } = press
 
-  return { text: !isSending && isStatusUnderActions(pending ?? f, true) ? label : null, tone }
+  return { text: !isStatusSending && isStatusUnderActions(pending ?? f, true) ? label : null, tone }
 }
 
 const pressLines = new Map<string, (TextLine & { tone: FeedbackTone })[]>()
@@ -231,10 +241,10 @@ export function ListRow({
 
   const press = isLeft ? (drawnPresses.get(row.id) ?? pressOf(row)) : pressOf(row)
   if (!isLeft) drawnPresses.set(row.id, press)
-  const { isPressing, pending, isSending, f, label, tone } = press
-  const ageAt = !isPressing && f && hasAge(f) ? f.at : null
+  const { isStatusOut, pending, isSending, isStatusSending, f, label, tone } = press
+  const ageAt = !isStatusOut && f && hasAge(f) ? f.at : null
   const lineForm = (isOpen: boolean): LineForm => {
-    const statusUnder = !isSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
+    const statusUnder = !isStatusSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
     const last = statusUnder ? null : label
     const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : row.age
 

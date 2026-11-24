@@ -22,6 +22,7 @@ import type { ShownTab } from '../../core/view/tabs'
 import type { Button, Tone } from './blocks'
 import type { RowMotion } from './motion'
 import type { TimeLeft } from './time-left'
+import type { HeldFades } from './held-fades'
 
 type Color = `#${string}`
 
@@ -225,6 +226,8 @@ export type Paint = {
   listRoom: number | null
   /** The width of a top-level row's text column, from the text's left edge to the pane's padding. */
   rowTextRoom: number
+  /** The look's fades, held across draws so that gpui-kit gets no delay. */
+  fades: HeldFades
 }
 
 /**

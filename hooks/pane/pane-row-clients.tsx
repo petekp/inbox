@@ -1,5 +1,6 @@
 import { isClientNew, PANE_PAD_PER_CLIENT_PAD, withCopy } from './client-copy'
 import { foldTree, type FoldProps } from './fold-client'
+import { noteShown } from './held-clients'
 import { linksTree, type LinksProps } from './links-client'
 import type { PaneClient } from './pane-context'
 import { parentTree, type ParentProps } from './parent-client'
@@ -26,6 +27,7 @@ export function rowClient(elements: Elements, key: string, props: RowProps) {
 /** An open row's title, which collapses the row on a click. */
 export function titleClient(elements: Elements, key: string, props: TitleProps) {
   const isNew = isClientNew(key)
+  noteShown(key, { kind: 'title', props })
   const { Box, Text } = elements
 
   return withCopy(
@@ -52,6 +54,7 @@ export function foldClient(elements: Elements, key: string, props: FoldProps) {
 /** A row's links, each of which posts its press. */
 export function linksClient(elements: Elements, key: string, props: LinksProps) {
   const isNew = isClientNew(key)
+  noteShown(key, { kind: 'links', props })
   const { Box, Text } = elements
 
   return withCopy(

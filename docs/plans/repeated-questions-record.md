@@ -6,10 +6,10 @@ Status: built. The `record` answer lists earlier answers once 21 days have passe
 
 Decided by the owner on 11-19 and 11-20: when an agent records a question, the `record` answer also lists the person's up to 3 earlier answers most like it. The agent can then close the question with the reason "answered before: …" and act on that answer, instead of asking again. This starts once 21 days have passed since the history began, after the row's measurement, so agents' closes do not change the weeks `scripts/earlier-answers-report.mjs` compares. The report counts only questions asked in those 21 days.
 
-The question is always recorded first, and the answer then adds its id and the matches:
+The question is always recorded first. The answer gives its close id, then adds the matches:
 
 ```
-Recorded. The user sees it in the /inbox pane. Its id is i35.
+Recorded. The user sees it in the /inbox pane. Its close id is i35. A close id is only for the close tool. Never write one in a reply.
 The user answered similar questions before. If one settles this exact question, close i35 with the reason "answered before: <their answer>" and act on that answer. If it answers an earlier step or a different case, or put the decision off, leave i35 open.
 - 3 days ago, in shop-api: "Which cache should the product API use?" They answered "In-memory".
 ```

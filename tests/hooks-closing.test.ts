@@ -3,6 +3,7 @@ import { test } from './test-with-timeout'
 import { FOLD_QUIET_MS, PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../core/view/timing'
 import { w, arrive, world } from './hooks-world'
 import { BAND, PANE, selectRow } from './hooks-helpers'
+import type { LinksProps } from '../hooks/pane/links-client'
 
 test('Claude closes an item or finding that no longer applies, by the id it reads beside the prompt', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
@@ -48,16 +49,16 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
   expect((await close({ id: 'i1', answer: 'Deno' })).result).toBe(
-    'Closed. The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
+    'Closed "Use Node or Python?". The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
   )
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
   expect(await pane.find({ text: /^Deno$/ })).toBeDefined()
   expect((await close({ id: 'i2', reason: 'no longer applies' })).result).toBe(
-    'Closed. The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
+    'Closed "Name the command greet?". The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
   )
   expect((await close({ id: 'f3', reason: 'fixed' })).result).toBe(
-    'Closed the finding. Name it by what it says, never by its id.',
+    'Closed the finding "README is stale". Name it by what it says, never by its id.',
   )
   expect((await close({ id: 'i9', reason: 'done' })).result).toContain(
     'Not closed: no open item or finding has the id i9.',
@@ -176,4 +177,51 @@ test('an Explain under way on the tab keeps a closed row in place past its fold 
   await $.turn.complete({ answer: 'Node is simpler.', durationMs: 5, isAborted: false, turnId: 't2', reason: 'answer' })
   await clock.settle()
   expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+})
+
+test('on desktop, a row dismissed with Undo keeps its title and links Clients drawn at zero height with the open row’s props until Undo ends, so Undo shows the same instances again', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.surfaces = ['desktop']
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: 'Node or Python?', durationMs: 5, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.settle()
+  w.paneState = { isShown: true, isFocused: true }
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 69 } })
+  const clientProps = async (key: string) => (await pane.find({ key }))?.props.props
+  const openTitle = await clientProps('collapse-i1')
+  const openLinks = await clientProps('links-i1')
+  const links = openLinks as LinksProps
+  const dismissAt = links.links
+    .slice(
+      0,
+      links.links.findIndex(l => l.key === 'dismiss-i1'),
+    )
+    .reduce((x, l) => x + l.width + links.gap, 0)
+  await clock.advance(PRESS_GUARD_MS)
+  const dismiss = async () => {
+    await pane.pointer({ type: 'down', x: dismissAt, y: 0, button: 'left', in: 'links-i1' })
+    await clock.settle()
+  }
+
+  await dismiss()
+  expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
+  expect((await pane.find({ key: 'held-i1' }))?.props).toMatchObject({ height: 0, overflow: 'hidden' })
+  expect(await clientProps('collapse-i1')).toEqual(openTitle)
+  expect(await clientProps('links-i1')).toEqual(openLinks)
+
+  await pane.pointer({ type: 'down', x: 1, y: 1, button: 'left', in: 'undo-i1' })
+  await clock.settle()
+  expect(await pane.find({ key: 'settled-i1' })).toBeUndefined()
+  expect(await pane.find({ key: 'held-i1' })).toBeUndefined()
+  expect(await clientProps('collapse-i1')).toMatchObject({ title: 'Use Node or Python?', isOverCopy: false })
+
+  await clock.advance(PRESS_GUARD_MS)
+  await dismiss()
+  await clock.advance(SETTLED_MS + FOLD_QUIET_MS)
+  expect(await pane.find({ key: 'undo-i1' })).toBeUndefined()
+  expect(await pane.find({ key: 'collapse-i1' })).toBeUndefined()
+  expect(await pane.find({ key: 'links-i1' })).toBeUndefined()
+  await arrive($)
 })

@@ -22,6 +22,7 @@ import { shutTo } from './block-glide'
 import { contentStrokeEls, feedsOf, passingOf, runsIn, spaceColumnEl, strokeFadesOf } from './paint-strokes'
 import { SLIDE_PX, enterDelayMs } from '../../core/view/row-motion'
 import { HEIGHT_SPRING } from '../../core/view/springs'
+import { fadeEl } from './paint-parts'
 
 /** A group's Closed fold, which ends its list. */
 const isClosedFold = (b: Block): boolean => b.kind === 'fold' && 'closedFold' in b.change
@@ -278,7 +279,8 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const isShown = m?.box === 'open' && m.isShown && height !== undefined
     const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0
     const glide = { duration: m?.fadeMs ?? 0, delay, easing: 'ease-out' as const }
-    const fade = (e: Element): Element => (m?.box ? e.opacity(isShown ? 1 : 0).transition('opacity', glide) : e)
+    const fade = (e: Element): Element =>
+      m?.box ? fadeEl(e, `box ${m.springId ?? b.id}`, isShown ? 1 : 0, glide, p) : e
     const isMoving = m?.box != null
     const move = { isMoving, isGone: isMoving && m?.state === 'leaving' && m.box === 'shut' }
 
