@@ -391,7 +391,7 @@ export function paneStatusGoal(
   }
   /**
    * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at its right,
-   * then the goal's text with its was, Now and awaiting lines, or the line that says no goal is set, then the
+   * then the goal's text with its was and Now lines, or the line that says no goal is set, then the
    * milestones, each after a blank line. While the person types a goal, the field and its Cancel take the text's place,
    * and the buttons leave the heading. While the suggested goal shows, its offer takes the text's place with its
    * buttons after it, and the heading keeps only Undo.
@@ -424,7 +424,6 @@ export function paneStatusGoal(
           : [goalText]),
       ...(shownGoal?.was ? [muted('goal-was', `${WAS_PREFIX}${shownGoal.was}`, width, WAS_LEVEL)] : []),
       ...(shownGoal?.now ? [muted('goal-now', shownGoal.now, width)] : []),
-      ...(shownGoal?.awaiting ? [muted('goal-awaiting', shownGoal.awaiting, width)] : []),
     ]
     const body = [
       ...goalHeading(g?.label ?? GOAL_HEADING, keys, mark),

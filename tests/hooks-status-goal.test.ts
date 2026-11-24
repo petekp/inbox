@@ -109,7 +109,6 @@ test('Remove goal leaves the Goal heading with the line that says no goal is set
   await clock.settle()
   expect(await replyField(pane, 'goal')).toBeUndefined()
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot live for every team')
-  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('Milestones after the next reply')
   expect(w.sent).toEqual([])
 })
 
@@ -157,7 +156,6 @@ test('New on the empty Status page sets the typed goal before any Status call', 
   await pane.input({ key: await replyKey(pane, 'goal'), text: 'Greeting CLI on npm' })
   await clock.settle()
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Greeting CLI on npm')
-  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('Milestones after the next reply')
 })
 
 test('the suggested goal shows at once as an offer with Set goal and Edit inline after it, Edit opens the field with its words, and Cancel shows it again', async ($, on) => {
@@ -184,7 +182,6 @@ test('Set on the suggested goal makes it the goal', async ($, on) => {
   await pane.press({ key: 'take-goal-goal-key' })
   await clock.settle()
   expect((await pane.find({ key: 'goal-text' }))?.text).toBe('Pilot ready to announce')
-  expect((await pane.find({ key: 'goal-awaiting' }))?.text).toBe('Milestones after the next reply')
   expect(await pane.find({ key: 'goal-offer' })).toBeUndefined()
   expect(w.sent).toEqual([])
 })

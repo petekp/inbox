@@ -61,8 +61,6 @@ export type GoalBlock = {
    * Null when it only names the milestone that reads "now", or holds every key word of a working subject's name.
    */
   now: string | null
-  /** The line drawn in place of the milestones until the Status call writes them for this goal. */
-  awaiting: string | null
   /**
    * Once the goal is met, the line its milestones fold into, naming the done ones, as "Release pass run, PRs merged". It
    * starts folded, and `shownMilestones` gives the milestones a look draws under it. `statusPage` fills it.
@@ -80,7 +78,6 @@ export type GoalParts = {
   suggestedGoal: string | null
 }
 
-const AWAITING_TEXT = 'Milestones after the next reply'
 /** The heading of the goal's section while no goal is met: the same with a goal or without one. */
 export const GOAL_HEADING = 'Goal'
 /** The dim line under the goal's heading while no goal is set. */
@@ -188,7 +185,6 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
     m => m.status !== 'dropped' || (o.lastLookAt !== null && m.changedAt > o.lastLookAt),
   )
   const isMet = g.metAt !== null
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0
   const head = o.head
   const nowText = head ? head.description || head.title : null
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept)
@@ -203,7 +199,6 @@ export function goalPage(o: SessionStatus | null, items: readonly Item[]): GoalP
       was: isWasShown ? g.was : null,
       // A met goal's head draws in its own section, since the work no longer serves the goal.
       now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestonesFold: null,
       milestones,
     },

@@ -71,7 +71,6 @@ function goalText(page: StatusPage): string[] {
         g.text,
         ...(g.was ? [`${WAS_LABEL}${g.was}`] : []),
         ...(g.now ? [g.now] : []),
-        ...(g.awaiting ? [g.awaiting] : []),
         ...g.milestones.flatMap(milestoneText),
       ]
     : []

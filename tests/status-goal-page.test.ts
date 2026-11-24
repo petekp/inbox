@@ -235,13 +235,11 @@ test('a typed goal waits for its milestones, and a goal whose milestones are all
   expect(page(typed, 46).goal).toMatchObject({
     label: 'Goal',
     was: 'Import ready to demo',
-    awaiting: 'Milestones after the next reply',
     milestones: [],
   })
   expect(page(met, 55).goal).toMatchObject({
     label: 'Goal met',
     isMet: true,
-    awaiting: null,
     now: null,
     mark: { mark: SUBJECT_MARKS.done.mark, tone: 'success' },
   })

@@ -40,14 +40,13 @@ const milestoneLines = (milestones: MilestoneRow[]): GoalLine[] =>
 const goalLines = (page: StatusPage): GoalLine[] =>
   page.goal ? milestoneLines(shownMilestones(page.goal, id => tabState.ui.statusUnfolded.includes(id))) : []
 
-/** The lines under the goal's text: what it was, where it stands now, and what it waits on. None under a suggestion. */
+/** The lines under the goal's text: what it was and where it stands now. None under a suggestion. */
 function goalHead(page: StatusPage): TextLine[] {
   const g = page.suggestedGoal === null ? page.goal : null
 
   return [
     ...(g?.was ? [{ id: GOAL_WAS_LINE, text: g.was, level: WAS_LEVEL }] : []),
     ...(g?.now ? [{ id: 'now', text: g.now }] : []),
-    ...(g?.awaiting ? [{ id: 'awaiting', text: g.awaiting }] : []),
   ]
 }
 

@@ -314,7 +314,6 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
             headTitle('goal text', g.text),
             ...(g.was ? [{ ...headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted'), level: WAS_LEVEL }] : []),
             ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
-            ...(g.awaiting ? [headNote('goal awaiting', g.awaiting, 'muted')] : []),
           ]
       ).map(atText)
   const fold = g.milestonesFold
