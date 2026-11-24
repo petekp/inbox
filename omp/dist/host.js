@@ -6432,12 +6432,15 @@ function noteAnsweredDialog(s, questions, outcome, now) {
   });
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now);
 }
-function noteDialog(s, callId, questions) {
-  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
-  const added = questions.flatMap((q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]);
+function noteDialogs(s, dialogs) {
+  const isNoted = (callId, index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = dialogs.flatMap(({ callId, questions }) => questions.flatMap((q, index) => isNoted(callId, index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]));
   if (added.length === 0)
     return s;
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
+}
+function noteDialog(s, callId, questions) {
+  return noteDialogs(s, [{ callId, questions }]);
 }
 
 // ../core/view/feedback.ts

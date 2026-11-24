@@ -7122,7 +7122,7 @@ function unranCalls(rows) {
 }
 
 // src/rollout-turns.ts
-var MARKERS = ['"task_started"', DIALOG_TOOL, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
+var MARKERS = ['"task_started"', DIALOG_TOOL, '"user"', '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
   ["task_started", "started"],
   ["task_complete", "completed"],

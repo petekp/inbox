@@ -1792,10 +1792,12 @@ function linkDialogs(s, now = Date.now()) {
   );
   return { ...s, ledger, dialogQuestions: kept };
 }
-function noteDialog(s, callId, questions) {
-  const isNoted = (index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
-  const added = questions.flatMap(
-    (q, index) => isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+function noteDialogs(s, dialogs) {
+  const isNoted = (callId, index) => callId !== null && s.dialogQuestions.some((q) => q.callId === callId && q.index === index);
+  const added = dialogs.flatMap(
+    ({ callId, questions }) => questions.flatMap(
+      (q, index) => isNoted(callId, index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }]
+    )
   );
   if (added.length === 0) return s;
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] });
@@ -5391,8 +5393,11 @@ async function withoutSharedTerminal(env, run2, pid, log) {
 import { resolve as resolve3 } from "node:path";
 
 // src/dialogs.ts
-function noteDialogs(s, dialogs) {
-  return dialogs.reduce((x, d) => d.callId === null ? x : noteDialog(x, d.callId, d.questions), s);
+function noteTurnDialogs(s, dialogs) {
+  return noteDialogs(
+    s,
+    dialogs.filter((d) => d.callId !== null && !d.isFollowedByMessage)
+  );
 }
 
 // src/history.ts
@@ -5799,7 +5804,7 @@ function unranCalls(rows) {
 
 // src/rollout-turns.ts
 var PLAN_TOOL = "update_plan";
-var MARKERS = ['"task_started"', DIALOG_TOOL, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
+var MARKERS = ['"task_started"', DIALOG_TOOL, '"user"', '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
   ["task_started", "started"],
   ["task_complete", "completed"],
@@ -5870,7 +5875,13 @@ function turnOf(lines, turnId) {
         } catch {
           continue;
         }
-        turn2.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions) });
+        turn2.dialogs.push({
+          callId: p.call_id ?? null,
+          questions: dialogQuestions(args.questions),
+          isFollowedByMessage: false
+        });
+      } else if (row.type === "response_item" && p.type === "message" && p.role === "user") {
+        turn2.dialogs = turn2.dialogs.map((d) => ({ ...d, isFollowedByMessage: true }));
       } else if (row.type === "response_item" && (p.type === "function_call" || p.type === "local_shell_call")) {
         const command = callCommand(p);
         if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
@@ -6249,7 +6260,7 @@ async function handleHook(input, deps) {
       const written = await write(async (s) => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),
-          withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran)
+          withoutActivity(noteTurnDialogs(withHost(await withHistory(s)), dialogs), unran)
         );
         const withRan = { ...unranDelegatesTakenBack(withLines, unranDelegates), delegateCalls: [] };
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withRan);
