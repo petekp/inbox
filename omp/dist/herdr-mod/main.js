@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T12:34:07.428Z. 375530 characters follow.
+// Built at 2026-11-24T13:22:48.162Z. 375535 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -5623,6 +5623,14 @@ function moveToward(track, form, now) {
       return { state: "leaving", since: now, hasOpenForm: track.hasOpenForm };
   }
 }
+function placeAfter(drawn, above) {
+  for (let i = above.length - 1;i >= 0; i--) {
+    const at = drawn.indexOf(above[i] ?? "");
+    if (at >= 0)
+      return at + 1;
+  }
+  return 0;
+}
 function rest(track, form, target, now) {
   if (form === "gone")
     return null;
@@ -6312,7 +6320,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       return;
     const block = copyId === undefined ? old.block : { ...old.block, id: copyId };
     add(block, track, old, copyId === undefined ? old.springId : null);
-    shown.splice(placeAfter(shown, was.order.slice(0, i).map((above) => copies.get(above) ?? above)), 0, block);
+    shown.splice(placeAfter(shown.map((b) => b.id), was.order.slice(0, i).map((above) => copies.get(above) ?? above)), 0, block);
   });
   const isStarting = [...motion.values()].some((m) => m.isStart);
   const drawn = isStarting ? shown.map((b) => heldForm(b, was, motion)) : shown;
@@ -6334,14 +6342,6 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     motion,
     nextAt: ends.length ? Math.min(...ends) : null
   };
-}
-function placeAfter(shown, above) {
-  for (let i = above.length - 1;i >= 0; i--) {
-    const at = shown.findIndex((b) => b.id === above[i]);
-    if (at >= 0)
-      return at + 1;
-  }
-  return 0;
 }
 
 // src/time-left.ts
