@@ -148,6 +148,97 @@ test('a dialog question links to the question the agent recorded for it or the u
   ])
 })
 
+const turnRows = () => {
+  const transcript = join(tempDir(), 'rollout.jsonl')
+  const rows: unknown[] = []
+  const write = (...more: unknown[]) => {
+    rows.push(...more)
+    writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n'))
+  }
+  const dialog = (callId: string, title: string) => ({
+    type: 'response_item',
+    payload: {
+      type: 'function_call',
+      name: 'request_user_input_async',
+      call_id: callId,
+      arguments: JSON.stringify({ questions: [{ title, options: ['Yes', 'No'] }] }),
+    },
+  })
+  const reply = (callId: string, question: string, answer: string) => {
+    const questionItemId = JSON.stringify(['request_user_input_async', callId, 0])
+    const json = JSON.stringify([{ questionItemId, question, answer }])
+
+    return { text: `<send_user_message_question_reply>\n${json}\n</send_user_message_question_reply>` }
+  }
+
+  return {
+    transcript,
+    write,
+    dialog,
+    reply,
+    started: { type: 'event_msg', payload: { type: 'task_started', turn_id: 't1' } },
+  }
+}
+
+const recordQuestion = (dir: string, ask: string) =>
+  updateState(dir, 's1', s => ({
+    ...s,
+    ledger: addAgentItem(s.ledger, { kind: 'question', ask, options: ['Yes', 'No'], rec: null, helps: [] }, 1000)
+      .ledger,
+  }))
+
+test('two dialogs of a turn with the same options are linked together, so the first cannot take the second’s copy', async () => {
+  const dir = tempDir()
+  const deps = hookDeps(dir)
+  const t = turnRows()
+  await handleHook(input('UserPromptSubmit', { prompt: 'Add greet', turn_id: 't1' }), deps)
+  t.write(
+    t.started,
+    t.dialog('call_a', 'Should greet print a trailing newline?'),
+    t.dialog('call_b', 'Should I add a CONTRIBUTING file?'),
+  )
+  await recordQuestion(dir, 'Add a CONTRIBUTING file?')
+  await handleHook(
+    input('Stop', { turn_id: 't1', transcript_path: t.transcript, last_assistant_message: 'Asked.' }),
+    deps,
+  )
+
+  assert.deepEqual(
+    (await readState(dir, 's1')).ledger.items.map(i => i.dialog),
+    [{ callId: 'call_b', index: 0, question: 'Should I add a CONTRIBUTING file?' }],
+  )
+})
+
+test('a dialog a user message followed in its turn links to no question of the inbox turn that message started', async () => {
+  const t = turnRows()
+  const typed = 'Also check the docs'
+  const answer = t.reply('call_a', 'Should greet print a trailing newline?', 'No')
+  for (const steered of [typed, answer.text]) {
+    const dir = tempDir()
+    const deps = hookDeps(dir)
+    const transcript = join(tempDir(), 'rollout.jsonl')
+    const message = { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: steered }] } }
+    await handleHook(input('UserPromptSubmit', { prompt: 'Add greet', turn_id: 't1' }), deps)
+    await handleHook(input('UserPromptSubmit', { prompt: steered, turn_id: 't1' }), deps)
+    writeFileSync(
+      transcript,
+      [t.started, t.dialog('call_a', 'Should greet print a trailing newline?'), message]
+        .map(row => JSON.stringify(row))
+        .join('\n'),
+    )
+    await recordQuestion(dir, 'Add a CONTRIBUTING file?')
+    await handleHook(
+      input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+      deps,
+    )
+
+    assert.deepEqual(
+      (await readState(dir, 's1')).ledger.items.map(i => i.dialog ?? null),
+      [null],
+    )
+  }
+})
+
 test('a Stop’s reply is the ending turn’s agent messages in order, ending with the Stop’s last message when the rollout lacks it', async () => {
   const dir = tempDir()
   const transcript = join(tempDir(), 'rollout.jsonl')

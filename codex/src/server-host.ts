@@ -30,7 +30,7 @@ import type { Holds } from '../../core/view/timing'
 import { copyToClipboard } from './clipboard'
 import { viewOf } from './core'
 import type { TabView } from './core'
-import { answerMessage, noteDialogs } from './dialogs'
+import { answerMessage, noteTurnDialogs } from './dialogs'
 import type { HooksTrust } from './hook-trust'
 import { codexStore } from './host'
 import type { PressReply, ServerDeps } from './server'
@@ -242,7 +242,7 @@ export function makeSessionHost(
     const canLink = item?.kind === 'question' && !item.dialog && item.turn === s.ledger.turn && s.presence.isTurnRunning
     if (!canLink) return
     const { dialogs } = await turnIn(s.transcriptPath, undefined)
-    if (dialogs.length > 0) await updateState(dir, id, x => noteDialogs(x, dialogs), now)
+    if (dialogs.length > 0) await updateState(dir, id, x => noteTurnDialogs(x, dialogs), now)
   }
 
   /** Reads the turn, and for an answer or a typed reply the running turn's dialogs, before a press applies. */

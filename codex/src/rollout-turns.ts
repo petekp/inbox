@@ -13,7 +13,7 @@ type FinishedCommand = { command: string; output: string }
 /** The Codex tool that writes the agent's plan: the rows of the plan, each with a step and a status. */
 const PLAN_TOOL = 'update_plan'
 
-const MARKERS = ['"task_started"', DIALOG_TOOL, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS]
+const MARKERS = ['"task_started"', DIALOG_TOOL, '"user"', '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS]
 
 /**
  * A row of the rollout that starts a turn (`task_started`), or ends it by completing (`task_complete`) or by an
@@ -46,10 +46,11 @@ export function turnEventOf(line: string): TurnEvent | null {
 }
 
 /**
- * A dialog the agent opened: its call's `call_id`, null when the row has none, and its questions in the call's order.
- * Codex refuses a call with an empty question title, so a question's place here is its index in the call.
+ * A dialog the agent opened: its call's `call_id`, null when the row has none, its questions in the call's order, and
+ * whether a user message came after it in its turn, as one steered into the running turn does. Codex refuses a call
+ * with an empty question title, so a question's place here is its index in the call.
  */
-export type Dialog = { callId: string | null; questions: DialogQuestion[] }
+export type Dialog = { callId: string | null; questions: DialogQuestion[]; isFollowedByMessage: boolean }
 
 /**
  * `texts`: the agent's messages to the person, in order, from its notes while it works to its final answer.
@@ -128,7 +129,13 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
         } catch {
           continue
         }
-        turn.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions) })
+        turn.dialogs.push({
+          callId: p.call_id ?? null,
+          questions: dialogQuestions(args.questions),
+          isFollowedByMessage: false,
+        })
+      } else if (row.type === 'response_item' && p.type === 'message' && p.role === 'user') {
+        turn.dialogs = turn.dialogs.map(d => ({ ...d, isFollowedByMessage: true }))
       } else if (row.type === 'response_item' && (p.type === 'function_call' || p.type === 'local_shell_call')) {
         const command = callCommand(p)
         if (command !== '' && p.call_id) turn.calls.set(p.call_id, { command, output: '' })

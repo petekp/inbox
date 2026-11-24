@@ -154,6 +154,10 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
     `core/domain/dialogs.ts:linkDialogs`). An answer press first links the
     dialogs of the rollout's newest turn, so an answer pressed while the
     dialog's turn runs is linked too (`codex/src/server-host.ts:linkRunningDialogs`).
+    Any prompt steered into the turn, a reply in this form or a typed message,
+    starts a new inbox turn. So the inbox notes a turn's dialogs together, and
+    leaves out a dialog a user message followed in its turn, since its copy is
+    in an earlier inbox turn (`codex/src/dialogs.ts:noteTurnDialogs`).
   - [live 2026-10-25, ChatGPT app in the inbox-ui VM, GPT-6.1 Sol] An inbox
     answer sent in this form closes the dialog when its queued turn starts. In
     an idle thread that was about 1 s after the press. With the dialog's turn

@@ -240,17 +240,28 @@ export function noteAnsweredDialog<S extends Session>(
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now)
 }
 
+/** A dialog to note: its call id, null when it has none, and its questions in the call's order. */
+type OpenedDialog = { callId: string | null; questions: DialogQuestion[] }
+
 /**
- * Notes a dialog's questions in the current turn, then links them. A Codex dialog's call id names its questions, so
- * those already noted are skipped.
+ * Notes the questions of dialogs in the current turn, then links them all at once, so a question noted first cannot
+ * take the copy of one noted after it. A Codex dialog's call id names its questions, so those already noted are
+ * skipped.
  */
-export function noteDialog<S extends Session>(s: S, callId: string | null, questions: DialogQuestion[]): S {
-  const isNoted = (index: number) =>
+export function noteDialogs<S extends Session>(s: S, dialogs: OpenedDialog[]): S {
+  const isNoted = (callId: string | null, index: number) =>
     callId !== null && s.dialogQuestions.some(q => q.callId === callId && q.index === index)
-  const added = questions.flatMap((q, index) =>
-    isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }],
+  const added = dialogs.flatMap(({ callId, questions }) =>
+    questions.flatMap((q, index) =>
+      isNoted(callId, index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }],
+    ),
   )
   if (added.length === 0) return s
 
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] })
+}
+
+/** Notes one dialog's questions in the current turn, then links them, as `noteDialogs` does. */
+export function noteDialog<S extends Session>(s: S, callId: string | null, questions: DialogQuestion[]): S {
+  return noteDialogs(s, [{ callId, questions }])
 }
