@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T02:30:35.302Z. 373266 characters follow.
+// Built at 2026-11-24T05:23:10.091Z. 373733 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -462,9 +462,6 @@ function clockTime(ms) {
 
 // ../core/domain/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
-function prRefs(text) {
-  return [...new Set([...text.matchAll(PR_URL)].map((m) => `${m[1]}#${m[2]}`))];
-}
 var PR_MENTION = /(?<![\w./-])(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*)\b/g;
 var PR_WORD_BEFORE = /\b(?:prs?|pull requests?|merg(?:e|es|ed|ing)|review(?:s|ed|ing)?|approv(?:e|es|ed|ing)|land(?:s|ed|ing)?)\s*$/i;
 var LIST_JOIN = /^\s*(?:,\s*)?(?:and|or|then|&)?\s*$/i;
@@ -639,9 +636,27 @@ function prLinkName(ref, isTracked, repo) {
   const isSessionRepo = refRepo.toLowerCase() === repo?.toLowerCase();
   return isTracked ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`;
 }
-function prSteps(item, tracked, repo) {
+var GITHUB_PR_OR_ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)/;
+function linkRef(url) {
+  const m = url.match(GITHUB_PR_OR_ISSUE_URL);
+  return m ? `${m[1]}#${m[2]}` : null;
+}
+var isSameRef = (a, b) => a.toLowerCase() === b.toLowerCase();
+function withPrName(help, { tracked, repo }) {
+  if (help.kind !== "link" || help.name)
+    return help;
+  const ref = linkRef(help.url);
+  if (!ref)
+    return help;
+  const isTracked = tracked.some((pr) => isSameRef(pr.ref, ref));
+  return { ...help, name: prLinkName(ref, isTracked, repo) };
+}
+function prSteps(item, { tracked, repo }) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
-  const isLinked = (ref, url) => item.helps.some((h) => h.kind === "link" && (h.url === url || prRefs(h.url).some((r) => r.toLowerCase() === ref.toLowerCase())));
+  const isLinked = (ref, url) => item.helps.some((h) => {
+    const linked = h.kind === "link" ? linkRef(h.url) : null;
+    return h.kind === "link" && (h.url === url || linked !== null && isSameRef(linked, ref));
+  });
   const named = namedPrs([item.ask, item.context ?? ""].join(`
 `), [...urls.keys()], repo).flatMap((ref) => {
     const { repo: refRepo, number } = parseRef(ref);
@@ -660,8 +675,8 @@ function prSteps(item, tracked, repo) {
   const label = links.length === 1 ? helpLabel(only) : isAllTracked ? `Open ${links.length} PRs` : clipLabel(`Open ${links.map((l) => l.name).join(", ")}`, COMMAND_LABEL_CHARS);
   return [{ label, step: links }];
 }
-function stepsOf(item, extraSteps) {
-  return [...steps(item.helps), ...extraSteps];
+function stepsOf(item, prs) {
+  return [...steps(item.helps.map((h) => withPrName(h, prs))), ...prSteps(item, prs)];
 }
 function stepIconKind(step) {
   if (!step)
@@ -1983,12 +1998,14 @@ function tabPrs(links) {
   const ranked = (order?.refs ?? []).filter((ref) => !links.prs.includes(ref) && !order?.dismissed.includes(ref));
   return [...links.prs, ...ranked];
 }
-function itemPrSteps(item, s) {
+function sessionPrs(s) {
   const { branchRef, views } = s.prViews;
   const linked = tabPrs(s.ledger);
   const refs = branchRef ? [...linked, branchRef] : linked;
-  const repo = branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null;
-  return prSteps(item, refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })), repo);
+  return {
+    tracked: refs.map((ref) => ({ ref, url: views[ref]?.url ?? null })),
+    repo: branchRef ? parseRef(branchRef).repo : s.place?.repo ?? null
+  };
 }
 function isLeftOut(prState, ref) {
   const view = prState.views[ref];
@@ -3590,7 +3607,7 @@ function inboxView({
   lastActions,
   notes,
   turns,
-  extraSteps,
+  sessionPrs,
   settleWindowMs,
   status,
   now,
@@ -3715,7 +3732,7 @@ function inboxView({
       replyKind: item.kind === "question" ? "answer" : "reply",
       item,
       finding: null,
-      steps: stepsOf(item, extraSteps[item.id] ?? [])
+      steps: stepsOf(item, sessionPrs)
     });
   };
   const questionRows = questions.map(itemRow);
@@ -4206,7 +4223,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map((item) => [item.id, itemPrSteps(item, s)])),
+    sessionPrs: sessionPrs(s),
     settleWindowMs,
     status: perTurnStatus(sync.ledger),
     now,
