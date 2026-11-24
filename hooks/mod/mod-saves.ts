@@ -277,10 +277,7 @@ export function changeSaved(e: SaveEngine, id: string, change: Change): Promise<
         const leases = viewerLeases.peek(id)
         result = {
           before: read.session,
-          after:
-            after === read.session
-              ? after
-              : forSaving(after, Object.keys(leases).length > 0 ? await e.now() : 0, leases),
+          after: after === read.session ? after : forSaving(after, await e.now(), leases),
           isDrawn: false,
         }
         if (result.after === read.session) return
