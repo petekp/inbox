@@ -2,7 +2,7 @@ import type { Help, Item } from '../../types'
 import { baseName } from './open-targets'
 import { messages } from './press-messages'
 import type { Effect } from '../view/press-reducer'
-import { namedPrs, parseRef, prRefs } from './prs'
+import { namedPrs, parseRef } from './prs'
 import { clipLabel } from './text'
 
 /**
@@ -61,16 +61,26 @@ function prLinkName(ref: string, isTracked: boolean, repo: string | null): strin
   return isTracked ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`
 }
 
-const GITHUB_PR_OR_ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(pull|issues)\/(\d+)(?:[/?#]|$)/
+const GITHUB_PR_OR_ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(?:pull|issues)\/(\d+)/
+
+/**
+ * "owner/repo#12" for a link to a GitHub PR or issue, or null. Issues and PRs share one set of numbers in a repository,
+ * and GitHub sends a pull or issue address of either number to its page.
+ */
+function linkRef(url: string): string | null {
+  const m = url.match(GITHUB_PR_OR_ISSUE_URL)
+
+  return m ? `${m[1]}#${m[2]}` : null
+}
+
+const isSameRef = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 /** A link with no name to a GitHub PR or issue, named as its Open PR step would name it, so its button says which. */
 function withPrName(help: Help, { tracked, repo }: SessionPrs): Help {
   if (help.kind !== 'link' || help.name) return help
-  const m = help.url.match(GITHUB_PR_OR_ISSUE_URL)
-  if (!m) return help
-  const [, refRepo, path, number] = m
-  const ref = `${refRepo}#${number}`
-  const isTracked = path === 'pull' && tracked.some(pr => pr.ref.toLowerCase() === ref.toLowerCase())
+  const ref = linkRef(help.url)
+  if (!ref) return help
+  const isTracked = tracked.some(pr => isSameRef(pr.ref, ref))
 
   return { ...help, name: prLinkName(ref, isTracked, repo) }
 }
@@ -82,9 +92,10 @@ function withPrName(help: Help, { tracked, repo }: SessionPrs): Help {
 function prSteps(item: Item, { tracked, repo }: SessionPrs): HelpStep[] {
   const urls = new Map(tracked.map(pr => [pr.ref, pr.url]))
   const isLinked = (ref: string, url: string) =>
-    item.helps.some(
-      h => h.kind === 'link' && (h.url === url || prRefs(h.url).some(r => r.toLowerCase() === ref.toLowerCase())),
-    )
+    item.helps.some(h => {
+      const linked = h.kind === 'link' ? linkRef(h.url) : null
+      return h.kind === 'link' && (h.url === url || (linked !== null && isSameRef(linked, ref)))
+    })
   const named = namedPrs([item.ask, item.context ?? ''].join('\n'), [...urls.keys()], repo).flatMap(ref => {
     const { repo: refRepo, number } = parseRef(ref)
     const url = urls.get(ref) ?? `https://github.com/${refRepo}/pull/${number}`
