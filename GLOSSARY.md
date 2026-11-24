@@ -186,7 +186,8 @@ milestone yet, while the goal shows milestones. Code closes a milestone
 once all its linked subjects are closed and one is done, and the model opens it
 again when work is left. Past 6 subjects, open or done, the model splits it by theme.
 A milestone with one subject, named like it, and no ask of its own draws that
-subject in its place.
+subject in its place, except once the milestone is done while that subject is
+still open.
 _Avoid_: step, phase
 
 **Child**:

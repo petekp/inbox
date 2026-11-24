@@ -86,7 +86,7 @@ test('a milestone whose only subject is named alike, with no ask naming the mile
   expect(statusListRows(p).map(r => r.id)).toContain('s2')
 })
 
-test('a milestone keeps its own row when an ask names it, when two subjects serve it, a dropped one included, or when its one subject is named otherwise', () => {
+test('a milestone keeps its own row when an ask names it, when two subjects serve it, a dropped one included, when its one subject is named otherwise, or when it is done while its subject is open', () => {
   const merges = (o: SessionStatus, asks: string[] = []) =>
     page(o, 40, {}, asks.map(askItem)).goal?.milestones.some(m => m.subject !== null)
 
@@ -95,6 +95,8 @@ test('a milestone keeps its own row when an ask names it, when two subjects serv
   expect(merges(after(withGoal(), 'SERVES: s2 | m3\nSERVES: s3 | m3', 30))).toBe(false)
   expect(merges(after(withGoal(), 'SERVES: s2 | m3\nSERVES: s3 | m3\nDROP: s3 | not needed', 30))).toBe(false)
   expect(merges(after(withGoal(), 'SERVES: s3 | m3', 30))).toBe(false)
+  expect(merges(after(withGoal(), 'SERVES: s2 | m3\nDONE: m3 | script approved', 30))).toBe(false)
+  expect(merges(after(withGoal(), 'SERVES: s2 | m3\nDONE: s2 | script recorded', 30))).toBe(true)
 })
 
 test('with no goal and one open subject, named alike, the head drops its title and keeps its description, and keeps its title beside a second open subject or with a title named otherwise', () => {

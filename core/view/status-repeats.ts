@@ -38,15 +38,17 @@ export function withoutRepeatedNow(page: StatusPage, o: SessionStatus | null): S
 
 /**
  * The subject the page draws in a milestone's place: the only subject that serves it, dropped ones counted, when that
- * subject was not dropped, the two are named alike and no open ask names the milestone. Null for a dropped milestone.
+ * subject was not dropped, the two are named alike and no open ask names the milestone. Null for a dropped milestone,
+ * and for a done one whose subject is still open, so the page shows the milestone done with that work under it.
  */
 export function subjectInPlaceOf(o: SessionStatus, m: Milestone, items: readonly Item[]): Subject | null {
   if (m.status === 'dropped') return null
   const work = o.subjects.filter(x => x.into === null && o.serves[x.id] === m.id)
   const only = work.length === 1 && work[0]?.status !== 'dropped' ? work[0] : undefined
   const isAskedDirectly = items.some(i => o.askSubjects[i.id]?.includes(m.id))
+  const isDoneWithOpenWork = m.status === 'done' && only !== undefined && isOpen(only)
 
-  return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null
+  return only !== undefined && !isAskedDirectly && !isDoneWithOpenWork && isNamedAlike(m.name, only.name) ? only : null
 }
 
 /**

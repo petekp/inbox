@@ -196,5 +196,11 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     answer: `${GOOD_RUNS['milestone-last-work-done']![0]!}\nNEW: working | Branch checks | checks running\nSERVES: Branch checks | m2`,
     breaks: 'milestones-true',
   },
+  'milestone-decided': {
+    at: 0,
+    answer:
+      'SET: s1 | working | Decided "!", edit not made yet\nSET: m1 | working | "!" chosen, edit not made yet\nLINK: i2 | s1',
+    breaks: 'milestones-true',
+  },
   'head-after-done': { at: 2, answer: 'HEAD: Greet flags | Adding options to greet', breaks: 'head-follows' },
 }
