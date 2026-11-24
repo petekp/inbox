@@ -2193,9 +2193,6 @@ var TOOL_FIELDS = {
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
-// ../core/view/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-
 // ../core/domain/inbox-text.ts
 var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
 function surfaceAtStart(host) {
@@ -2342,6 +2339,9 @@ function promptNotes(host, ledger, prompt, told) {
   notes.push(closed ? `${inbox}${NL3}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
+
+// ../core/view/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
 // ../core/view/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
