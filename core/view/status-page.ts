@@ -19,7 +19,7 @@ import {
   unplacedChildren,
 } from './status-page-parts'
 import type { ListContext, PartSplit } from './status-page-parts'
-import { isTitleRepeated, milestoneAsSubject, subjectInPlaceOf, withoutRepeatedNow } from './status-repeats'
+import { headPart, milestoneAsSubject, subjectInPlaceOf, withoutRepeatedNow } from './status-repeats'
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
 export type StatusBranch = 'mid' | 'last'
@@ -124,7 +124,7 @@ export type StatusPage = GoalParts & {
   /**
    * What the session is focused on now. The description is null until the Status call writes one. While a goal is
    * open, the goal draws it as its Now line. While no goal is set, and once the goal is met, since the work no longer
-   * serves it, it is the heading of `rows`, as their first `part` row.
+   * serves it, it is the heading of `rows`, as their first `part` row, when `headPart` keeps it: over rows, or while no goal is set and it has a description.
    */
   head: { title: string; description: string | null } | null
   /**
@@ -342,7 +342,6 @@ export function statusPage(
   ]
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null
   const g = goalParts.goal
-  const isHeadApart = head !== null && (g === null || g.isMet)
   const listRows: StatusRow[] = [
     ...(hasMilestones ? [] : looseRows(null, 0)),
     ...foldedPart('', top, 0, hasMilestones ? [] : settled),
@@ -353,14 +352,10 @@ export function statusPage(
         ]
       : []),
   ]
-  const title = head === null || (g === null && isTitleRepeated(head.title, subjects, listRows)) ? null : head.title
-  const headPart: StatusRow[] =
-    isHeadApart && head && (title ?? head.description) !== null
-      ? [{ kind: 'part', id: 'head', depth: 0, text: title, description: head.description, isTitle: true }]
-      : []
+  const headRows = headPart(head, g, subjects, listRows)
   const rows: StatusRow[] = [
-    ...headPart,
-    ...(headPart.length > 0 && listRows[0]?.id === 'other' ? listRows.slice(1) : listRows),
+    ...headRows,
+    ...(headRows.length > 0 && listRows[0]?.id === 'other' ? listRows.slice(1) : listRows),
   ]
   /** Whether every subject under a milestone is closed, seen or not, with no child still running under it. */
   const isWorkClosed = (m: MilestoneRow, p: PartSplit) =>
@@ -411,7 +406,7 @@ export function statusPage(
 
   return withoutRepeatedNow(
     {
-      isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+      isEmpty: rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
       head,
       ...goalParts,
       goal,
