@@ -37,7 +37,9 @@ test('a record call shows in the next prompt as a hidden message', async () => {
   createInbox(pi(), deps())
   await prompt('Add a greeting CLI')
   const answer = await record({ kind: 'task', ask: 'Try the CLI by hand', steps: ['node greet.mjs'] })
-  expect(answer.content[0].text).toBe('Recorded. The user sees it in the /inbox panel.')
+  expect(answer.content[0].text).toBe(
+    'Recorded. The user sees it in the /inbox panel. Its close id is i1. A close id is only for the close tool. Never write one in a reply.',
+  )
   expect(state().ledger.items.map((i: { ask: string }) => i.ask)).toEqual(['Try the CLI by hand'])
 
   const next = await prompt('How is it going?')
@@ -115,7 +117,9 @@ test("record and close draw the person's line under the call while the agent rea
     w.tools.get('close').execute('call', args, undefined, undefined, makeCtx())
 
   const recorded = await record({ kind: 'task', ask: 'Try the CLI by hand', steps: ['node greet.mjs'] })
-  expect(recorded.content[0].text).toBe('Recorded. The user sees it in the /inbox panel.')
+  expect(recorded.content[0].text).toBe(
+    'Recorded. The user sees it in the /inbox panel. Its close id is i1. A close id is only for the close tool. Never write one in a reply.',
+  )
   expect(drawn('record', recorded)).toEqual(['Task: Try the CLI by hand'])
   expect(w.tools.get('record').describeResult(recorded).body).toEqual([
     { k: 'text', p: { text: 'Task: Try the CLI by hand' } },
@@ -125,7 +129,7 @@ test("record and close draw the person's line under the call while the agent rea
   expect(w.tools.get('record').describeResult(again).body).toBeUndefined()
 
   const closed = await close({ id: state().ledger.items[0].id, reason: 'done by the agent' })
-  expect(closed.content[0].text).toStartWith('Closed. The user sees it in the /inbox panel')
+  expect(closed.content[0].text).toStartWith('Closed "Try the CLI by hand". The user sees it in the /inbox panel')
   expect(drawn('close', closed)).toEqual(['Closed: Try the CLI by hand'])
 
   const failed = { content: [{ type: 'text', text: 'Could not save the inbox.' }], isError: true }

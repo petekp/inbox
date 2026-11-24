@@ -85,7 +85,9 @@ test('a full store makes room by deleting ended sessions’ saves oldest first, 
     title: 'Retry loop never backs off',
     detail: 'The fetch retry spins with no delay.',
   })
-  expect(r.result).toBe('Recorded. The user sees it in the Finds tab of the /inbox pane.')
+  expect(r.result).toBe(
+    'Recorded. The user sees it in the Finds tab of the /inbox pane. Its close id is f3. A close id is only for the close tool. Never write one in a reply.',
+  )
   expect(w.stored.get('s:session-1')).toContain('Retry loop never backs off')
   expect(['running-1', 'ended-1', 'ended-2'].filter(id => w.stored.has(`s:${id}`))).toEqual(['running-1', 'ended-2'])
 })

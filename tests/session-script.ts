@@ -109,7 +109,7 @@ export async function runSessionScript<S extends Session>(makeHost: MakeHost<S>,
   })
   equal(
     toolAnswer,
-    'Recorded. The user sees it in the /inbox pane. It has no steps: when a command, file or link would help the user do it, record it again with steps.',
+    'Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply. It has no steps: when a command, file or link would help the user do it, record it again with steps.',
     'the record call answer',
   )
   equal(
