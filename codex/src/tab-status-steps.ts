@@ -16,8 +16,8 @@ type FoldLine = { id: string; fold: NonNullable<GoalBlock['milestonesFold']> }
 
 /**
  * The Status page's lists as the tab draws them, with the lines still leaving in the places they had: the lines under
- * the goal's text, the line a met goal's milestones fold into, the goal's milestones with their rows, and the rows
- * after the goal.
+ * the goal's text, the line a met goal's milestones fold into, the goal's milestones with their rows, the Later label
+ * above the first milestone that starts later, and the rows after the goal.
  */
 export type DrawnStatus = {
   head: TextLine[]

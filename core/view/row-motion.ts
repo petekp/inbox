@@ -259,8 +259,8 @@ export function placeAfter(drawn: readonly string[], above: readonly string[]): 
 
 /**
  * The rows to draw: the rows listed now, and each row of the last draw that is no longer listed and still leaves, each
- * where `placeAfter` puts it. Rows that stay keep their order, so a row that leaves never comes between a row and the
- * rows under it.
+ * where `placeAfter` puts it. Rows that stay keep their order, so a row that leaves never splits a row from the rows
+ * that sat under it last time.
  */
 export function withLeaving<T>(
   listed: readonly T[],

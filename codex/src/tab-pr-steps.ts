@@ -79,7 +79,7 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
         b[group],
         lastBlock?.drawn[group] ?? [],
         r => r.id,
-        r => drawnRows.has(r.id),
+        r => !listed.has(r.id) && drawnRows.has(r.id),
       )
       const shown = entries.filter(r => step(r.id, !listed.has(r.id) ? 'gone' : r.id === openId ? 'open' : 'closed'))
       drawn[group] = step(prGroupMotion(id, group), b[group].length > 0 ? 'closed' : 'gone') ? shown : null
