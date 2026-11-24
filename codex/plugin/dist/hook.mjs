@@ -1909,9 +1909,11 @@ function dismissedAt(lastActions, ref) {
 function isDismissed(lastActions, ref) {
   return dismissedAt(lastActions, ref) !== null;
 }
-function isViewKept(prState, links, lastActions, ref, shownSince) {
+var DISMISSED_VIEW_KEPT_MS = 6e4;
+function isViewKept(prState, links, lastActions, ref, shownSince, now) {
   const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
+  const isDismissedLately = at !== null && (now - at < DISMISSED_VIEW_KEPT_MS || isShownSince(at, shownSince));
+  return keepsView(prState, links, ref) || isDismissedLately;
 }
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
@@ -3228,7 +3230,7 @@ function rowsInPlace(s, now = Date.now(), viewers = {}) {
 function pruned(s, now = Date.now(), viewers = {}) {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
-      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
+      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince, now)
     )
   );
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
