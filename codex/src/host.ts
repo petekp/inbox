@@ -19,6 +19,7 @@ import { NEXT_BUILD_MARK } from '../../core/view/banners'
 import { herdrReporter, herdrReportKey, herdrTarget, herdrTokens } from '../../core/remote/herdr'
 import { publishedSession, unpublishSession } from '../../core/remote/herdr-app'
 import { mayReport, readClaim } from './herdr-terminal'
+import { isPidRunning } from './pid'
 import type { PublishFiles } from '../../core/remote/herdr-app'
 import type { SessionHost } from '../../core/runtime/session-host'
 
@@ -94,7 +95,8 @@ export function herdrOnWrite(
   return async written => {
     const id = written.sessionId
     await withLock(`${statePath(dir, id)}.herdr`, async () => {
-      const isReported = async () => target.kind === 'pane' || mayReport(await readClaim(dir, target.terminal), id)
+      const isReported = async () =>
+        target.kind === 'pane' || mayReport(await readClaim(dir, target.terminal), id, isPidRunning)
       if (!(await isReported())) return
       const [s, viewers] = await Promise.all([readState(dir, id), readViewers(dir, id)])
       const commands = await commandsOf(codexCommandStore(dir, id, now), s)

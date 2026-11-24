@@ -37,7 +37,7 @@ The Herdr look is a look, not a host. Each host publishes for it and applies its
 | Client | Entry | Reason |
 | --- | --- | --- |
 | `claude-code` | `different` | The mod cannot watch a folder, so a press reaches it through a wake label it reads with `hc events`. |
-| `codex` | `different` | Codex has no hook for a session's end, so its labels and file stay until the terminal runs something else. Whether `codex queue` reaches a CLI session is open. |
+| `codex` | `different` | Codex's SessionEnd hook removes its labels and file. A Codex that ends without it stays until the next Codex there gets its first prompt. Whether `codex queue` reaches a CLI session is open. |
 | `omp` | `full` | omp watches the press folder in its own process and clears its labels when it shuts down. |
 
 `herdr-sidebar` keeps its id, and its three entries are rewritten for the app's labels.

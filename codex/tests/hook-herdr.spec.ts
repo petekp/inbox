@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -70,4 +71,50 @@ test("a session's end in a terminal another session took leaves that session's f
 
   await terminal.end('first')
   assert.equal(existsSync(join(appHome, 'inbox/sessions/second.json')), true)
+})
+
+function terminalWorld() {
+  const dir = tempDir()
+  const appHome = tempDir()
+  const env = { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: appHome, HOME: '/home/person' }
+  const run = async () => ({ code: 1, stdout: '', stderr: 'no hc' })
+  const onWrite = herdrOnWrite(env, run, dir, () => 1000, quiet)
+  const at = (pid: number | null) => {
+    const terminal = herdrTerminal(env, run, dir, pid, quiet)
+    assert.ok(terminal)
+    return terminal
+  }
+  const published = (id: string) => existsSync(join(appHome, 'inbox/sessions', `${id}.json`))
+  const write = async (id: string) => {
+    await codexStore(dir, id, () => 2000, onWrite).update(async s => s)
+    return published(id)
+  }
+
+  return { appHome, at, published, write }
+}
+
+test('a Codex whose hooks do not run publishes once the session that held its terminal has left', async () => {
+  const { at, write } = terminalWorld()
+  const deadPid = spawnSync('true').pid
+  assert.ok(deadPid)
+
+  await at(process.pid).start('running')
+  assert.equal(await write('unhooked'), false)
+
+  await at(process.pid).end('running')
+  assert.equal(await write('unhooked'), true)
+  assert.equal(await write('running'), false)
+
+  await at(deadPid).start('crashed')
+  assert.equal(await write('unhooked'), true)
+})
+
+test('with no claim saved, a session publishes, and its end removes its file only when it published from this terminal', async () => {
+  const { appHome, at, published, write } = terminalWorld()
+  publishOther(appHome, 'away', 'codex', 't2')
+  assert.equal(await write('before'), true)
+
+  await at(null).end('away')
+  await at(null).end('before')
+  assert.deepEqual([published('away'), published('before')], [true, false])
 })
