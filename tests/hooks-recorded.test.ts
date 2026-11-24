@@ -248,7 +248,11 @@ test("the result under a record or close call reads the person's line, nothing w
   expect(await (await resultRow(1)).find({ text: /./ })).toBeUndefined()
   expect(await (await resultRow(2)).find({ text: 'Closed: Which cache should the API use?' })).toBeDefined()
   expect(
-    await (await resultRow(0, true)).find({ text: 'Recorded. The user sees it in the /inbox pane.' }),
+    await (
+      await resultRow(0, true)
+    ).find({
+      text: 'Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply.',
+    }),
   ).toBeDefined()
 })
 

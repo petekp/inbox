@@ -471,14 +471,16 @@
       {
         "calls": "record",
         "kind": "task",
-        "count": 1
+        "count": 1,
+        "items": true
       },
       {
         "calls": "close",
         "count": 1,
         "match": {
           "id": "^i12$"
-        }
+        },
+        "has": ["answer"]
       },
       {
         "calls": "close",
