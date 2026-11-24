@@ -353,5 +353,64 @@
         "added": 0
       }
     ]
+  },
+  {
+    "name": "dialog-reply-answers-one-question",
+    "about": "A Codex dialog of two questions, one answered by a dialog reply steered into the turn, then a typed message: the answered question's open copy closes and the other's stays open.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 6,
+      "card": {
+        "goal": "Add a greet command",
+        "done": [],
+        "now": "Waiting on two questions about greet",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i4",
+          "kind": "question",
+          "label": null,
+          "ask": "Should greet print a trailing newline?",
+          "options": ["Yes", "No"],
+          "rec": null,
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        },
+        {
+          "id": "i5",
+          "kind": "question",
+          "label": null,
+          "ask": "Should I tag a release once greet merges?",
+          "options": ["Yes", "No"],
+          "rec": null,
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "Also add a --name flag to greet",
+      "activity": [
+        "edited src/greet.ts",
+        "asked the user in a dialog: \"Should greet print a trailing newline?\" (options: Yes / No); answer: \"Should greet print a trailing newline?\"=\"No\"",
+        "asked the user in a dialog: \"Tag a release once greet merges?\" (options: Yes / No); still open, waiting on the user's answer",
+        "ran: npm test"
+      ],
+      "reply": "Added the --name flag to greet and updated its test. The tests pass."
+    },
+    "checks": [
+      {
+        "closed": "i4"
+      },
+      {
+        "open": "i5"
+      },
+      {
+        "added": 0
+      }
+    ]
   }
 ]

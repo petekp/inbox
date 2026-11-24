@@ -27,7 +27,7 @@ import {
 import { claimedStatusRefresh, needsUpdate, statusChanged } from '../../core/runtime/session-status'
 import { ancestorCli, namedCli } from './cli'
 import { endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
-import { dialogLine, noteTurnDialogs } from './dialogs'
+import { dialogLines, noteTurnDialogs } from './dialogs'
 import { withEarlierHistory, withMissedTurns } from './history'
 import { codexStore } from './host'
 import { codexCommandStore } from './command-log'
@@ -256,7 +256,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       // Codex runs Stop without writing the rollout out first, so the rollout can lack the turn's last message.
       const reply = turnReply(texts, input.last_assistant_message ?? '')
       const withHistory = await readHistoryAhead(() => before, tail)
-      const lines = dialogs.map(dialogLine)
+      const lines = dialogs.flatMap(dialogLines)
       const written = await write(async s => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),

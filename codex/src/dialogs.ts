@@ -1,4 +1,5 @@
-// Notes the dialogs a Codex turn opened, and words an inbox answer so that it answers the dialog its question copies.
+// Notes the dialogs a Codex turn opened and words their activity lines, and words an inbox answer so that it answers the
+// dialog its question copies.
 
 import { dialogActivity } from '../../core/domain/catch-up-text'
 import { noteDialogs } from '../../core/domain/dialogs'
@@ -48,18 +49,20 @@ export function dialogAnswersOf(text: string): DialogAnswer[] {
   })
 }
 
-/** The activity line for a dialog of a turn: answered with the answers a dialog reply gave it, else open. */
-export function dialogLine(d: Dialog): string {
-  const pairs = d.questions.flatMap((q, index) => {
-    const answer = d.answers[index]
+/**
+ * The activity lines for a dialog of a turn: one with the answers dialog replies gave its questions, and one with its
+ * questions still open. An inbox reply answers one question, so a dialog can end a turn partly answered.
+ */
+export function dialogLines(d: Dialog): string[] {
+  const isAnswered = (index: number) => d.answers[index] !== undefined
+  const answered = d.questions.filter((_, index) => isAnswered(index))
+  const open = d.questions.filter((_, index) => !isAnswered(index))
+  const pairs = d.questions.flatMap((q, index) => (isAnswered(index) ? [`"${q.question}"="${d.answers[index]}"`] : []))
 
-    return answer === undefined ? [] : [`"${q.question}"="${answer}"`]
-  })
-
-  return dialogActivity(
-    d.questions,
-    pairs.length > 0 ? { kind: 'answered', answer: pairs.join(', ') } : { kind: 'open' },
-  )
+  return [
+    ...(answered.length > 0 ? [dialogActivity(answered, { kind: 'answered', answer: pairs.join(', ') })] : []),
+    ...(open.length > 0 ? [dialogActivity(open, { kind: 'open' })] : []),
+  ]
 }
 
 /** An answer to a question linked to an open dialog question goes in the dialog's form, which closes the dialog. */
