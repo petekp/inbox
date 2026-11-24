@@ -2022,13 +2022,16 @@ function answerIndex(docs) {
 function rankedEarlier(index, question, skip, top) {
   const n = index.docs.length;
   const scores = /* @__PURE__ */ new Map();
+  const sharesWord = /* @__PURE__ */ new Set();
   let reachable = 0;
   for (const term of new Set(searchTerms([question.ask, ...question.options].join(" ")))) {
     const posted = index.postings.get(term);
     if (!posted) continue;
     const weight = Math.log(1 + (n - posted.length + 0.5) / (posted.length + 0.5));
     reachable += weight * (K1 + 1);
+    const isWord = /[a-z]/.test(term);
     for (const [doc, count] of posted) {
+      if (isWord) sharesWord.add(doc);
       const norm = 1 - B + B * index.lengths[doc] / index.averageLength;
       scores.set(doc, (scores.get(doc) ?? 0) + weight * count * (K1 + 1) / (count + K1 * norm));
     }
@@ -2036,7 +2039,7 @@ function rankedEarlier(index, question, skip, top) {
   if (reachable === 0) return [];
   return [...scores].flatMap(([i, score]) => {
     const doc = index.docs[i];
-    return doc && doc.key !== skip ? [{ doc, score: score / reachable }] : [];
+    return doc && doc.key !== skip && sharesWord.has(i) ? [{ doc, score: score / reachable }] : [];
   }).toSorted((a, b) => b.score - a.score).slice(0, top).filter((match) => match.score >= RELATIVE_FLOOR);
 }
 function bestEarlier(index, question, skip) {
