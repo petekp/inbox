@@ -107,7 +107,7 @@
 /* While every milestone leaves, the goal's section ends as it will without them, once their fade ends. */
 .status-page section[data-step='leaving'] {
   padding-bottom: calc(var(--section-gap) / 2);
-  transition-delay: var(--leave-fade);
+  transition-delay: var(--leave-fade-time);
 }
 .status-page section.unruled::before {
   content: none;
@@ -201,7 +201,7 @@
 }
 .status-page section[data-step='leaving'] > .status-head.goal + .list {
   margin-top: 0;
-  transition-delay: var(--leave-fade);
+  transition-delay: var(--leave-fade-time);
 }
 @property --space-above {
   syntax: '<length>';
@@ -228,7 +228,7 @@
 }
 .status-page .milestone-group[data-step='leaving'] {
   --space-above: 0px;
-  transition-delay: var(--leave-fade);
+  transition-delay: var(--leave-fade-time);
 }
 /* Later sits half of `section` under the row above, as around a rule. */
 .status-page .milestone-group + .row.part-line {
@@ -391,7 +391,7 @@
   margin-top: calc(-1 * var(--status-row-pad));
 }
 .status-page .list > [inert] ~ .row.part-line:nth-child(1 of :not([inert])) {
-  transition-delay: var(--leave-fade);
+  transition-delay: var(--leave-fade-time);
 }
 .status-page .part-rule {
   grid-column: 1 / -1;

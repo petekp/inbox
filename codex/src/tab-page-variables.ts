@@ -32,6 +32,7 @@ export function applyPageVariables() {
   document.documentElement.style.setProperty('--fade', `${FADE_MS}ms ${FADE_EASING}`)
   document.documentElement.style.setProperty('--settle', `${HEIGHT_SETTLE_MS}ms ease-out`)
   document.documentElement.style.setProperty('--leave-fade', `${LEAVE_FADE_MS}ms ${FADE_EASING}`)
+  document.documentElement.style.setProperty('--leave-fade-time', `${LEAVE_FADE_MS}ms`)
   document.documentElement.style.setProperty('--page-fade', `${ENTER_FADE_MS}ms ${FADE_EASING}`)
   const lineWait = enterDelayMs(layout.LINE_PT)
   document.documentElement.style.setProperty('--enter-fade', `${ENTER_FADE_MS}ms ${FADE_EASING} ${lineWait}ms`)
