@@ -69,13 +69,25 @@ function isApproval(item: Pick<Item, 'ask' | 'options'>): boolean {
  */
 export function missingText(item: Item | undefined, fields: readonly string[]): string {
   const canSend = (field: string) => fields.includes(field)
-  if (item?.kind === 'task')
-    return item.helps.length === 0 && canSend('steps')
-      ? ' It has no steps: when a command, file or link would help the user do it, record it again with steps.'
-      : ''
+  if (item?.kind === 'task') return taskStepsText(item, canSend) + taskResultsText(item, canSend)
   if (!item) return ''
 
   return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend)
+}
+
+function taskStepsText(item: Item, canSend: (field: string) => boolean): string {
+  return item.helps.length === 0 && canSend('steps')
+    ? ' It has no steps: when a command, file or link would help the user do it, record it again with steps.'
+    : ''
+}
+
+/** A task that asks the user something, as "does it come back?", needs its results as options to answer in one press. */
+function taskResultsText(item: Item, canSend: (field: string) => boolean): string {
+  const asksForResult = item.ask.trim().endsWith('?')
+
+  return asksForResult && item.options.length === 0 && canSend('options')
+    ? ' It asks for a result but has no options: record it again with the results the user can report as options.'
+    : ''
 }
 
 function bodyText(item: Item, canSend: (field: string) => boolean): string {

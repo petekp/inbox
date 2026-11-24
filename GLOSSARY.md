@@ -52,7 +52,9 @@ their measures, then the previews. The agent's reply has no table: it gives the
 pick, the reason, anything unexpected and the page's path.
 
 **Task**:
-Something only the person can do, such as signing in.
+Something only the person can do, such as signing in. When the agent needs
+the result back, such as a check on the person's screen, the task carries the
+results as options, and a press on one answers it.
 _Avoid_: do, todo
 
 **Closed item**:

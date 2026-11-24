@@ -296,7 +296,7 @@ export function demoView(now: number, agent: string): DemoCopy {
           label: null,
           from: 'record',
           ask: 'Check the glances outdoors in bright sun',
-          options: [],
+          options: ['Readable', 'Washed out'],
           rec: null,
           helps: [{ kind: 'copy', text: 'http://localhost:3000/preview', name: 'preview URL' }],
           turn: 14,

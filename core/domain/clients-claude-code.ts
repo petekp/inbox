@@ -117,5 +117,6 @@ export const CLAUDE_CODE: Client = {
     'named-pr-link': { kind: 'full' },
     'session-registry': { kind: 'full' },
     'press-preconditions': { kind: 'full' },
+    'task-results': { kind: 'full' },
   },
 }

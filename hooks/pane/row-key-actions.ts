@@ -51,7 +51,7 @@ export function rowKeyActions(
           ...(hotkey ? { hotkey } : {}),
           onPress: (press: UiPressArgument) => fx.runPress(p, press),
           ...(icon ? { icon } : {}),
-          key: `help-${id}-${p.step}`,
+          key: p.action === 'step' ? `help-${id}-${p.step}` : `result-${id}-${(item?.options ?? []).indexOf(p.option)}`,
         }
       }
       case 'action': {

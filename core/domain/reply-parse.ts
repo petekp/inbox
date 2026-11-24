@@ -121,12 +121,15 @@ export function withHelp(helps: Help[], help: Help): Help[] {
 
 /**
  * The open tasks a shell command the person ran completes: those whose run or
- * sign-in step is that exact command, so nothing closes on a guess.
+ * sign-in step is that exact command, so nothing closes on a guess. A task with
+ * results stays open, since running its command does not say which result came.
  */
 export function tasksRunBy(ledger: Ledger, command: string): Item[] {
   const typed = squash(command)
 
-  return ledger.items.filter(i => i.kind === 'task' && i.helps.some(h => isCommand(h) && squash(h.command) === typed))
+  return ledger.items.filter(
+    i => i.kind === 'task' && i.options.length === 0 && i.helps.some(h => isCommand(h) && squash(h.command) === typed),
+  )
 }
 
 function squash(command: string): string {
@@ -207,7 +210,7 @@ export function parseReply(text: string, source: string | null = null): Update |
         newLines.push(undefined)
         continue
       }
-      const options = rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean)
+      const options = readKind(kind) === 'question' ? rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : []
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === 'question'
       const item = {
         kind: readKind(kind),

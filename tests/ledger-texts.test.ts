@@ -165,6 +165,16 @@ describe("the person's own commands", () => {
     )
     expect(tasksRunBy(ledger, '  npm   login ').map(i => i.ask)).toEqual(['Sign in to npm'])
     expect(tasksRunBy(ledger, 'npm login --scope=@me')).toEqual([])
+    const withResults = {
+      ...ledger,
+      items: ledger.items.map(i => (i.ask === 'Sign in to npm' ? { ...i, options: ['Signed in', 'Refused'] } : i)),
+    }
+    expect(tasksRunBy(withResults, 'npm login')).toEqual([])
+  })
+
+  test("the inbox model's task line carries no results or recommendation", () => {
+    const update = parseReply('NEW: do | - | Sign in to npm | Signed in / Refused | Signed in', 'Run `npm login`.')
+    expect(update?.added.map(a => [a.kind, a.options, a.rec])).toEqual([['task', [], null]])
   })
 })
 
