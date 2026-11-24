@@ -124,7 +124,7 @@ export type StatusPage = GoalParts & {
   /**
    * What the session is focused on now. The description is null until the Status call writes one. While a goal is
    * open, the goal draws it as its Now line. While no goal is set, and once the goal is met, since the work no longer
-   * serves it, it is the heading of `rows`, as their first `part` row, when it has something to head (`headPart`).
+   * serves it, it is the heading of `rows`, as their first `part` row, when `headPart` keeps it: over rows, or while no goal is set and it has a description.
    */
   head: { title: string; description: string | null } | null
   /**
