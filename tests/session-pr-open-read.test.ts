@@ -70,8 +70,8 @@ const OPENS_PR: [string, RowPress | PrPress, Item?][] = [
   ['a check’s Open log with no log of its own', { action: 'log', ref: FIX_REF, check: 'lint' }],
   ['a task’s Open PR #12', { action: 'step', id: 'i1', step: 0, label: 'Open PR #12' }, task('Review PR #12')],
   [
-    'a task’s link to the PR',
-    { action: 'step', id: 'i1', step: 0, label: 'Open the PR' },
+    'a task’s link to the PR, named Open PR #12 whatever its name',
+    { action: 'step', id: 'i1', step: 0, label: 'Open PR #12' },
     task('Review it', [{ kind: 'link', url: 'https://github.com/ACME/app/pull/12', name: 'the PR' }]),
   ],
   [
@@ -91,8 +91,8 @@ for (const [name, p, item] of OPENS_PR)
 const OPENS_NO_TRACKED_PR: [string, RowPress | PrPress, Item?][] = [
   ['a check’s Open log', { action: 'log', ref: FIX_REF, check: 'test' }],
   [
-    'a task’s link to a PR the session does not track',
-    { action: 'step', id: 'i1', step: 0, label: 'Open the PR' },
+    'a task’s link to a PR the session does not track, named by its repo and number whatever its name',
+    { action: 'step', id: 'i1', step: 0, label: 'Open app#99' },
     task('Review it', [{ kind: 'link', url: 'https://github.com/acme/app/pull/99', name: 'the PR' }]),
   ],
   [
