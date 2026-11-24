@@ -368,11 +368,13 @@ function GoalSection({
       <p class="muted">{NO_GOAL_TEXT}</p>
     )
   const mark = g?.mark ?? null
-  const last = milestoneGroups(lines).at(-1)
+  const milestoneLines = milestoneGroups(lines)
+  const last = milestoneLines.at(-1)
   const sectionStyle = last ? { '--last-row-pad': `${milestoneGroupPadBelow(last.m, shownRows(last).shown)}px` } : {}
+  const isEveryMilestoneLeaving = connectorMotion(milestoneLines.map(l => goalLineMotion(l.m.id))) === 'leaving'
 
   return (
-    <section style={sectionStyle}>
+    <section style={sectionStyle} {...(isEveryMilestoneLeaving ? { 'data-step': 'leaving' } : {})}>
       <div class={mark ? 'goal-heading marked' : 'goal-heading'} data-motion="goal-heading">
         {mark ? (
           <span class={`${markClassOf(mark.tone, false)} goal-mark`}>
