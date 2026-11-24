@@ -98,6 +98,7 @@ Part of [the look map](../looks.md#files).
 | `hooks/mod/mod-state.ts` | Mod only. The values the hooks module keeps between events, in three holders: `paneState` for the drawn pane, `sessionState` for the conversation the session runs, and `mod` for the rest of the process. A reload that runs the modules again resets them. |
 | `hooks/pane/tabs-client.tsx` | Mod only. A Client region for the desktop tab bar, so each tab takes clicks over its whole shape. The app draws a new Client after the pane's own elements, so until a new one posts, the pane draws the same tab row from `tabsTree` with its own elements (`client-copy.tsx`). |
 | `hooks/pane/client-copy.tsx` | Mod only. Which desktop Clients are new, and the pane's copy of a new one, drawn with the pane's own elements under the Client until the Client posts. |
+| `hooks/pane/held-clients.tsx` | Mod only. An open desktop row's title and links Clients, kept drawn at zero height under the row while it waits on Undo, so Undo shows them again with no copy under them. |
 | `hooks/pane/pane-row-clients.tsx` | Mod only. The row, title, fold, links and Status parent Clients, each with its pane copy from the drawing function its module exports. |
 | `hooks/pane/row-client.tsx` | Mod only. A Client region for a closed row in the desktop pane. |
 | `hooks/pane/fold-keys.ts` | Mod only. The keys a fold line draws under, for an Asks group's Closed fold and a Status done fold, which a desktop click and hover come back with, and the upgrade of the saved Asks folds. |
