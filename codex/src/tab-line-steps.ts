@@ -1,4 +1,4 @@
-import { stepRow } from '../../core/view/row-motion'
+import { stepRow, withLeaving } from '../../core/view/row-motion'
 import type { BannerView } from '../../core/view/banners'
 import type { TextLevel } from '../../core/view/status-page-parts'
 import { drawnRows } from './tab-state'
@@ -26,9 +26,12 @@ export function stepLines<T extends { id: string }>(
 ): T[] {
   const listed = new Set(lines.map(l => l.id))
   const wasDrawn = new Set((lastLines ?? []).map(l => l.id))
-  const entries = [...lines]
-  for (const [n, l] of (lastLines ?? []).entries())
-    if (!listed.has(l.id) && drawnRows.has(motion(l.id))) entries.splice(Math.min(n, entries.length), 0, l)
+  const entries = withLeaving(
+    lines,
+    lastLines ?? [],
+    l => l.id,
+    l => drawnRows.has(motion(l.id)),
+  )
 
   return entries.filter(l => {
     const id = motion(l.id)

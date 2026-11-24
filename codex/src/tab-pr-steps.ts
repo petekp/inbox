@@ -1,7 +1,7 @@
 import { prMarkId } from '../../core/view/pr-rows'
 import type { PrAction } from '../../core/view/pr-press'
 import type { TabView as View } from './core'
-import { stepRow } from '../../core/view/row-motion'
+import { stepRow, withLeaving } from '../../core/view/row-motion'
 import type { RowTarget, RowTrack } from '../../core/view/row-motion'
 import { tabState, drawnRows } from './tab-state'
 import { isUndoing } from './tab-press'
@@ -75,9 +75,12 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
     const lastBlock = last?.blocks.find(x => prMarkId(x.pr.ref) === id)
     const drawn: Record<PrGroup, Row[] | null> = { threads: null, checks: null, cancelled: null }
     for (const group of PR_GROUPS) {
-      const entries = [...b[group]]
-      for (const [n, row] of (lastBlock?.drawn[group] ?? []).entries())
-        if (!listed.has(row.id) && drawnRows.has(row.id)) entries.splice(Math.min(n, entries.length), 0, row)
+      const entries = withLeaving(
+        b[group],
+        lastBlock?.drawn[group] ?? [],
+        r => r.id,
+        r => drawnRows.has(r.id),
+      )
       const shown = entries.filter(r => step(r.id, !listed.has(r.id) ? 'gone' : r.id === openId ? 'open' : 'closed'))
       drawn[group] = step(prGroupMotion(id, group), b[group].length > 0 ? 'closed' : 'gone') ? shown : null
     }
@@ -87,11 +90,10 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
     return { ...b, drawn, line: isLineShown ? (line ?? lastBlock?.line ?? null) : null, wasOpen: null }
   }
   const listedBlocks = new Set(blocks.map(b => prMarkId(b.pr.ref)))
-  const entries: PrBlockPlan[] = [...blocks]
-  for (const [n, b] of (last?.blocks ?? []).entries()) {
-    const id = prMarkId(b.pr.ref)
-    if (!listedBlocks.has(id) && drawnRows.has(prBlockMotion(id))) entries.splice(Math.min(n, entries.length), 0, b)
-  }
+  const blockId = (b: PrBlockPlan) => prMarkId(b.pr.ref)
+  const entries = withLeaving<PrBlockPlan>(blocks, last?.blocks ?? [], blockId, b =>
+    drawnRows.has(prBlockMotion(blockId(b))),
+  )
   const drawnBlocks = entries.flatMap((b): DrawnPrBlock[] => {
     const id = prMarkId(b.pr.ref)
     const motion = prBlockMotion(id)

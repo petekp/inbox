@@ -201,6 +201,17 @@
 .status-page .milestone-group.spaced {
   --space-above: var(--space-size, calc(var(--item-gap) - var(--list-gap)));
 }
+/* A milestone that enters grows its space from none, and one that leaves shrinks it once its fade ends, so the rows
+   below never jump by it. */
+.status-page .milestone-group.spaced[data-step='entering'] {
+  @starting-style {
+    --space-above: 0px;
+  }
+}
+.status-page .milestone-group[data-step='leaving'] {
+  --space-above: 0px;
+  transition-delay: var(--leave-fade);
+}
 /* Later sits half of `section` under the row above, as around a rule. */
 .status-page .milestone-group + .row.part-line {
   margin-top: calc(var(--section-gap) / 2 - var(--row-above-pad, calc(var(--item-gap) / 2)) - var(--status-row-pad));
