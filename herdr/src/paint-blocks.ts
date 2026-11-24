@@ -3,7 +3,7 @@ import type { Color, Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import { partPt } from '../../core/view/row-parts'
 import type { RowPart } from '../../core/view/row-parts'
-import { ROW_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
+import { LEAVE_FADE_MS, ROW_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
 import type { Aged, Block, BodyLine, Button, LineBlock, PrBlock, RowBlock, Tone } from './blocks'
 import {
@@ -311,12 +311,16 @@ function panelFadeEl(r: RowBlock, m: RowMotion | undefined, p: Paint, el: Elemen
 
 /**
  * The status under a row's buttons, such as "Sending…". It fades in once the row's box is nearly open, and out while
- * the box holds, as `underMotion` says. A row drawn with no motion, as a tab's first draw, shows it at rest, and so
- * does the form a row leaves as it changes form, `from`, which fades with that form's lines.
+ * the box holds, as `underMotion` says. A row drawn with no motion, as a tab's first draw, shows it at rest. The form a
+ * row leaves as it changes form, `from`, fades its status out from the opacity it shows, while the row's box holds its
+ * height, so a status still fading in, as Undo's "Sending…" when the row comes back, never shows whole.
  */
 function underEls(r: RowBlock, from: RowBlock, m: RowMotion | undefined, p: Paint, above: number): Element[] {
-  const atRest = isStatusUnder(from) ? { line: from.feedback, opacity: null, fadeMs: 0, delayMs: 0 } : null
-  const u = m && from === r ? m.under : atRest
+  const line = isStatusUnder(from) ? from.feedback : null
+  const isLeftForm = from !== r
+  const leaving = line && { line, opacity: 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 }
+  const atRest = line && { line, opacity: null, fadeMs: 0, delayMs: 0 }
+  const u = isLeftForm ? leaving : m ? m.under : atRest
   if (!u?.line) return []
   const key = underId(r.id)
   const glide = { duration: u.fadeMs, delay: u.delayMs, easing: 'ease-out' as const }
