@@ -44,9 +44,10 @@ that updates the inbox after each reply, reads two.
   again.
 - A dismissed question carries "Ask it again only if the user brings it up" on
   its own line.
-- `record` answers without an id, since replies repeated one to the user.
-  The next inbox line lists every open id for `close`. It answers "Already
-  open" for an ask an open item restates, and refuses one the person already answered or dismissed.
+- `record` answers a new row with its close id, since the inbox line lists a
+  row recorded this turn only from the next turn. The answer adds that a close
+  id never goes in a reply. It answers "Already open", with no id, for an ask an
+  open item restates, and refuses one the person already answered or dismissed.
 - Claude asks in its reply and records the same ask in that turn, as a
   question with options and a recommendation, or as a task with steps. It
   does not record rhetorical questions, offers to continue, FYIs or

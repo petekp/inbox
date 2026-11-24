@@ -1427,7 +1427,7 @@ var CODEX = {
     },
     "dialog-outcome": {
       kind: "different",
-      reason: "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open and its outcome is never recorded."
+      reason: "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open unless a reply in its form came later in the same turn."
     },
     "dialog-answer": { kind: "full" },
     "dialog-answer-closes-copy": {
@@ -7432,7 +7432,7 @@ function earlierAnswersText(id, earlier, now) {
     return `- ${agoText(now - doc.at)}${where}: "${clipLabel(doc.ask, MATCH_TEXT_CHARS)}" They answered "${clipLabel(doc.answer, MATCH_TEXT_CHARS)}".`;
   });
   return [
-    ` Its id is ${id}.`,
+    "",
     `The user answered similar questions before. If one settles this exact question, close ${id} with the reason "answered before: <their answer>" and act on that answer. If it answers an earlier step or a different case, or put the decision off, leave ${id} open.`,
     ...lines
   ].join(`
@@ -7540,6 +7540,9 @@ var TOOL_FIELDS = {
 
 // ../core/runtime/tools.ts
 var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
+function closeIdText(id) {
+  return ` Its close id is ${id}. ${CLOSE_ID_RULE}`;
+}
 function orderDescription(host) {
   return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
 }
@@ -7636,7 +7639,7 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
   }
   return {
     ledger: recorded,
-    result: `Recorded. The user sees it in ${host.surface}.` + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "") + earlierAnswersText(r.id, earlier, now),
+    result: `Recorded. The user sees it in ${host.surface}.` + closeIdText(r.id) + leftOut + missingText(after, fields.record) + (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : "") + earlierAnswersText(r.id, earlier, now),
     personLine: `${input.kind === "question" ? "Question" : "Task"}: ${ask}`
   };
 }
@@ -7654,7 +7657,7 @@ function recordFinding(host, ledger, input, now) {
     return unchanged(r.ledger, "Already recorded.");
   return {
     ledger: r.ledger,
-    result: `Recorded. The user sees it in ${host.findingsIn}.` + (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : ""),
+    result: `Recorded. The user sees it in ${host.findingsIn}.` + closeIdText(r.id) + (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : ""),
     personLine: `${kind === "opportunity" ? "Opportunity" : "Issue"}: ${title}`
   };
 }
@@ -7708,13 +7711,13 @@ function recordClose(host, ledger, input, now, presses) {
   if (r.closed && "item" in r.closed)
     return {
       ledger: r.ledger,
-      result: `Closed. The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`,
+      result: `Closed "${r.closed.item.ask}". The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`,
       personLine: `Closed: ${r.closed.item.ask}`
     };
   if (r.closed)
     return {
       ledger: r.ledger,
-      result: `Closed the finding. ${NAME_BY_CONTENT}`,
+      result: `Closed the finding "${r.closed.finding.title}". ${NAME_BY_CONTENT}`,
       personLine: `Closed: ${r.closed.finding.title}`
     };
   const earlier = [...ledger.closed, ...ledger.closedFindings].findLast((c) => c.id === id);

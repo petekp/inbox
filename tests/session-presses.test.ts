@@ -55,13 +55,17 @@ test('a close with a reason of a question recorded again after its Compare press
 
   await host.update(async s => turnEnded(endTurn(CLAUDE_CODE, s, 'I pick Redis.', false), await host.now()))
   await host.update(async s => turnStarted(s, await host.now()))
-  expect(await call('close', { id, reason: 'the person dropped caching' })).toMatch(/^Closed\./)
+  expect(await call('close', { id, reason: 'the person dropped caching' })).toMatch(
+    /^Closed "Which cache should the API use\?"\./,
+  )
 })
 
 test('a record after the agent closed the question with a reason in its Compare turn reopens that question and updates it', async () => {
   const { host, call, id, compared } = await pressedCompare()
 
-  expect(await call('close', { id, reason: 'replaced by the compared copy' })).toMatch(/^Closed\./)
+  expect(await call('close', { id, reason: 'replaced by the compared copy' })).toMatch(
+    /^Closed "Which cache should the API use\?"\./,
+  )
   expect(await call('record', compared)).toBe('Already open, so this record updated it and added its new steps.')
   const { ledger } = await host.read()
   expect(ledger.items.map(i => i.id)).toEqual([id])
@@ -72,7 +76,7 @@ test("a close with the person's answer after a Compare press takes effect", asyn
   const { host, call, id, compared } = await pressedCompare()
   await call('record', compared)
 
-  expect(await call('close', { id, answer: 'Redis' })).toMatch(/^Closed\./)
+  expect(await call('close', { id, answer: 'Redis' })).toMatch(/^Closed "Which cache should the API use\?"\./)
   expect((await host.read()).ledger.items).toEqual([])
 })
 

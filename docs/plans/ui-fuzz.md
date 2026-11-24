@@ -1,6 +1,6 @@
 # UI fuzz: pressure-test every look and its motion
 
-Status: building. The omp panel, the Herdr look and the shared row stepper run, with the rules marked built below. The Codex tab, the mod's looks and the arbitrary-state pass come next.
+Status: building. The omp panel, the Herdr look, the shared row stepper, the Codex tab and the mod's terminal and desktop looks run, with the rules marked built below. [The Codex tab and the mod's looks](ui-fuzz-looks.md) has those two passes. The arbitrary-state pass comes next.
 
 ## What it is for
 
@@ -8,10 +8,11 @@ The looks are tested on the demo session and a few hand-picked states. Bugs such
 
 ## Running it
 
-`./scripts/fuzz.sh [--look omp|herdr|all] [--seed N] [--runs N] [--time S] [--shrinks N] [--replay <case.json>]`
+`./scripts/fuzz.sh [--look omp|herdr|rows|codex|mod|all] [--seed N] [--runs N] [--time S] [--shrinks N] [--replay <case.json>]`
 
 - Bun runs `fuzz/run.ts`. Case `i` of a run draws every choice from a PRNG seeded with `(seed, i)`, so `--seed N --case i` runs that case again. `--time` stops after that many seconds, `--runs` after that many cases.
 - Each failure writes `fuzz/out/<run>/<look>-<rule>-<n>.json`, the shrunk case, which `--replay` runs again. Beside it, a `.md` gives the look, the rule, what it saw, the time of the draw or frame, the drawn lines or the frame's boxes, the case's size before and after shrinking, and the replay command. Each rule is shrunk at most `--shrinks` times a run, and a shrunk case already written is not written again. With `--shrinks 0`, the first failing case of each rule is written as it is. `fuzz/out/` is Git-ignored.
+- A failure that an open issue already describes is known: `KNOWN` in `fuzz/seeds.ts` names each one by look, rule and a text in its detail. Known failures are counted but not shrunk or written, unless `--known` asks for them. A run exits 0 when every seed fails as its issue says and every failure is known, and 1 on anything new.
 - It is not in `check.sh`. The report proposes a short fixed-seed run for it, with its measured runtime.
 - No model calls, no screen, no VM. Everything is headless and in one process.
 
@@ -66,10 +67,10 @@ Next, a separate pass, `--look arbitrary`, will build sessions with no regard fo
 | omp | `createPanel` in `omp/src/controller.ts`, over a `PanelSource` the in-memory host backs, `render(width)` after every event and timer | `no-throw`, `bad-text`, `width`, `raw-escape`, `glyph-cut`, `plan-order`, `counts` | `press-steady`. omp draws no glides. |
 | Herdr | the real `Inbox` view in `herdr/src/main.ts`, opened with `openPanel` from `herdr/tests/gpui-stand-in.ts`, with virtual timers, press files and session files kept in memory. Its blocks before motion then go through `framesOf` in `herdr/tests/frames.ts` at 16 ms frames. | `no-throw`, `motion-id`, `bad-text`, `glyph-cut`, `plan-order`, `counts`, `cut`, `jump`, `connector-gap`, `vanish` | `overlap`, `flicker`, `animates` |
 | Shared row stepper | `stepRow` over generated targets, draw gaps, new rows and reduced motion, 50 cases for each `--runs` case | the four stepper rules below | the same rules on the Codex tab's drawn rows |
-| Codex tab | the built tab in a headless browser page, as `codex/scripts/tab-page.sh` serves it, with `[data-motion]` rects sampled each animation frame, in both themes and with reduced motion emulated | none | all |
-| Terminal and desktop | the mod's render path as `tests/hooks-world.ts` drives it, read as the drawn tree | none | plan order, width in the terminal, counts, no bad text. The terminal does not glide. Desktop pixels need the VM, so desktop stays on the drawn tree. |
+| Codex tab | the built tab in a headless browser page, as `codex/scripts/tab-page.sh` serves it, with its boxes and text rects sampled each animation frame, in both themes and with reduced motion emulated | `cut`, `jump`, `reduced`, `bad-text`, `no-throw` | `vanish`, `plan-order`, agent events |
+| Terminal and desktop | the mod's render path as `tests/hooks-world.ts` drives it, in the plugin test engine, read as the drawn tree | `drawn`, `title`, `bad-text`, `raw-escape` | presses, keys and line widths in the terminal. The terminal does not glide. Desktop pixels need the VM, so desktop stays on the drawn tree. |
 
-`fuzz/look-herdr.ts` imports `herdr/tests/gpui-stand-in.ts` before any `herdr/src` module, since the stand-in replaces the app's modules as it loads. It wraps `moveRows` in `herdr/src/motion.ts` to record whether the view drew each frame as the person's input, and gives `framesOf` the same flag, so the replay moves rows as the view did. A key or click targets the tree of the last draw and comes 1 ms after it, so the view takes it as the person's move, as it always is live. `fuzz/look-omp.ts` wraps `drawPanel` in `omp/src/panel.ts` the same way, to read the screen and UI state each draw came from. Neither changes `frames.ts` or a look's code.
+`fuzz/look-herdr.ts` imports `herdr/tests/gpui-stand-in.ts` before any `herdr/src` module, since the stand-in replaces the app's modules as it loads. It wraps `moveRows` in `herdr/src/motion.ts` to record whether the view drew each frame as the person's input, and gives `framesOf` the same flag, so the replay moves rows as the view did. A key or click targets the tree of the last draw and comes 1 ms after it, so the view takes it as the person's move, as it always is live. `fuzz/look-omp.ts` wraps `drawPanel` in `omp/src/panel.ts` the same way, to read the screen and UI state each draw came from. Neither changes `frames.ts` or a look's code. The view draws a new page, a tab, Help or a session, at rest, which `framesOf` cannot know, so the driver records each draw where `moveRows` was told it is the first, and the rules replay each page from its first draw.
 
 ## Rules
 
@@ -111,9 +112,10 @@ Motion rules run on the frames `framesOf` draws from 0 ms, the case's start. The
 
 Recent bugs are seed cases in `fuzz/seeds.ts`, which every run checks before its generated cases. A seed for a closed issue must pass, and the run fails when it does not. A seed for an open issue is expected to fail with its rule, and the run says so without failing. When it passes, the run says its issue is fixed or the harness misses it.
 
-- Herdr: #771 (a row that settles while it opens) passes. #811's second Copy press fails with `cut`, as #811 says. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line. It shows #827's cut of "Sending…" instead.
-- From the first runs: #827, #828, #829, #830 and #831, each with its seed.
-- Codex tab, with that look: #772 and #783 (open or close just after Undo), #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line).
+- Herdr: #771 (a row that settles while it opens), #811's second Copy press, and #827's Undo bringing a dismissed task back and Explain on a task, pass. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line.
+- From the first runs: #827, #828, #830, #831, #832 and #833, each with its seed. #829 was a false report from the frame replay animating a tab switch, and is closed.
+- Codex tab: #834, #835, #836 and #837, each with its seed. #772 and #783 (open or close just after Undo) have no seed yet. #798 and #806 need agent events, which the Codex driver does not send.
+- Terminal and desktop: #830, with its seed.
 
 ## Shrinking
 
@@ -137,14 +139,14 @@ None. A seeded PRNG is ten lines, and the shrinker works on the case's own JSON.
 - `run.ts`: arguments, seeds, the loop and reports.
 - `case.ts`, `rng.ts`, `texts.ts`, `gen.ts`: the case format and its generator.
 - `host.ts`: the in-memory host. `agent.ts`: the agent's events through the shared code.
-- `look-omp.ts`, `look-herdr.ts`: each look's driver. `look-rows.ts`: the shared row stepper, with its own generator, rules and shrinking, since a case there is a list of draws rather than a session.
+- `look-omp.ts`, `look-herdr.ts`: each look's driver. `look-codex.ts` and `codex-page.ts`: the Codex tab's driver and the code it runs in the page. `look-mod.ts`, `mod-look.ts` and `mod-case.ts`: the mod's looks, with `tsconfig.mod.json` to type-check the part that runs in the test engine. `look-rows.ts`: the shared row stepper, with its own generator, rules and shrinking, since a case there is a list of draws rather than a session.
 - `rules-text.ts`, `rules-omp.ts`, `rules-herdr.ts`, `failure.ts`: the rules.
 - `shrink.ts`, `seeds.ts`, `tsconfig.json`.
 
 `scripts/fuzz.sh` runs it. Reports go to `fuzz/out/`, which Git ignores. Each file stays at 5,000 tokens or under.
 
-`check.sh` type-checks only the root, `codex`, `omp` and `herdr` projects, so it does not check `fuzz/`. Until it does, run `./herdr/node_modules/.bin/tsc -p fuzz` after a change there. It needs the Herdr app's types, which `bun herdr/herdr-types.ts` copies in.
+`check.sh` type-checks only the root, `codex`, `omp` and `herdr` projects, so it does not check `fuzz/`. Until it does, run `./herdr/node_modules/.bin/tsc -p fuzz` and `./herdr/node_modules/.bin/tsc -p fuzz/tsconfig.mod.json` after a change there. It needs the Herdr app's types, which `bun herdr/herdr-types.ts` copies in.
 
 ## A fixed-seed run for check.sh
 
-`./scripts/fuzz.sh --seed 1 --runs 12 --shrinks 0` runs the seeds and 12 cases on both looks in about 7 seconds. Today it finds the open bugs the first runs filed, so it would fail check.sh until they are fixed. Adding it to check.sh is a separate change.
+`./scripts/fuzz.sh --seed 1 --runs 12 --shrinks 0` runs the seeds, 12 cases on both looks and 600 stepper cases in about 7 seconds. It finds only known failures, so it exits 0, and it fails on a new failure or a seed that stops failing as its issue says. It leaves out the Codex tab, which runs in real time, and the mod's looks, which take about 10 seconds for 20 cases. Adding it to check.sh is a separate change. When an issue is fixed, mark its seed closed, and its known failures then count as new.

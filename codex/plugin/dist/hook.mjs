@@ -2193,9 +2193,6 @@ var TOOL_FIELDS = {
   order_prs: Object.keys(ORDER_SCHEMA.properties)
 };
 
-// ../core/view/arrivals.ts
-var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
-
 // ../core/domain/inbox-text.ts
 var START_TITLE = 'inbox: where this session stands, as of the last reply. An "inbox:" text beside a later prompt replaces this.';
 function surfaceAtStart(host) {
@@ -2342,6 +2339,9 @@ function promptNotes(host, ledger, prompt, told) {
   notes.push(closed ? `${inbox}${NL3}${closed}` : inbox);
   return { notes, told: { inbox, closed: ledger.closed.map((d) => d.id) } };
 }
+
+// ../core/view/arrivals.ts
+var ARRIVAL_TABS = ROW_TABS.map((t) => t.id);
 
 // ../core/view/action-plan.ts
 var CHOICE_KEYS = [..."abcfghilm"];
@@ -3569,8 +3569,8 @@ function numberedTasks(rows, textKey) {
   return rows.map(recordOf).map((row, n) => ({ id: String(n + 1), text: textOf(row[textKey]), status: statusOf(row.status) })).filter((t) => t.text !== "");
 }
 function codexPlanOf(args) {
-  const parsed2 = typeof args === "string" ? safeJson(args) : args;
-  const plan = recordOf(parsed2).plan;
+  const parsed3 = typeof args === "string" ? safeJson(args) : args;
+  const plan = recordOf(parsed3).plan;
   if (!Array.isArray(plan)) return null;
   return numberedTasks(plan, "step");
 }
@@ -5397,80 +5397,8 @@ async function withoutSharedTerminal(env, run2, pid, log) {
 // src/hook.ts
 import { resolve as resolve3 } from "node:path";
 
-// src/dialogs.ts
-function noteTurnDialogs(s, dialogs) {
-  return noteDialogs(
-    s,
-    dialogs.filter((d) => d.callId !== null && !d.isFollowedByMessage)
-  );
-}
-
-// src/history.ts
-async function withForkedLedger(s, { dir, reads }) {
-  const parentId = await reads.forkedFromId();
-  const parent = parentId === null ? null : await readState(dir, parentId).catch(() => null);
-  return parent !== null && hasLedger(parent) ? forkedFrom(s, parent) : s;
-}
-function newestEndedTurn(rows, currentTurnId) {
-  return rows?.findLast((t) => t.hasEnded && t.id !== currentTurnId)?.id ?? null;
-}
-var holdsEndedTurn = (currentTurnId) => (rows) => newestEndedTurn(rows, currentTurnId) !== null;
-async function withEarlierHistory(s, history) {
-  if (heardState(s.heard) !== "none") return { state: s, isBehind: false };
-  const forked = await withForkedLedger(s, history);
-  const { reads, cwd, currentTurnId, canMarkBehind = true } = history;
-  if (!canMarkBehind) return { state: forked, isBehind: false };
-  const rollout = isUnseen(forked) ? await reads.rollout(cwd, currentTurnId) : null;
-  const coveredTurn = newestEndedTurn(await reads.turns(holdsEndedTurn(currentTurnId)), currentTurnId);
-  const covered = coveredTurn === forked.coveredTurn ? forked : { ...forked, coveredTurn };
-  if ((rollout?.earlierTurns ?? 0) === 0) return { state: covered, isBehind: false };
-  return { state: { ...covered, presence: { ...covered.presence, ledgerState: "behind" } }, isBehind: true };
-}
-async function withMissedTurns(s, { reads, currentTurnId, canMarkBehind = true, isCleared = false }) {
-  const unchanged = { state: s, isBehind: false };
-  const isTurnChecked = currentTurnId !== void 0 && isTurnHeard(s, currentTurnId);
-  if (!canMarkBehind || isTurnChecked) return unchanged;
-  const rows = await reads.turns(
-    isCleared ? holdsEndedTurn(currentTurnId) : (turns) => turns.some((t) => t.id === s.coveredTurn)
-  );
-  if (rows === null) return unchanged;
-  if (isCleared) return { state: { ...s, coveredTurn: newestEndedTurn(rows, currentTurnId) }, isBehind: false };
-  const coveredAt = rows.findLastIndex((t) => t.id === s.coveredTurn);
-  const missed = rows.slice(coveredAt + 1).filter((t) => t.hasEnded && t.id !== currentTurnId);
-  const newest = missed.at(-1);
-  if (newest === void 0) return unchanged;
-  const promptTurn = s.heard.promptTurns.at(-1);
-  const isRecordedTurnMissed = s.turn.person !== null && missed.some((t) => t.id === promptTurn);
-  const { ledgerState } = s.presence;
-  return {
-    state: {
-      ...s,
-      coveredTurn: newest.id,
-      turn: isRecordedTurnMissed ? NO_TURN : s.turn,
-      presence: { ...s.presence, ledgerState: ledgerState === "current" ? "behind" : ledgerState }
-    },
-    isBehind: true
-  };
-}
-
-// src/delegate-calls.ts
-function delegateCallNoted(s, command, at) {
-  const refs = delegateRefs(command);
-  const before = (s.ledger.overview?.children ?? []).filter((c) => refs.has(c.ref));
-  const noted = { ...s, delegateCalls: [...s.delegateCalls, { command, at, before }] };
-  return statusChanged(noted, (o) => delegatesStarted(o, command, at));
-}
-function unranDelegatesTakenBack(s, refs) {
-  if (refs.length === 0) return s;
-  const unran = new Set(refs);
-  return statusChanged(
-    s,
-    (o) => s.delegateCalls.reduceRight((x, call) => {
-      const callRefs = new Set([...delegateRefs(call.command)].filter((ref) => unran.has(ref)));
-      return delegateRowsTakenBack(x, callRefs, call.before, call.at);
-    }, o)
-  );
-}
+// src/rollout-commands.ts
+import { resolve as resolve2 } from "node:path";
 
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
@@ -5589,37 +5517,7 @@ var jsonRecord = (raw) => {
   }
 };
 
-// ../core/domain/conversation.ts
-var NL4 = "\n";
-var TRANSCRIPT_MAX = 8e4;
-var MESSAGE_MAX = 6e3;
-function flattenConversation(turns) {
-  const lines = [];
-  for (const turn of turns) {
-    const text2 = turn.text.trim();
-    const shown = turn.isVerbatim ? text2 : clip(text2, MESSAGE_MAX);
-    if (turn.role === "person") {
-      if (text2 && !text2.startsWith("inbox:")) lines.push(`Person: ${shown}`);
-      continue;
-    }
-    if (text2) lines.push(`Agent: ${shown}`);
-    for (const line of turn.activity) lines.push(`Agent ${line}`);
-  }
-  const kept = [];
-  let size = 0;
-  for (const line of lines.reverse()) {
-    size += line.length + 1;
-    if (size > TRANSCRIPT_MAX) {
-      kept.push("(earlier conversation left out)");
-      break;
-    }
-    kept.push(line);
-  }
-  return kept.reverse().join(NL4);
-}
-
 // src/rollout-commands.ts
-import { resolve as resolve2 } from "node:path";
 var DIALOG_TOOL = "request_user_input_async";
 var SHELL_CALLS = /* @__PURE__ */ new Set(["shell", "shell_command", "exec_command", "container.exec"]);
 function commandText(command) {
@@ -5632,8 +5530,8 @@ function commandText(command) {
 function outputText(output) {
   if (!isText(output)) return "";
   try {
-    const parsed2 = JSON.parse(output);
-    return isText(parsed2.output) ? parsed2.output : output;
+    const parsed3 = JSON.parse(output);
+    return isText(parsed3.output) ? parsed3.output : output;
   } catch {
     return output;
   }
@@ -5695,6 +5593,138 @@ function callLines(p, hasCommandRows2, cwd) {
   if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
   const line = toolActivity(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
   return line ? [line] : [];
+}
+
+// src/dialogs.ts
+var REPLY_FORM = /^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/;
+function parsed2(text2) {
+  try {
+    return JSON.parse(typeof text2 === "string" ? text2 : "");
+  } catch {
+    return null;
+  }
+}
+function dialogAnswersOf(text2) {
+  const replies = parsed2(REPLY_FORM.exec(text2.trim())?.[1]);
+  if (!Array.isArray(replies)) return [];
+  return replies.flatMap((reply) => {
+    const { questionItemId, answer } = reply ?? {};
+    const id = parsed2(questionItemId);
+    const isQuestionId = Array.isArray(id) && id[0] === DIALOG_TOOL && typeof id[1] === "string" && typeof id[2] === "number";
+    return isQuestionId && typeof answer === "string" ? [{ callId: id[1], index: id[2], answer }] : [];
+  });
+}
+function dialogLines(d) {
+  const isAnswered = (index) => d.answers[index] !== void 0;
+  const answered = d.questions.filter((_, index) => isAnswered(index));
+  const open2 = d.questions.filter((_, index) => !isAnswered(index));
+  const pairs = d.questions.flatMap((q, index) => isAnswered(index) ? [`"${q.question}"="${d.answers[index]}"`] : []);
+  return [
+    ...answered.length > 0 ? [dialogActivity(answered, { kind: "answered", answer: pairs.join(", ") })] : [],
+    ...open2.length > 0 ? [dialogActivity(open2, { kind: "open" })] : []
+  ];
+}
+function noteTurnDialogs(s, dialogs) {
+  return noteDialogs(
+    s,
+    dialogs.filter((d) => d.callId !== null && !d.isFollowedByMessage)
+  );
+}
+
+// src/history.ts
+async function withForkedLedger(s, { dir, reads }) {
+  const parentId = await reads.forkedFromId();
+  const parent = parentId === null ? null : await readState(dir, parentId).catch(() => null);
+  return parent !== null && hasLedger(parent) ? forkedFrom(s, parent) : s;
+}
+function newestEndedTurn(rows, currentTurnId) {
+  return rows?.findLast((t) => t.hasEnded && t.id !== currentTurnId)?.id ?? null;
+}
+var holdsEndedTurn = (currentTurnId) => (rows) => newestEndedTurn(rows, currentTurnId) !== null;
+async function withEarlierHistory(s, history) {
+  if (heardState(s.heard) !== "none") return { state: s, isBehind: false };
+  const forked = await withForkedLedger(s, history);
+  const { reads, cwd, currentTurnId, canMarkBehind = true } = history;
+  if (!canMarkBehind) return { state: forked, isBehind: false };
+  const rollout = isUnseen(forked) ? await reads.rollout(cwd, currentTurnId) : null;
+  const coveredTurn = newestEndedTurn(await reads.turns(holdsEndedTurn(currentTurnId)), currentTurnId);
+  const covered = coveredTurn === forked.coveredTurn ? forked : { ...forked, coveredTurn };
+  if ((rollout?.earlierTurns ?? 0) === 0) return { state: covered, isBehind: false };
+  return { state: { ...covered, presence: { ...covered.presence, ledgerState: "behind" } }, isBehind: true };
+}
+async function withMissedTurns(s, { reads, currentTurnId, canMarkBehind = true, isCleared = false }) {
+  const unchanged = { state: s, isBehind: false };
+  const isTurnChecked = currentTurnId !== void 0 && isTurnHeard(s, currentTurnId);
+  if (!canMarkBehind || isTurnChecked) return unchanged;
+  const rows = await reads.turns(
+    isCleared ? holdsEndedTurn(currentTurnId) : (turns) => turns.some((t) => t.id === s.coveredTurn)
+  );
+  if (rows === null) return unchanged;
+  if (isCleared) return { state: { ...s, coveredTurn: newestEndedTurn(rows, currentTurnId) }, isBehind: false };
+  const coveredAt = rows.findLastIndex((t) => t.id === s.coveredTurn);
+  const missed = rows.slice(coveredAt + 1).filter((t) => t.hasEnded && t.id !== currentTurnId);
+  const newest = missed.at(-1);
+  if (newest === void 0) return unchanged;
+  const promptTurn = s.heard.promptTurns.at(-1);
+  const isRecordedTurnMissed = s.turn.person !== null && missed.some((t) => t.id === promptTurn);
+  const { ledgerState } = s.presence;
+  return {
+    state: {
+      ...s,
+      coveredTurn: newest.id,
+      turn: isRecordedTurnMissed ? NO_TURN : s.turn,
+      presence: { ...s.presence, ledgerState: ledgerState === "current" ? "behind" : ledgerState }
+    },
+    isBehind: true
+  };
+}
+
+// src/delegate-calls.ts
+function delegateCallNoted(s, command, at) {
+  const refs = delegateRefs(command);
+  const before = (s.ledger.overview?.children ?? []).filter((c) => refs.has(c.ref));
+  const noted = { ...s, delegateCalls: [...s.delegateCalls, { command, at, before }] };
+  return statusChanged(noted, (o) => delegatesStarted(o, command, at));
+}
+function unranDelegatesTakenBack(s, refs) {
+  if (refs.length === 0) return s;
+  const unran = new Set(refs);
+  return statusChanged(
+    s,
+    (o) => s.delegateCalls.reduceRight((x, call) => {
+      const callRefs = new Set([...delegateRefs(call.command)].filter((ref) => unran.has(ref)));
+      return delegateRowsTakenBack(x, callRefs, call.before, call.at);
+    }, o)
+  );
+}
+
+// ../core/domain/conversation.ts
+var NL4 = "\n";
+var TRANSCRIPT_MAX = 8e4;
+var MESSAGE_MAX = 6e3;
+function flattenConversation(turns) {
+  const lines = [];
+  for (const turn of turns) {
+    const text2 = turn.text.trim();
+    const shown = turn.isVerbatim ? text2 : clip(text2, MESSAGE_MAX);
+    if (turn.role === "person") {
+      if (text2 && !text2.startsWith("inbox:")) lines.push(`Person: ${shown}`);
+      continue;
+    }
+    if (text2) lines.push(`Agent: ${shown}`);
+    for (const line of turn.activity) lines.push(`Agent ${line}`);
+  }
+  const kept = [];
+  let size = 0;
+  for (const line of lines.reverse()) {
+    size += line.length + 1;
+    if (size > TRANSCRIPT_MAX) {
+      kept.push("(earlier conversation left out)");
+      break;
+    }
+    kept.push(line);
+  }
+  return kept.reverse().join(NL4);
 }
 
 // src/rollout-unran.ts
@@ -5883,10 +5913,15 @@ function turnOf(lines, turnId) {
         turn2.dialogs.push({
           callId: p.call_id ?? null,
           questions: dialogQuestions(args.questions),
-          isFollowedByMessage: false
+          isFollowedByMessage: false,
+          answers: {}
         });
       } else if (row.type === "response_item" && p.type === "message" && p.role === "user") {
-        turn2.dialogs = turn2.dialogs.map((d) => ({ ...d, isFollowedByMessage: true }));
+        const replies = dialogAnswersOf(contentText(p.content));
+        turn2.dialogs = turn2.dialogs.map((d) => {
+          const given = replies.filter((r) => r.callId === d.callId).map((r) => [r.index, r.answer]);
+          return { ...d, isFollowedByMessage: true, answers: { ...d.answers, ...Object.fromEntries(given) } };
+        });
       } else if (row.type === "response_item" && (p.type === "function_call" || p.type === "local_shell_call")) {
         const command = callCommand(p);
         if (command !== "" && p.call_id) turn2.calls.set(p.call_id, { command, output: "" });
@@ -6261,7 +6296,7 @@ async function handleHook(input, deps) {
       const { dialogs, commands, plan, texts, unran, unranDelegates } = turnOf(tail, input.turn_id);
       const reply = turnReply(texts, input.last_assistant_message ?? "");
       const withHistory = await readHistoryAhead(() => before, tail);
-      const lines = dialogs.map((d) => dialogActivity(d.questions, { kind: "open" }));
+      const lines = dialogs.flatMap(dialogLines);
       const written = await write(async (s) => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),
