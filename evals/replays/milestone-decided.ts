@@ -100,7 +100,7 @@ export const milestoneDecided: Replay = {
           {
             id: 'ending',
             state: 'working',
-            stands: '"!" chosen, the edit waits on the person',
+            stands: '"!" chosen, edit not made yet',
             alsoRight: ['done'],
           },
         ],
