@@ -16,6 +16,7 @@ import type { Item, Session } from '../types'
 import { allRows } from '../core/view/rows'
 import { NO_HOLDS } from '../core/view/timing'
 import { prMarkId } from '../core/view/pr-rows'
+import { DISMISSED_VIEW_KEPT_MS } from '../core/view/pr-views'
 import { demoSession, demoView, isDemoCopy } from '../core/view/demo'
 import { TOOL_FIELDS } from '../core/domain/tool-schemas'
 import { answer } from './session-helpers'
@@ -170,7 +171,7 @@ test('an applied model answer that changes nothing still makes the session seen,
   expect(forkedFrom(emptySession(), parent).hostTasks).toEqual(parent.hostTasks)
 })
 
-test('a prune keeps the closed records of held rows and of rows closed since the showing began, a linked PR’s view, and a dismissed PR’s view only while the showing that dismissed it lasts', () => {
+test('a prune keeps the closed records of held rows and of rows closed since the showing began, a linked PR’s view, and a dismissed PR’s view while the showing that dismissed it lasts or for a minute after the Dismiss', () => {
   const tasks = Array.from({ length: 14 }, (_, n) => `NEW: do | - | Task ${n} of the export | - | -`).join('\n')
   const opened = applyUpdate(EMPTY, parseReply(tasks)!, 10, 1)
   const ids = opened.items.map(i => i.id)
@@ -190,7 +191,11 @@ test('a prune keeps the closed records of held rows and of rows closed since the
   expect(closedIds(shownEarly)).toEqual(ids)
   expect(Object.keys(shownEarly.prViews.views).sort()).toEqual([ref, linked].sort())
   expect(closedIds(pruned({ ...s, shownSince: 50, heldRows: [ids[0]!] }))).toEqual([ids[0], ...ids.slice(2)])
-  const left = pruned({ ...s, shownSince: null })
+  const unshown = { ...s, shownSince: null }
+  expect(Object.keys(pruned(unshown, 30 + DISMISSED_VIEW_KEPT_MS - 1).prViews.views).sort()).toEqual(
+    [ref, linked].sort(),
+  )
+  const left = pruned(unshown, 30 + DISMISSED_VIEW_KEPT_MS)
   expect(closedIds(left)).toEqual(ids.slice(2))
   expect(Object.keys(left.prViews.views)).toEqual([linked])
 })
