@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T07:06:31.786Z. 374041 characters follow.
+// Built at 2026-11-24T11:46:25.218Z. 374180 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -6032,14 +6032,14 @@ function stepUnder(last, b, now, isInput = false) {
 function underMotion(u, now, height) {
   if (!u)
     return null;
-  if (u.isInput && !u.isLeaving)
-    return { line: u.line, opacity: null, fadeMs: 0, delayMs: 0 };
   const isStart = now === u.since;
   if (u.isLeaving)
     return { line: u.line, opacity: isStart ? 1 : 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 };
   if (now >= u.since + ROW_STATE_MS.entering)
     return { line: u.line, opacity: null, fadeMs: 0, delayMs: 0 };
-  return { line: u.line, opacity: isStart ? 0 : 1, fadeMs: ENTER_FADE_MS, delayMs: enterDelayMs(height ?? 0) };
+  if (isStart)
+    return { line: u.line, opacity: u.isInput ? CUT_OPACITY : 0, fadeMs: 0, delayMs: 0 };
+  return { line: u.line, opacity: 1, fadeMs: ENTER_FADE_MS, delayMs: enterDelayMs(height ?? 0) };
 }
 var underTimes = (u) => !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS] : [u.since + NEXT_FRAME_MS, u.since + ROW_STATE_MS.entering];
 var underId = (id) => `status ${id}`;
@@ -7282,8 +7282,11 @@ function panelFadeEl(r, m, p, el) {
   return el.opacity(opacity).transition("opacity", { duration, delay, easing: "ease-out" });
 }
 function underEls(r, from, m, p, above) {
-  const atRest = isStatusUnder(from) ? { line: from.feedback, opacity: null, fadeMs: 0, delayMs: 0 } : null;
-  const u = m && from === r ? m.under : atRest;
+  const line = isStatusUnder(from) ? from.feedback : null;
+  const isLeftForm = from !== r;
+  const leaving = line && { line, opacity: 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 };
+  const atRest = line && { line, opacity: null, fadeMs: 0, delayMs: 0 };
+  const u = isLeftForm ? leaving : m ? m.under : atRest;
   if (!u?.line)
     return [];
   const key = underId(r.id);
