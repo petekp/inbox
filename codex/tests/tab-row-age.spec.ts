@@ -202,7 +202,9 @@ test('the built tab keeps an open row’s ✓ Explained after its title while Ex
 
 test('the built tab keeps the space of an open row’s failed open, without its words, while Open is out again', async () => {
   const now = Date.now()
-  const item = { ...task().ledger.items[0]!, at: now - 120_000, helps: [{ kind: 'open' as const, path: 'plan.md' }] }
+  const first = task().ledger.items[0]
+  if (!first) throw new Error('the task fixture has no ledger item')
+  const item = { ...first, at: now - 120_000, helps: [{ kind: 'open' as const, path: 'plan.md' }] }
   const effect = { kind: 'open' as const, target: 'plan.md', name: 'plan.md' }
   const failed = finishedResult(pendingResult([effect], now - 60_000), ['no such file'], now - 60_000)
   const last: LastAction = {

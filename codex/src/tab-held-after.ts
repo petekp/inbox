@@ -27,7 +27,7 @@ export function holdAfter(id: string, after: AfterLine | null, isStatusUnder: bo
   return held
 }
 
-/** Ends the hold of a row whose line no longer draws its open form, or that the tab no longer draws. */
+/** Ends the hold of a row that no longer draws its open form and has no press out, or that the tab no longer draws. */
 export const dropHeldAfter = (id: string) => heldAfter.delete(id)
 
 export const heldAfterIds = (): string[] => [...heldAfter.keys()]

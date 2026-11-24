@@ -101,7 +101,7 @@ export function stepLists(v: View): {
       kept.add(id)
       drawn.push(x)
       const ownRow = drawsPanel(track) && 'row' in x ? x.row : null
-      if (!ownRow) dropHeldAfter(id)
+      if (!ownRow && !outOn(id)) dropHeldAfter(id)
       const panelRow = ownRow ?? (left && 'row' in left && track.hasOpenForm ? left.row : null)
       if (panelRow) {
         const { text, tone } = statusUnderOf(panelRow, ownRow ? undefined : drawnPresses.get(panelRow.id))
@@ -182,7 +182,7 @@ type Press = {
   f: Row['feedback']
   label: string | null
   tone: FeedbackTone
-  /** The status the open line drew after its title, which the form a row leaves keeps. */
+  /** The status the row's line drew after its title, which the form a row leaves keeps. */
   after?: AfterLine | null
 }
 
