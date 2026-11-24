@@ -12,6 +12,7 @@ import type { TabView } from '../src/core'
 import { POLL_MS } from '../src/settle'
 import { buttons, named, task, window } from './row-actions-fixtures'
 import { TOOL_FIELDS } from '../../core/domain/tool-schemas'
+import { NO_SESSION_PRS } from '../../core/domain/help-steps'
 
 test('the actual Codex tab replaces actions and shortcuts while replying, restores a cancelled draft, sends its current words, keeps them when the send cannot be confirmed, keeps a done row in place past its Undo while the pointer moves on the list, folds it once the pointer rests, and folds a done row at once on a tab switch', async () => {
   const state = emptyState('renderer')
@@ -73,7 +74,7 @@ test('the actual Codex tab replaces actions and shortcuts while replying, restor
       const applied = applyPress(state.ledger, state.lastActions[press.id], press, {
         now: Date.now(),
         turnsStarted: 1,
-        extraSteps: [],
+        sessionPrs: NO_SESSION_PRS,
         comparePage: '/plugin/dist/compare-page.html',
         compareInBackground: false,
         holdMs: 1000,

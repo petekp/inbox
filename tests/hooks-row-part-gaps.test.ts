@@ -12,6 +12,7 @@ import type { RowView } from '../core/view/rows'
 import type { TabsProps } from '../hooks/pane/tabs-client'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../core/view/timing'
 import { inboxView, perTurnStatus } from '../core/view/view'
+import { NO_SESSION_PRS } from '../core/domain/help-steps'
 import { caseName, rowCases } from './row-part-cases'
 import type { RowCase, RowKind } from './row-part-cases'
 import { w, world } from './hooks-world'
@@ -119,7 +120,7 @@ function rowsOf({ ledger, lastActions }: Seeded, now: number): RowView[] {
     lastActions,
     notes: {},
     turns: { turnsStarted: 0, turnsApplied: 0 },
-    extraSteps: {},
+    sessionPrs: NO_SESSION_PRS,
     settleWindowMs: SETTLED_MS,
     status: perTurnStatus({ is: 'fresh' }),
     now,

@@ -13,6 +13,7 @@ import { drawnSettled, SETTLE_WINDOW_MS } from '../src/settle'
 import { CODEX } from '../src/texts'
 import { after, withItems } from './press-fixtures'
 import { TOOL_FIELDS } from '../../core/domain/tool-schemas'
+import { NO_SESSION_PRS } from '../../core/domain/help-steps'
 
 test('the tab draws a settled row while it shows the tab the row closed in, and lists it in the Closed fold once the person switches tab', () => {
   const s = withItems()
@@ -101,7 +102,7 @@ test('a row Codex closes while the person types a reply stays held in place, out
     {
       now: 70,
       turnsStarted: 1,
-      extraSteps: [],
+      sessionPrs: NO_SESSION_PRS,
       comparePage: '/plugin/dist/compare-page.html',
       compareInBackground: false,
       holdMs: 1000,
@@ -153,7 +154,7 @@ test('a held finding’s reply sends what a reply to the open finding sends, and
     {
       now: 70,
       turnsStarted: 1,
-      extraSteps: [],
+      sessionPrs: NO_SESSION_PRS,
       comparePage: '/plugin/dist/compare-page.html',
       compareInBackground: false,
       holdMs: 1000,

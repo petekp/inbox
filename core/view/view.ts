@@ -16,7 +16,7 @@ import { questionNumbers } from '../domain/inbox-text'
 import { capitalized } from '../domain/press-labels'
 import { baseName } from '../domain/open-targets'
 import { stepsOf } from '../domain/help-steps'
-import type { HelpStep } from '../domain/help-steps'
+import type { SessionPrs } from '../domain/help-steps'
 import { isFixSent, isHandedOff } from '../domain/last-actions'
 import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
@@ -39,7 +39,7 @@ export type ViewInput = {
   lastActions: Record<string, LastAction>
   notes: Record<string, RowNote>
   turns: Turns
-  extraSteps: Record<string, HelpStep[]>
+  sessionPrs: SessionPrs
   /** How long a settled row offers Undo. */
   settleWindowMs: number
   status: ItemStatus
@@ -110,7 +110,7 @@ export function inboxView({
   lastActions,
   notes,
   turns,
-  extraSteps,
+  sessionPrs,
   settleWindowMs,
   status,
   now,
@@ -295,7 +295,7 @@ export function inboxView({
       replyKind: item.kind === 'question' ? 'answer' : 'reply',
       item,
       finding: null,
-      steps: stepsOf(item, extraSteps[item.id] ?? []),
+      steps: stepsOf(item, sessionPrs),
     })
   }
   const questionRows = questions.map(itemRow)

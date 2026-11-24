@@ -10,6 +10,7 @@ import { applyPrPress } from '../../core/view/pr-tab'
 import { demoView } from '../../core/view/demo'
 import type { LastAction } from '../../types'
 import { pressed, withItems } from './press-fixtures'
+import { NO_SESSION_PRS } from '../../core/domain/help-steps'
 
 test('an older same-time send failure does not claim a newer failed action', async () => {
   let lasts: Record<string, LastAction> = {
@@ -147,7 +148,7 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     {
       now: 20,
       turnsStarted: 1,
-      extraSteps: [],
+      sessionPrs: NO_SESSION_PRS,
       comparePage: '/plugin/dist/compare-page.html',
       compareInBackground: false,
       holdMs: 1000,
@@ -163,7 +164,7 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     {
       now: 20,
       turnsStarted: 1,
-      extraSteps: [],
+      sessionPrs: NO_SESSION_PRS,
       comparePage: '/plugin/dist/compare-page.html',
       compareInBackground: false,
       holdMs: 1000,
@@ -177,7 +178,7 @@ test('a refused Done attempt cannot change a later close of the same task', () =
     {
       now: 20,
       turnsStarted: 1,
-      extraSteps: [],
+      sessionPrs: NO_SESSION_PRS,
       comparePage: '/plugin/dist/compare-page.html',
       compareInBackground: false,
       holdMs: 1000,

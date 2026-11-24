@@ -74,6 +74,11 @@ const OPENS_PR: [string, RowPress | PrPress, Item?][] = [
     { action: 'step', id: 'i1', step: 0, label: 'Open the PR' },
     task('Review it', [{ kind: 'link', url: 'https://github.com/ACME/app/pull/12', name: 'the PR' }]),
   ],
+  [
+    'a task’s unnamed link to the PR, named Open PR #12',
+    { action: 'step', id: 'i1', step: 0, label: 'Open PR #12' },
+    task('Review it', [{ kind: 'link', url: 'https://github.com/acme/app/pull/12', name: null }]),
+  ],
 ]
 
 for (const [name, p, item] of OPENS_PR)
@@ -89,6 +94,11 @@ const OPENS_NO_TRACKED_PR: [string, RowPress | PrPress, Item?][] = [
     'a task’s link to a PR the session does not track',
     { action: 'step', id: 'i1', step: 0, label: 'Open the PR' },
     task('Review it', [{ kind: 'link', url: 'https://github.com/acme/app/pull/99', name: 'the PR' }]),
+  ],
+  [
+    'a task’s unnamed link to a PR the session does not track, named by its repo and number',
+    { action: 'step', id: 'i1', step: 0, label: 'Open app#99' },
+    task('Review it', [{ kind: 'link', url: 'https://github.com/acme/app/pull/99', name: null }]),
   ],
   [
     'a task’s Copy',

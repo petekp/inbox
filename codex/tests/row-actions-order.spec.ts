@@ -12,6 +12,7 @@ import { recordItem } from '../../core/runtime/tools'
 import { CODEX } from '../src/texts'
 import { buttons, named, task } from './row-actions-fixtures'
 import { TOOL_FIELDS } from '../../core/domain/tool-schemas'
+import { NO_SESSION_PRS } from '../../core/domain/help-steps'
 
 test('the Codex renderer preserves retry, folded-option and finding action order, keeps a row’s follow-ups in one group that wraps as a unit, maps emphasis, and guards presses', async () => {
   const { row, ledger } = task()
@@ -33,7 +34,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
         const result = applyPress(state, undefined, p, {
           now: 20,
           turnsStarted: 1,
-          extraSteps: [],
+          sessionPrs: NO_SESSION_PRS,
           comparePage: '/plugin/dist/compare-page.html',
           compareInBackground: false,
           holdMs: 1000,
@@ -86,7 +87,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     lastActions: {},
     notes: {},
     turns: { turnsStarted: 1, turnsApplied: 1 },
-    extraSteps: {},
+    sessionPrs: NO_SESSION_PRS,
     settleWindowMs: 5120,
     status: { error: null },
     now: 10,
@@ -104,7 +105,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
         answer = applyPress(questionLedger, undefined, p, {
           now: 20,
           turnsStarted: 1,
-          extraSteps: [],
+          sessionPrs: NO_SESSION_PRS,
           comparePage: '/plugin/dist/compare-page.html',
           compareInBackground: false,
           holdMs: 1000,
@@ -150,7 +151,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
     lastActions: {},
     notes: {},
     turns: { turnsStarted: 1, turnsApplied: 1 },
-    extraSteps: {},
+    sessionPrs: NO_SESSION_PRS,
     settleWindowMs: 5120,
     status: { error: null },
     now: 10,
@@ -166,7 +167,7 @@ test('the Codex renderer preserves retry, folded-option and finding action order
       discussion = applyPress(findingLedger, undefined, p, {
         now: 20,
         turnsStarted: 1,
-        extraSteps: [],
+        sessionPrs: NO_SESSION_PRS,
         comparePage: '/plugin/dist/compare-page.html',
         compareInBackground: false,
         holdMs: 1000,
