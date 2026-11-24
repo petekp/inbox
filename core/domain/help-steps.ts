@@ -73,16 +73,29 @@ function linkRef(url: string): string | null {
   return m ? `${m[1]}#${m[2]}` : null
 }
 
+/** A link to a GitHub PR's or issue's own page, not to its diff, checks or one comment. */
+const GITHUB_PR_OR_ISSUE_PAGE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+\/?(?:\?[^#]*)?$/
+
 const isSameRef = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
-/** A link with no name to a GitHub PR or issue, named as its Open PR step would name it, so its button says which. */
-function withPrName(help: Help, { tracked, repo }: SessionPrs): Help {
-  if (help.kind !== 'link' || help.name) return help
-  const ref = linkRef(help.url)
-  if (!ref) return help
-  const isTracked = tracked.some(pr => isSameRef(pr.ref, ref))
+/** A word a link's name may start with that its button and its result already say, as in "Open token page". */
+const LEADING_OPEN = /^open(?:\s+|$)/i
 
-  return { ...help, name: prLinkName(ref, isTracked, repo) }
+/**
+ * A link named as its button names it. A link to a GitHub PR's or issue's own page takes the name its Open PR step would
+ * have, whatever name it came with, since a name such as "PR" does not say which. A link to a page inside one takes it
+ * only when it has no name. Any other name loses a leading "Open".
+ */
+function withLinkName(help: Help, { tracked, repo }: SessionPrs): Help {
+  if (help.kind !== 'link') return help
+  const ref = linkRef(help.url)
+  if (ref && (GITHUB_PR_OR_ISSUE_PAGE.test(help.url) || !help.name)) {
+    const isTracked = tracked.some(pr => isSameRef(pr.ref, ref))
+    return { ...help, name: prLinkName(ref, isTracked, repo) }
+  }
+  const name = help.name?.replace(LEADING_OPEN, '') || null
+
+  return name === help.name ? help : { ...help, name }
 }
 
 /**
@@ -120,7 +133,7 @@ function prSteps(item: Item, { tracked, repo }: SessionPrs): HelpStep[] {
 }
 
 export function stepsOf(item: Item, prs: SessionPrs): HelpStep[] {
-  return [...steps(item.helps.map(h => withPrName(h, prs))), ...prSteps(item, prs)]
+  return [...steps(item.helps.map(h => withLinkName(h, prs))), ...prSteps(item, prs)]
 }
 
 export function stepIconKind(step: HelpStep | undefined): 'run' | 'copy' | 'open' | undefined {
