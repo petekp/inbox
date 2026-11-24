@@ -258,16 +258,16 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   expect(sidebarTokens()['inbox-prs']).toBe('1')
 })
 
-test('a link step the inbox model named "Open PR" names its PR, and a named link that starts with Open says it once', async ($, on) => {
+test('a link step the inbox model named "Open PR" names its PR, a named link inside the PR keeps its name, and a named link that starts with Open says it once', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   const ANSWER =
-    'Merge or close https://github.com/acme/greet/pull/2? Tokens: https://example.com/tokens, notes: https://example.com/notes.'
+    'Merge or close https://github.com/acme/greet/pull/2? Tokens: https://example.com/tokens, diff: https://github.com/acme/greet/pull/2/files.'
   w.ledgerReply = [
     'NEW: decide | - | Merge PR #2 or close it? | Merge / Close | - | -',
     'HELP: new 1 | link | https://github.com/acme/greet/pull/2 | Open PR',
     'HELP: new 1 | link | https://example.com/tokens | Open the token page',
-    'HELP: new 1 | link | https://example.com/notes | release notes',
+    'HELP: new 1 | link | https://github.com/acme/greet/pull/2/files | the diff',
   ].join('\n')
 
   await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
@@ -280,7 +280,7 @@ test('a link step the inbox model named "Open PR" names its PR, and a named link
   expect([await label(0), await label(1), await label(2), await label(3)]).toEqual([
     'Open PR #2',
     'Open the token page',
-    'Open release notes',
+    'Open the diff',
     undefined,
   ])
   await pane.press({ key: 'help-i1-0' })

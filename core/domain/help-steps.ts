@@ -73,19 +73,23 @@ function linkRef(url: string): string | null {
   return m ? `${m[1]}#${m[2]}` : null
 }
 
+/** A link to a GitHub PR's or issue's own page, not to its diff, checks or one comment. */
+const GITHUB_PR_OR_ISSUE_PAGE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+\/?(?:\?[^#]*)?$/
+
 const isSameRef = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
 
 /** A word a link's name may start with that its button and its result already say, as in "Open token page". */
 const LEADING_OPEN = /^open(?:\s+|$)/i
 
 /**
- * A link named as its button names it. A link to a GitHub PR or issue takes the name its Open PR step would have, whatever
- * name it came with, since a name such as "PR" does not say which. Any other link's name loses a leading "Open".
+ * A link named as its button names it. A link to a GitHub PR's or issue's own page takes the name its Open PR step would
+ * have, whatever name it came with, since a name such as "PR" does not say which. A link to a page inside one takes it
+ * only when it has no name. Any other name loses a leading "Open".
  */
 function withLinkName(help: Help, { tracked, repo }: SessionPrs): Help {
   if (help.kind !== 'link') return help
   const ref = linkRef(help.url)
-  if (ref) {
+  if (ref && (GITHUB_PR_OR_ISSUE_PAGE.test(help.url) || !help.name)) {
     const isTracked = tracked.some(pr => isSameRef(pr.ref, ref))
     return { ...help, name: prLinkName(ref, isTracked, repo) }
   }
