@@ -3,7 +3,6 @@ import { codexPlanOf } from '../../core/domain/host-tasks'
 import type { Turn } from '../../core/domain/conversation'
 import { addActivity, dialogQuestions } from '../../core/domain/catch-up-text'
 import type { DialogQuestion, HostTask } from '../../types'
-import { repliedQuestions, REPLY_OPEN } from './dialogs'
 import { callCommand, callLines, commandText, DIALOG_TOOL, outputText, shellLines } from './rollout-commands'
 import { contentText, isText, record, textOf } from './rollout-rows'
 import type { RolloutRow, TranscriptLine } from './rollout-rows'
@@ -14,7 +13,7 @@ type FinishedCommand = { command: string; output: string }
 /** The Codex tool that writes the agent's plan: the rows of the plan, each with a step and a status. */
 const PLAN_TOOL = 'update_plan'
 
-const MARKERS = ['"task_started"', DIALOG_TOOL, REPLY_OPEN, '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS]
+const MARKERS = ['"task_started"', DIALOG_TOOL, '"user"', '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS]
 
 /**
  * A row of the rollout that starts a turn (`task_started`), or ends it by completing (`task_complete`) or by an
@@ -48,10 +47,10 @@ export function turnEventOf(line: string): TurnEvent | null {
 
 /**
  * A dialog the agent opened: its call's `call_id`, null when the row has none, its questions in the call's order, and
- * the indexes of those a user message in the rollout's tail answered in the dialog's reply form. Codex refuses a call
+ * whether a user message came after it in its turn, as one steered into the running turn does. Codex refuses a call
  * with an empty question title, so a question's place here is its index in the call.
  */
-export type Dialog = { callId: string | null; questions: DialogQuestion[]; answered: number[] }
+export type Dialog = { callId: string | null; questions: DialogQuestion[]; isFollowedByMessage: boolean }
 
 /**
  * `texts`: the agent's messages to the person, in order, from its notes while it works to its final answer.
@@ -94,7 +93,6 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
     })
     let current = ''
     let newest = ''
-    const replied: { callId: string; index: number }[] = []
     for (const line of lines) {
       if (!MARKERS.some(m => line.includes(m))) continue
       let row: TranscriptLine
@@ -131,9 +129,13 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
         } catch {
           continue
         }
-        turn.dialogs.push({ callId: p.call_id ?? null, questions: dialogQuestions(args.questions), answered: [] })
+        turn.dialogs.push({
+          callId: p.call_id ?? null,
+          questions: dialogQuestions(args.questions),
+          isFollowedByMessage: false,
+        })
       } else if (row.type === 'response_item' && p.type === 'message' && p.role === 'user') {
-        replied.push(...repliedQuestions(contentText(p.content)))
+        turn.dialogs = turn.dialogs.map(d => ({ ...d, isFollowedByMessage: true }))
       } else if (row.type === 'response_item' && (p.type === 'function_call' || p.type === 'local_shell_call')) {
         const command = callCommand(p)
         if (command !== '' && p.call_id) turn.calls.set(p.call_id, { command, output: '' })
@@ -149,9 +151,7 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
     const unran = unranCalls(turn.rows)
 
     return {
-      dialogs: turn.dialogs
-        .filter(d => d.questions.length > 0)
-        .map(d => ({ ...d, answered: replied.flatMap(r => (r.callId === d.callId ? [r.index] : [])) })),
+      dialogs: turn.dialogs.filter(d => d.questions.length > 0),
       commands: turn.executions.length > 0 ? turn.executions : turn.called,
       plan: turn.plan,
       texts: turn.itemTexts.length > 0 ? turn.itemTexts : turn.messageTexts,

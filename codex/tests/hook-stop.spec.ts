@@ -167,15 +167,8 @@ const turnRows = () => {
   const reply = (callId: string, question: string, answer: string) => {
     const questionItemId = JSON.stringify(['request_user_input_async', callId, 0])
     const json = JSON.stringify([{ questionItemId, question, answer }])
-    const text = `<send_user_message_question_reply>\n${json}\n</send_user_message_question_reply>`
 
-    return {
-      text,
-      row: {
-        type: 'response_item',
-        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
-      },
-    }
+    return { text: `<send_user_message_question_reply>\n${json}\n</send_user_message_question_reply>` }
   }
 
   return {
@@ -216,25 +209,34 @@ test('two dialogs of a turn with the same options are linked together, so the fi
   )
 })
 
-test('a dialog question the person answered in the turn links to no inbox question', async () => {
-  const dir = tempDir()
-  const deps = hookDeps(dir)
+test('a dialog a user message followed in its turn links to no question of the inbox turn that message started', async () => {
   const t = turnRows()
+  const typed = 'Also check the docs'
   const answer = t.reply('call_a', 'Should greet print a trailing newline?', 'No')
-  await handleHook(input('UserPromptSubmit', { prompt: 'Add greet', turn_id: 't1' }), deps)
-  t.write(t.started, t.dialog('call_a', 'Should greet print a trailing newline?'))
-  await handleHook(input('UserPromptSubmit', { prompt: answer.text, turn_id: 't1' }), deps)
-  t.write(answer.row)
-  await recordQuestion(dir, 'Add a CONTRIBUTING file?')
-  await handleHook(
-    input('Stop', { turn_id: 't1', transcript_path: t.transcript, last_assistant_message: 'Asked.' }),
-    deps,
-  )
+  for (const steered of [typed, answer.text]) {
+    const dir = tempDir()
+    const deps = hookDeps(dir)
+    const transcript = join(tempDir(), 'rollout.jsonl')
+    const message = { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ text: steered }] } }
+    await handleHook(input('UserPromptSubmit', { prompt: 'Add greet', turn_id: 't1' }), deps)
+    await handleHook(input('UserPromptSubmit', { prompt: steered, turn_id: 't1' }), deps)
+    writeFileSync(
+      transcript,
+      [t.started, t.dialog('call_a', 'Should greet print a trailing newline?'), message]
+        .map(row => JSON.stringify(row))
+        .join('\n'),
+    )
+    await recordQuestion(dir, 'Add a CONTRIBUTING file?')
+    await handleHook(
+      input('Stop', { turn_id: 't1', transcript_path: transcript, last_assistant_message: 'Asked.' }),
+      deps,
+    )
 
-  assert.deepEqual(
-    (await readState(dir, 's1')).ledger.items.map(i => i.dialog ?? null),
-    [null],
-  )
+    assert.deepEqual(
+      (await readState(dir, 's1')).ledger.items.map(i => i.dialog ?? null),
+      [null],
+    )
+  }
 })
 
 test('a Stop’s reply is the ending turn’s agent messages in order, ending with the Stop’s last message when the rollout lacks it', async () => {

@@ -240,26 +240,20 @@ export function noteAnsweredDialog<S extends Session>(
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] }, now)
 }
 
-/**
- * A dialog to note: its call id, null when it has none, its questions in the call's order, and the indexes of those
- * the person already answered in it.
- */
-type OpenedDialog = { callId: string | null; questions: DialogQuestion[]; answered?: number[] }
+/** A dialog to note: its call id, null when it has none, and its questions in the call's order. */
+type OpenedDialog = { callId: string | null; questions: DialogQuestion[] }
 
 /**
  * Notes the questions of dialogs in the current turn, then links them all at once, so a question noted first cannot
  * take the copy of one noted after it. A Codex dialog's call id names its questions, so those already noted are
- * skipped. A question the person already answered in its dialog is left out: its dialog takes no more answers, and its
- * copy may be from an earlier turn than the one it is noted in.
+ * skipped.
  */
 export function noteDialogs<S extends Session>(s: S, dialogs: OpenedDialog[]): S {
   const isNoted = (callId: string | null, index: number) =>
     callId !== null && s.dialogQuestions.some(q => q.callId === callId && q.index === index)
-  const added = dialogs.flatMap(({ callId, questions, answered = [] }) =>
+  const added = dialogs.flatMap(({ callId, questions }) =>
     questions.flatMap((q, index) =>
-      isNoted(callId, index) || answered.includes(index)
-        ? []
-        : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }],
+      isNoted(callId, index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }],
     ),
   )
   if (added.length === 0) return s
