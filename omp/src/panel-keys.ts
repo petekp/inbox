@@ -124,7 +124,7 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button):
     return { events: [{ type: 'close-field', id: line.id, isDiscard: true }], patch: { focus: null } }
 
   const keepsButtons = button.kind === 'local'
-  const focus = keepsButtons ? { rowId: line.id, index: line.buttons.indexOf(button) } : null
+  const focus = keepsButtons ? { rowId: line.id, index: line.buttons.indexOf(button), press } : null
 
   return { events: [{ type: 'press', press, by: 'key' }], patch: { focus } }
 }

@@ -7,6 +7,7 @@ import { sessionView } from '../../core/view/session-view'
 import { demoSource, demoState } from '../src/demo'
 import { holdsOf } from '../../core/view/ui-controller-reply'
 import { INITIAL_UI } from '../src/panel'
+import type { PanelScreen, PanelUi } from '../src/panel'
 import { applyEvents } from '../src/panel-keys'
 import { prMarkId } from '../../core/view/pr-rows'
 import {
@@ -251,26 +252,52 @@ test('a failed send shows why and offers Try again first', () => {
   expect(text(screen, onRow(row))).toContain('Try again')
 })
 
-test('Enter on a ready PR’s Open PR keeps the focus there, so a second Enter opens the page again instead of merging', () => {
+function readyScreen(ref: string, fetchedAt: number) {
   const state = demoState(NOW)
-  const ref = 'acme/visor#31'
   const view = state.prViews.views[ref]
-  if (!view) throw new Error('the demo has no acme/visor#31')
+  if (!view) throw new Error(`the demo has no ${ref}`)
   state.prViews.views[ref] = {
     ...view,
     mergeable: 'MERGEABLE',
     reviewDecision: 'APPROVED',
     checks: [{ name: 'test', bucket: 'pass', url: null }],
     threads: [],
-    fetchedAt: NOW,
+    fetchedAt,
   }
-  const screen = screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
+
+  return screenOf({ view: sessionView(state, NOW, SETTLED_MS, NO_HOLDS) })
+}
+
+const settledPress = (screen: PanelScreen, ui: PanelUi) =>
+  applyEvents(
+    screen,
+    ui,
+    [{ type: 'press-settled', pressId: 1, outcome: { error: null, note: null, isUnconfirmed: false } }],
+    NOW,
+  ).ui
+
+test('Enter on a ready PR’s Open PR keeps the focus there, so a second Enter opens the page again instead of merging', () => {
+  const ref = 'acme/visor#31'
+  const screen = readyScreen(ref, NOW)
   const onBlock = withCursorOn({ ...INITIAL_UI, tab: 'prs' }, prMarkId(ref))
   expect(keyed(screen, onBlock, 'enter', NOW).press).toEqual({ action: 'pr-merge', ref })
-  const onOpen = keyed(screen, onBlock, 'right', NOW).ui
-  const opened = keyed(screen, onOpen, 'enter', NOW)
+  const opened = keyed(screen, keyed(screen, onBlock, 'right', NOW).ui, 'enter', NOW)
   expect(opened.press).toEqual({ action: 'pr-open', ref })
-  const outcome = { error: null, note: null, isUnconfirmed: false }
-  const settled = applyEvents(screen, opened.ui, [{ type: 'press-settled', pressId: 1, outcome }], NOW).ui
-  expect(keyed(screen, settled, 'enter', NOW + PRESS_GUARD_MS).press).toEqual({ action: 'pr-open', ref })
+  expect(keyed(screen, settledPress(screen, opened.ui), 'enter', NOW + PRESS_GUARD_MS).press).toEqual({
+    action: 'pr-open',
+    ref,
+  })
+})
+
+test('the focus stays on Open PR when the read after its press puts Merge before it', () => {
+  const ref = 'acme/visor#31'
+  const stale = readyScreen(ref, NOW - 24 * 60 * 60_000)
+  const onBlock = withCursorOn({ ...INITIAL_UI, tab: 'prs' }, prMarkId(ref))
+  const opened = keyed(stale, onBlock, 'enter', NOW)
+  expect(opened.press).toEqual({ action: 'pr-open', ref })
+  const fresh = readyScreen(ref, NOW)
+  expect(keyed(fresh, settledPress(fresh, opened.ui), 'enter', NOW + PRESS_GUARD_MS).press).toEqual({
+    action: 'pr-open',
+    ref,
+  })
 })

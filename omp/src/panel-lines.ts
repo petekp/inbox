@@ -400,8 +400,14 @@ function defaultFocus(line: Line): number {
   )
 }
 
-export const focusOf = (line: Line, ui: PanelUi): number =>
-  ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line)
+export function focusOf(line: Line, ui: PanelUi): number {
+  if (ui.focus?.rowId !== line.id) return defaultFocus(line)
+  const { index, press } = ui.focus
+  if (!press) return Math.min(index, line.buttons.length - 1)
+  const kept = line.buttons.findIndex(b => JSON.stringify(b.press) === JSON.stringify(press))
+
+  return kept >= 0 ? kept : defaultFocus(line)
+}
 
 export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>
   ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0
