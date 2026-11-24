@@ -381,7 +381,7 @@ class Frames {
       spacedEls(moved.blocks, paint, b => blockEl(b, paint)),
       LINE,
     )
-    this.held.drew(now)
+    this.held.drew()
     this.motionIds = checkMotionIds(tree, this.motionIds)
     const was = this.springs.shown()
     this.springs.declare(tree)

@@ -394,7 +394,7 @@ export default class Inbox extends View {
       this.blocks = []
       this.lastDraw = { tab: ui.tab, rows: null, pressed: [] }
       this.look.status.drew(null, now)
-      this.fades.drew(now)
+      this.fades.drew()
       return root.child(messageEl(screen.message, t))
     }
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
@@ -461,7 +461,7 @@ export default class Inbox extends View {
           .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
-    const wakeAt = nextDrawAt(now, moved, this.fades.drew(now))
+    const wakeAt = nextDrawAt(now, moved, this.fades.drew())
     if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
 
     return drawn
