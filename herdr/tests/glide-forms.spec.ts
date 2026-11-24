@@ -103,17 +103,36 @@ test('closing the goal field while its buttons fade in never shows them more tha
   expect(above).toEqual([])
 })
 
-test('a press’s status under a row’s buttons shows in the press’s own draw', () => {
+test('a press’s status under a row’s buttons shows faint in the press’s own draw, and its growing box cuts it only while faint', () => {
   const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd11' }))
-  const { fading } = framesOf(
+  const { cuts, fading } = framesOf(
     [
       [0, open],
       [0, sendingOn(open), 'input'],
     ],
     400,
   )
-  const hidden = fading.filter(f => f.id === 'status d11' && f.at >= 0 && f.opacity < 1)
-  expect(hidden).toEqual([])
+  const firstShown = fading.find(f => f.id === 'status d11' && f.at >= 0)?.opacity ?? 0
+  expect({ isShownAtOnce: firstShown > 0, cuts: cuts.filter(c => c.at >= 0) }).toEqual({
+    isShownAtOnce: true,
+    cuts: [],
+  })
+})
+
+test('a row that comes back through Undo while its Undo’s status fades in cuts no text', () => {
+  const dismissed = tabBlocks(withDismissedAsk('d13', NOW), uiOn('needsYou', { selected: 'd13' }))
+  const open = tabBlocks(demoScreen(), uiOn('needsYou', { selected: 'd13' }))
+  for (const replyAt of [32, 80, 300]) {
+    const { cuts } = framesOf(
+      [
+        [0, dismissed],
+        [0, outOn(dismissed, 'd13', 'undo', 'Undo', 'view'), 'input'],
+        [replyAt, open],
+      ],
+      replyAt + 900,
+    )
+    expect({ replyAt, cuts: cuts.filter(c => c.at >= 0) }).toEqual({ replyAt, cuts: [] })
+  }
 })
 
 test('a status under a row’s buttons that no press brought fades in once the row’s box is nearly open, and fades out before its space closes', () => {

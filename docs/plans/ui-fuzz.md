@@ -111,7 +111,7 @@ Motion rules run on the frames `framesOf` draws from 0 ms, the case's start. The
 
 Recent bugs are seed cases in `fuzz/seeds.ts`, which every run checks before its generated cases. A seed for a closed issue must pass, and the run fails when it does not. A seed for an open issue is expected to fail with its rule, and the run says so without failing. When it passes, the run says its issue is fixed or the harness misses it.
 
-- Herdr: #771 (a row that settles while it opens) passes. #811's second Copy press fails with `cut`, as #811 says. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line. It shows #827's cut of "Sending…" instead.
+- Herdr: #771 (a row that settles while it opens), #811's second Copy press and #827's Undo bringing a dismissed task back pass. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line.
 - From the first runs: #827, #828, #829, #830 and #831, each with its seed.
 - Codex tab, with that look: #772 and #783 (open or close just after Undo), #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line).
 
