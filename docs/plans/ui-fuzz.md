@@ -12,8 +12,8 @@ The looks are tested on the demo session and a few hand-picked states. Bugs such
 
 - Bun runs `fuzz/run.ts`. Case `i` of a run draws every choice from a PRNG seeded with `(seed, i)`, so `--seed N --case i` runs that case again. `--time` stops after that many seconds, `--runs` after that many cases.
 - Each failure writes `fuzz/out/<run>/<look>-<rule>-<n>.json`, the shrunk case, which `--replay` runs again. Beside it, a `.md` gives the look, the rule, what it saw, the time of the draw or frame, the drawn lines or the frame's boxes, the case's size before and after shrinking, and the replay command. Each rule is shrunk at most `--shrinks` times a run, and a shrunk case already written is not written again. With `--shrinks 0`, the first failing case of each rule is written as it is. `fuzz/out/` is Git-ignored.
-- A failure that an open issue already describes is known: `KNOWN` in `fuzz/seeds.ts` names each one by look, rule and a text in its detail. Known failures are counted but not shrunk or written, unless `--known` asks for them. A run exits 0 when every seed fails as its issue says and every failure is known, and 1 on anything new.
-- It is not in `check.sh`. The report proposes a short fixed-seed run for it, with its measured runtime.
+- A failure that an open issue already describes is known: `KNOWN` in `fuzz/seeds.ts` names each one by look, rule and a text in its detail. Known failures are counted but not shrunk or written, unless `--known` asks for them. A run exits 0 when every failure is known and no seed fails differently from its issue, and 1 on anything else. A seed whose issue is open but that now passes is reported, and does not fail the run.
+- `check.sh` runs a short fixed-seed run of it, described under "A fixed-seed run for check.sh" below.
 - No model calls, no screen, no VM. Everything is headless and in one process.
 
 ## The case
@@ -149,4 +149,4 @@ None. A seeded PRNG is ten lines, and the shrinker works on the case's own JSON.
 
 ## A fixed-seed run for check.sh
 
-`./scripts/fuzz.sh --seed 1 --runs 12 --shrinks 0` runs the seeds, 12 cases on both looks and 600 stepper cases in about 7 seconds. It finds only known failures, so it exits 0, and it fails on a new failure or a seed that stops failing as its issue says. It leaves out the Codex tab, which runs in real time, and the mod's looks, which take about 10 seconds for 20 cases. Adding it to check.sh is a separate change. When an issue is fixed, mark its seed closed, and its known failures then count as new.
+`./scripts/fuzz.sh --seed 1 --runs 12 --shrinks 0` runs the seeds, 12 cases in all, alternating between the Herdr look and the omp panel, and 600 stepper cases in about 6 to 12 seconds on a Mac. `check.sh` runs it as its "fuzz" step, after the Herdr checks, and only where Bun and the omp and herdr tools are installed. It finds only known failures, so it exits 0, and it fails on a new failure or a seed that fails differently from its issue. It leaves out the Codex tab, which runs in real time, and the mod's looks, which take about 10 seconds for 20 cases. CI does not run `check.sh`, so CI does not run it. Each run leaves a `summary.txt` in a new folder under `fuzz/out/`, which Git ignores. When an issue is fixed, mark its seed closed, and its known failures then count as new.
