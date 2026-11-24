@@ -10,9 +10,15 @@ import { isDismissed } from '../view/pr-views'
 import { bodyChanges, missingText, questionBody, withBody } from '../domain/question-checks'
 import { earlierAnswersText } from '../domain/record-matches'
 import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA } from '../domain/tool-schemas'
+import { CLOSE_ID_RULE } from '../domain/inbox-text'
 import type { Closed, Help, Item, LastAction, Ledger, ToolFields } from '../../types'
 
 const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
+
+/** Tells the agent the id to close a row by, which the inbox text beside the user's prompt lists only from the next turn. */
+function closeIdText(id: string): string {
+  return ` Its close id is ${id}. ${CLOSE_ID_RULE}`
+}
 
 function orderDescription(host: Host): string {
   return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`
@@ -191,13 +197,14 @@ export function recordItem(
     ]
     const updated = changes.length > 0 ? ` and ${changes.join(' and ')}` : ''
 
-    return unchanged(recorded, `Already open, so this record updated it${updated}.${leftOut}`)
+    return unchanged(recorded, `Already open, so this record updated it${updated}.${closeIdText(r.id)}${leftOut}`)
   }
 
   return {
     ledger: recorded,
     result:
       `Recorded. The user sees it in ${host.surface}.` +
+      closeIdText(r.id) +
       leftOut +
       missingText(after, fields.record) +
       (r.expired ? ` The list was full, so the oldest item closed: ${r.expired.ask}.` : '') +
@@ -219,12 +226,13 @@ function recordFinding(host: Host, ledger: Ledger, input: Record<string, unknown
       ledger,
       `Not recorded: the user already closed this (${r.dismissed.outcome}). Record it again only if they bring it up.`,
     )
-  if (!r.isAdded) return unchanged(r.ledger, 'Already recorded.')
+  if (!r.isAdded) return unchanged(r.ledger, `Already recorded.${closeIdText(r.id)}`)
 
   return {
     ledger: r.ledger,
     result:
       `Recorded. The user sees it in ${host.findingsIn}.` +
+      closeIdText(r.id) +
       (r.expired ? ` The list was full, so the oldest finding closed: ${r.expired.title}.` : ''),
     personLine: `${kind === 'opportunity' ? 'Opportunity' : 'Issue'}: ${title}`,
   }
@@ -311,13 +319,13 @@ export function recordClose(
   if (r.closed && 'item' in r.closed)
     return {
       ledger: r.ledger,
-      result: `Closed. The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`,
+      result: `Closed "${r.closed.item.ask}". The user sees it in ${host.surface} with its outcome. ${NAME_BY_CONTENT}`,
       personLine: `Closed: ${r.closed.item.ask}`,
     }
   if (r.closed)
     return {
       ledger: r.ledger,
-      result: `Closed the finding. ${NAME_BY_CONTENT}`,
+      result: `Closed the finding "${r.closed.finding.title}". ${NAME_BY_CONTENT}`,
       personLine: `Closed: ${r.closed.finding.title}`,
     }
   const earlier = [...ledger.closed, ...ledger.closedFindings].findLast(c => c.id === id)

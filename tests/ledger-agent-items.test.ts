@@ -79,7 +79,7 @@ describe('items the agent recorded', () => {
     const input = { kind: 'question', ask: ask.ask, options: ask.options, rec: 'Redis', why: 'it survives restarts' }
     const bare = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, input, 1000, TOOL_FIELDS)
     expect(bare.result).toBe(
-      'Recorded. The user sees it in the /inbox pane. It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does).',
+      'Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply. It has no context or option_notes: record it again with context (why it came up) and option_notes (what picking each option does).',
     )
     const body = { context: 'The price lookups are slow', option_notes: ['Adds a server', ''] }
     const halfNoted = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, { ...input, ...body }, 1000, TOOL_FIELDS)
@@ -88,7 +88,7 @@ describe('items the agent recorded', () => {
     )
     const enriched = recordItem(CLAUDE_CODE, bare.ledger, { ...input, ...body }, 1100, TOOL_FIELDS)
     expect(enriched.result).toBe(
-      'Already open, so this record updated it and gave it your context and gave its options your notes.',
+      'Already open, so this record updated it and gave it your context and gave its options your notes. Its close id is i1. A close id is only for the close tool. Never write one in a reply.',
     )
     expect(enriched.ledger.items[0]).toMatchObject({
       context: 'The price lookups are slow',
@@ -160,9 +160,9 @@ describe('items the agent recorded', () => {
   test("an agent whose record tool is 0.3.0's is asked only for the fields that tool takes", () => {
     const old = (input: Record<string, unknown>) => recordItem(CLAUDE_CODE, EMPTY, input, 1000, V0_3_TOOL_FIELDS).result
     const question = { kind: 'question', ask: ask.ask, options: ask.options }
-    expect(old({ ...question, rec: 'Redis' })).toBe('Recorded. The user sees it in the /inbox pane.')
+    expect(old({ ...question, rec: 'Redis' })).toBe('Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply.')
     expect(old(question)).toBe(
-      'Recorded. The user sees it in the /inbox pane. It has no rec: when you can recommend an option, record it again with rec.',
+      'Recorded. The user sees it in the /inbox pane. Its close id is i1. A close id is only for the close tool. Never write one in a reply. It has no rec: when you can recommend an option, record it again with rec.',
     )
     expect(old({ kind: 'question', ask: 'Approve the new settings layout?', options: ['Yes', 'No'] })).toContain(
       "The user can't approve what they can't see",
@@ -205,10 +205,10 @@ describe('items the agent recorded', () => {
     expect(
       [first, second, unstated, elsewhere].map(r => [r.ledger.items.map(i => i.rec), r.result, r.personLine]),
     ).toEqual([
-      [['Redis'], 'Already open, so this record updated it and changed its recommendation to Redis.', null],
-      [['Memcached'], 'Already open, so this record updated it and changed its recommendation to Memcached.', null],
-      [['Memcached'], 'Already open, so this record updated it.', null],
-      [['Memcached'], 'Already open, so this record updated it.', null],
+      [['Redis'], 'Already open, so this record updated it and changed its recommendation to Redis. Its close id is i1. A close id is only for the close tool. Never write one in a reply.', null],
+      [['Memcached'], 'Already open, so this record updated it and changed its recommendation to Memcached. Its close id is i1. A close id is only for the close tool. Never write one in a reply.', null],
+      [['Memcached'], 'Already open, so this record updated it. Its close id is i1. A close id is only for the close tool. Never write one in a reply.', null],
+      [['Memcached'], 'Already open, so this record updated it. Its close id is i1. A close id is only for the close tool. Never write one in a reply.', null],
     ])
   })
 

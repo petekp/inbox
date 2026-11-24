@@ -48,16 +48,16 @@ test('Claude closes an item or finding that no longer applies, by the id it read
   await clock.advance(QUEUED_AFTER_MS)
   expect(await pane.find({ text: /^Queued:\sExplain$/ })).toBeDefined()
   expect((await close({ id: 'i1', answer: 'Deno' })).result).toBe(
-    'Closed. The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
+    'Closed "Use Node or Python?". The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
   )
   expect(await pane.find({ key: 'row-i1' })).toBeUndefined()
   expect(await pane.find({ key: 'settled-i1' })).toBeDefined()
   expect(await pane.find({ text: /^Deno$/ })).toBeDefined()
   expect((await close({ id: 'i2', reason: 'no longer applies' })).result).toBe(
-    'Closed. The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
+    'Closed "Name the command greet?". The user sees it in the /inbox pane with its outcome. Name it by what it says, never by its id.',
   )
   expect((await close({ id: 'f3', reason: 'fixed' })).result).toBe(
-    'Closed the finding. Name it by what it says, never by its id.',
+    'Closed the finding "README is stale". Name it by what it says, never by its id.',
   )
   expect((await close({ id: 'i9', reason: 'done' })).result).toContain(
     'Not closed: no open item or finding has the id i9.',
