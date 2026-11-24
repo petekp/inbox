@@ -8956,6 +8956,12 @@ function untriedPrs(s) {
   const { views, unread = {} } = s.prViews;
   return splitLinked(s.prViews, s.ledger).tracked.filter((ref) => !(ref in views) && !(ref in unread));
 }
+function opensTrackedPr(s, effects) {
+  const { branchRef } = s.prViews;
+  const read = [...splitLinked(s.prViews, s.ledger).tracked, ...branchRef ? [branchRef] : []];
+  const refs = new Set(read.map((ref) => ref.toLowerCase()));
+  return effects.some((e) => e.kind === "open" && prRefs(e.target).some((ref) => refs.has(ref.toLowerCase())));
+}
 function addsTabPr(before, after) {
   const shown = new Set(tabPrs(before.ledger));
   return tabPrs(after.ledger).some((ref) => !shown.has(ref));
@@ -8989,16 +8995,26 @@ function prFetchTracker(now, onChange = () => {
   return {
     isFetching: (id) => running.has(id),
     fetchWhenDue: (id, s, isTabShown, fetch) => running.has(id) || !isPrFetchDue(s, endedAt.get(id), now(), isTabShown) ? null : start(id, fetch),
-    fetchNow: (id, fetch) => {
+    fetchNow: (id, fetch, isPress = false) => {
       const current = running.get(id);
       if (!current)
         return start(id, fetch);
-      const next = following.get(id) ?? current.then(() => {
-        following.delete(id);
-        return running.get(id) ?? start(id, fetch);
-      });
+      const waiting = following.get(id);
+      if (waiting) {
+        if (isPress && !waiting.isPress)
+          Object.assign(waiting, { fetch, isPress });
+        return waiting.run;
+      }
+      const next = {
+        fetch,
+        isPress,
+        run: current.then(() => {
+          following.delete(id);
+          return running.get(id) ?? start(id, next.fetch);
+        })
+      };
       following.set(id, next);
-      return next;
+      return next.run;
     }
   };
 }
@@ -10105,6 +10121,7 @@ function rowButtons(row, isAllShown) {
     press: o.action.press,
     isRecommended: o.action.press.option === recommended,
     isFollowUp: false,
+    kind: o.action.kind,
     isOut: o.action.isOut,
     option: { note: o.note }
   }));
@@ -10123,7 +10140,7 @@ function rowButtons(row, isAllShown) {
           }
         ];
       if (k.slot === "retry")
-        return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false }];
+        return [{ label: k.label, key: null, press: k.press, isRecommended: false, isFollowUp: false, kind: k.kind }];
       const { press } = k.action;
       const key = k.hotkey ?? null;
       return [
@@ -10133,6 +10150,7 @@ function rowButtons(row, isAllShown) {
           press,
           isRecommended: false,
           isFollowUp: k.slot === "action" && k.action.isFollowUp,
+          kind: k.action.kind,
           isOut: k.action.isOut
         }
       ];
@@ -10146,6 +10164,7 @@ function prButtons(actions) {
     press: a.press,
     isRecommended: false,
     isFollowUp: a.isFollowUp === true,
+    kind: a.kind,
     isOut: a.isOut
   }));
 }
@@ -10259,7 +10278,15 @@ var isShut = (line, ui) => line.isFolded && ui.opened !== line.id;
 function defaultFocus(line) {
   return Math.max(0, line.buttons.findIndex((b) => b.isRecommended));
 }
-var focusOf2 = (line, ui) => ui.focus?.rowId === line.id ? Math.min(ui.focus.index, line.buttons.length - 1) : defaultFocus(line);
+function focusOf2(line, ui) {
+  if (ui.focus?.rowId !== line.id)
+    return defaultFocus(line);
+  const { index, press } = ui.focus;
+  if (!press)
+    return Math.min(index, line.buttons.length - 1);
+  const kept = line.buttons.findIndex((b) => JSON.stringify(b.press) === JSON.stringify(press));
+  return kept >= 0 ? kept : defaultFocus(line);
+}
 var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
 
 // src/panel-draw.ts
@@ -11436,7 +11463,9 @@ function activate(screen, ui, line, button) {
     return { events: [{ type: "open-field", id: line.id }], patch: { focus: null } };
   if (!isPrPress(press) && press.action === "discard")
     return { events: [{ type: "close-field", id: line.id, isDiscard: true }], patch: { focus: null } };
-  return { events: [{ type: "press", press, by: "key" }], patch: { focus: null } };
+  const keepsButtons = button.kind === "local";
+  const focus = keepsButtons ? { rowId: line.id, index: line.buttons.indexOf(button), press } : null;
+  return { events: [{ type: "press", press, by: "key" }], patch: { focus } };
 }
 function typingKey(ui, id, key, text) {
   const draft = ui.drafts[id]?.text ?? "";
@@ -15972,7 +16001,13 @@ async function startPress(host, p, isStale, holds, commandId, when = []) {
       lastActions: withLasts(s.lastActions, commandId ? Object.fromEntries(Object.entries(pressLasts).map(([id, last]) => [id, { ...last, commandId }])) : pressLasts, r.drop),
       told: r.reopenedId ? { ...s.told, closed: s.told.closed.filter((id) => id !== r.reopenedId) } : s.told
     };
-    Object.assign(pressed, { r, at, deliveryId, undone: undoneId && { id: undoneId, before: s } });
+    Object.assign(pressed, {
+      r,
+      at,
+      deliveryId,
+      undone: undoneId && { id: undoneId, before: s },
+      opensTrackedPr: opensTrackedPr(s, r.effects)
+    });
     if (!firstSend || !deliveryId)
       return next;
     return {
@@ -16000,6 +16035,7 @@ async function startPress(host, p, isStale, holds, commandId, when = []) {
   const r = pressed.r;
   const at = pressed.at;
   const undone = pressed.undone;
+  const opensPr = pressed.opensTrackedPr === true;
   if (r && undone && host.commands)
     await host.commands.update((log) => cancelledCommand(remoteCommandState(log, undone.before), undone.id)).catch(() => {
       return;
@@ -16024,6 +16060,8 @@ async function startPress(host, p, isStale, holds, commandId, when = []) {
         isUnconfirmed = true;
       }
       await runLocalEffects(effectHost, r.effects, Object.keys(r.lasts), r.lasts[rowId]?.result);
+      if (opensPr)
+        host.fetchPrsInBackground();
       const isDone = !isPrPress(p) && p.action === "done";
       const isHeld = Object.values(r.lasts).some(isHeldSend);
       return { copy, error, note, isUnconfirmed, isRowFailed, wakesAfterSettle: isDone || isHeld };
@@ -17159,7 +17197,8 @@ function sessionCalls(context) {
       },
       perform: async (_s, effect) => effect.kind === "scroll" ? NO_CONVERSATION_SCROLL : effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
       refreshPrsIfDue: async () => fetchPrsWhenDue(ctx, true),
-      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true)),
+      refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true), true),
+      fetchPrsInBackground: () => fetchPrsNow(ctx),
       gh: {
         shared: {
           read: async () => memory.prShared,
