@@ -241,16 +241,33 @@ export function noteAnsweredDialog<S extends Session>(
 }
 
 /**
- * Notes a dialog's questions in the current turn, then links them. A Codex dialog's call id names its questions, so
- * those already noted are skipped.
+ * A dialog to note: its call id, null when it has none, its questions in the call's order, and the indexes of those
+ * the person already answered in it.
  */
-export function noteDialog<S extends Session>(s: S, callId: string | null, questions: DialogQuestion[]): S {
-  const isNoted = (index: number) =>
+type OpenedDialog = { callId: string | null; questions: DialogQuestion[]; answered?: number[] }
+
+/**
+ * Notes the questions of dialogs in the current turn, then links them all at once, so a question noted first cannot
+ * take the copy of one noted after it. A Codex dialog's call id names its questions, so those already noted are
+ * skipped. A question the person already answered in its dialog is left out: its dialog takes no more answers, and its
+ * copy may be from an earlier turn than the one it is noted in.
+ */
+export function noteDialogs<S extends Session>(s: S, dialogs: OpenedDialog[]): S {
+  const isNoted = (callId: string | null, index: number) =>
     callId !== null && s.dialogQuestions.some(q => q.callId === callId && q.index === index)
-  const added = questions.flatMap((q, index) =>
-    isNoted(index) ? [] : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }],
+  const added = dialogs.flatMap(({ callId, questions, answered = [] }) =>
+    questions.flatMap((q, index) =>
+      isNoted(callId, index) || answered.includes(index)
+        ? []
+        : [{ ...q, callId, index, turn: s.ledger.turn, itemId: null }],
+    ),
   )
   if (added.length === 0) return s
 
   return linkDialogs({ ...s, dialogQuestions: [...s.dialogQuestions, ...added] })
+}
+
+/** Notes one dialog's questions in the current turn, then links them, as `noteDialogs` does. */
+export function noteDialog<S extends Session>(s: S, callId: string | null, questions: DialogQuestion[]): S {
+  return noteDialogs(s, [{ callId, questions }])
 }

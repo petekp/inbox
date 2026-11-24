@@ -27,7 +27,7 @@ import {
 import { claimedStatusRefresh, needsUpdate, statusChanged } from '../../core/runtime/session-status'
 import { ancestorCli, namedCli } from './cli'
 import { endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
-import { noteDialogs } from './dialogs'
+import { noteTurnDialogs } from './dialogs'
 import { withEarlierHistory, withMissedTurns } from './history'
 import { codexStore } from './host'
 import { codexCommandStore } from './command-log'
@@ -260,7 +260,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       const written = await write(async s => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),
-          withoutActivity(noteDialogs(withHost(await withHistory(s)), dialogs), unran),
+          withoutActivity(noteTurnDialogs(withHost(await withHistory(s)), dialogs), unran),
         )
         const withRan = { ...unranDelegatesTakenBack(withLines, unranDelegates), delegateCalls: [] }
         const withOutput = commands.reduce((x, c) => noteCommandOutput(x, c.command, c.output), withRan)
