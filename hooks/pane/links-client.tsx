@@ -22,6 +22,11 @@ export type LinksProps = {
 
 type State = { hover: string | null }
 
+/** The cells the links take on one line, which the pane gives the Client's region before it shrinks to its line. */
+export function linksRegionWidth(props: LinksProps) {
+  return Math.ceil(props.links.reduce((sum, l) => sum + l.width + props.slack, props.gap * (props.links.length - 1)))
+}
+
 /**
  * Splits the links into lines no wider than `columns`, counting `slack` past each link. A link wider than a line gets a
  * line of its own.
