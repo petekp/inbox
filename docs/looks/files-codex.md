@@ -34,6 +34,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR block, PR row, PR group, press line and the tab's own buttons on the PRs tab, through the row states. |
 | `codex/src/tab-pr-lines.ts` | Codex adapter. The press status under a PR block's buttons and under the order's changed line. |
 | `codex/src/tab-status.tsx` | Codex adapter. The Status tab: the goal and its milestones, a met goal's folded milestones, and the goal's text field. |
+| `codex/src/tab-status-milestone.tsx` | Codex adapter. A milestone's line on the Status tab, with what a subject's row draws when one stands in its place. |
 | `codex/src/tab-status-line.tsx` | Codex adapter. A Status row with its keys and presses, and the fitting of merged lines to the width. |
 | `codex/src/tab-shown.ts` | Codex adapter. The Status subject rows the tab had on screen since its last view request, which the request sends. |
 | `codex/src/tab-status-fold.tsx` | Codex adapter. A Status parent's name line as its fold: the chevron after it, the click and keyboard press, and the collapse it sends. |

@@ -19,7 +19,7 @@ import { newRowsOf } from '../../core/view/ui-controller-tabs'
 import type { InputKind } from '../../core/view/ui-controller-types'
 import type { Group } from './arrivals'
 import type { TabView as View } from './core'
-import { LEAVE_FADE_MS, drawsFormLeft, drawsPanel, stepRow } from '../../core/view/row-motion'
+import { LEAVE_FADE_MS, drawsFormLeft, drawsPanel, stepRow, withLeaving } from '../../core/view/row-motion'
 import type { RowTarget, RowTrack } from '../../core/view/row-motion'
 import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
 import type { Key, Row, Entry, Lists } from './tab-state'
@@ -75,12 +75,8 @@ export function stepLists(v: View): {
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
-    const entries = [...listed]
     const lastDrawn = tabState.lastLists?.[LIST_OF[group]] ?? []
-    for (const [n, last] of lastDrawn.entries()) {
-      const id = entryId(last)
-      if (!listedIds.has(id) && drawnRows.has(id)) entries.splice(Math.min(n, entries.length), 0, last)
-    }
+    const entries = withLeaving(listed, lastDrawn, entryId, last => drawnRows.has(entryId(last)))
     const lastOf = new Map(lastDrawn.map(last => [entryId(last), last]))
     const drawn: Entry[] = []
     for (const x of entries) {
