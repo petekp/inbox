@@ -162,7 +162,7 @@ export function rowActions(row: Row): { options: Key[]; keys: Key[]; more: Key[]
 function pressOf(row: Row): Press {
   const out = outOn(row.id)
   const isStatusOut = out !== null && !holdsStatusWhileOut(out.kind)
-  const pending = outPending(tabState.view, row.id)
+  const pending = outPending(tabState.view, row.id, out !== null && !isStatusOut)
   const isSending = out !== null && out.pending === null
   const isStatusSending = isSending && isStatusOut
   const f = isFeedbackShown(row) ? row.feedback : null

@@ -163,7 +163,10 @@ test('the built tab keeps an open row’s ✓ Explained in its line while a Dism
     await tab.until(() => row()?.querySelector('.side')?.textContent?.trim() === 'Sending…')
     assert.equal(row()?.querySelector('.side')?.textContent?.trim(), 'Sending…')
     assert.equal(row()?.querySelector('.line .after')?.textContent, '✓ Explained')
-    assert.equal(row()?.querySelector('.line .after')?.className, 'after tone-done')
+    assert.ok(
+      row()?.querySelector('.line .after')?.classList.contains('tone-done'),
+      'the held status lost its done tone',
+    )
   } finally {
     await tab.close()
   }
