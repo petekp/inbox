@@ -1,6 +1,6 @@
 import type { PrCheck, PrStatus, PrThread, PrView } from '../../types'
 import { blockingChecks } from './pr-checks'
-import { clip } from './text'
+import { clip, drawableText } from './text'
 
 const NL = '\n'
 const PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g
@@ -80,10 +80,11 @@ export function parseRef(ref: string): { repo: string; owner: string; name: stri
 
 /**
  * What tells a PR's checks apart: the workflow and the name, as GitHub shows them in "CI / test", or the name alone
- * for a check without a workflow. Two workflows can each run a check with the same name.
+ * for a check without a workflow. Two workflows can each run a check with the same name. It holds no terminal control,
+ * so a key a look builds from a check's drawn name matches the key the host builds from the saved check.
  */
 export function checkKey(c: Pick<PrCheck, 'name' | 'workflow'>): string {
-  return c.workflow ? `${c.workflow} / ${c.name}` : c.name
+  return drawableText(c.workflow ? `${c.workflow} / ${c.name}` : c.name)
 }
 
 /** Whether the PRs tab keeps a linked PR: the viewer wrote it, or GitHub did not say who did, and a fetch found it open. */

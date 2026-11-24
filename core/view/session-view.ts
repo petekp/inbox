@@ -77,10 +77,18 @@ function withoutStalePending(lastActions: Record<string, LastAction>, now: numbe
 }
 
 /**
- * The keys of a view whose values stay as stored: ids, presses, the versions a press is checked against, and the item,
+ * The keys of a view whose values stay as stored: ids, the collapsed rows' ids, presses, the versions a press is checked against, and the item,
  * finding and answer text a look matches a press with. A host matches each press against the stored ledger.
  */
-const STORED_KEYS: ReadonlySet<string> = new Set(['id', 'press', 'drawnVersions', 'item', 'finding', 'option'])
+const STORED_KEYS: ReadonlySet<string> = new Set([
+  'id',
+  'collapsed',
+  'press',
+  'drawnVersions',
+  'item',
+  'finding',
+  'option',
+])
 
 /** What every look draws for session `s`, with every other text in it drawable, as `drawableText` says. */
 export function sessionView(

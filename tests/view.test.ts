@@ -5,6 +5,7 @@ import { actionLines, answersFitLine, drawnLists, rowKeyPlan, steppedIndex, tabU
 import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
 import { sessionView } from '../core/view/session-view'
+import { applyPrPress, checkActions } from '../core/view/pr-tab'
 import { footerError, inboxView, perTurnStatus } from '../core/view/view'
 import { NO_SESSION_PRS } from '../core/domain/help-steps'
 import { deliveryLabel, settledLabel } from '../core/view/rows'
@@ -43,6 +44,28 @@ test('the shared view draws an ask, an answer and a PR title without their escap
   expect(answer?.press).toEqual({ action: 'answer', id: 'd11', option })
   expect(view.prs.drawn.find(d => d.pr.ref === ref)?.pr.title).toBe('Add pinch')
   expect(tainted).toEqual(stored)
+})
+
+test('a failing check whose name holds escapes draws without them, and the Fix press a look builds from it reaches the saved check', () => {
+  const s = demoSession(AT, 'Claude')
+  const ref = 'acme/visor#31'
+  const pr = s.prViews.views[ref]
+  if (!pr) throw new Error('the demo has no PR acme/visor#31')
+  const checks = pr.checks.map(c => (c.name === 'unit tests' ? { ...c, name: `unit \x1b[31mtests${OSC_52}` } : c))
+  const tainted = { ...s, prViews: { ...s.prViews, views: { ...s.prViews.views, [ref]: { ...pr, checks } } } }
+  const view = sessionView(tainted, AT, SETTLED_MS)
+  const drawn = view.prs.drawn.find(d => d.pr.ref === ref)?.pr
+  const check = drawn?.checks.find(c => c.name === 'unit tests')
+  if (!drawn || !check) throw new Error('the view draws no check named unit tests')
+  const presses = { lastActions: tainted.lastActions, turns: view.turns, now: AT }
+  const fix = checkActions(drawn, check, presses).find(a => a.press.action === 'check-fix')
+  if (!fix) throw new Error('the check has no Fix press')
+  const result = applyPrPress(tainted.ledger, tainted.prViews, tainted.lastActions, fix.press, {
+    now: AT,
+    turnsStarted: 0,
+  })
+
+  expect(result).not.toEqual({ stale: true })
 })
 
 test('a row’s follow-ups stay on its buttons’ last line only when all of them fit there, and otherwise start the next line together', async () => {

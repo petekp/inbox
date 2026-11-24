@@ -1,5 +1,6 @@
 import type { Stop } from '../../types'
 import { capitalized } from '../domain/press-labels'
+import { drawableText } from '../domain/text'
 import type { BannerTone } from './tones'
 
 export function groupEmptyText(title: string): string {
@@ -27,7 +28,7 @@ export function stopText(stop: Stop): string {
         ? 'the API is limiting requests'
         : stop.apiError?.cause === 'overloaded'
           ? 'the API is overloaded'
-          : `API error (${stop.apiError?.text ?? 'unknown'})`
+          : `API error (${drawableText(stop.apiError?.text ?? 'unknown')})`
   }
 }
 
@@ -95,7 +96,8 @@ const BANNER_TONES: Record<BannerKind, BannerTone> = {
 export type BannerView = { kind: BannerKind; tone: BannerTone; lead: string; body: string | null }
 
 /** The banner for `text`. Its first sentence is the lead, and the rest is the body. */
-export function bannerOf(kind: BannerKind, text: string): BannerView {
+export function bannerOf(kind: BannerKind, hostText: string): BannerView {
+  const text = drawableText(hostText)
   const end = text.indexOf('. ')
   const lead = end < 0 ? text : text.slice(0, end + 1)
   const body = end < 0 ? null : text.slice(end + 2)

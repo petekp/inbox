@@ -37,7 +37,7 @@ export function dash(value: string | undefined): string | null {
  */
 const TERMINAL_CONTROL = new RegExp(
   [
-    String.raw`(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x9c]*(?:\x07|\x1b\\|\x9c)`,
+    String.raw`(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)`,
     String.raw`(?:\x1b\[|\x9b)[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]`,
     String.raw`\x1b[\x20-\x2f]*[\x30-\x7e]`,
     String.raw`[\x00-\x08\x0b-\x1f\x7f-\x9f]`,

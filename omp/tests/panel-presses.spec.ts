@@ -44,6 +44,18 @@ test('t opens a reply field in place of the buttons, and Enter sends the typed w
   expect(sent.ui.drafts[row.id]?.text).toBe('hi a')
 })
 
+test('text typed or pasted into the reply field drops its terminal controls, so the field draws and sends only what a reader sees', () => {
+  const screen = screenOf()
+  const row = firstQuestion(screen)
+  let ui = keyed(screen, onRow(row), 't', NOW).ui
+  ui = keyed(screen, ui, 'x', NOW, 'Ship \x1b[31mit\x1b]52;c;aGk=\x07').ui
+  ui = keyed(screen, ui, '\x1b', NOW, '\x1b').ui
+  ui = keyed(screen, ui, '!', NOW, '!').ui
+  expect(text(screen, ui)).not.toContain('\x1b]52')
+  expect(text(screen, ui)).toContain('Ship it!')
+  expect(keyed(screen, ui, 'enter', NOW).press).toEqual({ action: 'type', id: row.id, text: 'Ship it!' })
+})
+
 test('Enter in an empty reply field sends nothing', () => {
   const screen = screenOf()
   const ui = keyed(screen, onRow(firstQuestion(screen)), 't', NOW).ui
