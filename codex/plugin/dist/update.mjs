@@ -668,13 +668,18 @@ function linkRef(url) {
   const m = url.match(GITHUB_PR_OR_ISSUE_URL);
   return m ? `${m[1]}#${m[2]}` : null;
 }
+var GITHUB_PR_OR_ISSUE_PAGE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+\/?(?:\?[^#]*)?$/;
 var isSameRef = (a, b) => a.toLowerCase() === b.toLowerCase();
-function withPrName(help, { tracked, repo }) {
-  if (help.kind !== "link" || help.name) return help;
+var LEADING_OPEN = /^open(?:\s+|$)/i;
+function withLinkName(help, { tracked, repo }) {
+  if (help.kind !== "link") return help;
   const ref = linkRef(help.url);
-  if (!ref) return help;
-  const isTracked2 = tracked.some((pr) => isSameRef(pr.ref, ref));
-  return { ...help, name: prLinkName(ref, isTracked2, repo) };
+  if (ref && (GITHUB_PR_OR_ISSUE_PAGE.test(help.url) || !help.name)) {
+    const isTracked2 = tracked.some((pr) => isSameRef(pr.ref, ref));
+    return { ...help, name: prLinkName(ref, isTracked2, repo) };
+  }
+  const name = help.name?.replace(LEADING_OPEN, "") || null;
+  return name === help.name ? help : { ...help, name };
 }
 function prSteps(item, { tracked, repo }) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
@@ -699,7 +704,7 @@ function prSteps(item, { tracked, repo }) {
   return [{ label, step: links }];
 }
 function stepsOf(item, prs) {
-  return [...steps(item.helps.map((h) => withPrName(h, prs))), ...prSteps(item, prs)];
+  return [...steps(item.helps.map((h) => withLinkName(h, prs))), ...prSteps(item, prs)];
 }
 function stepIconKind(step) {
   if (!step) return void 0;

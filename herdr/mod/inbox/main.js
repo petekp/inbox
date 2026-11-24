@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T05:23:10.091Z. 373733 characters follow.
+// Built at 2026-11-24T07:06:31.786Z. 374041 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -641,15 +641,19 @@ function linkRef(url) {
   const m = url.match(GITHUB_PR_OR_ISSUE_URL);
   return m ? `${m[1]}#${m[2]}` : null;
 }
+var GITHUB_PR_OR_ISSUE_PAGE = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+\/?(?:\?[^#]*)?$/;
 var isSameRef = (a, b) => a.toLowerCase() === b.toLowerCase();
-function withPrName(help, { tracked, repo }) {
-  if (help.kind !== "link" || help.name)
+var LEADING_OPEN = /^open(?:\s+|$)/i;
+function withLinkName(help, { tracked, repo }) {
+  if (help.kind !== "link")
     return help;
   const ref = linkRef(help.url);
-  if (!ref)
-    return help;
-  const isTracked = tracked.some((pr) => isSameRef(pr.ref, ref));
-  return { ...help, name: prLinkName(ref, isTracked, repo) };
+  if (ref && (GITHUB_PR_OR_ISSUE_PAGE.test(help.url) || !help.name)) {
+    const isTracked = tracked.some((pr) => isSameRef(pr.ref, ref));
+    return { ...help, name: prLinkName(ref, isTracked, repo) };
+  }
+  const name = help.name?.replace(LEADING_OPEN, "") || null;
+  return name === help.name ? help : { ...help, name };
 }
 function prSteps(item, { tracked, repo }) {
   const urls = new Map(tracked.map((pr) => [pr.ref, pr.url]));
@@ -676,7 +680,7 @@ function prSteps(item, { tracked, repo }) {
   return [{ label, step: links }];
 }
 function stepsOf(item, prs) {
-  return [...steps(item.helps.map((h) => withPrName(h, prs))), ...prSteps(item, prs)];
+  return [...steps(item.helps.map((h) => withLinkName(h, prs))), ...prSteps(item, prs)];
 }
 function stepIconKind(step) {
   if (!step)
