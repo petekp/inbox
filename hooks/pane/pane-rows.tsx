@@ -13,6 +13,7 @@ import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
 import { settledScrollKey } from './pane-selection'
 import { rowClient, titleClient } from './pane-row-clients'
+import { heldClients, isComingBack } from './held-clients'
 import {
   DESKTOP_CELL_PT,
   DESKTOP_FIELD_PT,
@@ -188,6 +189,7 @@ export function paneRows(
           ) : null}
           <Box position="relative" width="100%">
             {rowClient(elements, `select-${row.id}`, rowClientProps(row, desktopRowTextPt, newTitleColor(row.id)))}
+            {isComingBack(ui, row.id) ? heldClients(elements, desktopFrame, row.id) : null}
           </Box>
         </Box>
       )

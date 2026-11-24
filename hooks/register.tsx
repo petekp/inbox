@@ -30,6 +30,7 @@ import { noteStopFailure, noteTurnEnd, noteTurnStart } from './mod/mod-turns'
 import { sendUi } from './mod/mod-ui-loop'
 import type { UiState } from '../core/view/ui-controller-types'
 import { CLAUDE_CODE, guidedCloseDescription } from '../core/domain/model-text'
+import { drawableText } from '../core/domain/text'
 import { runningSessions } from './mod/running-sessions'
 import { modCommandStore } from './mod/mod-command-log'
 import { INBOX_COMMAND_TEXT } from '../core/view/tabs'
@@ -429,7 +430,7 @@ export const register: Register = on => {
       return <Box />
     }
 
-    return next({ ...e, props: { ...e.props, output: line } })
+    return next({ ...e, props: { ...e.props, output: drawableText(line) } })
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

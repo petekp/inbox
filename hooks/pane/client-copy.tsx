@@ -21,10 +21,14 @@ export function startClientDrawing() {
   drawnClients = new Set()
 }
 
-/** A Client the drawing left out has no instance any more, so it is new again when a later drawing names it. */
+/**
+ * A Client the drawing left out has no instance any more, so it is new again when a later drawing names it, and a
+ * settled row no longer holds it (`held-clients.tsx`).
+ */
 export function endClientDrawing() {
   if (drawnClients === null) return
   for (const key of paneState.runningClients) if (!drawnClients.has(key)) paneState.runningClients.delete(key)
+  for (const key of paneState.shownClients.keys()) if (!drawnClients.has(key)) paneState.shownClients.delete(key)
   drawnClients = null
 }
 

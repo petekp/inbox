@@ -40,8 +40,16 @@ export function isDismissed(lastActions: Record<string, LastAction>, ref: string
 }
 
 /**
- * Whether a session keeps a PR's view: `keepsView` keeps it, or the PR was dismissed while the look shows the PRs tab,
- * so its settled block and Undo can draw it. Once the person leaves the tab, the block is gone and so is the view.
+ * How long a session keeps a dismissed PR's view after the Dismiss, whichever look shows the session. A look that
+ * presses through another host, as Herdr does, saves no showing of its own, so this keeps the view for its settled
+ * block and Undo. Each look still draws the block only while its own showing lasts.
+ */
+export const DISMISSED_VIEW_KEPT_MS = 60_000
+
+/**
+ * Whether a session keeps a PR's view: `keepsView` keeps it, or the PR was dismissed less than
+ * `DISMISSED_VIEW_KEPT_MS` before `now` or while the look that writes shows the PRs tab, so a settled block and Undo
+ * can draw it.
  */
 export function isViewKept(
   prState: PrViews,
@@ -49,10 +57,12 @@ export function isViewKept(
   lastActions: Record<string, LastAction>,
   ref: string,
   shownSince: number | null,
+  now: number,
 ): boolean {
   const at = dismissedAt(lastActions, ref)
+  const isDismissedLately = at !== null && (now - at < DISMISSED_VIEW_KEPT_MS || isShownSince(at, shownSince))
 
-  return keepsView(prState, links, ref) || (at !== null && isShownSince(at, shownSince))
+  return keepsView(prState, links, ref) || isDismissedLately
 }
 
 /**

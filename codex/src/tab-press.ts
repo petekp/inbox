@@ -47,11 +47,17 @@ export const sendingSince = (): number | null => earliestOf(pressesOut().map(p =
 /**
  * The status the tab draws for its Local press while the press is out: the press's pending result, until a view shows
  * the server's record of the press, which then draws as in the other looks, such as "Starting a re-run of CI…" after
- * "Refreshing PR #12…". Null for a message, and once a view shows the press.
+ * "Refreshing PR #12…". Null for a message, and once a view shows the press. With `isUnderLatest`, a Local press
+ * under the row's latest press counts too, for a latest press that keeps the status the row drew before it.
  */
-export function outPending(v: View | null, id: string): Feedback | null {
-  const out = outOn(id)
-  if (!out?.pending) return null
+export function outPending(v: View | null, id: string, isUnderLatest = false): Feedback | null {
+  const outs = pressesOut().filter(p => p.rowId === id)
+  const looked = isUnderLatest ? outs : outs.slice(-1)
+  const local = looked
+    .map(p => localOuts.get(p.pressId))
+    .filter(l => l?.pending != null)
+    .pop()
+  if (!local?.pending) return null
 
-  return lastPressKey(v, id) === out.lastBefore ? out.pending : null
+  return lastPressKey(v, id) === local.lastBefore ? local.pending : null
 }

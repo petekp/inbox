@@ -5,7 +5,7 @@ import { ENTER_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import type { Field } from './blocks'
 import { BOX_RADIUS, BUTTON_H, INSET, SMALL_GAP } from './paint-theme'
 import type { Paint } from './paint-theme'
-import { buttonsEl } from './paint-parts'
+import { buttonsEl, fadeEl } from './paint-parts'
 
 /**
  * A field and its buttons. A field a press brings in shows its text field as soon as its box opens, while its buttons,
@@ -35,21 +35,15 @@ export function fieldEl(
       ]
     : []
 
-  const glide = {
-    duration: ENTER_FADE_MS,
-    delay: opening ? enterDelayMs(opening.height) : 0,
-    easing: 'ease-out' as const,
-  }
+  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0 }
+  const key = `buttons ${f.rowId}`
 
   return v_flex()
     .pl(indent)
     .children(input)
     .child(
       buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, e =>
-        e
-          .id(`buttons ${f.rowId}`)
-          .opacity(opening?.isOpen ? 1 : 0)
-          .transition('opacity', glide),
+        fadeEl(e.id(key), key, opening?.isOpen ? 1 : 0, glide, p),
       ),
     )
 }

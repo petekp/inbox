@@ -24,13 +24,17 @@ test('while the store is full, a finding Claude records shows to the person, its
   w.storeLimit = storedLength()
 
   const full = await $.tool.call(FINDING)
-  expect(full.result).toBe(`Recorded. The user sees it in the Finds tab of the /inbox pane. ${NOT_SAVED}`)
+  expect(full.result).toBe(
+    `Recorded. The user sees it in the Finds tab of the /inbox pane. Its close id is f1. A close id is only for the close tool. Never write one in a reply. ${NOT_SAVED}`,
+  )
   const band = await $.ui.mount({ plugin: 'inbox', surface: 'terminal', ...BAND })
   expect(await band.find({ text: /Finds 1/ })).toBeDefined()
 
   w.storeLimit = undefined
   const roomy = await $.tool.call({ ...FINDING, title: 'README is stale', detail: 'It names the old command.' })
-  expect(roomy.result).toBe('Recorded. The user sees it in the Finds tab of the /inbox pane.')
+  expect(roomy.result).toBe(
+    'Recorded. The user sees it in the Finds tab of the /inbox pane. Its close id is f2. A close id is only for the close tool. Never write one in a reply.',
+  )
   expect(w.stored.get('s:session-1')).toContain('Retry loop never backs off')
 })
 
@@ -71,7 +75,9 @@ test('a full store makes room by dropping the shared PR views no fetch reads any
   w.storeLimit = storedLength()
 
   const r = await $.tool.call(FINDING)
-  expect(r.result).toBe('Recorded. The user sees it in the Finds tab of the /inbox pane.')
+  expect(r.result).toBe(
+    'Recorded. The user sees it in the Finds tab of the /inbox pane. Its close id is f1. A close id is only for the close tool. Never write one in a reply.',
+  )
   expect(Object.keys(JSON.parse(w.stored.get('gh:shared') ?? '{}').views)).toEqual(['acme/app#2'])
   expect(w.stored.get('s:session-1')).toContain('Retry loop never backs off')
 })

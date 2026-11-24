@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": ["bun"],
+    "typeRoots": ["../omp/node_modules/@types", "../herdr/node_modules/@types", "../node_modules/@types"],
+    "paths": {
+      "herdr": ["../herdr/.herdr-types/herdr.d.ts"]
+    }
+  },
+  "exclude": ["mod-look.ts"],
+  "include": ["*.ts", "../herdr/.herdr-types/gpui-kit.d.ts", "../herdr/.herdr-types/herdr.d.ts"]
+}

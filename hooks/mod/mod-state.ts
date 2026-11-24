@@ -6,6 +6,7 @@ import type { HerdrAsk } from '../../core/remote/herdr-ask'
 import type { UiState } from '../../core/view/ui-controller-types'
 import type { DrawnVersions } from '../../core/view/press-preconditions'
 import type { Owner } from './mod-sessions'
+import type { ShownClient } from '../pane/held-clients'
 import { memoryViewerStores } from '../../core/runtime/remote-viewers'
 
 class PaneState {
@@ -56,6 +57,8 @@ class PaneState {
   paneClosesOnEscape = true
   /** The keys of the desktop Clients that have posted since they were drawn, which draw themselves (`client-copy.tsx`). */
   runningClients = new Set<string>()
+  /** The props each drawn title and links Client last drew with, by key, which a row settled with Undo keeps running. */
+  shownClients = new Map<string, ShownClient>()
   /** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
   fieldWithoutKeys: string | null = null
   herdrCheckTimer: Timer | null = null

@@ -12,6 +12,7 @@ const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
 const { CUT_OPACITY, TURNED_BACK_CUT_OPACITY } = await import('../../core/view/row-motion')
 const { easeOut } = await import('../src/panel-steps')
+const { HeldFades } = await import('../src/held-fades')
 
 const FRAME_MS = 16
 const PANE_WIDTH = 300
@@ -159,7 +160,7 @@ class Springs {
   }
 }
 
-type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number }
+type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number; delay: number }
 
 const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'status ', 'tall ', 'short ', 'form ', 'trunk ', 'mark ']
 const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))
@@ -219,6 +220,13 @@ function cutTexts(placed: Map<Painted, Box>): { node: Painted; share: number }[]
   })
 }
 
+const retargetedFrom = (s: Fade): number => {
+  const sinceDeclared = Math.max(0, s.elapsed + s.delay)
+  const done = s.duration > 0 ? Math.min(1, sinceDeclared / s.duration) : 1
+
+  return s.from + (s.target - s.from) * easeOut(done)
+}
+
 /** The opacity of the content of each block's box that fades. A change of the declared opacity starts an eased fade. */
 class Fades {
   states = new Map<string, Fade>()
@@ -233,11 +241,18 @@ class Fades {
         const state = this.states.get(inBox)
         const to = n.style.opacity
         const delay = n.delays.get('opacity') ?? 0
-        if (!state) this.states.set(inBox, { shown: to, from: to, target: to, elapsed: duration, duration })
+        if (!state) this.states.set(inBox, { shown: to, from: to, target: to, elapsed: duration, duration, delay: 0 })
         else if (to !== state.target && duration === 0 && delay === 0)
-          this.states.set(inBox, { shown: to, from: to, target: to, elapsed: 0, duration })
+          this.states.set(inBox, { shown: to, from: to, target: to, elapsed: 0, duration, delay: 0 })
         else if (to !== state.target)
-          this.states.set(inBox, { ...state, from: state.shown, target: to, elapsed: -delay, duration })
+          this.states.set(inBox, {
+            shown: state.shown,
+            from: retargetedFrom(state),
+            target: to,
+            elapsed: -delay,
+            duration,
+            delay,
+          })
         return n.kids.forEach(k => walk(k, null))
       }
       n.kids.forEach(k => walk(k, inBox))
@@ -271,6 +286,7 @@ function paintOf(
   now: number,
   closedSeen = new Map<string, number>(),
   rowTextRoom?: number,
+  fades = new HeldFades(),
 ): Paint {
   const noop = () => {}
 
@@ -294,6 +310,7 @@ function paintOf(
     mono: 'Menlo',
     isNarrow: false,
     listRoom: null,
+    fades,
     ...(rowTextRoom === undefined ? {} : { rowTextRoom }),
   } as unknown as Paint
 }
@@ -325,6 +342,7 @@ class Frames {
   private linesAbove = NO_LINES_ABOVE
   private springs = new Springs()
   private fades = new Fades()
+  private held = new HeldFades()
   private closedSeen = new Map<string, number>()
   private lastShown = new Map<string, number>()
   private last: Map<string, Box> | null = null
@@ -350,11 +368,20 @@ class Frames {
         .filter(([, t]) => t.track.state === 'opening' && (t.panelSteps?.length ?? 0) > 1)
         .map(([id]) => panelId(id)),
     )
-    const paint = paintOf(moved.motion, this.heights, key => isFirst || resized.has(key), now, this.closedSeen)
+    const paint = paintOf(
+      moved.motion,
+      this.heights,
+      key => isFirst || resized.has(key),
+      now,
+      this.closedSeen,
+      undefined,
+      this.held,
+    )
     const tree = columnOf(
       spacedEls(moved.blocks, paint, b => blockEl(b, paint)),
       LINE,
     )
+    this.held.drew()
     this.motionIds = checkMotionIds(tree, this.motionIds)
     const was = this.springs.shown()
     this.springs.declare(tree)

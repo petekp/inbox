@@ -1,7 +1,6 @@
 import { Icon } from './row-actions'
-import { STATUS_TEXT_LINES } from '../../core/view/status-page'
-import { STALL_GAP, textLevelOf } from '../../core/view/status-page-parts'
-import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, goalSubmitLabel, milestoneKeyPlan } from '../../core/view/status-keys'
+import { STALL_GAP } from '../../core/view/status-page-parts'
+import { GOAL_FIELD, GOAL_KEYS_ID, goalKeyGroups, goalSubmitLabel } from '../../core/view/status-keys'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { GOAL_HEADING, NO_GOAL_TEXT, suggestedGoalOffer } from '../../core/view/status-goal-page'
 import { ROW_COPY } from '../../core/view/rows'
@@ -16,15 +15,22 @@ import { closingFolds, entering, tabState } from './tab-state'
 import { clickFold, foldMotion, toggleStatusFold } from './tab-fold-all'
 import { dispatch, errorOf, pressRow } from './tab-ui'
 import { outOn } from './tab-press'
-import { levelClass, milestoneNameClass, NameLine, WasLine, WasText } from './tab-status-name'
-import { chevronOf, isParentFolded, ParentName } from './tab-status-fold'
-import { markClassOf, MarkGlyph, EmptyState, pulseInStep } from './tab-parts'
-import { SUBJECTS_ATTRIBUTE } from './tab-shown'
-import { GOAL_WAS_LINE, goalHeadMotion, goalLineMotion, metFoldMotion, statusRowMotion } from './tab-status-steps'
+import { levelClass, WasText } from './tab-status-name'
+import { isParentFolded } from './tab-status-fold'
+import { markClassOf, MarkGlyph, EmptyState } from './tab-parts'
+import {
+  GOAL_WAS_LINE,
+  goalHeadMotion,
+  goalLineMotion,
+  laterMotion,
+  metFoldMotion,
+  statusRowMotion,
+} from './tab-status-steps'
 import { connectorClass, connectorMotion, lineMotion } from './tab-line-steps'
 import type { ConnectorMotion } from './tab-line-steps'
 import type { DrawnStatus } from './tab-status-steps'
-import { fitMergedLine, Keys, rowPads, StatusLine } from './tab-status-line'
+import { Keys, rowPads, StatusLine } from './tab-status-line'
+import { MilestoneLine } from './tab-status-milestone'
 import type { RowPad } from './tab-status-line'
 import {
   isOneLineMilestone,
@@ -87,71 +93,6 @@ function Offer({ text, keys }: { text: string; keys: StatusKey[] }) {
           <Keys key={k.label} keys={[k]} />,
         ])}
       </span>
-    </div>
-  )
-}
-
-/** A milestone's line. A subject drawn in its place adds what a subject's row draws. */
-function MilestoneLine({ m, motion, connector }: { m: MilestoneRow; motion: string; connector: string | null }) {
-  const fold = m.foldId
-  const x = m.subject
-  const isRunning = x?.isRunning ?? false
-  const merged = x?.merged ?? null
-  const classes = [
-    'row milestone',
-    isOneLineMilestone(m) ? '' : 'long',
-    connector === null ? '' : 'connector-down',
-    connector ?? '',
-  ]
-  const nameClass = milestoneNameClass(m)
-
-  return (
-    <div
-      class={classes.filter(Boolean).join(' ')}
-      {...(x ? { [SUBJECTS_ATTRIBUTE]: x.id } : {})}
-      {...lineMotion(motion)}
-    >
-      <span class={markClassOf(m.tone, isRunning)} ref={isRunning ? pulseInStep : undefined}>
-        <MarkGlyph text={m.mark} />
-      </span>
-      <div class="content tight">
-        {fold === null ? (
-          <div class="milestone-name">
-            <ParentName id={m.id} foldCount={m.foldCount} class={nameClass}>
-              <NameLine name={m.name} stall={x?.stall ?? null} chevron={chevronOf(m)} />
-            </ParentName>
-          </div>
-        ) : (
-          <button
-            type="button"
-            class="fold milestone-fold name-fold"
-            data-fold={foldMotion(fold)}
-            onClick={e => clickFold(e, tabState.ui.statusUnfolded.includes(fold), () => toggleStatusFold(fold))}
-          >
-            <span class="faint">{m.name}</span>
-            <Icon name={tabState.ui.statusUnfolded.includes(fold) ? 'down' : 'right'} />
-          </button>
-        )}
-        {x?.waitsOn ? (
-          <div class="tone-needsYou clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-            {x.waitsOn}
-          </div>
-        ) : null}
-        {m.text ? (
-          <div class={`${textLevelOf(m)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
-            {m.text}
-          </div>
-        ) : null}
-        {merged ? (
-          <div
-            class="outcome muted clamp"
-            style={{ '--lines': STATUS_TEXT_LINES }}
-            ref={el => fitMergedLine(el, merged)}
-          />
-        ) : null}
-        {m.was ? <WasLine was={m.was} /> : null}
-        {fold === null ? <Keys keys={milestoneKeyPlan(m)} /> : null}
-      </div>
     </div>
   )
 }
@@ -266,6 +207,7 @@ function MilestoneGroup({
   group,
   next,
   isSpaced,
+  motion: groupMotion,
   isGapUnder,
   space,
   nextSpace,
@@ -273,6 +215,7 @@ function MilestoneGroup({
   group: MilestoneGroupLines
   next: MilestoneRow | undefined
   isSpaced: boolean
+  motion: ConnectorMotion
   isGapUnder: boolean
   space: number | null
   nextSpace: number | null
@@ -293,11 +236,15 @@ function MilestoneGroup({
   ]
 
   return (
-    <div class={classes.filter(Boolean).join(' ')} style={groupStyle(next, space, nextSpace)}>
+    <div
+      class={classes.filter(Boolean).join(' ')}
+      style={groupStyle(next, space, nextSpace)}
+      {...(groupMotion ? { 'data-step': groupMotion } : {})}
+    >
       <MilestoneLine
         m={m}
         motion={goalLineMotion(m.id)}
-        connector={shown.length > 0 && m.line === null ? connectorClass(connectorState) : null}
+        connector={shown.length > 0 && m.line === null ? { motion: connectorState } : null}
       />
       {motion === null ? (
         rows.map((r, n) => (
@@ -330,7 +277,7 @@ function laterStyle(above: MilestoneGroupLines | undefined, m: MilestoneRow) {
   }
 }
 
-function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
+function MilestoneList({ lines, later }: { lines: DrawnStatus['goal']; later: DrawnStatus['later'] }) {
   const isUnfolded = (id: string) => tabState.ui.statusUnfolded.includes(id)
   const groups = milestoneGroups(lines)
   const milestones = groups.map(g => g.m)
@@ -342,9 +289,14 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
   return (
     <div class="list">
       {groups.flatMap((group, n) => [
-        ...(group.m.startsLater
+        ...(later.some(l => l.id === group.m.id)
           ? [
-              <div key="later" class="row part-line" style={laterStyle(groups[n - 1], group.m)}>
+              <div
+                key={laterMotion(group.m.id)}
+                class="row part-line"
+                style={laterStyle(groups[n - 1], group.m)}
+                {...lineMotion(laterMotion(group.m.id))}
+              >
                 <div class="part-rule">{LATER_TEXT}</div>
               </div>,
             ]
@@ -354,6 +306,7 @@ function MilestoneList({ lines }: { lines: DrawnStatus['goal'] }) {
           group={group}
           next={milestones[n + 1]}
           isSpaced={n > 0 && !group.m.startsLater && isSpacedAbove(milestones, n, isUnfolded, isParentFolded)}
+          motion={connectorMotion([goalLineMotion(group.m.id)])}
           isGapUnder={isSpacedAbove(milestones, n + 1, isUnfolded, isParentFolded) && n + 1 < milestones.length}
           space={spaces[n] ?? null}
           nextSpace={spaces[n + 1] ?? null}
@@ -395,11 +348,13 @@ function GoalSection({
   head,
   fold,
   lines,
+  later,
 }: {
   page: StatusPage
   head: DrawnStatus['head']
   fold: DrawnStatus['fold']
   lines: DrawnStatus['goal']
+  later: DrawnStatus['later']
 }) {
   const g = page.goal
   const isTyping = tabState.ui.typing === GOAL_KEYS_ID
@@ -413,11 +368,13 @@ function GoalSection({
       <p class="muted">{NO_GOAL_TEXT}</p>
     )
   const mark = g?.mark ?? null
-  const last = milestoneGroups(lines).at(-1)
+  const milestoneLines = milestoneGroups(lines)
+  const last = milestoneLines.at(-1)
   const sectionStyle = last ? { '--last-row-pad': `${milestoneGroupPadBelow(last.m, shownRows(last).shown)}px` } : {}
+  const isEveryMilestoneLeaving = connectorMotion(milestoneLines.map(l => goalLineMotion(l.m.id))) === 'leaving'
 
   return (
-    <section style={sectionStyle}>
+    <section style={sectionStyle} {...(isEveryMilestoneLeaving ? { 'data-step': 'leaving' } : {})}>
       <div class={mark ? 'goal-heading marked' : 'goal-heading'} data-motion="goal-heading">
         {mark ? (
           <span class={`${markClassOf(mark.tone, false)} goal-mark`}>
@@ -449,7 +406,7 @@ function GoalSection({
       {fold.map(l => (
         <MilestonesFold key={l.id} line={l} />
       ))}
-      {lines.length > 0 ? <MilestoneList lines={lines} /> : null}
+      {lines.length > 0 ? <MilestoneList lines={lines} later={later} /> : null}
     </section>
   )
 }
@@ -521,7 +478,7 @@ export function StatusTab({ v, drawn }: { v: View; drawn: DrawnStatus }) {
 
   return (
     <main class="status-page">
-      <GoalSection page={page} head={drawn.head} fold={drawn.fold} lines={drawn.goal} />
+      <GoalSection page={page} head={drawn.head} fold={drawn.fold} lines={drawn.goal} later={drawn.later} />
       {drawn.rows.length > 0 ? (
         <section class={isUnruledAfterGoal ? 'unruled' : undefined}>
           <div class="list">

@@ -8,6 +8,7 @@ import { foldGlyph } from '../../core/view/fold-chevron'
 import type { CountsUnits } from '../../core/view/status-folds'
 import type { FoldProps } from './fold-client'
 import { foldClient } from './pane-row-clients'
+import { heldClients } from './held-clients'
 import { LIST_MARGIN_PT, ROW_PAD_PT } from '../../core/view/layout'
 import type { Tone } from './palettes'
 import type { Entry, PaneBase, PaneClient, PaneHandlers } from './pane-context'
@@ -516,6 +517,7 @@ export function paneRowParts(
       return (
         <Box key={`settled-${r.id}`} flexDirection="column">
           {desktopRow(r, state, undo, mark, closedTitleColor(r.id, state))}
+          {undo && hasClient ? heldClients(elements, desktopFrame, r.id) : null}
         </Box>
       )
     return (

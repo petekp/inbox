@@ -1,7 +1,7 @@
 import { actionLines, answersFitLine } from '../../core/view/action-plan'
 import type { AnswerRow } from '../../core/view/action-plan'
 import { desktopButtonPt, desktopTextPt } from './desktop-metrics'
-import type { LinksProps } from './links-client'
+import { linksRegionWidth, type LinksProps } from './links-client'
 import { linksClient } from './pane-row-clients'
 import type { PaneBase, PaneClient, PaneHandlers, Row } from './pane-context'
 import { followUpPresses, type KeyAction } from './pane-keys'
@@ -128,15 +128,11 @@ export function paneRowKeys(
       colors: { muted: pal.muted, hover: null },
     }
 
-    const linksWidth = Math.ceil(
-      props.links.reduce((sum, l) => sum + l.width + props.slack, props.gap * (props.links.length - 1)),
-    )
-
     // A Client takes no flexShrink or minWidth, so this Box gives it the room left on its line. In the Claude app,
     // the wrapping row moves a Box this wide to the next line whole when the room left is narrower, and then shrinks
     // it to the line.
     return (
-      <Box flexGrow={1} flexShrink={1} minWidth={0} width={linksWidth}>
+      <Box flexGrow={1} flexShrink={1} minWidth={0} width={linksRegionWidth(props)}>
         {linksClient(elements, `links-${rowId}`, props)}
       </Box>
     )

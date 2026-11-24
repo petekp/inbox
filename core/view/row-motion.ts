@@ -248,6 +248,36 @@ function moveToward(track: RowTrack, form: Form, now: number): RowTrack {
   }
 }
 
+/** Where a row that leaves is drawn: just after the last row drawn above it last time that is still drawn, else first. */
+export function placeAfter(drawn: readonly string[], above: readonly string[]): number {
+  for (let i = above.length - 1; i >= 0; i--) {
+    const at = drawn.indexOf(above[i] ?? '')
+    if (at >= 0) return at + 1
+  }
+  return 0
+}
+
+/**
+ * The rows to draw: the rows listed now, and each row of the last draw that is no longer listed and still leaves, each
+ * where `placeAfter` puts it. Rows that stay keep their order, so a row that leaves never splits a row from the rows
+ * that sat under it last time.
+ */
+export function withLeaving<T>(
+  listed: readonly T[],
+  last: readonly T[],
+  idOf: (row: T) => string,
+  isLeaving: (row: T) => boolean,
+): T[] {
+  const listedIds = new Set(listed.map(idOf))
+  const drawn = [...listed]
+  last.forEach((row, i) => {
+    if (listedIds.has(idOf(row)) || !isLeaving(row)) return
+    drawn.splice(placeAfter(drawn.map(idOf), last.slice(0, i).map(idOf)), 0, row)
+  })
+
+  return drawn
+}
+
 function rest(track: RowTrack | undefined, form: Form, target: RowTarget, now: number): RowTrack | null {
   if (form === 'gone') return null
   const state: RowState = target === 'undoing' ? 'undoing' : form

@@ -60,7 +60,7 @@ export async function changeSession(
     const moved = commands ? await movedLegacyCommands(commands, changed, m.saves.log) : changed
     const kept = pruned(
       { ...moved, heldRows: [...held], shownSince: demo === null ? ui.shownSince : null },
-      Object.keys(leases).length > 0 ? await m.clock.now() : 0,
+      await m.clock.now(),
       leases,
     )
     let landed: ModSession | null = null

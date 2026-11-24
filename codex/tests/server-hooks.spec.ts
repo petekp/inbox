@@ -27,7 +27,10 @@ test("a question Codex records before this build lists the tools is asked only f
   const meta = { 'x-codex-turn-metadata': { session_id: 's1', thread_id: 's1' } }
   const question = { kind: 'question', options: ['Redis', 'Memcached'], rec: 'Redis' }
   const before = await call('record', { ...question, ask: 'Which cache should the API use?' }, meta)
-  assert.match(before.result.content[0]?.text ?? '', /^Recorded\. The user sees it in [^.]+\.$/)
+  assert.match(
+    before.result.content[0]?.text ?? '',
+    /^Recorded\. The user sees it in [^.]+\. Its close id is i\d+\. A close id is only for the close tool\. Never write one in a reply\.$/,
+  )
   await handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
   const after = await call('record', { ...question, ask: 'Which queue should jobs use?' }, meta)
   assert.match(after.result.content[0]?.text ?? '', /It has no context or option_notes: .* It has no why: /)

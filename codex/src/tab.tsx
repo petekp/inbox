@@ -76,7 +76,7 @@ function App({
           <Prs v={v} prs={prs} now={now} />
         ) : null
       ) : (
-        <StatusTab v={v} drawn={status ?? { head: [], fold: [], goal: [], rows: [] }} />
+        <StatusTab v={v} drawn={status ?? { head: [], fold: [], goal: [], later: [], rows: [] }} />
       )}
       <footer>
         {tabState.isDemo || !DEMO_BUTTON ? null : (
