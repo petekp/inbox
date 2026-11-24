@@ -7,6 +7,10 @@ import { collapsedOf } from '../core/view/ui-controller-selection'
 
 const PLAN_WIDTH = 80
 
+/** omp's TUI module that measures a line before it cuts one. Its source fails this project's strict type check, so tsc does not follow it. */
+const PI_TUI_UTILS: string = '../omp/node_modules/@oh-my-pi/pi-tui/src/utils'
+const { visibleWidth } = (await import(PI_TUI_UTILS)) as { visibleWidth: (line: string) => number }
+
 /** The selected open row's planned labels, missing from the drawn text in plan order, as `omp/tests/panel.spec.ts` checks a row. */
 function planBreak(d: OmpDraw): string | null {
   const { view, ui } = d
@@ -52,7 +56,7 @@ function countBreak(d: OmpDraw): string | null {
 
 const LOOK = 'omp'
 
-/** Every resting rule the omp panel broke in a run. Its width is measured with `Bun.stringWidth`, which the panel does not use. */
+/** Every resting rule the omp panel broke in a run. Width is measured as omp's TUI measures a line before it cuts one. */
 export function ompFailures(run: OmpRun, input: string): Failure[] {
   if (run.error)
     return [
@@ -69,7 +73,7 @@ export function ompFailures(run: OmpRun, input: string): Failure[] {
   for (const d of run.draws) {
     const at = { look: LOOK, at: d.at, after: d.after }
     for (const [i, line] of d.lines.entries()) {
-      const width = Bun.stringWidth(line)
+      const width = visibleWidth(line)
       if (width > run.width)
         out.push({
           ...at,

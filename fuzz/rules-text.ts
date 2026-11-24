@@ -28,7 +28,6 @@ export function badText(t: string, input: string): string | null {
   return BAD.find(b => t.includes(b) && !input.includes(b)) ?? null
 }
 
-/** Whether a terminal line holds an escape the panel's own style did not write. The fuzzer draws with a plain style. */
 /** The reset omp's `cutText` puts after its ellipsis, so a style cut mid-line ends there. */
 const RESET = `${ESC}[0m`
 

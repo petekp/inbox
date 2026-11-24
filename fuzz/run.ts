@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import type { Case, Look } from './case'
 import type { Failure } from './failure'
 import { caseOf } from './gen'
@@ -8,7 +8,7 @@ import { shrink } from './shrink'
 import { SEEDS } from './seeds'
 
 const USAGE =
-  'usage: fuzz.sh [--look omp|herdr|all] [--seed N] [--runs N] [--time S] [--shrinks N] [--replay <case.json>]'
+  'usage: fuzz.sh [--look omp|herdr|all] [--seed N] [--runs N] [--case N] [--time S] [--shrinks N] [--replay <case.json>]'
 
 function argsOf(argv: string[]) {
   const get = (name: string) => {
@@ -24,6 +24,7 @@ function argsOf(argv: string[]) {
     runs: Number(get('runs') ?? 100),
     seconds: Number(get('time') ?? Infinity),
     shrinks: Number(get('shrinks') ?? 2),
+    only: get('case') === undefined ? null : Number(get('case')),
     replay: get('replay'),
   }
 }
@@ -48,11 +49,10 @@ const failuresOf = async (c: Case) => (await checked(c)).failures
 const failsWith = (rule: string) => async (c: Case) => (await failuresOf(c)).some(f => f.rule === rule)
 
 function report(
-  name: string,
   c: Case,
   f: Failure,
   notes: string[],
-  from: { seed: number; n: number | string; events: number; tries: number },
+  from: { seed: number; n: number | string; events: number; tries: number; path: string },
 ): string {
   const event = (i: number) =>
     i >= 0 && i < c.events.length
@@ -66,9 +66,12 @@ function report(
     f.detail,
     '',
     `- At ${f.at} ms into the case, after event ${f.after}: ${event(f.after)}.`,
-    `- Found by seed ${from.seed}, case ${from.n}. Shrunk from ${from.events} events to ${c.events.length} in ${from.tries} tries.`,
+    `- Found by seed ${from.seed}, case ${from.n}` +
+      (from.tries > 0
+        ? `. Shrunk from ${from.events} events to ${c.events.length} in ${from.tries} tries.`
+        : ', not shrunk.'),
     `- The session starts with ${c.session.ledger.items.length} items, ${c.session.ledger.findings.length} findings, ${c.session.ledger.closed.length} closed rows and ${Object.keys(c.session.prViews.views).length} PRs.`,
-    `- Replay: \`./scripts/fuzz.sh --replay ${name}.json\``,
+    `- Replay: \`./scripts/fuzz.sh --replay ${from.path}\``,
     '',
     '## Events',
     '',
@@ -96,60 +99,77 @@ async function main() {
   const out = join(import.meta.dir, 'out', `${new Date().toISOString().replace(/[:.]/g, '-')}-seed${args.seed}`)
   mkdirSync(out, { recursive: true })
   const seen = new Set<string>()
-  const counts = new Map<string, { cases: number; shrunk: number }>()
+  const counts = new Map<string, { cases: number; shrunk: number; reported: number }>()
   const seedLines: string[] = []
   let isSeedBroken = false
   for (const s of SEEDS.filter(s => args.looks.includes(s.case.look))) {
-    const rules = [...new Set((await failuresOf(s.case)).map(f => f.rule))]
-    const fails = rules.length > 0
-    if (fails && !s.isOpen) isSeedBroken = true
-    const verdict = fails
-      ? s.isOpen
-        ? `fails as expected (${rules.join(', ')})`
-        : `fails again (${rules.join(', ')})`
-      : s.isOpen
-        ? 'passes, though its issue is open: the issue is fixed or the harness misses it'
-        : 'passes'
+    const failures = await failuresOf(s.case)
+    const rules = [...new Set(failures.map(f => f.rule))].join(', ')
+    const isAsIssueSays = failures.some(
+      f => f.rule === s.rule && (s.detail === undefined || f.detail.includes(s.detail)),
+    )
+    const verdict =
+      failures.length === 0
+        ? s.isOpen
+          ? 'passes, though its issue is open: the issue is fixed or the harness misses it'
+          : 'passes'
+        : !s.isOpen
+          ? `fails again (${rules})`
+          : isAsIssueSays
+            ? `fails as its issue says (${rules})`
+            : `fails, but not as its issue says (${rules})`
+    if (failures.length > 0 && !(s.isOpen && isAsIssueSays)) isSeedBroken = true
     seedLines.push(`seed #${s.issue}, ${s.name}: ${verdict}`)
+  }
+  const write = (
+    name: string,
+    c: Case,
+    f: Failure,
+    notes: string[],
+    from: { n: number; events: number; tries: number },
+  ) => {
+    const path = join('fuzz', 'out', basename(out), `${name}.json`)
+    writeFileSync(join(out, `${name}.json`), JSON.stringify(c, null, 2))
+    writeFileSync(join(out, `${name}.md`), report(c, f, notes, { ...from, seed: args.seed, path }))
+    console.log(`${name}: ${f.detail}`)
   }
   let ran = 0
   const realNow = performance.now.bind(performance)
   const t0 = realNow()
   for (let i = 0; ran < args.runs && (realNow() - t0) / 1000 < args.seconds; i++) {
-    const next = {
-      c: caseOf(rngOf(args.seed, Math.floor(i / args.looks.length)), args.looks[i % args.looks.length] ?? 'herdr'),
-      n: Math.floor(i / args.looks.length),
-    }
+    const n = args.only ?? Math.floor(i / args.looks.length)
+    const look = args.looks[i % args.looks.length] ?? 'herdr'
+    if (args.only !== null && i >= args.looks.length) break
+    const c = caseOf(rngOf(args.seed, n), look)
     ran++
-    const failures = await failuresOf(next.c)
-    for (const rule of new Set(failures.map(f => f.rule))) {
-      const key = `${next.c.look} ${rule}`
-      const count = counts.get(key) ?? { cases: 0, shrunk: 0 }
+    const run = await checked(c)
+    for (const rule of new Set(run.failures.map(f => f.rule))) {
+      const key = `${look} ${rule}`
+      const count = counts.get(key) ?? { cases: 0, shrunk: 0, reported: 0 }
       count.cases++
       counts.set(key, count)
+      const first = run.failures.find(f => f.rule === rule)
+      if (args.shrinks === 0 && count.cases === 1 && first) {
+        count.reported++
+        write(`${look}-${rule}-${count.reported}`, c, first, run.notes, { n, events: c.events.length, tries: 0 })
+      }
       if (count.shrunk >= args.shrinks) continue
-      const { shrunk, tries } = await shrink(next.c, failsWith(rule))
+      count.shrunk++
+      const { shrunk, tries } = await shrink(c, failsWith(rule))
       const shrunkRun = await checked(shrunk)
       const shrunkFailure = shrunkRun.failures.find(f => f.rule === rule)
-      const sig = `${key} ${JSON.stringify(shrunk.events)}`
+      const sig = `${key} ${JSON.stringify(shrunk)}`
       if (!shrunkFailure || seen.has(sig)) continue
       seen.add(sig)
-      count.shrunk++
-      const name = `${next.c.look}-${rule}-${count.shrunk}`
-      writeFileSync(join(out, `${name}.json`), JSON.stringify(shrunk, null, 2))
-      writeFileSync(
-        join(out, `${name}.md`),
-        report(name, shrunk, shrunkFailure, shrunkRun.notes, {
-          seed: args.seed,
-          n: next.n,
-          events: next.c.events.length,
-          tries,
-        }),
-      )
-      console.log(`${name}: ${shrunkFailure.detail}`)
+      count.reported++
+      write(`${look}-${rule}-${count.reported}`, shrunk, shrunkFailure, shrunkRun.notes, {
+        n,
+        events: c.events.length,
+        tries,
+      })
     }
   }
-  const lines = [...counts].map(([key, c]) => `${key}: ${c.cases} of ${ran} cases, ${c.shrunk} reported`)
+  const lines = [...counts].map(([key, c]) => `${key}: ${c.cases} of ${ran} cases, ${c.reported} reported`)
   const summary = [
     ...seedLines,
     `seed ${args.seed}, ${ran} cases in ${Math.round((realNow() - t0) / 1000)} s`,

@@ -10,8 +10,8 @@ The looks are tested on the demo session and a few hand-picked states. Bugs such
 
 `./scripts/fuzz.sh [--look omp|herdr|all] [--seed N] [--runs N] [--time S] [--shrinks N] [--replay <case.json>]`
 
-- Bun runs `fuzz/run.ts`. Case `i` of a run draws every choice from a PRNG seeded with `(seed, i)`, so a seed and a case number replay exactly. `--time` stops after that many seconds, `--runs` after that many cases.
-- Each failure writes `fuzz/out/<run>/<look>-<rule>-<n>.json`, the shrunk case, which `--replay` runs again. Beside it, a `.md` gives the look, the rule, what it saw, the time of the draw or frame, the drawn lines or the frame's boxes, and the case's size before and after shrinking. Failures with the same look, rule and shrunk events are written once. `fuzz/out/` is Git-ignored.
+- Bun runs `fuzz/run.ts`. Case `i` of a run draws every choice from a PRNG seeded with `(seed, i)`, so `--seed N --case i` runs that case again. `--time` stops after that many seconds, `--runs` after that many cases.
+- Each failure writes `fuzz/out/<run>/<look>-<rule>-<n>.json`, the shrunk case, which `--replay` runs again. Beside it, a `.md` gives the look, the rule, what it saw, the time of the draw or frame, the drawn lines or the frame's boxes, the case's size before and after shrinking, and the replay command. Each rule is shrunk at most `--shrinks` times a run, and a shrunk case already written is not written again. With `--shrinks 0`, the first failing case of each rule is written as it is. `fuzz/out/` is Git-ignored.
 - It is not in `check.sh`. The report proposes a short fixed-seed run for it, with its measured runtime.
 - No model calls, no screen, no VM. Everything is headless and in one process.
 
@@ -21,7 +21,7 @@ A case is plain JSON: the look, the session it starts from, a list of events, an
 
 ### Starting sessions
 
-- The demo session (`demoSession` in `core/view/demo.ts`), with texts replaced from the corpus below, rows dropped or copied (0, 1 or many), and PRs copied up to about 30.
+- The demo session (`demoSession` in `core/view/demo.ts`), keeping all, none or some of its rows and findings, with texts replaced from the corpus below in none, some or all of them. Its PRs stay as the demo has them.
 - A session from `emptySession` that the agent fills through its own tool calls at the start of the event list (see `record` below), so every row is one the record code built.
 - Last actions on rows in each press state the view reads come from presses, not from hand-written state: the host's delivery outcomes below make them.
 
@@ -38,7 +38,7 @@ Long sentences, one huge word with no spaces, CJK, emoji and ZWJ sequences, flag
 
 ### The host
 
-One in-memory host (`fuzz/host.ts`) holds the session and a virtual clock, as `tests/session-script.ts` does. It is a `PressHost`, so presses run through `startPress` in `core/runtime/host-press.ts`, the path every host runs. Its `deliver` answers accepted, rejected or unconfirmed, and holds a message until the turn ends in some cases, by the case's seed. Its `perform` opens and copies succeed or fail by the seed. A wait past the settle window calls `wakeAfterSettle`, which sends held answers and Done's message.
+One in-memory host (`fuzz/host.ts`) holds the session and a virtual clock, as `tests/session-script.ts` does. It is a `PressHost`, so omp's presses run through `press` in `core/runtime/host-press.ts`, and Herdr's press files through `startHerdrFile` in `core/remote/herdr-app.ts`, as the hosts run them. Its `deliver` answers accepted, rejected or unconfirmed, and holds a message until the turn ends in some cases, by the case's seed. Its `perform` opens and copies succeed or fail by the seed. A press whose outcome asks for it wakes the host 250 ms after the settle window, as `wakeLater` in `omp/src/host-sessions.ts` does, and `wakeAfterSettle` sends held answers and Done's message.
 
 ### Events
 
@@ -69,7 +69,7 @@ Next, a separate pass, `--look arbitrary`, will build sessions with no regard fo
 | Codex tab | the built tab in a headless browser page, as `codex/scripts/tab-page.sh` serves it, with `[data-motion]` rects sampled each animation frame, in both themes and with reduced motion emulated | none | all |
 | Terminal and desktop | the mod's render path as `tests/hooks-world.ts` drives it, read as the drawn tree | none | plan order, width in the terminal, counts, no bad text. The terminal does not glide. Desktop pixels need the VM, so desktop stays on the drawn tree. |
 
-`fuzz/look-herdr.ts` imports `herdr/tests/gpui-stand-in.ts` before any `herdr/src` module, since the stand-in replaces the app's modules as it loads. It wraps `moveRows` in `herdr/src/motion.ts` to record whether the view drew each frame as the person's input, and gives `framesOf` the same flag, so the replay moves rows as the view did. `fuzz/look-omp.ts` wraps `drawPanel` in `omp/src/panel.ts` the same way, to read the screen and UI state each draw came from. Neither changes `frames.ts` or a look's code.
+`fuzz/look-herdr.ts` imports `herdr/tests/gpui-stand-in.ts` before any `herdr/src` module, since the stand-in replaces the app's modules as it loads. It wraps `moveRows` in `herdr/src/motion.ts` to record whether the view drew each frame as the person's input, and gives `framesOf` the same flag, so the replay moves rows as the view did. A key or click targets the tree of the last draw and comes 1 ms after it, so the view takes it as the person's move, as it always is live. `fuzz/look-omp.ts` wraps `drawPanel` in `omp/src/panel.ts` the same way, to read the screen and UI state each draw came from. Neither changes `frames.ts` or a look's code.
 
 ## Rules
 
@@ -78,10 +78,10 @@ Each rule has an id that names it in reports.
 ### Resting
 
 - `plan-order`: the selected open row's buttons are its plan's, in order (AGENTS.md "Drawing in each look"). omp reads them from its lines after the cursor, as `omp/tests/panel.spec.ts` does, at 80 columns or more. Herdr reads each open row block's `buttons`, as `herdr/tests/draw.spec.ts` does. Both skip a row whose text field is open, and omp skips a row that is collapsed, has a press out or a reply sending, or was handed off and not opened again.
-- `width`: no omp line is wider than the panel. The measure is `Bun.stringWidth`, which omp's TUI (`visibleWidth` in `pi-tui`) uses to cut a line that is too wide. The panel measures with `cellWidth` in `core/domain/text.ts`, so this also checks that the two agree.
+- `width`: no omp line is wider than the panel, measured with `visibleWidth` from omp's TUI (`pi-tui`), which cuts a line that is too wide. The panel measures with `cellWidth` in `core/domain/text.ts`, so this checks that the two agree.
 - `raw-escape`: with every omp style drawn as plain text, no line holds an escape other than the reset the panel puts after an ellipsis.
 - `glyph-cut`: no drawn text holds half a surrogate pair, ends inside a ZWJ sequence, or starts with a combining mark or variation selector. It runs on omp lines and on Herdr's painted text.
-- `counts`: the shared view's Asks and Finds counts equal the waiting rows `listWaits` gives, and omp's tab line draws the same counts.
+- `counts`: the shared view's Asks and Finds counts equal the waiting rows `listWaits` gives, and omp's tab line draws the same counts. Herdr's drawn tab counts are not read yet.
 - `no-throw` and `bad-text`: nothing throws, and no drawn text holds `NaN`, `undefined`, `Infinity` or `[object Object]` the input did not hold. In Herdr, a gpui-kit motion-id restart is its own rule, `motion-id`.
 - Next: `overlap`, in the stand-in's layout no box has a negative or non-finite top or height, and no two boxes in one column overlap.
 
@@ -110,7 +110,8 @@ Motion rules run on the frames `framesOf` draws from 0 ms, the case's start. The
 
 Recent bugs are seed cases in `fuzz/seeds.ts`, which every run checks before its generated cases. A seed for a closed issue must pass, and the run fails when it does not. A seed for an open issue is expected to fail with its rule, and the run says so without failing. When it passes, the run says its issue is fixed or the harness misses it.
 
-- Herdr: #771 (a row that settles while it opens) passes. #811's second Copy press passes, so the stand-in misses that bug. #811's collapse right after Undo fails with `cut`.
+- Herdr: #771 (a row that settles while it opens) passes. #811's second Copy press fails with `cut`, as #811 says. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line. It shows #827's cut of "Sending…" instead.
+- From the first runs: #827, #828, #829, #830 and #831, each with its seed.
 - Codex tab, with that look: #772 and #783 (open or close just after Undo), #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line).
 
 ## Shrinking

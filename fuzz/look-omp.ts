@@ -26,6 +26,9 @@ mock.module('../omp/src/panel', () => ({
 }))
 const { createPanel } = await import('../omp/src/controller')
 
+/** As `wakeLater` in `omp/src/host-sessions.ts` waits past the settle window. */
+const WAKE_MARGIN_MS = 250
+
 /** Draws every style as plain text, so any escape in a line came from the input. */
 const PLAIN: Style = {
   bold: s => s,
@@ -75,7 +78,7 @@ export async function runOmp(c: Case, restMs = 3000): Promise<OmpRun> {
     }),
     press: async (p, holds, _pressId, when) => {
       const outcome = await press(host, p, false, holds, undefined, when)
-      if (outcome.wakesAfterSettle) add(() => void wakeAfterSettle(host), SETTLED_MS, true)
+      if (outcome.wakesAfterSettle) add(() => void wakeAfterSettle(host), SETTLED_MS + WAKE_MARGIN_MS, true)
       return {
         error: outcome.error,
         note: outcome.note,
@@ -145,7 +148,8 @@ export async function runOmp(c: Case, restMs = 3000): Promise<OmpRun> {
       for (const ch of e.text) panel.handleInput(ch, ch)
       return 'typed'
     }
-    if (e.is === 'key') return (panel.handleInput(e.key, e.text), `pressed ${e.key}`)
+    if (e.is === 'key')
+      return (panel.handleInput(e.key, e.text ?? (e.key.length === 1 ? e.key : undefined)), `pressed ${e.key}`)
     return ''
   }
 

@@ -64,7 +64,7 @@ function restingFailures(d: HerdrDraw, input: string): Failure[] {
       out.push({
         ...at,
         rule: 'counts',
-        detail: `${tab} counts ${counted[tab]}, and ${waiting} of its drawn rows wait on the person`,
+        detail: `the view counts ${counted[tab]} on ${tab}, and ${waiting} of its rows wait on the person`,
       })
   }
 
@@ -86,8 +86,8 @@ function motionFailures(run: HerdrRun): Failure[] {
       {
         look: LOOK,
         rule: /gpui-kit/.test(message) ? 'motion-id' : 'no-throw',
-        at: -1,
-        after: -1,
+        at: run.steps.at(-1)?.[0] ?? 0,
+        after: run.draws.at(-1)?.after ?? -1,
         detail: message.split('\n')[0] ?? '',
         seen: message,
       },

@@ -42,7 +42,12 @@ mock.module('../herdr/src/motion', () => ({
     return realMoveRows(...args)
   },
 }))
-const { publishedText, startHerdrFile } = await import('../core/remote/herdr-app')
+const { publishedText, startedFile, startHerdrFile } = await import('../core/remote/herdr-app')
+const { wakeAfterSettle } = await import('../core/runtime/host-press')
+const { SETTLED_MS } = await import('../core/view/timing')
+
+/** How long after a press's settle window a host wakes to send what the press held, as `wakeLater` in `omp/src/host-sessions.ts` waits. */
+const WAKE_AFTER_MS = SETTLED_MS + 250
 const { publishedSessionPath } = await import('../core/remote/herdr')
 const { pressFile } = await import('../core/remote/herdr-press-file')
 const { REREAD_MS, AGE_TICK_MS } = await import('../herdr/src/status-look')
@@ -70,6 +75,12 @@ export type HerdrRun = {
 }
 
 type Timer = { at: number; every: number | null; fn: (cx: unknown) => void; isCancelled: boolean }
+
+/**
+ * The time between the draw a person sees and their input, so the view takes the input as a move after that draw, as it
+ * always is live. Input targets that draw's tree.
+ */
+const INPUT_GAP_MS = 1
 
 const settle = async () => {
   for (let i = 0; i < 4; i++) await new Promise(resolve => setTimeout(resolve, 0))
@@ -144,8 +155,10 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
       files.delete(path)
       const read = pressFile(f.text)
       if (!read.ok) continue
-      const started = await startHerdrFile(host, read.file, 's1')
-      if (started.is === 'waiting') host.held.push(started.finish)
+      const started = startedFile(await startHerdrFile(host, read.file, 's1'), outcome => {
+        if (outcome.wakesAfterSettle) add(WAKE_AFTER_MS, () => void wakeAfterSettle(host), null)
+      })
+      if (started.waiting) host.held.push(started.waiting)
     }
     return due.length > 0
   }
@@ -213,14 +226,19 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     }
     const field = keysHolder()
     const isTyping = field !== null && field !== 'panel'
+    const root = draws.at(-1)?.root ?? p.paint()
+    clock += INPUT_GAP_MS
+    setSystemTime(new Date(clock))
     if (e.is === 'type') return isTyping ? (typeIn(field, e.text), 'typed in the open field') : 'no field is open'
     if (e.is === 'key') {
       if (isTyping && e.key === 'enter') return (field.submit(), 'submitted the open field')
-      if (isTyping && e.text !== undefined) return (typeIn(field, field.value() + e.text), 'typed in the open field')
-      p.press(e.key)
+      const text = e.text ?? (e.key.length === 1 ? e.key : undefined)
+      if (isTyping && text !== undefined) return (typeIn(field, field.value() + text), 'typed in the open field')
+      allOf(root)
+        .find(n => n.keyDown !== null)
+        ?.keyDown?.({ keystroke: e.key }, p.cx)
       return isTyping ? `pressed ${e.key} in the open field` : `pressed ${e.key}`
     }
-    const root = p.paint()
     const nodes = allOf(root)
     if (e.on === 'row' || e.on === 'tab') {
       const targets = nodes.filter(n => n.id?.startsWith(e.on === 'row' ? 'row ' : 'tab ') && n.click !== null)
