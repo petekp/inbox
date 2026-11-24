@@ -3,6 +3,17 @@ import { test } from './test-with-timeout'
 import { KEPT_SESSIONS } from '../core/domain/ledger'
 import { storedLength, w, world } from './hooks-world'
 import { SAVED_SESSION } from './hooks-helpers'
+import { SESSION_VERSION } from '../core/domain/session-version'
+import { DISMISSED_VIEW_KEPT_MS } from '../core/view/pr-views'
+import { prMarkId } from '../core/view/pr-rows'
+
+const FINDING = {
+  tool: 'mcp__inbox__record',
+  kind: 'finding',
+  finding_kind: 'issue',
+  title: 'Retry loop never backs off',
+  detail: 'The fetch retry spins with no delay.',
+} as const
 
 const saveOf = (savedAt: number, filler = '') => JSON.stringify({ savedAt, ledger: SAVED_SESSION.ledger, filler })
 
@@ -161,4 +172,48 @@ test('the first registry write removes the temporary files earlier builds left i
       .sort(),
   ).toEqual([...kept, `${folder}/claude-code-session-1.json`].sort())
   expect(w.logged).toContain(`inbox: removed 2 temporary files earlier builds left in ${folder}`)
+})
+
+test('with no pane shown, each write keeps a dismissed PR’s view for a minute after the Dismiss, then drops it', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.isGhMissing = true
+  const ref = 'acme/app#3'
+  const view = {
+    ref,
+    number: 3,
+    title: 'Retry the export',
+    url: 'https://github.com/acme/app/pull/3',
+    isDraft: false,
+    state: 'OPEN',
+    base: 'main',
+    mergeable: 'MERGEABLE',
+    reviewDecision: null,
+    checks: [],
+    threads: [],
+    isYours: true,
+    error: null,
+    fetchedAt: 990_000,
+    wasSeenOpen: true,
+  }
+  const dismissedAt = 999_000
+  w.stored.set(
+    's:session-1',
+    JSON.stringify({
+      ...SAVED_SESSION,
+      version: SESSION_VERSION,
+      prViews: { views: { [ref]: view }, branchRef: null, isFetching: false },
+      lastActions: { [prMarkId(ref)]: { kind: 'mark', action: 'pr-dismiss', text: 'Dismissed', at: dismissedAt } },
+    }),
+  )
+  const savedViews = () => Object.keys(JSON.parse(w.stored.get('s:session-1') ?? '{}').prViews.views)
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  await $.tool.call(FINDING)
+  expect(savedViews()).toEqual([ref])
+
+  await clock.advance(dismissedAt + DISMISSED_VIEW_KEPT_MS - 1_000_000)
+  await $.tool.call({ ...FINDING, title: 'Export drops the last row' })
+  expect(savedViews()).toEqual([])
 })

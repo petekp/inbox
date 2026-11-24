@@ -3,8 +3,6 @@ import { test } from './test-with-timeout'
 import { SAVED_PR_VIEWS_MAX } from '../hooks/mod/mod-saves'
 import { SESSION_VERSION } from '../core/domain/session-version'
 import { SETTLED_MS } from '../core/view/timing'
-import { DISMISSED_VIEW_KEPT_MS } from '../core/view/pr-views'
-import { prMarkId } from '../core/view/pr-rows'
 import { NOT_SAVED } from '../core/runtime/tools'
 import type { Session } from '../types'
 import { storedLength, w, world } from './hooks-world'
@@ -133,48 +131,4 @@ test('a save keeps its PR views within the cap, dropping merged and closed PRs f
   const kept = JSON.parse(w.stored.get('s:session-1') ?? '{}').prViews.views
   expect(Object.keys(kept)).toEqual(['acme/app#3', 'acme/app#4', 'acme/app#6'])
   expect(Object.keys((drawn as Session | null)?.prViews.views ?? {})).toHaveLength(6)
-})
-
-test('with no pane shown, each write keeps a dismissed PR’s view for a minute after the Dismiss, then drops it', async ($, on) => {
-  const clock = mock.clock(on, { now: 1_000_000 })
-  world($, on, [])
-  w.isGhMissing = true
-  const ref = 'acme/app#3'
-  const view = {
-    ref,
-    number: 3,
-    title: 'Retry the export',
-    url: 'https://github.com/acme/app/pull/3',
-    isDraft: false,
-    state: 'OPEN',
-    base: 'main',
-    mergeable: 'MERGEABLE',
-    reviewDecision: null,
-    checks: [],
-    threads: [],
-    isYours: true,
-    error: null,
-    fetchedAt: 990_000,
-    wasSeenOpen: true,
-  }
-  const dismissedAt = 999_000
-  w.stored.set(
-    's:session-1',
-    JSON.stringify({
-      ...SAVED_SESSION,
-      version: SESSION_VERSION,
-      prViews: { views: { [ref]: view }, branchRef: null, isFetching: false },
-      lastActions: { [prMarkId(ref)]: { kind: 'mark', action: 'pr-dismiss', text: 'Dismissed', at: dismissedAt } },
-    }),
-  )
-  const savedViews = () => Object.keys(JSON.parse(w.stored.get('s:session-1') ?? '{}').prViews.views)
-  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
-  await clock.settle()
-
-  await $.tool.call(FINDING)
-  expect(savedViews()).toEqual([ref])
-
-  await clock.advance(dismissedAt + DISMISSED_VIEW_KEPT_MS - 1_000_000)
-  await $.tool.call({ ...FINDING, title: 'Export drops the last row' })
-  expect(savedViews()).toEqual([])
 })
