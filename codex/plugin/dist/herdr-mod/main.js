@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T18:58:20.536Z. 377147 characters follow.
+// Built at 2026-11-24T20:52:27.609Z. 377299 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -4040,6 +4040,13 @@ function isTitleRepeated(title, subjects, rows) {
     return false;
   return work.some((x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name));
 }
+function headPart(head, goal, subjects, rows) {
+  if (head === null || goal !== null && !goal.isMet)
+    return [];
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title;
+  const hasContentUnder = rows.length > 0 || goal === null && head.description !== null;
+  return hasContentUnder && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
+}
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
   if (row?.kind !== "subject")
@@ -4186,7 +4193,6 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   ];
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
-  const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
@@ -4195,11 +4201,10 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows) ? null : head.title;
-  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
+  const headRows = headPart(head, g, subjects, listRows);
   const rows = [
-    ...headPart,
-    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
+    ...headRows,
+    ...headRows.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
@@ -4231,7 +4236,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
   return withoutRepeatedNow({
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    isEmpty: rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
