@@ -280,5 +280,78 @@
         "kind": "question"
       }
     ]
+  },
+  {
+    "name": "dialog-reply-closes-its-question",
+    "about": "A Codex dialog the person answered with a dialog reply, then a typed message steered into the same turn, closes the open question that copies it. The line lands in the typed message's exchange, which does not show the reply.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 5,
+      "card": {
+        "goal": "Add a greet command",
+        "done": [],
+        "now": "Waiting on the newline question",
+        "running": []
+      },
+      "items": [
+        {
+          "id": "i4",
+          "kind": "question",
+          "label": null,
+          "ask": "Should greet print a trailing newline?",
+          "options": ["Yes", "No"],
+          "rec": null,
+          "helps": [],
+          "turn": 4,
+          "at": 4
+        }
+      ]
+    },
+    "exchange": {
+      "person": "Also add a --name flag to greet",
+      "activity": [
+        "edited src/greet.ts",
+        "asked the user in a dialog: \"Should greet print a trailing newline?\" (options: Yes / No); answer: \"Should greet print a trailing newline?\"=\"No\"",
+        "ran: npm test"
+      ],
+      "reply": "Added the --name flag to greet and updated its test. The tests pass."
+    },
+    "checks": [
+      {
+        "closed": "i4"
+      },
+      {
+        "added": 0
+      }
+    ]
+  },
+  {
+    "name": "dialog-reply-adds-no-question",
+    "about": "A Codex dialog the person answered with a dialog reply, then a typed message steered into the same turn, is not a question for them. The line lands in the typed message's exchange, which does not show the reply.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 5,
+      "card": {
+        "goal": "Add a greet command",
+        "done": [],
+        "now": "Writing greet",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "Also add a --name flag to greet",
+      "activity": [
+        "edited src/greet.ts",
+        "asked the user in a dialog: \"Should greet print a trailing newline?\" (options: Yes / No); answer: \"Should greet print a trailing newline?\"=\"No\"",
+        "ran: npm test"
+      ],
+      "reply": "Added the --name flag to greet and updated its test. The tests pass."
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
   }
 ]

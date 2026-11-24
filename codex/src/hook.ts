@@ -11,7 +11,7 @@ import {
 import { gitPlaceIn } from '../../core/domain/gh'
 import type { Run } from '../../core/domain/gh'
 import { delegatesInHerdr, herdrTarget } from '../../core/remote/herdr'
-import { dialogActivity, toolActivity } from '../../core/domain/catch-up-text'
+import { toolActivity } from '../../core/domain/catch-up-text'
 import { childEnded } from '../../core/domain/status-children'
 import { turnReply } from '../../core/domain/text'
 import {
@@ -27,7 +27,7 @@ import {
 import { claimedStatusRefresh, needsUpdate, statusChanged } from '../../core/runtime/session-status'
 import { ancestorCli, namedCli } from './cli'
 import { endTurn, heardState, noteHook, notePrompt, patchFiles } from './core'
-import { noteTurnDialogs } from './dialogs'
+import { dialogLine, noteTurnDialogs } from './dialogs'
 import { withEarlierHistory, withMissedTurns } from './history'
 import { codexStore } from './host'
 import { codexCommandStore } from './command-log'
@@ -256,7 +256,7 @@ export async function handleHook(input: HookInput, deps: HookDeps): Promise<Reco
       // Codex runs Stop without writing the rollout out first, so the rollout can lack the turn's last message.
       const reply = turnReply(texts, input.last_assistant_message ?? '')
       const withHistory = await readHistoryAhead(() => before, tail)
-      const lines = dialogs.map(d => dialogActivity(d.questions, { kind: 'open' }))
+      const lines = dialogs.map(dialogLine)
       const written = await write(async s => {
         const withLines = lines.reduce(
           (x, line) => noteActivity(x, line),

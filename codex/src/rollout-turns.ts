@@ -7,6 +7,7 @@ import { callCommand, callLines, commandText, DIALOG_TOOL, outputText, shellLine
 import { contentText, isText, record, textOf } from './rollout-rows'
 import type { RolloutRow, TranscriptLine } from './rollout-rows'
 import { isUnranOutput, UNRAN_MARKERS, unranCalls } from './rollout-unran'
+import { dialogAnswersOf } from './dialogs'
 
 /** A shell command that finished, with the text it printed. */
 type FinishedCommand = { command: string; output: string }
@@ -47,10 +48,16 @@ export function turnEventOf(line: string): TurnEvent | null {
 
 /**
  * A dialog the agent opened: its call's `call_id`, null when the row has none, its questions in the call's order, and
- * whether a user message came after it in its turn, as one steered into the running turn does. Codex refuses a call
- * with an empty question title, so a question's place here is its index in the call.
+ * whether a user message came after it in its turn, as one steered into the running turn does. `answers` holds what
+ * the dialog replies among those messages answered, by question index. Codex refuses a call with an empty question
+ * title, so a question's place here is its index in the call.
  */
-export type Dialog = { callId: string | null; questions: DialogQuestion[]; isFollowedByMessage: boolean }
+export type Dialog = {
+  callId: string | null
+  questions: DialogQuestion[]
+  isFollowedByMessage: boolean
+  answers: Record<number, string>
+}
 
 /**
  * `texts`: the agent's messages to the person, in order, from its notes while it works to its final answer.
@@ -133,9 +140,15 @@ export function turnOf(lines: string[], turnId: string | undefined): TurnRows {
           callId: p.call_id ?? null,
           questions: dialogQuestions(args.questions),
           isFollowedByMessage: false,
+          answers: {},
         })
       } else if (row.type === 'response_item' && p.type === 'message' && p.role === 'user') {
-        turn.dialogs = turn.dialogs.map(d => ({ ...d, isFollowedByMessage: true }))
+        const replies = dialogAnswersOf(contentText(p.content))
+        turn.dialogs = turn.dialogs.map(d => {
+          const given = replies.filter(r => r.callId === d.callId).map(r => [r.index, r.answer] as const)
+
+          return { ...d, isFollowedByMessage: true, answers: { ...d.answers, ...Object.fromEntries(given) } }
+        })
       } else if (row.type === 'response_item' && (p.type === 'function_call' || p.type === 'local_shell_call')) {
         const command = callCommand(p)
         if (command !== '' && p.call_id) turn.calls.set(p.call_id, { command, output: '' })
