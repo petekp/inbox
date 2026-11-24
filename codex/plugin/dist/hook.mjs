@@ -847,7 +847,6 @@ function namesOnlyMilestoneUnderWay(nowText, milestones) {
 }
 
 // ../core/view/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var MILESTONES_FOLD_PREFIX = "goal-milestones";
 var MET_LABEL = "Goal met";
@@ -906,7 +905,6 @@ function goalPage(o, items) {
     (m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt
   );
   const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
@@ -920,7 +918,6 @@ function goalPage(o, items) {
       was: isWasShown ? g.was : null,
       // A met goal's head draws in its own section, since the work no longer serves the goal.
       now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestonesFold: null,
       milestones
     },

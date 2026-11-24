@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-23T23:25:52.355Z. 373513 characters follow.
+// Built at 2026-11-24T02:30:35.302Z. 373266 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -1151,7 +1151,6 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 }
 
 // ../core/view/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
 var suggestedGoalOffer = (text) => `Next goal: “${text}”?`;
@@ -1216,7 +1215,6 @@ function goalPage(o, items) {
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
   const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
@@ -1229,7 +1227,6 @@ function goalPage(o, items) {
       isMet,
       was: isWasShown ? g.was : null,
       now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestonesFold: null,
       milestones
     },
@@ -8180,8 +8177,7 @@ function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
   const lines = goalField ? field : (isSuggested ? suggestion : [
     headTitle("goal text", g.text),
     ...g.was ? [{ ...headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted"), level: WAS_LEVEL }] : [],
-    ...g.now ? [headNote("goal now", g.now, "muted")] : [],
-    ...g.awaiting ? [headNote("goal awaiting", g.awaiting, "muted")] : []
+    ...g.now ? [headNote("goal now", g.now, "muted")] : []
   ]).map(atText);
   const fold = g.milestonesFold;
   const foldLine = fold ? [

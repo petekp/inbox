@@ -2851,7 +2851,6 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 }
 
 // ../core/view/status-goal-page.ts
-var AWAITING_TEXT = "Milestones after the next reply";
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
 var suggestedGoalOffer = (text) => `Next goal: \u201C${text}\u201D?`;
@@ -2916,7 +2915,6 @@ function goalPage(o, items) {
   const kept = o.milestones.filter((m) => m.status !== "dropped");
   const shown = o.milestones.filter((m) => m.status !== "dropped" || o.lastLookAt !== null && m.changedAt > o.lastLookAt);
   const isMet = g.metAt !== null;
-  const isAwaiting = g.isAwaitingMilestones || kept.length === 0;
   const head = o.head;
   const nowText = head ? head.description || head.title : null;
   const isNowSaid = nowText !== null && namesOnlyMilestoneUnderWay(nowText, g.isAwaitingMilestones ? [] : kept);
@@ -2929,7 +2927,6 @@ function goalPage(o, items) {
       isMet,
       was: isWasShown ? g.was : null,
       now: nowText !== null && !isNowSaid && !isMet ? `Now: ${nowText}` : null,
-      awaiting: isAwaiting ? AWAITING_TEXT : null,
       milestonesFold: null,
       milestones
     },
@@ -10850,12 +10847,7 @@ function drawGoalPart(part, d, isSelected) {
   if (part.is === "title") {
     const g = part.suggestion === null ? part.goal : null;
     const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? offerLines(part.suggestion, d, textAt, isSelected) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
-    return [
-      ...text,
-      ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [],
-      ...g?.now ? at(g.now, s.dim) : [],
-      ...g?.awaiting ? at(g.awaiting, s.dim) : []
-    ];
+    return [...text, ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [], ...g?.now ? at(g.now, s.dim) : []];
   }
   if (part.is === "milestone")
     return milestoneLines(part.row, d, isSelected);
