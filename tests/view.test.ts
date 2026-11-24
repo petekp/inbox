@@ -6,6 +6,7 @@ import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
 import { sessionView } from '../core/view/session-view'
 import { footerError, inboxView, perTurnStatus } from '../core/view/view'
+import { NO_SESSION_PRS } from '../core/domain/help-steps'
 import { deliveryLabel, settledLabel } from '../core/view/rows'
 import type { RowView } from '../core/view/rows'
 import { cellWidth } from '../core/domain/text'
@@ -241,7 +242,7 @@ test('the inbox view lists questions and tasks newest reply first, and counts ea
     lastActions: {},
     notes: {},
     turns: s.presence,
-    extraSteps: {},
+    sessionPrs: NO_SESSION_PRS,
     settleWindowMs: SETTLED_MS,
     status: perTurnStatus({ is: 'fresh' }),
     now: 10,

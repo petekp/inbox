@@ -1,7 +1,7 @@
 import { isRowTabRunning } from './arrivals'
 import { drawnPrs, openPrViews } from './pr-views'
 import { isPrTabRunning, threadSentIn } from './pr-rows'
-import { itemPrSteps, olderPrsText } from '../domain/pr-fetch'
+import { olderPrsText, sessionPrs } from '../domain/pr-fetch'
 import { prOrderView } from './pr-order'
 import type { DrawnPr } from './pr-views'
 import type { PrOrderView } from './pr-order'
@@ -93,7 +93,7 @@ export function sessionView(
     lastActions,
     notes,
     turns: s.presence,
-    extraSteps: Object.fromEntries(l.items.map(item => [item.id, itemPrSteps(item, s)])),
+    sessionPrs: sessionPrs(s),
     settleWindowMs,
     status: perTurnStatus(sync.ledger),
     now,

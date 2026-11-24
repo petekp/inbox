@@ -1,6 +1,6 @@
 import type { Closed, LastAction, Ledger, LocalResult, Press } from '../../types'
 import { stepEffects, stepsOf } from '../domain/help-steps'
-import type { HelpStep } from '../domain/help-steps'
+import type { SessionPrs } from '../domain/help-steps'
 import { closeFinding, closeItem, reopenFinding, reopenItem } from '../domain/ledger-close'
 import { actionId, pressText } from '../domain/press-labels'
 import { messages } from '../domain/press-messages'
@@ -116,7 +116,7 @@ export function recordPress(
 export type PressContext = PressTexts & {
   now: number
   turnsStarted: number
-  extraSteps: HelpStep[]
+  sessionPrs: SessionPrs
   holdMs: number
   localPressId?: string
 }
@@ -258,7 +258,7 @@ export function pressed(ledger: Ledger, last: LastAction | undefined, p: RowPres
         effects: [],
       }
     case 'step': {
-      const step = stepsOf(item, ctx.extraSteps)[p.step]
+      const step = stepsOf(item, ctx.sessionPrs)[p.step]
       if (!step || step.label !== p.label) return stale
       const effects = stepEffects(item, step)
       if (effects.some(e => e.kind === 'send')) return { ledger, last: record('handoff'), effects }

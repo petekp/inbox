@@ -27,6 +27,13 @@ function helpLabel(help: Help): string {
 
 export type HelpStep = { label: string; step: Help[] }
 
+type TrackedPr = { ref: string; url: string | null }
+
+/** The PRs the session tracks, each with its address once a fetch read it, and the session's repository. */
+export type SessionPrs = { tracked: TrackedPr[]; repo: string | null }
+
+export const NO_SESSION_PRS: SessionPrs = { tracked: [], repo: null }
+
 function steps(helps: Help[]): HelpStep[] {
   const copy = helps.find(h => h.kind === 'copy')
   const open = helps.find(h => h.kind === 'open')
@@ -42,8 +49,6 @@ function steps(helps: Help[]): HelpStep[] {
     )
 }
 
-type TrackedPr = { ref: string; url: string | null }
-
 /**
  * The name a PR link takes on its button. A PR the session tracks is "PR #12". One it does not track may be an issue,
  * since GitHub sends a pull link of an issue's number to the issue, so it is "#12", or "repo#12" outside `repo`.
@@ -56,11 +61,25 @@ function prLinkName(ref: string, isTracked: boolean, repo: string | null): strin
   return isTracked ? `PR #${number}` : isSessionRepo ? `#${number}` : `${name}#${number}`
 }
 
+const GITHUB_PR_OR_ISSUE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(pull|issues)\/(\d+)(?:[/?#]|$)/
+
+/** A link with no name to a GitHub PR or issue, named as its Open PR step would name it, so its button says which. */
+function withPrName(help: Help, { tracked, repo }: SessionPrs): Help {
+  if (help.kind !== 'link' || help.name) return help
+  const m = help.url.match(GITHUB_PR_OR_ISSUE_URL)
+  if (!m) return help
+  const [, refRepo, path, number] = m
+  const ref = `${refRepo}#${number}`
+  const isTracked = path === 'pull' && tracked.some(pr => pr.ref.toLowerCase() === ref.toLowerCase())
+
+  return { ...help, name: prLinkName(ref, isTracked, repo) }
+}
+
 /**
  * One step that opens each PR the item's ask or context names, by `namedPrs`, that none of its steps links already.
- * `repo` is the session's repository, for a PR named by its number alone.
+ * The session's repository is for a PR named by its number alone.
  */
-export function prSteps(item: Item, tracked: TrackedPr[], repo: string | null): HelpStep[] {
+function prSteps(item: Item, { tracked, repo }: SessionPrs): HelpStep[] {
   const urls = new Map(tracked.map(pr => [pr.ref, pr.url]))
   const isLinked = (ref: string, url: string) =>
     item.helps.some(
@@ -89,8 +108,8 @@ export function prSteps(item: Item, tracked: TrackedPr[], repo: string | null): 
   return [{ label, step: links }]
 }
 
-export function stepsOf(item: Item, extraSteps: HelpStep[]): HelpStep[] {
-  return [...steps(item.helps), ...extraSteps]
+export function stepsOf(item: Item, prs: SessionPrs): HelpStep[] {
+  return [...steps(item.helps.map(h => withPrName(h, prs))), ...prSteps(item, prs)]
 }
 
 export function stepIconKind(step: HelpStep | undefined): 'run' | 'copy' | 'open' | undefined {

@@ -10,6 +10,7 @@ import { blockingChecks } from '../core/domain/pr-checks'
 import { waitingThreads } from '../core/domain/prs'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../core/view/timing'
 import { inboxView, perTurnStatus } from '../core/view/view'
+import { NO_SESSION_PRS } from '../core/domain/help-steps'
 import { statusPage } from '../core/view/status-page'
 import { rowKeyPlan } from '../core/view/action-plan'
 import { statusKeyPlan, statusKeyRows } from '../core/view/status-keys'
@@ -34,7 +35,7 @@ test('no two buttons on a row share a hotkey, for every row kind in the demo', a
     lastActions,
     notes,
     turns,
-    extraSteps: {},
+    sessionPrs: NO_SESSION_PRS,
     settleWindowMs: SETTLED_MS,
     status: perTurnStatus({ is: 'fresh' }),
     replies: {},
@@ -80,7 +81,7 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
     lastActions,
     notes,
     turns,
-    extraSteps: {},
+    sessionPrs: NO_SESSION_PRS,
     settleWindowMs: SETTLED_MS,
     status: perTurnStatus({ is: 'fresh' }),
     now: 1_000_000,

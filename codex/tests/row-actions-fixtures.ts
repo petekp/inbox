@@ -4,6 +4,7 @@ import { Window } from 'happy-dom'
 import { EMPTY } from '../../core/domain/ledger'
 import type { Ledger } from '../../types'
 import { inboxView } from '../../core/view/view'
+import { NO_SESSION_PRS } from '../../core/domain/help-steps'
 
 export const window = new Window()
 Object.assign(globalThis, { window, document: window.document, Event: window.Event })
@@ -33,7 +34,7 @@ export function task() {
     lastActions: {},
     notes: {},
     turns: { turnsStarted: 1, turnsApplied: 1 },
-    extraSteps: {},
+    sessionPrs: NO_SESSION_PRS,
     settleWindowMs: 5120,
     status: { error: null },
     now: 10,

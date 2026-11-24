@@ -5,6 +5,7 @@ import type { TabsProps } from '../hooks/pane/tabs-client'
 import { demoView } from '../core/view/demo'
 import { PRESS_GUARD_MS, SETTLED_MS } from '../core/view/timing'
 import { inboxView, perTurnStatus } from '../core/view/view'
+import { NO_SESSION_PRS } from '../core/domain/help-steps'
 import { rowKeyPlan } from '../core/view/action-plan'
 import { ROW_COPY } from '../core/view/rows'
 import { w, world } from './hooks-world'
@@ -21,7 +22,7 @@ test('in the terminal and desktop looks, an open row’s follow-ups are never sp
     lastActions,
     notes,
     turns,
-    extraSteps: {},
+    sessionPrs: NO_SESSION_PRS,
     settleWindowMs: SETTLED_MS,
     status: perTurnStatus({ is: 'fresh' }),
     now: 1_000_000,
