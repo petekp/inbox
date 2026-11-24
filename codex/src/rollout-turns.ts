@@ -240,7 +240,8 @@ function turnsOf(rows: RolloutRow[], cwd: string, answers: DialogAnswers): Turn[
         turns.push({ role: 'agent', text: contentText(p.content), activity: [] })
       else if (p.type === 'function_call' && p.name === DIALOG_TOOL) {
         const questions = dialogQuestions(jsonRecord(p.arguments).questions)
-        act(dialogLines({ questions, answers: answers.get(textOf(p.call_id)) ?? {} }))
+        const callId = textOf(p.call_id)
+        act(dialogLines({ questions, answers: (callId === '' ? undefined : answers.get(callId)) ?? {} }))
       } else act(callLines(p, hasCommandRows, cwd))
     }
   }

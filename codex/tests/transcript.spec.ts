@@ -141,8 +141,12 @@ test('a dialog a later dialog reply answered reads as answered, and the reply ad
     const questionItemId = JSON.stringify(['request_user_input_async', callId, index])
     const json = JSON.stringify([{ questionItemId, question, answer }])
 
-    return message('user', `<send_user_message_question_reply>\n${json}\n</send_user_message_question_reply>`)
+    return `<send_user_message_question_reply>\n${json}\n</send_user_message_question_reply>`
   }
+  const item = (type: string, text: string) => ({
+    type: 'event_msg',
+    payload: { type: 'item_completed', item: { type, content: [{ type: 'text', text }] } },
+  })
   const path = rolloutOf(
     rows(
       started('t1'),
@@ -151,9 +155,9 @@ test('a dialog a later dialog reply answered reads as answered, and the reply ad
       dialog('call_b', ['Delete the branch?']),
       completed('t1'),
       started('t2'),
-      reply('call_a', 0, 'Push now?', 'Yes'),
-      reply('call_z', 0, 'Delete the branch?', 'No'),
-      message('assistant', 'Pushed.'),
+      item('UserMessage', reply('call_a', 0, 'Push now?', 'Yes')),
+      message('user', reply('call_z', 0, 'Delete the branch?', 'No')),
+      item('AgentMessage', 'Pushed.'),
       completed('t2'),
     ),
   )
