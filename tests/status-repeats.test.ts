@@ -132,3 +132,16 @@ test('with no goal and no other open subject, the head drops a title that names 
   expect([finished, second, working].map(title)).toEqual(['Import', null, null])
   expect(title({ ...second, lastLookAt: 45 })).toBe('Dark mode')
 })
+
+test('a head with no rows under it is left out once the goal is met, and while no goal is set unless it has a description', () => {
+  const linked = after(withGoal(), 'SERVES: s1 | m2\nSERVES: s2 | m3\nDROP: s3 | not needed', 25)
+  const met = after(linked, 'DONE: s1 | explained\nDONE: s2 | written\nDONE: m2 | explained\nDONE: m3 | written', 30)
+  const seen = { ...met, lastLookAt: 40 }
+  const described = { ...seen, head: { title: 'Import', description: 'Making CSV import ready to demo' } }
+
+  expect(page(seen, 50)).toMatchObject({ isEmpty: false, rows: [], goal: { isMet: true } })
+  expect(page(described, 50).rows).toEqual([])
+  expect(page(after(null, 'HEAD: Import | Making CSV import ready to demo', 10), 20).rows).toMatchObject([
+    { kind: 'part', id: 'head', text: 'Import', description: 'Making CSV import ready to demo' },
+  ])
+})

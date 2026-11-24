@@ -56,7 +56,7 @@ export function subjectInPlaceOf(o: SessionStatus, m: Milestone, items: readonly
  * subject, the title is named alike with that subject, or holds every key word of a closed one `rows` draws. A title
  * broader than a finished part, such as the project's name, stays. Beside a second open subject the title stays.
  */
-export function isTitleRepeated(title: string, subjects: readonly Subject[], rows: readonly StatusRow[]): boolean {
+function isTitleRepeated(title: string, subjects: readonly Subject[], rows: readonly StatusRow[]): boolean {
   const drawnIds = new Set(rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
   const work = subjects.filter(x => x.into === null)
   if (work.filter(isOpen).length > 1) return false
@@ -64,6 +64,26 @@ export function isTitleRepeated(title: string, subjects: readonly Subject[], row
   return work.some(x =>
     isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name),
   )
+}
+
+/**
+ * The head's `part` row over `rows`, while the head is apart from the goal: while no goal is set, or once the goal is
+ * met. A part that would head nothing is left out: with `rows` empty, the head draws only while no goal is set and it
+ * has a description.
+ */
+export function headPart(
+  head: StatusPage['head'],
+  goal: { isMet: boolean } | null,
+  subjects: readonly Subject[],
+  rows: readonly StatusRow[],
+): StatusRow[] {
+  if (head === null || (goal !== null && !goal.isMet)) return []
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title
+  const hasContentUnder = rows.length > 0 || (goal === null && head.description !== null)
+
+  return hasContentUnder && (title ?? head.description) !== null
+    ? [{ kind: 'part', id: 'head', depth: 0, text: title, description: head.description, isTitle: true }]
+    : []
 }
 
 /**
