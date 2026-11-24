@@ -58,6 +58,7 @@ import type { LinesAbove } from './held-line'
 import { NO_TRACKS, moveRows } from './motion'
 import { heldTabs } from './held-form'
 import { nextDrawAt } from './wake'
+import { HeldFades } from './held-fades'
 import type { Tracks } from './motion'
 import { Heights, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
@@ -116,6 +117,7 @@ export default class Inbox extends View {
   /** The next read for the presses still out, the next draw for a move, and the controller's next wake. */
   outTimer: Timer | null = null
   drawTimer: Timer | null = null
+  fades = new HeldFades()
   wake: { at: number; isRead: boolean; timer: Timer } | null = null
   look = new LookReports()
 
@@ -375,6 +377,7 @@ export default class Inbox extends View {
       timeLeft: new Map(),
       input: rowId => (this.input?.rowId === rowId ? this.input.state : null),
       ...paneFit(this, zoomOf(settings())),
+      fades: this.fades,
     }
     const root = v_flex()
       .id('inbox')
@@ -391,6 +394,7 @@ export default class Inbox extends View {
       this.blocks = []
       this.lastDraw = { tab: ui.tab, rows: null, pressed: [] }
       this.look.status.drew(null, now)
+      this.fades.drew(now)
       return root.child(messageEl(screen.message, t))
     }
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
@@ -411,15 +415,13 @@ export default class Inbox extends View {
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
     this.timeLeft = timeLeftDraws(moved.blocks, this.timeLeft, now)
     paint.timeLeft = this.timeLeft
-    const wakeAt = nextDrawAt(now, moved)
-    if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
     const focus = this.focus
     const listInput = (cx: Context) => {
       const isNew = Date.now() - (this.ui.listInput?.last ?? 0) >= LIST_INPUT_STEP_MS
       if (isNew) this.apply([{ type: 'list-input' }], cx)
     }
 
-    return root
+    const drawn = root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
       .child(fitEl('tabs', paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint)))
@@ -459,5 +461,9 @@ export default class Inbox extends View {
           .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
+    const wakeAt = nextDrawAt(now, moved, this.fades.drew(now))
+    if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
+
+    return drawn
   }
 }

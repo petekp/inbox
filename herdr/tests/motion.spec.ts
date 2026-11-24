@@ -303,17 +303,22 @@ test('a click on a collapsed row’s title fades its panel in once its space is 
       panel.paint()
       setSystemTime(new Date((at += ROW_STATE_MS.closing)))
     }
-    expect(
-      allOf(panel.paint())
-        .find(n => n.id === `panel ${rowId}`)
-        ?.delays.get('opacity'),
-    ).toBeGreaterThan(0)
+    expect(shownAfterMs(panel, `panel ${rowId}`, at)).toBeGreaterThan(0)
   } finally {
     setSystemTime(new Date(NOW))
   }
 })
 
-async function nextPanelDelay(isPressed: boolean) {
+function shownAfterMs(panel: Awaited<ReturnType<typeof openPanel>>, id: string, from: number): number | undefined {
+  for (let ms = 0; ms <= ROW_STATE_MS.entering; ms += NEXT_FRAME_MS) {
+    setSystemTime(new Date(from + ms))
+    if (allOf(panel.paint()).find(n => n.id === id)?.style.opacity === 1) return ms
+  }
+
+  return undefined
+}
+
+async function nextPanelWait(isPressed: boolean) {
   let at = NOW
   const tick = () => setSystemTime(new Date((at += PRESS_GUARD_MS + 1)))
   const panel = await openPanel()
@@ -332,7 +337,8 @@ async function nextPanelDelay(isPressed: boolean) {
       setSystemTime(new Date(at + ms))
       panel.measure(() => ({ width: 300, height: 40 }))
       const drawn = allOf(panel.paint()).find(n => n.id === `panel ${openRow(blocks())}`)
-      if (drawn) return openRow(blocks()) === rowId ? undefined : drawn.delays.get('opacity')
+      if (drawn)
+        return openRow(blocks()) === rowId ? undefined : shownAfterMs(panel, `panel ${openRow(blocks())}`, at + ms)
     }
 
     return undefined
@@ -342,6 +348,6 @@ async function nextPanelDelay(isPressed: boolean) {
 }
 
 test('the row a press opens fades its panel in once its space is nearly open, as a row a publish opens does', async () => {
-  expect(await nextPanelDelay(true)).toBeGreaterThan(0)
-  expect(await nextPanelDelay(false)).toBeGreaterThan(0)
+  expect(await nextPanelWait(true)).toBeGreaterThan(0)
+  expect(await nextPanelWait(false)).toBeGreaterThan(0)
 })

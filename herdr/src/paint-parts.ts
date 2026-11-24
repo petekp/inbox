@@ -17,6 +17,7 @@ import {
 import type { Paint, Theme } from './paint-theme'
 import { checkboxEl } from './paint-checkbox'
 import { TIMED_W, timeLeftEl } from './paint-timer'
+import type { HeldFades } from './held-fades'
 
 /**
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
@@ -131,3 +132,16 @@ export const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null
 
 export const lineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W) =>
   div().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text)
+
+/** `el` fading to `opacity`, eased out, as the paint's `HeldFades` holds the fade named `name`. */
+export function fadeEl(
+  el: Element,
+  name: string,
+  opacity: number,
+  glide: { duration: number; delay: number },
+  p: { fades: HeldFades; now: number },
+): Element {
+  const handed = p.fades.fade(name, opacity, glide.duration, glide.delay, p.now)
+
+  return el.opacity(handed.opacity).transition('opacity', { duration: handed.ms, easing: 'ease-out' })
+}

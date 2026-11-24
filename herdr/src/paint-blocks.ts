@@ -23,7 +23,7 @@ import {
 } from './paint-theme'
 import { fieldEl } from './paint-field'
 import { emptyEl } from './paint-empty'
-import { buttonEl, buttonsEl, lineEl, markEl } from './paint-parts'
+import { buttonEl, buttonsEl, fadeEl, lineEl, markEl } from './paint-parts'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import { underId } from './under-line'
@@ -306,7 +306,7 @@ function panelFadeEl(r: RowBlock, m: RowMotion | undefined, p: Paint, el: Elemen
   const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0
   const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? 'open']
 
-  return el.opacity(opacity).transition('opacity', { duration, delay, easing: 'ease-out' })
+  return fadeEl(el, panelId(r.id), opacity, { duration, delay }, p)
 }
 
 /**
@@ -323,13 +323,12 @@ function underEls(r: RowBlock, from: RowBlock, m: RowMotion | undefined, p: Pain
   const u = isLeftForm ? leaving : m ? m.under : atRest
   if (!u?.line) return []
   const key = underId(r.id)
-  const glide = { duration: u.fadeMs, delay: u.delayMs, easing: 'ease-out' as const }
 
   return [
     bodyLineEl(u.line, above, p.t, r.isSelected)
       .id(key)
       .on_size_change((size, cx) => p.measure(key, size, cx))
-      .when(u.opacity !== null, e => e.opacity(u.opacity ?? 1).transition('opacity', glide)),
+      .when(u.opacity !== null, e => fadeEl(e, key, u.opacity ?? 1, { duration: u.fadeMs, delay: u.delayMs }, p)),
   ]
 }
 
