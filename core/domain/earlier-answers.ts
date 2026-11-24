@@ -58,8 +58,9 @@ export function answerIndex(docs: AnswerDoc[]): AnswerIndex {
 /**
  * The earlier answers that best match `question`'s ask and options, best first, at most `top`, each with its score as
  * a share of the best score the question could reach: each of its terms the history holds at full weight. Only matches
- * that reach `RELATIVE_FLOOR` and share a term that holds a letter count, so a number, such as a PR number or a version's
- * digits, never carries a match alone. `skip` is the key of the question itself, whose own answer never counts.
+ * that reach `RELATIVE_FLOOR` and share a term that holds a letter count, so a match on numbers alone, such as a PR
+ * number against a version's digits, never counts. A shared number still adds to the score of a match that also shares
+ * a word. `skip` is the key of the question itself, whose own answer never counts.
  */
 export function rankedEarlier(
   index: AnswerIndex,
