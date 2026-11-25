@@ -12,7 +12,8 @@
 # `claude plugin test`. Then the Codex plugin in codex/, the omp extension in
 # omp/ and the Herdr look in herdr/, each built into the working tree, and,
 # when the Herdr app is installed, a load of the built Herdr mod in the app's
-# own runtime with `herdr-app check`. Last, on a branch other than next or
+# own runtime with `herdr-app check`. Then a short fixed-seed fuzz run of the Herdr
+# look, the omp panel and the shared row stepper, with scripts/fuzz.sh. Last, on a branch other than next or
 # main, that the branch's commits change no built bundle, with
 # scripts/bundles.sh. Exits 1 on any failure, and when a check cannot run.
 #
@@ -159,6 +160,13 @@ if command -v herdr-app >/dev/null 2>&1; then
     herdr_scratch=
 else
     echo "  - herdr app check: skipped, herdr-app is not installed"
+fi
+
+# A short fixed-seed fuzz run of the Herdr look, the omp panel and the shared row stepper. It exits 0 when every failure
+# is one an open issue describes (KNOWN in fuzz/seeds.ts) and no seed fails differently from its issue. It runs only where the
+# omp and herdr checks above could run, which already say what is missing. Its reports go to fuzz/out/, which Git ignores.
+if command -v bun >/dev/null 2>&1 && [ -d "$DIR/omp/node_modules" ] && [ -d "$DIR/herdr/node_modules" ]; then
+    check "fuzz" "$DIR/scripts/fuzz.sh" --seed 1 --runs 12 --shrinks 0
 fi
 
 # A pull request carries source only, and a bot commits the rebuilt bundles to next after it merges.

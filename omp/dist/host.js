@@ -108,6 +108,41 @@ function dash(value) {
   const v = (value ?? "").trim();
   return v === "" || v === "-" ? null : v;
 }
+var TERMINAL_CONTROL = new RegExp([
+  String.raw`(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)`,
+  String.raw`(?:\x1b\[|\x9b)[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]`,
+  String.raw`\x1b[\x20-\x2f]*[\x30-\x7e]`,
+  String.raw`[\x00-\x08\x0b-\x1f\x7f-\x9f]`
+].join("|"), "g");
+var HAS_CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
+function drawableText(text) {
+  return HAS_CONTROL.test(text) ? text.replace(TERMINAL_CONTROL, "") : text;
+}
+function isPlainObject(value) {
+  if (typeof value !== "object" || value === null)
+    return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+function withDrawableText(value, isKept) {
+  if (typeof value === "string")
+    return drawableText(value);
+  if (Array.isArray(value)) {
+    const drawn = value.map((v) => withDrawableText(v, isKept));
+    return drawn.some((v, i) => v !== value[i]) ? drawn : value;
+  }
+  if (!isPlainObject(value))
+    return value;
+  let drawn = null;
+  for (const [key, v] of Object.entries(value)) {
+    if (isKept(key))
+      continue;
+    const d = withDrawableText(v, isKept);
+    if (d !== v)
+      (drawn ??= { ...value })[key] = d;
+  }
+  return drawn ?? value;
+}
 function clip(text, max) {
   return text.length <= max ? text : text.slice(0, max) + " \u2026[cut]";
 }
@@ -251,7 +286,7 @@ function parseRef(ref) {
   return { repo, owner, name, number };
 }
 function checkKey(c) {
-  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
+  return drawableText(c.workflow ? `${c.workflow} / ${c.name}` : c.name);
 }
 function isKeptPr(pr) {
   return pr.isYours !== false && pr.wasSeenOpen;
@@ -806,7 +841,7 @@ import { homedir } from "os";
 import { dirname as dirname6, join as join7 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
-var version = "0.6.0";
+var version = "0.7.0";
 
 // ../core/runtime/clipboard-commands.ts
 function clipboardCommands(platform) {
@@ -869,7 +904,7 @@ function stopText(stop) {
     case "usage-limit":
       return "usage limit reached";
     default:
-      return stop.apiError?.cause === "rate-limit" ? "the API is limiting requests" : stop.apiError?.cause === "overloaded" ? "the API is overloaded" : `API error (${stop.apiError?.text ?? "unknown"})`;
+      return stop.apiError?.cause === "rate-limit" ? "the API is limiting requests" : stop.apiError?.cause === "overloaded" ? "the API is overloaded" : `API error (${drawableText(stop.apiError?.text ?? "unknown")})`;
   }
 }
 function stopFix(stop) {
@@ -904,7 +939,8 @@ var BANNER_TONES = {
   "herdr-mod-failed": "warning",
   "herdr-mod-ask": "ask"
 };
-function bannerOf(kind, text) {
+function bannerOf(kind, hostText) {
+  const text = drawableText(hostText);
   const end = text.indexOf(". ");
   const lead = end < 0 ? text : text.slice(0, end + 1);
   const body = end < 0 ? null : text.slice(end + 2);
@@ -1408,7 +1444,8 @@ var CLAUDE_CODE = {
     "record-earlier-answers": { kind: "full" },
     "named-pr-link": { kind: "full" },
     "session-registry": { kind: "full" },
-    "press-preconditions": { kind: "full" }
+    "press-preconditions": { kind: "full" },
+    "task-results": { kind: "full" }
   }
 };
 
@@ -1582,7 +1619,8 @@ var CODEX = {
       kind: "different",
       reason: "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process."
     },
-    "press-preconditions": { kind: "full" }
+    "press-preconditions": { kind: "full" },
+    "task-results": { kind: "full" }
   }
 };
 
@@ -1705,7 +1743,8 @@ var OMP = {
     "record-earlier-answers": { kind: "full" },
     "named-pr-link": { kind: "full" },
     "session-registry": { kind: "full" },
-    "press-preconditions": { kind: "full" }
+    "press-preconditions": { kind: "full" },
+    "task-results": { kind: "full" }
   }
 };
 
@@ -3950,7 +3989,7 @@ function parseReply(text, source = null) {
         newLines.push(undefined);
         continue;
       }
-      const options = rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean);
+      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
@@ -4184,13 +4223,16 @@ function addAgentItem(ledger, entry, now) {
     const isDesignChoice = openItem.isDesignChoice === true || entry.isDesignChoice === true;
     const rec = restatedRec(openItem.options, openItem.rec, entry.rec);
     const reason = entry.recReason && rec === recommendedOption(openItem.options, entry.rec) ? entry.recReason : undefined;
-    const reported = { ...withRec(openItem, rec, reason), helps, isDesignChoice, reportedAt: now };
+    const isNewOptions = openItem.kind === "task" && openItem.options.length === 0 && entry.options.length > 0;
+    const options = isNewOptions ? entry.options : openItem.options;
+    const reported = { ...withRec(openItem, rec, reason), options, helps, isDesignChoice, reportedAt: now };
     const items = ledger.items.map((i) => i === openItem ? reported : i);
     return {
       ledger: { ...ledger, items },
       is: "open",
       id: openItem.id,
       addedSteps: helps.length - openItem.helps.length,
+      isNewOptions,
       isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
       newRec: rec !== openItem.rec ? rec : null,
       isNewReason: reason !== undefined && reason !== openItem.recReason
@@ -5419,7 +5461,7 @@ function sessionFields(saved, views) {
 
 // ../core/view/dialog-row.ts
 function dialogTitle(dialog) {
-  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
+  return drawableText(dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text);
 }
 
 // ../core/remote/herdr.ts
@@ -5490,7 +5532,7 @@ function statusLine(stop, dialogs, input) {
   return [stale, focus, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function focusOf(head) {
-  return head ? head.description || head.title : null;
+  return head ? drawableText(head.description || head.title) : null;
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
@@ -6474,7 +6516,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
-    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now) : null;
+    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
     const talkOutSince = isTalkOut ? under.at : undefined;
     return { is: "local", result, ...talkOutSince === undefined ? {} : { talkOutSince } };
@@ -6812,9 +6854,11 @@ function dismissedAt(lastActions, ref) {
 function isDismissed(lastActions, ref) {
   return dismissedAt(lastActions, ref) !== null;
 }
-function isViewKept(prState, links, lastActions, ref, shownSince) {
+var DISMISSED_VIEW_KEPT_MS = 60000;
+function isViewKept(prState, links, lastActions, ref, shownSince, now) {
   const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
+  const isDismissedLately = at !== null && (now - at < DISMISSED_VIEW_KEPT_MS || isShownSince(at, shownSince));
+  return keepsView(prState, links, ref) || isDismissedLately;
 }
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
@@ -7296,10 +7340,17 @@ function isApproval(item) {
 function missingText(item, fields) {
   const canSend = (field) => fields.includes(field);
   if (item?.kind === "task")
-    return item.helps.length === 0 && canSend("steps") ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
+    return taskStepsText(item, canSend) + taskResultsText(item, canSend);
   if (!item)
     return "";
   return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend);
+}
+function taskStepsText(item, canSend) {
+  return item.helps.length === 0 && canSend("steps") ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
+}
+function taskResultsText(item, canSend) {
+  const asksForResult = item.ask.trim().endsWith("?");
+  return asksForResult && item.options.length === 0 && canSend("options") ? " It asks for a result but has no options: record it again with the results the user can report as options." : "";
 }
 function bodyText(item, canSend) {
   const unnoted = canSend("option_notes") ? item.options.filter((o) => !item.optionDescriptions?.[o]) : [];
@@ -7459,7 +7510,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one. For a task that checks something whose outcome you need, such as whether a fix works on their screen: the outcomes the user can report, in the same form. Leave it out for a task you only need done, such as a sign-in."
     },
     option_notes: {
       type: "array",
@@ -7549,7 +7600,7 @@ function orderDescription(host) {
 function recordDescription(host) {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
-- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
+- task: a step only the user can do, such as signing in or running a command with their password. Put the commands, files and links in steps. When it is a check whose outcome you need, such as whether a fix works on their screen, give the outcomes they can report as options, with no rec. A task you only need done, such as a sign-in, gets none: the user marks it done. A step your own tools can take is not a task: take it, or ask for their OK as a question when it changes something other people see.
 - finding: something outside the current task that deserves their attention. It waits in ${host.findingsIn} until it is closed, and the user can ask you to address it or discuss it. Record what a careful senior engineer would flag to a teammate, once you have checked it. Leave out style nits, a PR's checks, conflicts, review threads or readiness, which ${host.prsIn} shows, anything the user already decided, todos or ideas the user mentioned, problems in your own change, progress, and anything only the user can do or decide: handle those in your reply, or record them as a question or task.
 Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.`;
 }
@@ -7599,7 +7650,7 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
   const ask = cut(input.ask, MAX_ASK);
   if (ask === "")
     return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`);
-  const options = input.kind === "question" ? list(input.options, MAX_OPTIONS, MAX_OPTION) : [];
+  const options = list(input.options, MAX_OPTIONS, MAX_OPTION);
   if (input.kind === "question" && options.length === 0)
     return unchanged(ledger, "Not recorded: a question needs at least one option.");
   const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
@@ -7629,6 +7680,7 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
   if (r.is === "open") {
     const changes = [
       ...r.addedSteps > 0 ? ["added its new steps"] : [],
+      ...r.isNewOptions ? ["gave it your options"] : [],
       ...r.isNewlyMarked ? ["marked it as a design choice"] : [],
       ...r.newRec ? [`changed its recommendation to ${r.newRec}`] : [],
       ...r.isNewReason ? ["gave its recommendation your reason"] : [],
@@ -7991,15 +8043,17 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   if (item.kind === "task")
     return [
       ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
+      ...item.options.length > 0 ? item.options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
+        isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+      })) : [action({ action: "done", id }, "Done", "mark")],
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
@@ -8085,7 +8139,7 @@ function rowKeyPlan(r, isAllShown) {
     const { press } = a;
     if (press.action === "answer" || press.action === "step") {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++] } : {};
-      if (press.action === "answer") {
+      if (press.action === "answer" && r.type !== "task") {
         const note = optionNote(r.optionDescriptions.find((d) => d.option === press.option));
         options.push({ action: { ...a, press }, note, ...hotkey });
       } else
@@ -8174,7 +8228,8 @@ function inboxView({
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
-  const pressOutSinceWhere = (isOnTab) => earliestOf(Object.entries(lastActions).map(([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now)) : null));
+  const reportedAtOf = (id) => (ledger.items.find((i) => i.id === id) ?? ledger.closed.find((c) => c.id === id)?.item)?.reportedAt;
+  const pressOutSinceWhere = (isOnTab) => earliestOf(Object.entries(lastActions).map(([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now, reportedAtOf(id))) : null));
   const placingOn = (pressOutSince) => ({
     shownSince,
     lastTypedMessageAt,
@@ -8554,7 +8609,8 @@ function subjectInPlaceOf(o, m, items) {
   const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
   const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : undefined;
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
-  return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+  const isDoneWithOpenWork = m.status === "done" && only !== undefined && isOpen(only);
+  return only !== undefined && !isAskedDirectly && !isDoneWithOpenWork && isNamedAlike(m.name, only.name) ? only : null;
 }
 function isTitleRepeated(title, subjects, rows) {
   const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
@@ -8562,6 +8618,13 @@ function isTitleRepeated(title, subjects, rows) {
   if (work.filter(isOpen).length > 1)
     return false;
   return work.some((x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name));
+}
+function headPart(head, goal, subjects, rows) {
+  if (head === null || goal !== null && !goal.isMet)
+    return [];
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title;
+  const hasContentUnder = rows.length > 0 || goal === null && head.description !== null;
+  return hasContentUnder && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -8710,7 +8773,6 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   ];
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
-  const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
@@ -8719,11 +8781,10 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows) ? null : head.title;
-  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
+  const headRows = headPart(head, g, subjects, listRows);
   const rows = [
-    ...headPart,
-    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
+    ...headRows,
+    ...headRows.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
@@ -8755,7 +8816,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
   return withoutRepeatedNow({
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    isEmpty: rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
@@ -8779,6 +8840,15 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
+var STORED_KEYS = new Set([
+  "id",
+  "collapsed",
+  "press",
+  "drawnVersions",
+  "item",
+  "finding",
+  "option"
+]);
 function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canScrollConversation = false, inputs = NO_SYNC_INPUTS) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
@@ -8799,7 +8869,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
   });
   const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
   const rowIds = [...allRows(inbox).map((r) => r.id), GOAL_KEYS_ID];
-  return {
+  const view = {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
@@ -8808,6 +8878,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     sync,
     drawnVersions: drawnVersions(s, rowIds, prs.drawn.map((d) => d.pr))
   };
+  return withDrawableText(view, (key) => STORED_KEYS.has(key));
 }
 function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
   if (isHelpShown)
@@ -8948,7 +9019,7 @@ function rowsInPlace(s, now = Date.now(), viewers = {}) {
   return new Set([...s.heldRows, ...remoteHeldRows(viewers, s, now), ...pendingCommandRows(s), ...since]);
 }
 function pruned(s, now = Date.now(), viewers = {}) {
-  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)));
+  const views = Object.fromEntries(Object.entries(s.prViews.views).filter(([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince, now)));
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
   return settledCollapses({
     ...s,
@@ -11502,7 +11573,7 @@ function typingKey(ui, id, key, text) {
   if (key === "backspace")
     return edit([...draft].slice(0, -1).join(""));
   if (text !== undefined)
-    return edit(draft + text.replace(/[\r\n]+/g, " "));
+    return edit(draft + drawableText(text.replace(/[\r\n]+/g, " ")));
   return {};
 }
 var isUpKey = (key) => key === "up" || key === "k";
@@ -12292,7 +12363,7 @@ function demoView(now, agent) {
           label: null,
           from: "record",
           ask: "Check the glances outdoors in bright sun",
-          options: [],
+          options: ["Readable", "Washed out"],
           rec: null,
           helps: [{ kind: "copy", text: "http://localhost:3000/preview", name: "preview URL" }],
           turn: 14,
@@ -12830,7 +12901,7 @@ Before you hand the user a step, take it yourself when your tools reach it, such
 
 When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
 
-Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
+Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with steps and result options. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
 
 A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
 
@@ -13474,7 +13545,7 @@ var GOAL_PARTS = {
   "goal-typed-kept": `A goal marked (typed) is the person's: never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when its release shipped or its feature merged, write DONE for each open milestone, so the goal is met, and GOAL when the next goal is clear. Never RETIRE a goal whose outcome happened.`,
   "goal-work-left": `When the work no longer moves a goal that is not typed, as when the person moved on and its subjects went stale, close those subjects with DONE or DROP, then write GOAL for what the work is for now, or RETIRE when nothing is clear. A goal marked (no work for \u2026) has been left, whatever its milestones say: write RETIRE in the same answer, or GOAL when the work shows the next goal. Never replace a goal while its work is open, unless the person changed its outcome, as by cutting part of it. Then write GOAL for the new outcome, name each milestone it keeps again in the same words, and write SERVES to - for the work of each one it leaves out. When a milestone is cut and the goal's words still hold, DROP that milestone instead. New work or an added outcome is a MILESTONE line, never a new goal.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". The milestones cover every outcome the goal names, a release or version included: "Offline sync in 3.1" needs one for offline sync and one for 3.1 published. Never name a milestone after a subject. A milestone's name and where it stands follow a subject's rules. Code starts a milestone when its linked work starts and closes it when all that work is done. When the exchange shows a milestone's outcome happened, write DONE for it, even while a subject that serves it stays open for a follow-up fix, such as a test that broke after its work landed. Write SET, DONE, DROP or WAS for one by its id when where it stands changed, and SET to open it again when part of it still has work left, with NEW for that work. Write MILESTONE for an outcome the goal now needs that none covers. Never write a count: code counts what is done.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". The milestones cover every outcome the goal names, a release or version included: "Offline sync in 3.1" needs one for offline sync and one for 3.1 published. Never name a milestone after a subject. A milestone's name and where it stands follow a subject's rules. Code starts a milestone when its linked work starts and closes it when all that work is done. Judge a milestone by the outcome its name states, not by the state of its subjects. When the exchange shows that outcome happened, write DONE for it, even while a subject that serves it stays open for work that follows the outcome, such as applying a choice, a check not yet run or a test that broke after its work landed: "Icon style chosen" is done once the person picks a style, though the icons are still to draw. Write SET, DONE, DROP or WAS for one by its id when where it stands changed, and SET to open it again when part of it still has work left, with NEW for that work. Write MILESTONE for an outcome the goal now needs that none covers. Never write a count: code counts what is done.`,
   "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next, naming a milestone this answer adds by its name. Leave it out while the milestone marked ${NEXT_MARK} is right.`,
   "milestone-split": `A milestone marked too big holds more work than the person can read as one outcome: split it by theme. Write MILESTONE for each outcome its open subjects are for, such as "Status page polish", no more than the room the mark gives. Then write SERVES to move each open subject to its new milestone, or to - when the goal does not need it. Its done subjects stay with it. When none of its subjects is left open, write DONE for it, or DROP with why when none is done. A split changes milestones only, so it applies to a typed goal too.`,
   "milestone-no-work": `For a milestone marked ${NO_WORK_LINKED}, write SERVES for an open subject whose work is part of it, DONE when the exchange shows it done, or DROP when the goal no longer needs it. Never link other work just to fill it.`,

@@ -38,15 +38,17 @@ export function withoutRepeatedNow(page: StatusPage, o: SessionStatus | null): S
 
 /**
  * The subject the page draws in a milestone's place: the only subject that serves it, dropped ones counted, when that
- * subject was not dropped, the two are named alike and no open ask names the milestone. Null for a dropped milestone.
+ * subject was not dropped, the two are named alike and no open ask names the milestone. Null for a dropped milestone,
+ * and for a done one whose subject is still open, so the page shows the milestone done with that work under it.
  */
 export function subjectInPlaceOf(o: SessionStatus, m: Milestone, items: readonly Item[]): Subject | null {
   if (m.status === 'dropped') return null
   const work = o.subjects.filter(x => x.into === null && o.serves[x.id] === m.id)
   const only = work.length === 1 && work[0]?.status !== 'dropped' ? work[0] : undefined
   const isAskedDirectly = items.some(i => o.askSubjects[i.id]?.includes(m.id))
+  const isDoneWithOpenWork = m.status === 'done' && only !== undefined && isOpen(only)
 
-  return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null
+  return only !== undefined && !isAskedDirectly && !isDoneWithOpenWork && isNamedAlike(m.name, only.name) ? only : null
 }
 
 /**
@@ -54,7 +56,7 @@ export function subjectInPlaceOf(o: SessionStatus, m: Milestone, items: readonly
  * subject, the title is named alike with that subject, or holds every key word of a closed one `rows` draws. A title
  * broader than a finished part, such as the project's name, stays. Beside a second open subject the title stays.
  */
-export function isTitleRepeated(title: string, subjects: readonly Subject[], rows: readonly StatusRow[]): boolean {
+function isTitleRepeated(title: string, subjects: readonly Subject[], rows: readonly StatusRow[]): boolean {
   const drawnIds = new Set(rows.flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
   const work = subjects.filter(x => x.into === null)
   if (work.filter(isOpen).length > 1) return false
@@ -62,6 +64,26 @@ export function isTitleRepeated(title: string, subjects: readonly Subject[], row
   return work.some(x =>
     isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name),
   )
+}
+
+/**
+ * The head's `part` row over `rows`, while the head is apart from the goal: while no goal is set, or once the goal is
+ * met. A part that would head nothing is left out: with `rows` empty, the head draws only while no goal is set and it
+ * has a description.
+ */
+export function headPart(
+  head: StatusPage['head'],
+  goal: { isMet: boolean } | null,
+  subjects: readonly Subject[],
+  rows: readonly StatusRow[],
+): StatusRow[] {
+  if (head === null || (goal !== null && !goal.isMet)) return []
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title
+  const hasContentUnder = rows.length > 0 || (goal === null && head.description !== null)
+
+  return hasContentUnder && (title ?? head.description) !== null
+    ? [{ kind: 'part', id: 'head', depth: 0, text: title, description: head.description, isTitle: true }]
+    : []
 }
 
 /**

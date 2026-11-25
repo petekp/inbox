@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T13:22:48.162Z. 375535 characters follow.
+// Built at 2026-11-25T02:15:29.700Z. 377672 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -33,6 +33,103 @@ function capitalized(text) {
 var ISSUE_LABEL = "File issue";
 var SHOW_EXPLANATION_LABEL = "Show explanation";
 
+// ../core/domain/text.ts
+var TERMINAL_CONTROL = new RegExp([
+  String.raw`(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)`,
+  String.raw`(?:\x1b\[|\x9b)[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]`,
+  String.raw`\x1b[\x20-\x2f]*[\x30-\x7e]`,
+  String.raw`[\x00-\x08\x0b-\x1f\x7f-\x9f]`
+].join("|"), "g");
+var HAS_CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
+function drawableText(text) {
+  return HAS_CONTROL.test(text) ? text.replace(TERMINAL_CONTROL, "") : text;
+}
+function isPlainObject(value) {
+  if (typeof value !== "object" || value === null)
+    return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+function withDrawableText(value, isKept) {
+  if (typeof value === "string")
+    return drawableText(value);
+  if (Array.isArray(value)) {
+    const drawn = value.map((v) => withDrawableText(v, isKept));
+    return drawn.some((v, i) => v !== value[i]) ? drawn : value;
+  }
+  if (!isPlainObject(value))
+    return value;
+  let drawn = null;
+  for (const [key, v] of Object.entries(value)) {
+    if (isKept(key))
+      continue;
+    const d = withDrawableText(v, isKept);
+    if (d !== v)
+      (drawn ??= { ...value })[key] = d;
+  }
+  return drawn ?? value;
+}
+function clipLabel(text, max) {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+function wordCuts(line) {
+  const words = line.split(" ");
+  const cuts = words.map((_, n) => words.slice(0, words.length - n).join(" ").replace(/[\s.,;:]+$/, ""));
+  return [...new Set(cuts.filter(Boolean).map((head) => `${head}…`))];
+}
+function cutAtWord(line, fits) {
+  return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
+}
+var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
+function cutAtPhrase(text, fits) {
+  if (fits(text))
+    return text;
+  const heads = [...text.matchAll(PHRASE_END)].map((m) => `${text.slice(0, m.index).replace(/[\s.,;:]+$/, "")}…`);
+  return heads.findLast(fits) ?? heads[0] ?? text;
+}
+var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
+var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
+var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
+var TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`;
+var SYLLABLE = String.raw`[\uAC00-\uD7A3]`;
+var OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(44032 + i * 28)).join("")}]`;
+var HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`;
+var FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`;
+var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`;
+var GRAPHEME = new RegExp(String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`, "gu");
+function graphemesOf(text) {
+  return segmenter ? Array.from(segmenter.segment(text), (s) => s.segment) : text.match(GRAPHEME) ?? [];
+}
+var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
+var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
+var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
+function cellWidth(text) {
+  let cells = 0;
+  for (const segment of graphemesOf(text))
+    cells += graphemeCells(segment);
+  return cells;
+}
+function graphemeCells(grapheme) {
+  if (ZERO_WIDTH.test(grapheme))
+    return 0;
+  return EMOJI.test(grapheme) || WIDE.test(grapheme) ? 2 : 1;
+}
+function duration(ms) {
+  const min = Math.max(1, Math.round(ms / 60000));
+  if (min < 60)
+    return `${min}m`;
+  const h = Math.round(min / 60);
+  if (h < 48)
+    return `${h}h`;
+  return `${Math.round(h / 24)}d`;
+}
+function ago(ms) {
+  return Math.round(ms / 60000) < 1 ? "just now" : `${duration(ms)} ago`;
+}
+function clockTime(ms) {
+  return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 // ../core/view/banners.ts
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
@@ -57,7 +154,8 @@ var BANNER_TONES = {
   "herdr-mod-failed": "warning",
   "herdr-mod-ask": "ask"
 };
-function bannerOf(kind, text) {
+function bannerOf(kind, hostText) {
+  const text = drawableText(hostText);
   const end = text.indexOf(". ");
   const lead = end < 0 ? text : text.slice(0, end + 1);
   const body = end < 0 ? null : text.slice(end + 2);
@@ -398,68 +496,6 @@ function blockingChecks(pr) {
   return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
 }
 
-// ../core/domain/text.ts
-function clipLabel(text, max) {
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-function wordCuts(line) {
-  const words = line.split(" ");
-  const cuts = words.map((_, n) => words.slice(0, words.length - n).join(" ").replace(/[\s.,;:]+$/, ""));
-  return [...new Set(cuts.filter(Boolean).map((head) => `${head}…`))];
-}
-function cutAtWord(line, fits) {
-  return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
-}
-var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
-function cutAtPhrase(text, fits) {
-  if (fits(text))
-    return text;
-  const heads = [...text.matchAll(PHRASE_END)].map((m) => `${text.slice(0, m.index).replace(/[\s.,;:]+$/, "")}…`);
-  return heads.findLast(fits) ?? heads[0] ?? text;
-}
-var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(undefined, { granularity: "grapheme" }) : null;
-var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
-var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;
-var TRAILING_JAMO = String.raw`[\u11A8-\u11FF\uD7CB-\uD7FB]`;
-var SYLLABLE = String.raw`[\uAC00-\uD7A3]`;
-var OPEN_SYLLABLE = `[${Array.from({ length: 19 * 21 }, (_, i) => String.fromCharCode(44032 + i * 28)).join("")}]`;
-var HANGUL = `(?:${LEADING_JAMO}*(?:${VOWEL_JAMO}+|${OPEN_SYLLABLE}${VOWEL_JAMO}*|${SYLLABLE})${TRAILING_JAMO}*|${LEADING_JAMO}+|${TRAILING_JAMO}+)`;
-var FLAG = String.raw`[\u{1F1E6}-\u{1F1FF}]{2}`;
-var EXTEND = String.raw`\p{M}\p{Emoji_Modifier}\u{E0020}-\u{E007F}‌ﾞﾟำຳ`;
-var GRAPHEME = new RegExp(String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`, "gu");
-function graphemesOf(text) {
-  return segmenter ? Array.from(segmenter.segment(text), (s) => s.segment) : text.match(GRAPHEME) ?? [];
-}
-var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
-var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
-var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
-function cellWidth(text) {
-  let cells = 0;
-  for (const segment of graphemesOf(text))
-    cells += graphemeCells(segment);
-  return cells;
-}
-function graphemeCells(grapheme) {
-  if (ZERO_WIDTH.test(grapheme))
-    return 0;
-  return EMOJI.test(grapheme) || WIDE.test(grapheme) ? 2 : 1;
-}
-function duration(ms) {
-  const min = Math.max(1, Math.round(ms / 60000));
-  if (min < 60)
-    return `${min}m`;
-  const h = Math.round(min / 60);
-  if (h < 48)
-    return `${h}h`;
-  return `${Math.round(h / 24)}d`;
-}
-function ago(ms) {
-  return Math.round(ms / 60000) < 1 ? "just now" : `${duration(ms)} ago`;
-}
-function clockTime(ms) {
-  return new Date(ms).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
 // ../core/domain/prs.ts
 var PR_URL = /https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/g;
 var PR_MENTION = /(?<![\w./-])(?:([\w.-]+\/[\w.-]+))?#([1-9]\d*)\b/g;
@@ -507,7 +543,7 @@ function parseRef(ref) {
   return { repo, owner, name, number };
 }
 function checkKey(c) {
-  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
+  return drawableText(c.workflow ? `${c.workflow} / ${c.name}` : c.name);
 }
 function isKeptPr(pr) {
   return pr.isYours !== false && pr.wasSeenOpen;
@@ -2557,7 +2593,7 @@ function dialogRowId(dialog) {
   return `dialog:${dialog.kind}:${dialog.text ?? ""}`;
 }
 function dialogTitle(dialog) {
-  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
+  return drawableText(dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text);
 }
 function answerPlace(agent, kind) {
   return kind === "question" ? `Answer the question in ${agent}'s dialog.` : `Allow or deny it in ${agent}'s dialog.`;
@@ -2820,7 +2856,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
-    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now) : null;
+    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
     const talkOutSince = isTalkOut ? under.at : undefined;
     return { is: "local", result, ...talkOutSince === undefined ? {} : { talkOutSince } };
@@ -3438,15 +3474,17 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   if (item.kind === "task")
     return [
       ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
+      ...item.options.length > 0 ? item.options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
+        isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+      })) : [action({ action: "done", id }, "Done", "mark")],
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
@@ -3532,7 +3570,7 @@ function rowKeyPlan(r, isAllShown) {
     const { press } = a;
     if (press.action === "answer" || press.action === "step") {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++] } : {};
-      if (press.action === "answer") {
+      if (press.action === "answer" && r.type !== "task") {
         const note = optionNote(r.optionDescriptions.find((d) => d.option === press.option));
         options.push({ action: { ...a, press }, note, ...hotkey });
       } else
@@ -3627,7 +3665,8 @@ function inboxView({
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
-  const pressOutSinceWhere = (isOnTab) => earliestOf(Object.entries(lastActions).map(([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now)) : null));
+  const reportedAtOf = (id) => (ledger.items.find((i) => i.id === id) ?? ledger.closed.find((c) => c.id === id)?.item)?.reportedAt;
+  const pressOutSinceWhere = (isOnTab) => earliestOf(Object.entries(lastActions).map(([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now, reportedAtOf(id))) : null));
   const placingOn = (pressOutSince) => ({
     shownSince,
     lastTypedMessageAt,
@@ -3994,7 +4033,8 @@ function subjectInPlaceOf(o, m, items) {
   const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
   const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : undefined;
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
-  return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+  const isDoneWithOpenWork = m.status === "done" && only !== undefined && isOpen(only);
+  return only !== undefined && !isAskedDirectly && !isDoneWithOpenWork && isNamedAlike(m.name, only.name) ? only : null;
 }
 function isTitleRepeated(title, subjects, rows) {
   const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
@@ -4002,6 +4042,13 @@ function isTitleRepeated(title, subjects, rows) {
   if (work.filter(isOpen).length > 1)
     return false;
   return work.some((x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name));
+}
+function headPart(head, goal, subjects, rows) {
+  if (head === null || goal !== null && !goal.isMet)
+    return [];
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title;
+  const hasContentUnder = rows.length > 0 || goal === null && head.description !== null;
+  return hasContentUnder && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -4149,7 +4196,6 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   ];
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
-  const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
@@ -4158,11 +4204,10 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows) ? null : head.title;
-  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
+  const headRows = headPart(head, g, subjects, listRows);
   const rows = [
-    ...headPart,
-    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
+    ...headRows,
+    ...headRows.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
@@ -4194,7 +4239,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
   return withoutRepeatedNow({
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    isEmpty: rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
@@ -4218,6 +4263,15 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
+var STORED_KEYS = new Set([
+  "id",
+  "collapsed",
+  "press",
+  "drawnVersions",
+  "item",
+  "finding",
+  "option"
+]);
 function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canScrollConversation = false, inputs = NO_SYNC_INPUTS) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
@@ -4238,7 +4292,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
   });
   const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
   const rowIds = [...allRows(inbox).map((r) => r.id), GOAL_KEYS_ID];
-  return {
+  const view = {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
@@ -4247,6 +4301,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     sync,
     drawnVersions: drawnVersions(s, rowIds, prs.drawn.map((d) => d.pr))
   };
+  return withDrawableText(view, (key) => STORED_KEYS.has(key));
 }
 function showsRunningMark(v, shown, isHelpShown, isUnfolded) {
   if (isHelpShown)
@@ -8612,7 +8667,7 @@ var LOOK_GAP_MS = 3 * LOOK_TICK_MS;
 function isPaneShown(paneId, panes, spaces, window2) {
   const own = panes.find((p) => p.pane === paneId);
   const tab = spaces.find((s) => s.active)?.tabs.find((t) => t.id === own?.tab);
-  return own !== undefined && window2.active && tab?.active === true && (!tab.zoomed || own.zoomed);
+  return own !== undefined && window2?.active === true && tab?.active === true && (!tab.zoomed || own.zoomed);
 }
 function statusPlaced(blocks, heightOf, page, room) {
   const subjects = new Map(statusListRows(page).map((r) => [r.id, seenSubjectIds(r)]));

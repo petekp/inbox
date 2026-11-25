@@ -9,9 +9,11 @@ import {
   feedbackTone,
   hasAge,
   holdsStatusWhileOut,
+  isFailure,
   isStatusUnderActions,
   type FeedbackTone,
 } from '../../core/view/feedback'
+import { dropHeldAfter, heldAfterIds, holdAfter, type AfterLine } from './tab-held-after'
 import type { RowView } from '../../core/view/rows'
 import { TAB_OF } from './arrivals'
 import { closedTitleClock, newRowIn } from '../../core/view/arrivals'
@@ -99,6 +101,7 @@ export function stepLists(v: View): {
       kept.add(id)
       drawn.push(x)
       const ownRow = drawsPanel(track) && 'row' in x ? x.row : null
+      if (!ownRow && !outOn(id)) dropHeldAfter(id)
       const panelRow = ownRow ?? (left && 'row' in left && track.hasOpenForm ? left.row : null)
       if (panelRow) {
         const { text, tone } = statusUnderOf(panelRow, ownRow ? undefined : drawnPresses.get(panelRow.id))
@@ -119,6 +122,7 @@ export function stepLists(v: View): {
   }))
   for (const id of [...drawnRows.keys()]) if (!kept.has(id)) drawnRows.delete(id)
   for (const id of [...drawnPresses.keys()]) if (!drawnRows.has(id)) drawnPresses.delete(id)
+  for (const id of heldAfterIds()) if (!drawnRows.has(id)) dropHeldAfter(id)
   return { lists, prs, status, banners, changed, drawnAt: now }
 }
 
@@ -178,6 +182,8 @@ type Press = {
   f: Row['feedback']
   label: string | null
   tone: FeedbackTone
+  /** The status the row's line drew after its title, which the form a row leaves keeps. */
+  after?: AfterLine | null
 }
 
 /** The press each row's line last drew, which the form a row leaves keeps while it fades out. */
@@ -199,8 +205,10 @@ const statusTextOf = (row: Row) => ({ foldNote: row.fold?.note ?? null, note: no
 
 /** What a row's line and side column draw, in its open form or its closed one. */
 type LineForm = {
-  last: string | null
+  last: AfterLine | null
   side: string | null | undefined
+  /** The row's status goes under its buttons, or its press sends with no status yet. */
+  isStatusUnder: boolean
 }
 
 export function ListRow({
@@ -240,27 +248,44 @@ export function ListRow({
   )
 
   const press = isLeft ? (drawnPresses.get(row.id) ?? pressOf(row)) : pressOf(row)
-  if (!isLeft) drawnPresses.set(row.id, press)
   const { isStatusOut, pending, isSending, isStatusSending, f, label, tone } = press
   const ageAt = !isStatusOut && f && hasAge(f) ? f.at : null
   const lineForm = (isOpen: boolean): LineForm => {
     const statusUnder = !isStatusSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
-    const last = statusUnder ? null : label
+    const text = statusUnder ? null : label
     const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : row.age
 
-    return { last, side }
+    return {
+      last: text ? { text, tone, isHidden: false } : null,
+      side,
+      isStatusUnder: isStatusSending || statusUnder !== null,
+    }
   }
-  const drawn = lineForm(isSelected || isClosing)
+  const isOpenForm = isSelected || isClosing
+  const shown = lineForm(isOpenForm)
+  const heldLast = isLeft
+    ? press.after !== undefined
+      ? press.after
+      : shown.last
+    : isOpenForm
+      ? holdAfter(row.id, shown.last, shown.isStatusUnder, isFailure(pending ?? f))
+      : shown.last
+  const drawn = { ...shown, last: heldLast }
+  if (!isLeft) drawnPresses.set(row.id, { ...press, after: drawn.last })
   // A closing row also draws its closed line, hidden, so that collapse() measures the height it comes to rest at.
   const closed = isClosing ? lineForm(false) : null
-  const afterTone = tone === 'muted' ? undefined : tone
-  const after = (form: LineForm, only?: 'open' | 'closed') =>
-    form.last ? (
-      <span class={only === 'open' ? 'part open-only' : only === 'closed' ? 'part closed-only' : 'part'}>
+  const after = (form: LineForm, only?: 'open' | 'closed') => {
+    if (!form.last) return null
+    const { text, tone: lastTone, isHidden } = form.last
+    const place = only === 'open' ? 'part open-only' : only === 'closed' ? 'part closed-only' : 'part'
+
+    return (
+      <span class={isHidden ? `${place} held-hidden` : place} aria-hidden={isHidden ? 'true' : undefined}>
         <Sep />
-        <span class={afterTone ? `after tone-${afterTone}` : 'after'}>{form.last}</span>
+        <span class={lastTone === 'muted' ? 'after' : `after tone-${lastTone}`}>{text}</span>
       </span>
-    ) : null
+    )
+  }
   const isSideSplit = closed !== null && closed.side !== drawn.side
   // An open row keeps its clamped title drawn, hidden, since the title's fade can outlast the opening state.
   const drawsClampedTitle = isClosing || drawsPanel(track)

@@ -53,6 +53,15 @@ var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
 var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
 
 // ../core/domain/text.ts
+var TERMINAL_CONTROL = new RegExp(
+  [
+    String.raw`(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)`,
+    String.raw`(?:\x1b\[|\x9b)[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]`,
+    String.raw`\x1b[\x20-\x2f]*[\x30-\x7e]`,
+    String.raw`[\x00-\x08\x0b-\x1f\x7f-\x9f]`
+  ].join("|"),
+  "g"
+);
 var segmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function" ? new Intl.Segmenter(void 0, { granularity: "grapheme" }) : null;
 var LEADING_JAMO = String.raw`[\u1100-\u115F\uA960-\uA97C]`;
 var VOWEL_JAMO = String.raw`[\u1160-\u11A7\uD7B0-\uD7C6]`;

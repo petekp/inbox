@@ -29,6 +29,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
 | `codex/src/tab-parted.tsx` | Codex adapter. `Sep`, the ` · ` that leads each part of a `.parted` line, so a part that starts a line hides its dot. Its layout is in `tab-css/parted.css`. |
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
+| `codex/src/tab-held-after.ts` | Codex adapter. The status an open row's line keeps after its title while the row's status goes under its buttons. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
 | `codex/src/tab-prs.tsx` | Codex adapter. The PRs tab: PR blocks, their keys, the order lines, and settled PRs. |
 | `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR block, PR row, PR group, press line and the tab's own buttons on the PRs tab, through the row states. |

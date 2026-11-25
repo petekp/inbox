@@ -208,11 +208,12 @@ test('with no look yet every row is new and shows where it stands', () => {
   expect(shape(page(o, 12 * MIN).rows)).toEqual(['◐ Offline mode: queue built'])
 })
 
-test('a page with no head and no rows shows its empty state, even while a turn runs', () => {
+test('a page with no rows shows its empty state while it has no head or a head with no description, even while a turn runs', () => {
   expect(page(null, 3 * MIN, { isTurnRunning: true, turnStartedAt: 0 }).isEmpty).toBe(true)
-  expect(page({ ...EMPTY_SESSION_STATUS, head: { title: '0.3 release', description: '' } }, 3 * MIN).isEmpty).toBe(
-    false,
-  )
+  expect(page({ ...EMPTY_SESSION_STATUS, head: { title: '0.3 release', description: '' } }, 3 * MIN).isEmpty).toBe(true)
+  expect(
+    page({ ...EMPTY_SESSION_STATUS, head: { title: '0.3 release', description: 'Shipping 0.3' } }, 3 * MIN).isEmpty,
+  ).toBe(false)
 })
 
 test('work closed since the last look shows as two rows, the rest is named in a fold for each status, and finished work folds into a count once seen', () => {

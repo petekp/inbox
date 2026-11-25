@@ -262,6 +262,8 @@ type AgentItemResult =
       is: 'open'
       id: string
       addedSteps: number
+      /** Whether the record gave its options to an open task that had none. */
+      isNewOptions: boolean
       isNewlyMarked: boolean
       newRec: string | null
       isNewReason: boolean
@@ -291,7 +293,9 @@ export function addAgentItem(
     const rec = restatedRec(openItem.options, openItem.rec, entry.rec)
     const reason =
       entry.recReason && rec === recommendedOption(openItem.options, entry.rec) ? entry.recReason : undefined
-    const reported = { ...withRec(openItem, rec, reason), helps, isDesignChoice, reportedAt: now }
+    const isNewOptions = openItem.kind === 'task' && openItem.options.length === 0 && entry.options.length > 0
+    const options = isNewOptions ? entry.options : openItem.options
+    const reported = { ...withRec(openItem, rec, reason), options, helps, isDesignChoice, reportedAt: now }
     const items = ledger.items.map(i => (i === openItem ? reported : i))
 
     return {
@@ -299,6 +303,7 @@ export function addAgentItem(
       is: 'open',
       id: openItem.id,
       addedSteps: helps.length - openItem.helps.length,
+      isNewOptions,
       isNewlyMarked: isDesignChoice && openItem.isDesignChoice !== true,
       newRec: rec !== openItem.rec ? rec : null,
       isNewReason: reason !== undefined && reason !== openItem.recReason,

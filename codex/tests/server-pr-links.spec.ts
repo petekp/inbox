@@ -3,6 +3,7 @@ import { test } from 'node:test'
 
 import { demoView } from '../../core/view/demo'
 import { SETTLED_MS } from '../../core/view/timing'
+import { DISMISSED_VIEW_KEPT_MS } from '../../core/view/pr-views'
 import { makeServer } from '../src/server'
 import { POLL_MS, SETTLE_WINDOW_MS } from '../src/settle'
 import { readState, updateState } from '../src/state'
@@ -10,7 +11,7 @@ import { fakeRunner, tempDir } from './helpers'
 import { GH_VIEW, ghAnswer, prsAnswer, prServer, viewAfterFetch } from './server-fixtures'
 import type { PrReply, PrView } from './server-fixtures'
 
-test('dismissing a linked PR unlinks it and settles its block as a dismissed row, which folds when the settle window ends unless the person is still using the list or the tab still shows its Undo, and its view goes once the tab shows another tab', async () => {
+test('dismissing a linked PR unlinks it and settles its block as a dismissed row, which folds when the settle window ends unless the person is still using the list or the tab still shows its Undo, and its view goes once the tab shows another tab and a minute has passed since the Dismiss', async () => {
   let t = 100
   const dir = tempDir()
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
@@ -64,6 +65,9 @@ test('dismissing a linked PR unlinks it and settles its block as a dismissed row
   assert.ok(ref in (await readState(dir, 's1')).prViews.views)
   const switched = await call('inbox_view', { shownSince: t })
   assert.equal(drawn(switched.result.structuredContent).includes(ref), false)
+  assert.ok(ref in (await readState(dir, 's1')).prViews.views)
+  t = 100 + DISMISSED_VIEW_KEPT_MS
+  await call('inbox_view', { shownSince: t })
   assert.equal(ref in (await readState(dir, 's1')).prViews.views, false)
 })
 

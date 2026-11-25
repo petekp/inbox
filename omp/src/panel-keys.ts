@@ -1,4 +1,5 @@
 import { isPrPress } from '../../core/view/pr-press'
+import { drawableText } from '../../core/domain/text'
 import { CLEAR_FINISHED_ID, PR_REFRESH_ID, RANK_AGAIN_ID } from '../../core/view/pr-rows'
 import { shownTabs, isRowTab } from '../../core/view/tabs'
 import { firstWaiting, steppedIndex } from '../../core/view/action-plan'
@@ -135,7 +136,7 @@ function typingKey(ui: PanelUi, id: string, key: string, text: string | undefine
   if (key === 'escape') return { events: [{ type: 'close-field', id, isDiscard: false }] }
   if (key === 'enter') return { events: [{ type: 'press', press: { action: 'type', id, text: draft }, by: 'key' }] }
   if (key === 'backspace') return edit([...draft].slice(0, -1).join(''))
-  if (text !== undefined) return edit(draft + text.replace(/[\r\n]+/g, ' '))
+  if (text !== undefined) return edit(draft + drawableText(text.replace(/[\r\n]+/g, ' ')))
 
   return {}
 }

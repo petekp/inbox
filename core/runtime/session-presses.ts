@@ -219,7 +219,7 @@ export function rowsInPlace(
 export function pruned<S extends Session>(s: S, now = Date.now(), viewers: ViewerLeases = {}): S {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(([ref]) =>
-      isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince),
+      isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince, now),
     ),
   )
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length

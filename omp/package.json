@@ -1,6 +1,6 @@
 {
   "name": "inbox-omp",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "The inbox extension for omp, built on the shared modules in ../core",

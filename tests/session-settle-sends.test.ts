@@ -4,6 +4,7 @@ import { test } from './test-with-timeout'
 import { CLAUDE_CODE } from '../core/domain/model-text'
 import { recorded } from '../core/runtime/session-presses'
 import { sessionView } from '../core/view/session-view'
+import { rowKeyPlan } from '../core/view/action-plan'
 import { press, wakeAfterSettle } from '../core/runtime/host-press'
 import { NO_HOLDS, QUEUED_AFTER_MS } from '../core/view/timing'
 import { fakeHost } from './session-fake-host'
@@ -134,3 +135,51 @@ for (const isDeliveryHeldUntilRun of [false, true])
     expect(await deliveryAt(clock + QUEUED_AFTER_MS - 1)).toEqual(['sending'])
     expect(await deliveryAt(clock + QUEUED_AFTER_MS)).toEqual(['queued'])
   })
+
+test("a task's result press closes it and sends its result, after its steps take the place of Done in its buttons", async () => {
+  let clock = 1_000_000
+  const sent: string[] = []
+  const scripted = fakeHost(async () => null).host
+  const host = {
+    ...scripted,
+    now: () => clock,
+    deliver: async (_s: unknown, text: string) => {
+      sent.push(text)
+      return { state: 'accepted' as const, queuedId: null }
+    },
+  }
+  const holds = { ...NO_HOLDS, shownSince: clock }
+  const check = {
+    kind: 'task',
+    ask: 'Delete a card and press Cmd+Z: does it come back?',
+    options: ['Comes back', 'Gone'],
+    rec: 'Gone',
+    steps: ['https://localhost:3000/stack'],
+  }
+  await host.update(s => recorded(CLAUDE_CODE, s, 'record', check, clock, TOOL_FIELDS, null).state)
+  const open = sessionView(await host.read(), clock, host.settleWindowMs, holds).needsYou.tasks[0]
+  if (!open) throw new Error('the task has no row')
+  const plan = rowKeyPlan(open, false)
+
+  expect(open.actions.map(a => [a.press.action, a.label, a.emphasis])).toEqual([
+    ['step', 'Open localhost:3000', 'normal'],
+    ['answer', 'Comes back', 'normal'],
+    ['answer', 'Gone', 'normal'],
+    ['type', 'Reply', 'quiet'],
+    ['explain', 'Explain', 'quiet'],
+    ['dismiss', 'Dismiss', 'quiet'],
+  ])
+  expect([plan.options, plan.answerRow, plan.keys.map(k => (k.slot === 'choice' ? k.action.label : k.slot))]).toEqual([
+    [],
+    null,
+    ['Open localhost:3000', 'Comes back', 'Gone'],
+  ])
+
+  await press(host, { action: 'answer', id: open.id, option: 'Gone' }, false, holds)
+  clock += host.settleWindowMs
+  await wakeAfterSettle(host)
+  const s = await host.read()
+
+  expect(sent).toEqual(['Re "Delete a card and press Cmd+Z: does it come back?": Gone'])
+  expect([s.ledger.items, s.ledger.closed.map(c => [c.how, c.outcome])]).toEqual([[], [['answered', 'Gone']]])
+})

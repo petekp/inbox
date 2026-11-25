@@ -336,6 +336,9 @@ export const GOOD_RUNS: Record<string, string[]> = {
     ].join('\n'),
   ],
   'milestone-last-work-done': ['DONE: s9 | API on main, checks passed\nHEAD: Notes app | Fixing card animations'],
+  'milestone-decided': [
+    'SET: s1 | working | Decided "!", edit not made yet\nDONE: m1 | ending chosen as "!"\nLINK: i2 | s1',
+  ],
   'finished-pass': [
     'DONE: s2 | fix merged and pushed\nDONE: m1 | review delivered\nSET: s1 | waits-on-other | Page text done, screenshots needed',
     'SET: s1 | waits-on-other | Page text done, screenshots needed\nSUGGEST: Editor focus pass done',

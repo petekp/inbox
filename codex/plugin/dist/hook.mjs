@@ -293,6 +293,39 @@ function turnReply(texts, final = "") {
   const isFinalWritten = final.trim() === "" || written.at(-1)?.trim() === final.trim();
   return (isFinalWritten ? written : [...written, final]).join(`${NL}${NL}`);
 }
+var TERMINAL_CONTROL = new RegExp(
+  [
+    String.raw`(?:\x1b[\]PX^_]|[\x90\x98\x9d-\x9f])[^\x07\x1b\x90\x98\x9c-\x9f]*(?:\x07|\x1b\\|\x9c)`,
+    String.raw`(?:\x1b\[|\x9b)[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]`,
+    String.raw`\x1b[\x20-\x2f]*[\x30-\x7e]`,
+    String.raw`[\x00-\x08\x0b-\x1f\x7f-\x9f]`
+  ].join("|"),
+  "g"
+);
+var HAS_CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
+function drawableText(text2) {
+  return HAS_CONTROL.test(text2) ? text2.replace(TERMINAL_CONTROL, "") : text2;
+}
+function isPlainObject(value) {
+  if (typeof value !== "object" || value === null) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+function withDrawableText(value, isKept) {
+  if (typeof value === "string") return drawableText(value);
+  if (Array.isArray(value)) {
+    const drawn2 = value.map((v) => withDrawableText(v, isKept));
+    return drawn2.some((v, i) => v !== value[i]) ? drawn2 : value;
+  }
+  if (!isPlainObject(value)) return value;
+  let drawn = null;
+  for (const [key, v] of Object.entries(value)) {
+    if (isKept(key)) continue;
+    const d = withDrawableText(v, isKept);
+    if (d !== v) (drawn ??= { ...value })[key] = d;
+  }
+  return drawn ?? value;
+}
 function clip(text2, max) {
   return text2.length <= max ? text2 : text2.slice(0, max) + " \u2026[cut]";
 }
@@ -375,7 +408,7 @@ function parseRef(ref) {
   return { repo, owner, name, number };
 }
 function checkKey(c) {
-  return c.workflow ? `${c.workflow} / ${c.name}` : c.name;
+  return drawableText(c.workflow ? `${c.workflow} / ${c.name}` : c.name);
 }
 function isKeptPr(pr) {
   return pr.isYours !== false && pr.wasSeenOpen;
@@ -1328,7 +1361,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
-    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now) : null;
+    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
     const talkOutSince = isTalkOut ? under.at : void 0;
     return { is: "local", result, ...talkOutSince === void 0 ? {} : { talkOutSince } };
@@ -1876,9 +1909,11 @@ function dismissedAt(lastActions, ref) {
 function isDismissed(lastActions, ref) {
   return dismissedAt(lastActions, ref) !== null;
 }
-function isViewKept(prState, links, lastActions, ref, shownSince) {
+var DISMISSED_VIEW_KEPT_MS = 6e4;
+function isViewKept(prState, links, lastActions, ref, shownSince, now) {
   const at = dismissedAt(lastActions, ref);
-  return keepsView(prState, links, ref) || at !== null && isShownSince(at, shownSince);
+  const isDismissedLately = at !== null && (now - at < DISMISSED_VIEW_KEPT_MS || isShownSince(at, shownSince));
+  return keepsView(prState, links, ref) || isDismissedLately;
 }
 function openPrViews(drawn) {
   return drawn.filter((d) => d.state.is === "open").map((d) => d.pr);
@@ -2114,7 +2149,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one. For a task that checks something whose outcome you need, such as whether a fix works on their screen: the outcomes the user can report, in the same form. Leave it out for a task you only need done, such as a sign-in."
     },
     option_notes: {
       type: "array",
@@ -2414,15 +2449,19 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   if (item.kind === "task")
     return [
       ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
+      ...item.options.length > 0 ? item.options.map(
+        (option, n) => action({ action: "answer", id, option }, option, "mark", {
+          isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+        })
+      ) : [action({ action: "done", id }, "Done", "mark")],
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map(
@@ -2471,9 +2510,10 @@ function inboxView({
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
+  const reportedAtOf = (id) => (ledger.items.find((i) => i.id === id) ?? ledger.closed.find((c) => c.id === id)?.item)?.reportedAt;
   const pressOutSinceWhere = (isOnTab) => earliestOf(
     Object.entries(lastActions).map(
-      ([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, void 0, turns, now)) : null
+      ([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, void 0, turns, now, reportedAtOf(id))) : null
     )
   );
   const placingOn = (pressOutSince) => ({
@@ -2861,7 +2901,8 @@ function subjectInPlaceOf(o, m, items) {
   const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
   const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : void 0;
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
-  return only !== void 0 && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+  const isDoneWithOpenWork = m.status === "done" && only !== void 0 && isOpen(only);
+  return only !== void 0 && !isAskedDirectly && !isDoneWithOpenWork && isNamedAlike(m.name, only.name) ? only : null;
 }
 function isTitleRepeated(title, subjects, rows) {
   const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
@@ -2870,6 +2911,12 @@ function isTitleRepeated(title, subjects, rows) {
   return work.some(
     (x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name)
   );
+}
+function headPart(head, goal, subjects, rows) {
+  if (head === null || goal !== null && !goal.isMet) return [];
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title;
+  const hasContentUnder = rows.length > 0 || goal === null && head.description !== null;
+  return hasContentUnder && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -3031,7 +3078,6 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   ];
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
-  const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows2 = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
@@ -3040,11 +3086,10 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows2) ? null : head.title;
-  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
+  const headRows = headPart(head, g, subjects, listRows2);
   const rows = [
-    ...headPart,
-    ...headPart.length > 0 && listRows2[0]?.id === "other" ? listRows2.slice(1) : listRows2
+    ...headRows,
+    ...headRows.length > 0 && listRows2[0]?.id === "other" ? listRows2.slice(1) : listRows2
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some(
     (c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id))
@@ -3078,7 +3123,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   };
   return withoutRepeatedNow(
     {
-      isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+      isEmpty: rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
       head,
       ...goalParts,
       goal,
@@ -3100,6 +3145,15 @@ function withoutStaleResult(last, now) {
 function withoutStalePending(lastActions, now) {
   return Object.fromEntries(Object.entries(lastActions).map(([id, last]) => [id, withoutStaleResult(last, now)]));
 }
+var STORED_KEYS = /* @__PURE__ */ new Set([
+  "id",
+  "collapsed",
+  "press",
+  "drawnVersions",
+  "item",
+  "finding",
+  "option"
+]);
 function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canScrollConversation = false, inputs = NO_SYNC_INPUTS) {
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
@@ -3120,7 +3174,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
   });
   const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
   const rowIds = [...allRows(inbox).map((r) => r.id), GOAL_KEYS_ID];
-  return {
+  const view = {
     ...inbox,
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
@@ -3133,6 +3187,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
       prs.drawn.map((d) => d.pr)
     )
   };
+  return withDrawableText(view, (key) => STORED_KEYS.has(key));
 }
 function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOut }, settleWindowMs, gh) {
   const pressOutSince = earliestOf(
@@ -3185,7 +3240,7 @@ function rowsInPlace(s, now = Date.now(), viewers = {}) {
 function pruned(s, now = Date.now(), viewers = {}) {
   const views = Object.fromEntries(
     Object.entries(s.prViews.views).filter(
-      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince)
+      ([ref]) => isViewKept(s.prViews, s.ledger, s.lastActions, ref, s.shownSince, now)
     )
   );
   const isViewDropped = Object.keys(views).length < Object.keys(s.prViews.views).length;
@@ -4451,7 +4506,7 @@ Before you hand the user a step, take it yourself when your tools reach it, such
 
 When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
 
-Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
+Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with steps and result options. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
 
 A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
 
@@ -4892,7 +4947,7 @@ var SESSION_LABEL = "inbox.session";
 
 // ../core/view/dialog-row.ts
 function dialogTitle(dialog) {
-  return dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text;
+  return drawableText(dialog.kind === "permission" ? `Allow ${dialog.text}?` : dialog.text);
 }
 
 // ../core/remote/herdr.ts
@@ -4960,7 +5015,7 @@ function statusLine(stop, dialogs, input) {
   return [stale, focus, findingsText].filter(Boolean).join(" \xB7 ");
 }
 function focusOf(head) {
-  return head ? head.description || head.title : null;
+  return head ? drawableText(head.description || head.title) : null;
 }
 function herdrTokens(ledger, stop, view, dialogs) {
   const input = {
@@ -5243,7 +5298,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
           turnReadFailedAt: s.turnReadFailedAt,
-          version: "0.6.0",
+          version: "0.7.0",
           isNextBuild: existsSync(join6(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
@@ -5350,7 +5405,7 @@ function registryOnWrite(env, dir, now, pid, log = herdrLog(dir)) {
     await writeRegistryEntry(
       files2,
       folder,
-      { host: "codex", sessionId: s.sessionId, agent: CODEX2.agent, projectFolder: s.root, version: "0.6.0", herdr },
+      { host: "codex", sessionId: s.sessionId, agent: CODEX2.agent, projectFolder: s.root, version: "0.7.0", herdr },
       s,
       viewOf(s, at),
       at,
