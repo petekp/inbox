@@ -127,10 +127,12 @@ export function inboxView({
   const isFindingId = (id: string) =>
     ledger.findings.some(f => f.id === id) || ledger.closedFindings.some(f => f.id === id)
   const isItemId = (id: string) => ledger.items.some(i => i.id === id) || ledger.closed.some(c => c.id === id)
+  const reportedAtOf = (id: string) =>
+    (ledger.items.find(i => i.id === id) ?? ledger.closed.find(c => c.id === id)?.item)?.reportedAt
   const pressOutSinceWhere = (isOnTab: (id: string) => boolean) =>
     earliestOf(
       Object.entries(lastActions).map(([id, last]) =>
-        isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now)) : null,
+        isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now, reportedAtOf(id))) : null,
       ),
     )
   const placingOn = (pressOutSince: number | null) => ({
