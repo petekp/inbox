@@ -212,16 +212,23 @@ describe('items the agent recorded', () => {
         'Load the page on your phone and let me know if it loads or shows an error',
         'Tell me if node greet.js prints Hola or Hello',
         'Run the test and report: pass or fail',
+        'Say whether the card comes back or stays gone',
       ].map(resultsNote),
-    ).toEqual([true, true, true, true, true])
+    ).toEqual([true, true, true, true, true, true])
     expect(
       [
         'Run npm login in the repo root',
         'Sign in to npm or create an account',
         'Tell me once you have signed in with GitHub or Google',
         'Report back after you run brew install or apt install',
+        'Confirm the 2FA prompt on your phone or security key',
+        'Confirm the payment in the Stripe dashboard or with the stripe CLI',
+        'Answer the security questions or use a backup code to sign in',
+        'Say yes or no in the terminal prompt that npm login shows',
+        'Tell the bot your org name or ID in the sign-in page',
+        'Reply to the reviewer on GitHub or in Slack',
       ].map(resultsNote),
-    ).toEqual([false, false, false, false])
+    ).toEqual([false, false, false, false, false, false, false, false, false, false])
   })
 
   test("one stays open after 12 prompts, when the update's items expire", () => {

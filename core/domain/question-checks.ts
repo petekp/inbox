@@ -81,10 +81,14 @@ function taskStepsText(item: Item, canSend: (field: string) => boolean): string 
     : ''
 }
 
-const REPORT_VERB = String.raw`\b(?:report|tell|let \w+ know|say|reply|answer|confirm)\b`
+const REPORT_VERB = String.raw`\b(?:report|tell (?:me|us)|let \w+ know)\b`
 /** The rest of a clause, up to a sentence's end, that has no word such as "when" that only waits for a step to finish. */
 const SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`
-/** An ask that asks the user to report one of the results it names, as "report Hola or Hello" or "say whether it loads". */
+/**
+ * An ask that asks the user to report one of the results it names, as "report Hola or Hello" or "say whether it loads".
+ * Verbs such as confirm, answer, say and reply also name a step to do, as "Confirm the 2FA prompt on your phone or
+ * security key", so only "whether" makes them a request for a result.
+ */
 const NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b`, 'i')
 
 /**
