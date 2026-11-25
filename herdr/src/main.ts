@@ -11,7 +11,9 @@ import {
   props,
   readTextFile,
   run,
+  setShared,
   settings,
+  shared,
   spaces,
   terminals,
   theme,
@@ -61,6 +63,7 @@ import { nextDrawAt } from './wake'
 import { HeldFades } from './held-fades'
 import type { Tracks } from './motion'
 import { Heights, zoomOf } from './heights'
+import { ownPaneOf, PaneWidth } from './pane-width'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
 import type { TimeLeft } from './time-left'
@@ -96,6 +99,13 @@ export default class Inbox extends View {
   shownAt = Date.now()
   isOpened = false
   paneWidth = Infinity
+  width = new PaneWidth({
+    pane: () => ownPaneOf(props()?.pane, panes(), this.tab),
+    zoom: () => zoomOf(settings()),
+    shared,
+    setShared,
+    run,
+  })
   listHeight: number | null = null
   /** The controller states of the sessions the look left, by session id, and their presses still out. */
   left: Record<string, LeftSession> = {}
@@ -387,7 +397,10 @@ export default class Inbox extends View {
       .text_color(t.foreground)
       .text_size(TEXT)
       .line_height(LINE)
-      .on_size_change(onSize(this, 'paneWidth', s => s.width))
+      .on_size_change((size, cx) => {
+        this.width.measured(size.width, cx)
+        onSize(this, 'paneWidth', s => s.width)(size, cx)
+      })
     if (screen.is === 'message') {
       this.timeLeft = new Map()
       this.tracksOf = ''

@@ -288,6 +288,8 @@ export const appModules = {
     watchFolder: () => new Promise(() => {}),
     exec: async () => ({ code: 0, stdout: '', stderr: '' }),
     hc: async () => null,
+    shared: () => undefined,
+    setShared: () => null,
     run() {},
   },
 }
