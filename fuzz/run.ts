@@ -121,14 +121,15 @@ async function main() {
     const verdict =
       failures.length === 0
         ? s.isOpen
-          ? 'passes, though its issue is open: the issue is fixed or the harness misses it'
+          ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds.ts in the same PR`
           : 'passes'
         : !s.isOpen
           ? `fails again (${rules})`
           : isAsIssueSays
             ? `fails as its issue says (${rules})`
             : `fails, but not as its issue says (${rules})`
-    if (failures.length > 0 && !(s.isOpen && isAsIssueSays)) isSeedBroken = true
+    const isFixedWhileOpen = failures.length === 0 && s.isOpen
+    if (isFixedWhileOpen || (failures.length > 0 && !(s.isOpen && isAsIssueSays))) isSeedBroken = true
     seedLines.push(`seed #${s.issue}, ${s.name}: ${verdict}`)
   }
   const write = (
