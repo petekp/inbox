@@ -19,13 +19,17 @@ Each new kind of failure, a rule and its issue or the kind of box, is shrunk by 
 
 Headless Chrome does not animate smooth scrolling, so positions add the page's scroll offset. Runs are in real time, so a failure can come and go between runs. `--look all` leaves the Codex tab out for that reason.
 
-Results so far, on seeds 1 to 3 with 30 to 50 cases each:
+Results so far, on seeds 1 to 3 with 30 to 50 cases each. The fixed seeds for #834 to #837 run before the generated cases, and each is marked open in `fuzz/seeds.ts`:
 
 - #834: a press's new line, or a PR comment's line from its thread, pushes full-opacity lines past the edge of its growing box.
 - #835: Explain on a row that is still opening makes the row 24 px taller in one frame.
 - #836: a row's height glide that starts again mid-move stands still for one frame, in about two of three runs.
 - #837: Cancel on the Reply field brings the row's buttons back below the edge of its growing box.
+- #863: a closing row's box cuts lines that are still fading out, at 21% to 42% opacity. Seed 2, case 9 finds it.
+- #864: Copy's result on an open task wraps after the title and moves the buttons 20 px in one frame. Seed 2, case 28 finds it.
 - Not filed: once, a 12 px shrink and then a cut of "Reply" at 0.27 opacity, after ArrowUp, a 120 ms wait and a click on the open row. It came back in 1 of 3 replays.
+
+The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/seeds.ts`) and no seed fails differently from its issue. A seed whose issue is open but that now passes fails the run, and its line says to close the issue and mark the seed closed. #863 and #864 have no `KNOWN` entry, so `--seed 2 --runs 30` reports them as new and exits 1. The seed for #836 fails in about 2 of 3 runs, so it can pass and fail the run. `check.sh` does not run this look, since it runs in real time.
 
 Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so the seeds for #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line) cannot run there.
 
@@ -35,10 +39,10 @@ Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so t
 
 `fuzzMod` in `fuzz/mod-look.ts` starts a session in `tests/hooks-world.ts`, makes the agent's `record` calls, and mounts the pane in the terminal or desktop look. The pane is 30, 50, 80 or 120 columns wide, with room for every row. On the Asks and Finds tabs it checks:
 
-- `drawn`: the pane draws its tabs. A pane that draws nothing at all is #830: one control character in a row's text makes Claude Code refuse the whole pane.
+- `drawn`: the pane draws its tabs. A pane that draws nothing at all was #830, where one control character in a row's text made Claude Code refuse the whole pane.
 - `title`: each recorded row shows the first 8 letters and digits of its title, which a cut title still shows.
 - `bad-text` and `raw-escape`: no drawn text holds `NaN`, `undefined` or `[object Object]`, or a control character.
 
-The shrinker drops records. On seeds 1 and 2 with 40 and 150 cases, only #830 fails, in about a third of the cases. Those are the cases where an escape lands in drawn text.
+The shrinker drops records. On seeds 1 and 2 with 40 and 150 cases, no generated case fails. A fixed seed in `MOD_SEEDS` (`fuzz/seeds.ts`) holds the escape case of #830, which is closed, so it must pass, and the run fails when it does not. An open issue's seed is expected to fail, and the run fails when it passes. `check.sh` does not run this look, since its fuzz step covers the Herdr look, the omp panel and the row stepper.
 
 The terminal does not glide, and the test engine lays out no pixels, so neither look has motion rules. Desktop pixels need the VM. Plan order in both looks is already checked on the demo by the demo test in `tests/hooks.test.ts`. Next: presses, keys and widths of drawn lines in the terminal.
