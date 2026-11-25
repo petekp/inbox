@@ -2681,11 +2681,11 @@ function parseReply(text2, source = null) {
   const lines = text2.split(NL4);
   const newLines = [];
   for (const raw of lines.slice(lastAnswerStart(lines))) {
-    const parsed2 = keyOf(raw);
-    if (!parsed2) continue;
+    const parsed3 = keyOf(raw);
+    if (!parsed3) continue;
     seen += 1;
-    const key = parsed2.key;
-    const value = dash(parsed2.value) ?? "";
+    const key = parsed3.key;
+    const value = dash(parsed3.value) ?? "";
     if (key === "NONE") continue;
     if (key === "CLOSED" || key === "FIXED") {
       const [id, outcome] = value.split("|").map((s) => s.trim());
@@ -2730,8 +2730,8 @@ function parseReply(text2, source = null) {
     } else if (key === "HELP") {
       const [target, kind, ...tail] = value.split("|");
       const { help, name } = helpFields(tail, source);
-      const parsed3 = readHelp((kind ?? "").trim(), help, name, blocks, source);
-      if (parsed3 && target) helps.push({ target: target.trim(), help: parsed3 });
+      const parsed4 = readHelp((kind ?? "").trim(), help, name, blocks, source);
+      if (parsed4 && target) helps.push({ target: target.trim(), help: parsed4 });
     }
   }
   for (const { target, help } of helps) {
@@ -5254,21 +5254,21 @@ async function updateState(dir, sessionId, change, now = Date.now) {
 function parsedReply(ex, reply) {
   return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
 }
-function applied(s, parsed2, now, promptAt, isDelegate) {
+function applied(s, parsed3, now, promptAt, isDelegate) {
   const next = s.pending[0];
   if (!next) return s;
   const { ex } = next;
-  if (!parsed2 && !next.failed)
+  if (!parsed3 && !next.failed)
     return {
       ...s,
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed", failedAttempts: s.presence.failedAttempts + 1 }
     };
-  const update = parsed2 && isDelegate ? withoutNewAsks(parsed2) : parsed2;
+  const update = parsed3 && isDelegate ? withoutNewAsks(parsed3) : parsed3;
   const ledger = update ? applyExchangeUpdate(s.ledger, update, ex, now, promptAt) : s.ledger;
-  const hasDroppedReply = s.presence.hasDroppedReply || !parsed2;
+  const hasDroppedReply = s.presence.hasDroppedReply || !parsed3;
   const isCurrent = !hasDroppedReply;
-  const failedAttempts = parsed2 ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
+  const failedAttempts = parsed3 ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
   return linkDialogs({
     ...s,
     ledger,
@@ -5541,18 +5541,18 @@ function needsCatchUp(s) {
   return presence.ledgerState !== "current" || hasUnappliedTurn || hasMissedStatus;
 }
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
-function appliedCatchUp(s, begun, parsed2, now, isDelegate) {
+function appliedCatchUp(s, begun, parsed3, now, isDelegate) {
   const covered = new Set(begun.pending.map(pendingKey));
-  const update = parsed2 && isDelegate ? withoutNewAsks(parsed2) : parsed2;
+  const update = parsed3 && isDelegate ? withoutNewAsks(parsed3) : parsed3;
   return linkDialogs({
     ...s,
     ledger: update ? applyUpdate(s.ledger, update, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
-      ledgerState: parsed2 ? "current" : "failed",
-      hasDroppedReply: parsed2 ? false : s.presence.hasDroppedReply,
-      failedAttempts: parsed2 ? 0 : s.presence.failedAttempts + 1,
+      ledgerState: parsed3 ? "current" : "failed",
+      hasDroppedReply: parsed3 ? false : s.presence.hasDroppedReply,
+      failedAttempts: parsed3 ? 0 : s.presence.failedAttempts + 1,
       isConversationUnreadable: false,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
@@ -6803,18 +6803,18 @@ async function runUpdates(host) {
                 await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
-              const parsed3 = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
+              const parsed4 = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
               const at = await host.now();
               const noted = (x) => reply.heard ? withAnswer(
-                withCall(x, CATCH_UP_CALL, reply.heard, parsed3 !== null, at),
+                withCall(x, CATCH_UP_CALL, reply.heard, parsed4 !== null, at),
                 CATCH_UP_CALL,
                 reply.heard,
-                parsed3 !== null,
+                parsed4 !== null,
                 at,
                 x.ledger.turn
               ) : x;
-              const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed3, at, isDelegate));
-              if (!parsed3) return "stop";
+              const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed4, at, isDelegate));
+              if (!parsed4) return "stop";
               if (reply.kind === "reply" && reply.statusCall)
                 followUp(writeStatus(after2, reply.statusCall, s.hostTasks));
               continue;
@@ -6823,23 +6823,23 @@ async function runUpdates(host) {
             const promptAt = await host.now();
             const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
             const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind);
-            const parsed2 = parsedReply(next.ex, asked.text);
+            const parsed3 = parsedReply(next.ex, asked.text);
             let isApplied = false;
             const after = await host.update(async (current) => {
               const at = await host.now();
               const heard = { ...asked, ms: at - promptAt };
               const x = withAnswer(
-                withCall(current, kind, heard, parsed2 !== null, at),
+                withCall(current, kind, heard, parsed3 !== null, at),
                 kind,
                 heard,
-                parsed2 !== null,
+                parsed3 !== null,
                 at,
                 next.ex.turn
               );
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
-              isApplied = parsed2 !== null;
-              return applied(x, parsed2, at, promptAt, isDelegate);
+              isApplied = parsed3 !== null;
+              return applied(x, parsed3, at, promptAt, isDelegate);
             });
             if (isApplied)
               followUp(
@@ -7006,8 +7006,8 @@ function commandText2(command) {
 function outputText(output) {
   if (!isText(output)) return "";
   try {
-    const parsed2 = JSON.parse(output);
-    return isText(parsed2.output) ? parsed2.output : output;
+    const parsed3 = JSON.parse(output);
+    return isText(parsed3.output) ? parsed3.output : output;
   } catch {
     return output;
   }
@@ -7066,7 +7066,6 @@ function callLines(p, hasCommandRows2, cwd) {
     const line2 = toolActivity("Agent", { description: textOf(args.task_name) });
     return line2 ? [line2] : [];
   }
-  if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
   const line = toolActivity(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
@@ -7181,6 +7180,36 @@ function unranCalls(rows) {
   };
 }
 
+// src/dialogs.ts
+var REPLY_FORM = /^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/;
+function parsed2(text2) {
+  try {
+    return JSON.parse(typeof text2 === "string" ? text2 : "");
+  } catch {
+    return null;
+  }
+}
+function dialogAnswersOf(text2) {
+  const replies = parsed2(REPLY_FORM.exec(text2.trim())?.[1]);
+  if (!Array.isArray(replies)) return [];
+  return replies.flatMap((reply) => {
+    const { questionItemId, answer } = reply ?? {};
+    const id = parsed2(questionItemId);
+    const isQuestionId = Array.isArray(id) && id[0] === DIALOG_TOOL && typeof id[1] === "string" && typeof id[2] === "number";
+    return isQuestionId && typeof answer === "string" ? [{ callId: id[1], index: id[2], answer }] : [];
+  });
+}
+function dialogLines(d) {
+  const isAnswered = (index) => d.answers[index] !== void 0;
+  const answered = d.questions.filter((_, index) => isAnswered(index));
+  const open2 = d.questions.filter((_, index) => !isAnswered(index));
+  const pairs = d.questions.flatMap((q, index) => isAnswered(index) ? [`"${q.question}"="${d.answers[index]}"`] : []);
+  return [
+    ...answered.length > 0 ? [dialogActivity(answered, { kind: "answered", answer: pairs.join(", ") })] : [],
+    ...open2.length > 0 ? [dialogActivity(open2, { kind: "open" })] : []
+  ];
+}
+
 // src/rollout-turns.ts
 var MARKERS = ['"task_started"', DIALOG_TOOL, '"user"', '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
@@ -7194,7 +7223,18 @@ function turnEventOfRow(row) {
   return kind === void 0 ? null : { id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), kind };
 }
 var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
-function turnsOf(rows, cwd) {
+function dialogAnswersIn(rows) {
+  const answers = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const p = record(row.payload);
+    const isUserMessage = row.type === "response_item" && p.type === "message" && p.role === "user";
+    const text2 = isItem(row, "UserMessage") ? contentText(record(p.item).content) : isUserMessage ? contentText(p.content) : "";
+    for (const reply of dialogAnswersOf(text2))
+      answers.set(reply.callId, { ...answers.get(reply.callId), [reply.index]: reply.answer });
+  }
+  return answers;
+}
+function turnsOf(rows, cwd, answers) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows2 = rows.some((row) => isItem(row, "CommandExecution"));
   const unran = new Set(unranCalls(rows).lines);
@@ -7225,7 +7265,11 @@ function turnsOf(rows, cwd) {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
         turns.push({ role: "agent", text: contentText(p.content), activity: [] });
-      else act(callLines(p, hasCommandRows2, cwd));
+      else if (p.type === "function_call" && p.name === DIALOG_TOOL) {
+        const questions = dialogQuestions(jsonRecord(p.arguments).questions);
+        const callId = textOf(p.call_id);
+        act(dialogLines({ questions, answers: (callId === "" ? void 0 : answers.get(callId)) ?? {} }));
+      } else act(callLines(p, hasCommandRows2, cwd));
     }
   }
   return turns;
@@ -7249,7 +7293,8 @@ function rolloutTurns(lines, cwd) {
     if (event?.kind === "completed") group.isComplete = true;
     else group.rows.push(row);
   }
-  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
+  const answers = dialogAnswersIn(groups.flatMap((g) => g.rows));
+  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd, answers) }));
 }
 function rolloutOfLines(lines, cwd, currentTurnId) {
   const turns = rolloutTurns(lines, cwd);

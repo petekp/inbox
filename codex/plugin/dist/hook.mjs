@@ -5645,7 +5645,6 @@ function callLines(p, hasCommandRows2, cwd) {
     const line2 = toolActivity("Agent", { description: textOf2(args.task_name) });
     return line2 ? [line2] : [];
   }
-  if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
   const line = toolActivity(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
@@ -6003,7 +6002,18 @@ function turnOf(lines, turnId) {
   }
 }
 var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
-function turnsOf(rows, cwd) {
+function dialogAnswersIn(rows) {
+  const answers = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const p = record(row.payload);
+    const isUserMessage = row.type === "response_item" && p.type === "message" && p.role === "user";
+    const text2 = isItem(row, "UserMessage") ? contentText(record(p.item).content) : isUserMessage ? contentText(p.content) : "";
+    for (const reply of dialogAnswersOf(text2))
+      answers.set(reply.callId, { ...answers.get(reply.callId), [reply.index]: reply.answer });
+  }
+  return answers;
+}
+function turnsOf(rows, cwd, answers) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows2 = rows.some((row) => isItem(row, "CommandExecution"));
   const unran = new Set(unranCalls(rows).lines);
@@ -6034,7 +6044,11 @@ function turnsOf(rows, cwd) {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
         turns.push({ role: "agent", text: contentText(p.content), activity: [] });
-      else act(callLines(p, hasCommandRows2, cwd));
+      else if (p.type === "function_call" && p.name === DIALOG_TOOL) {
+        const questions = dialogQuestions(jsonRecord(p.arguments).questions);
+        const callId = textOf2(p.call_id);
+        act(dialogLines({ questions, answers: (callId === "" ? void 0 : answers.get(callId)) ?? {} }));
+      } else act(callLines(p, hasCommandRows2, cwd));
     }
   }
   return turns;
@@ -6058,7 +6072,8 @@ function rolloutTurns(lines, cwd) {
     if (event?.kind === "completed") group.isComplete = true;
     else group.rows.push(row);
   }
-  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
+  const answers = dialogAnswersIn(groups.flatMap((g) => g.rows));
+  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd, answers) }));
 }
 function turnRowsOf(lines, isWindow) {
   const rows = [];
