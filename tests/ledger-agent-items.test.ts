@@ -210,13 +210,18 @@ describe('items the agent recorded', () => {
         'Run node greet.js in your terminal; report Hola or Hello',
         'Open the stack and tell me whether the card comes back',
         'Load the page on your phone and let me know if it loads or shows an error',
+        'Tell me if node greet.js prints Hola or Hello',
+        'Run the test and report: pass or fail',
       ].map(resultsNote),
-    ).toEqual([true, true, true])
+    ).toEqual([true, true, true, true, true])
     expect(
-      ['Run npm login in the repo root', 'Sign in to npm or create an account', 'Tell me when you have signed in'].map(
-        resultsNote,
-      ),
-    ).toEqual([false, false, false])
+      [
+        'Run npm login in the repo root',
+        'Sign in to npm or create an account',
+        'Tell me once you have signed in with GitHub or Google',
+        'Report back after you run brew install or apt install',
+      ].map(resultsNote),
+    ).toEqual([false, false, false, false])
   })
 
   test("one stays open after 12 prompts, when the update's items expire", () => {
