@@ -12,6 +12,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-form-swap.ts` | Codex adapter. The fades of a row's change between its settled form and another: the form it leaves, drawn over the form it takes, fades out while the height holds, and the new form's lines fade in once the height moves. |
 | `codex/src/tab-wake.ts` | Codex adapter. The timed work after a draw: scrolling the open row into view, and the draw when the next move ends. |
 | `codex/src/tab-glide.ts` | Codex adapter. The Web Animations each move plays: the spring glide of a height or offset, and fades. |
+| `codex/src/tab-new-keys.ts` | Codex adapter. Fades in the buttons a draw brings into a block it drew before, such as a row's buttons that come back as its reply field closes, once the block's box has nearly grown to hold them. |
 | `codex/src/tab-title-motion.ts` | Codex adapter. When a row's title fades between its full and clamped forms while its line grows or shrinks, so the fade runs while the line rests and the line never cuts a line of the title that shows. |
 | `codex/src/tab-page-variables.ts` | Codex adapter. The shared spacing scale and motion lengths, set as the CSS variables the tab's styles read. |
 | `codex/src/tab-fold-all.ts` | Codex adapter. `toggleStatusFold` opens or shuts a Status fold, with `foldMotion`, its list's motion key. `foldAllHere` applies a fold-all to the tab's folds through each fold's own toggle, so each animates and saves as a single click would, and `clickFold` turns an Option-click on a fold into a fold-all. |

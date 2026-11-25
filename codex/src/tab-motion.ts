@@ -12,7 +12,17 @@ import type { SpringState } from '../../core/view/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
 import { later } from './tab-host'
 import { fadeForms, swapsForm } from './tab-form-swap'
-import { atEndLines, closeTitle, openTitle, releaseLine, LINE } from './tab-title-motion'
+import {
+  atEndGlides,
+  closeLineHoldMs,
+  closeTitle,
+  drawnLine,
+  glideLine,
+  openTitle,
+  releaseLine,
+  LINE,
+} from './tab-title-motion'
+import type { DrawnLine } from './tab-title-motion'
 import {
   fade,
   glide,
@@ -37,19 +47,24 @@ import {
   trunkBeside,
 } from './tab-panel-fade'
 import { showConnectors } from './tab-connectors'
+import { drawnKeys, showNewKeys } from './tab-new-keys'
 
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
-/** An element's height before a draw, and the top of the part it draws open, a row's panel or a PR block's body. */
+/**
+ * An element's height before a draw, its line's, and the top of the part it draws open, a row's panel or a PR block's
+ * body.
+ */
 type Drawn = {
   el: HTMLElement
   height: number
+  line: DrawnLine | null
   openTop: number | null
   openPart: Element | null
   openShown: number
 }
 type TabWidth = { el: HTMLElement; width: number; isShown: boolean }
-type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; fieldKeys: Set<Element> }
+type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; keys: Set<Element> }
 
 /** The part an entry draws open: a row's panel, or a PR block's body. */
 const OPEN_PART = '.panel, .pr-body'
@@ -65,6 +80,7 @@ export function measure(): Drawing {
     heights.set(el.dataset.motion!, {
       el,
       height: el.getBoundingClientRect().height,
+      line: drawnLine(el),
       openTop: part ? topIn(el, part) : null,
       openPart: part,
       openShown: part instanceof HTMLElement ? opacityOf(part) : 1,
@@ -74,7 +90,7 @@ export function measure(): Drawing {
   for (const el of root.querySelectorAll<HTMLElement>('[data-tab]'))
     tabWidths.set(el.dataset.tab!, { el, width: el.getBoundingClientRect().width, isShown: isShownTab(el) })
 
-  return { heights, tabWidths, fieldKeys: new Set(root.querySelectorAll(FIELD_KEYS)) }
+  return { heights, tabWidths, keys: drawnKeys() }
 }
 
 /**
@@ -108,7 +124,7 @@ let drawnAt = 0
 function naturalHeight(el: HTMLElement): number {
   glides.get(el)?.anim.cancel()
 
-  return atEndLines(el, () => el.getBoundingClientRect().height)
+  return atEndGlides(el, () => el.getBoundingClientRect().height)
 }
 
 /** Whether a leaving element no longer holds its space: its space has begun to shrink, or it left before its space opened. */
@@ -164,7 +180,7 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>, stepA
   }
   glideTabs(before.tabWidths)
   showNotes(before)
-  showFieldKeys(before)
+  showNewKeys(before.keys, before.heights)
   showConnectors()
   entering.clear()
   heightWaitMs = 0
@@ -202,25 +218,6 @@ function showNotes(before: Drawing) {
     const g = end && before.heights.has(end.dataset.motion!) ? glides.get(end) : undefined
     if (!g || !isRunning(g.anim) || g.to <= g.from.x) continue
     fade(note, 0, 1, ENTER_FADE_MS, false, true, g.delay + enterDelayMs(g.to, g.from))
-  }
-}
-
-/** A text field's buttons, such as the goal field's Save and Cancel. */
-const FIELD_KEYS = '.field-keys'
-
-/**
- * A field's buttons that this draw brings into a moving block fade in while the text field shows at once, as in Herdr.
- * While the field's box grows they wait until it has nearly grown to hold them. A box this draw brings in, as on a
- * page's first draw, opens no field, and its buttons show at once.
- */
-function showFieldKeys(before: Drawing) {
-  for (const keys of root.querySelectorAll<HTMLElement>(FIELD_KEYS)) {
-    if (before.fieldKeys.has(keys)) continue
-    const box = keys.closest<HTMLElement>('[data-motion]')
-    if (!box || before.heights.get(box.dataset.motion!)?.el !== box) continue
-    const g = glides.get(box)
-    const isGrowing = g !== undefined && isRunning(g.anim) && g.to > g.from.x
-    fade(keys, 0, 1, ENTER_FADE_MS, false, false, isGrowing ? g.delay + enterDelayMs(g.to, g.from) : 0)
   }
 }
 
@@ -278,6 +275,7 @@ function moveRow(
     if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, Math.max(heightWaitMs, closeWaitMs))
     return
   }
+  if (state && !isMoving(state) && !changed.has(key)) glideLine(el, was.line, naturalHeight(el) - from.x)
   if (carried.has(el) && !(state && isMoving(state))) {
     glides.get(el)?.anim.cancel()
     return
@@ -386,7 +384,8 @@ function collapse(
   else if (part && state === 'closing') for (const p of [part, ...trunkBeside(part, true)]) fade(p, 0, 0, 0, true)
   if (part && state === 'closing') closeHoldsUp(part, shown !== null)
   const opacity = opacityOf(el)
-  const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0)
+  const lineHolds = line && lineTo !== null ? closeLineHoldMs(line, lineTo) : 0
+  const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0, lineHolds)
   glide(el, 'height', from, target, true, false, shrinksAfter)
   if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, shrinksAfter)
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)

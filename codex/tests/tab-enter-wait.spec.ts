@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { TestContext } from 'node:test'
 import { Window } from 'happy-dom'
-import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, TURNED_BACK_CUT_OPACITY } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, FAINT_OPACITY, LEAVE_FADE_MS, ROW_STATE_MS } from '../../core/view/row-motion'
 import { FRAME_MS } from '../../core/view/springs'
 import TAB_HTML from '../src/tab.html'
 import { NO_HOLDS } from '../../core/view/timing'
@@ -375,12 +375,18 @@ test('a row that enters while another leaves keeps the rest of its wait and its 
       )
     const dims = lateFades()
     assert.ok(
-      dims.length > 0 && dims.every(f => f.delay === 0 && f.to === TURNED_BACK_CUT_OPACITY),
+      dims.length > 0 && dims.every(f => f.delay === 0 && f.to === FAINT_OPACITY),
       `a close turned back once its row began to shrink does not fade its panel at once to a faint opacity: ${JSON.stringify(dims.map(({ to, delay }) => ({ to, delay })))}`,
     )
     await after(Math.max(...dims.map(f => f.duration)) + FRAME_MS)
+    const holds = lateFades().filter(f => f.from === FAINT_OPACITY && f.to === FAINT_OPACITY)
+    await after(Math.max(0, ...holds.map(f => f.duration)) + FRAME_MS)
     assert.ok(
-      lateFades().some(f => f.from === TURNED_BACK_CUT_OPACITY && f.to === 1),
+      lateFades().every(f => f.to <= FAINT_OPACITY || f.from === FAINT_OPACITY),
+      'a turned-back panel fades past faint before its space is nearly open',
+    )
+    assert.ok(
+      lateFades().some(f => f.from === FAINT_OPACITY && f.to === 1),
       'a turned-back panel held faint does not fade on to full once its space is nearly open',
     )
     await after(ROW_STATE_MS.opening + 50)

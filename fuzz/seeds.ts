@@ -192,7 +192,7 @@ export const CODEX_SEEDS: {
     rule: 'cut',
     detail: '"Open comment"',
     issue: 834,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'light',
@@ -209,7 +209,7 @@ export const CODEX_SEEDS: {
     rule: 'jump',
     detail: ' grew ',
     issue: 835,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'dark',
@@ -222,11 +222,11 @@ export const CODEX_SEEDS: {
     },
   },
   {
-    name: 'a row glide that starts again mid-move, in about 2 of 3 runs',
+    name: 'a row glide that starts again mid-move',
     rule: 'jump',
     detail: 'height stood still',
     issue: 836,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'dark',
@@ -241,11 +241,62 @@ export const CODEX_SEEDS: {
     },
   },
   {
+    name: 'Explain on a row that is still opening, then opening another row',
+    rule: 'cut',
+    issue: 834,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 7 },
+        { is: 'click', on: 'button', n: 3 },
+        { is: 'click', on: 'row', n: 1 },
+      ],
+    },
+  },
+  {
+    name: 'opening a row again just as its close ends',
+    rule: 'cut',
+    issue: 863,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 1 },
+        { is: 'wait', ms: 300 },
+        { is: 'key', key: 'ArrowUp' },
+      ],
+    },
+  },
+  {
+    name: 'Copy on an open task, whose result wraps after the title',
+    rule: 'jump',
+    detail: 'press-',
+    issue: 864,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 5 },
+        { is: 'click', on: 'button', n: 0 },
+      ],
+    },
+  },
+  {
     name: 'Cancel on the Reply field',
     rule: 'cut',
     detail: '"Reply" shows at 1.00',
     issue: 837,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'light',
@@ -294,16 +345,8 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   { issue: 832, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
-  { issue: 834, look: 'codex', rule: 'cut', details: [' thread ', '"Holds up ', '…" shows', '"·" shows', '"· '] },
-  { issue: 834, look: 'codex', rule: 'jump', details: ['press-'] },
-  { issue: 835, look: 'codex', rule: 'jump', details: [' grew '] },
-  { issue: 836, look: 'codex', rule: 'jump', details: ['height stood still'] },
-  {
-    issue: 837,
-    look: 'codex',
-    rule: 'cut',
-    details: ['"Reply" shows at 1.00', '"Explain" shows at 1.00', '"Dismiss" shows at 1.00'],
-  },
+  { issue: 864, look: 'codex', rule: 'jump', details: ['press-'] },
+  { issue: 864, look: 'codex', rule: 'cut', details: ['"Holds up '] },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */

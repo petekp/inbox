@@ -7,10 +7,10 @@ import type { Painted } from './gpui-stand-in'
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
 const { moveRows, NO_TRACKS } = await import('../src/motion')
-const { Heights, MOVED_TO, panelId } = await import('../src/heights')
+const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
-const { CUT_OPACITY, TURNED_BACK_CUT_OPACITY } = await import('../../core/view/row-motion')
+const { CUT_OPACITY } = await import('../../core/view/row-motion')
 const { easeOut } = await import('../src/panel-steps')
 const { HeldFades } = await import('../src/held-fades')
 
@@ -363,11 +363,6 @@ class Frames {
     this.linesAbove = held.held
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
     this.tracks = moved.tracks
-    const turnedBackPanels = new Set(
-      [...moved.tracks.rows]
-        .filter(([, t]) => t.track.state === 'opening' && (t.panelSteps?.length ?? 0) > 1)
-        .map(([id]) => panelId(id)),
-    )
     const paint = paintOf(
       moved.motion,
       this.heights,
@@ -394,8 +389,7 @@ class Frames {
       const box = boxOf(node)
       const opacity = this.fades.opacityOf(node)
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
-      const maxOpacity = turnedBackPanels.has(box ?? '') ? TURNED_BACK_CUT_OPACITY : CUT_OPACITY
-      if (opacity > maxOpacity) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
+      if (opacity > CUT_OPACITY) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
     }
     for (const { node, share } of shownTexts(placed)) {
       let plain = 1
