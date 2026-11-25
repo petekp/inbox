@@ -12,16 +12,7 @@ import type { SpringState } from '../../core/view/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
 import { later } from './tab-host'
 import { fadeForms, swapsForm } from './tab-form-swap'
-import {
-  atEndGlides,
-  closeLineHoldMs,
-  closeTitle,
-  drawnLine,
-  glideLine,
-  openTitle,
-  releaseLine,
-  LINE,
-} from './tab-title-motion'
+import { atEndGlides, closeTitle, drawnLine, glideLine, openTitle, releaseLine, LINE } from './tab-title-motion'
 import type { DrawnLine } from './tab-title-motion'
 import {
   fade,
@@ -384,8 +375,7 @@ function collapse(
   else if (part && state === 'closing') for (const p of [part, ...trunkBeside(part, true)]) fade(p, 0, 0, 0, true)
   if (part && state === 'closing') closeHoldsUp(part, shown !== null)
   const opacity = opacityOf(el)
-  const lineHolds = line && lineTo !== null ? closeLineHoldMs(line, lineTo) : 0
-  const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0, lineHolds)
+  const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0)
   glide(el, 'height', from, target, true, false, shrinksAfter)
   if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, shrinksAfter)
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)

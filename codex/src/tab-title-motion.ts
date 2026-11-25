@@ -74,31 +74,29 @@ const aftersOf = (line: HTMLElement) => [
   ...line.querySelectorAll<HTMLElement>(':scope > .text > .part:not(.title-part)'),
 ]
 
-/**
- * How long a closing row's line holds its height before it shrinks to `to`, the closed line's height, so a status that
- * only its open form draws, and the closed line has no room for, fades out first. 0 when the closed line holds it.
- */
-export function closeLineHoldMs(line: HTMLElement, to: number): number {
+/** Whether a closing row's line draws a status only its open form has, which the closed line `to` px tall lacks room for. */
+function dropsOpenAfter(line: HTMLElement, to: number): boolean {
   const short = line.querySelector<HTMLElement>(':scope > .text.short')
   const needs = short ? short.getBoundingClientRect().height : 0
 
-  return openAftersOf(line).length > 0 && needs - to >= 0.5 ? LEAVE_FADE_MS : 0
+  return openAftersOf(line).length > 0 && needs - to >= 0.5
 }
 
 /**
  * Starts a closing row's title move, from the line's height `from` to the closed title's height `to`. The title fades to
  * its closed form while the line holds its height, as the row's panel fades out, and the line shrinks after `delay` ms,
  * with its row. A line that holds too briefly for the fade takes the closed form at once. A title the closed form shows
- * whole keeps its full form, unless an open it turns back had hidden it. A status the closed line has no room for fades
- * out while the line holds (`closeLineHoldMs`).
+ * whole keeps its full form, unless an open it turns back had hidden it. A status only the open form draws, which the
+ * closed line has no room for, fades out with the title, or goes at once with it, so the shrinking line never cuts it.
  */
 export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
   const title = titleOf(line)
-  const dropsOpenAfter = closeLineHoldMs(line, to) > 0
-  if (dropsOpenAfter) for (const part of openAftersOf(line)) fade(part, fadeShown(part) ?? 1, 0, LEAVE_FADE_MS, true)
-  const end = title && !dropsOpenAfter ? Math.max(to, title.short.getBoundingClientRect().height) : to
-  if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null))
-    swapTitle(title, false, 0, delay >= LEAVE_FADE_MS)
+  const isFaded = delay >= LEAVE_FADE_MS
+  const isAfterDropped = dropsOpenAfter(line, to)
+  if (isAfterDropped)
+    for (const part of openAftersOf(line)) fade(part, fadeShown(part) ?? 1, 0, isFaded ? LEAVE_FADE_MS : 0, true)
+  const end = title && !isAfterDropped ? Math.max(to, title.short.getBoundingClientRect().height) : to
+  if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null)) swapTitle(title, false, 0, isFaded)
   glide(line, 'height', from, end, true, false, delay)
 }
 
