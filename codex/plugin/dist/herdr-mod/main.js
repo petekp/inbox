@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-25T11:45:03.298Z. 378033 characters follow.
+// Built at 2026-11-25T22:17:05.411Z. 379160 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -4255,7 +4255,7 @@ function seenSubjectIds(row) {
 // ../core/view/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
-  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
+  if (last.result?.state !== "pending" || now - last.result.at < PRESS_TIMEOUT_MS)
     return last;
   const { result: _result, ...rest } = last;
   return rest;
@@ -8640,16 +8640,15 @@ var readView = (read, now, holds, notes) => withDialogRow(sessionView(read.sessi
 }), read.openDialog, read.envelope.agent);
 function screenOf(followed, read, ui, o) {
   const shown = messageOf(followed, read);
-  if (shown !== null || read?.is !== "read")
+  const raw = o.view;
+  if (shown !== null || read?.is !== "read" || raw === null)
     return shown ?? message(READING_TEXT, null);
-  const { holds } = o;
-  const raw = readView(read, o.now, holds, o.notes);
   const view = o.collapsed ? { ...raw, collapsed: o.collapsed(raw) } : raw;
   const screen = {
     view,
     agent: read.envelope.agent,
     now: o.now,
-    shownSince: holds.shownSince ?? o.now,
+    shownSince: o.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs
   };
@@ -8663,6 +8662,48 @@ function screenOf(followed, read, ui, o) {
     blocks: drawOuts(tabBlocks(screen, ui), o.queue.outs, o.queue.lines, o.now),
     waits: rowWaits(screen, ui.tab)
   };
+}
+
+// src/view-cache.ts
+class ViewCache {
+  shown;
+  kept = null;
+  timer = null;
+  constructor(shown) {
+    this.shown = shown;
+  }
+  at(now) {
+    const s = this.shown();
+    if (s === null)
+      return null;
+    const k = this.kept;
+    const isKept = k !== null && k.read === s.read && k.ui === s.ui && now < k.until;
+    return isKept ? k.view : this.build(s.read, s.ui, now);
+  }
+  prepare(cx, isFresh = false) {
+    this.timer?.cancel();
+    this.timer = null;
+    const s = this.shown();
+    if (s === null)
+      return;
+    const now = Date.now();
+    if (isFresh)
+      this.build(s.read, s.ui, now);
+    else
+      this.at(now);
+    const until = this.kept?.until ?? Infinity;
+    if (until === Infinity)
+      return;
+    this.timer = cx.timer.after(Math.max(0, until - now), (cx) => {
+      this.prepare(cx);
+      cx.notify();
+    });
+  }
+  build(read, ui, now) {
+    const view = readView(read, now, holdsOf(ui, now), notesOf(ui));
+    this.kept = { read, ui, view, until: readWakeAt(ui, view, now) ?? Infinity };
+    return view;
+  }
 }
 
 // src/status-look.ts
@@ -8813,6 +8854,10 @@ class Inbox extends View {
   tracks = NO_TRACKS;
   drawnTabs = [];
   heights = new Heights;
+  viewCache = new ViewCache(() => {
+    const read = this.readSession;
+    return read && { read, ui: this.ui };
+  });
   tracksOf = "";
   blocks = [];
   lastDraw = { tab: "needsYou", rows: null, pressed: [] };
@@ -8837,15 +8882,17 @@ class Inbox extends View {
       }
     });
     cx.timer.every(REREAD_MS, (cx) => this.sessionId && this.load(this.sessionId, cx));
-    cx.timer.every(AGE_TICK_MS, (cx) => cx.notify());
+    cx.timer.every(AGE_TICK_MS, (cx) => {
+      this.viewCache.prepare(cx, true);
+      cx.notify();
+    });
     cx.timer.every(LOOK_TICK_MS, (cx) => cx.spawn(() => this.checkLook()));
   }
   get readSession() {
     return this.read?.is === "read" ? this.read : null;
   }
   viewAt(now) {
-    const read = this.readSession;
-    return read && readView(read, now, holdsOf(this.ui, now), notesOf(this.ui));
+    return this.viewCache.at(now);
   }
   apply(events, cx, from = null) {
     const now = Date.now();
@@ -8861,6 +8908,7 @@ class Inbox extends View {
     for (const c of applied.commands)
       this.run(c, from, cx);
     this.schedule(applied.nextWakeAt, view, cx);
+    this.viewCache.prepare(cx);
     if (!this.endPresses(cx) && !events.every((e) => e.type === "list-input" || e.type === "edit-draft"))
       cx.notify();
   }
@@ -9032,14 +9080,14 @@ class Inbox extends View {
     const t = theme();
     const now = Date.now();
     const ui = this.ui;
+    const raw = this.viewAt(now);
     const presses = {
       now,
-      holds: holdsOf(ui, now),
-      notes: notesOf(ui),
+      view: raw,
+      shownSince: ui.shownSince,
       collapsed: (view) => collapsedOf(ui, view),
       queue: this.queue
     };
-    const raw = this.viewAt(now);
     const lookUi = lookUiOf(ui, raw && { ...raw, collapsed: collapsedOf(ui, raw) });
     const screen = screenOf(this.followed, this.read, lookUi, presses);
     this.drawTimer?.cancel();
