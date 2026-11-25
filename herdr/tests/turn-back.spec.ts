@@ -1,6 +1,6 @@
 import './gpui-stand-in'
 import { expect, setSystemTime, test } from 'bun:test'
-import { LEAVE_FADE_MS, TURNED_BACK_CUT_OPACITY } from '../../core/view/row-motion'
+import { FAINT_OPACITY, LEAVE_FADE_MS } from '../../core/view/row-motion'
 import { PRESS_GUARD_MS } from '../../core/view/timing'
 import type { Block, RowBlock } from '../src/blocks'
 
@@ -91,7 +91,7 @@ test('a row closed again while its turned-back panel is still faint keeps the pa
   }
 })
 
-test('a click on a closing row’s title turns it back and fades its panel in at once, held under half while its space regrows, as a key does', async () => {
+test('a click on a closing row’s title turns it back and fades its panel in at once, held faint while its space regrows, as a key does', async () => {
   let at = NOW
   const tick = () => setSystemTime(new Date((at += PRESS_GUARD_MS + 1)))
   const panel = await openPanel()
@@ -108,7 +108,7 @@ test('a click on a closing row’s title turns it back and fades its panel in at
     panel.click(title())
     const shown = allOf(panel.paint()).find(n => n.id === `panel ${rowId}`)
     expect({ opacity: shown?.style.opacity, delay: shown?.delays.get('opacity') ?? 0 }).toEqual({
-      opacity: TURNED_BACK_CUT_OPACITY,
+      opacity: FAINT_OPACITY,
       delay: 0,
     })
   } finally {

@@ -107,7 +107,8 @@ function sizeFrames(size: Size, xs: number[], edges: number[] | null, full: numb
 /**
  * Moves an element's size on the spring from `from` to `to`, after `delay` ms. `hold` keeps it at `to` once there,
  * until released. `comesOrGoes` marks an element growing in from nothing or shrinking away, or one that was when this
- * move restarts it.
+ * move restarts it. A move that takes over one under way, `from` moving with no wait, starts at the time of the frame
+ * `from` was read at, so it goes on at its speed. Started from the next frame, it would draw `from` twice.
  */
 export function glide(
   el: HTMLElement,
@@ -136,6 +137,7 @@ export function glide(
     },
     true,
   )
+  if (delay === 0 && from.v !== 0) anim.startTime = el.ownerDocument.timeline.currentTime
   glides.set(el, { size, from, to, delay, startsAt: Date.now() + delay, anim, scalesEdges })
 }
 
