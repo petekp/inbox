@@ -3,7 +3,7 @@
 // src/update-main.ts
 import { existsSync as existsSync3 } from "node:fs";
 import { homedir as homedir3 } from "node:os";
-import { dirname as dirname8, join as join11 } from "node:path";
+import { dirname as dirname8, join as join12 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
 
 // src/cli.ts
@@ -4874,9 +4874,9 @@ function codexCommandStore(dir, sessionId, now, onChange) {
 }
 
 // src/host.ts
-import { mkdir as mkdir4, rename as rename5, rm as rm3, writeFile as writeFile5 } from "node:fs/promises";
+import { mkdir as mkdir5, rename as rename6, rm as rm4, writeFile as writeFile6 } from "node:fs/promises";
 import { existsSync as existsSync2 } from "node:fs";
-import { dirname as dirname3, join as join7 } from "node:path";
+import { dirname as dirname3, join as join8 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // src/state.ts
@@ -5829,6 +5829,10 @@ function publishedSessionsFolder(appHome) {
 function publishedSessionPath(appHome, sessionId) {
   return `${publishedSessionsFolder(appHome)}/${sessionFile(sessionId)}`;
 }
+function pressFolder(appHome, sessionId) {
+  sessionFile(sessionId);
+  return `${appHome}/inbox/presses/${sessionId}`;
+}
 
 // ../core/view/session-presentation.ts
 var SESSION_FIELDS = Object.keys(emptySession()).filter(
@@ -5911,6 +5915,36 @@ function publishedSession(files2, appHome, source, session, log) {
     }
   );
 }
+async function unpublishSession(files2, appHome, sessionId) {
+  await Promise.all([
+    files2.remove(publishedSessionPath(appHome, sessionId)),
+    files2.removeFolder(pressFolder(appHome, sessionId))
+  ]);
+}
+
+// src/herdr-terminal.ts
+import { mkdir as mkdir4, readdir as readdir3, readFile as readFile4, rename as rename5, rm as rm3, writeFile as writeFile5 } from "node:fs/promises";
+import { join as join7 } from "node:path";
+
+// ../core/remote/herdr-sweep.ts
+var SWEEP_AFTER_MS = 24 * 60 * 60 * 1e3;
+var LIST_REQUEST = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "terminal.list", params: {} });
+
+// src/herdr-terminal.ts
+var claimPath = (dir, terminal) => join7(dir, "herdr-terminals", `${encodeURIComponent(terminal)}.json`);
+var isPid = (value) => value === null || Number.isSafeInteger(value);
+async function readClaim(dir, terminal) {
+  const text2 = await readFile4(claimPath(dir, terminal), "utf8").catch(() => null);
+  try {
+    const c = JSON.parse(text2 ?? "null");
+    const isClaim = typeof c?.sessionId === "string" && isPid(c.pid) && typeof c.isEnded === "boolean";
+    return isClaim ? { sessionId: c.sessionId, pid: c.pid, isEnded: c.isEnded } : null;
+  } catch {
+    return null;
+  }
+}
+var hasLeft = (claim, isRunning2) => claim.isEnded || claim.pid !== null && !isRunning2(claim.pid);
+var mayReport = (claim, sessionId, isRunning2) => claim === null || (claim.sessionId === sessionId ? !claim.isEnded : hasLeft(claim, isRunning2));
 
 // src/host.ts
 function codexStore(dir, sessionId, now, onWrite) {
@@ -5933,12 +5967,12 @@ function codexStore(dir, sessionId, now, onWrite) {
 }
 var publishFiles = {
   write: async (path, text2) => {
-    await mkdir4(dirname3(path), { recursive: true });
-    await writeFile5(path, text2);
+    await mkdir5(dirname3(path), { recursive: true });
+    await writeFile6(path, text2);
   },
-  move: (from, to) => rename5(from, to),
-  remove: (path) => rm3(path, { force: true }),
-  removeFolder: (path) => rm3(path, { recursive: true, force: true })
+  move: (from, to) => rename6(from, to),
+  remove: (path) => rm4(path, { force: true }),
+  removeFolder: (path) => rm4(path, { recursive: true, force: true })
 };
 function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
   const target = herdrTarget(env);
@@ -5947,6 +5981,8 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
   return async (written) => {
     const id = written.sessionId;
     await withLock(`${statePath(dir, id)}.herdr`, async () => {
+      const isReported = async () => target.kind === "pane" || mayReport(await readClaim(dir, target.terminal), id, isPidRunning);
+      if (!await isReported()) return;
       const [s, viewers] = await Promise.all([readState(dir, id), readViewers(dir, id)]);
       const commands = await commandsOf(codexCommandStore(dir, id, now), s);
       const at = now();
@@ -5969,11 +6005,16 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           isFetchingPrs: isPrFetchRunning(s),
           turnReadFailedAt: s.turnReadFailedAt,
           version: "0.7.0",
-          isNextBuild: existsSync2(join7(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
+          isNextBuild: existsSync2(join8(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
         log
       );
+      const appHome = target.kind === "terminal" ? target.appHome : null;
+      if (isPublished && appHome && !await isReported()) {
+        await unpublishSession(publishFiles, appHome, id);
+        return;
+      }
       const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), []);
       const r = { target, tokens, session: isPublished ? id : null, seq };
       const key = herdrReportKey(r);
@@ -5985,7 +6026,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
 }
 
 // src/registry.ts
-import { mkdir as mkdir5, readdir as readdir3, readFile as readFile4, rename as rename6, rm as rm4, writeFile as writeFile6 } from "node:fs/promises";
+import { mkdir as mkdir6, readdir as readdir4, readFile as readFile5, rename as rename7, rm as rm5, writeFile as writeFile7 } from "node:fs/promises";
 import { dirname as dirname4 } from "node:path";
 
 // ../core/runtime/session-registry.ts
@@ -6053,14 +6094,14 @@ async function pruneEnded(files2, folder, host, own) {
 
 // src/registry.ts
 var registryFiles = (log) => ({
-  list: (folder) => readdir3(folder).catch(() => []),
-  read: (path) => readFile4(path, "utf8").catch(missingAsNull),
+  list: (folder) => readdir4(folder).catch(() => []),
+  read: (path) => readFile5(path, "utf8").catch(missingAsNull),
   write: async (path, text2) => {
-    await mkdir5(dirname4(path), { recursive: true, mode: 448 });
-    await writeFile6(path, text2, { mode: 384 });
+    await mkdir6(dirname4(path), { recursive: true, mode: 448 });
+    await writeFile7(path, text2, { mode: 384 });
   },
-  move: (from, to) => rename6(from, to),
-  remove: (path) => rm4(path, { force: true }),
+  move: (from, to) => rename7(from, to),
+  remove: (path) => rm5(path, { force: true }),
   livePids: async (pids) => new Set(pids.filter(isPidRunning)),
   log
 });
@@ -6092,25 +6133,25 @@ function eachOnWrite(...writes) {
 }
 
 // src/question-history.ts
-import { mkdir as mkdir6, readdir as readdir4, readFile as readFile5, rename as rename7, stat as stat3, writeFile as writeFile7 } from "node:fs/promises";
-import { dirname as dirname5, join as join8 } from "node:path";
+import { mkdir as mkdir7, readdir as readdir5, readFile as readFile6, rename as rename8, stat as stat3, writeFile as writeFile8 } from "node:fs/promises";
+import { dirname as dirname5, join as join9 } from "node:path";
 var nodeFs = {
   list: async (folder) => {
-    const names = await readdir4(folder).catch(() => []);
+    const names = await readdir5(folder).catch(() => []);
     const listed = await Promise.all(
       names.map(async (name) => {
-        const info = await stat3(join8(folder, name)).catch(() => null);
+        const info = await stat3(join9(folder, name)).catch(() => null);
         return info?.isFile() ? { name, mtimeMs: info.mtimeMs } : null;
       })
     );
     return listed.filter((x) => x !== null);
   },
-  read: (path) => readFile5(path, "utf8"),
+  read: (path) => readFile6(path, "utf8"),
   write: async (path, text2) => {
-    await mkdir6(dirname5(path), { recursive: true });
+    await mkdir7(dirname5(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile7(tmp, text2);
-    await rename7(tmp, path);
+    await writeFile8(tmp, text2);
+    await rename8(tmp, path);
   }
 };
 function questionHistoryPlace(env, dir) {
@@ -6121,7 +6162,7 @@ function questionHistoryPlace(env, dir) {
     folder,
     host: "codex",
     keptSessions: async () => {
-      const names = (await readdir4(join8(dir, "sessions")).catch(() => [])).filter(isSessionFile);
+      const names = (await readdir5(join9(dir, "sessions")).catch(() => [])).filter(isSessionFile);
       const read = await Promise.all(
         names.map(async (name) => {
           const id = name.slice(0, -".json".length);
@@ -6181,18 +6222,18 @@ import {
   access,
   copyFile,
   lstat as lstat2,
-  mkdir as mkdir7,
-  readdir as readdir6,
-  readFile as readFile6,
+  mkdir as mkdir8,
+  readdir as readdir7,
+  readFile as readFile7,
   readlink as readlink2,
-  rename as rename8,
-  rm as rm5,
+  rename as rename9,
+  rm as rm6,
   rmdir as rmdir2,
   stat as stat6,
   symlink as symlink2,
-  writeFile as writeFile8
+  writeFile as writeFile9
 } from "node:fs/promises";
-import { dirname as dirname7, join as join10 } from "node:path";
+import { dirname as dirname7, join as join11 } from "node:path";
 
 // ../core/domain/status.ts
 var LINE = /^\s*[-*]?\s*(NO CHANGE|NOCHANGE|UNCHANGED|NEW|SET|DONE|DROP|WAS|HEAD|LINK|GOAL|RETIRE|MILESTONE|SERVES|NEXT|SUGGEST)\s*(?::\s*(.*))?$/i;
@@ -6859,8 +6900,8 @@ async function runUpdates(host) {
 }
 
 // src/transcript.ts
-import { readdir as readdir5, stat as stat5 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname6, join as join9 } from "node:path";
+import { readdir as readdir6, stat as stat5 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname6, join as join10 } from "node:path";
 
 // src/rollout-file.ts
 import { createReadStream } from "node:fs";
@@ -7304,7 +7345,7 @@ function rolloutOfLines(lines, cwd, currentTurnId) {
 
 // src/transcript.ts
 async function namesIn(dir, pattern) {
-  const names = await readdir5(dir).catch(() => []);
+  const names = await readdir6(dir).catch(() => []);
   return names.filter((n) => pattern.test(n)).sort().reverse();
 }
 var ROLLOUT_NAME = canReadZstd ? /^rollout-.+\.jsonl(\.zst)?$/ : /^rollout-.+\.jsonl$/;
@@ -7315,17 +7356,17 @@ async function rolloutsIn(folder, isWanted) {
   return names.sort(byNewest);
 }
 async function newestRollout(codexHome, isWanted) {
-  const sessions = join9(codexHome, "sessions");
+  const sessions = join10(codexHome, "sessions");
   for (const year of await namesIn(sessions, /^\d{4}$/))
-    for (const month of await namesIn(join9(sessions, year), /^\d{2}$/))
-      for (const day of await namesIn(join9(sessions, year, month), /^\d{2}$/)) {
-        const folder = join9(sessions, year, month, day);
+    for (const month of await namesIn(join10(sessions, year), /^\d{2}$/))
+      for (const day of await namesIn(join10(sessions, year, month), /^\d{2}$/)) {
+        const folder = join10(sessions, year, month, day);
         const [name] = await rolloutsIn(folder, isWanted);
-        if (name !== void 0) return join9(folder, name);
+        if (name !== void 0) return join10(folder, name);
       }
-  const archive = join9(codexHome, "archived_sessions");
+  const archive = join10(codexHome, "archived_sessions");
   const [archived] = await rolloutsIn(archive, isWanted);
-  return archived === void 0 ? null : join9(archive, archived);
+  return archived === void 0 ? null : join10(archive, archived);
 }
 function codexHomeOf(path) {
   const folder = dirname6(path);
@@ -7426,22 +7467,22 @@ var OFF = [
   "personality"
 ];
 async function modelHome(dir, personHome) {
-  const auth = join10(personHome, "auth.json");
+  const auth = join11(personHome, "auth.json");
   const hasSignInFile = await access(auth).then(
     () => true,
     () => false
   );
   if (!hasSignInFile) return null;
-  const home = join10(dir, "model-home");
-  const link = join10(home, "auth.json");
+  const home = join11(dir, "model-home");
+  const link = join11(home, "auth.json");
   try {
-    await mkdir7(home, { recursive: true });
+    await mkdir8(home, { recursive: true });
     const isLinked = await readlink2(link).catch(() => null) === auth;
     if (isLinked) return home;
     await keepNewerSignIn(link, auth);
     const made = `${link}.${randomUUID2()}`;
     await symlink2(auth, made);
-    await rename8(made, link);
+    await rename9(made, link);
     return home;
   } catch {
     return null;
@@ -7455,15 +7496,15 @@ async function keepNewerSignIn(link, auth) {
 }
 function codexAsk(exec, cli, dir, personHome) {
   return async (prompt, instructions, _kind, report) => {
-    const work = join10(dir, "exec");
-    const system = join10(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
-    const out = join10(work, `reply-${randomUUID2()}.txt`);
-    await mkdir7(work, { recursive: true });
+    const work = join11(dir, "exec");
+    const system = join11(dir, `inbox-system-${createHash2("sha256").update(instructions).digest("hex").slice(0, 12)}.md`);
+    const out = join11(work, `reply-${randomUUID2()}.txt`);
+    await mkdir8(work, { recursive: true });
     const home = await modelHome(dir, personHome);
-    if (await readFile6(system, "utf8").catch(() => "") !== instructions) await writeFile8(system, instructions);
+    if (await readFile7(system, "utf8").catch(() => "") !== instructions) await writeFile9(system, instructions);
     let off = [...OFF];
     for (let tries = 0; tries <= OFF.length; tries += 1) {
-      await rm5(out, { force: true });
+      await rm6(out, { force: true });
       const r = await exec(
         [
           cli,
@@ -7497,8 +7538,8 @@ function codexAsk(exec, cli, dir, personHome) {
         off = off.filter((f) => f !== unknown);
         continue;
       }
-      const text2 = r.code === 0 ? await readFile6(out, "utf8").catch(() => null) : null;
-      await rm5(out, { force: true });
+      const text2 = r.code === 0 ? await readFile7(out, "utf8").catch(() => null) : null;
+      await rm6(out, { force: true });
       if (text2 !== null) {
         report?.({ model: MODEL });
         return text2;
@@ -7534,18 +7575,18 @@ var inOrderFor = (dir, sessionId) => (fn) => resultsOrder.run(
 );
 var recordFiles = {
   write: async (path, text2) => {
-    await mkdir7(dirname7(path), { recursive: true });
+    await mkdir8(dirname7(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile8(tmp, text2);
-    await rename8(tmp, path);
+    await writeFile9(tmp, text2);
+    await rename9(tmp, path);
   },
-  list: (folder) => readdir6(folder).catch(() => []),
-  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm5(p, { force: true }))),
+  list: (folder) => readdir7(folder).catch(() => []),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm6(p, { force: true }))),
   removeFolder: (path) => rmdir2(path)
 };
 var statusRecords = (dir, sessionId) => ({
   host: "codex",
-  folder: join10(dir, "overview-calls"),
+  folder: join11(dir, "overview-calls"),
   session: sessionId,
   files: recordFiles
 });
@@ -7591,13 +7632,13 @@ async function main() {
   useQuestionHistory(questionHistoryPlace(process.env, dir));
   const { cliPath } = await readState(dir, sessionId);
   const cli = cliPath ?? await findCli(process.env, run, process.ppid);
-  const personHome = process.env.CODEX_HOME || join11(homedir3(), ".codex");
+  const personHome = process.env.CODEX_HOME || join12(homedir3(), ".codex");
   const ask = codexAsk(run, cli, dir, personHome);
   const onWrite = eachOnWrite(
     herdrOnWrite(process.env, run, dir, Date.now),
     registryOnWrite(process.env, dir, Date.now, null)
   );
-  const records = existsSync3(join11(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
+  const records = existsSync3(join12(pluginRoot, NEXT_BUILD_MARK)) ? statusRecords(dir, sessionId) : void 0;
   if (isStatusRefresh) await refreshStatus2(dir, sessionId, ask, Date.now, onWrite, records);
   else await runUpdates2(dir, sessionId, ask, Date.now, onWrite, records, delegateReader(herdrTarget(process.env), run));
 }
