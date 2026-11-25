@@ -120,7 +120,7 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
     }
     if (track.hasOpenForm && wasOpen) {
       drawnRows.set(motion, { track, openBlock: wasOpen })
-      for (const r of PR_GROUPS.flatMap(g => wasOpen.block.drawn[g] ?? [])) keepPanelLines(r.id)
+      for (const r of PR_GROUPS.flatMap(g => wasOpen.block.drawn[g] ?? [])) keepPanelLines(r.id, kept)
     }
     const empty = { threads: null, checks: null, cancelled: null }
 

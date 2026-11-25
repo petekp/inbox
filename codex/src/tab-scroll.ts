@@ -14,15 +14,43 @@ type Scroll = {
   target: number
   frameAt: number
   setTop: number
-  /** Removes the listeners that stop the scroll on a wheel, a touch or a press on the scroll bar. */
-  input: AbortController
 }
 
 let scroll: Scroll | null = null
 
-function endScroll() {
-  scroll?.input.abort()
-  scroll = null
+/** When the person last scrolled the page themselves, as `watchScrollInput` hears it, on `performance.now()`'s clock. */
+let scrolledAt = -Infinity
+
+/** Whether the person has scrolled the page themselves since `at`, on `performance.now()`'s clock. */
+export const hasScrolledSince = (at: number) => scrolledAt >= at
+
+/** The keys the browser scrolls the page with. The tab takes the arrows and j and k itself, to move between rows. */
+const SCROLL_KEYS = new Set([' ', 'PageDown', 'PageUp', 'Home', 'End'])
+
+const isTyping = (e: Event) =>
+  e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable="true"]') !== null
+
+const isScrollKey = (e: KeyboardEvent) => SCROLL_KEYS.has(e.key) && !isTyping(e)
+
+/** A press inside an element's box but right of its content, which is on its scroll bar. */
+const isScrollBarPress = (e: PointerEvent) =>
+  e.target instanceof Element && e.target.clientWidth > 0 && e.offsetX >= e.target.clientWidth
+
+const watchedWindows = new WeakSet<Window>()
+
+/** Notes each time the person scrolls the page: a wheel, a touch, a press on a scroll bar or a scroll key. Each one stops a scroll under way where it is. */
+function watchScrollInput(win: Window | null) {
+  if (!win || watchedWindows.has(win)) return
+  watchedWindows.add(win)
+  const onInput = () => {
+    scrolledAt = performance.now()
+    scroll = null
+  }
+  const options = { passive: true, capture: true }
+  win.addEventListener('wheel', onInput, options)
+  win.addEventListener('touchstart', onInput, options)
+  win.addEventListener('pointerdown', e => isScrollBarPress(e) && onInput(), options)
+  win.addEventListener('keydown', e => isScrollKey(e) && onInput(), options)
 }
 
 /** The longest step one animation frame takes, so a frame that comes late does not jump the list. */
@@ -58,22 +86,11 @@ function nearestTop(box: Element, el: Element, from: number): number {
   return Math.min(most, Math.max(0, to))
 }
 
-function stopOnInput(box: Element): AbortController {
-  const input = new AbortController()
-  const target = box === box.ownerDocument.scrollingElement ? box.ownerDocument.defaultView : box
-  target?.addEventListener('wheel', endScroll, { passive: true, signal: input.signal })
-  target?.addEventListener('touchstart', endScroll, { passive: true, signal: input.signal })
-  const isOnScrollBar = (e: Event) => e.target === box
-  target?.addEventListener('pointerdown', e => isOnScrollBar(e) && endScroll(), { passive: true, signal: input.signal })
-
-  return input
-}
-
 function frame(now: number) {
   const s = scroll
   if (!s) return
   if (!s.box.isConnected || !s.el.isConnected) {
-    endScroll()
+    scroll = null
     return
   }
   const shift = s.box.scrollTop - s.setTop
@@ -90,7 +107,7 @@ function frame(now: number) {
   s.setTop = isDone ? s.target : s.at.x
   s.box.scrollTop = s.setTop
   s.setTop = s.box.scrollTop
-  if (isDone) endScroll()
+  if (isDone) scroll = null
   else requestAnimationFrame(frame)
 }
 
@@ -100,14 +117,15 @@ function frame(now: number) {
  * where it is, at its speed, and the target is judged from where that scroll was going. Each frame judges the target
  * again from where `el` is then, since rows glide while the list scrolls. A move the browser makes to the scroll
  * position, as when scroll anchoring keeps the view still while rows above it change height, carries the scroll with
- * it. A wheel, a touch or a press on the scroll bar stops it where it is.
+ * it. A wheel, a touch, a press on a scroll bar or a scroll key stops it where it is.
  */
 export function scrollToNearest(el: Element, isMoved: boolean) {
   const box = scrollBoxOf(el)
+  watchScrollInput(box.ownerDocument.defaultView)
   const running = scroll?.box === box ? scroll : null
   const target = nearestTop(box, el, running ? running.target : box.scrollTop)
   if (!isMoved) {
-    endScroll()
+    scroll = null
     box.scrollTop = target
     return
   }
@@ -117,9 +135,8 @@ export function scrollToNearest(el: Element, isMoved: boolean) {
     return
   }
   if (Math.abs(target - box.scrollTop) < HEIGHT_SPRING.epsilon) return
-  endScroll()
   const at = { x: box.scrollTop, v: 0 }
   const frameAt = performance.now()
-  scroll = { box, el, lead: at, at, target, frameAt, setTop: box.scrollTop, input: stopOnInput(box) }
+  scroll = { box, el, lead: at, at, target, frameAt, setTop: box.scrollTop }
   requestAnimationFrame(frame)
 }

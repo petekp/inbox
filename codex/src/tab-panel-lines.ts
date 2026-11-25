@@ -96,9 +96,11 @@ export function stepPanelLines(
 }
 
 /** Keeps the panel lines a row drew last, unstepped, for a row drawn again from an earlier draw, as a settling PR block's. */
-export function keepPanelLines(id: string) {
+export function keepPanelLines(id: string, kept: Set<string>) {
   const press = lastPressLines.get(id)
   const status = lastStatusLines.get(id)
   if (press) pressLines.set(id, press)
   if (status) statusLines.set(id, status)
+  for (const l of press ?? []) kept.add(pressMotion(l.id))
+  for (const l of status ?? []) kept.add(statusMotion(l.id))
 }
