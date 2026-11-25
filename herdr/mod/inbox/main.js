@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-25T02:15:29.700Z. 377672 characters follow.
+// Built at 2026-11-25T08:32:28.276Z. 377860 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -6563,6 +6563,9 @@ function faintOf(t, under = t.background) {
   return faintOver(flatten(t.muted, page), page);
 }
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
+var TIME_LEFT_DARK_SHARE = 0.12;
+var TIME_LEFT_LIGHT_SHARE = 0.2;
+var timeLeftFillOf = (t) => tint(t.foreground, isLightTheme(t) ? TIME_LEFT_LIGHT_SHARE : TIME_LEFT_DARK_SHARE);
 function flatten(c, under) {
   const alpha = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1;
   return alpha === 1 ? c.slice(0, 7) : mixInto(c.slice(0, 7), under, alpha);
@@ -6635,7 +6638,7 @@ var checkboxEl = (color) => div().relative().flex_none().w(CHECKBOX_PX).h(CHECKB
 import { div as div2 } from "gpui-kit";
 var TIMED_W = 64;
 function timeLeftEl(id, left, runsOutAt, now, t) {
-  const cut = div2().id(`time left ${id}`).absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div2().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(t.hover));
+  const cut = div2().id(`time left ${id}`).absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div2().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(timeLeftFillOf(t)));
   if (left.is === "paused")
     return cut.w(left.share * TIMED_W);
   const step = Math.min(TIME_LEFT_STEP_MS, Math.max(0, runsOutAt - now));

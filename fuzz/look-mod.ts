@@ -72,13 +72,19 @@ export async function runMod(seed: number, runs: number, out: string): Promise<{
   const seedLines = MOD_SEEDS.map((s, i) => {
     const failures = found.get(`seed-${i}`) ?? []
     const isAsIssueSays = failures.some(f => f.rule === s.rule && issueOf(f) === s.issue)
+    const isFixedWhileOpen = failures.length === 0 && s.isOpen
     const verdict =
       failures.length === 0
-        ? 'passes, though its issue is open: the issue is fixed or the harness misses it'
+        ? s.isOpen
+          ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds.ts in the same PR`
+          : 'passes'
         : isAsIssueSays
           ? 'fails as its issue says'
           : `fails, but not as its issue says (${failures.map(f => f.rule).join(', ')})`
-    return { line: `mod seed #${s.issue}, ${s.name}: ${verdict}`, isBroken: failures.length > 0 && !isAsIssueSays }
+    return {
+      line: `mod seed #${s.issue}, ${s.name}: ${verdict}`,
+      isBroken: isFixedWhileOpen || (failures.length > 0 && !isAsIssueSays),
+    }
   })
   const counts = new Map<string, { cases: number; issue: number | null }>()
   for (const { name, c } of generated) {

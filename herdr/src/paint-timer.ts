@@ -1,6 +1,6 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
-import { BUTTON_H } from './paint-theme'
+import { BUTTON_H, timeLeftFillOf } from './paint-theme'
 import type { Theme } from './paint-theme'
 import { TIME_LEFT_STEP_MS, timeLeftShare } from './time-left'
 import type { TimeLeft } from './time-left'
@@ -30,7 +30,7 @@ export function timeLeftEl(id: string, left: TimeLeft, runsOutAt: number, now: n
         .w(TIMED_W)
         .h(BUTTON_H)
         .rounded(BUTTON_H / 2)
-        .bg(t.hover),
+        .bg(timeLeftFillOf(t)),
     )
   if (left.is === 'paused') return cut.w(left.share * TIMED_W)
   const step = Math.min(TIME_LEFT_STEP_MS, Math.max(0, runsOutAt - now))

@@ -2040,6 +2040,11 @@ function readKind(kind) {
 var EXPIRED = "expired, unanswered";
 var NOT_AN_ANSWER = new RegExp(`^\\s*(?:done\\s*:|(?:${OVERTAKEN_OUTCOMES}|no longer relevant|dealt with)\\b)`, "i");
 
+// ../core/domain/question-checks.ts
+var REPORT_VERB = String.raw`\b(?:report|tell|let \w+ know|say|reply|answer|confirm)\b`;
+var SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`;
+var NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b`, "i");
+
 // ../core/domain/earlier-answers.ts
 var K1 = 1.2;
 var B = 0.75;
@@ -5402,7 +5407,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
           turnReadFailedAt: s.turnReadFailedAt,
-          version: "0.8.0",
+          version: "0.7.0",
           isNextBuild: existsSync(join7(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
@@ -5514,7 +5519,7 @@ function registryOnWrite(env, dir, now, pid, log = herdrLog(dir)) {
     await writeRegistryEntry(
       files3,
       folder,
-      { host: "codex", sessionId: s.sessionId, agent: CODEX2.agent, projectFolder: s.root, version: "0.8.0", herdr },
+      { host: "codex", sessionId: s.sessionId, agent: CODEX2.agent, projectFolder: s.root, version: "0.7.0", herdr },
       s,
       viewOf(s, at),
       at,

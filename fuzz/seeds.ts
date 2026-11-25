@@ -267,7 +267,7 @@ export const MOD_SEEDS: { name: string; issue: number; isOpen: boolean; rule: st
     name: 'a finding whose title holds escapes, in the terminal',
     rule: 'drawn',
     issue: 830,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'terminal',
       columns: 80,
