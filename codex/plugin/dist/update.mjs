@@ -3909,7 +3909,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
 // ../core/view/session-view.ts
 var PRESS_TIMEOUT_MS = 6e4;
 function withoutStaleResult(last, now) {
-  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS) return last;
+  if (last.result?.state !== "pending" || now - last.result.at < PRESS_TIMEOUT_MS) return last;
   const { result: _result, ...rest } = last;
   return rest;
 }

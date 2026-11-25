@@ -8837,7 +8837,7 @@ function seenSubjectIds(row) {
 // ../core/view/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
-  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
+  if (last.result?.state !== "pending" || now - last.result.at < PRESS_TIMEOUT_MS)
     return last;
   const { result: _result, ...rest } = last;
   return rest;
