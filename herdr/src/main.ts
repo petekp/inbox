@@ -22,9 +22,7 @@ import {
 import { publishedSessionPath, publishedSessionsFolder } from '../../core/remote/herdr'
 import type { SessionView } from '../../core/view/session-view'
 import type { ShownTab } from '../../core/view/tabs'
-import { notesOf } from '../../core/view/ui-controller'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
-import { holdsOf } from '../../core/view/ui-controller-reply'
 import { collapsedOf } from '../../core/view/ui-controller-selection'
 import { closed, newRowsOf, opened } from '../../core/view/ui-controller-tabs'
 import { freshUi } from '../../core/view/ui-controller-types'
@@ -71,7 +69,8 @@ import type { Paint, Theme } from './paint-theme'
 import { PressQueue } from './press-queue'
 import { herdrIo } from './io'
 import { runHere } from './run-here'
-import { readView, screenOf } from './screen'
+import { screenOf } from './screen'
+import { ViewCache } from './view-cache'
 import { LookReports } from './look-reports'
 import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, statusDrawn } from './status-look'
 
@@ -105,6 +104,10 @@ export default class Inbox extends View {
   tracks: Tracks = NO_TRACKS
   drawnTabs: TabCell[] = []
   heights = new Heights()
+  viewCache = new ViewCache(() => {
+    const read = this.readSession
+    return read && { read, ui: this.ui }
+  })
   tracksOf = ''
   /** The blocks of the last draw, whose buttons give a key's press its label and effects. */
   blocks: Block[] = []
@@ -131,7 +134,10 @@ export default class Inbox extends View {
       }
     })
     cx.timer.every(REREAD_MS, cx => this.sessionId && this.load(this.sessionId, cx))
-    cx.timer.every(AGE_TICK_MS, cx => cx.notify())
+    cx.timer.every(AGE_TICK_MS, cx => {
+      this.viewCache.prepare(cx, true)
+      cx.notify()
+    })
     cx.timer.every(LOOK_TICK_MS, cx => cx.spawn(() => this.checkLook()))
   }
 
@@ -141,9 +147,7 @@ export default class Inbox extends View {
 
   /** The session's view at `now`, with the rows and notes the controller holds, or null before a read. */
   viewAt(now: number): SessionView | null {
-    const read = this.readSession
-
-    return read && readView(read, now, holdsOf(this.ui, now), notesOf(this.ui))
+    return this.viewCache.at(now)
   }
 
   /**
@@ -161,6 +165,7 @@ export default class Inbox extends View {
     this.syncInput(isMove)
     for (const c of applied.commands) this.run(c, from, cx)
     this.schedule(applied.nextWakeAt, view, cx)
+    this.viewCache.prepare(cx)
     if (!this.endPresses(cx) && !events.every(e => e.type === 'list-input' || e.type === 'edit-draft')) cx.notify()
   }
 
@@ -342,14 +347,14 @@ export default class Inbox extends View {
     const t = theme() as Theme
     const now = Date.now()
     const ui = this.ui
+    const raw = this.viewAt(now)
     const presses = {
       now,
-      holds: holdsOf(ui, now),
-      notes: notesOf(ui),
+      view: raw,
+      shownSince: ui.shownSince,
       collapsed: (view: SessionView) => collapsedOf(ui, view),
       queue: this.queue,
     }
-    const raw = this.viewAt(now)
     const lookUi = lookUiOf(ui, raw && { ...raw, collapsed: collapsedOf(ui, raw) })
     const screen = screenOf(this.followed, this.read, lookUi, presses)
     this.drawTimer?.cancel()

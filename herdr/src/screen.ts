@@ -92,12 +92,12 @@ export const readView = (
   )
 
 /**
- * What the look holds besides the session: rows held in place, the notes its presses left, the collapses it drew
- * before the session shows them, and its presses with the lines they left.
+ * What the look holds besides the session: the view of its read, or null before a read, when it began showing the
+ * session, the collapses it drew before the session shows them, and its presses with the lines they left.
  */
 type LookPresses = {
-  holds: Holds
-  notes: Record<string, RowNote>
+  view: SessionView | null
+  shownSince: number | null
   collapsed?: (view: SessionView) => string[]
   queue: Pick<PressQueue, 'outs' | 'lines'>
 }
@@ -110,15 +110,14 @@ export function screenOf(
   o: { now: number } & LookPresses,
 ): Screen {
   const shown = messageOf(followed, read)
-  if (shown !== null || read?.is !== 'read') return shown ?? message(READING_TEXT, null)
-  const { holds } = o
-  const raw = readView(read, o.now, holds, o.notes)
+  const raw = o.view
+  if (shown !== null || read?.is !== 'read' || raw === null) return shown ?? message(READING_TEXT, null)
   const view = o.collapsed ? { ...raw, collapsed: o.collapsed(raw) } : raw
   const screen = {
     view,
     agent: read.envelope.agent,
     now: o.now,
-    shownSince: holds.shownSince ?? o.now,
+    shownSince: o.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs,
   }

@@ -2,12 +2,15 @@ import type { Session } from '../../types'
 import { demoSession } from '../../core/view/demo'
 import { herdrEnvelope } from '../../core/remote/herdr-envelope'
 import { sessionView } from '../../core/view/session-view'
-import { SETTLED_MS } from '../../core/view/timing'
+import { NO_HOLDS, SETTLED_MS } from '../../core/view/timing'
+import type { Holds } from '../../core/view/timing'
 import type { ShownTab } from '../../core/view/tabs'
 import { applyPrPress } from '../../core/view/pr-tab'
 import { tabBlocks } from '../src/draw'
 import type { LookScreen, LookUi } from '../src/draw'
 import type { Block } from '../src/blocks'
+import type { ReadSession } from '../src/files'
+import { readView } from '../src/screen'
 
 export const NOW = Date.UTC(2026, 10, 10, 12)
 export const AGENT = 'Claude'
@@ -41,6 +44,13 @@ export function demoScreen(sample = readSample()): LookScreen {
     isFetchingPrs: false,
   }
 }
+
+export const lookPresses = (read: ReadSession | null, holds: Holds = { ...NO_HOLDS, shownSince: NOW }, now = NOW) => ({
+  now,
+  view: read?.is === 'read' ? readView(read, now, holds, {}) : null,
+  shownSince: holds.shownSince,
+  queue: { outs: [], lines: {} },
+})
 
 export const uiOn = (tab: ShownTab, changes: Partial<LookUi> = {}): LookUi => ({
   tab,
