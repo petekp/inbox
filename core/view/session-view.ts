@@ -64,9 +64,9 @@ export type SessionView = InboxView & {
   drawnVersions: DrawnVersions
 }
 
-/** Drops a Local result still pending after `PRESS_TIMEOUT_MS`, whose press will not finish. */
+/** Drops a Local result pending for `PRESS_TIMEOUT_MS`, whose press will not finish, at the time `readWakeAt` gives. */
 function withoutStaleResult(last: LastAction, now: number): LastAction {
-  if (last.result?.state !== 'pending' || now - last.result.at <= PRESS_TIMEOUT_MS) return last
+  if (last.result?.state !== 'pending' || now - last.result.at < PRESS_TIMEOUT_MS) return last
   const { result: _result, ...rest } = last
 
   return rest

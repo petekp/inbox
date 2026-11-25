@@ -104,7 +104,7 @@ export default class Inbox extends View {
   tracks: Tracks = NO_TRACKS
   drawnTabs: TabCell[] = []
   heights = new Heights()
-  views = new ViewCache(() => {
+  viewCache = new ViewCache(() => {
     const read = this.readSession
     return read && { read, ui: this.ui }
   })
@@ -135,7 +135,7 @@ export default class Inbox extends View {
     })
     cx.timer.every(REREAD_MS, cx => this.sessionId && this.load(this.sessionId, cx))
     cx.timer.every(AGE_TICK_MS, cx => {
-      this.views.prepare(cx, true)
+      this.viewCache.prepare(cx, true)
       cx.notify()
     })
     cx.timer.every(LOOK_TICK_MS, cx => cx.spawn(() => this.checkLook()))
@@ -147,7 +147,7 @@ export default class Inbox extends View {
 
   /** The session's view at `now`, with the rows and notes the controller holds, or null before a read. */
   viewAt(now: number): SessionView | null {
-    return this.views.at(now)
+    return this.viewCache.at(now)
   }
 
   /**
@@ -165,7 +165,7 @@ export default class Inbox extends View {
     this.syncInput(isMove)
     for (const c of applied.commands) this.run(c, from, cx)
     this.schedule(applied.nextWakeAt, view, cx)
-    this.views.prepare(cx)
+    this.viewCache.prepare(cx)
     if (!this.endPresses(cx) && !events.every(e => e.type === 'list-input' || e.type === 'edit-draft')) cx.notify()
   }
 

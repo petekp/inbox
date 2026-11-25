@@ -14,13 +14,12 @@ type Shown = { read: Read; ui: UiState } | null
 type Kept = { read: Read; ui: UiState; view: SessionView; until: number }
 
 /** What `prepare` uses of the look's context: a timer and a request to draw again. */
-type Clock = { timer: { after(ms: number, fn: (cx: Clock) => void): { cancel(): void } }; notify(): void }
+type LookContext = { timer: { after(ms: number, fn: (cx: LookContext) => void): { cancel(): void } }; notify(): void }
 
 /**
  * The session's view for one read and one controller state, built once and kept until the clock changes it
- * (`readWakeAt`). Herdr stops a draw that runs past 50 ms, and an event, task or timer past 500 ms. A long session's
- * view takes most of a draw to build, so the look builds it in `prepare`, where its read or state changes, and when
- * the clock changes it. A draw reads it with `at`.
+ * (`readWakeAt`). Herdr stops a draw that runs past 50 ms, and an event, task or timer past 500 ms, so the look builds
+ * the view in `prepare`, where its read or state changes and when the clock changes it, and a draw reads it with `at`.
  */
 export class ViewCache {
   private kept: Kept | null = null
@@ -42,7 +41,7 @@ export class ViewCache {
    * Builds the view outside a draw, afresh with `isFresh` for the ages it draws, which change each minute without a
    * wake. It builds the view again and draws when the clock changes it.
    */
-  prepare(cx: Clock, isFresh = false): void {
+  prepare(cx: LookContext, isFresh = false): void {
     this.timer?.cancel()
     this.timer = null
     const s = this.shown()
