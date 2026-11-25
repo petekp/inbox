@@ -11,7 +11,7 @@ export function fadeThrough(el: HTMLElement, from: number, steps: FadeStep[], de
   const [step, ...rest] = steps
   if (!step) return
   const end = steps.at(-1)!.to
-  const isPassed = (step.to - from) * (end - from) <= 0
+  const isPassed = (step.to - from) * (end - from) < 0
   if (isPassed && rest.length > 0) return fadeThrough(el, from, rest, delay)
   const anim = fade(el, from, step.to, step.ms, rest.length > 0 || step.to < 1, false, delay)
   if (rest.length > 0)

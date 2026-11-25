@@ -1,4 +1,4 @@
-import { LEAVE_FADE_MS, titleFades, titleSwapMs } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, enterDelayMs, LEAVE_FADE_MS, titleFades, titleSwapMs } from '../../core/view/row-motion'
 import { FRAME_MS } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
 import { fade, fadeShown, glide, glides, isRunning, springOf, stopFadeOut } from './tab-glide'
@@ -54,38 +54,62 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
   glides.get(line)?.anim.cancel()
   const to = line.getBoundingClientRect().height
   const from: SpringState = held ?? { x: Math.min(title.short.getBoundingClientRect().height, to), v: 0 }
-  if (to - from.x < 0.5 && Math.abs(from.v) * FRAME_MS < 0.5) {
+  const isAtOpen = to - from.x < 0.5 && Math.abs(from.v) * FRAME_MS < 0.5
+  const shows = isAtOpen ? 0 : delay + titleSwapMs(to, from)
+  for (const part of aftersOf(line))
+    if (fadeShown(part) !== null) fade(part, fadeShown(part) ?? 0, 1, ENTER_FADE_MS, false, false, shows)
+  if (isAtOpen) {
     if (fadeShown(title.full) !== null) swapTitle(title, true, 0)
     return
   }
   glide(line, 'height', from, to, false, false, delay)
-  swapTitle(title, true, delay + titleSwapMs(to, from))
+  swapTitle(title, true, shows)
+}
+
+/** The statuses a closing row's line draws only while it draws its open form, in both forms of its title. */
+const openAftersOf = (line: HTMLElement) => [...line.querySelectorAll<HTMLElement>(':scope > .text > .open-only')]
+
+/** The status parts of a row's line, in both forms of its title. */
+const aftersOf = (line: HTMLElement) => [
+  ...line.querySelectorAll<HTMLElement>(':scope > .text > .part:not(.title-part)'),
+]
+
+/** Whether a closing row's line draws a status only its open form has, which the closed line `to` px tall lacks room for. */
+function dropsOpenAfter(line: HTMLElement, to: number): boolean {
+  const short = line.querySelector<HTMLElement>(':scope > .text.short')
+  const needs = short ? short.getBoundingClientRect().height : 0
+
+  return openAftersOf(line).length > 0 && needs - to >= 0.5
 }
 
 /**
  * Starts a closing row's title move, from the line's height `from` to the closed title's height `to`. The title fades to
  * its closed form while the line holds its height, as the row's panel fades out, and the line shrinks after `delay` ms,
  * with its row. A line that holds too briefly for the fade takes the closed form at once. A title the closed form shows
- * whole keeps its full form, unless an open it turns back had hidden it.
+ * whole keeps its full form, unless an open it turns back had hidden it. A status only the open form draws, which the
+ * closed line has no room for, fades out with the title, or goes at once with it, so the shrinking line never cuts it.
  */
 export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
   const title = titleOf(line)
-  const end = title ? Math.max(to, title.short.getBoundingClientRect().height) : to
-  if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null))
-    swapTitle(title, false, 0, delay >= LEAVE_FADE_MS)
+  const isFaded = delay >= LEAVE_FADE_MS
+  const isAfterDropped = dropsOpenAfter(line, to)
+  if (isAfterDropped)
+    for (const part of openAftersOf(line)) fade(part, fadeShown(part) ?? 1, 0, isFaded ? LEAVE_FADE_MS : 0, true)
+  const end = title && !isAfterDropped ? Math.max(to, title.short.getBoundingClientRect().height) : to
+  if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null)) swapTitle(title, false, 0, isFaded)
   glide(line, 'height', from, end, true, false, delay)
 }
 
 /**
  * Lets go of a line held or gliding, once its row's state is no longer `closing`, so the row measures its natural
  * height. A row whose close has ended takes the closed form's height, with its meta, at once, since its own height
- * already holds that space, and shows the full title the close hid. While the row opens, it returns where the
+ * already holds that space, and shows the full title and the statuses the close hid. While the row opens, it returns where the
  * line was, so `openTitle` moves on from there. Null when the row holds no line, or the line was at rest.
  */
 export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | null {
   const line = el.querySelector<HTMLElement>(LINE)
   const full = line && fullOf(line)
-  if (full && !isOpening) stopFadeOut(full)
+  if (full && !isOpening) for (const el of [full, ...aftersOf(line)]) stopFadeOut(el)
   const was = line && glides.get(line)
   if (!line || !was || was.anim.playState === 'idle') return null
   const held = springOf(line, line.getBoundingClientRect().height)
@@ -94,10 +118,55 @@ export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | 
   return isOpening ? held : null
 }
 
-/** Runs `measure` with every line glide inside `el` at its end, then puts each back, so `el` measures its natural height. */
-export function atEndLines<T>(el: HTMLElement, measure: () => T): T {
-  const running = [...el.querySelectorAll<HTMLElement>(LINE)].flatMap(line => {
-    const g = glides.get(line)
+/** A row's own line, and not the lines of the rows inside it, as in a PR block. */
+const OWN_LINE = ':scope > .row > .content > .line'
+
+/** The status a row's line draws after its title. */
+const afterOf = (line: HTMLElement) => line.querySelector<HTMLElement>(':scope > .text:not(.short) .after')
+
+/** A row's line before a draw: where its height is, and the status it drew after its title. */
+export type DrawnLine = { el: HTMLElement; from: SpringState; after: string | null }
+
+export function drawnLine(el: HTMLElement): DrawnLine | null {
+  const line = el.querySelector<HTMLElement>(OWN_LINE)
+  if (!line) return null
+
+  return {
+    el: line,
+    from: springOf(line, line.getBoundingClientRect().height),
+    after: afterOf(line)?.textContent ?? null,
+  }
+}
+
+/**
+ * Glides a resting row's line to its new height, as when a status after its title wraps to a line of its own, so the
+ * lines under it move with the row's edge as the row glides `rowMove` px to its new height. A status the line did not
+ * draw before fades in once the line has nearly grown to hold it. A line whose move the row's does not take in, as when
+ * a closed row's Holds up line moves into it from under it, takes its height at once.
+ */
+export function glideLine(el: HTMLElement, was: DrawnLine | null, rowMove: number) {
+  const line = el.querySelector<HTMLElement>(OWN_LINE)
+  if (!line || !was || was.el !== line) return
+  glides.get(line)?.anim.cancel()
+  const to = line.getBoundingClientRect().height
+  const { from } = was
+  const move = to - from.x
+  const isTakenIn = move * rowMove > 0 && Math.abs(rowMove) + 0.5 >= Math.abs(move)
+  if (!isTakenIn && Math.abs(from.v) * FRAME_MS < 0.5) return
+  glide(line, 'height', from, to)
+  const after = afterOf(line)
+  const part = after?.closest<HTMLElement>('.part')
+  if (part && to > from.x && after?.textContent !== was.after)
+    fade(part, 0, 1, ENTER_FADE_MS, false, false, enterDelayMs(to, from))
+}
+
+/**
+ * Runs `measure` with every glide inside `el` at its end, a line's or a block's, such as a press line growing in, then
+ * puts each back, so `el` measures the height it comes to rest at.
+ */
+export function atEndGlides<T>(el: HTMLElement, measure: () => T): T {
+  const running = [...el.querySelectorAll<HTMLElement>(`${LINE}, [data-motion]`)].flatMap(inner => {
+    const g = glides.get(inner)
 
     return g && isRunning(g.anim) ? [g.anim] : []
   })
