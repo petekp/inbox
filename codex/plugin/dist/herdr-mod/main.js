@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-25T08:32:28.276Z. 377860 characters follow.
+// Built at 2026-11-25T11:45:03.298Z. 378033 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -5587,13 +5587,16 @@ function enterDelayMs(height, from = { x: 0, v: 0 }) {
   const at = springFrames(from, height).findLastIndex((x) => height - x > SLIDE_PX / 2) + 1;
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
 }
-var TURNED_BACK_CUT_OPACITY = 0.5;
+var CUT_OPACITY = 0.2;
+var FAINT_OPACITY = CUT_OPACITY / 2;
 function turnBackFades(height, from) {
   const dimMs = enterDelayMs(height, from);
   const full = { to: 1, ms: ENTER_FADE_MS };
-  return dimMs > 0 ? [{ to: TURNED_BACK_CUT_OPACITY, ms: dimMs }, full] : [full];
+  const faintMs = Math.min(dimMs, ENTER_FADE_MS * FAINT_OPACITY);
+  const holdMs = dimMs - faintMs;
+  const hold = holdMs > 0 ? [{ to: FAINT_OPACITY, ms: holdMs }] : [];
+  return dimMs > 0 ? [{ to: FAINT_OPACITY, ms: faintMs }, ...hold, full] : [full];
 }
-var CUT_OPACITY = 0.2;
 function faintCloseFades(opacity) {
   const out = { to: 0, ms: LEAVE_FADE_MS };
   return opacity > CUT_OPACITY ? [{ to: CUT_OPACITY, ms: 0 }, out] : [out];
