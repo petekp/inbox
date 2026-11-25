@@ -160,6 +160,9 @@ at each Stop, to find the question dialogs the agent opened in the ending turn.
     in an earlier inbox turn (`codex/src/dialogs.ts:noteTurnDialogs`). Stop
     writes the questions of a dialog that a reply in this form answered with
     that reply's answers, and the rest as open (`codex/src/dialogs.ts:dialogLines`).
+    A catch-up writes each dialog of the conversation it reads the same way,
+    from the replies in this form anywhere after it
+    (`codex/src/rollout-turns.ts:rolloutTurns`).
   - [live 2026-10-25, ChatGPT app in the inbox-ui VM, GPT-6.1 Sol] An inbox
     answer sent in this form closes the dialog when its queued turn starts. In
     an idle thread that was about 1 s after the press. With the dialog's turn

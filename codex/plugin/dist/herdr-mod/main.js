@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-24T17:22:53.967Z. 377026 characters follow.
+// Built at 2026-11-25T02:15:29.700Z. 377672 characters follow.
 
 // src/main.ts
 import { View, div as div16 } from "gpui-kit";
@@ -2856,7 +2856,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
-    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now) : null;
+    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
     const talkOutSince = isTalkOut ? under.at : undefined;
     return { is: "local", result, ...talkOutSince === undefined ? {} : { talkOutSince } };
@@ -3474,15 +3474,17 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   if (item.kind === "task")
     return [
       ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
+      ...item.options.length > 0 ? item.options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
+        isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+      })) : [action({ action: "done", id }, "Done", "mark")],
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map((option, n) => action({ action: "answer", id, option }, option, "mark", {
@@ -3568,7 +3570,7 @@ function rowKeyPlan(r, isAllShown) {
     const { press } = a;
     if (press.action === "answer" || press.action === "step") {
       const hotkey = letters < CHOICE_KEYS.length ? { hotkey: CHOICE_KEYS[letters++] } : {};
-      if (press.action === "answer") {
+      if (press.action === "answer" && r.type !== "task") {
         const note = optionNote(r.optionDescriptions.find((d) => d.option === press.option));
         options.push({ action: { ...a, press }, note, ...hotkey });
       } else
@@ -3663,7 +3665,8 @@ function inboxView({
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
-  const pressOutSinceWhere = (isOnTab) => earliestOf(Object.entries(lastActions).map(([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now)) : null));
+  const reportedAtOf = (id) => (ledger.items.find((i) => i.id === id) ?? ledger.closed.find((c) => c.id === id)?.item)?.reportedAt;
+  const pressOutSinceWhere = (isOnTab) => earliestOf(Object.entries(lastActions).map(([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, undefined, turns, now, reportedAtOf(id))) : null));
   const placingOn = (pressOutSince) => ({
     shownSince,
     lastTypedMessageAt,
@@ -4030,7 +4033,8 @@ function subjectInPlaceOf(o, m, items) {
   const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
   const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : undefined;
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
-  return only !== undefined && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+  const isDoneWithOpenWork = m.status === "done" && only !== undefined && isOpen(only);
+  return only !== undefined && !isAskedDirectly && !isDoneWithOpenWork && isNamedAlike(m.name, only.name) ? only : null;
 }
 function isTitleRepeated(title, subjects, rows) {
   const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
@@ -4038,6 +4042,13 @@ function isTitleRepeated(title, subjects, rows) {
   if (work.filter(isOpen).length > 1)
     return false;
   return work.some((x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name));
+}
+function headPart(head, goal, subjects, rows) {
+  if (head === null || goal !== null && !goal.isMet)
+    return [];
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title;
+  const hasContentUnder = rows.length > 0 || goal === null && head.description !== null;
+  return hasContentUnder && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -4185,7 +4196,6 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   ];
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
-  const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
@@ -4194,11 +4204,10 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows) ? null : head.title;
-  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
+  const headRows = headPart(head, g, subjects, listRows);
   const rows = [
-    ...headPart,
-    ...headPart.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
+    ...headRows,
+    ...headRows.length > 0 && listRows[0]?.id === "other" ? listRows.slice(1) : listRows
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some((c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id)));
   const workCount = (p) => p.shown.length + p.named.length + p.foldedOpen.length + p.foldedDone.length;
@@ -4230,7 +4239,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     milestones: g.milestones.map((m, n) => withRows(m, underMilestones[n]))
   };
   return withoutRepeatedNow({
-    isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+    isEmpty: rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
     head,
     ...goalParts,
     goal,
@@ -8658,7 +8667,7 @@ var LOOK_GAP_MS = 3 * LOOK_TICK_MS;
 function isPaneShown(paneId, panes, spaces, window2) {
   const own = panes.find((p) => p.pane === paneId);
   const tab = spaces.find((s) => s.active)?.tabs.find((t) => t.id === own?.tab);
-  return own !== undefined && window2.active && tab?.active === true && (!tab.zoomed || own.zoomed);
+  return own !== undefined && window2?.active === true && tab?.active === true && (!tab.zoomed || own.zoomed);
 }
 function statusPlaced(blocks, heightOf, page, room) {
   const subjects = new Map(statusListRows(page).map((r) => [r.id, seenSubjectIds(r)]));

@@ -1857,7 +1857,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
-    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now) : null;
+    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
     const talkOutSince = isTalkOut ? under.at : void 0;
     return { is: "local", result, ...talkOutSince === void 0 ? {} : { talkOutSince } };
@@ -2681,11 +2681,11 @@ function parseReply(text2, source = null) {
   const lines = text2.split(NL4);
   const newLines = [];
   for (const raw of lines.slice(lastAnswerStart(lines))) {
-    const parsed2 = keyOf(raw);
-    if (!parsed2) continue;
+    const parsed3 = keyOf(raw);
+    if (!parsed3) continue;
     seen += 1;
-    const key = parsed2.key;
-    const value = dash(parsed2.value) ?? "";
+    const key = parsed3.key;
+    const value = dash(parsed3.value) ?? "";
     if (key === "NONE") continue;
     if (key === "CLOSED" || key === "FIXED") {
       const [id, outcome] = value.split("|").map((s) => s.trim());
@@ -2707,7 +2707,7 @@ function parseReply(text2, source = null) {
         newLines.push(void 0);
         continue;
       }
-      const options = rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean);
+      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
@@ -2730,8 +2730,8 @@ function parseReply(text2, source = null) {
     } else if (key === "HELP") {
       const [target, kind, ...tail] = value.split("|");
       const { help, name } = helpFields(tail, source);
-      const parsed3 = readHelp((kind ?? "").trim(), help, name, blocks, source);
-      if (parsed3 && target) helps.push({ target: target.trim(), help: parsed3 });
+      const parsed4 = readHelp((kind ?? "").trim(), help, name, blocks, source);
+      if (parsed4 && target) helps.push({ target: target.trim(), help: parsed4 });
     }
   }
   for (const { target, help } of helps) {
@@ -3012,7 +3012,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one. For a task that checks something whose outcome you need, such as whether a fix works on their screen: the outcomes the user can report, in the same form. Leave it out for a task you only need done, such as a sign-in."
     },
     option_notes: {
       type: "array",
@@ -3202,15 +3202,19 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   if (item.kind === "task")
     return [
       ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
+      ...item.options.length > 0 ? item.options.map(
+        (option, n) => action({ action: "answer", id, option }, option, "mark", {
+          isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+        })
+      ) : [action({ action: "done", id }, "Done", "mark")],
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map(
@@ -3259,9 +3263,10 @@ function inboxView({
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
+  const reportedAtOf = (id) => (ledger.items.find((i) => i.id === id) ?? ledger.closed.find((c) => c.id === id)?.item)?.reportedAt;
   const pressOutSinceWhere = (isOnTab) => earliestOf(
     Object.entries(lastActions).map(
-      ([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, void 0, turns, now)) : null
+      ([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, void 0, turns, now, reportedAtOf(id))) : null
     )
   );
   const placingOn = (pressOutSince) => ({
@@ -3658,7 +3663,8 @@ function subjectInPlaceOf(o, m, items) {
   const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
   const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : void 0;
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
-  return only !== void 0 && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+  const isDoneWithOpenWork = m.status === "done" && only !== void 0 && isOpen(only);
+  return only !== void 0 && !isAskedDirectly && !isDoneWithOpenWork && isNamedAlike(m.name, only.name) ? only : null;
 }
 function isTitleRepeated(title, subjects, rows) {
   const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
@@ -3667,6 +3673,12 @@ function isTitleRepeated(title, subjects, rows) {
   return work.some(
     (x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name)
   );
+}
+function headPart(head, goal, subjects, rows) {
+  if (head === null || goal !== null && !goal.isMet) return [];
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title;
+  const hasContentUnder = rows.length > 0 || goal === null && head.description !== null;
+  return hasContentUnder && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -3828,7 +3840,6 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   ];
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
-  const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows2 = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
@@ -3837,11 +3848,10 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows2) ? null : head.title;
-  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
+  const headRows = headPart(head, g, subjects, listRows2);
   const rows = [
-    ...headPart,
-    ...headPart.length > 0 && listRows2[0]?.id === "other" ? listRows2.slice(1) : listRows2
+    ...headRows,
+    ...headRows.length > 0 && listRows2[0]?.id === "other" ? listRows2.slice(1) : listRows2
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some(
     (c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id))
@@ -3875,7 +3885,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   };
   return withoutRepeatedNow(
     {
-      isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+      isEmpty: rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
       head,
       ...goalParts,
       goal,
@@ -5244,21 +5254,21 @@ async function updateState(dir, sessionId, change, now = Date.now) {
 function parsedReply(ex, reply) {
   return reply === null ? null : parseReply(reply, [ex.reply, ...ex.activity].join("\n"));
 }
-function applied(s, parsed2, now, promptAt, isDelegate) {
+function applied(s, parsed3, now, promptAt, isDelegate) {
   const next = s.pending[0];
   if (!next) return s;
   const { ex } = next;
-  if (!parsed2 && !next.failed)
+  if (!parsed3 && !next.failed)
     return {
       ...s,
       pending: [{ ...next, failed: true }, ...s.pending.slice(1)],
       presence: { ...s.presence, ledgerState: "failed", failedAttempts: s.presence.failedAttempts + 1 }
     };
-  const update = parsed2 && isDelegate ? withoutNewAsks(parsed2) : parsed2;
+  const update = parsed3 && isDelegate ? withoutNewAsks(parsed3) : parsed3;
   const ledger = update ? applyExchangeUpdate(s.ledger, update, ex, now, promptAt) : s.ledger;
-  const hasDroppedReply = s.presence.hasDroppedReply || !parsed2;
+  const hasDroppedReply = s.presence.hasDroppedReply || !parsed3;
   const isCurrent = !hasDroppedReply;
-  const failedAttempts = parsed2 ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
+  const failedAttempts = parsed3 ? s.presence.failedAttempts : s.presence.failedAttempts + 1;
   return linkDialogs({
     ...s,
     ledger,
@@ -5531,18 +5541,18 @@ function needsCatchUp(s) {
   return presence.ledgerState !== "current" || hasUnappliedTurn || hasMissedStatus;
 }
 var pendingKey = (p) => `${p.turnsStarted}:${p.ex.turn}`;
-function appliedCatchUp(s, begun, parsed2, now, isDelegate) {
+function appliedCatchUp(s, begun, parsed3, now, isDelegate) {
   const covered = new Set(begun.pending.map(pendingKey));
-  const update = parsed2 && isDelegate ? withoutNewAsks(parsed2) : parsed2;
+  const update = parsed3 && isDelegate ? withoutNewAsks(parsed3) : parsed3;
   return linkDialogs({
     ...s,
     ledger: update ? applyUpdate(s.ledger, update, now, s.ledger.turn, now) : s.ledger,
     pending: s.pending.filter((p) => !covered.has(pendingKey(p))),
     presence: {
       ...s.presence,
-      ledgerState: parsed2 ? "current" : "failed",
-      hasDroppedReply: parsed2 ? false : s.presence.hasDroppedReply,
-      failedAttempts: parsed2 ? 0 : s.presence.failedAttempts + 1,
+      ledgerState: parsed3 ? "current" : "failed",
+      hasDroppedReply: parsed3 ? false : s.presence.hasDroppedReply,
+      failedAttempts: parsed3 ? 0 : s.presence.failedAttempts + 1,
       isConversationUnreadable: false,
       turnsApplied: Math.max(s.presence.turnsApplied, begun.presence.turnsStarted)
     }
@@ -6312,7 +6322,7 @@ var GOAL_PARTS = {
   "goal-typed-kept": `A goal marked (typed) is the person's: never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when its release shipped or its feature merged, write DONE for each open milestone, so the goal is met, and GOAL when the next goal is clear. Never RETIRE a goal whose outcome happened.`,
   "goal-work-left": `When the work no longer moves a goal that is not typed, as when the person moved on and its subjects went stale, close those subjects with DONE or DROP, then write GOAL for what the work is for now, or RETIRE when nothing is clear. A goal marked (no work for \u2026) has been left, whatever its milestones say: write RETIRE in the same answer, or GOAL when the work shows the next goal. Never replace a goal while its work is open, unless the person changed its outcome, as by cutting part of it. Then write GOAL for the new outcome, name each milestone it keeps again in the same words, and write SERVES to - for the work of each one it leaves out. When a milestone is cut and the goal's words still hold, DROP that milestone instead. New work or an added outcome is a MILESTONE line, never a new goal.`,
-  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". The milestones cover every outcome the goal names, a release or version included: "Offline sync in 3.1" needs one for offline sync and one for 3.1 published. Never name a milestone after a subject. A milestone's name and where it stands follow a subject's rules. Code starts a milestone when its linked work starts and closes it when all that work is done. When the exchange shows a milestone's outcome happened, write DONE for it, even while a subject that serves it stays open for a follow-up fix, such as a test that broke after its work landed. Write SET, DONE, DROP or WAS for one by its id when where it stands changed, and SET to open it again when part of it still has work left, with NEW for that work. Write MILESTONE for an outcome the goal now needs that none covers. Never write a count: code counts what is done.`,
+  "milestones-are-outcomes": `A milestone is an outcome the goal needs, never a task or a step: "Fix merged", not "Merge the fix". The milestones cover every outcome the goal names, a release or version included: "Offline sync in 3.1" needs one for offline sync and one for 3.1 published. Never name a milestone after a subject. A milestone's name and where it stands follow a subject's rules. Code starts a milestone when its linked work starts and closes it when all that work is done. Judge a milestone by the outcome its name states, not by the state of its subjects. When the exchange shows that outcome happened, write DONE for it, even while a subject that serves it stays open for work that follows the outcome, such as applying a choice, a check not yet run or a test that broke after its work landed: "Icon style chosen" is done once the person picks a style, though the icons are still to draw. Write SET, DONE, DROP or WAS for one by its id when where it stands changed, and SET to open it again when part of it still has work left, with NEW for that work. Write MILESTONE for an outcome the goal now needs that none covers. Never write a count: code counts what is done.`,
   "next-milestone": `NEXT names the queued milestone the work takes up after the one under way. Write it when the plan changes which comes next, naming a milestone this answer adds by its name. Leave it out while the milestone marked ${NEXT_MARK} is right.`,
   "milestone-split": `A milestone marked too big holds more work than the person can read as one outcome: split it by theme. Write MILESTONE for each outcome its open subjects are for, such as "Status page polish", no more than the room the mark gives. Then write SERVES to move each open subject to its new milestone, or to - when the goal does not need it. Its done subjects stay with it. When none of its subjects is left open, write DONE for it, or DROP with why when none is done. A split changes milestones only, so it applies to a typed goal too.`,
   "milestone-no-work": `For a milestone marked ${NO_WORK_LINKED}, write SERVES for an open subject whose work is part of it, DONE when the exchange shows it done, or DROP when the goal no longer needs it. Never link other work just to fill it.`,
@@ -6793,18 +6803,18 @@ async function runUpdates(host) {
                 await host.update((x) => ({ ...x, presence: { ...x.presence, isConversationUnreadable: true } }));
                 continue;
               }
-              const parsed3 = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
+              const parsed4 = reply.kind === "reply" ? parseReply(reply.text, reply.source) : null;
               const at = await host.now();
               const noted = (x) => reply.heard ? withAnswer(
-                withCall(x, CATCH_UP_CALL, reply.heard, parsed3 !== null, at),
+                withCall(x, CATCH_UP_CALL, reply.heard, parsed4 !== null, at),
                 CATCH_UP_CALL,
                 reply.heard,
-                parsed3 !== null,
+                parsed4 !== null,
                 at,
                 x.ledger.turn
               ) : x;
-              const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed3, at, isDelegate));
-              if (!parsed3) return "stop";
+              const after2 = await host.update((x) => appliedCatchUp(noted(x), s, parsed4, at, isDelegate));
+              if (!parsed4) return "stop";
               if (reply.kind === "reply" && reply.statusCall)
                 followUp(writeStatus(after2, reply.statusCall, s.hostTasks));
               continue;
@@ -6813,23 +6823,23 @@ async function runUpdates(host) {
             const promptAt = await host.now();
             const kind = { call: "ledger", reads: "reply", isRetry: next.failed === true };
             const asked = await askedCall(host.ask, buildPrompt(s.ledger, next.ex), systemText(host.names), kind);
-            const parsed2 = parsedReply(next.ex, asked.text);
+            const parsed3 = parsedReply(next.ex, asked.text);
             let isApplied = false;
             const after = await host.update(async (current) => {
               const at = await host.now();
               const heard = { ...asked, ms: at - promptAt };
               const x = withAnswer(
-                withCall(current, kind, heard, parsed2 !== null, at),
+                withCall(current, kind, heard, parsed3 !== null, at),
                 kind,
                 heard,
-                parsed2 !== null,
+                parsed3 !== null,
                 at,
                 next.ex.turn
               );
               isApplied = false;
               if (x.pending[0]?.turnsStarted !== next.turnsStarted || x.pending[0].ex.turn !== next.ex.turn) return x;
-              isApplied = parsed2 !== null;
-              return applied(x, parsed2, at, promptAt, isDelegate);
+              isApplied = parsed3 !== null;
+              return applied(x, parsed3, at, promptAt, isDelegate);
             });
             if (isApplied)
               followUp(
@@ -6996,8 +7006,8 @@ function commandText2(command) {
 function outputText(output) {
   if (!isText(output)) return "";
   try {
-    const parsed2 = JSON.parse(output);
-    return isText(parsed2.output) ? parsed2.output : output;
+    const parsed3 = JSON.parse(output);
+    return isText(parsed3.output) ? parsed3.output : output;
   } catch {
     return output;
   }
@@ -7056,7 +7066,6 @@ function callLines(p, hasCommandRows2, cwd) {
     const line2 = toolActivity("Agent", { description: textOf(args.task_name) });
     return line2 ? [line2] : [];
   }
-  if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
   const line = toolActivity(textOf(p.namespace).startsWith("mcp__") ? textOf(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
@@ -7171,6 +7180,36 @@ function unranCalls(rows) {
   };
 }
 
+// src/dialogs.ts
+var REPLY_FORM = /^<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>$/;
+function parsed2(text2) {
+  try {
+    return JSON.parse(typeof text2 === "string" ? text2 : "");
+  } catch {
+    return null;
+  }
+}
+function dialogAnswersOf(text2) {
+  const replies = parsed2(REPLY_FORM.exec(text2.trim())?.[1]);
+  if (!Array.isArray(replies)) return [];
+  return replies.flatMap((reply) => {
+    const { questionItemId, answer } = reply ?? {};
+    const id = parsed2(questionItemId);
+    const isQuestionId = Array.isArray(id) && id[0] === DIALOG_TOOL && typeof id[1] === "string" && typeof id[2] === "number";
+    return isQuestionId && typeof answer === "string" ? [{ callId: id[1], index: id[2], answer }] : [];
+  });
+}
+function dialogLines(d) {
+  const isAnswered = (index) => d.answers[index] !== void 0;
+  const answered = d.questions.filter((_, index) => isAnswered(index));
+  const open2 = d.questions.filter((_, index) => !isAnswered(index));
+  const pairs = d.questions.flatMap((q, index) => isAnswered(index) ? [`"${q.question}"="${d.answers[index]}"`] : []);
+  return [
+    ...answered.length > 0 ? [dialogActivity(answered, { kind: "answered", answer: pairs.join(", ") })] : [],
+    ...open2.length > 0 ? [dialogActivity(open2, { kind: "open" })] : []
+  ];
+}
+
 // src/rollout-turns.ts
 var MARKERS = ['"task_started"', DIALOG_TOOL, '"user"', '"AgentMessage"', '"assistant"', ...UNRAN_MARKERS];
 var TURN_EVENT_KINDS = /* @__PURE__ */ new Map([
@@ -7184,7 +7223,18 @@ function turnEventOfRow(row) {
   return kind === void 0 ? null : { id: textOf(p.turn_id) || textOf(record(p.turn_attribution).turn_id), kind };
 }
 var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf(record(record(row.payload).item).type));
-function turnsOf(rows, cwd) {
+function dialogAnswersIn(rows) {
+  const answers = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const p = record(row.payload);
+    const isUserMessage = row.type === "response_item" && p.type === "message" && p.role === "user";
+    const text2 = isItem(row, "UserMessage") ? contentText(record(p.item).content) : isUserMessage ? contentText(p.content) : "";
+    for (const reply of dialogAnswersOf(text2))
+      answers.set(reply.callId, { ...answers.get(reply.callId), [reply.index]: reply.answer });
+  }
+  return answers;
+}
+function turnsOf(rows, cwd, answers) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows2 = rows.some((row) => isItem(row, "CommandExecution"));
   const unran = new Set(unranCalls(rows).lines);
@@ -7215,7 +7265,11 @@ function turnsOf(rows, cwd) {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
         turns.push({ role: "agent", text: contentText(p.content), activity: [] });
-      else act(callLines(p, hasCommandRows2, cwd));
+      else if (p.type === "function_call" && p.name === DIALOG_TOOL) {
+        const questions = dialogQuestions(jsonRecord(p.arguments).questions);
+        const callId = textOf(p.call_id);
+        act(dialogLines({ questions, answers: (callId === "" ? void 0 : answers.get(callId)) ?? {} }));
+      } else act(callLines(p, hasCommandRows2, cwd));
     }
   }
   return turns;
@@ -7239,7 +7293,8 @@ function rolloutTurns(lines, cwd) {
     if (event?.kind === "completed") group.isComplete = true;
     else group.rows.push(row);
   }
-  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
+  const answers = dialogAnswersIn(groups.flatMap((g) => g.rows));
+  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd, answers) }));
 }
 function rolloutOfLines(lines, cwd, currentTurnId) {
   const turns = rolloutTurns(lines, cwd);

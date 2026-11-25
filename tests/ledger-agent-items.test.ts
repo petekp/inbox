@@ -172,6 +172,35 @@ describe('items the agent recorded', () => {
     expect(old({ kind: 'task', ask: 'Plug in the test phone' })).toContain('It has no steps')
   })
 
+  test('a task keeps the results the agent gave as options, without a rec, a record again gives them to an open task with none, and a task that asks for a result without them is told so', () => {
+    const check = { kind: 'task', ask: 'Delete a card and press Cmd+Z: does it come back?' }
+    const bare = recordItem(CLAUDE_CODE, EMPTY, check, 1000, TOOL_FIELDS)
+    const restated = recordItem(
+      CLAUDE_CODE,
+      bare.ledger,
+      { ...check, options: ['Comes back', 'Gone'] },
+      2000,
+      TOOL_FIELDS,
+    )
+    const again = recordItem(CLAUDE_CODE, restated.ledger, { ...check, options: ['Yes', 'No'] }, 3000, TOOL_FIELDS)
+    const given = recordItem(
+      CLAUDE_CODE,
+      EMPTY,
+      { ...check, options: ['Comes back', 'Gone'], rec: 'Gone' },
+      1000,
+      TOOL_FIELDS,
+    )
+
+    expect(bare.result).toContain('It asks for a result but has no options')
+    expect(restated.result).toContain('gave it your options')
+    expect(again.ledger.items.map(i => [i.options, i.rec])).toEqual([[['Comes back', 'Gone'], null]])
+    expect(given.ledger.items.map(i => [i.options, i.rec])).toEqual([[['Comes back', 'Gone'], null]])
+    expect(given.result).not.toContain('It asks for a result')
+    expect(
+      recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask: 'Sign in to npm' }, 1000, TOOL_FIELDS).result,
+    ).not.toContain('It asks for a result')
+  })
+
   test("one stays open after 12 prompts, when the update's items expire", () => {
     const both = applyUpdate(recorded(), parseReply('NEW: do | - | Sign in to npm | - | -')!, 1500, 1)
     const later = applyUpdate({ ...both, turn: 14 }, parseReply('NONE')!, 2000, 14)

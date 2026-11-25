@@ -17,7 +17,7 @@ export const CODEX: Client = {
     'dialog-outcome': {
       kind: 'different',
       reason:
-        "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open unless a reply in its form came later in the same turn.",
+        "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open unless a reply in its form came later in the same turn, or, in a catch-up, anywhere later in the conversation.",
     },
     'dialog-answer': { kind: 'full' },
     'dialog-answer-closes-copy': {
@@ -195,5 +195,6 @@ export const CODEX: Client = {
         "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process.",
     },
     'press-preconditions': { kind: 'full' },
+    'task-results': { kind: 'full' },
   },
 }

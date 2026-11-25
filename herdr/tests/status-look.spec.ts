@@ -67,6 +67,7 @@ test('the pane counts as shown only while its window has focus and its tab shows
   expect(isPaneShown('p-inbox', panes, spacesWith({ active: true, zoomed: true }), { active: true })).toBe(false)
   const zoomedInbox = panes.map(p => ({ ...p, zoomed: p.pane === 'p-inbox' }))
   expect(isPaneShown('p-inbox', zoomedInbox, spacesWith({ active: true, zoomed: true }), { active: true })).toBe(true)
+  expect(isPaneShown('p-inbox', panes, shownTab, null)).toBe(false)
   expect(isPaneShown(undefined, panes, shownTab, { active: true })).toBe(false)
 })
 

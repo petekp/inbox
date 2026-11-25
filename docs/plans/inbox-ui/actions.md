@@ -63,7 +63,7 @@ Each host's arrival signal:
 
 ### 2.4 Actions per row
 
-The shared `rowKeyPlan` puts retry first, then options or help steps, then Done or Fix, then the follow-ups. Within each group, `actionsOf` sets the order. Primary emphasis changes appearance without promoting an action ahead of retry or help.
+The shared `rowKeyPlan` puts retry first, then options or help steps, then Done, a task's results or Fix, then the follow-ups. Within each group, `actionsOf` sets the order. Primary emphasis changes appearance without promoting an action ahead of retry or help.
 
 | Row | Action | Shows when | Kind |
 |---|---|---|---|
@@ -72,7 +72,8 @@ The shared `rowKeyPlan` puts retry first, then options or help steps, then Done 
 | | Explain | Always | Talk |
 | | Dismiss | Always | Mark |
 | Task | each help step | One per step the item carries | Local; a Run step is a Hand-off |
-| | Done | Always | Mark |
+| | Done | When the task has no results | Mark |
+| | each result | When the agent gave the task results, such as "Comes back" and "Gone". A press closes the task as answered and sends the result. | Mark and send |
 | | Reply | A text field draws | Hand-off |
 | | Explain | Always | Talk |
 | Finding | Fix for an issue, Do it for an opportunity | Always | Hand-off |

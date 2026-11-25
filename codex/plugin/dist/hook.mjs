@@ -1361,7 +1361,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (note && now - note.at < SETTLED_MS && note.at >= Math.max(last?.at ?? 0, result?.at ?? 0))
     return { is: "note", note: note.note, at: note.at };
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
-    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now) : null;
+    const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
     const talkOutSince = isTalkOut ? under.at : void 0;
     return { is: "local", result, ...talkOutSince === void 0 ? {} : { talkOutSince } };
@@ -2149,7 +2149,7 @@ var RECORD_SCHEMA = {
     options: {
       type: "array",
       items: { type: "string" },
-      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one."
+      description: "For a question: the answers the user can pick, at most 5 words each, in words the user would say, without links, URL parameters, file paths or names from code. Give at least one. For a task that checks something whose outcome you need, such as whether a fix works on their screen: the outcomes the user can report, in the same form. Leave it out for a task you only need done, such as a sign-in."
     },
     option_notes: {
       type: "array",
@@ -2449,15 +2449,19 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       action({ action: "discuss", id }, "Discuss", "talk"),
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
+  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   if (item.kind === "task")
     return [
       ...stepActions,
-      action({ action: "done", id }, "Done", "mark"),
+      ...item.options.length > 0 ? item.options.map(
+        (option, n) => action({ action: "answer", id, option }, option, "mark", {
+          isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
+        })
+      ) : [action({ action: "done", id }, "Done", "mark")],
       action({ action: "type", id, text: "" }, "Reply", "handoff"),
       ...explainActions,
       action({ action: "dismiss", id }, "Dismiss", "mark")
     ];
-  const isFolding = item.options.length > OPTIONS_FOLD_AT;
   const options = item.rec && item.options.includes(item.rec) ? [item.rec, ...item.options.filter((o) => o !== item.rec)] : item.options;
   return [
     ...options.map(
@@ -2506,9 +2510,10 @@ function inboxView({
 }) {
   const isFindingId = (id) => ledger.findings.some((f) => f.id === id) || ledger.closedFindings.some((f) => f.id === id);
   const isItemId = (id) => ledger.items.some((i) => i.id === id) || ledger.closed.some((c) => c.id === id);
+  const reportedAtOf = (id) => (ledger.items.find((i) => i.id === id) ?? ledger.closed.find((c) => c.id === id)?.item)?.reportedAt;
   const pressOutSinceWhere = (isOnTab) => earliestOf(
     Object.entries(lastActions).map(
-      ([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, void 0, turns, now)) : null
+      ([id, last]) => isOnTab(id) ? pressUnderWaySince(feedbackOf(id, last, void 0, turns, now, reportedAtOf(id))) : null
     )
   );
   const placingOn = (pressOutSince) => ({
@@ -2896,7 +2901,8 @@ function subjectInPlaceOf(o, m, items) {
   const work = o.subjects.filter((x) => x.into === null && o.serves[x.id] === m.id);
   const only = work.length === 1 && work[0]?.status !== "dropped" ? work[0] : void 0;
   const isAskedDirectly = items.some((i) => o.askSubjects[i.id]?.includes(m.id));
-  return only !== void 0 && !isAskedDirectly && isNamedAlike(m.name, only.name) ? only : null;
+  const isDoneWithOpenWork = m.status === "done" && only !== void 0 && isOpen(only);
+  return only !== void 0 && !isAskedDirectly && !isDoneWithOpenWork && isNamedAlike(m.name, only.name) ? only : null;
 }
 function isTitleRepeated(title, subjects, rows) {
   const drawnIds = new Set(rows.flatMap((r) => r.kind === "subject" ? [r.id] : []));
@@ -2905,6 +2911,12 @@ function isTitleRepeated(title, subjects, rows) {
   return work.some(
     (x) => isOpen(x) ? isNamedAlike(title, x.name) : drawnIds.has(x.id) && holdsEveryWordOf(title, x.name)
   );
+}
+function headPart(head, goal, subjects, rows) {
+  if (head === null || goal !== null && !goal.isMet) return [];
+  const title = goal === null && isTitleRepeated(head.title, subjects, rows) ? null : head.title;
+  const hasContentUnder = rows.length > 0 || goal === null && head.description !== null;
+  return hasContentUnder && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
 }
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
@@ -3066,7 +3078,6 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   ];
   const head = o?.head ? { title: o.head.title, description: textBeyondName(o.head.title, o.head.description) } : null;
   const g = goalParts.goal;
-  const isHeadApart = head !== null && (g === null || g.isMet);
   const listRows2 = [
     ...hasMilestones ? [] : looseRows(null, 0),
     ...foldedPart("", top, 0, hasMilestones ? [] : settled),
@@ -3075,11 +3086,10 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       ...otherRows
     ] : []
   ];
-  const title = head === null || g === null && isTitleRepeated(head.title, subjects, listRows2) ? null : head.title;
-  const headPart = isHeadApart && head && (title ?? head.description) !== null ? [{ kind: "part", id: "head", depth: 0, text: title, description: head.description, isTitle: true }] : [];
+  const headRows = headPart(head, g, subjects, listRows2);
   const rows = [
-    ...headPart,
-    ...headPart.length > 0 && listRows2[0]?.id === "other" ? listRows2.slice(1) : listRows2
+    ...headRows,
+    ...headRows.length > 0 && listRows2[0]?.id === "other" ? listRows2.slice(1) : listRows2
   ];
   const isWorkClosed = (m, p) => p.foldedOpen.length === 0 && !p.shown.some(isOpen) && !running.some(
     (c) => isChildRunning(c, now) && (p.shown.some((x) => x.id === c.subjectId) || loose.some((l) => l.child === c && l.milestoneId === m.id))
@@ -3113,7 +3123,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   };
   return withoutRepeatedNow(
     {
-      isEmpty: head === null && rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
+      isEmpty: rows.length === 0 && goal === null && !goalParts.canRestoreGoal,
       head,
       ...goalParts,
       goal,
@@ -4496,7 +4506,7 @@ Before you hand the user a step, take it yourself when your tools reach it, such
 
 When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
 
-Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with its steps. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
+Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with steps and result options. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
 
 A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
 
@@ -5635,7 +5645,6 @@ function callLines(p, hasCommandRows2, cwd) {
     const line2 = toolActivity("Agent", { description: textOf2(args.task_name) });
     return line2 ? [line2] : [];
   }
-  if (name === DIALOG_TOOL) return [dialogActivity(dialogQuestions(args.questions), { kind: "open" })];
   const line = toolActivity(textOf2(p.namespace).startsWith("mcp__") ? textOf2(p.namespace) + name : name, {});
   return line ? [line] : [];
 }
@@ -5993,7 +6002,18 @@ function turnOf(lines, turnId) {
   }
 }
 var isItem = (row, ...kinds) => row.type === "event_msg" && record(row.payload).type === "item_completed" && kinds.includes(textOf2(record(record(row.payload).item).type));
-function turnsOf(rows, cwd) {
+function dialogAnswersIn(rows) {
+  const answers = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const p = record(row.payload);
+    const isUserMessage = row.type === "response_item" && p.type === "message" && p.role === "user";
+    const text2 = isItem(row, "UserMessage") ? contentText(record(p.item).content) : isUserMessage ? contentText(p.content) : "";
+    for (const reply of dialogAnswersOf(text2))
+      answers.set(reply.callId, { ...answers.get(reply.callId), [reply.index]: reply.answer });
+  }
+  return answers;
+}
+function turnsOf(rows, cwd, answers) {
   const hasMessageRows = rows.some((row) => isItem(row, "UserMessage", "AgentMessage"));
   const hasCommandRows2 = rows.some((row) => isItem(row, "CommandExecution"));
   const unran = new Set(unranCalls(rows).lines);
@@ -6024,7 +6044,11 @@ function turnsOf(rows, cwd) {
       if (p.type === "message" && !hasMessageRows && p.role === "user") person(contentText(p.content));
       else if (p.type === "message" && !hasMessageRows && p.role === "assistant")
         turns.push({ role: "agent", text: contentText(p.content), activity: [] });
-      else act(callLines(p, hasCommandRows2, cwd));
+      else if (p.type === "function_call" && p.name === DIALOG_TOOL) {
+        const questions = dialogQuestions(jsonRecord(p.arguments).questions);
+        const callId = textOf2(p.call_id);
+        act(dialogLines({ questions, answers: (callId === "" ? void 0 : answers.get(callId)) ?? {} }));
+      } else act(callLines(p, hasCommandRows2, cwd));
     }
   }
   return turns;
@@ -6048,7 +6072,8 @@ function rolloutTurns(lines, cwd) {
     if (event?.kind === "completed") group.isComplete = true;
     else group.rows.push(row);
   }
-  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }));
+  const answers = dialogAnswersIn(groups.flatMap((g) => g.rows));
+  return groups.map((g) => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd, answers) }));
 }
 function turnRowsOf(lines, isWindow) {
   const rows = [];

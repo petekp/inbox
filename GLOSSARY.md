@@ -52,7 +52,9 @@ their measures, then the previews. The agent's reply has no table: it gives the
 pick, the reason, anything unexpected and the page's path.
 
 **Task**:
-Something only the person can do, such as signing in.
+Something only the person can do, such as signing in. When the agent needs
+the result back, such as a check on the person's screen, the task carries the
+results as options, and a press on one answers it.
 _Avoid_: do, todo
 
 **Closed item**:
@@ -186,7 +188,8 @@ milestone yet, while the goal shows milestones. Code closes a milestone
 once all its linked subjects are closed and one is done, and the model opens it
 again when work is left. Past 6 subjects, open or done, the model splits it by theme.
 A milestone with one subject, named like it, and no ask of its own draws that
-subject in its place.
+subject in its place, except once the milestone is done while that subject is
+still open.
 _Avoid_: step, phase
 
 **Child**:
