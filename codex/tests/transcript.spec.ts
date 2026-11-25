@@ -129,6 +129,49 @@ test('a rollout of older shapes reads shell calls, patches, spawned agents, dial
   ])
 })
 
+test('a dialog a later dialog reply answered reads as answered, and the reply adds no person line', async () => {
+  const dialog = (callId: string, titles: string[]) =>
+    response({
+      type: 'function_call',
+      name: 'request_user_input_async',
+      call_id: callId,
+      arguments: JSON.stringify({ questions: titles.map(title => ({ title, options: ['Yes', 'No'] })) }),
+    })
+  const reply = (callId: string, index: number, question: string, answer: string) => {
+    const questionItemId = JSON.stringify(['request_user_input_async', callId, index])
+    const json = JSON.stringify([{ questionItemId, question, answer }])
+
+    return `<send_user_message_question_reply>\n${json}\n</send_user_message_question_reply>`
+  }
+  const item = (type: string, text: string) => ({
+    type: 'event_msg',
+    payload: { type: 'item_completed', item: { type, content: [{ type: 'text', text }] } },
+  })
+  const path = rolloutOf(
+    rows(
+      started('t1'),
+      message('user', 'Ship the fix'),
+      dialog('call_a', ['Push now?', 'Tag a release?']),
+      dialog('call_b', ['Delete the branch?']),
+      completed('t1'),
+      started('t2'),
+      item('UserMessage', reply('call_a', 0, 'Push now?', 'Yes')),
+      message('user', reply('call_z', 0, 'Delete the branch?', 'No')),
+      item('AgentMessage', 'Pushed.'),
+      completed('t2'),
+    ),
+  )
+  const conversation = (await readRollout(path, '/repo', undefined))?.conversation.split('\n')
+
+  assert.deepEqual(conversation, [
+    'Person: Ship the fix',
+    'Agent asked the user in a dialog: "Push now?" (options: Yes / No); answer: "Push now?"="Yes"',
+    `Agent asked the user in a dialog: "Tag a release?" (options: Yes / No); still open, waiting on the user's answer`,
+    `Agent asked the user in a dialog: "Delete the branch?" (options: Yes / No); still open, waiting on the user's answer`,
+    'Agent: Pushed.',
+  ])
+})
+
 test('a rollout reads no line for a command the person declined or a hook blocked', async () => {
   const command = (script: string, status: string) => ({
     type: 'event_msg',

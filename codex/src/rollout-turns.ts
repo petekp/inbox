@@ -4,10 +4,10 @@ import type { Turn } from '../../core/domain/conversation'
 import { addActivity, dialogQuestions } from '../../core/domain/catch-up-text'
 import type { DialogQuestion, HostTask } from '../../types'
 import { callCommand, callLines, commandText, DIALOG_TOOL, outputText, shellLines } from './rollout-commands'
-import { contentText, isText, record, textOf } from './rollout-rows'
+import { contentText, isText, jsonRecord, record, textOf } from './rollout-rows'
 import type { RolloutRow, TranscriptLine } from './rollout-rows'
 import { isUnranOutput, UNRAN_MARKERS, unranCalls } from './rollout-unran'
-import { dialogAnswersOf } from './dialogs'
+import { dialogAnswersOf, dialogLines } from './dialogs'
 
 /** A shell command that finished, with the text it printed. */
 type FinishedCommand = { command: string; output: string }
@@ -181,11 +181,32 @@ const isItem = (row: RolloutRow, ...kinds: string[]): boolean =>
   record(row.payload).type === 'item_completed' &&
   kinds.includes(textOf(record(record(row.payload).item).type))
 
+/** Answers by call id, then by question index. */
+type DialogAnswers = Map<string, Record<number, string>>
+
+/** The answers the dialog replies among `rows` gave. A reply can come in a later turn than its dialog. */
+function dialogAnswersIn(rows: RolloutRow[]): DialogAnswers {
+  const answers: DialogAnswers = new Map()
+  for (const row of rows) {
+    const p = record(row.payload)
+    const isUserMessage = row.type === 'response_item' && p.type === 'message' && p.role === 'user'
+    const text = isItem(row, 'UserMessage')
+      ? contentText(record(p.item).content)
+      : isUserMessage
+        ? contentText(p.content)
+        : ''
+    for (const reply of dialogAnswersOf(text))
+      answers.set(reply.callId, { ...answers.get(reply.callId), [reply.index]: reply.answer })
+  }
+
+  return answers
+}
+
 /**
  * The conversation of one turn's rows. Codex 0.163 writes each message twice, as an item and as a `response_item`,
  * so the `response_item` copy is read only when the turn has no item rows.
  */
-function turnsOf(rows: RolloutRow[], cwd: string): Turn[] {
+function turnsOf(rows: RolloutRow[], cwd: string, answers: DialogAnswers): Turn[] {
   const hasMessageRows = rows.some(row => isItem(row, 'UserMessage', 'AgentMessage'))
   const hasCommandRows = rows.some(row => isItem(row, 'CommandExecution'))
   const unran = new Set(unranCalls(rows).lines)
@@ -217,7 +238,11 @@ function turnsOf(rows: RolloutRow[], cwd: string): Turn[] {
       if (p.type === 'message' && !hasMessageRows && p.role === 'user') person(contentText(p.content))
       else if (p.type === 'message' && !hasMessageRows && p.role === 'assistant')
         turns.push({ role: 'agent', text: contentText(p.content), activity: [] })
-      else act(callLines(p, hasCommandRows, cwd))
+      else if (p.type === 'function_call' && p.name === DIALOG_TOOL) {
+        const questions = dialogQuestions(jsonRecord(p.arguments).questions)
+        const callId = textOf(p.call_id)
+        act(dialogLines({ questions, answers: (callId === '' ? undefined : answers.get(callId)) ?? {} }))
+      } else act(callLines(p, hasCommandRows, cwd))
     }
   }
 
@@ -247,7 +272,9 @@ function rolloutTurns(lines: string[], cwd: string): RolloutTurn[] {
     else group.rows.push(row)
   }
 
-  return groups.map(g => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd) }))
+  const answers = dialogAnswersIn(groups.flatMap(g => g.rows))
+
+  return groups.map(g => ({ id: g.id, isComplete: g.isComplete, turns: turnsOf(g.rows, cwd, answers) }))
 }
 
 /** A turn of the rollout, by its start, and whether it ended, by completing or by an interrupt. */

@@ -19,5 +19,25 @@
         "kind": "question"
       }
     ]
+  },
+  {
+    "name": "catch-up-answered-dialog-adds-no-question",
+    "about": "A Codex catch-up over a dialog the person answered with a dialog reply adds no question for it. The reply itself is not in the conversation, so only the dialog's line says it was answered.",
+    "ledger": {
+      "turn": 3,
+      "nextId": 1
+    },
+    "catchUp": "Person: speed up the product API\nAgent: I'll profile the slow endpoints first.\nAgent ran: node profile.js\nAgent asked the user in a dialog: \"Which cache should the product API use?\" (options: Redis (recommended) / In-memory); answer: \"Which cache should the product API use?\"=\"Redis\"\nAgent: Almost all the time is in three queries, so a cache will help. I have put the cache choice to you in a dialog.\nAgent edited src/cache.ts\nAgent edited src/routes/products.ts\nAgent ran: npm test\nAgent: The three slow endpoints now read through the cache. The tests pass, and the profile shows each endpoint under 40 ms.",
+    "exchange": {
+      "person": null,
+      "turn": 3,
+      "activity": [],
+      "reply": "(catch-up)"
+    },
+    "checks": [
+      {
+        "added": 0
+      }
+    ]
   }
 ]

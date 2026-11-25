@@ -17,7 +17,7 @@ export const CODEX: Client = {
     'dialog-outcome': {
       kind: 'different',
       reason:
-        "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open unless a reply in its form came later in the same turn.",
+        "Codex's dialog tool returns at once and the answer arrives later as a user message, so a dialog is noted as open unless a reply in its form came later in the same turn, or, in a catch-up, anywhere later in the conversation.",
     },
     'dialog-answer': { kind: 'full' },
     'dialog-answer-closes-copy': {
