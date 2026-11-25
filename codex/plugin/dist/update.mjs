@@ -6004,7 +6004,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
           turnReadFailedAt: s.turnReadFailedAt,
-          version: "0.7.0",
+          version: "0.8.0",
           isNextBuild: existsSync2(join8(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },
         s,
@@ -6116,7 +6116,7 @@ function registryOnWrite(env, dir, now, pid, log = herdrLog(dir)) {
     await writeRegistryEntry(
       files2,
       folder,
-      { host: "codex", sessionId: s.sessionId, agent: CODEX2.agent, projectFolder: s.root, version: "0.7.0", herdr },
+      { host: "codex", sessionId: s.sessionId, agent: CODEX2.agent, projectFolder: s.root, version: "0.8.0", herdr },
       s,
       viewOf(s, at),
       at,
