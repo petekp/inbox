@@ -4,6 +4,7 @@ import { test } from './test-with-timeout'
 import { actionLines, answersFitLine, drawnLists, rowKeyPlan, steppedIndex, tabUndos } from '../core/view/action-plan'
 import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
+import { closeItem } from '../core/domain/ledger-close'
 import { sessionView } from '../core/view/session-view'
 import { applyPrPress, checkActions } from '../core/view/pr-tab'
 import { footerError, inboxView, perTurnStatus } from '../core/view/view'
@@ -149,6 +150,45 @@ test('a press begun before a row came due keeps it in place until the press ends
   expect(isSettledInPlace(settled, placing(due + 10 * SETTLED_MS, { pressOutSince: null }))).toBe(false)
   expect(isSettledInPlace(settled, placing(due + 1, { undoShown: ['i1'] }), 'i1')).toBe(true)
   expect(isSettledInPlace(settled, placing(due + 1, { undoShown: ['i1'] }), 'i2')).toBe(false)
+})
+
+test('a Compare press holds the tab’s settled rows in place only until its comparison is reported', () => {
+  const s = demoSession(AT, 'Claude')
+  const [compared, answered] = s.ledger.items.filter(i => i.kind === 'question')
+  if (!compared || !answered) throw new Error('the demo has fewer than two questions')
+  const comparedAt = AT + 1000
+  const answeredAt = AT + 2000
+  const turn = s.presence.turnsStarted
+  const pressed = (action: 'compare' | 'answer', text: string, at: number) =>
+    ({
+      kind: action === 'compare' ? 'talk' : 'mark',
+      action,
+      text,
+      at,
+      turnsStarted: turn,
+      delivery: { state: 'arrived' },
+    }) as const
+  const isAnsweredInPlace = (reportedAt: number) => {
+    const items = s.ledger.items.map(i => (i.id === compared.id ? { ...i, reportedAt } : i))
+    const ledger = closeItem({ ...s.ledger, items }, answered.id, { how: 'answered', outcome: 'Pinch' }, answeredAt)
+    const session = {
+      ...s,
+      ledger,
+      presence: { ...s.presence, turnsStarted: turn + 1, turnsApplied: turn + 1 },
+      lastActions: {
+        ...s.lastActions,
+        [compared.id]: pressed('compare', 'Compare', comparedAt),
+        [answered.id]: pressed('answer', 'Pinch', answeredAt),
+      },
+    }
+    const holds = { replies: {}, discarded: {}, shownSince: AT, listInput: null }
+    const view = sessionView(session, answeredAt + SETTLED_MS + 1, SETTLED_MS, holds)
+
+    return view.needsYou.questions.some(r => r.id === answered.id)
+  }
+
+  expect(isAnsweredInPlace(comparedAt - 1)).toBe(true)
+  expect(isAnsweredInPlace(comparedAt + 500)).toBe(false)
 })
 
 test('a folded row stays folded: a press on another row, a Talk press or list input that begins after it came due does not bring it back', () => {
