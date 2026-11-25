@@ -213,8 +213,11 @@ describe('items the agent recorded', () => {
         'Tell me if node greet.js prints Hola or Hello',
         'Run the test and report: pass or fail',
         'Say whether the card comes back or stays gone',
+        'Run node greet.js and say if it prints Hola or Hello',
+        'Open the page and tell Claude if it loads or shows an error',
+        'Let us know: pass or fail',
       ].map(resultsNote),
-    ).toEqual([true, true, true, true, true, true])
+    ).toEqual([true, true, true, true, true, true, true, true, true])
     expect(
       [
         'Run npm login in the repo root',
@@ -227,8 +230,9 @@ describe('items the agent recorded', () => {
         'Say yes or no in the terminal prompt that npm login shows',
         'Tell the bot your org name or ID in the sign-in page',
         'Reply to the reviewer on GitHub or in Slack',
+        'Let Sam know about the outage on Slack or by email',
       ].map(resultsNote),
-    ).toEqual([false, false, false, false, false, false, false, false, false, false])
+    ).toEqual([false, false, false, false, false, false, false, false, false, false, false])
   })
 
   test("one stays open after 12 prompts, when the update's items expire", () => {

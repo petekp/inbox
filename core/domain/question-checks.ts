@@ -81,15 +81,20 @@ function taskStepsText(item: Item, canSend: (field: string) => boolean): string 
     : ''
 }
 
-const REPORT_VERB = String.raw`\b(?:report|tell (?:me|us)|let \w+ know)\b`
+const REPORT_VERB = String.raw`\b(?:report|tell (?:me|us)|let (?:me|us) know)\b`
+const CONDITIONAL_VERB = String.raw`\b(?:confirm|answer|say|reply|tell \w+)\b`
 /** The rest of a clause, up to a sentence's end, that has no word such as "when" that only waits for a step to finish. */
 const SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`
 /**
  * An ask that asks the user to report one of the results it names, as "report Hola or Hello" or "say whether it loads".
- * Verbs such as confirm, answer, say and reply also name a step to do, as "Confirm the 2FA prompt on your phone or
- * security key", so only "whether" makes them a request for a result.
+ * Verbs such as confirm, answer, say, reply and tell also name a step to do, as "Confirm the 2FA prompt on your phone or
+ * security key", so they ask for a result only with "whether", or with "if" before the "or". "Report", "tell me" and
+ * "let me know" ask for one with the "or" alone.
  */
-const NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b`, 'i')
+const NAMED_RESULTS_ASK = new RegExp(
+  String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}${SAME_CLAUSE}\bif\b${SAME_CLAUSE}\bor\b`,
+  'i',
+)
 
 /**
  * A task that asks the user something, as "does it come back?" or "report Hola or Hello", needs its results as options
