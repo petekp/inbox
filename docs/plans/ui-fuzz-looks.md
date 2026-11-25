@@ -29,7 +29,7 @@ Results so far, on seeds 1 to 3 with 30 to 50 cases each. The fixed seeds for #8
 - #864: Copy's result on an open task wraps after the title and moves the buttons 20 px in one frame. Seed 2, case 28 finds it.
 - Not filed: once, a 12 px shrink and then a cut of "Reply" at 0.27 opacity, after ArrowUp, a 120 ms wait and a click on the open row. It came back in 1 of 3 replays.
 
-The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/seeds.ts`) and no seed fails differently from its issue. A seed whose issue is open but that now passes fails the run, and its line says to close the issue and mark the seed closed. #863 and #864 have no `KNOWN` entry, so `--seed 2 --runs 30` reports them as new and exits 1. The seed for #836 fails in about 2 of 3 runs, so it can pass and fail the run. `check.sh` does not run this look, since it runs in real time.
+The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/seeds.ts`) and no seed fails differently from its issue. A seed whose issue is open but that now passes fails the run, and its line says to close the issue and mark the seed closed. #863 and #864 have no `KNOWN` entry, so `--look codex --seed 2 --runs 30` reports them as new and exits 1. The seed for #836 fails in about 2 of 3 runs, so it can pass and fail the run. `check.sh` does not run this look, since it runs in real time.
 
 Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so the seeds for #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line) cannot run there.
 
