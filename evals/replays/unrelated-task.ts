@@ -53,7 +53,9 @@ export const unrelatedTask: Replay = {
           stands: 'range includes its end value, fix not made',
         }),
       ],
-      asks: [{ match: 'hello or hi', text: "Should greet.js's English greeting say Hello or Hi?", holdsUp: ['greeting'] }],
+      asks: [
+        { match: 'hello or hi', text: "Should greet.js's English greeting say Hello or Hi?", holdsUp: ['greeting'] },
+      ],
     },
   },
   steps: [
@@ -96,7 +98,12 @@ export const unrelatedTask: Replay = {
           text: "Pick greet.js's English greeting",
           match: 'greet',
           milestones: [
-            { id: 'ms-english', name: 'English greeting chosen', match: 'english|chosen|picked|decided', state: 'working' },
+            {
+              id: 'ms-english',
+              name: 'English greeting chosen',
+              match: 'english|chosen|picked|decided',
+              state: 'working',
+            },
           ],
         },
         asks: [
