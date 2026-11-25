@@ -81,9 +81,16 @@ function taskStepsText(item: Item, canSend: (field: string) => boolean): string 
     : ''
 }
 
-/** A task that asks the user something, as "does it come back?", needs its results as options to answer in one press. */
+/** An ask that asks the user to report one of the results it names, as "report Hola or Hello" or "say whether it loads". */
+const NAMED_RESULTS_ASK = /\bwhether\b|\b(?:report|tell|let \w+ know|say|reply|answer|confirm)\b[^.;:?!]*\bor\b/i
+
+/**
+ * A task that asks the user something, as "does it come back?" or "report Hola or Hello", needs its results as options
+ * to answer in one press.
+ */
 function taskResultsText(item: Item, canSend: (field: string) => boolean): string {
-  const asksForResult = item.ask.trim().endsWith('?')
+  const ask = item.ask.trim()
+  const asksForResult = ask.endsWith('?') || NAMED_RESULTS_ASK.test(ask)
 
   return asksForResult && item.options.length === 0 && canSend('options')
     ? ' It asks for a result but has no options: record it again with the results the user can report as options.'
