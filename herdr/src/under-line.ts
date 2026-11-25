@@ -1,4 +1,4 @@
-import { CUT_OPACITY, ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, enterDelayMs } from '../../core/view/row-motion'
+import { FAINT_OPACITY, ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, enterDelayMs } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import { NEXT_FRAME_MS } from './block-glide'
@@ -39,7 +39,8 @@ export function stepUnder(last: UnderLine | null, b: Block, now: number, isInput
 /**
  * A line that comes is drawn in its first draw, which sets the row's box growing, and fades in once the box is nearly
  * open, `height` being the line's measured height, so the growing box never cuts it while it shows. A line the
- * person's press brings starts at `CUT_OPACITY`, so the press shows in its own draw, and others start hidden. A line
+ * person's press brings starts at `FAINT_OPACITY`, so the press shows in its own draw, faint enough that the growing box
+ * may cut it, and others start hidden. A line
  * that goes fades out from the draw after it starts.
  */
 export function underMotion(u: UnderLine | null, now: number, height: number | undefined): UnderMotion | null {
@@ -48,7 +49,7 @@ export function underMotion(u: UnderLine | null, now: number, height: number | u
   if (u.isLeaving) return { line: u.line, opacity: isStart ? 1 : 0, fadeMs: LEAVE_FADE_MS, delayMs: 0 }
   if (now >= u.since + ROW_STATE_MS.entering) return { line: u.line, opacity: null, fadeMs: 0, delayMs: 0 }
 
-  if (isStart) return { line: u.line, opacity: u.isInput ? CUT_OPACITY : 0, fadeMs: 0, delayMs: 0 }
+  if (isStart) return { line: u.line, opacity: u.isInput ? FAINT_OPACITY : 0, fadeMs: 0, delayMs: 0 }
 
   return { line: u.line, opacity: 1, fadeMs: ENTER_FADE_MS, delayMs: enterDelayMs(height ?? 0) }
 }
