@@ -93,7 +93,20 @@ type GoalClear = {
 }
 
 /** An open ask, and the pieces it holds up. */
-type AskFact = { match: string; text: string; holdsUp: string[] }
+type AskFact = {
+  match: string
+  text: string
+  holdsUp: string[]
+  /** Pieces it never holds up, for an ask with no pieces in `holdsUp` that may still hold up a piece of its own. */
+  neverHoldsUp?: string[]
+}
+
+/** What an ask holds up, in the words the judge reads. */
+function askHolds(a: AskFact, nameOf: (id: string) => string): string {
+  if (a.holdsUp.length > 0) return `holds up ${a.holdsUp.map(nameOf).join(' and ')}`
+  if (!a.neverHoldsUp) return 'holds up no piece'
+  return `holds up no piece, or only a piece of its own, never ${a.neverHoldsUp.map(nameOf).join(' or ')}`
+}
 
 /** Something the session mentions that is not a piece of its work. */
 type NotWork = { kind: 'ask' | 'finding' | 'task' | 'rule'; text: string; match: string }
@@ -307,7 +320,7 @@ export function factsText(f: Facts): string {
     'Pieces of work:',
     list(f.pieces.map(piece)),
     'Open asks:',
-    list(f.asks.map(a => `- "${a.text}" holds up ${a.holdsUp.map(nameOf).join(' and ') || 'no piece'}`)),
+    list(f.asks.map(a => `- "${a.text}" ${askHolds(a, nameOf)}`)),
     'Not work:',
     list(f.notWork.map(n => `- ${n.kind}: ${n.text}`)),
     'Running work:',

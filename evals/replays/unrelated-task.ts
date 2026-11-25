@@ -101,7 +101,7 @@ export const unrelatedTask: Replay = {
             {
               id: 'ms-english',
               name: 'English greeting chosen',
-              match: 'english|chosen|picked|decided',
+              match: 'english|chosen|picked|decided|settled|choice|hello or hi',
               state: 'working',
             },
           ],
@@ -109,7 +109,14 @@ export const unrelatedTask: Replay = {
         asks: [
           { match: 'hello or hi', text: "Should greet.js's English greeting say Hello or Hi?", holdsUp: ['greeting'] },
           { match: 'npm', text: 'Sign in to npm before publishing', holdsUp: [] },
+          {
+            match: 'clamp',
+            text: "Should clamp.js's error name its bounds lo/hi or min/max?",
+            holdsUp: [],
+            neverHoldsUp: ['greeting', 'range'],
+          },
         ],
+        pieces: [{ id: 'greeting', serves: 'ms-english' }],
       },
       targets: ['asks-linked'],
     },
