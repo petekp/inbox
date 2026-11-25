@@ -163,7 +163,7 @@ else
 fi
 
 # A short fixed-seed fuzz run of the Herdr look, the omp panel and the shared row stepper. It exits 0 when every failure
-# is one an open issue describes (KNOWN in fuzz/seeds.ts) and no seed fails differently from its issue. It runs only where the
+# is one an open issue describes (KNOWN in fuzz/seeds.ts), no seed fails differently from its issue, and no seed whose issue is open passes. It runs only where the
 # omp and herdr checks above could run, which already say what is missing. Its reports go to fuzz/out/, which Git ignores.
 if command -v bun >/dev/null 2>&1 && [ -d "$DIR/omp/node_modules" ] && [ -d "$DIR/herdr/node_modules" ]; then
     check "fuzz" "$DIR/scripts/fuzz.sh" --seed 1 --runs 12 --shrinks 0
