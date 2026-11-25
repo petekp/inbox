@@ -2903,6 +2903,11 @@ function withUpdate(item, updated) {
   return withRec({ ...item, options }, restatedRec(options, item.rec, change.rec));
 }
 
+// ../core/domain/question-checks.ts
+var REPORT_VERB = String.raw`\b(?:report|tell|let \w+ know|say|reply|answer|confirm)\b`;
+var SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`;
+var NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b`, "i");
+
 // ../core/domain/earlier-answers.ts
 var K1 = 1.2;
 var B = 0.75;

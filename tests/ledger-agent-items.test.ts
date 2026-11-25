@@ -201,6 +201,29 @@ describe('items the agent recorded', () => {
     ).not.toContain('It asks for a result')
   })
 
+  test('a task worded as a statement that asks the user to report one of named results is told to give them as options, and one the agent only needs done is not', () => {
+    const resultsNote = (ask: string) =>
+      recordItem(CLAUDE_CODE, EMPTY, { kind: 'task', ask }, 1000, TOOL_FIELDS).result.includes('It asks for a result')
+
+    expect(
+      [
+        'Run node greet.js in your terminal; report Hola or Hello',
+        'Open the stack and tell me whether the card comes back',
+        'Load the page on your phone and let me know if it loads or shows an error',
+        'Tell me if node greet.js prints Hola or Hello',
+        'Run the test and report: pass or fail',
+      ].map(resultsNote),
+    ).toEqual([true, true, true, true, true])
+    expect(
+      [
+        'Run npm login in the repo root',
+        'Sign in to npm or create an account',
+        'Tell me once you have signed in with GitHub or Google',
+        'Report back after you run brew install or apt install',
+      ].map(resultsNote),
+    ).toEqual([false, false, false, false])
+  })
+
   test("one stays open after 12 prompts, when the update's items expire", () => {
     const both = applyUpdate(recorded(), parseReply('NEW: do | - | Sign in to npm | - | -')!, 1500, 1)
     const later = applyUpdate({ ...both, turn: 14 }, parseReply('NONE')!, 2000, 14)

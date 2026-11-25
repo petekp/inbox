@@ -81,9 +81,19 @@ function taskStepsText(item: Item, canSend: (field: string) => boolean): string 
     : ''
 }
 
-/** A task that asks the user something, as "does it come back?", needs its results as options to answer in one press. */
+const REPORT_VERB = String.raw`\b(?:report|tell|let \w+ know|say|reply|answer|confirm)\b`
+/** The rest of a clause, up to a sentence's end, that has no word such as "when" that only waits for a step to finish. */
+const SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`
+/** An ask that asks the user to report one of the results it names, as "report Hola or Hello" or "say whether it loads". */
+const NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b`, 'i')
+
+/**
+ * A task that asks the user something, as "does it come back?" or "report Hola or Hello", needs its results as options
+ * to answer in one press.
+ */
 function taskResultsText(item: Item, canSend: (field: string) => boolean): string {
-  const asksForResult = item.ask.trim().endsWith('?')
+  const ask = item.ask.trim()
+  const asksForResult = ask.endsWith('?') || NAMED_RESULTS_ASK.test(ask)
 
   return asksForResult && item.options.length === 0 && canSend('options')
     ? ' It asks for a result but has no options: record it again with the results the user can report as options.'
