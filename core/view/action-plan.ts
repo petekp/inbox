@@ -8,7 +8,7 @@ import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
 import { ROW_COPY, OPTIONS_FOLD_AT, isWaitingRow, optionNote, optionReasonLine } from './rows'
 import type { RowState, ActionView, RowView, SettledState } from './rows'
-import { pressOutAction, outAction, isAgain, fixLabel } from './feedback'
+import { pressOutAction, outAction, isAgain, fixLabel, isStoppedSession } from './feedback'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
 
@@ -315,15 +315,27 @@ export type PlannedOption = {
   hotkey?: string
 }
 
+/** The button that shows the session a message was not sent to, so the person can type there. */
+type SessionKey = { label: string; emphasis: 'normal' }
+
 /**
  * A row's options, then its keys, then its follow-ups. A look draws each option as its button in the question's tree
  * with its note under it, in this order. Then it draws the keys, and the follow-ups in one group after them. A task's
- * results are keys after its steps, since a task has no tree of answers.
+ * results are keys after its steps, since a task has no tree of answers. A look that shows a session from outside it,
+ * as the Herdr look does, passes `canShowSession`. On a row whose message did not send because the person stopped the
+ * session, it then draws `sessionKey` first among the keys.
  */
 export function rowKeyPlan(
   r: RowView,
   isAllShown: boolean,
-): { options: PlannedOption[]; keys: PlannedKey[]; more: ActionKey[]; answerRow: AnswerRow | null } {
+  canShowSession = false,
+): {
+  options: PlannedOption[]
+  keys: PlannedKey[]
+  more: ActionKey[]
+  answerRow: AnswerRow | null
+  sessionKey: SessionKey | null
+} {
   const shown = r.actions.filter(a => isAllShown || !a.isFolded)
   const folded = r.actions.length - shown.length
   const lastOption = shown.map(a => a.press.action).lastIndexOf('answer')
@@ -359,7 +371,10 @@ export function rowKeyPlan(
       })
   }
 
-  return { options, keys, more, answerRow: answerRowOf(r, options) }
+  const sessionKey: SessionKey | null =
+    canShowSession && isStoppedSession(r.feedback) ? { label: ROW_COPY.goToSession, emphasis: 'normal' } : null
+
+  return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey }
 }
 
 /** Widths in a look's own unit. `separator` is the extra room a look draws between the buttons and the follow-ups when they share a line. */

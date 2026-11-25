@@ -118,5 +118,10 @@ export const CLAUDE_CODE: Client = {
     'session-registry': { kind: 'full' },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'stopped-session-send': {
+      kind: 'different',
+      reason:
+        'The row says the person stopped the session and offers no Go to session, since the person is already in it.',
+    },
   },
 }

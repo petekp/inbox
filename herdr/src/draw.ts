@@ -89,7 +89,10 @@ function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string):
 
 /** The row's buttons in the plan's order: its options, which the tree draws, then its keys, then its follow-ups. */
 function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] {
-  const { options, keys, more } = rowKeyPlan(row, isAllShown)
+  const { options, keys, more, sessionKey } = rowKeyPlan(row, isAllShown, true)
+  const toSession = sessionKey
+    ? [button(`${row.id} session`, sessionKey.label, sessionKey.emphasis, { is: 'focusTerminal' })]
+    : []
   const answers = options.map((o, n): Button => ({
     ...button(
       `${row.id} ${n}`,
@@ -104,6 +107,7 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
 
   return [
     ...answers,
+    ...toSession,
     ...[...keys, ...more].map((k, n): Button => {
       const id = `${row.id} ${options.length + n}`
       if (k.slot === 'allOptions')

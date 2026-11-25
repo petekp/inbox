@@ -334,7 +334,12 @@ export default class Inbox extends View {
     cx.stop_propagation()
     if (move.is === 'event') this.apply([move.event], cx)
     else if (move.is === 'press') this.apply(buttonEvents(move.button.does, this.ui, 'key'), cx, move.button)
-    else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
+    else this.focusTerminal()
+  }
+
+  /** Gives focus to the terminal the look follows, whose session it shows. */
+  focusTerminal(): void {
+    if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
   }
 
   render(cx: Context): Element {
@@ -360,7 +365,10 @@ export default class Inbox extends View {
     const paint: Paint = {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
-      press: (b, cx, isAll) => this.apply(buttonEvents(b.does, this.ui, 'click', isAll), cx, b),
+      press: (b, cx, isAll) =>
+        b.does.is === 'focusTerminal'
+          ? this.focusTerminal()
+          : this.apply(buttonEvents(b.does, this.ui, 'click', isAll), cx, b),
       collapse: (id, isCollapsed, cx, isAll) =>
         this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
       select: (id, cx) => this.apply(titleClickEvents(this.ui, id, false, false), cx),
