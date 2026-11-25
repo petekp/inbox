@@ -13,6 +13,8 @@ import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import { followPresses, isPublishedHere, pressDrainer, pressFileProblem } from '../../core/remote/herdr-app'
 import type { PressFiles, StartedFile } from '../../core/remote/herdr-app'
 import { isSessionFile } from '../../core/view/session-files'
+import { readClaim, runsHere } from './herdr-terminal'
+import { isPidRunning } from './pid'
 
 const pressFiles: PressFiles = {
   list: folder => readdir(folder),
@@ -85,12 +87,14 @@ const message = (err: unknown) => (err instanceof Error ? err.message : String(e
 /**
  * In a Herdr app terminal, applies the presses the Herdr look writes for the Codex sessions this terminal publishes,
  * with `apply`. The server cannot tell which session it serves until a tool call names one, so a session is this
- * terminal's when its published file names Codex and this terminal. The presses folder is read at once, again once
+ * terminal's when its published file names Codex and this terminal, and `runsHere` says so of the terminal's claim in
+ * `dir`. A press for a session that ended there then waits until the next session's start removes it. The presses folder is read at once, again once
  * its watcher starts, on each change, and every `PRESS_POLL_MS` in case the watcher missed a press. Returns how to stop,
  * or null outside an app terminal.
  */
 export function followCodexPresses(
   env: NodeJS.ProcessEnv,
+  dir: string,
   apply: (sessionId: string, file: HerdrFile) => Promise<StartedFile>,
   log: (text: string) => void,
 ): (() => void) | null {
@@ -101,7 +105,9 @@ export function followCodexPresses(
 
   const drain = pressDrainer(
     pressFiles,
-    id => isPublishedHere(path => readFile(path, 'utf8'), appHome, id, 'codex', terminal),
+    async id =>
+      (await isPublishedHere(path => readFile(path, 'utf8'), appHome, id, 'codex', terminal)) &&
+      runsHere(await readClaim(dir, terminal), id, isPidRunning),
     apply,
     log,
   )

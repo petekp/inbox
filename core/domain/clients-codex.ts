@@ -91,11 +91,12 @@ export const CODEX: Client = {
     'herdr-sidebar': {
       kind: 'different',
       reason:
-        "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops, and runs no hook when a session ends, so its tokens or labels stay.",
+        "In a Herdr pane, only Codex's hooks and the update a hook starts report, so a record or close during a turn reaches the sidebar at the next hook. In a Herdr app terminal, the MCP server labels too. Codex finds no stops. Its SessionEnd hook clears a Herdr app terminal's labels, but a pane's tokens stay after the session ends.",
     },
     'herdr-look': {
       kind: 'different',
-      reason: 'Codex runs no hook when a session ends, so its published file stays.',
+      reason:
+        "Codex's MCP server cannot tell which session it serves, so the hooks save which session runs in the terminal. Codex runs SessionStart at a session's first prompt, so a session that ended without its SessionEnd hook stays in the look until then, and none of its presses apply.",
     },
     'herdr-open': {
       kind: 'unsupported',

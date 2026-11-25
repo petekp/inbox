@@ -17,7 +17,9 @@ import { CODEX } from './texts'
 import type { Run } from '../../core/domain/gh'
 import { NEXT_BUILD_MARK } from '../../core/view/banners'
 import { herdrReporter, herdrReportKey, herdrTarget, herdrTokens } from '../../core/remote/herdr'
-import { publishedSession } from '../../core/remote/herdr-app'
+import { publishedSession, unpublishSession } from '../../core/remote/herdr-app'
+import { mayReport, readClaim } from './herdr-terminal'
+import { isPidRunning } from './pid'
 import type { PublishFiles } from '../../core/remote/herdr-app'
 import type { SessionHost } from '../../core/runtime/session-host'
 
@@ -93,6 +95,9 @@ export function herdrOnWrite(
   return async written => {
     const id = written.sessionId
     await withLock(`${statePath(dir, id)}.herdr`, async () => {
+      const isReported = async () =>
+        target.kind === 'pane' || mayReport(await readClaim(dir, target.terminal), id, isPidRunning)
+      if (!(await isReported())) return
       const [s, viewers] = await Promise.all([readState(dir, id), readViewers(dir, id)])
       const commands = await commandsOf(codexCommandStore(dir, id, now), s)
       const at = now()
@@ -122,6 +127,11 @@ export function herdrOnWrite(
           s,
           log,
         ))
+      const appHome = target.kind === 'terminal' ? target.appHome : null
+      if (isPublished && appHome && !(await isReported())) {
+        await unpublishSession(publishFiles, appHome, id)
+        return
+      }
       const tokens = herdrTokens(s.ledger, s.stop, viewOf(s, at), [])
       const r = { target, tokens, session: isPublished ? id : null, seq }
       const key = herdrReportKey(r)
