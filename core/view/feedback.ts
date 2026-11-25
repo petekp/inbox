@@ -268,14 +268,15 @@ export type PressState = Pick<ViewInput, 'lastActions' | 'turns' | 'now'>
 
 /**
  * A press status follows the row's title. While the press is out, an open row draws its status, such as "Comparing…",
- * under its buttons instead, so a status that wraps adds a line below them and never moves them. A row that still
- * waits after its press, such as a failing check after Fix, keeps its done status there, beside the button that
- * presses again, as a PR block does.
+ * under its buttons instead, so a status that wraps adds a line below them and never moves them. An open, copy or
+ * scroll keeps its result there until it clears, done or failed, where "Opening plan.md…" read. A row that still waits
+ * after its press, such as a failing check after Fix, keeps its done status there, beside the button that presses
+ * again, as a PR block does.
  */
 export function isStatusUnderActions(f: Feedback | null, isOpen: boolean): boolean {
   const isDoneStillWaiting = f?.is === 'done' && f.isStillWaiting === true
 
-  return isOpen && (isPressOut(f) || isDoneStillWaiting)
+  return isOpen && (isPressOut(f) || f?.is === 'local' || isDoneStillWaiting)
 }
 
 /**
@@ -291,7 +292,8 @@ export const holdsStatusWhileOut = (kind: PressKind | null): boolean => kind ===
 /**
  * Whether a row in the terminal and desktop looks draws a press status after its title, unless
  * `isStatusUnderActions` places it under the buttons. A status with an age and a Local result that did not fail
- * do. A failure takes its own line above an open row's buttons, in the error color.
+ * do. A failure takes its own line above an open row's buttons, in the error color, unless it is an open or copy's,
+ * which stays under them.
  */
 export function isAfterTitle(f: Feedback): boolean {
   return hasAge(f) || (f.is === 'local' && f.result.state !== 'failed')

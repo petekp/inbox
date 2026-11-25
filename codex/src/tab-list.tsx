@@ -4,15 +4,7 @@ import { partAttrs } from './tab-part-gap'
 import { closedTitleTone, DOT, settledMark, fieldExit, settledLabel, shortAgo } from '../../core/view/rows'
 import { entryId } from '../../core/view/action-plan'
 import { isRowTab } from '../../core/view/tabs'
-import {
-  feedbackText,
-  feedbackTone,
-  hasAge,
-  holdsStatusWhileOut,
-  isFailure,
-  isStatusUnderActions,
-  type FeedbackTone,
-} from '../../core/view/feedback'
+import { hasAge, isFailure, isStatusUnderActions } from '../../core/view/feedback'
 import { dropHeldAfter, heldAfterIds, holdAfter, type AfterLine } from './tab-held-after'
 import type { RowView } from '../../core/view/rows'
 import { TAB_OF } from './arrivals'
@@ -27,28 +19,28 @@ import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
 import type { Key, Row, Entry, Lists } from './tab-state'
 import { reducedMotion } from './tab-motion'
 import { dispatch, drawnTab, errorOf, isGuarded, openRowId, pressRow } from './tab-ui'
-import { isUndoing, outOn, outPending } from './tab-press'
+import { isUndoing, outOn } from './tab-press'
 import { listsOf, pressTitle, shownSettled } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
 import type { DrawnPrs } from './tab-pr-steps'
 import { stepStatus } from './tab-status-steps'
 import { bannerMotion, lineMotion, stepLines } from './tab-line-steps'
-import type { BannerLine, TextLine } from './tab-line-steps'
+import type { BannerLine } from './tab-line-steps'
 import { tabBanners } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
-import {
-  feedbackLabel,
-  noteOf,
-  isFeedbackShown,
-  markClassOf,
-  MarkGlyph,
-  pulseInStep,
-  ResultMarkView,
-  UndoPlace,
-} from './tab-parts'
+import { markClassOf, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 import { TitleTint } from './tab-title-tint'
 import { SettledTitlePart, TitlePart } from './tab-title-cut'
-import { StatusLines, statusLinesOf, statusMotion, type StatusLine } from './tab-status-part'
+import { StatusLines } from './tab-status-part'
+import {
+  drawnPresses,
+  pressLines,
+  pressMotion,
+  pressOf,
+  startPanelLines,
+  statusLines,
+  stepPanelLines,
+} from './tab-panel-lines'
 import { Sep } from './tab-parted'
 
 const LIST_OF = { question: 'questions', task: 'tasks', finding: 'findings' } as const
@@ -67,13 +59,10 @@ export function stepLists(v: View): {
   const openId = isRowTab(t) ? openRowId(t) : undefined
   const changed = new Set<string>()
   const kept = new Set<string>()
+  startPanelLines()
   const prs = t === 'prs' ? stepPrs(v, now, changed, kept) : null
   const status = t === 'overview' ? stepStatus(v.statusPage, now, changed, kept) : null
   const banners = stepLines(tabBanners(v), tabState.lastBanners ?? undefined, bannerMotion, now, changed, kept)
-  const lastPressLines = new Map(pressLines)
-  const lastStatusLines = new Map(statusLines)
-  pressLines.clear()
-  statusLines.clear()
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
@@ -103,16 +92,7 @@ export function stepLists(v: View): {
       const ownRow = drawsPanel(track) && 'row' in x ? x.row : null
       if (!ownRow && !outOn(id)) dropHeldAfter(id)
       const panelRow = ownRow ?? (left && 'row' in left && track.hasOpenForm ? left.row : null)
-      if (panelRow) {
-        const { text, tone } = statusUnderOf(panelRow, ownRow ? undefined : drawnPresses.get(panelRow.id))
-        const lines = text ? [{ id: panelRow.id, text, tone }] : []
-        pressLines.set(panelRow.id, stepLines(lines, lastPressLines.get(panelRow.id), pressMotion, now, changed, kept))
-        const status = statusLinesOf(panelRow.id, statusTextOf(panelRow))
-        statusLines.set(
-          panelRow.id,
-          stepLines(status, lastStatusLines.get(panelRow.id), statusMotion, now, changed, kept),
-        )
-      }
+      if (panelRow) stepPanelLines(panelRow, ownRow ? undefined : drawnPresses.get(panelRow.id), now, changed, kept)
     }
     lists[LIST_OF[group]] = drawn
   }
@@ -154,54 +134,6 @@ export function rowActions(row: Row): { options: Key[]; keys: Key[]; more: Key[]
 
   return { options: row.options, keys: row.keys, more: row.more }
 }
-
-/**
- * A row's press as its line draws it: whether one is out or still sending, and the status it shows. A Mark press out
- * keeps the status the row drew before it, as `holdsStatusWhileOut` says, and only its side column reads "Sending…".
- */
-function pressOf(row: Row): Press {
-  const out = outOn(row.id)
-  const isStatusOut = out !== null && !holdsStatusWhileOut(out.kind)
-  const pending = outPending(tabState.view, row.id, out !== null && !isStatusOut)
-  const isSending = out !== null && out.pending === null
-  const isStatusSending = isSending && isStatusOut
-  const f = isFeedbackShown(row) ? row.feedback : null
-  const label = isStatusSending ? null : pending ? feedbackText(pending, 'codex') : f ? feedbackLabel(row) : null
-  const tone: FeedbackTone = isStatusOut ? 'muted' : feedbackTone(f)
-
-  return { isStatusOut, pending, isSending, isStatusSending, f, label, tone }
-}
-
-type Press = {
-  /** A press is out and its status takes the row's. */
-  isStatusOut: boolean
-  pending: ReturnType<typeof outPending>
-  isSending: boolean
-  /** The press is sending and its status takes the row's: the line draws none until the reply. */
-  isStatusSending: boolean
-  f: Row['feedback']
-  label: string | null
-  tone: FeedbackTone
-  /** The status the row's line drew after its title, which the form a row leaves keeps. */
-  after?: AfterLine | null
-}
-
-/** The press each row's line last drew, which the form a row leaves keeps while it fades out. */
-const drawnPresses = new Map<string, Press>()
-
-/** The status an open row draws under its buttons, while its press is out, and its tone. */
-function statusUnderOf(row: Row, press = pressOf(row)): { text: string | null; tone: FeedbackTone } {
-  const { pending, isStatusSending, f, label, tone } = press
-
-  return { text: !isStatusSending && isStatusUnderActions(pending ?? f, true) ? label : null, tone }
-}
-
-const pressLines = new Map<string, (TextLine & { tone: FeedbackTone })[]>()
-const pressMotion = (id: string) => `press-${id}`
-
-const statusLines = new Map<string, StatusLine[]>()
-
-const statusTextOf = (row: Row) => ({ foldNote: row.fold?.note ?? null, note: noteOf(row.id), error: errorOf(row.id) })
 
 /** What a row's line and side column draw, in its open form or its closed one. */
 type LineForm = {
