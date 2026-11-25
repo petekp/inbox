@@ -99,6 +99,13 @@ export const tint = (c: Color, share: number): Color =>
     .toString(16)
     .padStart(2, '0')}` as Color
 
+const TIME_LEFT_DARK_SHARE = 0.12
+const TIME_LEFT_LIGHT_SHARE = 0.2
+
+/** The fill of a timed button's time left: the text color at the share that shows on the theme's background, as the Codex tab's Undo does in dark. */
+export const timeLeftFillOf = (t: Theme): Color =>
+  tint(t.foreground, isLightTheme(t) ? TIME_LEFT_LIGHT_SHARE : TIME_LEFT_DARK_SHARE)
+
 /** `c` laid over `under` at `c`'s own alpha, as one opaque color. A theme's `selected` and `hover` are translucent. */
 export function flatten(c: Color, under: Color): Color {
   const alpha = c.length > 7 ? parseInt(c.slice(7, 9), 16) / 255 : 1
