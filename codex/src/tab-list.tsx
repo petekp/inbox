@@ -209,7 +209,7 @@ export function ListRow({
             isFailed: isFailure(pending ?? f),
             isPressUnderWay: outOn(row.id) !== null || isPressUnderWay(pending ?? f),
           },
-          now,
+          Date.now(),
         )
       : shown.last
   const drawn = { ...shown, last: heldLast }

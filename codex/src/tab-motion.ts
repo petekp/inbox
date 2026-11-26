@@ -267,7 +267,10 @@ function moveRow(
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
     if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, Math.max(heightWaitMs, closeWaitMs))
-    else if (state === 'entering' && was) growIn(el, { x: was.height, v: 0 }, was.opacity, 0)
+    else if (state === 'entering' && was) {
+      const hasStarted = was.height >= 0.5 || was.opacity > 0
+      growIn(el, { x: was.height, v: 0 }, was.opacity, hasStarted ? 0 : Math.max(heightWaitMs, closeWaitMs))
+    }
     return
   }
   if (state && !isMoving(state) && !changed.has(key)) glideLine(el, was.line, naturalHeight(el) - from.x)

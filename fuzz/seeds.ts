@@ -590,7 +590,15 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
     ],
   },
   { issue: 932, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status ']] },
-  { issue: 934, look: 'herdr', rule: 'cut', details: [['"Explaining…"', 'in its box status ']] },
+  {
+    issue: 934,
+    look: 'herdr',
+    rule: 'cut',
+    details: [
+      ['"Explaining…"', 'in its box status '],
+      ['"Queued: Explain"', 'in its box status '],
+    ],
+  },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
   { issue: 896, look: 'codex', rule: 'cut', details: ['"Holds up ', '"Comparing…"'] },

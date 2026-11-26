@@ -29,7 +29,6 @@ type Fading = { at: number; id: string; height: number; opacity: number }
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
 type Shown = { at: number; block: string; text: string; opacity: number; share: number; isFormPart: boolean }
 type ShownLine = { block: string; text: string; top: number; height: number; opacity: number }
-/** The last frame's clipped boxes with a set height, beside their content's height, and its text lines. */
 type Rest = { fits: { id: string | null; height: number; content: number }[]; lines: ShownLine[] }
 
 const lengthIn = (length: number | string, height: number): number =>
@@ -309,7 +308,6 @@ class Frames {
   shown: Shown[] = []
   rest: Rest = { fits: [], lines: [] }
 
-  /** Shows another page, as the panel does on a tab switch: its next draw is a first draw, with the heights kept. */
   showPage() {
     this.last = null
     this.tracks = NO_TRACKS

@@ -72,6 +72,21 @@ test('a row deselected while its press is under way keeps its held line for when
   ])
 })
 
+test('a row selected while it shows a status draws that status at rest, with no box opening for it', () => {
+  const session = demoSession(NOW, AGENT)
+  const discussed = {
+    ...session,
+    lastActions: { ...session.lastActions, d23: discuss },
+    presence: { ...session.presence, turnsStarted: 14, turnsApplied: 15 },
+  }
+  const screen = { ...demoScreen(), view: sessionView(discussed, NOW, SETTLED_MS, NO_HOLDS) }
+  const before = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected: 'd22' })), NO_LINES_ABOVE, NOW)
+  const after = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected: 'd23' })), before.held, NOW + 16)
+  const row = rowsOf(after.blocks).find(b => b.id === 'd23')
+  expect(row?.feedback?.text).toBe('✓ Discussed')
+  expect(row?.lineCameAt).toBeUndefined()
+})
+
 test('a held failure keeps its space without its words while the press is under way, then lets its space close', () => {
   const failed: LastAction = {
     ...discuss,
@@ -151,7 +166,7 @@ test('a held line that ends with its age keeps counting it', () => {
   }
   const sending: RowBlock = {
     ...row,
-    feedback: { text: 'Sending…', tone: 'muted', source: { is: 'sending', label: 'Sending…', at: NOW } },
+    feedback: { text: 'Sending…', tone: 'muted', source: { is: 'sending', label: 'Sending…', at: NOW, sentAt: NOW } },
   }
   const first = holdLinesAbove([done], NO_LINES_ABOVE, NOW)
   const later = holdLinesAbove([sending], first.held, NOW + 60_000)

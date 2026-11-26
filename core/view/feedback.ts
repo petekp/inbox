@@ -16,7 +16,7 @@ export type Feedback =
   | { is: 'stillOpen'; at: number }
   | { is: 'noComparison'; at: number }
   /** The labels of a message on its way read as the row draws them, from `deliveryLabel`, as "Queued: Yes" or "Queued reply: Call it hello". */
-  | { is: 'sending'; label: string; at: number }
+  | { is: 'sending'; label: string; at: number; sentAt: number }
   | { is: 'queued'; label: string; at: number }
   | { is: 'unconfirmed'; label: string; at: number }
   | { is: 'notSent'; reason: string; retry: RowPress | null }
@@ -50,7 +50,8 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
  * it was held does not come back.
  */
 export function pressUnderWaySince(f: Feedback | null): number | null {
-  if (f?.is === 'working' || f?.is === 'sending') return f.at
+  if (f?.is === 'sending') return f.sentAt
+  if (f?.is === 'working') return f.at
   if (f?.is !== 'local') return null
 
   return f.talkOutSince ?? (f.result.state === 'pending' ? f.result.at : null)
@@ -76,7 +77,7 @@ export function feedbackOf(
     const under =
       last.kind === 'talk' ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now, reportedAt) : null
     const isTalkOut = under?.is === 'working' || under?.is === 'sending' || under?.is === 'queued'
-    const talkOutSince = isTalkOut ? under.at : undefined
+    const talkOutSince = isTalkOut ? (under.is === 'sending' ? under.sentAt : under.at) : undefined
 
     return { is: 'local', result, ...(talkOutSince === undefined ? {} : { talkOutSince }) }
   }
@@ -100,7 +101,12 @@ export function feedbackOf(
       ...(last.kind === 'handoff' ? { isHandoff: true as const } : {}),
     }
   if (pending === 'sending')
-    return { is: 'sending', label: deliveryLabel('sending', last.text, last.reply), at: queuedSentAt(last) }
+    return {
+      is: 'sending',
+      label: deliveryLabel('sending', last.text, last.reply),
+      at: last.at,
+      sentAt: queuedSentAt(last),
+    }
   if (isUnreported) return { is: 'noComparison', at: last.at }
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: 'stillOpen', at: last.at }
 

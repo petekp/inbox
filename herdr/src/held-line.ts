@@ -13,11 +13,15 @@ type LineAbove = { text: string; tone: Tone; aged?: Aged; cameAt?: number }
 
 /**
  * What each row holds above its buttons, by row id: the line it last drew there, or null for a row that drew none
- * there when its press went out, so its status stays under its buttons.
+ * there when its press went out, so its status stays under its buttons. `lineless` names the rows that last drew their
+ * buttons with no line above them.
  */
-export type LinesAbove = ReadonlyMap<string, HeldLine<LineAbove> | null>
+export type LinesAbove = {
+  held: ReadonlyMap<string, HeldLine<LineAbove> | null>
+  lineless: ReadonlySet<string>
+}
 
-export const NO_LINES_ABOVE: LinesAbove = new Map()
+export const NO_LINES_ABOVE: LinesAbove = { held: new Map(), lineless: new Set() }
 
 /** How long a line whose hold let go stays drawn: its fade, then its space closing. */
 const HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS
@@ -55,20 +59,22 @@ const isComing = (l: LineAbove | undefined, now: number): l is LineAbove & { cam
  * with "✓ Explained". A row drawn without buttons during its press, such as one deselected, keeps what it holds for
  * when it shows them again. A row that settles or comes back from settled starts holding afresh.
  *
- * A status that comes above the buttons of a row that held no line there opens a box for itself, so the buttons glide
- * down (`lineCameAt`). In a draw that takes heights at once, `isAtOnce`, it comes at rest.
+ * A status that comes above the buttons of a row that last drew them with no line above opens a box for itself, so the
+ * buttons glide down (`lineCameAt`). A row that shows its buttons again, such as one selected, draws its line at rest,
+ * as does a draw that takes heights at once, `isAtOnce`.
  */
 export function holdLinesAbove(
   blocks: Block[],
-  held: LinesAbove,
+  last: LinesAbove,
   now: number,
   isAtOnce = false,
 ): { blocks: Block[]; held: LinesAbove; nextAt: number | null } {
   const next = new Map<string, HeldLine<LineAbove> | null>()
+  const lineless = new Set<string>()
   const shown = blocks.map((b): Block => {
     if (b.kind !== 'row') return b
     const key = heldKey(b)
-    const kept = held.get(key)
+    const kept = last.held.get(key)
     const f = b.feedback
     const source = f?.source ?? null
     const isUnderWay = isPressUnderWay(source)
@@ -80,10 +86,11 @@ export function holdLinesAbove(
     const isStarting = kept === undefined && f !== null && isUnder && (isUnderWay || source?.is === 'queued')
     if (kept === null || isStarting) {
       next.set(key, null)
+      lineless.add(key)
       return kept === null && f !== null && !isUnder ? { ...b, isStatusHeldUnder: true } : b
     }
-    const cameAt =
-      kept === undefined ? (isAtOnce ? undefined : now) : kept.leftAt === null ? kept.line.cameAt : undefined
+    const isNewLine = kept === undefined && !isAtOnce && last.lineless.has(key)
+    const cameAt = isNewLine ? now : kept?.leftAt === null ? kept.line.cameAt : undefined
     const own = f !== null && !isUnder ? lineOf(f, cameAt) : null
     const isOwnFailure = f !== null && isFailure(f.source)
     const step = stepHeldLine(
@@ -94,6 +101,7 @@ export function holdLinesAbove(
     )
     if (step.kept) next.set(key, step.kept)
     const d = step.drawn
+    if (!d && !own) lineless.add(key)
     if (!d) return own && isComing(own, now) ? { ...b, lineCameAt: own.cameAt } : b
     const text = d.line.aged ? agedText(d.line.aged, now) : d.line.text
 
@@ -111,7 +119,7 @@ export function holdLinesAbove(
       : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter(at => at > now)
   })
 
-  return { blocks: shown, held: next, nextAt: ends.length === 0 ? null : Math.min(...ends) }
+  return { blocks: shown, held: { held: next, lineless }, nextAt: ends.length === 0 ? null : Math.min(...ends) }
 }
 
 /** Whether a row's held line that let go has faded, so its box shuts. */
