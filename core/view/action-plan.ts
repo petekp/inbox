@@ -1,6 +1,7 @@
 import type { Item, PressKind, Finding, LastAction, Tab } from '../../types'
 import { actionId, ISSUE_LABEL, SHOW_EXPLANATION_LABEL } from '../domain/press-labels'
 import { stepIconKind } from '../domain/help-steps'
+import { OPEN_PREVIEWS_LABEL } from '../domain/option-previews'
 import type { HelpStep } from '../domain/help-steps'
 import type { RowPress } from '../domain/presses'
 import type { PrPress } from './pr-press'
@@ -41,6 +42,7 @@ const ACTION_KEYS: Partial<Record<RowPress['action'], string>> = {
   'show-explanation': 's',
   explain: 'e',
   compare: 'p',
+  previews: 'o',
   discuss: 'd',
   dismiss: 'x',
   discard: 'x',
@@ -172,6 +174,7 @@ export function actionsOf(
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1,
       }),
     ),
+    ...(item.previewPage ? [action({ action: 'previews', id }, OPEN_PREVIEWS_LABEL, 'local')] : []),
     ...stepActions,
     action({ action: 'type', id, text: '' }, 'Reply', 'mark'),
     ...explainActions,

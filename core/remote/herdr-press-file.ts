@@ -73,6 +73,7 @@ const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref'
   undo: 'id',
   discard: 'id',
   step: 'id',
+  previews: 'id',
   'remove-goal': 'id',
   'restore-goal': 'id',
   'take-goal': 'id',

@@ -42,7 +42,7 @@ export async function runPress(
 ) {
   const mayStayOnRow = isPrPress(p)
     ? ['pr-open', 'pr-refresh', 'thread-open', 'log', 'check-rerun'].includes(p.action)
-    : p.action === 'step'
+    : p.action === 'step' || p.action === 'previews'
   const undoRevision = mayStayOnRow ? suspendUndoReveal() : cancelUndoScroll()
   const now = await m.clock.now()
   const isDemo = (await m.atoms.demo.read()) !== null

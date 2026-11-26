@@ -1,0 +1,69 @@
+[
+  {
+    "name": "design-choice-gives-previews",
+    "about": "A design choice whose options the agent drew as images is recorded with each option's image in previews, given at once or after the record's answer says it has none.",
+    "files": {
+      ".scratch/cards/flat.png": "PNG placeholder\n",
+      ".scratch/cards/outlined.png": "PNG placeholder\n",
+      ".scratch/cards/raised.png": "PNG placeholder\n",
+      ".scratch/cards/glass.png": "PNG placeholder\n"
+    },
+    "prompt": "Task: restyle the cards on the dashboard. You made a mockup of each of four card styles and saved them in this checkout: .scratch/cards/flat.png, .scratch/cards/outlined.png, .scratch/cards/raised.png and .scratch/cards/glass.png. You recommend raised, because the cards sit on a busy background. I have to choose one style before you build it. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "min": 1,
+        "match": {
+          "previews": "^/\\S*cards/\\w+\\.png,/\\S*cards/\\w+\\.png,/\\S*cards/\\w+\\.png,/\\S*cards/\\w+\\.png$"
+        }
+      },
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1,
+        "items": true
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "raised"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
+    "name": "design-choice-without-pictures-records-once",
+    "about": "A design choice between two ways to build something, with nothing drawn, is recorded once with no previews: the record's answer that it has none asks only when the agent made something to show.",
+    "prompt": "Task: add search to the product API. Before you build it, I have to choose how: Postgres full-text search, or a new Elasticsearch cluster. You have not built or drawn either one. You recommend Postgres, because the catalog has under 50,000 products. Ask me.",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 1
+      },
+      {
+        "calls": "record",
+        "kind": "question",
+        "count": 0,
+        "match": {
+          "previews": "[a-z/]"
+        }
+      },
+      {
+        "reply": "postgres"
+      },
+      {
+        "reply": "elastic"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  }
+]

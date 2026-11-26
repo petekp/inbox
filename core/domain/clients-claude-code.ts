@@ -123,5 +123,6 @@ export const CLAUDE_CODE: Client = {
       reason:
         'The row says the person stopped the session and offers no Go to session, since the person is already in it.',
     },
+    'option-previews': { kind: 'full' },
   },
 }

@@ -131,5 +131,6 @@ export const OMP: Client = {
       kind: 'different',
       reason: 'The host holds no message after the person stops a turn, so it never refuses one for that.',
     },
+    'option-previews': { kind: 'full' },
   },
 }

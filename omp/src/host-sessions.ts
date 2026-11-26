@@ -4,6 +4,7 @@ import type { ViewerStore } from '../../core/runtime/remote-viewers'
 import { commandsOf, remoteReceipts } from '../../core/runtime/remote-command-state'
 import { ompCommandStore } from './command-log'
 import { registryFiles } from './registry'
+import { withPreviewPages } from '../../core/runtime/preview-pages'
 import { registryHerdr, removeRegistryEntry, writeRegistryEntry } from '../../core/runtime/session-registry'
 import { mkdir, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -406,8 +407,18 @@ export function sessionCalls(context: HostContext) {
     ctx.setTimeout(() => deps.background(wakeAfterSettle(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS)
   }
 
+  const previews = deps.previewPages?.(context.logHerdr)
+
+  /** `change` for an agent tool call, which also writes the session's previews pages. */
+  async function changeByTool(id: string, fn: (s: OmpState) => OmpState) {
+    const place = previews?.placeOf(id) ?? null
+    const saved = await change(id, s => withPreviewPages(fn(s), place))
+    if (place) await previews?.write(place, saved.ledger)
+  }
+
   return {
     change,
+    changeByTool,
     notifyChanged,
     endedTurn,
     hostFor,
