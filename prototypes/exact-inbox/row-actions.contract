@@ -19,9 +19,9 @@ component RowActions
   derive answers = optionsShown ? item.allOptions : item.options
   derive answerKeys = answers.map(option => option.button.key)
   view
-    column gap=8
+    column gap=0
       for option, oi in answers key=option.id
-        column position="relative" gap=4 align-items="start"
+        column position="relative" gap=4 align-items="start" padding-bottom=8
           if item.hasTree
             box position="absolute" left=-17 top=0 height=(oi == answers.length - 1 ? 14 : "100%") border-left="1.5px solid tree.row"
             box position="absolute" left=-17 top=14 width=11 border-top="1.5px solid tree.row"

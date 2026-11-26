@@ -26,7 +26,7 @@ component SessionList
           row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
             text error color="tone.error"
         for s in entries key=s.id
-          button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` appearance="none" width="100%" border-width=0 border-radius=8 padding="8px 10px" text-align="left" background-color=(selected == s.id ? "surface.selected" : "transparent")
+          button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` appearance="none" width="100%" box-sizing="border-box" border-width=0 border-radius=8 padding="8px 10px" text-align="left" background-color=(selected == s.id ? "surface.selected" : "transparent")
             :active
               background-color="surface.soft"
             column flex=1 min-width=0 gap=2

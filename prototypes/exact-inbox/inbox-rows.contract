@@ -80,35 +80,37 @@ component InboxRows
                     if r.row.age != ""
                       text r.row.age font-size=12 color="ink.faint" font-variant-numeric="tabular-nums" white-space="nowrap" padding-left=8
                 column position="relative" min-width=0 gap=0 padding-left=24 height=(r.target == "open" ? "auto" : "0px") overflow="hidden" inert=(r.target != "open") aria-hidden=(r.target != "open") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "open" ? 1 : 0) translate=rowSlide(r.target != "open") transition=rowFade(reduced)
-                  if r.panel.hasTree
-                    box position="absolute" left=7 top=0 bottom=0 border-left="1.5px solid tree.row"
-                  column gap=0 padding-top=0
-                    if r.panel.state != "settled"
+                  if r.panel.state != "settled"
+                    column position="relative" gap=0 padding-bottom=(r.panel.hasTree and (r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? 8 : 0)
+                      if r.panel.hasTree and (r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0))
+                        box position="absolute" left=-17 top=0 bottom=0 border-left="1.5px solid tree.row"
                       if r.panel.holdsUpParts.length > 0
                         column position="relative" color="ink.muted"
                           if r.panel.hasTree
+                            box position="absolute" left=-17 top=0 height=(not (r.panel.contextParts.length > 0 or r.panel.earlierParts.length > 0 or r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? 10 : "100%") border-left="1.5px solid tree.row"
                             box position="absolute" left=-17 top=10 width=11 border-top="1.5px solid tree.row"
                           InlineText(parts=r.panel.holdsUpParts)
                       if r.panel.contextParts.length > 0
                         column position="relative" color="ink.muted" padding-top=(r.panel.holdsUpParts.length > 0 ? 8 : 0)
                           if r.panel.hasTree
+                            box position="absolute" left=-17 top=0 height=(not (r.panel.earlierParts.length > 0 or r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? (r.panel.holdsUpParts.length > 0 ? 18 : 10) : "100%") border-left="1.5px solid tree.row"
                             box position="absolute" left=-17 top=(r.panel.holdsUpParts.length > 0 ? 18 : 10) width=11 border-top="1.5px solid tree.row"
                           InlineText(parts=r.panel.contextParts)
                       if r.panel.earlierParts.length > 0
                         column position="relative" color="ink.muted" padding-top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 ? 8 : 0)
                           if r.panel.hasTree
+                            box position="absolute" left=-17 top=0 height=(not (r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? (r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 ? 18 : 10) : "100%") border-left="1.5px solid tree.row"
                             box position="absolute" left=-17 top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 ? 18 : 10) width=11 border-top="1.5px solid tree.row"
                           InlineText(parts=r.panel.earlierParts)
                       if r.panel.detailParts.length > 0
-                        column color="ink.primary" white-space="pre-line"
+                        column color="ink.primary" white-space="pre-line" padding-top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 or r.panel.earlierParts.length > 0 ? 6 : 0)
                           InlineText(parts=r.panel.detailParts)
                       if r.panel.fileName != ""
                         row gap=6 flex-wrap="wrap" align-items="center" padding-top=4
                           text r.panel.fileLabel color="ink.muted"
                           text r.panel.fileName font-family="monospace" font-size=12 padding="1px 4px" border-radius=4 background-color="surface.soft" color="ink.primary"
-                    if r.panel.state != "settled"
-                      column padding-top=8
-                        RowActions(item=r.panel, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+                    column padding-top=(r.panel.hasTree and (r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? 0 : 8)
+                      RowActions(item=r.panel, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
                     if replyOpen and replyRow == r.row.id and r.row.state != "settled"
                       column padding-top=8
                         ReplyPane(discardLabel=discardLabel, hint=r.panel.replyHint, reduced=reduced, goalReply=false, submitLabel=sendLabel, title="", draft=replyText, canSend=canSend and not r.guarded, canDiscard=not pending and not r.guarded, message=replyMessage, tab=(findings ? "findings" : "asks"), onEdit=onEdit, onDiscard=onDiscard, onCancel=onCancel, onSend=onSend)
