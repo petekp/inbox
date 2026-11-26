@@ -117,6 +117,28 @@ describe('items the agent recorded', () => {
     expect(choice.result).not.toContain("can't approve")
   })
 
+  test('a record with text longer than its row shows is refused and names the field, and text that fits is kept whole', () => {
+    const input = { kind: 'question', ask: ask.ask, options: ask.options }
+    const fits = 'The app quit and reopened 32 s later, with no crash report, so '.padEnd(200, 'x')
+    const kept = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, { ...input, context: fits }, 1000, TOOL_FIELDS)
+    expect(kept.ledger.items[0]?.context).toBe(fits)
+
+    const long = recordItem(CLAUDE_CODE, kept.ledger, { ...input, context: `${fits}y` }, 1100, TOOL_FIELDS)
+    expect(long.result).toBe(
+      "Not recorded: context has 201 characters, more than the 200 the user's row shows. Shorten it and try again.",
+    )
+    expect(long.ledger).toBe(kept.ledger)
+    const note = recordItem(
+      CLAUDE_CODE,
+      EMPTY,
+      { ...input, option_notes: ['Adds a server', 'x'.repeat(121)] },
+      1000,
+      TOOL_FIELDS,
+    )
+    expect(note.result).toStartWith('Not recorded: item 2 of option_notes has 121 characters')
+    expect(note.ledger).toBe(EMPTY)
+  })
+
   test('a record again in the turn that rewords the ask and adds context replaces the row, while another question stays its own', () => {
     const options = ['Redis', 'Memory cache']
     const bare = recordItem(

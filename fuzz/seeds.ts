@@ -286,7 +286,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
           kind: 'question',
           ask: 'Z',
           options: [
-            `https://example.com/${'path/'.repeat(30)}`,
+            `https://example.com/${'path/'.repeat(8)}`,
             'هل نعيد المحاولة؟',
             'Fix the flaky test',
             'zero\u200bwidth\u200bspaces',

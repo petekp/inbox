@@ -98,7 +98,7 @@ test('a held row and the rows that closed while the tab shows stay in place, and
   await $.tool.call({
     tool: 'mcp__inbox__close',
     id: 'i2',
-    reason: 'settled in chat, since the team already picked the name for the command in this morning’s standup',
+    reason: 'settled in chat, since the team picked the name at standup',
   } as never)
   await clock.settle()
   w.ledgerReply = tasks.map(t => `NEW: do | - | ${t} | - | -`).join('\n')

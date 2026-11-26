@@ -9,6 +9,7 @@ import { MAX_ORDERED_PRS, tabPrs } from '../domain/pr-fetch'
 import { isDismissed } from '../view/pr-views'
 import { bodyChanges, missingText, questionBody, withBody } from '../domain/question-checks'
 import { previewsLeftOutText } from '../domain/option-previews'
+import { CLOSE_LIMITS, ORDER_LIMITS, RECORD_LIMITS, recordFields, tooLongText } from '../domain/field-limits'
 import { earlierAnswersText } from '../domain/record-matches'
 import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA } from '../domain/tool-schemas'
 import { CLOSE_ID_RULE } from '../domain/inbox-text'
@@ -102,23 +103,15 @@ export function toolAnswer(
   }
 }
 
-function cut(value: unknown, max: number): string {
-  return typeof value === 'string' ? value.trim().slice(0, max) : ''
+function trimmed(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
 }
 
-const MAX_ASK = 200
-const MAX_OPTION = 60
 const MAX_OPTIONS = 8
 const MAX_STEPS = 3
-const MAX_REASON = 120
 
-function list(value: unknown, max: number, each: number): string[] {
-  return Array.isArray(value)
-    ? value
-        .map(v => cut(v, each))
-        .filter(Boolean)
-        .slice(0, max)
-    : []
+function list(value: unknown, max: number): string[] {
+  return Array.isArray(value) ? value.map(trimmed).filter(Boolean).slice(0, max) : []
 }
 
 /**
@@ -145,16 +138,18 @@ export function recordItem(
   if (input.kind === 'finding') return recordFinding(host, ledger, input, now)
   if (input.kind !== 'question' && input.kind !== 'task')
     return unchanged(ledger, 'Not recorded: kind must be question, task or finding.')
-  const ask = cut(input.ask, MAX_ASK)
+  const tooLong = tooLongText(input, RECORD_LIMITS, recordFields(input))
+  if (tooLong) return unchanged(ledger, `Not recorded: ${tooLong}`)
+  const ask = trimmed(input.ask)
   if (ask === '') return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`)
-  const options = list(input.options, MAX_OPTIONS, MAX_OPTION)
+  const options = list(input.options, MAX_OPTIONS)
   if (input.kind === 'question' && options.length === 0)
     return unchanged(ledger, 'Not recorded: a question needs at least one option.')
-  const recInput = input.kind === 'question' ? cut(input.rec, MAX_OPTION) : ''
+  const recInput = input.kind === 'question' ? trimmed(input.rec) : ''
   const rec = recInput === '' ? null : recommendedOption(options, recInput)
   if (recInput !== '' && rec === null) return unchanged(ledger, 'Not recorded: rec must be one of the options.')
-  const recReason = rec ? cut(input.why, MAX_REASON).replace(/^because\s+/i, '') : ''
-  const steps = list(input.steps, MAX_STEPS + 3, 4000)
+  const recReason = rec ? trimmed(input.why).replace(/^because\s+/i, '') : ''
+  const steps = list(input.steps, MAX_STEPS + 3)
   const isUsable = (h: Help) => input.kind === 'task' || h.kind === 'open' || h.kind === 'link'
   const helps = steps
     .flatMap(step => stepHelp(step) ?? [])
@@ -218,10 +213,12 @@ export function recordItem(
 }
 
 function recordFinding(host: Host, ledger: Ledger, input: Record<string, unknown>, now: number): ToolAnswer {
-  const title = cut(input.title, 120)
-  const detail = cut(input.detail, 600)
+  const tooLong = tooLongText(input, RECORD_LIMITS, recordFields(input))
+  if (tooLong) return unchanged(ledger, `Not recorded: ${tooLong}`)
+  const title = trimmed(input.title)
+  const detail = trimmed(input.detail)
   if (title === '' || detail === '') return unchanged(ledger, 'Not recorded: a finding needs a title and a detail.')
-  const path = cut(input.path, 300)
+  const path = trimmed(input.path)
   const kind = input.finding_kind === 'opportunity' ? 'opportunity' : 'issue'
   const r = addFinding(ledger, { kind, title, detail, path: path || null, at: now })
 
@@ -306,11 +303,13 @@ export function recordClose(
   now: number,
   presses: Presses,
 ): ToolAnswer {
-  const id = cut(input.id, 80).replace(/^\[|\]$/g, '')
-  const answer = cut(input.answer, 80)
-  const reason = cut(input.reason, 80)
+  const id = trimmed(input.id).replace(/^\[|\]$/g, '')
+  const answer = trimmed(input.answer)
+  const reason = trimmed(input.reason)
   if (id === '' || (answer === '' && reason === ''))
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.")
+  const tooLong = tooLongText(input, CLOSE_LIMITS)
+  if (tooLong) return unchanged(ledger, `Not closed: ${tooLong}`)
   if (answer === '' && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, 'Not closed: your record updated this question, and it stays open for the user.')
   const item = ledger.items.find(i => i.id === id)
@@ -342,8 +341,6 @@ export function recordClose(
 }
 
 const REPO = /^[\w.-]+\/[\w.-]+$/
-const MAX_ORDER_LABEL = 40
-const MAX_ORDER_WHY = 300
 
 /** A PR number as the agent gave it, as 3401 or "#3401", or null when it is not one. */
 function prNumber(value: unknown): number | null {
@@ -376,14 +373,16 @@ function orderPrs(
   }
   const numbers = input.numbers.map(prNumber)
   if (numbers.includes(null)) return unchanged(ledger, 'Not set: numbers must be PR numbers, such as 3401.')
-  const repo = cut(input.repo, 200)
+  const repo = trimmed(input.repo)
   if (!REPO.test(repo)) return unchanged(ledger, 'Not set: give repo as owner/name.')
   const refs = [...new Set(numbers.map(n => `${repo}#${n}`))]
   if (refs.length > MAX_ORDERED_PRS) return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`)
-  const label = cut(input.label, MAX_ORDER_LABEL)
+  const label = trimmed(input.label)
   if (!label) return unchanged(ledger, 'Not set: give label, what the user does with the order.')
-  const why = cut(input.why, MAX_ORDER_WHY)
+  const why = trimmed(input.why)
   if (!why) return unchanged(ledger, 'Not set: give why, the reason for this order.')
+  const tooLong = tooLongText(input, ORDER_LIMITS)
+  if (tooLong) return unchanged(ledger, `Not set: ${tooLong}`)
   const dismissed = refs.filter(ref => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref))
   const onTab = tabPrs(ledger)
   const added = refs.filter(ref => !onTab.includes(ref))
