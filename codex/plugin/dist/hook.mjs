@@ -635,6 +635,8 @@ var SUBJECT_MARKS = {
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var TASK_MARK = { mark: "\u25A1", tone: "tasks" };
+var heldMarkOf = (kinds) => kinds.some((k) => k === "question") ? HELD_MARK : TASK_MARK;
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: "working" };
@@ -666,6 +668,7 @@ var MARK_LEGEND = [
     words: "Waits on something other than you, such as a build or a review"
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
     tone: NEEDS_YOU_MARKS.question.tone,
@@ -812,7 +815,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       kind: "subject",
       id: x.id,
       depth,
-      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning: isRunning2,
       ...carried,
       name: x.name,
@@ -934,7 +937,7 @@ function milestoneRow(step, o, items) {
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
     id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
     line: step.line,
@@ -1313,7 +1316,8 @@ function isWaitingRow(row) {
   return row.state.is === "open";
 }
 var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
-var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
 }
@@ -2975,6 +2979,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const isNew = (x) => o === null || !isSubjectSeen(o, x);
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const holdKindsOf = (x) => s.ledger.items.filter((i) => o?.askSubjects[i.id]?.includes(x.id)).map((i) => i.kind);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
@@ -3028,6 +3033,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const ctx = {
     isNew,
     isHeld,
+    holdKindsOf,
     oldestAskOf,
     items: s.ledger.items,
     running,

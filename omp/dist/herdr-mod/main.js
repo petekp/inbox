@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T05:45:56.936Z. 383373 characters follow.
+// Built at 2026-11-26T06:24:10.827Z. 384132 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -829,6 +829,8 @@ var SUBJECT_MARKS = {
   dropped: { mark: "✗", tone: null }
 };
 var HELD_MARK = { mark: "◆", tone: "needsYou" };
+var TASK_MARK = { mark: "□", tone: "tasks" };
+var heldMarkOf = (kinds) => kinds.some((k) => k === "question") ? HELD_MARK : TASK_MARK;
 var RUNNING_FRAMES = ["●", "◉", "◎", "◉"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "◐", tone: "working" };
@@ -860,6 +862,7 @@ var MARK_LEGEND = [
     words: "Waits on something other than you, such as a build or a review"
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
     tone: NEEDS_YOU_MARKS.question.tone,
@@ -1093,7 +1096,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       kind: "subject",
       id: x.id,
       depth,
-      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning,
       ...carried,
       name: x.name,
@@ -1259,7 +1262,7 @@ function milestoneRow(step, o, items) {
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
     id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
     line: step.line,
@@ -2207,9 +2210,13 @@ function rowResultMark(row) {
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
-var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
+function openMark(row) {
+  return row.type === "finding" ? null : row.type === "task" ? TASK_ROW_MARK : QUESTION_MARK;
+}
 function rowMark(row) {
-  return rowResultMark(row) ?? (row.state.is === "open" && row.type !== "finding" ? ASK_MARK : null);
+  return rowResultMark(row) ?? (row.state.is === "open" ? openMark(row) : null);
 }
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
@@ -4108,6 +4115,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const isNew = (x) => o === null || !isSubjectSeen(o, x);
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const holdKindsOf = (x) => s.ledger.items.filter((i) => o?.askSubjects[i.id]?.includes(x.id)).map((i) => i.kind);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
@@ -4156,6 +4164,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const ctx = {
     isNew,
     isHeld,
+    holdKindsOf,
     oldestAskOf,
     items: s.ledger.items,
     running,
@@ -6685,7 +6694,7 @@ import { h_flex } from "gpui-base";
 import { PathBuilder, div } from "gpui-kit";
 var CHECKBOX_PX = 11;
 var CHECK_PATH = PathBuilder.stroke(1.5).move_to("27%", "53%").line_to("43%", "69%").line_to("74%", "31%").build();
-var checkboxEl = (color) => div().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
+var checkboxEl = (color, isChecked = true) => div().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).border_1().border_color(color).rounded(3).when(isChecked, (e) => e.child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`)));
 
 // src/paint-timer.ts
 import { div as div2 } from "gpui-kit";
@@ -6727,7 +6736,7 @@ var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, ab
   const others = buttons.filter((b) => !b.isFollowUp);
   return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(above).pl(indent - outdent).children(others.map((b) => buttonEl(b, p, isInert, true))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().ml(outdent).gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
 };
-var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
+var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark || m?.text === TASK_MARK.mark ? h_flex().w(MARK_W).h(LINE_HEIGHT).flex_none().items_center().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)), m.text === NEEDS_YOU_MARKS.task.mark)) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
 function fadeEl(el, name, opacity, glide, p) {
   const handed = p.fades.fade(name, opacity, glide.duration, glide.delay, p.now);

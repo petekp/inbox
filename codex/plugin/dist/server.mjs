@@ -121,6 +121,7 @@ var SUBJECT_MARKS = {
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var TASK_MARK = { mark: "\u25A1", tone: "tasks" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: "working" };
@@ -152,6 +153,7 @@ var MARK_LEGEND = [
     words: "Waits on something other than you, such as a build or a review"
   },
   { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
     tone: NEEDS_YOU_MARKS.question.tone,
@@ -211,7 +213,8 @@ var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
   { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
-var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
 var QUEUED_RESULT = { text: SUBJECT_MARKS.queued.mark, isRunning: false };
 
 // ../core/view/session-files.ts
