@@ -35,6 +35,7 @@ export const NO_SIZES: Sizes = { get: () => undefined, widthOf: () => undefined 
 export class Heights {
   private sizes = new Map<string, Size>()
   private resized = new Set<string>()
+  private isChanged = false
   private zoom: number | null = null
 
   /** A block's copy in its old place has no size of its own until it measures, and takes its original's until then. */
@@ -64,6 +65,7 @@ export class Heights {
     this.sizes.set(key, { width: size.width, height: size.height })
     const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height
     if (isRewrapped) this.resized.add(key)
+    if (was?.height !== size.height) this.isChanged = true
 
     return was?.height !== size.height || isZoomChanged || (isWidthDrawn && was?.width !== size.width)
   }
@@ -76,10 +78,38 @@ export class Heights {
     return resized
   }
 
+  /** Whether a height changed since the last draw that asked. */
+  takeChanged(): boolean {
+    const isChanged = this.isChanged
+    this.isChanged = false
+
+    return isChanged
+  }
+
   clear() {
     this.sizes.clear()
     this.resized.clear()
   }
+}
+
+/** How long a newly shown page keeps taking its heights at once while its measures still change. */
+const PAGE_FORMS_MS = 100
+
+/**
+ * When the page drawn at `now` started to form, or null once it is at rest. A newly shown page draws at once, and keeps
+ * taking its heights at once while each draw brings new measures (`isChanged`), as when its answers' measured widths
+ * stack them, so a row drawn for the first time comes to rest at its measured height instead of springing to it under
+ * its buttons.
+ */
+export function pageFormingSince(
+  isFirst: boolean,
+  since: number | null,
+  isChanged: boolean,
+  now: number,
+): number | null {
+  if (isFirst) return now
+
+  return since !== null && isChanged && now - since < PAGE_FORMS_MS ? since : null
 }
 
 /** The key a row's title is measured under. */
@@ -88,9 +118,12 @@ export const titleId = (id: string): string => `title ${id}`
 /** The key a row's lines under its title, with its panel, are measured under. */
 export const restId = (id: string): string => `rest ${id}`
 
-/** A PR block's title, and the lines under its status line: its error, buttons and press result. */
+/** The key a PR block's title is measured under. */
 export const prHeadId = (id: string): string => `head ${id}`
-export const prTailId = (id: string): string => `tail ${id}`
+
+/** The keys a held line that lets go is measured under: its box as it shuts, and the line in it. */
+export const aboveId = (id: string): string => `above ${id}`
+export const aboveLineId = (id: string): string => `above line ${id}`
 
 /** The key a row's panel is measured under, beside the row's own height. */
 export const panelId = (id: string): string => `panel ${id}`

@@ -23,23 +23,24 @@ const earlierReply: LastAction = {
 }
 const discuss: LastAction = { kind: 'talk', action: 'discuss', text: 'Discuss', at: NOW - 1000, turnsStarted: 14 }
 
-function heldAcross(draws: [LastAction | null, number, string][]) {
+function heldAcross(draws: [LastAction | null, number, string, number?][]) {
   const session = demoSession(NOW, AGENT)
   const { d23: _, ...others } = session.lastActions
   let held = NO_LINES_ABOVE
-  return draws.map(([last, applied, selected]) => {
+  return draws.map(([last, applied, selected, at = NOW]) => {
     const s = {
       ...session,
       lastActions: last ? { ...others, d23: last } : others,
       presence: { ...session.presence, turnsStarted: 14, turnsApplied: applied },
     }
     const screen = { ...demoScreen(), view: sessionView(s, NOW, SETTLED_MS, NO_HOLDS) }
-    const drawn = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected })), held, NOW)
+    const drawn = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected })), held, at)
     held = drawn.held
     const row = rowsOf(drawn.blocks).find(b => b.id === 'd23')!
     const line = row.heldLine
     const status = row.feedback ? `${row.isStatusHeldUnder ? 'under ' : ''}${row.feedback.text}` : null
-    return [status, line ? `${line.isHidden ? 'hidden ' : ''}${line.text}` : null]
+    const form = `${line?.leftAt === undefined ? '' : 'leaving '}${line?.isHidden ? 'hidden ' : ''}`
+    return [status, line ? `${form}${line.text}` : null]
   })
 }
 
@@ -71,7 +72,7 @@ test('a row deselected while its press is under way keeps its held line for when
   ])
 })
 
-test('a held failure keeps its space without its words, also once the press ends with its status under the buttons', () => {
+test('a held failure keeps its space without its words while the press is under way, then lets its space close', () => {
   const failed: LastAction = {
     ...discuss,
     at: NOW - 600_000,
@@ -83,13 +84,17 @@ test('a held failure keeps its space without its words, also once the press ends
   expect(
     heldAcross([
       [failed, 14, 'd23'],
+      [discuss, 14, 'd23'],
       [queued, 14, 'd23'],
       [unconfirmed, 14, 'd23'],
+      [unconfirmed, 14, 'd23', NOW + 1000],
     ]),
   ).toEqual([
     ['Not sent: the terminal was closed', null],
-    ['Queued: Discuss', 'hidden Not sent: the terminal was closed'],
-    ['Not confirmed: Discuss', 'hidden Not sent: the terminal was closed'],
+    ['Discussing…', 'hidden Not sent: the terminal was closed'],
+    ['Queued: Discuss', 'leaving hidden Not sent: the terminal was closed'],
+    ['Not confirmed: Discuss', 'leaving hidden Not sent: the terminal was closed'],
+    ['Not confirmed: Discuss', null],
   ])
 })
 

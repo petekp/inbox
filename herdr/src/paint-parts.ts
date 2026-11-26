@@ -3,6 +3,8 @@ import type { Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS } from '../../core/view/help'
 import { RUNNING_PULSE_MS } from '../../core/view/timing'
+import { LEAVE_FADE_MS } from '../../core/view/row-motion'
+import { NEXT_FRAME_MS } from './block-glide'
 import type { Button, Mark } from './blocks'
 import {
   BUTTON_H,
@@ -23,7 +25,7 @@ import type { HeldFades } from './held-fades'
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
  * so a quiet button that starts a line puts its label where the text above it starts. A button whose press is out keeps its size, loses
  * its fill and border, and is the quietest thing in its row. A timed button's time left stays drawn and pauses while
- * its press is out. A hidden button keeps its place and draws nothing. A button of a block that is leaving draws but
+ * its press is out. A spent Undo keeps its place, drawn as quiet as a button whose press is out. A button of a block that is leaving draws but
  * takes no clicks, so the block keeps its height as it fades. A button that takes no clicks shows no hover or pressed
  * change. A button that `canWrap` narrows to its line and wraps its label onto more lines, growing a line's height for
  * each. A timed button keeps one line, since its time left fills it.
@@ -35,7 +37,7 @@ export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false):
   const left = p.timeLeft.get(b.id)
   const isWrapping = canWrap && runsOutAt === undefined
   const base = h_flex()
-    .id(`button ${b.id}`)
+    .id(b.isSpent ? `spent ${b.id}` : `button ${b.id}`)
     .when(!isWrapping, e => e.flex_none().h(BUTTON_H))
     .when(isWrapping, e => e.flex_shrink_1().min_w(0).min_h(BUTTON_H).py(BUTTON_PAD_Y))
     .items_center()
@@ -56,8 +58,13 @@ export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false):
           .rounded(BUTTON_H / 2)
           .border_1()
       : base
-  if (b.isHidden) return shaped.invisible().disabled(true)
-  if (b.isOut) return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true)
+  if (b.isSpent) {
+    const spent = shaped.text_color(t.muted).opacity(SPENT_OPACITY).disabled(true)
+    if (b.leftAt === undefined) return spent
+    const opacity = p.now < b.leftAt + NEXT_FRAME_MS ? SPENT_OPACITY : 0
+    return fadeEl(spent, `spent ${b.id}`, opacity, { duration: LEAVE_FADE_MS, delay: 0 }, p)
+  }
+  if (b.isOut) return shaped.border_color(CLEAR).text_color(t.muted).opacity(SPENT_OPACITY).disabled(true)
   const styled =
     b.emphasis === 'primary'
       ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground)
@@ -79,6 +86,9 @@ export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false):
 }
 
 const CLEAR = '#00000000'
+
+/** How far a button whose press is out, or a spent Undo, fades back, so it is the quietest thing in its row. */
+const SPENT_OPACITY = 0.5
 
 /**
  * The buttons wrap by line, and a button wider than its line wraps its label. The follow-ups, which come last, share

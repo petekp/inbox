@@ -4,6 +4,7 @@ import { tabState, drawnRows, root } from './tab-state'
 import { later, cancelTimer } from './tab-host'
 import { reducedMotion } from './tab-motion'
 import { hasScrolledSince, scrollToNearest } from './tab-scroll'
+import { heldAfterEndsAt } from './tab-held-after'
 
 /** Scrolls the open row into view, and again once its height has come to rest unless the person has scrolled since. */
 export function revealSelected() {
@@ -22,9 +23,14 @@ const TIMER_SLACK_MS = 50
 
 let moveWake: { at: number; timer: ReturnType<typeof later> } | null = null
 
+/** Draws the tab again once its next row move, or its next held status's fade out, has ended. */
 export function wakeForMoves() {
   const now = Date.now()
-  const ends = [...drawnRows.values()].flatMap(({ track: t }) => (isMoving(t.state) ? [t.since + moveMs(t)] : []))
+  const held = heldAfterEndsAt()
+  const ends = [
+    ...[...drawnRows.values()].flatMap(({ track: t }) => (isMoving(t.state) ? [t.since + moveMs(t)] : [])),
+    ...(held === null ? [] : [held]),
+  ]
   if (ends.length === 0) return
   const at = Math.min(...ends) + TIMER_SLACK_MS
   if (moveWake && moveWake.at <= at) return

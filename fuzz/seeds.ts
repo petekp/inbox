@@ -169,13 +169,82 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box panel i1',
     issue: 898,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       { is: 'record', args: { kind: 'question', ask: 'Show glances while you walk?', options: ['Yes', 'No'] } },
       { is: 'wait', ms: 672 },
       { is: 'click', on: 'tab', n: 0, label: 'overview' },
       { is: 'key', key: 'right' },
     ]),
+  },
+  {
+    name: 'a question that arrives on another tab, first drawn on Asks',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 898,
+    isOpen: false,
+    case: herdr(emptySession(), [
+      { is: 'click', on: 'tab', n: 0, label: 'overview' },
+      { is: 'wait', ms: 800 },
+      { is: 'record', args: { kind: 'question', ask: 'Show glances while you walk?', options: ['Yes', 'No'] } },
+      { is: 'wait', ms: 900 },
+      { is: 'click', on: 'tab', n: 0, label: 'needsYou' },
+    ]),
+  },
+  {
+    name: 'a settled row folding while its answer shows above its Undo',
+    rule: 'cut',
+    detail: 'in its box status above d10',
+    issue: 925,
+    isOpen: true,
+    case: herdr(demo, [
+      { is: 'click', on: 'button', n: 7, label: 'Pinch (recommended)' },
+      { is: 'wait', ms: 4287 },
+    ]),
+  },
+  {
+    name: 'the agent ordering PRs again while a PR block moves',
+    rule: 'motion-id',
+    issue: 926,
+    isOpen: true,
+    case: herdr(demo, [
+      { is: 'click', on: 'tab', n: 7, label: 'prs' },
+      { is: 'order', picks: [4, 4, 3, 2], label: 'Ship it', why: 'Fix the flaky test' },
+      { is: 'click', on: 'button', n: 7, label: 'Discuss' },
+      { is: 'order', picks: [], label: 'Yes', why: 'Retry?' },
+    ]),
+  },
+  {
+    name: 'a task that comes back after Done',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 927,
+    isOpen: true,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
+        { is: 'click', on: 'button', n: 0, label: 'Done' },
+        { is: 'wait', ms: 12352 },
+      ]),
+      takeAfterMs: null,
+    },
+  },
+  {
+    name: 'a Reply sent while a settled row folds',
+    rule: 'cut',
+    detail: '"Not sent',
+    issue: 928,
+    isOpen: true,
+    case: {
+      ...herdr(demo, [
+        { is: 'click', on: 'button', n: 7, label: 'Pinch (recommended)' },
+        { is: 'wait', ms: 5387 },
+        { is: 'click', on: 'button', n: 7, label: 'Reply' },
+        { is: 'key', key: 'a' },
+        { is: 'key', key: 'enter' },
+      ]),
+      outcomes: { deliver: ['accepted', 'rejected'], isHeldUntilRun: false, performFails: [false] },
+    },
   },
   {
     name: 'folding every fold on the Status tab',
@@ -200,6 +269,23 @@ export const CODEX_SEEDS: {
   detail?: string
   case: CodexCase
 }[] = [
+  {
+    name: 'an option pressed just after Open previews',
+    rule: 'jump',
+    detail: 'press-d11',
+    issue: 924,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'button', n: 2 },
+        { is: 'click', on: 'button', n: 0 },
+      ],
+    },
+  },
   {
     name: 'opening a PR comment from its thread',
     rule: 'cut',
@@ -365,15 +451,43 @@ export const MOD_SEEDS: { name: string; issue: number; isOpen: boolean; rule: st
 ]
 
 /**
- * Failures of generated cases that an open issue already describes, by look, rule and a text in the failure's detail.
- * A run that finds only these passes, so a fixed-seed run fails only on something new.
+ * Failures of generated cases that an open issue already describes, by look, rule and what the failure's detail holds:
+ * one of `details`, where a list stands for a detail that holds every text in it, as a cut's text and its box. A run
+ * that finds only these passes, so a fixed-seed run fails only on something new.
  */
-const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string; details: string[] }[] = [
+const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string; details: (string | string[])[] }[] = [
   { issue: 811, look: 'herdr', rule: 'cut', details: ['"✓ Copied'] },
-  { issue: 827, look: 'herdr', rule: 'cut', details: ['"Send"', '"Cancel"', '"Discard"', 'in its box status '] },
+  {
+    issue: 827,
+    look: 'herdr',
+    rule: 'cut',
+    details: [
+      ['"Send"', 'in its box panel '],
+      ['"Cancel"', 'in its box panel '],
+      ['"Discard"', 'in its box panel '],
+      ['"Sending…"', 'in its box status '],
+    ],
+  },
   { issue: 828, look: 'herdr', rule: 'jump', details: ['panel d', ' thread '] },
   { issue: 832, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
-  { issue: 898, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
+  { issue: 924, look: 'codex', rule: 'jump', details: [['press-d', ' grew '], ['d11 shrank']] },
+  {
+    issue: 925,
+    look: 'herdr',
+    rule: 'cut',
+    details: ['in its box status above ', 'in its box box ', ['"✓"', 'in its box mark '], ['"Undo"', ' undo']],
+  },
+  { issue: 926, look: 'herdr', rule: 'motion-id', details: [['drawing pr:', '~to ']] },
+  {
+    issue: 927,
+    look: 'herdr',
+    rule: 'cut',
+    details: [
+      ['"Reply"', 'in its box panel '],
+      ['"Explain"', 'in its box panel '],
+    ],
+  },
+  { issue: 928, look: 'herdr', rule: 'cut', details: [['"Not sent', 'in its box status ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
   { issue: 896, look: 'codex', rule: 'cut', details: ['"Holds up ', '"Comparing…"'] },
@@ -383,7 +497,11 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
 export function knownIssueOf(f: { look: string; rule: string; detail: string }): number | null {
   const open = new Set([...SEEDS, ...CODEX_SEEDS, ...MOD_SEEDS].filter(s => s.isOpen).map(s => s.issue))
   const k = KNOWN.find(
-    k => open.has(k.issue) && k.look === f.look && k.rule === f.rule && k.details.some(d => f.detail.includes(d)),
+    k =>
+      open.has(k.issue) &&
+      k.look === f.look &&
+      k.rule === f.rule &&
+      k.details.some(d => (typeof d === 'string' ? [d] : d).every(part => f.detail.includes(part))),
   )
   return k?.issue ?? null
 }

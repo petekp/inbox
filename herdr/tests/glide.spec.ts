@@ -215,7 +215,7 @@ test('folding a milestone down to its name takes the list’s height down on eve
 })
 
 const { allOf, openPanel, setZoom } = await import('./gpui-stand-in')
-const { layout } = await import('./frames')
+const { layout } = await import('./layout')
 
 test.each([1, 0.9])(
   'at zoom %p, once the app reports sizes scaled by the zoom, every box in any tab is drawn at its content’s height',

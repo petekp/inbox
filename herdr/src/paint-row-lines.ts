@@ -1,14 +1,16 @@
-import { ENTER_FADE_MS } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, LEAVE_FADE_MS } from '../../core/view/row-motion'
 import type { Element } from 'gpui-kit'
 import type { RowBlock, Tone } from './blocks'
-import { NEXT_FRAME_MS } from './block-glide'
+import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
 import { isStatusUnder } from './held-line'
+import { aboveId, aboveLineId } from './heights'
+import { sizeEl, springBox } from './paint-space'
 import type { RowMotion } from './motion'
 import { fadeEl } from './paint-parts'
 import type { Paint } from './paint-theme'
 
 /** A line a row draws between its title and its panel. */
-type TitleLine = { text: string; tone: Tone; isHidden?: boolean }
+type TitleLine = { text: string; tone: Tone; isHidden?: boolean; leftAt?: number }
 
 /** The lines a row's form draws between its title and its panel: its settled label, a status after the title, its held line. */
 const linesOf = (r: RowBlock): TitleLine[] => [
@@ -33,7 +35,7 @@ export function titleLineEls(
   lineEl: (l: TitleLine, n: number) => Element,
   withPanel: (el: Element) => Element,
 ): Element[] {
-  const drawn = (l: TitleLine, n: number) => lineEl(l, n).id(`status above ${r.id} line ${n}`)
+  const drawn = (l: TitleLine, n: number) => leavingEl(r, l, lineEl(l, n).id(`status above ${r.id} line ${n}`), n, p)
   const closing = m?.closing ?? null
   const lines = linesOf(shown)
   if (closing === null) return lines.map(drawn)
@@ -51,4 +53,20 @@ export function titleLineEls(
     const name = fadeName(n)
     return fadeEl(lineEl(l, n).id(name), name, 1, { duration: ENTER_FADE_MS, delay: NEXT_FRAME_MS }, p)
   })
+}
+
+/**
+ * A held line whose hold let go, as `holdLinesAbove` gives it: it fades out while its box holds the line's height, then
+ * the box shuts, with the row's box, so the buttons under it glide up and no empty space stays. Other lines draw as
+ * they are.
+ */
+function leavingEl(r: RowBlock, l: TitleLine, el: Element, n: number, p: Paint): Element {
+  const leftAt = l.leftAt
+  if (leftAt === undefined) return el
+  const isFading = p.now < leftAt + HOLD_MS
+  const name = `status above ${r.id} line ${n}`
+  const shown = l.isHidden ? el : fadeEl(el, name, p.now === leftAt ? 1 : 0, { duration: LEAVE_FADE_MS, delay: 0 }, p)
+  const box = springBox(`fit ${aboveId(r.id)}`, isFading ? p.heights.get(aboveLineId(r.id)) : 0)
+
+  return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)))
 }

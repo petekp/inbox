@@ -32,8 +32,8 @@ import type { RowMotion } from './motion'
 import type { SwapMotion } from './form-swap'
 import { padOf, sizeEl, titleEl } from './paint-space'
 import { PATH_X, lineColor } from './paint-strokes'
-import { panelId, prHeadId, prTailId, restId } from './heights'
-import { prStatusEl } from './paint-pr-status'
+import { panelId, prHeadId, restId } from './heights'
+import { prStatusEl, prTailEls } from './paint-pr-status'
 import type { PrLine } from './pr-status'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
@@ -351,10 +351,11 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     ...(l.status ? [statusPartEl(l.status.text).text_color(colorOf(t, l.status.tone))] : []),
     ...l.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
   ]
-  const tail = v_flex()
-    .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
-    .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
-    .when(b.feedback !== null, e => (b.feedback ? e.child(feedbackEl(b.feedback, t)) : e))
+  const tail = prTailEls(b, p, {
+    error: text => lineEl(text, t.ansi1, 0),
+    buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing),
+    result: f => feedbackEl(f, t),
+  })
 
   return v_flex()
     .pl(EDGE)
@@ -367,7 +368,7 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
           .child(partedEl(statusParts(l), t.muted)),
       ),
     )
-    .child(sizeEl(prTailId(b.id), p, tail))
+    .children(tail)
 }
 
 function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {

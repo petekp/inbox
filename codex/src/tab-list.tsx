@@ -5,7 +5,8 @@ import { closedTitleTone, DOT, settledMark, fieldExit, settledLabel, shortAgo } 
 import { entryId } from '../../core/view/action-plan'
 import { isRowTab } from '../../core/view/tabs'
 import { hasAge, isFailure, isStatusUnderActions } from '../../core/view/feedback'
-import { dropHeldAfter, heldAfterIds, holdAfter, type AfterLine } from './tab-held-after'
+import { dropHeldAfter, heldAfterIds, holdAfter, type DrawnAfter } from './tab-held-after'
+import { isPressUnderWay } from '../../core/view/held-line'
 import type { RowView } from '../../core/view/rows'
 import { TAB_OF } from './arrivals'
 import { closedTitleClock, newRowIn } from '../../core/view/arrivals'
@@ -137,7 +138,7 @@ export function rowActions(row: Row): { options: Key[]; keys: Key[]; more: Key[]
 
 /** What a row's line and side column draw, in its open form or its closed one. */
 type LineForm = {
-  last: AfterLine | null
+  last: DrawnAfter | null
   side: string | null | undefined
   /** The row's status goes under its buttons, or its press sends with no status yet. */
   isStatusUnder: boolean
@@ -188,7 +189,7 @@ export function ListRow({
     const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : row.age
 
     return {
-      last: text ? { text, tone, isHidden: false } : null,
+      last: text ? { text, tone, isHidden: false, isLeaving: false } : null,
       side,
       isStatusUnder: isStatusSending || statusUnder !== null,
     }
@@ -200,7 +201,16 @@ export function ListRow({
       ? press.after
       : shown.last
     : isOpenForm
-      ? holdAfter(row.id, shown.last, shown.isStatusUnder, isFailure(pending ?? f))
+      ? holdAfter(
+          row.id,
+          shown.last,
+          {
+            isStatusUnder: shown.isStatusUnder,
+            isFailed: isFailure(pending ?? f),
+            isPressUnderWay: outOn(row.id) !== null || isPressUnderWay(pending ?? f),
+          },
+          now,
+        )
       : shown.last
   const drawn = { ...shown, last: heldLast }
   if (!isLeft) drawnPresses.set(row.id, { ...press, after: drawn.last })
@@ -208,8 +218,9 @@ export function ListRow({
   const closed = isClosing ? lineForm(false) : null
   const after = (form: LineForm, only?: 'open' | 'closed') => {
     if (!form.last) return null
-    const { text, tone: lastTone, isHidden } = form.last
-    const place = only === 'open' ? 'part open-only' : only === 'closed' ? 'part closed-only' : 'part'
+    const { text, tone: lastTone, isHidden, isLeaving } = form.last
+    const where = only === 'open' ? 'part open-only' : only === 'closed' ? 'part closed-only' : 'part'
+    const place = isLeaving ? `${where} leaving` : where
 
     return (
       <span class={isHidden ? `${place} held-hidden` : place} aria-hidden={isHidden ? 'true' : undefined}>

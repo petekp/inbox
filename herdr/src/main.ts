@@ -56,9 +56,10 @@ import type { LinesAbove } from './held-line'
 import { NO_TRACKS, moveRows } from './motion'
 import { heldTabs } from './held-form'
 import { nextDrawAt } from './wake'
+import { earliestOf } from '../../core/view/timing'
 import { HeldFades } from './held-fades'
 import type { Tracks } from './motion'
-import { Heights, zoomOf } from './heights'
+import { Heights, pageFormingSince, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
 import type { TimeLeft } from './time-left'
@@ -109,6 +110,7 @@ export default class Inbox extends View {
     return read && { read, ui: this.ui }
   })
   tracksOf = ''
+  private formingSince: number | null = null
   /** The blocks of the last draw, whose buttons give a key's press its label and effects. */
   blocks: Block[] = []
   lastDraw: LastDraw = { tab: 'needsYou', rows: null, pressed: [] }
@@ -362,6 +364,8 @@ export default class Inbox extends View {
     const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`
     const isFirst = tracksOf !== this.tracksOf
     const resized = this.heights.takeResized()
+    this.formingSince = pageFormingSince(isFirst, this.formingSince, this.heights.takeChanged(), now)
+    const isForming = this.formingSince !== null
     const paint: Paint = {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
@@ -372,7 +376,7 @@ export default class Inbox extends View {
       pick: (tab: ShownTab, cx) => this.apply([{ type: 'show-tab', tab }], cx),
       motion: new Map(),
       heights: this.heights,
-      isAtOnce: key => isFirst || resized.has(key),
+      isAtOnce: key => isForming || resized.has(key),
       measure: (key, size, cx, isWidthDrawn) =>
         this.heights.measure(key, size, zoomOf(settings()), isWidthDrawn) && cx.notify(),
       now,
@@ -466,7 +470,7 @@ export default class Inbox extends View {
           .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
-    const wakeAt = nextDrawAt(now, moved, this.fades.drew())
+    const wakeAt = nextDrawAt(now, moved, earliestOf([this.fades.drew(), held.nextAt]))
     if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
 
     return drawn

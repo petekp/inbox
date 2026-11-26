@@ -174,6 +174,78 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
   }
   win.requestAnimationFrame(sample)
 
+  const opacityOf = (el: Element) => {
+    let opacity = 1
+    for (let e: Element | null = el; e && e !== d.documentElement; e = e.parentElement)
+      opacity *= Number(win.getComputedStyle(e).opacity)
+    return opacity
+  }
+  const boxName = (el: Element) => {
+    const motion = el.closest<HTMLElement>('[data-motion]')?.dataset.motion ?? ''
+    return `${motion} ${el.className}`.trim()
+  }
+  /**
+   * The rest-space rule, once every move has come to rest: no clipped box is taller than its content, and no blank
+   * line's worth of space sits between two things a motion box draws, its nested boxes' included. It sets each clipped box's height to auto for a
+   * moment to measure its content, and puts it back before the page draws again.
+   */
+  const restSpace = () => {
+    for (const el of d.querySelectorAll<HTMLElement>('[data-motion], [data-motion] *')) {
+      if (!/hidden|clip/.test(win.getComputedStyle(el).overflowY)) continue
+      const height = el.getBoundingClientRect().height
+      if (height <= 0) continue
+      const style = el.getAttribute('style')
+      el.style.setProperty('height', 'auto', 'important')
+      const content = el.getBoundingClientRect().height
+      if (style === null) el.removeAttribute('style')
+      else el.setAttribute('style', style)
+      if (height - content > STILL_PX)
+        fail('rest-space', `${boxName(el)} rests ${(height - content).toFixed(1)} px taller than its content`)
+    }
+    type Drawn = { top: number; bottom: number; line: number; text: string }
+    const drawn = new Map<Element, Drawn[]>()
+    for (const el of d.querySelectorAll<HTMLElement>('[data-motion] *')) {
+      const texts = [...el.childNodes].filter(n => n.nodeType === 3 && (n.textContent ?? '').trim() !== '')
+      const isField = el instanceof win.HTMLInputElement || el instanceof win.HTMLTextAreaElement
+      if ((texts.length === 0 && !isField) || opacityOf(el) < spec.cutOpacity) continue
+      const control = el.closest('button, input, textarea, select')
+      const range = d.createRange()
+      if (control) range.selectNode(control)
+      else {
+        range.setStartBefore(texts[0] as ChildNode)
+        range.setEndAfter(texts[texts.length - 1] as ChildNode)
+      }
+      const r = range.getBoundingClientRect()
+      if (r.height <= 0) continue
+      const cs = win.getComputedStyle(el)
+      const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2
+      const text = isField
+        ? 'a text field'
+        : texts
+            .map(n => n.textContent ?? '')
+            .join('')
+            .trim()
+            .slice(0, 40)
+      for (
+        let entry = el.closest('[data-motion]');
+        entry;
+        entry = entry.parentElement?.closest('[data-motion]') ?? null
+      )
+        drawn.set(entry, [...(drawn.get(entry) ?? []), { top: r.top, bottom: r.bottom, line, text }])
+    }
+    for (const [entry, list] of drawn) {
+      const sorted = list.sort((a, b) => a.top - b.top)
+      let bottom = sorted[0]?.bottom ?? 0
+      for (const x of sorted.slice(1)) {
+        if (x.top - bottom >= x.line - STILL_PX)
+          fail(
+            'rest-space',
+            `${boxName(entry)} rests with ${(x.top - bottom).toFixed(1)} px of blank space above "${x.text}"`,
+          )
+        bottom = Math.max(bottom, x.bottom)
+      }
+    }
+  }
   const visible = (el: Element) => {
     const r = el.getBoundingClientRect()
     return r.width > 0 && r.height > 0 && !el.closest('[inert]')
@@ -226,6 +298,7 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
   for (let t = 0; t < spec.restMs && !isFrozen; t += 50) await sleep(50)
   isRunning = false
   await sleep(50)
+  if (!isFrozen) restSpace()
 
   return { failures, notes, frames, isFrozen }
 }
