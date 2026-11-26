@@ -173,6 +173,7 @@ export function statusPage(
   const isNew = (x: Subject) => o === null || !isSubjectSeen(o, x)
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  const holdKindsOf = (x: Subject) => s.ledger.items.filter(i => o?.askSubjects[i.id]?.includes(x.id)).map(i => i.kind)
   const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null =>
     isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null
   const placeOf = (x: Subject): StatusPlace =>
@@ -242,6 +243,7 @@ export function statusPage(
   const ctx: ListContext = {
     isNew,
     isHeld,
+    holdKindsOf,
     oldestAskOf,
     items: s.ledger.items,
     running,

@@ -1,5 +1,5 @@
 import type { Child, Item, Subject } from '../../types'
-import { HELD_MARK, IDLE_MARK, SUBJECT_MARKS } from './help'
+import { HELD_MARK, heldMarkOf, IDLE_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { IDLE_AFTER_MS, isOpen } from '../domain/status-limits'
 import { ago, cutAtPhrase, duration } from '../domain/text'
@@ -109,7 +109,7 @@ const DAY_MS = 24 * 60 * 60_000
 
 /**
  * A subject's stall word: how long it has gone without a change, in whole days, once it is open past `IDLE_AFTER_MS` with no
- * child of it running. A subject an open ask holds up has none, since its ◆ mark and its ask say it waits.
+ * child of it running. A subject an open ask holds up has none, since its ◆ or □ mark and its ask say it waits.
  */
 function subjectStall(x: Subject, isHeld: boolean, isWorkRunning: boolean, now: number): StatusStall | null {
   if (isHeld) return null
@@ -170,8 +170,9 @@ function isNamedLikeSubject(x: Subject, under: readonly Child[]): boolean {
 
 /**
  * What the one child that is named like its subject gives the subject's row: a moving mark while it works, the
- * needs-you mark while it is blocked, and ✓ once it finished, unless an open ask holds the subject up, which keeps its
- * own mark and words. Such a row has no stall word.
+ * needs-you mark while it is blocked, and ✓ once it finished. An open ask that holds the subject up keeps its own mark
+ * and words over a working or finished child. A blocked child's ◆ replaces a task's □, since the delegate waits on a
+ * decision. Such a row has no stall word.
  */
 function carriedByChild(
   c: Child,
@@ -260,6 +261,8 @@ function askWords(items: readonly Item[], ask: { id: string } | null): string | 
 export type ListContext = {
   isNew: (x: Subject) => boolean
   isHeld: (x: Subject) => boolean
+  /** The kinds of the open asks that hold `x` up. */
+  holdKindsOf: (x: Subject) => Item['kind'][]
   oldestAskOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
   items: readonly Item[]
   running: Child[]
@@ -296,7 +299,7 @@ export function partRows(
       kind: 'subject',
       id: x.id,
       depth,
-      ...(c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
+      ...(c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
       isRunning,
       ...carried,
       name: x.name,

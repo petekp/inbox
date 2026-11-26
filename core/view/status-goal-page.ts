@@ -1,6 +1,6 @@
 import type { Item, Milestone, SessionStatus, StatusGoal } from '../../types'
 import { isOpen as isOpenStatus } from '../domain/status-limits'
-import { HELD_MARK, SUBJECT_MARKS } from './help'
+import { heldMarkOf, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
 import { namedList, textBeyondName } from './status-page-parts'
@@ -157,7 +157,7 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
 
   return {
     id: m.id,
-    ...(isHeld ? HELD_MARK : SUBJECT_MARKS[m.status]),
+    ...(isHeld ? heldMarkOf(holds.map(i => i.kind)) : SUBJECT_MARKS[m.status]),
     name: m.name,
     place: step.place,
     line: step.line,

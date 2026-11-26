@@ -47,6 +47,16 @@ test('a sole child named like its subject draws no row, and its state shows on t
     [askItem('i1')],
   ).rows
   expect(held).toMatchObject([{ kind: 'subject', mark: '◆', stall: null, waitsOn: 'Ask i1?', hasChildren: false }])
+
+  const taskHeld = (state: Child['delegateState']) =>
+    page(
+      after(withSoleChild(sameNamedDelegate('help icon', state, null)), 'LINK: i1 | s1', 28 * MIN, new Set(['i1'])),
+      now,
+      {},
+      [{ ...askItem('i1'), kind: 'task' as const }],
+    ).rows
+  expect(taskHeld(null)).toMatchObject([{ kind: 'subject', mark: '□', tone: 'tasks', isRunning: false }])
+  expect(taskHeld('blocked')).toMatchObject([{ kind: 'subject', mark: '◆', tone: 'needsYou', isRunning: false }])
 })
 
 test('a child with another name, or one of several children, keeps its row', () => {

@@ -9,7 +9,7 @@ import { sessionView } from '../core/view/session-view'
 import { applyPrPress, checkActions } from '../core/view/pr-tab'
 import { footerError, inboxView, perTurnStatus } from '../core/view/view'
 import { NO_SESSION_PRS } from '../core/domain/help-steps'
-import { deliveryLabel, settledLabel } from '../core/view/rows'
+import { deliveryLabel, rowMark, settledLabel } from '../core/view/rows'
 import { allRows } from '../core/view/rows'
 import type { RowView } from '../core/view/rows'
 import { cellWidth } from '../core/domain/text'
@@ -329,7 +329,7 @@ const ask = (id: string, turn: number, kind: Item['kind'] = 'question'): Item =>
   from: 'record',
 })
 
-test('the inbox view lists questions and tasks newest reply first, and counts each open one as waiting', () => {
+test('the inbox view lists questions and tasks newest reply first, counts each open one as waiting, and marks an open question ◆ and an open task □', () => {
   const s = emptySession()
   const v = inboxView({
     ledger: { ...s.ledger, items: [ask('q1', 1), ask('t1', 2, 'task'), ask('q2', 3)] },
@@ -350,6 +350,11 @@ test('the inbox view lists questions and tasks newest reply first, and counts ea
   expect(v.needsYou.tasks.map(r => r.id)).toEqual(['t1'])
   expect(v.needsYou.count).toBe(3)
   expect(v.findings.count).toBe(0)
+  expect([...v.needsYou.questions, ...v.needsYou.tasks].map(r => rowMark(r))).toEqual([
+    { text: '◆', isRunning: false, tone: 'needsYou' },
+    { text: '◆', isRunning: false, tone: 'needsYou' },
+    { text: '□', isRunning: false, tone: 'tasks' },
+  ])
 })
 
 test('the footer shows a failed update on every tab but PRs, and on Status puts the page’s failure first, then the update’s, then its quiet note', () => {

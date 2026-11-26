@@ -1,4 +1,4 @@
-import { HELD_MARK } from '../core/view/help'
+import { HELD_MARK, heldMarkOf, TASK_MARK } from '../core/view/help'
 import { findMilestone, restatesGoal } from '../core/domain/status-goal-ops'
 import { isNumberOnly, isOpen } from '../core/domain/status-limits'
 import { parseStatus } from '../core/domain/status'
@@ -138,7 +138,7 @@ export const HOLD_RULES: Rule[] = [
   hold({
     id: 'held-milestone',
     property: 15,
-    text: 'A milestone shows ◆ exactly while it is open and an open ask holds it up, itself or through a subject that serves it.',
+    text: 'A milestone shows a held mark exactly while it is open and an open ask holds it up, itself or through a subject that serves it: ◆ while an open question does, else □.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       if (!o) return []
@@ -146,15 +146,19 @@ export const HOLD_RULES: Rule[] = [
         const m = o.milestones.find(x => x.id === savedMilestoneId(o.serves, row))
         if (!m) return [`"${row.name}" is drawn with no saved milestone`]
         const serving = Object.keys(o.serves).filter(id => o.serves[id] === m.id)
-        const isHeld =
-          isOpen(m) &&
-          result.session.ledger.items.some(i => {
-            const to = o.askSubjects[i.id] ?? []
-            return to.some(id => id === m.id || serving.includes(id))
-          })
-        const isDrawnHeld = row.mark === HELD_MARK.mark
-        if (isDrawnHeld === isHeld) return []
-        return [`"${m.name}" ${isDrawnHeld ? 'shows ◆ with no open ask' : 'is held and shows no ◆'}`]
+        const holds = result.session.ledger.items.filter(i => {
+          const to = o.askSubjects[i.id] ?? []
+          return to.some(id => id === m.id || serving.includes(id))
+        })
+        const isHeld = isOpen(m) && holds.length > 0
+        const drawnHeldMark = row.mark === HELD_MARK.mark || row.mark === TASK_MARK.mark ? row.mark : null
+        const heldMark = isHeld ? heldMarkOf(holds.map(i => i.kind)).mark : null
+        if (drawnHeldMark === heldMark) return []
+        return [
+          heldMark === null
+            ? `"${m.name}" shows ${drawnHeldMark} with no open ask`
+            : `"${m.name}" is held and shows ${drawnHeldMark ?? 'no held mark'} where its asks give ${heldMark}`,
+        ]
       })
     },
   }),

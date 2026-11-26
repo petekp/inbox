@@ -1,7 +1,7 @@
 import type { ComponentChildren, ComponentProps } from 'preact'
 import { TitleTint } from './tab-title-tint'
 import { ActionButton, Icon, inputOf } from './row-actions'
-import { NEEDS_YOU_MARKS, RUNNING_MARK } from '../../core/view/help'
+import { NEEDS_YOU_MARKS, RUNNING_MARK, TASK_MARK } from '../../core/view/help'
 import { markShape, mutedMarkShape } from '../../core/view/marks'
 import { DOT, rowMark } from '../../core/view/rows'
 import { markedFeedbackText, rowFeedbackText } from '../../core/view/feedback'
@@ -44,7 +44,7 @@ function TitleMark({ isRunning }: { isRunning: boolean }) {
   )
 }
 
-/** An Asks or Finds row's mark in the mark column: its result's, or ◆ on an open question or task. */
+/** An Asks or Finds row's mark in the mark column: its result's, or on an open row its `openMark`: ◆ on a question, □ on a task. */
 export function resultHandle(r: RowView): Pick<Row, 'handle' | 'handleTone' | 'isHandleRunning'> {
   const mark = rowMark(r)
 
@@ -99,15 +99,20 @@ export function markClassOf(tone: ToneName | null, isRunning: boolean): string {
 /** The tab's ○ glyph, as measured in the Codex app: centred 6 px into the mark, and 0.75 px above an 8 px box's middle. */
 const CIRCLE_MID = { x: 6, y: 3.25 }
 
-/** A mark's text, or its shape from `mutedMarkShape` where the system font draws it badly. */
+/**
+ * A mark's text, or its shape where the system font draws it badly: from `mutedMarkShape`, or an open task's □ as the
+ * Tasks heading's box, at the heading's size.
+ */
 export function MarkGlyph({ text }: { text: string }) {
-  const shape = text === NEEDS_YOU_MARKS.task.mark ? markShape(text, 4) : mutedMarkShape(text, 4, CIRCLE_MID)
+  const isTaskBox = text === TASK_MARK.mark
+  const shape =
+    text === NEEDS_YOU_MARKS.task.mark || isTaskBox ? markShape(text, 4) : mutedMarkShape(text, 4, CIRCLE_MID)
 
   return shape === null ? (
     <>{text}</>
   ) : (
     <svg
-      class="mark-shape"
+      class={isTaskBox ? 'task-shape' : 'mark-shape'}
       viewBox="0 0 8 8"
       role="img"
       aria-label={text}

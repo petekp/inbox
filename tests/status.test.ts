@@ -16,6 +16,7 @@ import {
   PR_MARKS,
   RUNNING_FRAMES,
   SUBJECT_MARKS,
+  TASK_MARK,
 } from '../core/view/help'
 import type { Item, SessionStatus } from '../types'
 import { minutes } from '../evals/status-replay'
@@ -302,6 +303,7 @@ test('the Help legend explains every mark a row or group title draws, once each'
     ...Object.values(SUBJECT_MARKS).map(m => m.mark),
     IDLE_MARK.mark,
     HELD_MARK.mark,
+    TASK_MARK.mark,
     ...Object.values(CLOSED_MARKS),
     ...Object.values(FINDING_GROUPS).map(g => g.mark),
     ...Object.values(NEEDS_YOU_MARKS).map(g => g.mark),
