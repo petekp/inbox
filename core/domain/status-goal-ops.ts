@@ -1,7 +1,12 @@
 import type { GoalRefusal, Milestone, SessionStatus, StatusGoal, Subject } from '../../types'
 import type { Op } from './status'
 import { goalRefusal, goalRevision, hasWorkForGoal } from './status-goal-gate'
-import { forgetSeenWas, withWorkDoneMilestones, withWorkStartedMilestones } from './status-milestone-work'
+import {
+  forgetSeenWas,
+  withHeldMilestonesOpen,
+  withWorkDoneMilestones,
+  withWorkStartedMilestones,
+} from './status-milestone-work'
 import {
   clipWords,
   DESCRIPTION_KEPT,
@@ -323,7 +328,9 @@ export function applyGoalOp(
  * The goal once an answer has applied. A typed goal carries the milestones of the goal before it until an answer from a
  * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
  * has not dropped, in the order of the lines that first name them, which is its plan, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
- * closed, as `withWorkDoneMilestones` says, and each queued one whose linked work is under way starts. The was line goes once the person has seen it,
+ * closed, as `withWorkDoneMilestones` says, each queued one whose linked work is under way starts, and each done one
+ * that an open ask in `askIds` holds up opens again, as `withHeldMilestonesOpen` says against
+ * `before`, the Status the answer found. The was line goes once the person has seen it,
  * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
  * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
  * that read an earlier goal wrote for that goal.
@@ -333,10 +340,14 @@ export function settleGoal(
   now: number,
   readSetAt: number | null,
   named: ReadonlyMap<string, number>,
+  askIds: ReadonlySet<string>,
+  before: SessionStatus,
 ): SessionStatus {
   const g = saved.goal
   if (g === null) return saved
-  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now)
+  const o = g.isAwaitingMilestones
+    ? saved
+    : withHeldMilestonesOpen(withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now), now, askIds, before)
   const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt
   const milestones = isAnswerForNewGoal

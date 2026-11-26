@@ -80,6 +80,30 @@ test('the goal is met once every milestone left is done, and unmet when one open
   expect(reopened.goal?.metAt).toBeNull()
 })
 
+test('a milestone an open ask holds up, itself or through a subject that serves it, is not done: a DONE for it changes nothing, one saved done opens again with no text, and a DONE applies once the ask closes', () => {
+  const asks = new Set(['i1'])
+  const withGoal = after(
+    null,
+    'NEW: working | Import | CSV works\nGOAL: Import ready to demo | done Import works; working Error messages; queued Demo script',
+    20,
+  )
+  const held = after(withGoal, 'SERVES: s1 | m2\nLINK: i1 | s1', 30, asks)
+  const early = after(held, 'DONE: m2 | named\nDONE: m3 | written', 40, asks)
+  const saved = {
+    ...held,
+    milestones: held.milestones.map(m => (m.id === 'm2' ? { ...m, status: 'done' as const, closedAt: 35 } : m)),
+  }
+  const loaded = applyStatus(saved, parseStatus('NO CHANGE')!, 50, asks)
+  const answered = after(early, 'DONE: m2 | named', 60)
+  const m2 = (o: SessionStatus | null) => o?.milestones.find(m => m.id === 'm2')
+
+  expect(m2(early)).toEqual(m2(held))
+  expect(early.goal?.metAt).toBeNull()
+  expect(m2(loaded)).toMatchObject({ status: 'working', text: '', changedAt: 50, closedAt: null })
+  expect(m2(answered)?.status).toBe('done')
+  expect(answered.goal?.metAt).toBe(60)
+})
+
 test('a GOAL applies in the answer whose subject DONE closes the goal’s last milestone', () => {
   const o = after(
     linked(),

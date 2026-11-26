@@ -70,6 +70,8 @@ The last condition lets the model reopen a milestone. When the exchange shows pa
 
 The rule the call reads: "Code closes a milestone once all its linked work is done. When part of it still has work left, write SET to open it again, and NEW for the work."
 
+A milestone an open ask holds up, itself or through a subject that serves it, is never done. After an answer applies, `withHeldMilestonesOpen` in `core/domain/status-milestone-work.ts` opens such a milestone again. One that was open before the answer goes back to how it stood, so a DONE written while the ask is open changes nothing. One saved done, or one an answer linked to an open ask after it was done, opens with no text, so the page counts its work, as "1 of 3 done". Once the ask closes, a DONE applies. Code does this in `settleGoal` rather than refusing the DONE line, since a link made after the DONE, by a LINK or SERVES line in a later answer, also leaves an ask holding a done milestone. The call reads the milestone as open, with its asks, and gets no line about the DONE. An open subject alone does not hold a milestone open: a milestone whose outcome happened is done while follow-up work under it stays open.
+
 ## What code does
 
 `OP_ORDER` in `core/domain/status-ops.ts` sorts an answer's lines before applying them. Today GOAL, MILESTONE and the subject lines share the first rank, so a GOAL line can apply before the DONE lines that close the old goal's work. The build ranks them:

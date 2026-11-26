@@ -3,8 +3,8 @@ import type { Replay } from '../status-replay'
 import { goal, milestone, NO_FACTS, overview, piece, question, subject } from './builders'
 
 /**
- * The person answers the question a "decided" milestone is for, and the agent asks before it applies the answer. In
- * a real omp session the Status call kept the milestone working, in words about the edit, for two calls.
+ * The person answers the question a "decided" milestone is for, and the agent asks before it applies the answer. The
+ * edit question holds up the greeting subject, which serves the milestone, so the milestone stays open while it is open.
  */
 export const milestoneDecided: Replay = {
   name: 'milestone-decided',
@@ -95,7 +95,7 @@ export const milestoneDecided: Replay = {
         ].join('\n'),
       },
       facts: {
-        milestones: [{ id: 'ms-ending', state: 'done' }],
+        milestones: [{ id: 'ms-ending', state: 'working' }],
         pieces: [
           {
             id: 'ending',
@@ -106,7 +106,7 @@ export const milestoneDecided: Replay = {
         ],
         asks: [{ match: 'edit greet', text: 'Should I edit greet.js to add the "!"?', holdsUp: ['ending'] }],
       },
-      targets: ['milestones-true'],
+      targets: ['milestones-true', 'asks-linked'],
     },
   ],
 }

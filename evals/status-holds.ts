@@ -163,6 +163,22 @@ export const HOLD_RULES: Rule[] = [
     },
   }),
   hold({
+    id: 'held-milestone-open',
+    property: 15,
+    text: 'A milestone an open ask holds up, itself or through a subject that serves it, is not done.',
+    failures: ({ result }) => {
+      const o = result.session.ledger.overview
+      if (!o?.goal || o.goal.isAwaitingMilestones) return []
+      const isHeld = (id: string) => {
+        const ids = new Set([id, ...Object.keys(o.serves).filter(s => o.serves[s] === id)])
+        return result.session.ledger.items.some(i => (o.askSubjects[i.id] ?? []).some(to => ids.has(to)))
+      }
+      return o.milestones
+        .filter(m => m.status === 'done' && isHeld(m.id))
+        .map(m => `"${m.name}" is done while an open ask holds it up`)
+    },
+  }),
+  hold({
     id: 'other-work-shows-news',
     property: 16,
     text: 'Under Other work, an open subject that changed since the person looked, or that an ask holds up, has its own row.',
