@@ -53,6 +53,7 @@ type Drawn = {
   openTop: number | null
   openPart: Element | null
   openShown: number
+  opacity: number
 }
 type TabWidth = { el: HTMLElement; width: number; isShown: boolean }
 type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; keys: Set<Element> }
@@ -75,6 +76,7 @@ export function measure(): Drawing {
       openTop: part ? topIn(el, part) : null,
       openPart: part,
       openShown: part instanceof HTMLElement ? opacityOf(part) : 1,
+      opacity: opacityOf(el),
     })
   }
   const tabWidths = new Map<string, TabWidth>()
@@ -150,7 +152,8 @@ function fadeAway(el: HTMLElement, from: SpringState, slide: boolean, to = 0) {
 
 /**
  * Starts each element's move after a draw. Children go first: an element with a gliding element inside it follows
- * that glide at its own height, unless it moves itself, so the two never pull against each other.
+ * that glide at its own height, unless it moves itself or its own content changed height, so the two never pull against
+ * each other.
  */
 export function animateDraw(before: Drawing, changed: ReadonlySet<string>, stepAt: number) {
   drawnAt = stepAt
@@ -264,12 +267,14 @@ function moveRow(
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
     if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, Math.max(heightWaitMs, closeWaitMs))
+    else if (state === 'entering' && was) growIn(el, { x: was.height, v: 0 }, was.opacity, 0)
     return
   }
   if (state && !isMoving(state) && !changed.has(key)) glideLine(el, was.line, naturalHeight(el) - from.x)
   if (carried.has(el) && !(state && isMoving(state))) {
     glides.get(el)?.anim.cancel()
-    return
+    const isOwnChange = Math.abs(el.getBoundingClientRect().height - from.x) >= 0.5
+    if (!isOwnChange) return
   }
   const opacity = opacityOf(el)
   const target = naturalHeight(el)

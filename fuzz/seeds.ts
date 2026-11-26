@@ -340,7 +340,7 @@ export const CODEX_SEEDS: {
     rule: 'jump',
     detail: 'press-d11',
     issue: 924,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'dark',
@@ -349,6 +349,43 @@ export const CODEX_SEEDS: {
       events: [
         { is: 'click', on: 'button', n: 2 },
         { is: 'click', on: 'button', n: 0 },
+      ],
+    },
+  },
+  {
+    name: 'a row clicked after j and r on the PRs tab',
+    rule: 'cut',
+    detail: '"@review-bot"',
+    issue: 936,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'key', key: '4' },
+        { is: 'key', key: 'j' },
+        { is: 'key', key: 'r' },
+        { is: 'click', on: 'row', n: 1 },
+      ],
+    },
+  },
+  {
+    name: 'Reply just after Open previews',
+    rule: 'jump',
+    detail: 'd11 shrank',
+    issue: 924,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'wait', ms: 300 },
+        { is: 'click', on: 'button', n: 2 },
+        { is: 'click', on: 'button', n: 3 },
       ],
     },
   },
@@ -534,7 +571,6 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
       ['"Sending…"', 'in its box status '],
     ],
   },
-  { issue: 924, look: 'codex', rule: 'jump', details: [['press-d', ' grew '], ['d11 shrank']] },
   {
     issue: 927,
     look: 'herdr',
@@ -544,12 +580,21 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
       ['"Explain"', 'in its box panel '],
     ],
   },
-  { issue: 931, look: 'herdr', rule: 'cut', details: [['"Done"', 'in its box status above '], ['"Undo"', ' undo']] },
+  {
+    issue: 931,
+    look: 'herdr',
+    rule: 'cut',
+    details: [
+      ['"Done"', 'in its box status above '],
+      ['"Undo"', ' undo'],
+    ],
+  },
   { issue: 932, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status ']] },
   { issue: 934, look: 'herdr', rule: 'cut', details: [['"Explaining…"', 'in its box status ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
   { issue: 896, look: 'codex', rule: 'cut', details: ['"Holds up ', '"Comparing…"'] },
+  { issue: 936, look: 'codex', rule: 'cut', details: ['visor#31 thread DT'] },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */
