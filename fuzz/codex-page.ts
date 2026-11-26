@@ -65,6 +65,7 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
   let stepsBefore = new Map<string, Step>()
   let wasPageFrame = false
   let lastClips = new Map<Element, number>()
+  let lastShares = new Map<Element, number>()
   let reducedMoves = new Map<string, number>()
   let frames = 0
   let isRunning = true
@@ -83,6 +84,7 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
       return s
     }
     const clips = new Map<Element, number>()
+    const shares = new Map<Element, number>()
     const isPageFrame = now() - pageAt < PAGE_MS
     for (const el of d.querySelectorAll<HTMLElement>('body *:not(script):not(style)')) {
       const texts = [...el.childNodes].filter(n => n.nodeType === 3 && (n.textContent ?? '').trim() !== '')
@@ -106,7 +108,11 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
           bottom = Math.min(bottom, s.clip[1])
         }
       }
-      if (!clipper || opacity < spec.cutOpacity) continue
+      if (opacity < spec.cutOpacity) continue
+      if (!clipper) {
+        shares.set(el, 1)
+        continue
+      }
       const range = d.createRange()
       range.setStartBefore(texts[0] as ChildNode)
       range.setEndAfter(texts[texts.length - 1] as ChildNode)
@@ -117,16 +123,21 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
       clips.set(clipper, h)
       const was = lastClips.get(clipper)
       const isMoving = was !== undefined && Math.abs(was - h) > STILL_PX
-      if (isMoving && !isPageFrame && share > CUT_FROM && share < CUT_TO) {
+      shares.set(el, share)
+      const wasShare = lastShares.get(el)
+      const isPushedOut = !isMoving && wasShare !== undefined && wasShare >= CUT_TO
+      if ((isMoving || isPushedOut) && !isPageFrame && share > CUT_FROM && share < CUT_TO) {
         const box = (clipper as HTMLElement).closest<HTMLElement>('[data-motion]')?.dataset.motion ?? clipper.className
+        const how = isMoving ? '' : ', pushed past the edge of a box that holds still'
         fail(
           'cut',
-          `"${own.slice(0, 50)}" shows at ${opacity.toFixed(2)} with ${Math.round(share * 100)}% of it in its box ${box}`,
+          `"${own.slice(0, 50)}" shows at ${opacity.toFixed(2)} with ${Math.round(share * 100)}% of it in its box ${box}${how}`,
           `${own} ${box}`,
         )
       }
     }
     lastClips = clips
+    lastShares = shares
     const boxes = new Map<string, Seen>()
     for (const el of d.querySelectorAll<HTMLElement>('[data-motion]')) {
       const r = el.getBoundingClientRect()

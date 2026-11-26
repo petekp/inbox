@@ -37,6 +37,10 @@ const restsAfter = (u: UnderLine<unknown>): number =>
 
 const lineOf = (b: Block): Line | null => (b.kind === 'row' && isStatusUnder(b) ? b.feedback : null)
 
+/** What a status says, as a press under way or its outcome: an open or refresh that runs, and how it ended, differ. */
+const kindOf = (l: Line): string | undefined =>
+  l.source?.is === 'local' ? `local ${l.source.result.state}` : l.source?.is
+
 /**
  * The status under a block's buttons at `now`, after `last`. A line that comes stays drawn and grows the row's box
  * from the draw after it. One that goes from a row that stays open stays drawn while it fades and the box holds, until
@@ -50,14 +54,14 @@ export const stepUnder = (last: UnderLine | null, b: Block, now: number, isInput
     b.kind === 'row' && isOpenRow(b) && !b.settled,
     now,
     isInput,
-    (x, y) => x.source?.is === y.source?.is,
+    (x, y) => kindOf(x) === kindOf(y),
   )
 
 /**
  * A line that comes and goes in a block, at `now`, after `last`, as `stepUnder` says. `isSameForm` says the block
  * keeps the form it drew the line in, so a line that goes stays drawn while it fades. A line that `isSameLine` reads as
- * another while it still comes, such as "Sending…" turning into a longer "Not sent", comes again from this draw, since
- * its box grows again to its new height.
+ * another, such as "Sending…" turning into a longer "Not sent", or "Refreshing PR #31…" into "Could not refresh PR #31",
+ * comes again from this draw, since its box grows again to its new height.
  */
 export function stepLine<L>(
   last: UnderLine<L> | null,

@@ -1,0 +1,288 @@
+import type { CodexCase } from './look-codex'
+
+/** Fixed Codex tab cases, run before each Codex pass. A seed whose issue is open is expected to fail with `rule`. */
+export const CODEX_SEEDS: {
+  name: string
+  issue: number
+  isOpen: boolean
+  rule: string
+  detail?: string
+  case: CodexCase
+}[] = [
+  {
+    name: 'File issue on a Finds row whose status line then wraps',
+    rule: 'cut',
+    detail: '"Reply"',
+    issue: 959,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 420,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'tab', n: 2 },
+        { is: 'wait', ms: 300 },
+        { is: 'click', on: 'button', n: 1 },
+      ],
+    },
+  },
+  {
+    name: 'a row clicked while Undo brings back its status line',
+    rule: 'jump',
+    detail: 'status-d11',
+    issue: 959,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'key', key: 'x' },
+        { is: 'key', key: 'e' },
+        { is: 'click', on: 'button', n: 4 },
+        { is: 'wait', ms: 50 },
+        { is: 'click', on: 'row', n: 0 },
+        { is: 'click', on: 'row', n: 7 },
+      ],
+    },
+  },
+  {
+    name: 'a dismissed task row clicked again, then the row below it',
+    rule: 'cut',
+    detail: '"Run gesture tests"',
+    issue: 968,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'wait', ms: 300 },
+        { is: 'click', on: 'button', n: 6 },
+        { is: 'click', on: 'row', n: 7 },
+        { is: 'wait', ms: 16 },
+        { is: 'click', on: 'button', n: 4 },
+        { is: 'click', on: 'row', n: 7 },
+        { is: 'click', on: 'button', n: 2 },
+        { is: 'wait', ms: 50 },
+        { is: 'click', on: 'row', n: 8 },
+        { is: 'wait', ms: 800 },
+      ],
+    },
+  },
+  {
+    name: 'an option pressed just after Open previews',
+    rule: 'jump',
+    detail: 'press-d11',
+    issue: 924,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'button', n: 2 },
+        { is: 'click', on: 'button', n: 0 },
+      ],
+    },
+  },
+  {
+    name: 'a row clicked after j and r on the PRs tab',
+    rule: 'cut',
+    detail: '"@review-bot"',
+    issue: 936,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'key', key: '4' },
+        { is: 'key', key: 'j' },
+        { is: 'key', key: 'r' },
+        { is: 'click', on: 'row', n: 1 },
+      ],
+    },
+  },
+  {
+    name: 'File issue on a Finds row that is still opening',
+    rule: 'cut',
+    detail: '"Asked to file"',
+    issue: 955,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'tab', n: 2 },
+        { is: 'click', on: 'row', n: 3 },
+        { is: 'click', on: 'button', n: 1 },
+      ],
+    },
+  },
+  {
+    name: 'Reply just after Open previews',
+    rule: 'jump',
+    detail: 'd11 shrank',
+    issue: 924,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'wait', ms: 300 },
+        { is: 'click', on: 'button', n: 2 },
+        { is: 'click', on: 'button', n: 3 },
+      ],
+    },
+  },
+  {
+    name: 'opening a PR comment from its thread',
+    rule: 'cut',
+    detail: '"Open comment"',
+    issue: 834,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'tab', n: 3 },
+        { is: 'click', on: 'button', n: 4 },
+      ],
+    },
+  },
+  {
+    name: 'Explain on a row that is still opening',
+    rule: 'jump',
+    detail: ' grew ',
+    issue: 835,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 2 },
+        { is: 'key', key: 'e' },
+      ],
+    },
+  },
+  {
+    name: 'a row glide that starts again mid-move',
+    rule: 'jump',
+    detail: 'height stood still',
+    issue: 836,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 5 },
+        { is: 'click', on: 'row', n: 1 },
+        { is: 'wait', ms: 350 },
+        { is: 'click', on: 'row', n: 2 },
+      ],
+    },
+  },
+  {
+    name: 'Explain on a row that is still opening, then opening another row',
+    rule: 'cut',
+    issue: 834,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 7 },
+        { is: 'click', on: 'button', n: 3 },
+        { is: 'click', on: 'row', n: 1 },
+      ],
+    },
+  },
+  {
+    name: 'opening a row again just as its close ends',
+    rule: 'cut',
+    issue: 863,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 1 },
+        { is: 'wait', ms: 300 },
+        { is: 'key', key: 'ArrowUp' },
+      ],
+    },
+  },
+  {
+    name: 'Copy on an open task, whose result shows under its buttons',
+    rule: 'jump',
+    detail: 'press-',
+    issue: 864,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 5 },
+        { is: 'click', on: 'button', n: 0 },
+      ],
+    },
+  },
+  {
+    name: 'Cancel on the Reply field',
+    rule: 'cut',
+    detail: '"Reply" shows at 1.00',
+    issue: 837,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 7 },
+        { is: 'click', on: 'button', n: 2 },
+        { is: 'wait', ms: 800 },
+        { is: 'click', on: 'button', n: 7 },
+      ],
+    },
+  },
+  {
+    name: 'Compare, then opening another row',
+    rule: 'cut',
+    detail: '"Holds up Flick option" shows at 1.00',
+    issue: 896,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'button', n: 4 },
+        { is: 'click', on: 'row', n: 8 },
+      ],
+    },
+  },
+]
