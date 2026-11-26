@@ -78,7 +78,7 @@ export function stepLine<L>(
     line,
     since: now,
     isLeaving: false,
-    isInput: isEntering && last.isInput,
+    isInput: isInput || (isEntering && last.isInput),
     ...(isEntering && waitMs > 0 ? { waitMs } : {}),
   }
 }
