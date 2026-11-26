@@ -6633,7 +6633,9 @@ function rowFeedbackText(row, look) {
   return f.is === "done" ? f.label : f.is === "local" ? localText(f.result, look) : feedbackText(f, look);
 }
 function pressUnderWaySince(f) {
-  if (f?.is === "working" || f?.is === "sending")
+  if (f?.is === "sending")
+    return f.sentAt;
+  if (f?.is === "working")
     return f.at;
   if (f?.is !== "local")
     return null;
@@ -6649,7 +6651,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
     const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
-    const talkOutSince = isTalkOut ? under.at : undefined;
+    const talkOutSince = isTalkOut ? under.is === "sending" ? under.sentAt : under.at : undefined;
     return { is: "local", result, ...talkOutSince === undefined ? {} : { talkOutSince } };
   }
   if (!last || last.kind === "local")
@@ -6674,7 +6676,12 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
       ...last.kind === "handoff" ? { isHandoff: true } : {}
     };
   if (pending === "sending")
-    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
+    return {
+      is: "sending",
+      label: deliveryLabel("sending", last.text, last.reply),
+      at: last.at,
+      sentAt: queuedSentAt(last)
+    };
   if (isUnreported)
     return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))

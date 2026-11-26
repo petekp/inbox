@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T07:32:47.349Z. 385161 characters follow.
+// Built at 2026-11-26T09:08:30.853Z. 393108 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -2869,7 +2869,9 @@ function rowFeedbackText(row, look) {
   return f.is === "done" ? f.label : f.is === "local" ? localText(f.result, look) : feedbackText(f, look);
 }
 function pressUnderWaySince(f) {
-  if (f?.is === "working" || f?.is === "sending")
+  if (f?.is === "sending")
+    return f.sentAt;
+  if (f?.is === "working")
     return f.at;
   if (f?.is !== "local")
     return null;
@@ -2885,7 +2887,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
     const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
-    const talkOutSince = isTalkOut ? under.at : undefined;
+    const talkOutSince = isTalkOut ? under.is === "sending" ? under.sentAt : under.at : undefined;
     return { is: "local", result, ...talkOutSince === undefined ? {} : { talkOutSince } };
   }
   if (!last || last.kind === "local")
@@ -2910,7 +2912,12 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
       ...last.kind === "handoff" ? { isHandoff: true } : {}
     };
   if (pending === "sending")
-    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
+    return {
+      is: "sending",
+      label: deliveryLabel("sending", last.text, last.reply),
+      at: last.at,
+      sentAt: queuedSentAt(last)
+    };
   if (isUnreported)
     return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))
@@ -5505,72 +5512,6 @@ async function writeCollapse(io, to, read, row, c) {
     await io.wake(read.envelope.terminal, id);
 }
 
-// src/blocks.ts
-var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
-var isOpenRow = (r) => r.isSelected && !r.isCollapsed;
-var agedText = (a, now) => `${a.lead}${DOT}${shortAgo(now - a.at)}`;
-function emptyBlock(tab, empty, parts = null) {
-  return {
-    kind: "empty",
-    id: `empty ${tab}`,
-    empty: { title: empty.title, hint: empty.hint },
-    titleMark: empty.titleMark,
-    under: parts
-  };
-}
-
-// src/held-line.ts
-var NO_LINES_ABOVE = new Map;
-var heldKey = (r) => r.settled ? `settled ${r.id}` : r.id;
-var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
-var isStatusUnder = (r) => r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)));
-var isUnderWay2 = (f) => f?.is === "queued" || pressUnderWaySince(f) !== null;
-var lineOf = (f) => ({
-  text: f.text,
-  tone: f.tone,
-  isHidden: isFailure(f.source),
-  ...f.aged ? { aged: f.aged } : {}
-});
-var drawn = (l, now) => ({
-  text: l.aged ? agedText(l.aged, now) : l.text,
-  tone: l.tone,
-  isHidden: l.isHidden
-});
-function holdLinesAbove(blocks, held, now) {
-  const next = new Map;
-  const shown = blocks.map((b) => {
-    if (b.kind !== "row")
-      return b;
-    const key = heldKey(b);
-    const kept = held.get(key);
-    const f = b.feedback;
-    if (!hasActions(b)) {
-      if (kept !== undefined && isUnderWay2(f?.source ?? null))
-        next.set(key, kept);
-      return b;
-    }
-    if (f === null) {
-      if (kept === undefined)
-        return b;
-      const empty = kept && { ...kept, isHidden: true };
-      next.set(key, empty);
-      return empty ? { ...b, heldLine: drawn(empty, now) } : b;
-    }
-    if (!isStatusUnder(b)) {
-      next.set(key, kept === null ? null : lineOf(f));
-      return kept === null ? { ...b, isStatusHeldUnder: true } : b;
-    }
-    if (kept === undefined) {
-      if (isUnderWay2(f.source))
-        next.set(key, null);
-      return b;
-    }
-    next.set(key, kept);
-    return kept ? { ...b, heldLine: drawn(kept, now) } : b;
-  });
-  return { blocks: shown, held: next };
-}
-
 // ../core/view/springs.ts
 var HEIGHT_SPRING = { response: 300, damping: 1, epsilon: 0.5 };
 var LONGEST_MOVE_PX = 2000;
@@ -5611,6 +5552,40 @@ function settleMs(spring) {
   return longest;
 }
 var HEIGHT_SETTLE_MS = settleMs(HEIGHT_SPRING);
+
+// ../core/view/held-line.ts
+var isPressUnderWay = (f) => pressUnderWaySince(f) !== null;
+function stepHeldLine(kept, place, now, leaveMs) {
+  if (place.own !== null) {
+    const line = place.own;
+    return { kept: { line, isFailure: place.isOwnFailure, isHidden: false, leftAt: null }, drawn: null };
+  }
+  if (!kept)
+    return { kept: undefined, drawn: null };
+  const drawn = (k) => ({ kept: k, drawn: { line: k.line, isHidden: k.isHidden, leftAt: k.leftAt } });
+  if (kept.leftAt !== null)
+    return now < kept.leftAt + leaveMs ? drawn(kept) : { kept: undefined, drawn: null };
+  if (place.isPressUnderWay)
+    return drawn({ ...kept, isHidden: kept.isFailure });
+  if (place.isUnder && !kept.isFailure)
+    return drawn(kept);
+  return drawn({ ...kept, leftAt: now });
+}
+var heldLineEndsAt = (kept, leaveMs) => kept?.leftAt == null ? null : kept.leftAt + leaveMs;
+
+// src/blocks.ts
+var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
+var isOpenRow = (r) => r.isSelected && !r.isCollapsed;
+var agedText = (a, now) => `${a.lead}${DOT}${shortAgo(now - a.at)}`;
+function emptyBlock(tab, empty, parts = null) {
+  return {
+    kind: "empty",
+    id: `empty ${tab}`,
+    empty: { title: empty.title, hint: empty.hint },
+    titleMark: empty.titleMark,
+    under: parts
+  };
+}
 
 // ../core/view/row-motion.ts
 var FADE_MS = 200;
@@ -5730,6 +5705,62 @@ function rest(track, form, target, now) {
   return track?.state === state ? track : { state, since: now, hasOpenForm: state === "open" };
 }
 
+// src/block-glide.ts
+var NEXT_FRAME_MS = 16;
+var HOLD_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
+var restAt = (now, fadeMs) => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS;
+function glideOf(track, isStart, last, now, holdsUntil, isPressed, isReplaced, height) {
+  const { state } = track;
+  const isLive = last !== null && now < last.endsAt;
+  if (state === "leaving") {
+    if (!isStart && last !== null) {
+      const box = last.shutAt !== null && now >= last.shutAt ? "shut" : last.box;
+      return { ...last, box, isShown: false };
+    }
+    const isTurned = isShownAtOnce(last, now, height);
+    const fadeMs = isReplaced || isTurned ? 0 : LEAVE_FADE_MS;
+    const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + fadeMs;
+    const from = isTurned ? { box: "shut", isShown: false } : isLive || isReplaced ? { box: shutAt <= now ? "shut" : last?.box ?? "open", isShown: false } : { box: "open", isShown: true };
+    const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt };
+    return { ...glide, endsAt: restAt(shutAt, 0) };
+  }
+  if (state === "entering") {
+    if (!isStart && last !== null)
+      return openedAt(last, now);
+    if (isLive) {
+      const isShutting = last.shutAt !== null && now > last.shutAt;
+      const waitsForSpace = isShutting || last.box !== "open";
+      const opensAt = waitsForSpace && !isPressed && holdsUntil > now ? holdsUntil : null;
+      const startsAt = opensAt ?? now;
+      const shutForMs = isShutting && last.shutAt !== null ? startsAt - last.shutAt : null;
+      const isOpen = opensAt === null;
+      const box = isOpen ? "open" : "shut";
+      const glide = { box, isShown: isOpen, fadeMs: ENTER_FADE_MS, waitsForSpace, shutForMs };
+      return { ...glide, opensAt, shutAt: null, endsAt: restAt(startsAt, ENTER_FADE_MS) };
+    }
+    const opensAt = !isPressed && holdsUntil > now ? holdsUntil : now + NEXT_FRAME_MS;
+    const glide = { box: "shut", isShown: isPressed, fadeMs: isPressed ? 0 : ENTER_FADE_MS };
+    return {
+      ...glide,
+      waitsForSpace: !isPressed,
+      shutForMs: null,
+      opensAt,
+      shutAt: null,
+      endsAt: restAt(opensAt, glide.fadeMs)
+    };
+  }
+  if (!isLive || last.box !== "open" && last.opensAt === null)
+    return null;
+  const glide = openedAt(last, now);
+  return isStart ? { ...glide, endsAt: Math.max(glide.endsAt, restAt(now, glide.fadeMs)) } : glide;
+}
+var isShownAtOnce = (g, now, height) => g !== null && g.box === "open" && g.shutAt === null && g.fadeMs === 0 && g.opensAt !== null && (height === undefined || now < g.opensAt + enterDelayMs(height));
+function openedAt(g, now) {
+  const isOpen = g.opensAt === null || now >= g.opensAt;
+  return { ...g, box: isOpen ? "open" : "shut", isShown: isOpen || g.fadeMs === 0 };
+}
+var shutTo = (height, ms) => ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING);
+
 // src/heights.ts
 var MOVED_FROM = "~from ";
 var MOVED_TO = "~to ";
@@ -5748,6 +5779,8 @@ var NO_SIZES = { get: () => {
 class Heights {
   sizes = new Map;
   resized = new Set;
+  isChanged = false;
+  formingSince = null;
   zoom = null;
   get(key) {
     return (this.sizes.get(key) ?? this.sizes.get(originalKey(key)))?.height;
@@ -5764,6 +5797,8 @@ class Heights {
     const isRewrapped = was !== undefined && was.width !== size.width && was.height !== size.height;
     if (isRewrapped)
       this.resized.add(key);
+    if (was?.height !== size.height)
+      this.isChanged = true;
     return was?.height !== size.height || isZoomChanged || isWidthDrawn && was?.width !== size.width;
   }
   takeResized() {
@@ -5771,16 +5806,92 @@ class Heights {
     this.resized = new Set;
     return resized;
   }
+  isForming(isFirst, now) {
+    const isChanged = this.isChanged;
+    this.isChanged = false;
+    const since = this.formingSince;
+    this.formingSince = isFirst ? now : since !== null && isChanged && now - since < PAGE_FORMS_MS ? since : null;
+    return this.formingSince !== null;
+  }
   clear() {
     this.sizes.clear();
     this.resized.clear();
   }
 }
+var PAGE_FORMS_MS = 100;
 var titleId = (id) => `title ${id}`;
 var restId = (id) => `rest ${id}`;
 var prHeadId = (id) => `head ${id}`;
-var prTailId = (id) => `tail ${id}`;
+var aboveId = (id) => `above ${id}`;
+var aboveLineId = (id) => `above line ${id}`;
 var panelId = (id) => `panel ${id}`;
+
+// src/held-line.ts
+var NO_LINES_ABOVE = { held: new Map, lineless: new Set };
+var HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS;
+var LINE_COMES_MS = NEXT_FRAME_MS + HEIGHT_SETTLE_MS;
+var heldKey = (r) => r.settled ? `settled ${r.id}` : r.id;
+var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
+var isStatusUnder = (r) => r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)));
+var lineOf = (f, cameAt) => ({
+  text: f.text,
+  tone: f.tone,
+  ...f.aged ? { aged: f.aged } : {},
+  ...cameAt === undefined ? {} : { cameAt }
+});
+var isComing = (l, now) => l?.cameAt !== undefined && now < l.cameAt + LINE_COMES_MS;
+function holdLinesAbove(blocks, last, now, isAtOnce = false) {
+  const next = new Map;
+  const lineless = new Set;
+  const shown = blocks.map((b) => {
+    if (b.kind !== "row")
+      return b;
+    const key = heldKey(b);
+    const kept = last.held.get(key);
+    const f = b.feedback;
+    const source = f?.source ?? null;
+    const isUnderWay = isPressUnderWay(source);
+    if (!hasActions(b)) {
+      if (kept !== undefined && isUnderWay)
+        next.set(key, kept);
+      return b;
+    }
+    const isUnder = isStatusUnder(b);
+    const isStarting = kept === undefined && f !== null && isUnder && (isUnderWay || source?.is === "queued");
+    if (kept === null || isStarting) {
+      next.set(key, null);
+      lineless.add(key);
+      return kept === null && f !== null && !isUnder ? { ...b, isStatusHeldUnder: true } : b;
+    }
+    const isNewLine = kept === undefined && !isAtOnce && last.lineless.has(key);
+    const cameAt = isNewLine ? now : kept?.leftAt === null ? kept.line.cameAt : undefined;
+    const own = f !== null && !isUnder ? lineOf(f, cameAt) : null;
+    const isOwnFailure = f !== null && isFailure(f.source);
+    const step = stepHeldLine(kept, { own, isOwnFailure, isUnder: f !== null && isUnder, isPressUnderWay: isUnderWay }, now, HELD_LEAVE_MS);
+    if (step.kept)
+      next.set(key, step.kept);
+    const d = step.drawn;
+    if (!d && !own)
+      lineless.add(key);
+    if (!d)
+      return own && isComing(own, now) ? { ...b, lineCameAt: own.cameAt } : b;
+    const text = d.line.aged ? agedText(d.line.aged, now) : d.line.text;
+    return {
+      ...b,
+      heldLine: { text, tone: d.line.tone, isHidden: d.isHidden, ...d.leftAt === null ? {} : { leftAt: d.leftAt } }
+    };
+  });
+  const ends = [...next.values()].flatMap((k) => {
+    if (isComing(k?.line, now))
+      return [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter((at) => at > now);
+    const end = heldLineEndsAt(k, HELD_LEAVE_MS);
+    return end === null || k?.leftAt == null ? [] : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter((at) => at > now);
+  });
+  return { blocks: shown, held: { held: next, lineless }, nextAt: ends.length === 0 ? null : Math.min(...ends) };
+}
+var isHeldLineShutting = (r, now) => r.heldLine?.leftAt !== undefined && now >= r.heldLine.leftAt + HOLD_MS;
+var heldLineDrop = (r, now, heights) => isHeldLineShutting(r, now) ? heights.get(aboveId(r.id)) ?? 0 : 0;
+var lineRise = (r, now, heights) => r.lineCameAt === undefined || now === r.lineCameAt ? 0 : Math.max(0, (heights.get(aboveLineId(r.id)) ?? 0) - (heights.get(aboveId(r.id)) ?? 0));
 
 // ../core/view/layout.ts
 var SPACE_UNIT = 4;
@@ -5931,62 +6042,6 @@ function titleCopiesOf(r, sizes) {
   return [{ key: wholeId(r.id), text: r.title }, ...bareCopy, ...cuts];
 }
 
-// src/block-glide.ts
-var NEXT_FRAME_MS = 16;
-var HOLD_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
-var restAt = (now, fadeMs) => now + Math.max(fadeMs, HEIGHT_SETTLE_MS) + NEXT_FRAME_MS;
-function glideOf(track, isStart, last, now, holdsUntil, isPressed, isReplaced, height) {
-  const { state } = track;
-  const isLive = last !== null && now < last.endsAt;
-  if (state === "leaving") {
-    if (!isStart && last !== null) {
-      const box = last.shutAt !== null && now >= last.shutAt ? "shut" : last.box;
-      return { ...last, box, isShown: false };
-    }
-    const isTurned = isShownAtOnce(last, now, height);
-    const fadeMs = isReplaced || isTurned ? 0 : LEAVE_FADE_MS;
-    const shutAt = now + (isLive ? 0 : NEXT_FRAME_MS) + fadeMs;
-    const from = isTurned ? { box: "shut", isShown: false } : isLive || isReplaced ? { box: shutAt <= now ? "shut" : last?.box ?? "open", isShown: false } : { box: "open", isShown: true };
-    const glide = { ...from, fadeMs, waitsForSpace: false, shutForMs: null, opensAt: null, shutAt };
-    return { ...glide, endsAt: restAt(shutAt, 0) };
-  }
-  if (state === "entering") {
-    if (!isStart && last !== null)
-      return openedAt(last, now);
-    if (isLive) {
-      const isShutting = last.shutAt !== null && now > last.shutAt;
-      const waitsForSpace = isShutting || last.box !== "open";
-      const opensAt = waitsForSpace && !isPressed && holdsUntil > now ? holdsUntil : null;
-      const startsAt = opensAt ?? now;
-      const shutForMs = isShutting && last.shutAt !== null ? startsAt - last.shutAt : null;
-      const isOpen = opensAt === null;
-      const box = isOpen ? "open" : "shut";
-      const glide = { box, isShown: isOpen, fadeMs: ENTER_FADE_MS, waitsForSpace, shutForMs };
-      return { ...glide, opensAt, shutAt: null, endsAt: restAt(startsAt, ENTER_FADE_MS) };
-    }
-    const opensAt = !isPressed && holdsUntil > now ? holdsUntil : now + NEXT_FRAME_MS;
-    const glide = { box: "shut", isShown: isPressed, fadeMs: isPressed ? 0 : ENTER_FADE_MS };
-    return {
-      ...glide,
-      waitsForSpace: !isPressed,
-      shutForMs: null,
-      opensAt,
-      shutAt: null,
-      endsAt: restAt(opensAt, glide.fadeMs)
-    };
-  }
-  if (!isLive || last.box !== "open" && last.opensAt === null)
-    return null;
-  const glide = openedAt(last, now);
-  return isStart ? { ...glide, endsAt: Math.max(glide.endsAt, restAt(now, glide.fadeMs)) } : glide;
-}
-var isShownAtOnce = (g, now, height) => g !== null && g.box === "open" && g.shutAt === null && g.fadeMs === 0 && g.opensAt !== null && (height === undefined || now < g.opensAt + enterDelayMs(height));
-function openedAt(g, now) {
-  const isOpen = g.opensAt === null || now >= g.opensAt;
-  return { ...g, box: isOpen ? "open" : "shut", isShown: isOpen || g.fadeMs === 0 };
-}
-var shutTo = (height, ms) => ms === null ? { x: 0, v: 0 } : springStep({ x: height, v: 0 }, 0, ms, HEIGHT_SPRING);
-
 // src/panel-steps.ts
 var spaceNow = (s, now) => springStep(s.box, s.to, now - s.at);
 function aimSpace(last, to, now) {
@@ -6122,10 +6177,18 @@ var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
 // src/under-line.ts
 var LEAVE_ENDS_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
 var lineOf2 = (b) => b.kind === "row" && isStatusUnder(b) ? b.feedback : null;
-var stepUnder = (last, b, now, isInput = false) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput);
-function stepLine(last, line, isSameForm, now, isInput) {
-  if (line)
-    return last && !last.isLeaving ? { ...last, line } : { line, since: now, isLeaving: false, isInput };
+var stepUnder = (last, b, now, isInput = false) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput, (x, y) => x.source?.is === y.source?.is);
+function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true) {
+  if (line && last?.isLeaving)
+    return { line, since: now, isLeaving: false, isInput, isBack: true };
+  if (!line)
+    return leaving(last, isSameForm, now, isInput);
+  if (!last)
+    return { line, since: now, isLeaving: false, isInput };
+  const isEntering = now < last.since + ROW_STATE_MS.entering;
+  return isEntering && !isSameLine(last.line, line) ? { line, since: now, isLeaving: false, isInput: last.isInput } : { ...last, line };
+}
+function leaving(last, isSameForm, now, isInput) {
   if (!last || !isSameForm || isInput)
     return null;
   if (!last.isLeaving)
@@ -6147,6 +6210,8 @@ function underMotion(u, now, height) {
     return at(isStart ? 1 : 0, LEAVE_FADE_MS, 0);
   if (now >= u.since + ROW_STATE_MS.entering)
     return at(null, 0, 0);
+  if (u.isBack)
+    return at(1, ENTER_FADE_MS, 0);
   if (isStart)
     return at(u.isInput ? FAINT_OPACITY : 0, 0, 0, true);
   return at(1, ENTER_FADE_MS, enterDelayMs(height ?? 0));
@@ -6188,19 +6253,36 @@ function movedOf(blocks, was) {
 
 // src/pr-status.ts
 var lineOf3 = (b) => b.kind === "pr" && (b.status !== null || b.unlisted.length > 0) ? { status: b.status, unlisted: b.unlisted } : null;
-function stepPrStatus(last, b, now, isFirst) {
-  const line = lineOf3(b);
+function stepPrLine(last, line, b, now, isFirst, isInput) {
   if (isFirst)
     return line && { line, since: -Infinity, isLeaving: false, isInput: false };
-  return stepLine(last, line, b.kind === "pr", now, false);
+  return stepLine(last, line, b.kind === "pr", now, isInput);
 }
-function prStatusHeight(b, m, p) {
-  const key = underId(b.id);
-  if (!m || p.isNarrow || p.isAtOnce(key))
+var stepPrStatus = (last, b, now, isFirst) => stepPrLine(last, lineOf3(b), b, now, isFirst, false);
+function stepPrTail(last, b, now, isFirst, isInput) {
+  const pr = b.kind === "pr" ? b : null;
+  const buttons = pr && pr.buttons.length > 0 ? pr.buttons : null;
+  return {
+    error: stepPrLine(last?.error ?? null, pr?.error ?? null, b, now, isFirst, isInput),
+    buttons: stepPrLine(last?.buttons ?? null, buttons, b, now, isFirst, false),
+    result: stepPrLine(last?.result ?? null, pr?.feedback ?? null, b, now, isFirst, isInput)
+  };
+}
+var prTailId = (part, id) => `status ${part} ${id}`;
+var PR_TAIL_PARTS = ["error", "buttons", "result"];
+var prTailMotion = (t, id, now, heightOf) => ({
+  error: underMotion(t.error, now, heightOf(prTailId("error", id))),
+  buttons: underMotion(t.buttons, now, heightOf(prTailId("buttons", id))),
+  result: underMotion(t.result, now, heightOf(prTailId("result", id)))
+});
+var prTailTimes = (t) => t ? [...underTimes(t.error), ...underTimes(t.buttons), ...underTimes(t.result)] : [];
+function lineHeight(key, s, m, p) {
+  if (!m || p.isAtOnce(key))
     return;
-  const s = m.status;
   return s === null || s.isNew ? 0 : p.heights.get(key) ?? 0;
 }
+var prStatusHeight = (b, m, p) => p.isNarrow ? undefined : lineHeight(underId(b.id), m?.status ?? null, m, p);
+var prTailHeight = (b, part, m, p) => lineHeight(prTailId(part, b.id), m?.prTail?.[part] ?? null, m, p);
 
 // src/form-swap.ts
 var isSettledRow = (b) => b?.kind === "row" && b.settled !== null;
@@ -6354,6 +6436,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
     const under = stepUnder(last?.under ?? null, block, now, isInput);
     const status = stepPrStatus(last?.status ?? null, block, now, isFirst);
+    const prTail = block.kind === "pr" ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInput) : null;
     const isTurnedBack = isStart && track.state === "opening" && last?.track.state === "closing" && last.opened !== null;
     const panelHeight = heightOf(panelId(block.id));
     const lastSteps = last?.panelSteps ?? null;
@@ -6387,6 +6470,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       isInputMove,
       under,
       status,
+      prTail,
       panelSpace,
       panelSteps,
       panelHeldUntil,
@@ -6411,13 +6495,16 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       springId,
       under: underMotion(under, now, heightOf(underId(block.id))),
       status: underMotion(status, now, heightOf(underId(block.id))),
+      prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
       former: last && last.block.kind !== block.kind ? last.block : null,
       swap: swapMotion(waited, now)
     });
   };
   for (const b of blocks) {
-    const isMoved = moved.has(b.id);
-    const old = isMoved ? undefined : was.rows.get(b.id);
+    const prior = was.rows.get(b.id);
+    const isMovedOn = prior?.track.state === "entering" && prior.springId?.includes(MOVED_TO) === true;
+    const isMoved = moved.has(b.id) && !isMovedOn;
+    const old = isMoved ? undefined : prior;
     const opens = old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
     const waitsForLeave = opens && !isInput && isHolding;
     const isTurningBack = old?.track.state === "closing" && old.swap?.inAt !== null;
@@ -6451,6 +6538,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     ...titleTimes(t.title),
     ...underTimes(t.under),
     ...underTimes(t.status),
+    ...prTailTimes(t.prTail),
     ...swapTimes(t.swap),
     holdsUntil,
     closeHoldsUntil,
@@ -6472,14 +6560,14 @@ function timeLeftShare(runsOutAt, now) {
 }
 var TIME_LEFT_STEP_MS = 250;
 function timeLeftOf(b, drawn, now) {
-  if (b.runsOutAt === undefined || b.isHidden)
+  if (b.runsOutAt === undefined || b.isSpent)
     return null;
   const was = drawn.get(b.id);
   if (b.isOut)
     return { is: "paused", share: was?.is === "paused" ? was.share : timeLeftShare(b.runsOutAt, now) };
   return b.runsOutAt > now ? { is: "emptying" } : null;
 }
-var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined && !b.isHidden);
+var timedButtons = (blocks) => blocks.flatMap((b) => b.kind === "row" ? b.buttons : []).filter((b) => b.runsOutAt !== undefined);
 function timeLeftDraws(blocks, drawn, now) {
   return new Map(timedButtons(blocks).flatMap((b) => {
     const left = timeLeftOf(b, drawn, now);
@@ -6487,18 +6575,24 @@ function timeLeftDraws(blocks, drawn, now) {
   }));
 }
 function timeLeftNextAt(blocks, now) {
-  const ends = timedButtons(blocks).filter((b) => !b.isOut && (b.runsOutAt ?? 0) > now).map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS));
+  const timed = timedButtons(blocks);
+  const leaves = timed.flatMap((b) => b.leftAt === undefined ? [] : [b.leftAt + NEXT_FRAME_MS, b.leftAt + HOLD_MS]);
+  const running = timed.filter((b) => !b.isOut && !b.isSpent && (b.runsOutAt ?? 0) > now);
+  const ends = [
+    ...running.map((b) => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS)),
+    ...leaves.filter((at) => at > now)
+  ];
   return ends.length > 0 ? Math.min(...ends) : null;
 }
 
 // src/wake.ts
-function nextDrawAt(now, moved, heldFadeAt) {
+function nextDrawAt(now, moved, heldAt) {
   const isStarting = [...moved.motion.values()].some((m) => m.isStart);
   const wakeAt = [
     isStarting ? now + NEXT_FRAME_MS : null,
     moved.nextAt,
     timeLeftNextAt(moved.blocks, now),
-    heldFadeAt
+    ...heldAt
   ].filter((at) => at !== null);
   return wakeAt.length === 0 ? null : Math.min(...wakeAt);
 }
@@ -6731,12 +6825,17 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
   const isWrapping = canWrap && runsOutAt === undefined;
-  const base = h_flex().id(`button ${b.id}`).when(!isWrapping, (e) => e.flex_none().h(BUTTON_H)).when(isWrapping, (e) => e.flex_shrink_1().min_w(0).min_h(BUTTON_H).py(BUTTON_PAD_Y)).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isWrapping ? div3().min_w(0).whitespace_normal().child(b.label) : b.label);
+  const base = h_flex().id(b.isSpent ? `spent ${b.id}` : `button ${b.id}`).when(!isWrapping, (e) => e.flex_none().h(BUTTON_H)).when(isWrapping, (e) => e.flex_shrink_1().min_w(0).min_h(BUTTON_H).py(BUTTON_PAD_Y)).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isWrapping ? div3().min_w(0).whitespace_normal().child(b.label) : b.label);
   const shaped = isPill && runsOutAt === undefined ? base.px(BUTTON_PAD_X).rounded(BUTTON_H / 2).border_1() : base;
-  if (b.isHidden)
-    return shaped.invisible().disabled(true);
+  if (b.isSpent) {
+    const spent = shaped.text_color(t.muted).opacity(SPENT_OPACITY).disabled(true);
+    if (b.leftAt === undefined)
+      return spent;
+    const opacity = p.now < b.leftAt + NEXT_FRAME_MS ? SPENT_OPACITY : 0;
+    return fadeEl(spent, `spent ${b.id}`, opacity, { duration: LEAVE_FADE_MS, delay: 0 }, p);
+  }
   if (b.isOut)
-    return shaped.border_color(CLEAR).text_color(t.muted).opacity(0.5).disabled(true);
+    return shaped.border_color(CLEAR).text_color(t.muted).opacity(SPENT_OPACITY).disabled(true);
   const styled = b.emphasis === "primary" ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? shaped.border_color(t.input).text_color(t.foreground) : shaped.text_color(t.muted);
   if (isInert)
     return styled;
@@ -6747,6 +6846,7 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
   });
 }
 var CLEAR = "#00000000";
+var SPENT_OPACITY = 0.5;
 var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, above = CONTROL_GAP) => {
   const outdent = followsAnswers ? BUTTON_LABEL_X : 0;
   const followUps = buttons.filter((b) => b.isFollowUp);
@@ -7059,11 +7159,12 @@ function fitHeight(b, m, p) {
   const panel = m?.isPanelLeftOut ? p.heights.get(panelId(id)) ?? 0 : 0;
   const former = () => m?.former ? fitHeight(m.former, undefined, p) : undefined;
   if (b.kind === "pr") {
-    const parts = [prHeadId(id), underId(id), prTailId(id)].map((key) => p.heights.get(key));
-    const [head, status, tail] = parts;
-    if (head === undefined || status === undefined || tail === undefined)
+    const head = p.heights.get(prHeadId(id));
+    const status = p.heights.get(underId(id));
+    const tail = PR_TAIL_PARTS.map((part) => prTailHeight(b, part, m, p) ?? p.heights.get(prTailId(part, id)));
+    if (head === undefined || status === undefined || tail.some((h) => h === undefined))
       return former();
-    return head + (prStatusHeight(b, m, p) ?? status) + tail;
+    return head + (prStatusHeight(b, m, p) ?? status) + tail.reduce((sum, h) => sum + (h ?? 0), 0);
   }
   if (b.kind !== "row") {
     const measured = p.heights.get(id);
@@ -7071,7 +7172,9 @@ function fitHeight(b, m, p) {
   }
   const title = titleHeightOf(b, p);
   const rest = p.heights.get(restId(id));
-  return title === undefined || rest === undefined ? former() : 2 * padOf(b) + title + rest - panel;
+  if (title === undefined || rest === undefined)
+    return former();
+  return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + lineRise(b, p.now, p.heights);
 }
 function contentEl(b, m, p, el, strokes) {
   const id = b.id;
@@ -7220,15 +7323,33 @@ function statusEl(s, p, isInert) {
 
 // src/paint-pr-status.ts
 import { div as div10 } from "gpui-kit";
+function prLineEl(key, height, s, atRest, lineEl, p) {
+  const moving = height === undefined ? null : s;
+  const line = height === undefined ? atRest : s?.line ?? null;
+  const drawn = (line === null ? null : lineEl(line)) ?? div10();
+  const faded = moving === null || moving.opacity === null ? drawn.id(key) : fadeEl(drawn.id(key), key, moving.opacity, { duration: moving.fadeMs, delay: moving.delayMs }, p);
+  return springBox(`fit ${key}`, height).child(sizeEl(key, p, faded));
+}
 function prStatusEl(b, p, lineEl) {
   const m = p.motion.get(b.id);
-  const key = underId(b.id);
-  const height = prStatusHeight(b, m, p);
-  const s = height === undefined ? null : m?.status ?? null;
-  const line = height === undefined ? b : s?.line ?? null;
-  const drawn = line && (p.isNarrow || line.status !== null || line.unlisted.length > 0) ? lineEl(line).id(key) : div10();
-  const faded = s?.opacity === null || s === null ? drawn : fadeEl(drawn, key, s.opacity, { duration: s.fadeMs, delay: s.delayMs }, p);
-  return springBox(`fit ${key}`, height).child(sizeEl(key, p, faded));
+  const isShown = (l) => p.isNarrow || l.status !== null || l.unlisted.length > 0;
+  return prLineEl(underId(b.id), prStatusHeight(b, m, p), m?.status ?? null, b, (l) => isShown(l) ? lineEl(l) : null, p);
+}
+function prTailEls(b, p, els) {
+  const m = p.motion.get(b.id);
+  const box = (part) => {
+    const key = prTailId(part, b.id);
+    const height = prTailHeight(b, part, m, p);
+    const t = m?.prTail ?? null;
+    if (part === "error")
+      return prLineEl(key, height, t?.error ?? null, b.error, els.error, p);
+    if (part === "buttons") {
+      const atRest = b.buttons.length > 0 ? b.buttons : null;
+      return prLineEl(key, height, t?.buttons ?? null, atRest, (l) => els.buttons(l, atRest === null), p);
+    }
+    return prLineEl(key, height, t?.result ?? null, b.feedback, els.result, p);
+  };
+  return PR_TAIL_PARTS.map(box);
 }
 
 // src/paint-chrome.ts
@@ -7322,11 +7443,11 @@ function shortTitleEl(s) {
 // src/paint-row-lines.ts
 var linesOf = (r) => [
   ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
-  ...r.feedback && !isStatusUnder(r) ? [r.feedback] : [],
+  ...r.feedback && !isStatusUnder(r) ? [{ ...r.feedback, cameAt: r.lineCameAt }] : [],
   ...r.heldLine ? [r.heldLine] : []
 ];
 function titleLineEls(r, shown, m, p, lineEl, withPanel) {
-  const drawn = (l, n) => lineEl(l, n).id(`status above ${r.id} line ${n}`);
+  const drawn = (l, n) => leavingEl(r, l, lineEl(l, n).id(`status above ${r.id} line ${n}`), n, p);
   const closing = m?.closing ?? null;
   const lines = linesOf(shown);
   if (closing === null)
@@ -7345,6 +7466,27 @@ function titleLineEls(r, shown, m, p, lineEl, withPanel) {
     const name = fadeName(n);
     return fadeEl(lineEl(l, n).id(name), name, 1, { duration: ENTER_FADE_MS, delay: NEXT_FRAME_MS }, p);
   });
+}
+function leavingEl(r, l, el, n, p) {
+  const leftAt = l.leftAt;
+  if (l.cameAt !== undefined)
+    return comingEl(r, l.cameAt, el, n, p);
+  if (leftAt === undefined)
+    return el;
+  const isFading = p.now < leftAt + HOLD_MS;
+  const name = `status above ${r.id} line ${n}`;
+  const shown = l.isHidden ? el : fadeEl(el, name, p.now === leftAt ? 1 : 0, { duration: LEAVE_FADE_MS, delay: 0 }, p);
+  const box = springBox(`fit ${aboveId(r.id)}`, isFading ? p.heights.get(aboveLineId(r.id)) : 0);
+  return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)));
+}
+function comingEl(r, cameAt, el, n, p) {
+  const isStart = p.now === cameAt;
+  const height = p.heights.get(aboveLineId(r.id));
+  const name = `status above ${r.id} line ${n}`;
+  const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) };
+  const shown = fadeEl(el, name, isStart ? FAINT_OPACITY : 1, fade, p);
+  const box = springBox(`fit ${aboveId(r.id)}`, isStart ? 0 : height);
+  return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)));
 }
 
 // src/paint-notes.ts
@@ -7522,8 +7664,12 @@ function prEl(b, p, isInert) {
     ...l.status ? [statusPartEl(l.status.text).text_color(colorOf(t, l.status.tone))] : [],
     ...l.unlisted.map((u) => statusPartEl(u).text_color(t.muted))
   ];
-  const tail = v_flex6().when(b.error !== null, (e) => e.child(lineEl(b.error ?? "", t.ansi1, 0))).when(b.buttons.length > 0, (e) => e.child(buttonsEl(b.buttons, p, 0, isInert))).when(b.feedback !== null, (e) => b.feedback ? e.child(feedbackEl(b.feedback, t)) : e);
-  return v_flex6().pl(EDGE).pr(EDGE).child(sizeEl(prHeadId(b.id), p, title)).child(prStatusEl(b, p, (l) => div16().pt(INSIDE_GAP).child(partedEl(statusParts(l), t.muted)))).child(sizeEl(prTailId(b.id), p, tail));
+  const tail = prTailEls(b, p, {
+    error: (text) => lineEl(text, t.ansi1, 0),
+    buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing),
+    result: (f) => feedbackEl(f, t)
+  });
+  return v_flex6().pl(EDGE).pr(EDGE).child(sizeEl(prHeadId(b.id), p, title)).child(prStatusEl(b, p, (l) => div16().pt(INSIDE_GAP).child(partedEl(statusParts(l), t.muted)))).children(tail);
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
@@ -7683,7 +7829,7 @@ function drawOuts(blocks, outs, lines, now) {
     const out = byRow.get(id);
     if (!out || holdsStatusWhileOut(out.kind))
       return lines[id] ?? null;
-    const source = out.pending ?? { is: "sending", label: SENDING, at: now };
+    const source = out.pending ?? { is: "sending", label: SENDING, at: now, sentAt: now };
     if (out.result)
       return { ...resultLine(out.result), source };
     return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted", source };
@@ -8523,8 +8669,13 @@ function undoButtons(row, agent, now) {
         runsOutAt
       }
     ];
-  const isWaitingForAgent = row.state.delivery === "queued" && now >= undoPlaceEndsAt(row.state);
-  return row.state.offersUndo && !isWaitingForAgent ? [{ ...button(id, ROW_COPY.undo, "quiet"), isHidden: true, runsOutAt }] : [];
+  if (!row.state.offersUndo)
+    return [];
+  const leftAt = row.state.delivery === "queued" ? undoPlaceEndsAt(row.state) : null;
+  if (leftAt !== null && now >= leftAt + HOLD_MS)
+    return [];
+  const leaving = leftAt !== null && now >= leftAt ? { leftAt } : {};
+  return [{ ...button(id, ROW_COPY.undo, "quiet"), isSpent: true, ...leaving, runsOutAt }];
 }
 function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
   const leave = isDiscard ? ROW_COPY.discard : ROW_COPY.cancel;
@@ -9223,6 +9374,7 @@ class Inbox extends View {
     const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`;
     const isFirst = tracksOf !== this.tracksOf;
     const resized = this.heights.takeResized();
+    const isForming = this.heights.isForming(isFirst, now);
     const paint = {
       t,
       mono: theme().typography?.mono ?? "Menlo",
@@ -9232,7 +9384,7 @@ class Inbox extends View {
       pick: (tab, cx) => this.apply([{ type: "show-tab", tab }], cx),
       motion: new Map,
       heights: this.heights,
-      isAtOnce: (key) => isFirst || resized.has(key),
+      isAtOnce: (key) => isForming || resized.has(key),
       measure: (key, size, cx, isWidthDrawn) => this.heights.measure(key, size, zoomOf(settings()), isWidthDrawn) && cx.notify(),
       now,
       newRows: newRowsOf(ui),
@@ -9256,7 +9408,7 @@ class Inbox extends View {
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
     this.blocks = shown;
     this.hints = fieldHints(shown);
-    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now);
+    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming);
     this.linesAbove = held.held;
     const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits);
     this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map((o) => o.rowId) };
@@ -9284,7 +9436,7 @@ class Inbox extends View {
       else
         this.focus?.focus();
     }).children(spacedEls(moved.blocks, paint, (b) => blockEl(b, paint)))).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
-    const wakeAt = nextDrawAt(now, moved, this.fades.drew());
+    const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt]);
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     return drawn;
