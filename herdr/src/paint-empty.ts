@@ -2,6 +2,7 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import { EMPTY_STATE_MAX_WIDTH_PT } from '../../core/view/layout'
+import { enterDelayMs } from '../../core/view/row-motion'
 import type { Block } from './blocks'
 import { CONTROL_GAP, END_SPACE, INSIDE_GAP, colorOf } from './paint-theme'
 import type { Paint } from './paint-theme'
@@ -37,7 +38,7 @@ function controlsEl(b: Extract<Block, { kind: 'empty' }>, p: Paint, isInert: boo
   const field = b.under?.field ?? null
   const buttons = b.under?.buttons ?? []
   const height = p.heights.get(key) ?? 0
-  const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), height }
+  const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), delayMs: enterDelayMs(height) }
   const fieldBox = field
     ? div()
         .w_full()

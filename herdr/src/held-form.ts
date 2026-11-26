@@ -1,7 +1,8 @@
 import { isMoving } from '../../core/view/row-motion'
 import type { Block } from './blocks'
 import type { TabCell } from './draw'
-import type { RowMotion, Tracks } from './motion'
+import type { RowMotion } from './motion'
+import type { Tracks } from './tracks'
 
 /**
  * A block at rest that changed in a draw that starts a move, such as a group's title as its count changes, keeps its

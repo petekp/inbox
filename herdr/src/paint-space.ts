@@ -18,7 +18,7 @@ import {
 import type { Paint } from './paint-theme'
 import { panelId, prHeadId, restId, titleId } from './heights'
 import { PR_TAIL_PARTS, prStatusHeight, prTailHeight, prTailId } from './pr-status'
-import { heldLineDrop, lineRise } from './held-line'
+import { addedRise, heldLineDrop, lineRise } from './held-line'
 import { warningBoxId, warningRise } from './warning-line'
 import { underId } from './under-line'
 import { shortTitleOf } from './title-cut'
@@ -230,7 +230,7 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
 
   if (title === undefined || rest === undefined) return former()
 
-  const rise = lineRise(b, p.now, p.heights) + warningRise(b, m, p)
+  const rise = lineRise(b, p.now, p.heights) + addedRise(b, p.now, p.heights) + warningRise(b, m, p)
 
   return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + rise
 }

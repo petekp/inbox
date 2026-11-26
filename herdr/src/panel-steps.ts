@@ -79,11 +79,13 @@ export function opacityAt(steps: PanelStep[], now: number): number {
   return step.from + (step.to - step.from) * easeOut(share)
 }
 
-/** What a row last drew that its panel's fade starts from: its track, its open form and its form swap. */
-type PanelWas = { track: RowTrack; opened: RowBlock | null; swap: FormSwap | null }
-
 /** A row's panel fades in as it opens and out as it closes, from where it is when the move turns back. */
-export function panelOf(state: RowState, isStart: boolean, last: PanelWas | undefined, closing: RowBlock | null) {
+export function panelOf(
+  state: RowState,
+  isStart: boolean,
+  last: { track: RowTrack; opened: RowBlock | null; swap: FormSwap | null } | undefined,
+  closing: RowBlock | null,
+): number | null {
   const isLeftPanelShown = last?.swap?.inAt === null && isOpenRow(last.swap.from)
   const wasPanelFolding =
     last?.track.state === 'opening' || (last?.track.state === 'closing' && last.opened !== null) || isLeftPanelShown

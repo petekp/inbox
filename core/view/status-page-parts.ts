@@ -257,7 +257,7 @@ function askWords(items: readonly Item[], ask: { id: string } | null): string | 
   return words || null
 }
 
-/** The words of the oldest open ask that holds a subject up, in the tone of that ask's kind. */
+/** The words of the open ask that sets a subject's mark, in the tone of that ask's kind. */
 export type StatusWaitsOn = { text: string; tone: 'needsYou' | 'tasks' }
 
 const askTone = (ask: { kind: Item['kind'] } | null): StatusWaitsOn['tone'] =>
@@ -269,7 +269,7 @@ export type ListContext = {
   isHeld: (x: Subject) => boolean
   /** The kinds of the open asks that hold `x` up. */
   holdKindsOf: (x: Subject) => Item['kind'][]
-  oldestAskOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
+  askSettingMarkOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
   items: readonly Item[]
   running: Child[]
   isTurnRunning: boolean
@@ -299,7 +299,7 @@ export function partRows(
     const isWorkRunning = isRunning || under.some(ch => ch.endedAt === null)
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0]! : null
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null
-    const ask = c.oldestAskOf(x)
+    const ask = c.askSettingMarkOf(x)
     const words = askWords(c.items, ask)
     const waitsOn = words === null ? null : { text: words, tone: askTone(ask) }
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now)
@@ -318,7 +318,7 @@ export function partRows(
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
       foldCount: lone === null ? under.length : 0,
-      ask: c.oldestAskOf(x),
+      ask: c.askSettingMarkOf(x),
     })
     if (lone === null)
       rows.push(

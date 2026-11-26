@@ -8,7 +8,8 @@ import { type Box, layout, linesOf } from './layout'
 
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
-const { moveRows, NO_TRACKS } = await import('../src/motion')
+const { moveRows } = await import('../src/motion')
+const { NO_TRACKS } = await import('../src/tracks')
 const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
@@ -26,7 +27,7 @@ type TitleForm = { at: number; id: string; tall: number; short: number; box: num
 type ColumnGap = { at: number; id: string; x: number; y: number }
 type Cut = { at: number; box: string; text: string; share: number; opacity: number }
 type Fading = { at: number; id: string; height: number; opacity: number }
-type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
+type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean; isHidden: boolean }
 type Shown = { at: number; block: string; text: string; opacity: number; share: number; isFormPart: boolean }
 type ShownLine = { block: string; text: string; top: number; height: number; opacity: number }
 type Rest = { fits: { id: string | null; height: number; content: number }[]; lines: ShownLine[] }
@@ -34,7 +35,7 @@ type Rest = { fits: { id: string | null; height: number; content: number }[]; li
 const lengthIn = (length: number | string, height: number): number =>
   typeof length === 'string' && length.endsWith('%') ? (parseFloat(length) / 100) * height : Number(length)
 
-function segmentsOf(root: Painted, placed: Map<Painted, Box>): Segment[] {
+function segmentsOf(root: Painted, placed: Map<Painted, Box>, isHidden: (n: Painted) => boolean): Segment[] {
   const out: Segment[] = []
   const walk = (n: Painted, clip: [number, number], id: string) => {
     const box = placed.get(n)
@@ -56,10 +57,11 @@ function segmentsOf(root: Painted, placed: Map<Painted, Box>): Segment[] {
       const shown = { y0: Math.max(y0, own[0]), y1: Math.min(y1, own[1]) }
       if (shown.y1 < shown.y0) {
         const isBelowClip = y0 > own[1] && Number.isFinite(own[1])
-        if (isBelowClip) out.push({ id, x: k.style.left ?? 0, y0: own[1], y1: own[1], runsIn: false, runsOn })
+        if (isBelowClip)
+          out.push({ id, x: k.style.left ?? 0, y0: own[1], y1: own[1], runsIn: false, runsOn, isHidden: isHidden(k) })
         continue
       }
-      out.push({ id, x: k.style.left ?? 0, ...shown, runsIn: (k.style.top ?? 0) === 0, runsOn })
+      out.push({ id, x: k.style.left ?? 0, ...shown, runsIn: (k.style.top ?? 0) === 0, runsOn, isHidden: isHidden(k) })
     }
   }
   walk(root, [-Infinity, Infinity], '')
@@ -70,10 +72,12 @@ function segmentsOf(root: Painted, placed: Map<Painted, Box>): Segment[] {
 function gapsOf(segments: Segment[], end: number): { id: string; x: number; y: number }[] {
   const isMet = (s: Segment, y: number) =>
     segments.some(o => o !== s && o.x === s.x && o.y0 <= y + 0.5 && o.y1 >= y - 0.5)
-  const ends = segments.flatMap(s => [
-    ...(s.runsIn && s.y0 > 0.5 ? [{ s, y: s.y0 }] : []),
-    ...(s.runsOn && s.y1 < end - 0.5 ? [{ s, y: s.y1 }] : []),
-  ])
+  const ends = segments
+    .filter(s => !s.isHidden)
+    .flatMap(s => [
+      ...(s.runsIn && s.y0 > 0.5 ? [{ s, y: s.y0 }] : []),
+      ...(s.runsOn && s.y1 < end - 0.5 ? [{ s, y: s.y1 }] : []),
+    ])
 
   return ends.filter(({ s, y }) => !isMet(s, y)).map(({ s, y }) => ({ id: s.id, x: s.x, y }))
 }
@@ -297,6 +301,7 @@ class Frames {
   private lastShown = new Map<string, number>()
   private last: Map<string, Box> | null = null
   private motionIds: Map<string, string> | null = null
+  private strokesOut = new Map<string, number>()
   jumps: Jump[] = []
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
@@ -312,6 +317,21 @@ class Frames {
     this.tracks = NO_TRACKS
     this.linesAbove = NO_LINES_ABOVE
     this.motionIds = null
+  }
+
+  private hiddenStrokes(root: Painted, now: number): (n: Painted) => boolean {
+    const out = new Map<string, number>()
+    const walk = (n: Painted) => {
+      if (n.style.isAbsolute && n.id && n.style.opacity === 0) out.set(n.id, this.strokesOut.get(n.id) ?? now)
+      n.kids.forEach(walk)
+    }
+    walk(root)
+    this.strokesOut = out
+
+    return n => {
+      const since = n.id ? out.get(n.id) : undefined
+      return since !== undefined && now - since >= (n.transitions.get('opacity') ?? 0)
+    }
   }
 
   draw(blocks: Block[], now: number, isInput = false) {
@@ -364,7 +384,8 @@ class Frames {
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
     this.slides.push(sized.flatMap(({ node }) => (node.transitions.has('top') ? [node.style.top ?? 0] : [])))
-    for (const gap of gapsOf(segmentsOf(tree, placed), end)) this.gaps.push({ at: now, ...gap })
+    for (const gap of gapsOf(segmentsOf(tree, placed, this.hiddenStrokes(tree, now)), end))
+      this.gaps.push({ at: now, ...gap })
     this.rest = { fits, lines }
     const startsHere = [...moved.motion].filter(([, m]) => m.springId?.endsWith(`${MOVED_TO}${now}`)).map(([id]) => id)
     const isInMovedBlock = (id: string) => startsHere.some(b => id.endsWith(` ${b}`))

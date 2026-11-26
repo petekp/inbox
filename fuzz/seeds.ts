@@ -76,12 +76,27 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: '"Send"',
     issue: 827,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd13' },
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'button', n: 0, label: 'Reply' },
+    ]),
+  },
+  {
+    name: 'selecting another row just after Reply',
+    rule: 'cut',
+    detail: '"Send"',
+    issue: 827,
+    isOpen: false,
+    case: herdr(demo, [
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'row', n: 0, label: 'd13' },
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'button', n: 0, label: 'Reply' },
+      { is: 'wait', ms: 60 },
+      { is: 'click', on: 'row', n: 0, label: 'd14' },
     ]),
   },
   {
@@ -251,7 +266,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box status above i1',
     issue: 931,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       { is: 'record', args: { kind: 'task', ask: '同', steps: ['/repo/x', 'git push', 'https://example.com'] } },
       { is: 'click', on: 'button', n: 0, label: 'Done' },
@@ -263,7 +278,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: '"Not applied',
     issue: 932,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(emptySession(), [
         { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
@@ -278,7 +293,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box panel i1',
     issue: 933,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       {
         is: 'record',
@@ -304,7 +319,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: '"Explaining…"',
     issue: 934,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
       { is: 'click', on: 'button', n: 2, label: 'Explain' },
@@ -313,10 +328,25 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     ]),
   },
   {
+    name: 'a press that is not applied after its buttons went',
+    rule: 'cut',
+    detail: '"Not applied',
+    issue: 950,
+    isOpen: false,
+    case: {
+      ...herdr(demo, [
+        { is: 'key', key: 'x' },
+        { is: 'key', key: 'w' },
+        { is: 'wait', ms: 12010 },
+      ]),
+      takeAfterMs: null,
+    },
+  },
+  {
     name: 'folding every fold on the Status tab',
     rule: 'connector-gap',
     issue: 833,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'tab', n: 0, label: 'overview' },
@@ -357,7 +387,7 @@ export const CODEX_SEEDS: {
     rule: 'cut',
     detail: '"@review-bot"',
     issue: 936,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'light',
@@ -517,7 +547,7 @@ export const CODEX_SEEDS: {
     rule: 'cut',
     detail: '"Holds up Flick option" shows at 1.00',
     issue: 896,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'dark',
@@ -580,29 +610,9 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
       ['"Explain"', 'in its box panel '],
     ],
   },
-  {
-    issue: 931,
-    look: 'herdr',
-    rule: 'cut',
-    details: [
-      ['"Done"', 'in its box status above '],
-      ['"Undo"', ' undo'],
-    ],
-  },
-  { issue: 932, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status ']] },
-  {
-    issue: 934,
-    look: 'herdr',
-    rule: 'cut',
-    details: [
-      ['"Explaining…"', 'in its box status '],
-      ['"Queued: Explain"', 'in its box status '],
-    ],
-  },
+  { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
-  { issue: 896, look: 'codex', rule: 'cut', details: ['"Holds up ', '"Comparing…"'] },
-  { issue: 936, look: 'codex', rule: 'cut', details: ['visor#31 thread DT'] },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */

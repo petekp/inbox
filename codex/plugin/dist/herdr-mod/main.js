@@ -1,9 +1,9 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T09:46:19.797Z. 394667 characters follow.
+// Built at 2026-11-26T19:52:55.222Z. 401235 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
-import { InputState, Scrollbar, v_flex as v_flex7 } from "gpui-base";
+import { InputState, Scrollbar, v_flex as v_flex8 } from "gpui-base";
 import {
   appHome,
   exec,
@@ -78,6 +78,12 @@ function withDrawableText(value, isKept) {
 function clipLabel(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
+function cutForEllipsis(line, fits) {
+  const parts = graphemesOf(line);
+  while (parts.length > 0 && !fits(`${parts.join("")}…`))
+    parts.pop();
+  return parts.join("").replace(/[\s.,;:]+$/, "");
+}
 function wordCuts(line) {
   const words = line.split(" ");
   const cuts = words.map((_, n) => words.slice(0, words.length - n).join(" ").replace(/[\s.,;:]+$/, ""));
@@ -85,6 +91,11 @@ function wordCuts(line) {
 }
 function cutAtWord(line, fits) {
   return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
+}
+function cutLine(line, fits) {
+  if (fits(line))
+    return line;
+  return `${cutAtWord(line, fits) ?? cutForEllipsis(line, fits)}…`;
 }
 var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
 function cutAtPhrase(text, fits) {
@@ -1091,7 +1102,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const ask = c.oldestAskOf(x);
+    const ask = c.askSettingMarkOf(x);
     const words = askWords(c.items, ask);
     const waitsOn = words === null ? null : { text: words, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
@@ -1110,7 +1121,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
       foldCount: lone === null ? under.length : 0,
-      ask: c.oldestAskOf(x)
+      ask: c.askSettingMarkOf(x)
     });
     if (lone === null)
       rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1)));
@@ -1240,10 +1251,12 @@ function metMilestonesFold(g, milestones, isWorkClosed) {
   const isFolded = g.metAt !== null && milestones.length > 0 && milestones.every((m) => m.place === "done" && isWorkClosed(m));
   return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map((m) => m.name)) } : null;
 }
-function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+function askSettingMark(holds) {
+  const oldestFirst = [...holds].sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity));
+  const setter = oldestFirst.find((i) => i.kind === "question") ?? oldestFirst[0];
+  return setter ? { id: setter.id, kind: setter.kind } : null;
 }
+var asksLinkedTo = (items, links, id) => items.filter((i) => links[i.id]?.includes(id));
 function workCountText(m, o) {
   const work = o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === m.id);
   const done = work.filter((s) => s.status === "done").length;
@@ -1261,8 +1274,6 @@ function milestoneRow(step, o, items) {
   const isHeld = isOpen2 && holds.length > 0;
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
     id: m.id,
     ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
@@ -1276,7 +1287,7 @@ function milestoneRow(step, o, items) {
     foldCount: 0,
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
+    ask: isHeld ? askSettingMark(holds) : null,
     rows: [],
     subject: null
   };
@@ -1494,7 +1505,7 @@ function isSendOnItsWay(delivery) {
 function isSettledInPlace(state, { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, pressOutSince }, id) {
   const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs);
   const isUndoShown = id !== undefined && (undoShown ?? []).includes(id);
-  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(listInput, dueAt, now);
+  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) && (state.sentAt ?? state.at) <= dueAt || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(listInput, dueAt, now);
   return isShownSince(state.at, shownSince) && isWaiting;
 }
 function nextFoldAt(settled, {
@@ -2310,8 +2321,12 @@ function settledLabel(label, delivery, reply) {
     return `${label} · Not sent: ${delivery.error}`;
   return deliveryLabel(sendStepOf(delivery), label, reply);
 }
+var MAX_OUTCOME_CHARS = 120;
+function shortOutcome(outcome) {
+  return cutLine(outcome, (t) => t.length <= MAX_OUTCOME_CHARS);
+}
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(shortOutcome(c.outcome));
 }
 
 // ../core/view/pr-rows.ts
@@ -3736,10 +3751,14 @@ function inboxView({
     needsYou: placingOn(pressOutSinceWhere(isItemId)),
     findings: placingOn(pressOutSinceWhere(isFindingId))
   };
-  const isInPlace = (id, at, canUndo, last) => isSettledInPlace({ at, canUndo, delivery: pendingDeliveryAt(last, now) }, isFindingId(id) ? placingFor.findings : placingFor.needsYou, id);
+  const isInPlace = (id, at, canUndo, last, sentAt) => isSettledInPlace({ at, canUndo, delivery: pendingDeliveryAt(last, now), ...sentAt !== undefined && { sentAt } }, isFindingId(id) ? placingFor.findings : placingFor.needsYou, id);
   const pressedSend = (c) => {
     const last = lastActions[c.id];
     return (c.how === "answered" || c.how === "done") && last?.kind === "mark" && last.at === closedAt(c) ? last : undefined;
+  };
+  const doneSentAt = (c) => {
+    const delivery = c.how === "done" ? pressedSend(c)?.delivery : undefined;
+    return delivery && "sentAt" in delivery ? delivery.sentAt : undefined;
   };
   const isOpen = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
@@ -3756,7 +3775,7 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c), doneSentAt(c)));
   };
   const placedItems = new Map(ledger.closed.filter((d) => d.item && !isOpen(d.id) && isPlaced(d)).map((d) => [d.id, d]));
   const isFixSettled = (id) => {
@@ -3893,8 +3912,8 @@ function inboxView({
 }
 function heldLabel(c) {
   if (c.how === "answered")
-    return `Answered: ${c.outcome}`;
-  return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
+    return `Answered: ${shortOutcome(c.outcome)}`;
+  return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
 }
 function footerError(tab, status, page) {
   if (tab === "prs")
@@ -4143,7 +4162,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const holdKindsOf = (x) => s.ledger.items.filter((i) => o?.askSubjects[i.id]?.includes(x.id)).map((i) => i.kind);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const askSettingMarkOf = (x) => isHeld(x) ? askSettingMark(asksLinkedTo(s.ledger.items, o?.askSubjects ?? {}, x.id)) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const goalParts = goalPage(o, s.ledger.items);
@@ -4192,7 +4211,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     isNew,
     isHeld,
     holdKindsOf,
-    oldestAskOf,
+    askSettingMarkOf,
     items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning && turn.is === "fresh",
@@ -5842,10 +5861,19 @@ var restId = (id) => `rest ${id}`;
 var prHeadId = (id) => `head ${id}`;
 var aboveId = (id) => `above ${id}`;
 var aboveLineId = (id) => `above line ${id}`;
+var addedId = (id) => `added ${id}`;
+var addedLinesId = (id) => `added lines ${id}`;
 var panelId = (id) => `panel ${id}`;
 
 // src/held-line.ts
-var NO_LINES_ABOVE = { held: new Map, lineless: new Set };
+var NO_LINES_ABOVE = {
+  held: new Map,
+  lineless: new Set,
+  bare: new Set,
+  comes: new Map,
+  options: new Map,
+  added: new Map
+};
 var HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS;
 var LINE_COMES_MS = NEXT_FRAME_MS + HEIGHT_SETTLE_MS;
 var heldKey = (r) => r.settled ? `settled ${r.id}` : r.id;
@@ -5858,9 +5886,47 @@ var lineOf = (f, cameAt) => ({
   ...cameAt === undefined ? {} : { cameAt }
 });
 var isComing = (l, now) => l?.cameAt !== undefined && now < l.cameAt + LINE_COMES_MS;
+function stepAdded(was, last, ids, now, isAtOnce) {
+  if (isAtOnce)
+    return null;
+  if (was && ids.includes(was.firstId) && now < was.cameAt + LINE_COMES_MS)
+    return was;
+  const isAdded = last !== undefined && last.length > 0 && ids.length > last.length && last.every((id, n) => ids[n] === id);
+  const firstId = isAdded ? ids[last.length] : undefined;
+  return firstId === undefined ? null : { firstId, cameAt: now };
+}
+function addOptions(blocks, last, now, isAtOnce) {
+  const options = new Map;
+  const added = new Map;
+  const shown = blocks.map((b) => {
+    if (b.kind !== "row" || !isOpenRow(b) || !hasActions(b))
+      return b;
+    const ids = b.buttons.filter((x) => x.isOption).map((x) => x.id);
+    options.set(b.id, ids);
+    const a = stepAdded(last.added.get(b.id), last.options.get(b.id), ids, now, isAtOnce);
+    if (a)
+      added.set(b.id, a);
+    return a ? { ...b, addedOptions: a } : b;
+  });
+  const ends = [...added.values()].flatMap((a) => [a.cameAt + NEXT_FRAME_MS, a.cameAt + LINE_COMES_MS]);
+  return { blocks: shown, options, added, ends: ends.filter((at) => at > now) };
+}
 function holdLinesAbove(blocks, last, now, isAtOnce = false) {
   const next = new Map;
   const lineless = new Set;
+  const bare = new Set;
+  const comes = new Map;
+  const bareRow = (b, key) => {
+    if (b.feedback === null || isStatusUnder(b))
+      return bare.add(key), b;
+    const was = last.comes.get(key);
+    const isNew = !isAtOnce && last.bare.has(key);
+    const cameAt = was !== undefined && now < was + LINE_COMES_MS ? was : isNew ? now : undefined;
+    if (cameAt === undefined)
+      return b;
+    comes.set(key, cameAt);
+    return { ...b, lineCameAt: cameAt };
+  };
   const shown = blocks.map((b) => {
     if (b.kind !== "row")
       return b;
@@ -5872,7 +5938,7 @@ function holdLinesAbove(blocks, last, now, isAtOnce = false) {
     if (!hasActions(b)) {
       if (kept !== undefined && isUnderWay)
         next.set(key, kept);
-      return b;
+      return bareRow(b, key);
     }
     const isUnder = isStatusUnder(b);
     const isStarting = kept === undefined && f !== null && isUnder && (isUnderWay || source?.is === "queued");
@@ -5899,17 +5965,23 @@ function holdLinesAbove(blocks, last, now, isAtOnce = false) {
       heldLine: { text, tone: d.line.tone, isHidden: d.isHidden, ...d.leftAt === null ? {} : { leftAt: d.leftAt } }
     };
   });
+  const withAdded = addOptions(shown, last, now, isAtOnce);
   const ends = [...next.values()].flatMap((k) => {
     if (isComing(k?.line, now))
       return [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter((at) => at > now);
     const end = heldLineEndsAt(k, HELD_LEAVE_MS);
     return end === null || k?.leftAt == null ? [] : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter((at) => at > now);
   });
-  return { blocks: shown, held: { held: next, lineless }, nextAt: ends.length === 0 ? null : Math.min(...ends) };
+  for (const at of comes.values())
+    ends.push(...[at + NEXT_FRAME_MS, at + LINE_COMES_MS].filter((t) => t > now));
+  ends.push(...withAdded.ends);
+  const held = { held: next, lineless, bare, comes, options: withAdded.options, added: withAdded.added };
+  return { blocks: withAdded.blocks, held, nextAt: ends.length === 0 ? null : Math.min(...ends) };
 }
 var isHeldLineShutting = (r, now) => r.heldLine?.leftAt !== undefined && now >= r.heldLine.leftAt + HOLD_MS;
 var heldLineDrop = (r, now, heights) => isHeldLineShutting(r, now) ? heights.get(aboveId(r.id)) ?? 0 : 0;
 var lineRise = (r, now, heights) => r.lineCameAt === undefined || now === r.lineCameAt ? 0 : Math.max(0, (heights.get(aboveLineId(r.id)) ?? 0) - (heights.get(aboveId(r.id)) ?? 0));
+var addedRise = (r, now, heights) => r.addedOptions === undefined || now === r.addedOptions.cameAt ? 0 : Math.max(0, (heights.get(addedLinesId(r.id)) ?? 0) - (heights.get(addedId(r.id)) ?? 0));
 
 // ../core/view/layout.ts
 var SPACE_UNIT = 4;
@@ -6104,6 +6176,16 @@ function opacityAt(steps, now) {
   const share = step.ms > 0 ? Math.min(1, Math.max(0, (now - step.at) / step.ms)) : 1;
   return step.from + (step.to - step.from) * easeOut(share);
 }
+function panelOf(state, isStart, last, closing) {
+  const isLeftPanelShown = last?.swap?.inAt === null && isOpenRow(last.swap.from);
+  const wasPanelFolding = last?.track.state === "opening" || last?.track.state === "closing" && last.opened !== null || isLeftPanelShown;
+  const isFrom = isStart && !wasPanelFolding;
+  if (state === "opening")
+    return isFrom ? 0 : 1;
+  if (state === "closing" && closing)
+    return isFrom ? 1 : 0;
+  return null;
+}
 
 // src/title-motion.ts
 var AT_ONCE = { delayMs: 0, ms: 0 };
@@ -6194,6 +6276,7 @@ var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
 
 // src/under-line.ts
 var LEAVE_ENDS_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
+var restsAfter = (u) => u.waitMs === undefined ? ROW_STATE_MS.entering : u.waitMs + ENTER_FADE_MS;
 var lineOf2 = (b) => b.kind === "row" && isStatusUnder(b) ? b.feedback : null;
 var stepUnder = (last, b, now, isInput = false) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput, (x, y) => x.source?.is === y.source?.is);
 function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true) {
@@ -6203,8 +6286,17 @@ function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true)
     return leaving(last, isSameForm, now, isInput);
   if (!last)
     return { line, since: now, isLeaving: false, isInput };
-  const isEntering = now < last.since + ROW_STATE_MS.entering;
-  return isEntering && !isSameLine(last.line, line) ? { line, since: now, isLeaving: false, isInput: last.isInput } : { ...last, line };
+  if (isSameLine(last.line, line))
+    return { ...last, line };
+  const waitMs = last.waitMs === undefined ? 0 : last.since + last.waitMs - now;
+  const isEntering = now < last.since + restsAfter(last);
+  return {
+    line,
+    since: now,
+    isLeaving: false,
+    isInput: isInput || isEntering && last.isInput,
+    ...isEntering && waitMs > 0 ? { waitMs } : {}
+  };
 }
 function leaving(last, isSameForm, now, isInput) {
   if (!last || !isSameForm || isInput)
@@ -6226,15 +6318,29 @@ function underMotion(u, now, height) {
   });
   if (u.isLeaving)
     return at(isStart ? 1 : 0, LEAVE_FADE_MS, 0);
-  if (now >= u.since + ROW_STATE_MS.entering)
+  if (now >= u.since + restsAfter(u))
     return at(null, 0, 0);
   if (u.isBack)
     return at(1, ENTER_FADE_MS, 0);
   if (isStart)
-    return at(u.isInput ? FAINT_OPACITY : 0, 0, 0, true);
-  return at(1, ENTER_FADE_MS, enterDelayMs(height ?? 0));
+    return at(u.isInput ? FAINT_OPACITY : 0, 0, 0, u.waitMs === undefined);
+  const delayMs = u.waitMs === undefined ? enterDelayMs(height ?? 0) : Math.max(0, u.since + u.waitMs - now);
+  return at(1, ENTER_FADE_MS, delayMs);
 }
-var underTimes = (u) => !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS] : [u.since + NEXT_FRAME_MS, u.since + ROW_STATE_MS.entering];
+function underPushMs(last, b, space) {
+  if (!last || b.kind !== "row" || last.block.kind !== "row")
+    return null;
+  if (last.restSpace && space.to > last.restSpace.to)
+    return enterDelayMs(space.to, space.box);
+  return b.field !== null && last.block.field === null ? HEIGHT_SETTLE_MS - ENTER_FADE_MS : null;
+}
+function pushUnder(u, waitMs, now) {
+  if (!u || u.isLeaving || waitMs === null)
+    return u;
+  const isHidden = now < u.since + restsAfter(u) && !u.isInput && !u.isBack;
+  return { line: u.line, since: now, isLeaving: false, isInput: !isHidden, waitMs };
+}
+var underTimes = (u) => !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS] : [u.since + NEXT_FRAME_MS, u.since + restsAfter(u)];
 var underId = (id) => `status ${id}`;
 
 // src/moved-blocks.ts
@@ -6382,20 +6488,42 @@ function heldTabs(tabs, last, motion) {
   });
 }
 
+// src/field-wait.ts
+var MAX_WAIT_MS = HEIGHT_SETTLE_MS - ENTER_FADE_MS;
+function stepFieldWait(last, b, space, now) {
+  if (b.kind !== "row" || !last)
+    return null;
+  const wait = last.fieldWait;
+  if (b.field === null)
+    return wait === null || wait.goneShown !== null ? wait : goneWait(wait, now);
+  if (last.block.kind !== "row" || last.block.field === null)
+    return { since: now, waitMs: null, goneShown: null };
+  if (wait === null || wait.waitMs !== null)
+    return wait;
+  const isGrowing = last.restSpace !== null && space.to > last.restSpace.to;
+  return isGrowing ? { ...wait, waitMs: now - wait.since + enterDelayMs(space.to, space.box) } : wait;
+}
+function goneWait(w, now) {
+  const opening = fieldOpening(w, now);
+  return opening === null ? null : { ...w, goneShown: opening.isOpen && opening.delayMs === 0 };
+}
+function fieldOpening(w, now) {
+  if (w === null)
+    return null;
+  if (w.goneShown !== null)
+    return { isOpen: w.goneShown, delayMs: 0 };
+  const fadesAt = w.since + (w.waitMs ?? MAX_WAIT_MS);
+  if (now >= fadesAt + ENTER_FADE_MS)
+    return null;
+  const isOpen = now > w.since && (w.waitMs !== null || now >= fadesAt);
+  return { isOpen, delayMs: Math.max(0, fadesAt - now) };
+}
+var fieldTimes = (w) => w === null || w.goneShown !== null ? [] : [w.since + NEXT_FRAME_MS, w.since + (w.waitMs ?? MAX_WAIT_MS) + ENTER_FADE_MS, w.since + MAX_WAIT_MS];
+
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
-function panelOf(state, isStart, last, closing) {
-  const isLeftPanelShown = last?.swap?.inAt === null && isOpenRow(last.swap.from);
-  const wasPanelFolding = last?.track.state === "opening" || last?.track.state === "closing" && last.opened !== null || isLeftPanelShown;
-  const isFrom = isStart && !wasPanelFolding;
-  if (state === "opening")
-    return isFrom ? 0 : 1;
-  if (state === "closing" && closing)
-    return isFrom ? 1 : 0;
-  return null;
-}
 function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES) {
   const heightOf = (key) => sizes.get(key);
   const was = isFirst ? NO_TRACKS : last;
@@ -6452,7 +6580,6 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const glide = glideOf(track, isStart, last?.glide ?? null, now, Math.max(holdsUntil, closeHoldsUntil), isPressed, isFieldPressed, heightOf(block.id));
     const isReleased = isInput && opensRow && track.state === "closing";
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
-    const under = stepUnder(last?.under ?? null, block, now, isInput);
     const status = stepPrStatus(last?.status ?? null, block, now, isFirst);
     const prTail = block.kind === "pr" ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInput) : null;
     const isTurnedBack = isStart && track.state === "opening" && last?.track.state === "closing" && last.opened !== null;
@@ -6475,7 +6602,9 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isPanelLeftOut = isLeftOut || wasClosing && block.kind === "row";
     const leftOut = isPanelLeftOut ? panelHeight ?? 0 : 0;
     const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now);
+    const under = pushUnder(stepUnder(last?.under ?? null, block, now, isInput), underPushMs(last, block, restSpace), now);
     const waited = waitSwap(swap, restSpace, rest, now);
+    const fieldWait = stepFieldWait(last, block, restSpace, now);
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
     const title = block.kind === "row" && last ? stepTitle(last.title, titleRestOf(last.block, last.swap, sizes), titleRestOf(block, swap, sizes), now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now)) : null;
     rows.set(block.id, {
@@ -6493,7 +6622,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       panelSteps,
       panelHeldUntil,
       swap: waited,
-      restSpace
+      restSpace,
+      fieldWait
     });
     motion.set(block.id, {
       state: track.state,
@@ -6515,7 +6645,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       status: underMotion(status, now, heightOf(underId(block.id))),
       prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
       former: last && last.block.kind !== block.kind ? last.block : null,
-      swap: swapMotion(waited, now)
+      swap: swapMotion(waited, now),
+      field: fieldOpening(fieldWait, now)
     });
   };
   for (const b of blocks) {
@@ -6558,6 +6689,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     ...underTimes(t.status),
     ...prTailTimes(t.prTail),
     ...swapTimes(t.swap),
+    ...fieldTimes(t.fieldWait),
     holdsUntil,
     closeHoldsUntil,
     opensAfterClose,
@@ -6648,7 +6780,7 @@ function nextHeld(was, to, delayMs, now) {
 
 // src/paint-blocks.ts
 import { div as div16 } from "gpui-kit";
-import { h_flex as h_flex9, v_flex as v_flex6 } from "gpui-base";
+import { h_flex as h_flex9, v_flex as v_flex7 } from "gpui-base";
 
 // ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
@@ -6885,7 +7017,7 @@ function fieldEl(f, p, indent, isInert = false, opening = null) {
   const input = state ? [
     div4().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
-  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0 };
+  const glide = { duration: ENTER_FADE_MS, delay: opening?.delayMs ?? 0 };
   const key = `buttons ${f.rowId}`;
   return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => fadeEl(e.id(key), key, opening?.isOpen ? 1 : 0, glide, p)));
 }
@@ -7192,7 +7324,8 @@ function fitHeight(b, m, p) {
   const rest = p.heights.get(restId(id));
   if (title === undefined || rest === undefined)
     return former();
-  return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + lineRise(b, p.now, p.heights);
+  const rise = lineRise(b, p.now, p.heights) + addedRise(b, p.now, p.heights);
+  return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + rise;
 }
 function contentEl(b, m, p, el, strokes) {
   const id = b.id;
@@ -7262,7 +7395,7 @@ function controlsEl(b, p, isInert) {
   const field = b.under?.field ?? null;
   const buttons = b.under?.buttons ?? [];
   const height = p.heights.get(key) ?? 0;
-  const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), height };
+  const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), delayMs: enterDelayMs(height) };
   const fieldBox = field ? div7().w_full().pt(CONTROL_GAP).child(fieldEl(field, p, 0, isInert, opening)) : div7();
   return v_flex3().w_full().items_center().child(sizeEl(key, p, fieldBox).w_full()).when(buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(buttons.map((x) => buttonEl(x, p, isInert)))));
 }
@@ -7459,6 +7592,7 @@ function shortTitleEl(s) {
 }
 
 // src/paint-row-lines.ts
+import { v_flex as v_flex6 } from "gpui-base";
 var linesOf = (r) => [
   ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
   ...r.feedback && !isStatusUnder(r) ? [{ ...r.feedback, cameAt: r.lineCameAt }] : [],
@@ -7506,6 +7640,20 @@ function comingEl(r, cameAt, el, n, p) {
   const box = springBox(`fit ${aboveId(r.id)}`, isStart ? 0 : height);
   return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)));
 }
+function addedOptionsEls(r, lines, els, p) {
+  const added = r.addedOptions;
+  const from = added ? lines.findIndex((l) => l.optionId === added.firstId) : -1;
+  const end = lines.findLastIndex((l) => l.optionId !== undefined || l.isOptionNote === true) + 1;
+  if (!added || from < 0 || end <= from)
+    return els;
+  const height = p.heights.get(addedLinesId(r.id));
+  const isStart = p.now === added.cameAt || height === undefined;
+  const name = addedId(r.id);
+  const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) };
+  const shown = fadeEl(v_flex6().id(name).children(els.slice(from, end)), name, isStart ? FAINT_OPACITY : 1, fade, p);
+  const box = springBox(`fit ${name}`, isStart ? 0 : height);
+  return [...els.slice(0, from), sizeEl(name, p, box.child(sizeEl(addedLinesId(r.id), p, shown))), ...els.slice(end)];
+}
 
 // src/paint-notes.ts
 import { div as div13 } from "gpui-kit";
@@ -7544,9 +7692,7 @@ var answerKey = (buttonId) => `answer ${buttonId}`;
 function isSideBySide(r, p) {
   if (!r.sideBySide)
     return false;
-  const widths = r.sideBySide.optionIds.map((id) => p.heights.widthOf(answerKey(id)));
-  if (widths.some((w) => w === undefined))
-    return true;
+  const widths = r.sideBySide.optionIds.flatMap((id) => p.heights.widthOf(answerKey(id)) ?? []);
   return answersFitLine(widths, CONTROL_GAP, p.rowTextRoom);
 }
 var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
@@ -7598,7 +7744,7 @@ function rowEl(r, p) {
     return l.isHidden ? el.opacity(0) : el;
   }, (el) => panelFadeEl(r, m, p, el));
   const titleEnd = lines.length > 0 ? "titleStatus" : "title";
-  return v_flex6().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex6().id(`form ${r.id}`).when(swap !== null, (e) => swapFadeEl(swap, e)).children(lines).children(panelEl(r, shown, m, p, isLeaving, titleEnd))));
+  return v_flex7().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex7().id(`form ${r.id}`).when(swap !== null, (e) => swapFadeEl(swap, e)).children(lines).children(panelEl(r, shown, m, p, isLeaving, titleEnd))));
 }
 function bodyEls(from, isSelected, p, isInert, titleEnd) {
   const buttonOf = (id) => from.buttons.filter((b) => b.id === id);
@@ -7627,7 +7773,7 @@ function bodyEls(from, isSelected, p, isInert, titleEnd) {
     const buttons = l.part === "answers" ? answers : buttonOf(l.optionId);
     return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert);
   });
-  return { els, end };
+  return { els: addedOptionsEls(from, shown, els, p), end };
 }
 var swapFadeEl = (swap, el) => swap ? el.opacity(swap.opacity).transition("opacity", { duration: swap.fadeMs, easing: "ease-out" }) : el;
 function panelEl(r, shown, m, p, isLeaving, titleEnd) {
@@ -7641,14 +7787,14 @@ function panelEl(r, shown, m, p, isLeaving, titleEnd) {
   const parts = [
     ...body.els,
     ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, "buttons"))] : [],
-    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, "field"))] : [],
+    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert, m?.field).pt(partPt(body.end, "field"))] : [],
     ...underEls(r, m?.closing ?? shown, m, p, partPt(end, "result"))
   ];
   if (parts.length === 0)
     return [];
   const key = panelId(r.id);
   return [
-    panelFadeEl(r, m, p, v_flex6().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts))
+    panelFadeEl(r, m, p, v_flex7().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts))
   ];
 }
 function panelFadeEl(r, m, p, el) {
@@ -7687,11 +7833,11 @@ function prEl(b, p, isInert) {
     buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing),
     result: (f) => feedbackEl(f, t)
   });
-  return v_flex6().pl(EDGE).pr(EDGE).child(sizeEl(prHeadId(b.id), p, title)).child(prStatusEl(b, p, (l) => div16().pt(INSIDE_GAP).child(partedEl(statusParts(l), t.muted)))).children(tail);
+  return v_flex7().pl(EDGE).pr(EDGE).child(sizeEl(prHeadId(b.id), p, title)).child(prStatusEl(b, p, (l) => div16().pt(INSIDE_GAP).child(partedEl(statusParts(l), t.muted)))).children(tail);
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex6().pl(EDGE).pr(EDGE).child(h_flex9().gap(CONTROL_GAP).items_center().child(div16().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex9().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
+  return v_flex7().pl(EDGE).pr(EDGE).child(h_flex9().gap(CONTROL_GAP).items_center().child(div16().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex9().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
 function headingEl(b, p, isInert) {
   const { t } = p;
@@ -7745,8 +7891,9 @@ function blockEl(b, p) {
   if (b.kind === "field") {
     const m = p.motion.get(b.id);
     const isShownAsOpening = m?.state === "entering" && m.box !== null && m.fadeMs === 0;
-    const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null;
-    const opening = isShownAsOpening ? { isOpen: m.box === "open", height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade;
+    const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null;
+    const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0);
+    const opening = isShownAsOpening ? { isOpen: m.box === "open", delayMs } : keepsButtonsFade;
     return div16().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
   }
   if (b.kind === "note")
@@ -9431,7 +9578,7 @@ class Inbox extends View {
       ...paneFit(this, zoomOf(settings())),
       fades: this.fades
     };
-    const root = v_flex7().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
+    const root = v_flex8().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
@@ -9465,7 +9612,7 @@ class Inbox extends View {
       if (isNew)
         this.apply([{ type: "list-input" }], cx);
     };
-    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex7().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div17().flex_1().min_h(0).relative().child(v_flex7().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
+    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex8().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div17().flex_1().min_h(0).relative().child(v_flex8().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

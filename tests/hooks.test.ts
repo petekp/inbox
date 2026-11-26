@@ -259,6 +259,6 @@ test('every row in the demo, on every tab, draws its plan’s buttons in the pla
     await pane.press({ key: `show-ask-${page.rows.find(r => statusKeyPlan(r).length > 0)!.id}` })
     await clock.settle()
     expect(await pane.find({ key: 'status-head' }), `${look} View leaves the Status`).toBeUndefined()
-    expect(await pane.find({ key: 'view-d17' }), `${look} View selects the oldest ask`).toBeDefined()
+    expect(await pane.find({ key: 'view-d17' }), `${look} View selects the ask that sets the mark`).toBeDefined()
   }
 })

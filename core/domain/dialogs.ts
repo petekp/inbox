@@ -107,8 +107,6 @@ export function linkDialogs<S extends Session>(s: S, now = Date.now()): S {
   return { ...s, ledger, dialogQuestions: kept }
 }
 
-const MAX_DIALOG_ANSWER = 80
-
 /**
  * The words around the `"<question>"="<answer>"` pairs of Claude Code's AskUserQuestion result. From 2.1.318 to
  * 2.1.323 they say whether every answer is an option, or one was typed or has notes, or the person asked for more
@@ -209,7 +207,7 @@ function structuredAnswers(questions: AskedQuestion[], answers: Record<string, s
 function chosenOf(q: AskedQuestion, answer: string): string {
   const chosen = q.options.find(o => optionKey(o) === answer.trim().toLowerCase())
 
-  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, '').trim().slice(0, MAX_DIALOG_ANSWER)
+  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, '').trim()
 }
 
 /**

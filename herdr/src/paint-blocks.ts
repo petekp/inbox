@@ -41,7 +41,7 @@ import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { titleTextEl } from './paint-title-text'
-import { titleLineEls } from './paint-row-lines'
+import { addedOptionsEls, titleLineEls } from './paint-row-lines'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
 import { NO_BREAK_SPACE, feedbackEl, partedTextEl, wordEls } from './paint-text'
@@ -211,7 +211,7 @@ function bodyEls(
     return [...(warning ? [warning] : []), bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)]
   })
 
-  return { els, end, isWarned }
+  return { els: addedOptionsEls(from, shown, els, p), end, isWarned }
 }
 
 /**
@@ -257,7 +257,7 @@ function panelEl(
     ...body.els,
     ...(warning ? [warning] : []),
     ...(actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, gapOf('buttons'))] : []),
-    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(gapOf('field'))] : []),
+    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert, m?.field).pt(gapOf('field'))] : []),
     ...underEls(r, m?.closing ?? shown, m, p, partPt(end, 'result')),
   ]
   if (parts.length === 0) return []
@@ -495,8 +495,9 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'field') {
     const m = p.motion.get(b.id)
     const isShownAsOpening = m?.state === 'entering' && m.box !== null && m.fadeMs === 0
-    const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null
-    const opening = isShownAsOpening ? { isOpen: m.box === 'open', height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade
+    const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null
+    const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0)
+    const opening = isShownAsOpening ? { isOpen: m.box === 'open', delayMs } : keepsButtonsFade
 
     return div()
       .pl(b.isAtEdge ? EDGE : TEXT_X)

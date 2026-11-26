@@ -513,6 +513,25 @@ function clip(text2, max) {
 function clipLabel(text2, max) {
   return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
 }
+function cutForEllipsis(line, fits) {
+  const parts = graphemesOf(line);
+  while (parts.length > 0 && !fits(`${parts.join("")}\u2026`)) parts.pop();
+  return parts.join("").replace(/[\s.,;:]+$/, "");
+}
+function wordCuts(line) {
+  const words3 = line.split(" ");
+  const cuts = words3.map(
+    (_, n) => words3.slice(0, words3.length - n).join(" ").replace(/[\s.,;:]+$/, "")
+  );
+  return [...new Set(cuts.filter(Boolean).map((head) => `${head}\u2026`))];
+}
+function cutAtWord(line, fits) {
+  return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
+}
+function cutLine(line, fits) {
+  if (fits(line)) return line;
+  return `${cutAtWord(line, fits) ?? cutForEllipsis(line, fits)}\u2026`;
+}
 function clipMiddle(text2, max, head) {
   if (text2.length <= max) return text2;
   return `${text2.slice(0, head)}${NL2}\u2026[cut]${NL2}${text2.slice(text2.length - (max - head))}`;
@@ -530,6 +549,9 @@ var GRAPHEME = new RegExp(
   String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
   "gu"
 );
+function graphemesOf(text2) {
+  return segmenter ? Array.from(segmenter.segment(text2), (s) => s.segment) : text2.match(GRAPHEME) ?? [];
+}
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -1368,7 +1390,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning2 || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const ask = c.oldestAskOf(x);
+    const ask = c.askSettingMarkOf(x);
     const words3 = askWords(c.items, ask);
     const waitsOn = words3 === null ? null : { text: words3, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
@@ -1387,7 +1409,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
       foldCount: lone === null ? under.length : 0,
-      ask: c.oldestAskOf(x)
+      ask: c.askSettingMarkOf(x)
     });
     if (lone === null)
       rows.push(
@@ -1473,10 +1495,12 @@ function metMilestonesFold(g, milestones, isWorkClosed) {
   const isFolded = g.metAt !== null && milestones.length > 0 && milestones.every((m) => m.place === "done" && isWorkClosed(m));
   return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map((m) => m.name)) } : null;
 }
-function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+function askSettingMark(holds) {
+  const oldestFirst = [...holds].sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity));
+  const setter = oldestFirst.find((i) => i.kind === "question") ?? oldestFirst[0];
+  return setter ? { id: setter.id, kind: setter.kind } : null;
 }
+var asksLinkedTo = (items, links, id) => items.filter((i) => links[i.id]?.includes(id));
 function workCountText(m, o) {
   const work = o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === m.id);
   const done = work.filter((s) => s.status === "done").length;
@@ -1494,8 +1518,6 @@ function milestoneRow(step, o, items) {
   const isHeld = isOpen2 && holds.length > 0;
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
     id: m.id,
     ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
@@ -1509,7 +1531,7 @@ function milestoneRow(step, o, items) {
     foldCount: 0,
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
+    ask: isHeld ? askSettingMark(holds) : null,
     rows: [],
     subject: null
   };
@@ -1768,7 +1790,7 @@ function isSendOnItsWay(delivery) {
 function isSettledInPlace(state, { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, pressOutSince }, id) {
   const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs);
   const isUndoShown = id !== void 0 && (undoShown ?? []).includes(id);
-  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(listInput, dueAt, now);
+  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) && (state.sentAt ?? state.at) <= dueAt || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(listInput, dueAt, now);
   return isShownSince(state.at, shownSince) && isWaiting;
 }
 function isUndoLeft(at, now, settleWindowMs) {
@@ -1869,8 +1891,12 @@ function closedMark(state, delivery) {
   if (delivery === "queued") return QUEUED_RESULT;
   return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
 }
+var MAX_OUTCOME_CHARS = 120;
+function shortOutcome(outcome) {
+  return cutLine(outcome, (t) => t.length <= MAX_OUTCOME_CHARS);
+}
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(shortOutcome(c.outcome));
 }
 
 // ../core/view/feedback.ts
@@ -3334,14 +3360,18 @@ function inboxView({
     needsYou: placingOn(pressOutSinceWhere(isItemId)),
     findings: placingOn(pressOutSinceWhere(isFindingId))
   };
-  const isInPlace = (id, at, canUndo, last) => isSettledInPlace(
-    { at, canUndo, delivery: pendingDeliveryAt(last, now) },
+  const isInPlace = (id, at, canUndo, last, sentAt) => isSettledInPlace(
+    { at, canUndo, delivery: pendingDeliveryAt(last, now), ...sentAt !== void 0 && { sentAt } },
     isFindingId(id) ? placingFor.findings : placingFor.needsYou,
     id
   );
   const pressedSend = (c) => {
     const last = lastActions[c.id];
     return (c.how === "answered" || c.how === "done") && last?.kind === "mark" && last.at === closedAt(c) ? last : void 0;
+  };
+  const doneSentAt = (c) => {
+    const delivery = c.how === "done" ? pressedSend(c)?.delivery : void 0;
+    return delivery && "sentAt" in delivery ? delivery.sentAt : void 0;
   };
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
@@ -3358,7 +3388,13 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(
+      c.id,
+      at,
+      isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs),
+      pressedSend(c),
+      doneSentAt(c)
+    ));
   };
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
@@ -3513,8 +3549,8 @@ function inboxView({
   };
 }
 function heldLabel(c) {
-  if (c.how === "answered") return `Answered: ${c.outcome}`;
-  return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
+  if (c.how === "answered") return `Answered: ${shortOutcome(c.outcome)}`;
+  return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
 }
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
@@ -3768,7 +3804,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
   const holdKindsOf = (x) => s.ledger.items.filter((i) => o?.askSubjects[i.id]?.includes(x.id)).map((i) => i.kind);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const askSettingMarkOf = (x) => isHeld(x) ? askSettingMark(asksLinkedTo(s.ledger.items, o?.askSubjects ?? {}, x.id)) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const goalParts = goalPage(o, s.ledger.items);
@@ -3822,7 +3858,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     isNew,
     isHeld,
     holdKindsOf,
-    oldestAskOf,
+    askSettingMarkOf,
     items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning && turn.is === "fresh",

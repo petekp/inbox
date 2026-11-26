@@ -1,9 +1,10 @@
 import { ENTER_FADE_MS, FAINT_OPACITY, LEAVE_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import type { Element } from 'gpui-kit'
-import type { RowBlock, Tone } from './blocks'
+import { v_flex } from 'gpui-base'
+import type { BodyLine, RowBlock, Tone } from './blocks'
 import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
 import { isStatusUnder } from './held-line'
-import { aboveId, aboveLineId } from './heights'
+import { aboveId, aboveLineId, addedId, addedLinesId } from './heights'
 import { sizeEl, springBox } from './paint-space'
 import type { RowMotion } from './motion'
 import { fadeEl } from './paint-parts'
@@ -86,4 +87,24 @@ function comingEl(r: RowBlock, cameAt: number, el: Element, n: number, p: Paint)
   const box = springBox(`fit ${aboveId(r.id)}`, isStart ? 0 : height)
 
   return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)))
+}
+
+/**
+ * A row's body lines, `els` drawn for `lines`, with the options the open row added, as `holdLinesAbove` gives them, in
+ * a box of their own: it opens from none, with the row's box, so the buttons under it glide down. The options show
+ * faint until they have measured, so the press shows at once, then fade in once the box is nearly open.
+ */
+export function addedOptionsEls(r: RowBlock, lines: BodyLine[], els: Element[], p: Paint): Element[] {
+  const added = r.addedOptions
+  const from = added ? lines.findIndex(l => l.optionId === added.firstId) : -1
+  const end = lines.findLastIndex(l => l.optionId !== undefined || l.isOptionNote === true) + 1
+  if (!added || from < 0 || end <= from) return els
+  const height = p.heights.get(addedLinesId(r.id))
+  const isStart = p.now === added.cameAt || height === undefined
+  const name = addedId(r.id)
+  const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) }
+  const shown = fadeEl(v_flex().id(name).children(els.slice(from, end)), name, isStart ? FAINT_OPACITY : 1, fade, p)
+  const box = springBox(`fit ${name}`, isStart ? 0 : height)
+
+  return [...els.slice(0, from), sizeEl(name, p, box.child(sizeEl(addedLinesId(r.id), p, shown))), ...els.slice(end)]
 }
