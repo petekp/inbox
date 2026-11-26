@@ -5,6 +5,8 @@ import type { Painted } from '../herdr/tests/gpui-stand-in'
 import type { Block } from '../herdr/src/blocks'
 import type { Step } from '../herdr/tests/frames'
 import type { SessionView } from '../core/view/session-view'
+import { notesOf } from '../core/view/ui-controller'
+import { holdsOf } from '../core/view/ui-controller-reply'
 import type { LookUi } from '../herdr/src/draw'
 import type { Case, Ev } from './case'
 import { fuzzHost } from './host'
@@ -33,6 +35,7 @@ mock.module('herdr', () => ({
 }))
 
 const motion = await import('../herdr/src/motion')
+const { readView } = await import('../herdr/src/screen')
 const realMoveRows = motion.moveRows
 let wasInput = false
 let wasFirst = false
@@ -120,7 +123,7 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     },
   })
   add(REREAD_MS, () => p.panel.sessionId && p.panel.load(p.panel.sessionId, p.cx as never), REREAD_MS)
-  add(AGE_TICK_MS, () => {}, AGE_TICK_MS)
+  add(AGE_TICK_MS, () => p.panel.viewCache.prepare(p.cx as never, true), AGE_TICK_MS)
   await settle()
 
   const draws: HerdrDraw[] = []
@@ -135,7 +138,8 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     const isInput = wasInput
     if (wasFirst && pageAt.at(-1) !== clock - START) pageAt.push(clock - START)
     const blocks = p.panel.blocks
-    const view = p.panel.viewAt(clock)
+    const read = p.panel.readSession
+    const view = read && readView(read, clock, holdsOf(p.panel.ui, clock), notesOf(p.panel.ui))
     draws.push({
       at: clock - START,
       after,

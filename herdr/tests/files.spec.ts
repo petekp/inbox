@@ -4,11 +4,10 @@ import { HERDR_FORMAT } from '../../core/remote/herdr'
 import { writeCollapse } from '../src/collapse'
 import { isSessionChange, readSession } from '../src/files'
 import { dialogRowId } from '../../core/view/dialog-row'
-import { NO_HOLDS } from '../../core/view/timing'
 import type { RowBlock } from '../src/blocks'
 import type { Followed } from '../src/follow'
 import { screenOf } from '../src/screen'
-import { AGENT, NOW, demoEnvelopeText, uiOn } from './fixtures'
+import { AGENT, demoEnvelopeText, lookPresses, uiOn } from './fixtures'
 
 test('a published session reads back with its source and its rows', () => {
   const read = readSession(demoEnvelopeText())
@@ -104,11 +103,11 @@ test('the session rereads on a change to its own file or the whole folder, not o
 const PERMISSION = { kind: 'permission', text: 'npm test' } as const
 
 test('a published open dialog draws first in the Asks tab, with where to answer it, and counts in no badge', () => {
-  const o = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW }, notes: {}, queue: { outs: [], lines: {} } }
   const followed: Followed = { is: 'session', terminal: 't1', sessionId: 's1' }
   const screenWith = (overrides: Record<string, unknown>) => {
     const ui = uiOn('needsYou', { selected: dialogRowId(PERMISSION) })
-    const screen = screenOf(followed, readSession(demoEnvelopeText(overrides)), ui, o)
+    const read = readSession(demoEnvelopeText(overrides))
+    const screen = screenOf(followed, read, ui, lookPresses(read))
     if (screen.is !== 'inbox') throw new Error('the demo file drew no inbox')
 
     return { tabs: screen.tabs, rows: screen.blocks.filter((b): b is RowBlock => b.kind === 'row') }

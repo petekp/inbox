@@ -25,7 +25,7 @@ import { pressFileText } from '../src/press-file'
 import { readSession } from '../src/files'
 import { screenOf } from '../src/screen'
 import { timeLeftDraws, timeLeftShare } from '../src/time-left'
-import { AGENT, NOW, demoScreen, dismissedPr, uiOn } from './fixtures'
+import { AGENT, NOW, demoScreen, dismissedPr, lookPresses, uiOn } from './fixtures'
 
 const rowsOf = (blocks: Block[]) => blocks.filter((b): b is RowBlock => b.kind === 'row')
 
@@ -291,13 +291,12 @@ test('a settled answer keeps its spent Undo’s place until its message has wait
     const source = { host: 'claude-code' as const, agent: AGENT, sessionId: 's1', terminal: 't1', writtenAt: now }
     const read = readSession(JSON.stringify(herdrEnvelope(source, session)))
     const holds = { ...NO_HOLDS, shownSince: at - 1000 }
-    const queue = { outs: [], lines: {} }
-    return screenOf({ is: 'session', terminal: 't1', sessionId: 's1' }, read, uiOn('needsYou'), {
-      now,
-      holds,
-      notes: {},
-      queue,
-    })
+    return screenOf(
+      { is: 'session', terminal: 't1', sessionId: 's1' },
+      read,
+      uiOn('needsYou'),
+      lookPresses(read, holds, now),
+    )
   }
   const drawn = (screen: ReturnType<typeof screenAt>) => {
     const row = screen.is === 'inbox' ? rowsOf(screen.blocks).find(r => r.id === 'd11') : undefined

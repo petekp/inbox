@@ -88,7 +88,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     name: 'leaving a row just after Explain',
     rule: 'jump',
     issue: 828,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd13' },
@@ -154,7 +154,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box panel d14',
     issue: 832,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd14' },
@@ -162,6 +162,19 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       { is: 'click', on: 'button', n: 0, label: 'Explain' },
       { is: 'wait', ms: 16 },
       { is: 'key', key: 'z' },
+    ]),
+  },
+  {
+    name: 'going back to the Asks tab at once',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 898,
+    isOpen: true,
+    case: herdr(emptySession(), [
+      { is: 'record', args: { kind: 'question', ask: 'Show glances while you walk?', options: ['Yes', 'No'] } },
+      { is: 'wait', ms: 672 },
+      { is: 'click', on: 'tab', n: 0, label: 'overview' },
+      { is: 'key', key: 'right' },
     ]),
   },
   {
@@ -275,11 +288,11 @@ export const CODEX_SEEDS: {
     },
   },
   {
-    name: 'Copy on an open task, whose result wraps after the title',
+    name: 'Copy on an open task, whose result shows under its buttons',
     rule: 'jump',
     detail: 'press-',
     issue: 864,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'light',
@@ -307,6 +320,23 @@ export const CODEX_SEEDS: {
         { is: 'click', on: 'button', n: 2 },
         { is: 'wait', ms: 800 },
         { is: 'click', on: 'button', n: 7 },
+      ],
+    },
+  },
+  {
+    name: 'Compare, then opening another row',
+    rule: 'cut',
+    detail: '"Holds up Flick option" shows at 1.00',
+    issue: 896,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'button', n: 4 },
+        { is: 'click', on: 'row', n: 8 },
       ],
     },
   },
@@ -343,10 +373,10 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   { issue: 827, look: 'herdr', rule: 'cut', details: ['"Send"', '"Cancel"', '"Discard"', 'in its box status '] },
   { issue: 828, look: 'herdr', rule: 'jump', details: ['panel d', ' thread '] },
   { issue: 832, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
+  { issue: 898, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
-  { issue: 864, look: 'codex', rule: 'jump', details: ['press-'] },
-  { issue: 864, look: 'codex', rule: 'cut', details: ['"Holds up '] },
+  { issue: 896, look: 'codex', rule: 'cut', details: ['"Holds up ', '"Comparing…"'] },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */
