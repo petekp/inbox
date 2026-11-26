@@ -255,8 +255,9 @@ function moveRow(
   const scalesEdges = isScalingEdges(el)
   const waitsForLeave = state === 'opening' || waitLeft > 0 || el.querySelector(NEW_NOTE) !== null
   const delay = Math.max(isOwnMove ? 0 : Math.max(waitsForLeave ? heightWaitMs : 0, waitLeft), closeWait)
-  if (track && changed.has(key) && startState(el, track, from, isFresh, was?.openTop ?? null)) return
+  if (track && changed.has(key) && startState(el, track, from, isFresh, was?.openTop ?? null, was?.line ?? null)) return
   if (state === 'closing' && !isFresh) retargetClose(el)
+  if (state === 'leaving' && track && was && isFresh) return goOnLeaving(el, was, track)
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
     if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, Math.max(heightWaitMs, closeWaitMs))
@@ -278,15 +279,44 @@ function moveRow(
   if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
     glide(el, 'height', from, target, false, scalesEdges, delay)
   if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
-  if (part && state === 'opening' && changed.has(key)) openPanel(part, was?.openPart === part, delay, target, from)
+  const leftShown = was?.openPart !== part && was?.openPart?.closest(FORM_LEFT) ? was.openShown : 0
+  if (part && state === 'opening' && changed.has(key))
+    openPanel(part, was?.openPart === part, delay, target, from, leftShown)
+}
+
+/** The form a row leaves, drawn over the form it takes. */
+const FORM_LEFT = '.form-left'
+
+/**
+ * Goes on with a leave whose element a draw replaced, as a status line above a row's buttons when Undo draws the row's
+ * panel again: from the height and opacity its last element showed, on the leave's own clock, so it ends with its track.
+ */
+function goOnLeaving(el: HTMLElement, was: Drawn, track: RowTrack) {
+  const fadeLeft = was.opacity > 0.01 ? Math.max(0, track.since + LEAVE_FADE_MS - drawnAt) : 0
+  fade(el, was.opacity, 0, fadeLeft, true, !isInsideLeaving(el))
+  glide(el, 'height', springOf(was.el, was.height), restOf(el), true, true, fadeLeft)
 }
 
 /**
  * Fades an opening row's panel in once its space is nearly open, counted from where the space is. A panel the row
  * still drew as it closed turns back at once, from the opacity it shows, in the steps of `turnBackFades`, and one
- * that still shows whole stops its fade out.
+ * that still shows whole stops its fade out. A panel the form the row leaves still showed, at `leftShown`, as when
+ * Undo brings a row back while its open form fades out, turns back the same way from that opacity.
  */
-function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
+function openPanel(
+  part: HTMLElement,
+  wasDrawn: boolean,
+  delay: number,
+  target: number,
+  from: SpringState,
+  leftShown: number,
+) {
+  if (!wasDrawn && leftShown > 0.01) {
+    const steps = turnBackFades(target, from)
+    for (const el of [part, ...trunkBeside(part)]) fadeThrough(el, leftShown, steps, delay)
+    openHoldsUp(part, delay + steps.slice(0, -1).reduce((ms, step) => ms + step.ms, 0))
+    return
+  }
   if (!wasDrawn) {
     const shows = delay + enterDelayMs(target, from)
     for (const el of [part, ...trunkBeside(part)]) fade(el, 0, 1, ENTER_FADE_MS, false, false, shows)
@@ -303,7 +333,14 @@ function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: 
 }
 
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */
-function startState(el: HTMLElement, track: RowTrack, from: SpringState, isFresh: boolean, openTop: number | null) {
+function startState(
+  el: HTMLElement,
+  track: RowTrack,
+  from: SpringState,
+  isFresh: boolean,
+  openTop: number | null,
+  line: DrawnLine | null,
+) {
   const { state } = track
   switch (state) {
     case 'entering': {
@@ -320,6 +357,7 @@ function startState(el: HTMLElement, track: RowTrack, from: SpringState, isFresh
         state,
         openTop,
         Math.max(tabState.isReadDraw ? heightWaitMs : 0, swapsForm(el) ? track.since + LEAVE_FADE_MS - drawnAt : 0),
+        line,
       )
       return true
     case 'leaving':

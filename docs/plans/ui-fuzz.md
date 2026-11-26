@@ -92,7 +92,7 @@ Motion rules run on the frames `framesOf` draws from 0 ms, the case's start. The
 
 - `cut`: no text is cut by its box while it shows at 0.2 opacity or more (`CUT_OPACITY`), as `framesOf` reports `cuts`.
 - `jump`: no box moves off its spring, as `framesOf` reports `jumps`. A panel whose row's form or panel has faded to 0.02 opacity or less is left out, since nothing of it shows.
-- `connector-gap`: the tree connectors leave no gap, as `framesOf` reports `gaps`. A stroke whose fade to no opacity has ended draws nothing, so it neither breaks a column nor joins one.
+- `connector-gap`: the tree connectors leave no gap, as `framesOf` reports `gaps`. A stroke draws nothing once its fade to no opacity, or its box's, has ended, or when it is first drawn at none. It joins no column, so a stroke that shows and ends against it leaves a gap.
 - `rest-space`: 1.5 s after the case's last event, when every move has come to rest, no clipped box is taller than its content and no blank line's worth of space sits between two lines a block draws. In Herdr it reads the last frame's `rest` from `framesOf`: each clipped box with a set height beside its content's height, and the lines each list block draws at `CUT_OPACITY` or more. In the Codex tab the page sets each clipped box's height to auto for a moment to measure its content, and reads the text, controls and fields each `[data-motion]` box draws, its nested boxes' included. A control counts by its drawn shape, so a button's padding is not blank space. The other rules miss this: `cut`, `vanish` and `jump` look at text and moves, and a line kept hidden at rest moves nothing.
 - `vanish`: a text that shows at 0.2 or more of opacity times share does not go in one frame with no draw then, while its block still shows. A text that goes on as a longer or shorter text in its block, or whose block shows as many texts in the next frame, changed rather than went.
 - Next: `press-steady`, a button whose press is out keeps its place and size while nothing above it changed. `flicker`, within one move a text's opacity does not rise, fall and rise again. `animates`, a box whose resting height changes passes through a height between the two.
@@ -111,14 +111,12 @@ Motion rules run on the frames `framesOf` draws from 0 ms, the case's start. The
 
 ### Seeds
 
-Recent bugs are seed cases in `fuzz/seeds.ts`, which every run checks before its generated cases. A seed for a closed issue must pass, and the run fails when it does not. A seed for an open issue is expected to fail with its rule, and the run says so without failing. When it passes, the run fails and says to close the issue and mark the seed closed.
+Recent bugs are seed cases in `fuzz/seeds.ts`, and the Codex tab's in `fuzz/seeds-codex.ts`, which every run checks before its generated cases. A seed for a closed issue must pass, and the run fails when it does not. A seed for an open issue is expected to fail with its rule, and the run says so without failing. When it passes, the run fails and says to close the issue and mark the seed closed.
 
 A known failure in `KNOWN` matches on part of its detail, so keep that part as narrow as its issue. #832's part, any cut in a panel's box, also matched a cut that a tab shown again makes. That cut was found only once #832's seed closed, and is now #898.
 
-- Herdr: #771 (a row that settles while it opens), #811's second Copy press, #827's four seeds, #828's leave just after Explain, #832's collapse just after Explain, #833's fold of every Status fold and #950's, pass. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line.
+- Herdr: #771 (a row that settles while it opens), #811's second Copy press, #827's four seeds, #828's leave just after Explain, #832's collapse just after Explain, #833's fold of every Status fold, #950's, #956's Reply after an option and #957's Fix whose refresh fails, pass. #967, #971 and #972 have open seeds. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line.
 - From the first runs: #827, #828, #830, #831, #832 and #833, each with its seed. #898 has its seed too. #829 was a false report from the frame replay animating a tab switch, and is closed.
-- Codex tab: #834, #835, #836 and #837, each with its seed. #772 and #783 (open or close just after Undo) have no seed yet. #798 and #806 need agent events, which the Codex driver does not send.
-- Terminal and desktop: #830, with its seed.
 
 ## Shrinking
 
@@ -144,7 +142,7 @@ None. A seeded PRNG is ten lines, and the shrinker works on the case's own JSON.
 - `host.ts`: the in-memory host. `agent.ts`: the agent's events through the shared code.
 - `look-omp.ts`, `look-herdr.ts`: each look's driver. `look-codex.ts` and `codex-page.ts`: the Codex tab's driver and the code it runs in the page. `look-mod.ts`, `mod-look.ts` and `mod-case.ts`: the mod's looks, with `tsconfig.mod.json` to type-check the part that runs in the test engine. `look-rows.ts`: the shared row stepper, with its own generator, rules and shrinking, since a case there is a list of draws rather than a session.
 - `rules-text.ts`, `rules-omp.ts`, `rules-herdr.ts`, `failure.ts`: the rules.
-- `shrink.ts`, `seeds.ts`, `tsconfig.json`.
+- `shrink.ts`, `seeds.ts`, `seeds-codex.ts`, `tsconfig.json`.
 
 `scripts/fuzz.sh` runs it. Reports go to `fuzz/out/`, which Git ignores. Each file stays at 5,000 tokens or under.
 

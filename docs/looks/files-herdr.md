@@ -59,6 +59,7 @@ The Herdr look is a Herdr app mod. It draws the inbox of the session that a host
 | `herdr/src/paint-field.ts` | Herdr adapter. A text field with its buttons under it, for a row's reply field and any other field block. |
 | `herdr/src/paint-status-line.ts` | Herdr adapter. A Status line and a Help line: the mark or key, the name, its stall, fold chevron and buttons, and the parts a line is built from. |
 | `herdr/src/paint-empty.ts` | Herdr adapter. An empty tab's block: its title, hint and any line, buttons, field or feedback under them, centred across and down the list's room. |
+| `herdr/src/paint-body-line.ts` | Herdr adapter. Paints a line under a row's title with its part of the tree that hangs from the row's mark, or a row's answers' buttons in its place. |
 | `herdr/src/paint-tree.ts` | Herdr adapter. Paints the parts of a row's tree: its trunk and arms, and its answers' buttons, stacked or side by side, with the test of whether they fit side by side. |
 | `herdr/src/paint-parts.ts` | Herdr adapter. The small parts every block draws with: a button, a row of buttons, a mark, a line of text and a press's result line. |
 | `herdr/src/paint-chrome.ts` | Herdr adapter. Paints the tab row with Help at its right end, the banners, the session notes, the fades at the list's scroll edges, and the message for a terminal with no inbox. Herdr's pane header names the pane, so the look draws no title. |

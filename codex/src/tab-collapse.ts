@@ -1,6 +1,7 @@
 import { FADE_MS, LEAVE_FADE_MS } from '../../core/view/row-motion'
 import type { SpringState } from '../../core/view/springs'
 import { atEndGlides, closedLineHeight, closeTitle, showGrownAfters, LINE } from './tab-title-motion'
+import type { DrawnLine } from './tab-title-motion'
 import { fade, glide, glides, isOpeningShort, isRunning, opacityOf, springOf } from './tab-glide'
 import type { Glide } from './tab-glide'
 import { closeHoldsUp, fadeFaintPanel, fadingParts, shownPanel, trunkBeside } from './tab-panel-fade'
@@ -49,7 +50,8 @@ function closedForm(el: HTMLElement) {
  * either, and fades out in the steps of `faintCloseFades` while the height shrinks. A settling PR
  * block's dismissed head replaces the line above its body, so the body keeps the top it had at `openTop` while the
  * height shrinks over it. A settling row draws its settled line, under the form it leaves while that form fades
- * (`fadeForms`).
+ * (`fadeForms`). A closing row's line moves from where it was drawn before this draw, `drawn`, since the draw that
+ * closes the row can also give its line a status that wraps, which shows only as the line grows to it.
  */
 export function collapse(
   el: HTMLElement,
@@ -57,9 +59,11 @@ export function collapse(
   state: 'closing' | 'settling',
   openTop: number | null,
   delay: number,
+  drawn: DrawnLine | null = null,
 ) {
   const isShort = state === 'closing' && isOpeningShort(el, from)
-  const { part, line, lineFrom, lineTo, height: target } = closedForm(el)
+  const { part, line, lineFrom: lineNow, lineTo, height: target } = closedForm(el)
+  const lineFrom = drawn && drawn.el === line ? drawn.from : lineNow
   if (part && state === 'settling' && openTop !== null) keepTop(el, part, openTop)
   const shown = state === 'closing' ? shownPanel(el) : null
   if (shown && isShort) fadeFaintPanel(shown)

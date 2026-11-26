@@ -7,7 +7,6 @@ import { LEAVE_FADE_MS, ROW_FADE_MS, enterDelayMs } from '../../core/view/row-mo
 import { isOpenRow } from './blocks'
 import type { Block, BodyLine, Button, LineBlock, PrBlock, RowBlock } from './blocks'
 import {
-  BUTTON_LABEL_X,
   CONTROL_GAP,
   EDGE,
   END_SPACE,
@@ -19,7 +18,6 @@ import {
   NEST,
   SEP,
   TEXT_X,
-  bodyTextColor,
   colorOf,
   faintOf,
 } from './paint-theme'
@@ -33,7 +31,6 @@ import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
 import type { SwapMotion } from './form-swap'
 import { padOf, sizeEl, titleEl } from './paint-space'
-import { PATH_X, lineColor } from './paint-strokes'
 import { panelId, prHeadId, restId } from './heights'
 import { prStatusEl, prTailEls } from './paint-pr-status'
 import type { PrLine } from './pr-status'
@@ -44,54 +41,10 @@ import { titleTextEl } from './paint-title-text'
 import { addedOptionsEls, titleLineEls } from './paint-row-lines'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
-import { NO_BREAK_SPACE, feedbackEl, partedTextEl, wordEls } from './paint-text'
-import { ARM_END, answersEl, armEl, isSideBySide, trunkEl } from './paint-tree'
+import { NO_BREAK_SPACE, feedbackEl, wordEls } from './paint-text'
+import { isSideBySide, trunkEl } from './paint-tree'
+import { bodyLineEl } from './paint-body-line'
 import { isWarningDrawn, rowWarningEl, warningBoxEl } from './paint-warning'
-
-/** A line under a row's title, `above` under the part above it, with its part of the tree that hangs from the row's mark. */
-const bodyLineEl = (
-  l: Omit<BodyLine, 'part'> & { part?: RowPart },
-  above: number,
-  t: Theme,
-  isSelected: boolean,
-  answers: Button[] = [],
-  p: Paint | null = null,
-  isInert = false,
-): Element => {
-  const under = isSelected ? t.selected : t.background
-  const color = lineColor(t, under)
-  const textColor = bodyTextColor(t, l, under)
-  if (answers.length > 0 && p) {
-    const trunk =
-      l.tree === 'tee' ? [trunkEl(0, null, t, isSelected)] : l.tree === 'last' ? [trunkEl(0, above, t, isSelected)] : []
-
-    return h_flex()
-      .relative()
-      .min_w(0)
-      .pt(above)
-      .child(answersEl(answers, p, isInert, l.tree === 'last', t, isSelected))
-      .children(trunk)
-  }
-  const armAt = above + LINE_HEIGHT / 2
-  const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color)
-  const strokes =
-    l.tree === 'trunk'
-      ? [trunkEl(0, null, t, isSelected)]
-      : l.tree === 'tee'
-        ? [trunkEl(0, null, t, isSelected), arm]
-        : l.tree === 'last'
-          ? [trunkEl(0, armAt + 1, t, isSelected), arm]
-          : []
-  const line = l.lead
-    ? h_flex()
-        .flex_wrap()
-        .pl(MARK_W)
-        .pt(above)
-        .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, textColor)])
-    : partedTextEl(l.text, textColor, l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above)
-
-  return line.relative().children(strokes)
-}
 
 function rowEl(r: RowBlock, p: Paint): Element {
   const { t } = p
@@ -127,7 +80,8 @@ function rowEl(r: RowBlock, p: Paint): Element {
     p,
     (l, n) => {
       const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
-      const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, above, t, r.isSelected)
+      const trunk = panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`))
+      const el = bodyLineEl(l, above, t, r.isSelected).when(hasTree, e => e.child(trunk))
 
       return l.isHidden ? el.opacity(0) : el
     },
