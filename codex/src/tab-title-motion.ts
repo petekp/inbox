@@ -1,7 +1,7 @@
 import { ENTER_FADE_MS, enterDelayMs, LEAVE_FADE_MS, titleFades, titleSwapMs } from '../../core/view/row-motion'
 import { FRAME_MS } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
-import { fade, fadeShown, glide, glides, isRunning, springOf, stopFadeOut } from './tab-glide'
+import { fade, fadeShown, glide, glides, isRunning, springOf, stopFadeOut, waitLeftMs } from './tab-glide'
 
 /**
  * A row's line. While the row opens or closes it is a block that draws the title, wrapped as the open row's is, with
@@ -121,11 +121,12 @@ export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | 
 /** A row's own line, and not the lines of the rows inside it, as in a PR block. */
 const OWN_LINE = ':scope > .row > .content > .line'
 
-/** The status a row's line draws after its title. */
-const afterOf = (line: HTMLElement) => line.querySelector<HTMLElement>(':scope > .text:not(.short) .after')
+/** The status a row's line shows after its title. A closing row hides the one only its closed form draws. */
+const afterOf = (line: HTMLElement) =>
+  line.querySelector<HTMLElement>(':scope > .text:not(.short) > .part:not(.closed-only) .after')
 
-/** A row's line before a draw: where its height is, and the status it drew after its title. */
-export type DrawnLine = { el: HTMLElement; from: SpringState; after: string | null }
+/** A row's line before a draw: where its height is, the status it showed after its title, and whether it closed. */
+export type DrawnLine = { el: HTMLElement; from: SpringState; after: string | null; isClosing: boolean }
 
 export function drawnLine(el: HTMLElement): DrawnLine | null {
   const line = el.querySelector<HTMLElement>(OWN_LINE)
@@ -135,7 +136,28 @@ export function drawnLine(el: HTMLElement): DrawnLine | null {
     el: line,
     from: springOf(line, line.getBoundingClientRect().height),
     after: afterOf(line)?.textContent ?? null,
+    isClosing: line.closest('.row')?.classList.contains('closing') === true,
   }
+}
+
+/**
+ * Fades in what a row's line shows once its close has ended and the close hid: its meta line, such as a review
+ * thread's place, and a status after its title it did not show before. Each waits until the row has nearly grown to
+ * hold it, when the row still grows.
+ */
+export function showClosedLine(el: HTMLElement, was: DrawnLine) {
+  const line = el.querySelector<HTMLElement>(OWN_LINE)
+  if (!line || line !== was.el) return
+  const g = glides.get(el)
+  const isGrowing = g !== undefined && g.size === 'height' && isRunning(g.anim) && g.to > g.from.x
+  const delay = isGrowing ? waitLeftMs(el) + enterDelayMs(g.to, springOf(el, el.getBoundingClientRect().height)) : 0
+  const after = afterOf(line)
+  const isAfterNew = after !== null && after.textContent !== was.after
+  const parts = [
+    line.querySelector<HTMLElement>(':scope > .meta'),
+    isAfterNew ? after.closest<HTMLElement>('.part') : null,
+  ]
+  for (const part of parts) if (part) fade(part, 0, 1, ENTER_FADE_MS, false, false, delay)
 }
 
 /**
