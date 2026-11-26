@@ -255,7 +255,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         age: doneAt(f),
         feedback: f,
         detail: pr.error ? prRefreshFailedText(pr.error) : null,
-        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync)),
+        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync).actions),
         isWaiting: false,
       },
     })
@@ -275,7 +275,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
           age: doneAt(feedback) ?? t.at,
           feedback,
-          buttons: prButtons(threadActions(pr, t, presses)),
+          buttons: prButtons(threadActions(pr, t, presses).actions),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null,
         },
@@ -297,7 +297,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · '),
           age: doneAt(feedback) ?? c.finishedAt ?? null,
           feedback,
-          buttons: prButtons(checkActions(pr, c, presses)),
+          buttons: prButtons(checkActions(pr, c, presses).actions),
           isWaiting: isWaiting(id),
         },
       }

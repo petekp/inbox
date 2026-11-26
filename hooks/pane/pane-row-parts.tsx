@@ -41,7 +41,7 @@ import type { RowPress } from '../../core/domain/presses'
 import { foldGapRows } from '../../core/view/row-parts'
 import {
   canUndoRefused,
-  closedLineAction,
+  closedLinePlan,
   DOT,
   ROW_COPY,
   earlierLabel,
@@ -232,7 +232,7 @@ export function paneRowParts(
     )
   /** A Closed line's press: the Undo of a refused notification, or Reopen on a row the person dismissed. */
   const lineAction = (d: ClosedLine) => {
-    const action = closedLineAction(d)
+    const action = closedLinePlan(d).action
     if (!action) return null
     if (canUndoRefused(d.delivery)) return undoButton(action.press, null)
     return (

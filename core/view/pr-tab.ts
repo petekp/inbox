@@ -30,6 +30,7 @@ import {
   PR_FIX_LABELS,
   PR_REFRESH,
   prPageEffect,
+  prPlan,
   prRetryOf,
   RERUN_LABEL,
   rerunEffect,
@@ -37,13 +38,12 @@ import {
   sameRunChecks,
   withOut,
 } from './pr-press'
-import type { Applied, PlannedPrAction, PrAction, PrPress } from './pr-press'
+import type { Applied, PlannedPrAction, PrAction, PrPlan, PrPress } from './pr-press'
 
-export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrAction[] {
+export function threadActions(pr: PrView, t: PrThread, presses: PressState, canShowSession = false): PrPlan {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt)
   const on = { ref: pr.ref, thread: t.id }
-
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
     {
       press: { action: 'thread-address', ...on },
@@ -76,13 +76,15 @@ export function threadActions(pr: PrView, t: PrThread, presses: PressState): PrA
       isFollowUp: true,
     },
   ])
+
+  return prPlan(row, actions, canShowSession)
 }
 
 /**
  * A failing check offers Fix. A cancelled one offers Re-run in Fix's place when `rerunEffect` allows. Re-run draws out
  * while another row of its run has a re-run out, since that re-run covers this row too.
  */
-export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAction[] {
+export function checkActions(pr: PrView, c: PrCheck, presses: PressState, canShowSession = false): PrPlan {
   const row = lastPressOf(presses, prCheckId(pr, c), pr.fetchedAt)
   const on = { ref: pr.ref, check: checkKey(c) }
   const isCancelled = c.bucket === 'cancelled'
@@ -122,7 +124,11 @@ export function checkActions(pr: PrView, c: PrCheck, presses: PressState): PrAct
     },
   ])
 
-  return isRunRerunOut ? actions.map(a => (a.press.action === 'check-rerun' ? { ...a, isOut: true } : a)) : actions
+  const shown = isRunRerunOut
+    ? actions.map(a => (a.press.action === 'check-rerun' ? { ...a, isOut: true } : a))
+    : actions
+
+  return prPlan(row, shown, canShowSession)
 }
 
 /**
@@ -135,7 +141,8 @@ export function prBlockActions(
   branchRef: string | null,
   presses: PressState,
   sync: PrSync,
-): PrAction[] {
+  canShowSession = false,
+): PrPlan {
   const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt)
   const isReadyShown = shownReadiness(pr, sync, isThreadSent, 'Claude')?.status === 'ready'
   const waitingOn = threadsOnYou(pr, isThreadSent).length
@@ -169,7 +176,7 @@ export function prBlockActions(
       : []),
   ]
 
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n): PlannedPrAction => ({ ...m, emphasis: n === 0 ? 'primary' : 'normal' })),
     { press: { action: 'pr-open', ref: pr.ref }, label: 'Open PR', kind: 'local', emphasis: 'normal', icon: 'open' },
@@ -184,6 +191,8 @@ export function prBlockActions(
           },
         ]),
   ])
+
+  return prPlan(row, actions, canShowSession)
 }
 
 /** `ledger` with `refs` off the PRs tab: unlinked, and dismissed from the agent's order if it ranks them. */

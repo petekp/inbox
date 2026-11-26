@@ -178,7 +178,7 @@ function prThreadRow(v: View, pr: PrView, t: PrThread): Row {
       pressRow({ action, ref: pr.ref, thread: t.id }, inputOf(e), { pending, kind: null })
   const where = threadWhere(t)
   const { rest } = commentParts(t.body)
-  const actions = splitFollowUps(threadActions(pr, t, pressesOf(v)))
+  const actions = splitFollowUps(threadActions(pr, t, pressesOf(v)).actions)
   const openEffect = prPressEffect(pr, { action: 'thread-open', ref: pr.ref, thread: t.id })
 
   return {
@@ -235,7 +235,7 @@ function prCheckRow(v: View, pr: PrView, c: PrCheck): Row {
     age: c.finishedAt === undefined ? undefined : shortAgo(v.at - c.finishedAt),
     body: () => <div class="muted">{ran}</div>,
     options: [],
-    keys: checkActions(pr, c, pressesOf(v)).map(a => prKey(id, pr, a)),
+    keys: checkActions(pr, c, pressesOf(v)).actions.map(a => prKey(id, pr, a)),
     more: [],
     feedback: feedbackOf(id, v.lastActions[id], undefined, v.turns, v.at),
   }

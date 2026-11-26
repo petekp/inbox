@@ -3,7 +3,7 @@ import type { FoldKind, PressKind } from '../../types'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import type { PrAction } from '../../core/view/pr-press'
 import {
-  closedLineAction,
+  closedLinePlan,
   closedTitleTone,
   settledTone,
   closedShown,
@@ -272,7 +272,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
 
 type ClosedLine = {
   id: string
-  how: Parameters<typeof closedLineAction>[0]['how']
+  how: Parameters<typeof closedLinePlan>[0]['how']
   title: string
   at: number
   outcomeLabel: string
@@ -297,7 +297,7 @@ const closedId = (id: string) => `closed ${id}`
 const foldId = (kind: FoldKind) => `fold ${kind}`
 
 function closedLines(d: ClosedLine): Line {
-  const action = closedLineAction(d)
+  const action = closedLinePlan(d).action
   const buttons: Button[] = action
     ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }]
     : []
