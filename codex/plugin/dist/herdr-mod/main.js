@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T21:53:24.858Z. 408584 characters follow.
+// Built at 2026-11-26T22:43:36.354Z. 408850 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -6290,7 +6290,8 @@ var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
 var LEAVE_ENDS_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
 var restsAfter = (u) => u.waitMs === undefined ? ROW_STATE_MS.entering : u.waitMs + ENTER_FADE_MS;
 var lineOf2 = (b) => b.kind === "row" && isStatusUnder(b) ? b.feedback : null;
-var stepUnder = (last, b, now, isInput = false) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput, (x, y) => x.source?.is === y.source?.is);
+var kindOf = (l) => l.source?.is === "local" ? `local ${l.source.result.state}` : l.source?.is;
+var stepUnder = (last, b, now, isInput = false) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput, (x, y) => kindOf(x) === kindOf(y));
 function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true) {
   if (line && last?.isLeaving)
     return { line, since: now, isLeaving: false, isInput, isBack: true };
@@ -6818,7 +6819,7 @@ function nextHeld(was, to, delayMs, now) {
 
 // src/paint-blocks.ts
 import { div as div18 } from "gpui-kit";
-import { h_flex as h_flex10, v_flex as v_flex7 } from "gpui-base";
+import { h_flex as h_flex11, v_flex as v_flex7 } from "gpui-base";
 
 // ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
@@ -7758,6 +7759,23 @@ var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
   return h_flex9().relative().min_w(0).pl(MARK_W).child(isAlone ? buttons[0] : h_flex9().flex_wrap().gap(CONTROL_GAP).children(buttons)).children(isLast ? [arm, trunkEl(0, "50%", t, isSelected)] : [arm]);
 };
 
+// src/paint-body-line.ts
+import { h_flex as h_flex10 } from "gpui-base";
+var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
+  const under = isSelected ? t.selected : t.background;
+  const color = lineColor(t, under);
+  const textColor = bodyTextColor(t, l, under);
+  if (answers.length > 0 && p) {
+    const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
+    return h_flex10().relative().min_w(0).pt(above).child(answersEl(answers, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
+  }
+  const armAt = above + LINE_HEIGHT / 2;
+  const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
+  const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
+  const line = l.lead ? h_flex10().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, textColor)]) : partedTextEl(l.text, textColor, l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
+  return line.relative().children(strokes);
+};
+
 // src/paint-warning.ts
 import { div as div17 } from "gpui-kit";
 function warningBoxEl(id, atRest, p, lineEl, isLeftForm = false) {
@@ -7777,20 +7795,6 @@ var isWarningDrawn = (r, m, p) => r.settled === null && (r.warning !== undefined
 var rowWarningEl = (box, gap, trunk) => div17().relative().pt(gap).child(box).children(trunk ? [trunk] : []);
 
 // src/paint-blocks.ts
-var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
-  const under = isSelected ? t.selected : t.background;
-  const color = lineColor(t, under);
-  const textColor = bodyTextColor(t, l, under);
-  if (answers.length > 0 && p) {
-    const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
-    return h_flex10().relative().min_w(0).pt(above).child(answersEl(answers, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
-  }
-  const armAt = above + LINE_HEIGHT / 2;
-  const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
-  const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = l.lead ? h_flex10().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, textColor)]) : partedTextEl(l.text, textColor, l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
-  return line.relative().children(strokes);
-};
 function rowEl(r, p) {
   const { t } = p;
   const m = p.motion.get(r.id);
@@ -7802,10 +7806,11 @@ function rowEl(r, p) {
   const hasTree = (m?.closing ?? shown).body.some((l) => l.tree !== undefined);
   const mark = markEl(shown.mark, t, markTintOf(shown, p)).id(`mark ${r.id}`);
   const trunk = trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`);
-  const line = h_flex10().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div18().flex_none().ml(INSET).text_color(faintOf(t, r.isSelected ? t.selected : t.background)).child(r.age ?? "")));
+  const line = h_flex11().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div18().flex_none().ml(INSET).text_color(faintOf(t, r.isSelected ? t.selected : t.background)).child(r.age ?? "")));
   const lines = titleLineEls(r, shown, m, p, (l, n) => {
     const above = partPt(n === 0 ? "title" : "titleStatus", "titleStatus");
-    const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, above, t, r.isSelected);
+    const trunk = panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`));
+    const el = bodyLineEl(l, above, t, r.isSelected).when(hasTree, (e) => e.child(trunk));
     return l.isHidden ? el.opacity(0) : el;
   }, (el) => panelFadeEl(r, m, p, el));
   const titleEnd = lines.length > 0 ? "titleStatus" : "title";
@@ -7902,7 +7907,7 @@ function underEls(r, from, m, p, above) {
 }
 function prEl(b, p, isInert) {
   const { t } = p;
-  const title = h_flex10().items_start().child(div18().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div18().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
+  const title = h_flex11().items_start().child(div18().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div18().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
   const statusParts = (l) => [
     ...p.isNarrow ? [div18().flex_none().text_color(t.muted).child(b.number)] : [],
     ...l.status ? [statusPartEl(l.status.text).text_color(colorOf(t, l.status.tone))] : [],
@@ -7918,22 +7923,22 @@ function prEl(b, p, isInert) {
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex7().pl(EDGE).pr(EDGE).child(warningBoxEl(b.id, b.warning ?? null, p, (text) => lineEl(text, colorOf(t, "error"), 0).pb(LIST_GAP))).child(h_flex10().gap(CONTROL_GAP).items_center().child(div18().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex10().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
+  return v_flex7().pl(EDGE).pr(EDGE).child(warningBoxEl(b.id, b.warning ?? null, p, (text) => lineEl(text, colorOf(t, "error"), 0).pb(LIST_GAP))).child(h_flex11().gap(CONTROL_GAP).items_center().child(div18().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex11().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
 function headingEl(b, p, isInert) {
   const { t } = p;
-  const buttons = h_flex10().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
+  const buttons = h_flex11().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
-    return h_flex10().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex10().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
-  return h_flex10().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div18().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div18().text_color(t.muted).child(`${SEP}${b.count}`))).child(div18().flex_1()).when(b.aside !== undefined, (e) => e.child(div18().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
+    return h_flex11().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex11().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
+  return h_flex11().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div18().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div18().text_color(t.muted).child(`${SEP}${b.count}`))).child(div18().flex_1()).when(b.aside !== undefined, (e) => e.child(div18().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
 var countsEl = (counts, t) => {
-  const items = counts.items.map((c) => h_flex10().flex_none().children([
+  const items = counts.items.map((c) => h_flex11().flex_none().children([
     div18().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
     statusPartEl(`${NO_BREAK_SPACE}${c.text}`).text_color(t.muted)
   ]));
   const [first, ...rest] = items;
-  const head = h_flex10().flex_wrap().min_w(0).children([...wordEls(counts.label, t.muted), ...first ? [first] : []]);
+  const head = h_flex11().flex_wrap().min_w(0).children([...wordEls(counts.label, t.muted), ...first ? [first] : []]);
   return partedEl([head, ...rest], t.muted);
 };
 function foldEl(b, p, isInert) {
@@ -7948,7 +7953,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex10().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div18().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert, level: fold?.level ?? "muted" })));
+  return h_flex11().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div18().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert, level: fold?.level ?? "muted" })));
 }
 function blockEl(b, p) {
   const { t } = p;
