@@ -12,7 +12,7 @@ type Size = 'height' | 'width'
  * `Date.now()` time, and the animation that plays it. An element that comes or goes also scales its vertical padding
  * and top margin with its height, so it truly grows from and shrinks to no height.
  */
-type Glide = {
+export type Glide = {
   size: Size
   from: SpringState
   to: number
