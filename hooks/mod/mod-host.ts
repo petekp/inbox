@@ -12,6 +12,7 @@ import { prSharedStore } from './mod-pr-shared'
 import { readDurableSession, readSettledSession } from './mod-saves'
 import { changeSession } from './mod-session-write'
 import { isCurrent, type Owner, updating } from './mod-sessions'
+import { sessionState } from './mod-state'
 import { openTarget } from '../../core/domain/open-targets'
 import { COPY_FAILURES } from '../pane/pane-keys'
 import { isCompareInBackground } from '../../core/domain/press-messages'
@@ -106,7 +107,12 @@ export async function deliver(m: HostWriteCalls, owner: Owner, text: string, del
         ? { entered: text }
         : { notSent: (err instanceof Error ? err.message : String(err)) || 'the session refused it' },
   )
-  if ('notSent' in sent) return { state: 'rejected', reason: refusalReason(sent.notSent) }
+  if ('notSent' in sent) {
+    const reason = refusalReason(sent.notSent)
+    if (reason === STOPPED_REASON) sessionState.isSendHeld = true
+    return { state: 'rejected', reason }
+  }
+  sessionState.isSendHeld = false
   const entered = sent.entered
   if (entered === text) return { state: 'accepted', queuedId: null }
   let outcome: SendOutcome = { state: 'accepted', queuedId: null, entered }

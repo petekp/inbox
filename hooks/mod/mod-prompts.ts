@@ -109,6 +109,7 @@ export async function promptSubmitted(m: Mod, e: PromptSubmitEvent): Promise<str
     )
   }
   const isTyped = origin.kind === 'composer' || origin.kind === 'bridge'
+  if (isTyped) sessionState.isSendHeld = false
   const isPersonsWords = isTyped || (origin.kind === 'plugin' && origin.asUser === true)
   if (!isPersonsWords) {
     if (!e.turnId) await m.commit(currentOwner(), s => ({ ...s, turn: { ...s.turn, trigger: origin.kind } }))

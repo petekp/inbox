@@ -11,7 +11,7 @@ import { noteStatusTop, paneHandlers, paneViewKeys, restoreDesktopFocus } from '
 import { matchPaneEscape, paneDrawnOnDesktop, paneOpened } from './mod-pane-open'
 import { scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
-import { cancelUndoScroll, paneState } from './mod-state'
+import { cancelUndoScroll, paneState, sessionState } from './mod-state'
 import { currentOwner } from './mod-sessions'
 import { applyUiEvents, hostFactsOf } from './mod-ui'
 import { landTerminalFrame } from './mod-ui-loop'
@@ -143,6 +143,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     handlers,
   )
   const isThreadSent = threadSentIn(lastActions)
+  const isSendHeld = sessionState.isSendHeld && !isDemo
   const presses = { lastActions, turns, now }
   const { prKeyAction, checkRow, threadRow } = panePrRows(
     { Text, pal, presses, Link, Box, Markdown, terminalText, lastActions, look, now },
@@ -275,6 +276,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
       isInline,
       e,
       optionsShown,
+      isSendHeld,
       blankLine,
       Button,
       settledLayout,
@@ -417,11 +419,13 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
 
   const { prsView } = panePrBlocks({
     look,
+    isInline,
     pal,
     Text,
     Box,
     blankLine,
     isThreadSent,
+    isSendHeld,
     lastActions,
     prState,
     presses,
@@ -442,6 +446,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     markGlyph,
     divided,
     pressLine,
+    feedbackLabel,
     ...rowFns,
     prKeyAction,
     desktopLabel,

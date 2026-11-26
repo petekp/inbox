@@ -5,7 +5,7 @@ import type { RowPress } from '../domain/presses'
 import { retryOf, isRepeatOf } from './pressed'
 import { noteText } from './press-reducer'
 import { SETTLED_MS, pendingDeliveryAt, COMPARE_LIMIT_MS, queuedSentAt } from './timing'
-import { isHandedOffDone, isTerminalLike, DOT, deliveryLabel } from './rows'
+import { isHandedOffDone, isTerminalLike, DOT, deliveryLabel, STOPPED_REASON } from './rows'
 import type { Look, RowView, RowState } from './rows'
 import type { ViewInput } from './view'
 
@@ -331,6 +331,36 @@ function localText(r: LocalResult, look: Look): string {
 
   return `${text}${isCommand ? `. ${runIt(look)}` : ''}`
 }
+
+/** The line an open row or PR block draws above its buttons while Claude Code holds the inbox's messages after a stop. */
+export const STOPPED_WARNING = 'Not sent until you write to Claude: you stopped this session.'
+
+type Buttons = readonly { kind: PressKind }[]
+
+const warningOf = (isSendHeld: boolean, sends: boolean, shown: string | null): string | null => {
+  const isRefusalShown = shown?.includes(STOPPED_REASON) ?? false
+  return isSendHeld && sends && !isRefusalShown ? STOPPED_WARNING : null
+}
+
+/**
+ * The stopped warning for an open row with `buttons` and the press result `shown` on it, or null. It shows while
+ * `isSendHeld`, when a button sends a message, and until the row reads the refusal itself. A row's Mark, such as an
+ * answer, sends once its Undo runs out.
+ */
+export const stoppedWarningOf = (isSendHeld: boolean, buttons: Buttons, shown: string | null): string | null =>
+  warningOf(
+    isSendHeld,
+    buttons.some(b => b.kind === 'talk' || b.kind === 'handoff' || b.kind === 'mark'),
+    shown,
+  )
+
+/** The stopped warning for a PR block, as `stoppedWarningOf` gives a row's. A PR's Mark, Dismiss, sends nothing. */
+export const prStoppedWarningOf = (isSendHeld: boolean, buttons: Buttons, shown: string | null): string | null =>
+  warningOf(
+    isSendHeld,
+    buttons.some(b => b.kind === 'talk' || b.kind === 'handoff'),
+    shown,
+  )
 
 export function feedbackText(f: Feedback, look: Look): string {
   switch (f.is) {

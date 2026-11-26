@@ -103,6 +103,7 @@ export async function noteTurnEnd(m: Mod, e: TurnCompleteEvent) {
   askedCalls.clear()
   await closeDialogs(m, null)
   if (!mod.isOn) return
+  if (e.reason === 'aborted') sessionState.isSendHeld = true
   const endedAt = await m.clock.now()
   const [listed, inHerdr, place] = await Promise.all([
     m.conversation.agents().catch(() => null),

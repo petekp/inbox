@@ -1,6 +1,7 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../core/view/timing'
+import { STOPPED_WARNING } from '../core/view/feedback'
 import { RUNNING_FRAMES } from '../core/view/help'
 import { w, arrive, arriveFirst, world } from './hooks-world'
 import { BAND, PANE, selectRow, replyField, replyKey } from './hooks-helpers'
@@ -34,7 +35,7 @@ test('a press whose submit stays pending through a turn reads Queued instead of 
   expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
 })
 
-test("Claude Code's hold on messages after the person stopped the session reads why and what to do", async ($, on) => {
+test("Claude Code's hold on messages after the person stopped the session reads why and what to do, and the open row warns of it until the person types", async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   on('ui.focus', () => ({}))
@@ -60,6 +61,18 @@ test("Claude Code's hold on messages after the person stopped the session reads 
       text: 'Not sent: you stopped this session. It takes inbox messages again after you write to it.',
     }),
   ).toBeDefined()
+  expect(await pane.find({ text: STOPPED_WARNING })).toBeDefined()
+  await $.prompt.submit({ text: 'Re "Call it greet?": Yes', wait: false, origin: { kind: 'plugin', name: 'inbox' } })
+  await clock.settle()
+  expect(await pane.find({ text: STOPPED_WARNING })).toBeDefined()
+
+  await $.prompt.submit({ text: 'carry on', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  expect(await pane.find({ text: STOPPED_WARNING })).toBeUndefined()
+
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't2', reason: 'aborted' })
+  await clock.settle()
+  expect(await pane.find({ text: STOPPED_WARNING })).toBeDefined()
 })
 
 test('a press during a turn reads Queued until its prompt enters, a refused reply reopens its field with its words, and a press that will not enter is undone with Not sent and [Try again]', async ($, on) => {

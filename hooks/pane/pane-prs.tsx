@@ -40,6 +40,8 @@ import { desktopTextPt } from './desktop-metrics'
 import { glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } from './terminal-text'
 import { cellWidth, clipLabel } from '../../core/domain/text'
 import { runningMark } from '../../core/view/timing'
+import { prStoppedWarningOf } from '../../core/view/feedback'
+import { partSpace } from './pane-part-space'
 
 export function panePrRows(
   {
@@ -182,11 +184,13 @@ type PanePrRows = ReturnType<typeof panePrRows>
 
 export function panePrBlocks({
   look,
+  isInline,
   pal,
   Text,
   Box,
   blankLine,
   isThreadSent,
+  isSendHeld,
   lastActions,
   prState,
   presses,
@@ -207,6 +211,7 @@ export function panePrBlocks({
   markGlyph,
   divided,
   pressLine,
+  feedbackLabel,
   listRow,
   prKeyAction,
   desktopLabel,
@@ -219,11 +224,13 @@ export function panePrBlocks({
   PaneBase,
   | 'listColumns'
   | 'look'
+  | 'isInline'
   | 'pal'
   | 'Text'
   | 'Box'
   | 'blankLine'
   | 'isThreadSent'
+  | 'isSendHeld'
   | 'lastActions'
   | 'prState'
   | 'presses'
@@ -237,7 +244,7 @@ export function panePrBlocks({
 > &
   Pick<PaneRowParts, 'section' | 'undoPlace' | 'settledContent' | 'groupTitle' | 'titleGap' | 'sections'> &
   Pick<PaneRowFrame, 'desktopFrame'> &
-  Pick<PaneRowLines, 'markGlyph' | 'divided' | 'pressLine'> &
+  Pick<PaneRowLines, 'markGlyph' | 'divided' | 'pressLine' | 'feedbackLabel'> &
   Pick<PaneRows, 'listRow'> &
   Pick<PanePrRows, 'prKeyAction'> &
   Pick<PaneRowKeys, 'desktopLabel' | 'desktopRowTextPt' | 'keyRow'> &
@@ -296,6 +303,8 @@ export function panePrBlocks({
     const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses, sync).actions.map(a =>
       prKeyAction(a, pr.ref),
     )
+    const shownPress = isPrLastShown ? (feedbackLabel(prMarkId(pr.ref))?.text ?? null) : null
+    const warning = prStoppedWarningOf(isSendHeld, prActions, shownPress)
 
     const fits = (text: string) =>
       look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : cellWidth(text) <= listColumns - 2
@@ -330,12 +339,19 @@ export function panePrBlocks({
             </Text>
           </Box>
         ) : null}
+        {warning ? (
+          <Box marginTop={blankLine}>
+            <Text color={pal.tone.error} wrap="wrap">
+              {warning}
+            </Text>
+          </Box>
+        ) : null}
         <Box
           flexDirection="row"
           flexWrap="wrap"
           columnGap={space.buttonGap}
           rowGap={look === 'desktop' ? 1 : 0}
-          marginTop={blankLine}
+          marginTop={warning ? partSpace(look, isInline)('status', 'buttons') : blankLine}
         >
           {prActions.map(a =>
             a.emphasis === 'quiet' ? (

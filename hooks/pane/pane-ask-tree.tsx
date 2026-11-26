@@ -25,10 +25,21 @@ export type AskEntry = {
   options?: KeyAction[]
   /** The answer this line is the note of, which it nests under at the answer's label. */
   noteOf?: KeyAction
+  /** The stopped warning, which takes a context line's place and draws in the error color. */
+  isWarning?: true
+}
+
+/** An open row's answers and other parts, its text column `textWidth` cells wide in the terminal. */
+type RowEntriesInput = {
+  options: KeyAction[]
+  answerRow: AnswerRow | null
+  textWidth: number
+  isSelected: boolean
+  warning: string | null
 }
 
 /**
- * An open question's or task's Holds up line, context, earlier answer and option lines, in that order. In the terminal
+ * An open question's or task's Holds up line, context, earlier answer, stopped warning and option lines, in that order. In the terminal
  * they hang from the row's ◆ or □ on one connector: the Holds up line and each option on a branch, the context and earlier
  * answer beside it. Answers that `answerRow` lets sit side by side and that fit `width` share one branch, with the
  * recommendation's reason under them. `askEntries` gives desktop the same entries, which it draws on its own hairline
@@ -71,7 +82,13 @@ export function paneAskTree(
           ]
         : []),
     ])
-  const entriesOf = (view: RowView, answers: KeyAction[], answerRow: AnswerRow | null, width: number): AskEntry[] => {
+  const entriesOf = (
+    view: RowView,
+    answers: KeyAction[],
+    answerRow: AnswerRow | null,
+    width: number,
+    warning: string | null = null,
+  ): AskEntry[] => {
     if (view.type === 'finding' || view.state.is !== 'open') return []
     const options = answerRow && answersFit(answers, width) ? sideBySide(answers, answerRow.recLine) : stacked(answers)
     const holdsUp = view.state.is === 'open' && view.holdsUpLine ? view.holdsUpLine : null
@@ -88,6 +105,7 @@ export function paneAskTree(
         label: earlier.answer,
         rest: earlier.rest,
       })
+    if (warning) context.push({ key: 'stopped', part: 'context', pos: null, label: '', rest: warning, isWarning: true })
     const head = holdsUp
       ? [{ key: 'holds-up', part: 'holdsUp' as const, pos: 'mid' as const, label: '', rest: holdsUp }]
       : []
@@ -106,6 +124,25 @@ export function paneAskTree(
             ? { ...b, pos: 'pass' }
             : b
     })
+  }
+  const restColor = (e: AskEntry) =>
+    e.isWarning ? pal.tone.error : isSupportingPart(e.part) ? pal.supporting : pal.muted
+  /**
+   * An open row's entries. Desktop draws `treeEntries` on its own hairline pieces when they hang from a tree, and
+   * otherwise draws `descriptionEntries`, which the terminal also draws. `statusWarning` is the warning neither holds,
+   * which the row draws above its buttons.
+   */
+  const rowEntries = (
+    view: RowView | undefined,
+    { options, answerRow, textWidth, isSelected, warning }: RowEntriesInput,
+  ) => {
+    const treeEntries =
+      view && look === 'desktop' && isSelected ? entriesOf(view, options, answerRow, Infinity, warning) : []
+    const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
+    const descriptionEntries = view && !isDesktopTree ? entriesOf(view, options, answerRow, textWidth, warning) : []
+    const isWarningDrawn = [...treeEntries, ...descriptionEntries].some(en => en.isWarning)
+
+    return { treeEntries, isDesktopTree, descriptionEntries, statusWarning: isWarningDrawn ? null : warning }
   }
   const hasTree = (view: RowView, answers: KeyAction[]) =>
     look === 'terminal' && entriesOf(view, answers, null, Infinity).some(e => e.pos !== null)
@@ -147,7 +184,7 @@ export function paneAskTree(
                 <Text wrap="wrap">
                   {e.lead ? <Text color={pal.muted}>{e.lead}</Text> : null}
                   {e.label ? <Text bold={e.lead !== undefined}>{e.label}</Text> : null}
-                  <Text color={isSupportingPart(e.part) ? pal.supporting : pal.muted}>{e.rest}</Text>
+                  <Text color={restColor(e)}>{e.rest}</Text>
                 </Text>
               )}
             </Box>
@@ -157,5 +194,5 @@ export function paneAskTree(
     )
   }
 
-  return { askTree, askEntries: entriesOf, hasTree, treeTextIndent: TREE_TEXT_INDENT }
+  return { askTree, rowEntries, hasTree, restColor, treeTextIndent: TREE_TEXT_INDENT }
 }
