@@ -1095,7 +1095,8 @@ function applyGoalOp(o, op, now, findSubject2, askIds, start = o, servesLines = 
     const placed = new Map(
       servesLines.flatMap((l) => {
         const s = findSubject2(l.subject);
-        return s ? [[s.id, l.milestone]] : [];
+        const target = l.milestone === null ? null : findMilestone(settled, l.milestone)?.name ?? l.milestone;
+        return s ? [[s.id, target]] : [];
       })
     );
     const unplaced = op.kind === "goal" ? goalRevision(settled, start, milestones, placed) : null;
@@ -2764,12 +2765,11 @@ function parseReply(text2, source = null) {
       const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ""));
       if (isDesignField) rest.pop();
       const rec = rest.length > 1 ? rest.pop() : null;
-      const isAskTheChoices = readKind(kind) === "question" && readsAsChoices(ask ?? "");
-      if (!ask || isAskTheChoices) {
+      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
+      if (!ask || readKind(kind) === "question" && isOnlyItsAnswers(ask, options)) {
         newLines.push(void 0);
         continue;
       }
-      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
@@ -2814,7 +2814,11 @@ function parseReply(text2, source = null) {
 function readsAsChoices(field) {
   const text2 = field.trim();
   const choices = text2.split(/\s+\/\s+/);
-  return choices.length > 1 && !text2.endsWith("?") && choices.every((c) => c !== "" && words2(c).length <= 5);
+  return choices.length > 1 && !/[?？]$/.test(text2) && choices.every((c) => c !== "" && words2(c).length <= 5);
+}
+function isOnlyItsAnswers(ask, options) {
+  const parts = new Set(ask.split(/\s+\/\s+/).map((part) => part.trim().toLowerCase()));
+  return readsAsChoices(ask) && options.every((option) => parts.has(option.trim().toLowerCase()));
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -5499,8 +5503,11 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     if (m) named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity));
   };
   const servesLines = ops.flatMap((op) => op.kind === "serves" ? [op] : []);
+  const replacedMilestones = /* @__PURE__ */ new Map();
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op, n } of ordered) {
+  const keptRef = (ref) => replacedMilestones.get(ref) ?? ref;
+  for (const { op: written, n } of ordered) {
+    const op = written.kind === "next" || written.kind === "was" ? { ...written, ref: keptRef(written.ref) } : written.kind === "link" ? { ...written, subject: keptRef(written.subject) } : written;
     if (op.kind === "none" || op.kind === "suggest") continue;
     if (op.kind === "next") {
       markNamed(findMilestone(o, op.ref), n);
@@ -5508,9 +5515,12 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       continue;
     }
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find, askIds, last ?? o, servesLines);
+      const earlier = o.milestones;
+      const line = op.kind === "serves" && op.milestone !== null ? { ...op, milestone: keptRef(op.milestone) } : op;
+      o = applyGoalOp(o, line, now, find, askIds, last ?? o, servesLines);
+      if (op.kind === "goal" && o.milestones !== earlier) for (const m of earlier) replacedMilestones.set(m.id, m.name);
       if (op.kind === "milestone") markNamed(findMilestone(o, op.name), n);
-      if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n);
+      if (line.kind === "serves" && line.milestone !== null) markNamed(findMilestone(o, line.milestone), n);
     } else if (op.kind === "head") {
       if (!isNumberOnly(op.title)) o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     } else if (op.kind === "link") {

@@ -261,8 +261,6 @@ function isPrecondition(x) {
       return isText(x.row) && isText(x.version);
     case "pr-head-sha":
       return isText(x.ref) && isText(x.sha);
-    case "git-tree-hash":
-      return isText(x.cwd) && isText(x.hash);
     case "expires-at":
       return typeof x.at === "number" && Number.isFinite(x.at);
     default:

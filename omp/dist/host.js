@@ -2441,7 +2441,8 @@ function applyGoalOp(o, op, now, findSubject, askIds, start = o, servesLines = [
     const milestones = op.kind === "goal" ? op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status, text: clipWords(m.text, TEXT_KEPT) })) : [];
     const placed = new Map(servesLines.flatMap((l) => {
       const s = findSubject(l.subject);
-      return s ? [[s.id, l.milestone]] : [];
+      const target = l.milestone === null ? null : findMilestone(settled, l.milestone)?.name ?? l.milestone;
+      return s ? [[s.id, target]] : [];
     }));
     const unplaced = op.kind === "goal" ? goalRevision(settled, start, milestones, placed) : null;
     const why = op.kind === "goal" && goalLineRefusal(settled, op, unplaced === null ? null : start) || (unplaced === null ? goalRefusal(settled, start, op.kind, now) : unplaced.length > 0 ? "work-open" : null);
@@ -4111,12 +4112,11 @@ function parseReply(text, source = null) {
       if (isDesignField)
         rest.pop();
       const rec = rest.length > 1 ? rest.pop() : null;
-      const isAskTheChoices = readKind(kind) === "question" && readsAsChoices(ask ?? "");
-      if (!ask || isAskTheChoices) {
+      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
+      if (!ask || readKind(kind) === "question" && isOnlyItsAnswers(ask, options)) {
         newLines.push(undefined);
         continue;
       }
-      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
@@ -4165,7 +4165,11 @@ function parseReply(text, source = null) {
 function readsAsChoices(field) {
   const text = field.trim();
   const choices = text.split(/\s+\/\s+/);
-  return choices.length > 1 && !text.endsWith("?") && choices.every((c) => c !== "" && words2(c).length <= 5);
+  return choices.length > 1 && !/[?\uFF1F]$/.test(text) && choices.every((c) => c !== "" && words2(c).length <= 5);
+}
+function isOnlyItsAnswers(ask, options) {
+  const parts = new Set(ask.split(/\s+\/\s+/).map((part) => part.trim().toLowerCase()));
+  return readsAsChoices(ask) && options.every((option) => parts.has(option.trim().toLowerCase()));
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -8759,7 +8763,7 @@ function rowVersion(s, id) {
     l.closedFindings.findLast((row) => row.id === id) ?? null
   ]));
 }
-function refusal(s, when, now, treeHash) {
+function refusal(s, when, now) {
   for (const c of when ?? []) {
     if (c.kind === "row-version" && rowVersion(s, c.row) !== c.version)
       return "This changed before your press. Nothing was sent.";
@@ -8770,8 +8774,6 @@ function refusal(s, when, now, treeHash) {
     }
     if (c.kind === "expires-at" && now >= c.at)
       return "This press is too old to run. Nothing was sent.";
-    if (c.kind === "git-tree-hash" && (treeHash?.(c.cwd) ?? null) !== c.hash)
-      return "Files changed since you pressed. Nothing was run.";
   }
   return null;
 }
@@ -8784,8 +8786,6 @@ function isPrecondition(x) {
       return isText(x.row) && isText(x.version);
     case "pr-head-sha":
       return isText(x.ref) && isText(x.sha);
-    case "git-tree-hash":
-      return isText(x.cwd) && isText(x.hash);
     case "expires-at":
       return typeof x.at === "number" && Number.isFinite(x.at);
     default:
@@ -13645,8 +13645,11 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity));
   };
   const servesLines = ops.flatMap((op) => op.kind === "serves" ? [op] : []);
+  const replacedMilestones = new Map;
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op, n } of ordered) {
+  const keptRef = (ref) => replacedMilestones.get(ref) ?? ref;
+  for (const { op: written, n } of ordered) {
+    const op = written.kind === "next" || written.kind === "was" ? { ...written, ref: keptRef(written.ref) } : written.kind === "link" ? { ...written, subject: keptRef(written.subject) } : written;
     if (op.kind === "none" || op.kind === "suggest")
       continue;
     if (op.kind === "next") {
@@ -13655,11 +13658,16 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       continue;
     }
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find, askIds, last ?? o, servesLines);
+      const earlier = o.milestones;
+      const line = op.kind === "serves" && op.milestone !== null ? { ...op, milestone: keptRef(op.milestone) } : op;
+      o = applyGoalOp(o, line, now, find, askIds, last ?? o, servesLines);
+      if (op.kind === "goal" && o.milestones !== earlier)
+        for (const m of earlier)
+          replacedMilestones.set(m.id, m.name);
       if (op.kind === "milestone")
         markNamed(findMilestone(o, op.name), n);
-      if (op.kind === "serves" && op.milestone !== null)
-        markNamed(findMilestone(o, op.milestone), n);
+      if (line.kind === "serves" && line.milestone !== null)
+        markNamed(findMilestone(o, line.milestone), n);
     } else if (op.kind === "head") {
       if (!isNumberOnly(op.title))
         o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
