@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 
 import { STOPPED_WARNING } from '../../core/view/feedback'
 import { rankedStatusOf } from '../../core/view/pr-order'
-import { prMarkId, prThreadId, RANK_AGAIN_ID } from '../../core/view/pr-rows'
+import { prCheckId, prMarkId, prThreadId, RANK_AGAIN_ID } from '../../core/view/pr-rows'
 import { STOPPED_REASON } from '../../core/view/rows'
 import { demoSession } from '../../core/view/demo'
 import { sessionView } from '../../core/view/session-view'
@@ -60,7 +60,7 @@ test('while Claude Code holds the inbox messages, an open question and an open f
   expect(drawn(refusedSession, true, question.id, 'needsYou').warning).toBeUndefined()
 })
 
-test('while Claude Code holds the inbox messages, a PR block with a button that sends warns, and so do its open thread and the order line with Rank again', () => {
+test('while Claude Code holds the inbox messages, a PR block with a button that sends warns, and so do its open thread, its open check and the order line with Rank again', () => {
   const s = demoSession(NOW, AGENT)
   const pr = demoScreen()
     .view.prs.drawn.map(d => d.pr)
@@ -100,6 +100,19 @@ test('while Claude Code holds the inbox messages, a PR block with a button that 
   const threadOf = (isSendHeld: boolean, selected: string | null) =>
     rowIn(tabBlocks(screenOf(s, isSendHeld), uiOn('prs', { selected })), threadId).warning
   expect([threadOf(true, threadId), threadOf(true, null), threadOf(false, threadId)]).toEqual([
+    STOPPED_WARNING,
+    undefined,
+    undefined,
+  ])
+
+  const checkIds = new Set(pr.checks.map(c => prCheckId(pr, c)))
+  const checkId = tabBlocks(screenOf(s, true), uiOn('prs')).find(
+    b => b.kind === 'row' && b.isSelectable && checkIds.has(b.id),
+  )?.id
+  if (!checkId) throw new Error('the demo PR has no check the person can open')
+  const checkOf = (isSendHeld: boolean, selected: string | null) =>
+    rowIn(tabBlocks(screenOf(s, isSendHeld), uiOn('prs', { selected })), checkId).warning
+  expect([checkOf(true, checkId), checkOf(true, null), checkOf(false, checkId)]).toEqual([
     STOPPED_WARNING,
     undefined,
     undefined,
@@ -156,5 +169,69 @@ test('the stopped warning comes and goes on an open question, finding and thread
         cuts: after(frames.cuts),
         early: after(frames.shown).filter(isShownEarly),
       }).toEqual({ form, isShown, jumps: [], cuts: [], early: [] })
+    }
+})
+
+test('a row that closes while its stopped warning comes or goes keeps the warning box still, with no jump and no cut line', () => {
+  const s = demoSession(NOW, AGENT)
+  const { view } = demoScreen()
+  const question = view.needsYou.questions.find(
+    r => r.state.is === 'open' && r.actions.some(a => a.press.action === 'answer'),
+  )
+  const finding = view.findings.rows.find(r => r.state.is === 'open')
+  const pr = view.prs.drawn.map(d => d.pr).find(p => p.threads.some(t => t.isWaiting))
+  if (!question || !finding || !pr) throw new Error('the demo has no open question, open finding or PR with a thread')
+  const threadIds = new Set(pr.threads.map(t => prThreadId(pr, t)))
+  const threadId = tabBlocks(screenOf(s, true), uiOn('prs')).find(
+    b => b.kind === 'row' && b.isSelectable && threadIds.has(b.id),
+  )?.id
+  if (!threadId) throw new Error('the demo PR has no thread the person can open')
+  const rows: [string, 'needsYou' | 'findings' | 'prs', string][] = [
+    ['question', 'needsYou', question.id],
+    ['finding', 'findings', finding.id],
+    ['thread', 'prs', threadId],
+  ]
+  const moves: [string, [number, boolean, boolean][]][] = [
+    [
+      'closes as the warning fades out',
+      [
+        [0, true, true],
+        [100, false, true],
+        [180, false, false],
+      ],
+    ],
+    [
+      'closes as the warning box opens',
+      [
+        [0, false, true],
+        [100, true, true],
+        [140, true, false],
+      ],
+    ],
+    [
+      'closes with the warning shown',
+      [
+        [0, true, true],
+        [100, true, false],
+      ],
+    ],
+  ]
+
+  for (const [form, tab, id] of rows)
+    for (const [move, steps] of moves) {
+      const frames = framesOf(
+        steps.map(([at, isHeld, isOpen]) => [
+          at,
+          tabBlocks(screenOf(s, isHeld), uiOn(tab, { selected: isOpen ? id : null })),
+        ]),
+        1000,
+      )
+      const after = <T extends { at: number }>(xs: T[]) => xs.filter(x => x.at >= 0)
+      expect({ form, move, jumps: after(frames.jumps), cuts: after(frames.cuts) }).toEqual({
+        form,
+        move,
+        jumps: [],
+        cuts: [],
+      })
     }
 })
