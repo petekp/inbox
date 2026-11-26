@@ -5,7 +5,7 @@ import type { Effect } from '../../core/view/press-reducer'
 import type { PrPress } from '../../core/view/pr-press'
 import type { RowPress } from '../../core/domain/presses'
 import { DOT, shortAgo } from '../../core/view/rows'
-import type { ActionEmphasis } from '../../core/view/rows'
+import type { ActionEmphasis, SessionKey } from '../../core/view/rows'
 import type { StatusStall } from '../../core/view/status-page'
 import type { NameLevel, StatusWaitsOn, TextLevel } from '../../core/view/status-page-parts'
 import type { PathLine } from '../../core/view/status-path'
@@ -90,6 +90,10 @@ export const button = (
   does: Does = { is: 'nothing' },
   hotkey: string | null = null,
 ): Button => ({ id, label, emphasis, isOut: false, hotkey, does })
+
+/** Go to session, when a plan gives its `sessionKey`, as the first button of the row or line `id`. */
+export const sessionButtons = (id: string, key: SessionKey | null): Button[] =>
+  key ? [button(`${id} session`, key.label, key.emphasis, { is: 'focusTerminal' })] : []
 
 /** The field a row or the goal draws while the person types in it, with its Send or Save, and Cancel or Discard. */
 export type Field = { rowId: string; buttons: Button[] }

@@ -6,6 +6,7 @@ import { prCheckId, prMarkId, prSyncOf, prThreadId, splitFollowUps, threadSentIn
 import { checkActions, prBlockActions, threadActions } from '../../core/view/pr-tab'
 import { isStatusUnderActions } from '../../core/view/feedback'
 import { pendingResult } from '../../core/view/pressed'
+import type { PrPlan } from '../../core/view/pr-press'
 import { demoSession } from '../../core/view/demo'
 import { herdrEnvelope } from '../../core/remote/herdr-envelope'
 import { sessionView } from '../../core/view/session-view'
@@ -140,6 +141,8 @@ test('a press keeps its status under an open row’s buttons until it ends, even
   expect(isStatusUnderActions(ended.feedback!.source, true)).toBe(false)
 })
 
+const planLabels = (p: PrPlan) => [...(p.sessionKey ? [p.sessionKey.label] : []), ...p.actions.map(a => a.label)]
+
 test('the PRs tab draws each PR’s and each selected row’s buttons in the shared plans’ order', () => {
   const screen = demoScreen()
   const { view } = screen
@@ -149,8 +152,8 @@ test('the PRs tab draws each PR’s and each selected row’s buttons in the sha
   const blocks = tabBlocks(screen, uiOn('prs'))
   for (const pr of open) {
     const drawn = blocks.find(b => b.kind === 'pr' && b.id === prMarkId(pr.ref))
-    const planned = prBlockActions(pr, isSent, view.prs.branchRef, presses, prSyncOf(view.sync, pr.ref)).map(
-      a => a.label,
+    const planned = planLabels(
+      prBlockActions(pr, isSent, view.prs.branchRef, presses, prSyncOf(view.sync, pr.ref), true),
     )
     expect(drawn?.kind === 'pr' && drawn.buttons.map(b => b.label)).toEqual(planned)
   }
@@ -161,12 +164,13 @@ test('the PRs tab draws each PR’s and each selected row’s buttons in the sha
     const planned = open.flatMap(pr => [
       ...pr.threads
         .filter(t => prThreadId(pr, t) === row.id)
-        .map(t => splitFollowUps(threadActions(pr, t, presses)))
-        .map(({ keys, more }) => [...keys, ...more]),
-      ...pr.checks.filter(c => prCheckId(pr, c) === row.id).map(c => checkActions(pr, c, presses)),
+        .map(t => threadActions(pr, t, presses, true))
+        .map(p =>
+          planLabels({ ...p, actions: [...splitFollowUps(p.actions).keys, ...splitFollowUps(p.actions).more] }),
+        ),
+      ...pr.checks.filter(c => prCheckId(pr, c) === row.id).map(c => planLabels(checkActions(pr, c, presses, true))),
     ])
-    expect(planned.length).toBe(1)
-    expect(selected.buttons.map(b => b.label)).toEqual(planned[0]!.map(a => a.label))
+    expect(planned).toEqual([selected.buttons.map(b => b.label)])
   }
 })
 

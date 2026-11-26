@@ -59,7 +59,7 @@ test('a failing check whose name holds escapes draws without them, and the Fix p
   const check = drawn?.checks.find(c => c.name === 'unit tests')
   if (!drawn || !check) throw new Error('the view draws no check named unit tests')
   const presses = { lastActions: tainted.lastActions, turns: view.turns, now: AT }
-  const fix = checkActions(drawn, check, presses).find(a => a.press.action === 'check-fix')
+  const fix = checkActions(drawn, check, presses).actions.find(a => a.press.action === 'check-fix')
   if (!fix) throw new Error('the check has no Fix press')
   const result = applyPrPress(tainted.ledger, tainted.prViews, tainted.lastActions, fix.press, {
     now: AT,

@@ -48,7 +48,7 @@ type Kind = {
 const presses = (s: Session, now: number) => ({ lastActions: s.lastActions, turns: s.presence, now })
 const blockAction = (action: string) => (s: Session, now: number) => {
   const pr = s.prViews.views[FIX_REF]!
-  const found = prBlockActions(pr, () => false, null, presses(s, now), { is: 'fresh' }).find(
+  const found = prBlockActions(pr, () => false, null, presses(s, now), { is: 'fresh' }).actions.find(
     a => a.press.action === action,
   )
 
@@ -93,7 +93,8 @@ const KINDS: Kind[] = [
     plan: (s, now) => {
       const pr = s.prViews.views[FIX_REF]!
       const thread = pr.threads.find(t => t.id === 't1')
-      const found = thread && threadActions(pr, thread, presses(s, now)).find(a => a.press.action === 'thread-address')
+      const found =
+        thread && threadActions(pr, thread, presses(s, now)).actions.find(a => a.press.action === 'thread-address')
 
       return found ? { label: found.label, isOut: found.isOut } : null
     },
@@ -108,7 +109,7 @@ const KINDS: Kind[] = [
     plan: (s, now) => {
       const pr = s.prViews.views[FIX_REF]!
       const check = pr.checks[0]
-      const found = check && checkActions(pr, check, presses(s, now)).find(a => a.press.action === 'check-fix')
+      const found = check && checkActions(pr, check, presses(s, now)).actions.find(a => a.press.action === 'check-fix')
 
       return found ? { label: found.label, isOut: found.isOut } : null
     },
@@ -155,7 +156,7 @@ test('a hand-off whose turn ended with no answer stops reading as working, and i
   const s = await t.host.read()
   const conflicts = prBlockActions(s.prViews.views[FIX_REF]!, () => false, null, presses(s, await t.host.now()), {
     is: 'fresh',
-  })
+  }).actions
   expect(conflicts.find(a => a.press.action === 'pr-conflicts')?.label).toBe('Resolve conflicts again')
 })
 
@@ -167,7 +168,7 @@ test('a hand-off button waits for a fetch only until PR_READ_WAIT_MS after the r
   const s = await t.host.read()
   const at = s.lastActions[prMarkId(FIX_REF)]!.repliedAt!
   const conflicts = (now: number) =>
-    prBlockActions(s.prViews.views[FIX_REF]!, () => false, null, presses(s, now), { is: 'fresh' }).find(
+    prBlockActions(s.prViews.views[FIX_REF]!, () => false, null, presses(s, now), { is: 'fresh' }).actions.find(
       a => a.press.action === 'pr-conflicts',
     )
   expect(conflicts(at + PR_READ_WAIT_MS - 1)?.isOut).toBe(true)

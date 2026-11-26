@@ -21,7 +21,7 @@ import type { Ask, SessionHost } from '../../core/runtime/session-host'
 import type { SendOutcome } from '../../core/runtime/session-presses'
 import { markArrived } from '../../core/runtime/remote-command-state'
 import { SETTLED_MS } from '../../core/view/timing'
-import { STOPPED_REASON } from '../../core/view/feedback'
+import { STOPPED_REASON } from '../../core/view/rows'
 
 type HostCalls = Pick<
   Mod,

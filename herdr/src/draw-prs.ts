@@ -3,7 +3,7 @@ import { feedbackOf, feedbackText, feedbackTone, hasAge, markedFeedbackText } fr
 import type { PressState } from '../../core/view/feedback'
 import { prPressEffect } from '../../core/view/pr-press'
 import type { PrAction } from '../../core/view/pr-press'
-import { OTHER_PRS_TEXT, otherPrsStart } from '../../core/view/pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart, rankAgainPlan } from '../../core/view/pr-order'
 import {
   PR_GROUP_TITLES,
   PR_QUOTE_CHARS,
@@ -36,7 +36,7 @@ import type { PrRefreshView } from '../../core/view/pr-refresh'
 import { DOT, ROW_COPY, settledLabel, settledMark, shortAgo } from '../../core/view/rows'
 import { SETTLED_MS } from '../../core/view/timing'
 import { clipLabel } from '../../core/domain/text'
-import { agedText, button, emptyBlock } from './blocks'
+import { agedText, button, emptyBlock, sessionButtons } from './blocks'
 import type { Block, Button, Does, LineBlock, Mark, RowBlock, Tone } from './blocks'
 import type { LookScreen } from './draw'
 
@@ -88,7 +88,8 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
   const id = prThreadId(pr, t)
   const text = threadRowText(pr, t, screen.view.lastActions)
   const { rest } = commentParts(t.body)
-  const { keys, more } = splitFollowUps(threadActions(pr, t, presses))
+  const plan = threadActions(pr, t, presses, true)
+  const { keys, more } = splitFollowUps(plan.actions)
   const reply = t.reply ? `@${t.reply.author}: ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}` : null
 
   return {
@@ -108,7 +109,10 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
       { part: 'detail', text: `${threadWhere(t)}${DOT}@${t.author}`, tone: 'muted' as const },
       ...(reply ? [{ part: 'detail' as const, text: reply, tone: null }] : []),
     ],
-    buttons: [...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
+    buttons: [
+      ...sessionButtons(id, plan.sessionKey),
+      ...[...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
+    ],
     field: null,
   }
 }
@@ -116,6 +120,7 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
 function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressState): PrRow {
   const id = prCheckId(pr, c)
   const text = checkRowText(pr, c)
+  const plan = checkActions(pr, c, presses, true)
 
   return {
     kind: 'row',
@@ -129,7 +134,10 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
     isDim: false,
     isSelectable: text.fold === null,
     body: [{ part: 'detail', text: text.meta, tone: 'muted' }],
-    buttons: checkActions(pr, c, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
+    buttons: [
+      ...sessionButtons(id, plan.sessionKey),
+      ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
+    ],
     field: null,
   }
 }
@@ -180,6 +188,7 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
   const shown = shownReadiness(pr, sync, isSent, screen.agent)
   const tone = shown ? PR_TONES[shown.status] : null
   const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
+  const plan = prBlockActions(pr, isSent, screen.view.prs.branchRef, presses, sync, true)
   const groups = prBlockRows(pr, false, {
     thread: t => threadRow(screen, pr, t, presses),
     check: c => checkRow(screen, pr, c, presses),
@@ -220,9 +229,10 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
       status: shown && { text: shown.head, tone: tone ? PR_TONE[tone] : 'muted' },
       unlisted: shown?.unlisted ?? [],
       error: pr.error ? prRefreshFailedText(pr.error) : null,
-      buttons: prBlockActions(pr, isSent, screen.view.prs.branchRef, presses, sync).map((a, n) =>
-        prButton(pr, a, `${pr.ref} ${n}`),
-      ),
+      buttons: [
+        ...sessionButtons(pr.ref, plan.sessionKey),
+        ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${n}`)),
+      ],
       feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null,
     },
     ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, 'threads'),
@@ -274,7 +284,7 @@ function noticeBlocks(screen: LookScreen, notice: ReturnType<typeof ghNoticeOf>)
 }
 
 /** The agent's order: its title and reason, then the changed line with Rank again. */
-function orderLines(screen: LookScreen): Block[] {
+function orderLines(screen: LookScreen, presses: PressState): Block[] {
   const order = screen.view.prs.order
   if (!order) return []
   const changed = order.changed
@@ -282,7 +292,11 @@ function orderLines(screen: LookScreen): Block[] {
     { kind: 'line', id: 'pr order', text: order.title, under: order.why, buttons: [], feedback: null },
   ]
   if (!changed) return lines
-  const buttons = changed.actions.map((a, n) => prButton(null, a, `order ${n}`))
+  const plan = rankAgainPlan(changed.actions, presses, true)
+  const buttons = [
+    ...sessionButtons(RANK_AGAIN_ID, plan.sessionKey),
+    ...plan.actions.map((a, n) => prButton(null, a, `order ${n}`)),
+  ]
   const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null
 
   return [...lines, { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }]
@@ -327,7 +341,7 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   return [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
-    ...orderLines(screen),
+    ...orderLines(screen, presses),
     ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, selected)]),
     ...(prs.olderText ? [ruleBetween('older prs'), note('older prs', prs.olderText, 'muted')] : []),
   ]

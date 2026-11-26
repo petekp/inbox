@@ -227,7 +227,7 @@ function PrBody({
 }: DrawnPrBlock & { v: View; prs: DrawnPrs; now: number; tracks?: Map<string, RowTrack> }) {
   const isSent = threadSentIn(v.lastActions)
   const id = prMarkId(pr.ref)
-  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v), prSyncOf(v.sync, pr.ref)).map(a =>
+  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v), prSyncOf(v.sync, pr.ref)).actions.map(a =>
     prKey(id, pr, a),
   )
 

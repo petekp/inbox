@@ -98,22 +98,43 @@ export const ROW_COPY = {
   reopen: 'Reopen',
 } as const
 
+/**
+ * Why a message did not send when Claude Code held it after the person stopped the session. Claude Code holds plugin
+ * messages until the person types in that session, and a press from outside it, as in the Herdr look, does not count.
+ */
+export const STOPPED_REASON = 'you stopped this session. It takes inbox messages again after you write to it.'
+
+/** The button that shows the session a message was not sent to, so the person can type there. */
+export type SessionKey = { label: string; emphasis: 'normal' }
+
+/**
+ * Go to session for a message refused for `reason`, when the person stopped the session and the look shows the
+ * session from outside it, as the Herdr look does, and passes `canShowSession`. Null otherwise.
+ */
+export function sessionKeyOf(reason: string | null, canShowSession: boolean): SessionKey | null {
+  return canShowSession && reason === STOPPED_REASON ? { label: ROW_COPY.goToSession, emphasis: 'normal' } : null
+}
+
 /** The stop banner's button: Resume, and Resuming… while its message is on its way. */
 export function resumeLabel(isSending: boolean): string {
   return isSending ? 'Resuming…' : 'Resume'
 }
 
 /**
- * The press a Closed line offers: Undo after its notification was refused, else Reopen on a row the person dismissed,
- * which stays reachable for the rest of the session. Reopening loses nothing, since a dismissal sent nothing.
+ * A Closed line's buttons. Its press is Undo after its notification was refused, else Reopen on a row the person
+ * dismissed, which stays reachable for the rest of the session. Reopening loses nothing, since a dismissal sent nothing.
+ * A look that passes `canShowSession` draws `sessionKey` before the press, as `sessionKeyOf` gives it.
  */
-export function closedLineAction(d: {
-  id: string
-  how: Closed['how']
-  delivery: ClosedDelivery
-}): { label: string; press: RowPress } | null {
-  if (canUndoRefused(d.delivery)) return { label: ROW_COPY.undo, press: { id: d.id, action: 'undo' } }
-  return d.how === 'dismissed' ? { label: ROW_COPY.reopen, press: { id: d.id, action: 'undo' } } : null
+export function closedLinePlan(
+  d: { id: string; how: Closed['how']; delivery: ClosedDelivery },
+  canShowSession = false,
+): { action: { label: string; press: RowPress } | null; sessionKey: SessionKey | null } {
+  const sessionKey = sessionKeyOf(refusalOf(d.delivery), canShowSession)
+  if (canUndoRefused(d.delivery))
+    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: 'undo' } }, sessionKey }
+  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: 'undo' as const } }
+
+  return { action: d.how === 'dismissed' ? reopen : null, sessionKey }
 }
 
 export type ActionView = {
@@ -428,6 +449,9 @@ export function closedTitleTone(state: Pick<SettledState, 'delivery' | 'closedAs
 
   return state.closedAs === 'handled' ? 'done' : 'muted'
 }
+
+/** Why the agent refused a closed row's message, or null when it was not refused. */
+export const refusalOf = (delivery: ClosedDelivery): string | null => (isSendRefused(delivery) ? delivery.error : null)
 
 function isSendRefused(delivery: ClosedDelivery): delivery is { error: string; canUndo: boolean } {
   return delivery !== null && typeof delivery === 'object'

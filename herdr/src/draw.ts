@@ -7,7 +7,7 @@ import {
   actionLabel,
   fieldExit,
   replyHint,
-  closedLineAction,
+  closedLinePlan,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -36,7 +36,7 @@ import type { ShownTab } from '../../core/view/tabs'
 import { SETTLED_MS, isDrawnInPlace } from '../../core/view/timing'
 import { footerError } from '../../core/view/view'
 import type { PressKind } from '../../types'
-import { button, emptyBlock } from './blocks'
+import { button, emptyBlock, sessionButtons } from './blocks'
 import { HOLD_MS } from './block-glide'
 import { undoPlaceEndsAt } from '../../core/view/ui-controller-clock'
 import type { Block, BodyLine, Button, Does, Field, Mark, RowBlock } from './blocks'
@@ -90,9 +90,6 @@ function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string):
 /** The row's buttons in the plan's order: its options, which the tree draws, then its keys, then its follow-ups. */
 function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] {
   const { options, keys, more, sessionKey } = rowKeyPlan(row, isAllShown, true)
-  const toSession = sessionKey
-    ? [button(`${row.id} session`, sessionKey.label, sessionKey.emphasis, { is: 'focusTerminal' })]
-    : []
   const answers = options.map((o, n): Button => ({
     ...button(
       `${row.id} ${n}`,
@@ -107,7 +104,7 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
 
   return [
     ...answers,
-    ...toSession,
+    ...sessionButtons(row.id, sessionKey),
     ...[...keys, ...more].map((k, n): Button => {
       const id = `${row.id} ${options.length + n}`
       if (k.slot === 'allOptions')
@@ -258,7 +255,7 @@ type ClosedLine = {
 type Group = { kind: FoldKind; title: string; mark: Mark | null; rows: RowView[]; closed: ClosedLine[] }
 
 function closedBlock(d: ClosedLine, now: number): RowBlock {
-  const action = closedLineAction(d)
+  const { action, sessionKey } = closedLinePlan(d, true)
   const closedDoes: Does = action ? { is: 'press', press: action.press, effects: [], kind: null } : { is: 'nothing' }
 
   return {
@@ -274,7 +271,10 @@ function closedBlock(d: ClosedLine, now: number): RowBlock {
     isSelectable: false,
     isSelected: false,
     body: [],
-    buttons: action ? [button(`closed ${d.id} 0`, action.label, 'quiet', closedDoes)] : [],
+    buttons: [
+      ...sessionButtons(`closed ${d.id}`, sessionKey),
+      ...(action ? [button(`closed ${d.id} 0`, action.label, 'quiet', closedDoes)] : []),
+    ],
     field: null,
   }
 }

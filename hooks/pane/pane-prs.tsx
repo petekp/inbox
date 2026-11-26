@@ -88,7 +88,7 @@ export function panePrRows(
       line: { ...(lead ? { before: `${lead} / ` } : {}), text: title, after: meta },
       subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
       body: null,
-      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${checkKey(c)}`)),
+      keys: () => checkActions(pr, c, presses).actions.map(a => prKeyAction(a, `${pr.ref}-${checkKey(c)}`)),
     }
   }
   const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -151,7 +151,7 @@ export function panePrRows(
       )
     }
     const text = threadRowText(pr, t, lastActions)
-    const actions = splitFollowUps(threadActions(pr, t, presses))
+    const actions = splitFollowUps(threadActions(pr, t, presses).actions)
 
     return {
       id,
@@ -293,7 +293,7 @@ export function panePrBlocks({
     const tone = shown ? PR_TONES[shown.status] : null
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
     const prLast = isPrLastShown ? pressLine(prMarkId(pr.ref)) : null
-    const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses, sync).map(a =>
+    const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses, sync).actions.map(a =>
       prKeyAction(a, pr.ref),
     )
 

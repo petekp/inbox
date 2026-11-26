@@ -7,9 +7,9 @@ import type { RowPress } from '../domain/presses'
 import type { PrPress } from './pr-press'
 import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
-import { ROW_COPY, OPTIONS_FOLD_AT, isWaitingRow, optionNote, optionReasonLine } from './rows'
-import type { RowState, ActionView, RowView, SettledState } from './rows'
-import { pressOutAction, outAction, isAgain, fixLabel, isStoppedSession } from './feedback'
+import { ROW_COPY, OPTIONS_FOLD_AT, isWaitingRow, optionNote, optionReasonLine, refusalOf, sessionKeyOf } from './rows'
+import type { RowState, ActionView, RowView, SettledState, SessionKey } from './rows'
+import { pressOutAction, outAction, isAgain, fixLabel } from './feedback'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
 
@@ -318,9 +318,6 @@ export type PlannedOption = {
   hotkey?: string
 }
 
-/** The button that shows the session a message was not sent to, so the person can type there. */
-type SessionKey = { label: string; emphasis: 'normal' }
-
 /**
  * A row's options, then its keys, then its follow-ups. A look draws each option as its button in the question's tree
  * with its note under it, in this order. Then it draws the keys, and the follow-ups in one group after them. A task's
@@ -374,8 +371,9 @@ export function rowKeyPlan(
       })
   }
 
-  const sessionKey: SessionKey | null =
-    canShowSession && isStoppedSession(r.feedback) ? { label: ROW_COPY.goToSession, emphasis: 'normal' } : null
+  const notSent = r.feedback?.is === 'notSent' ? r.feedback.reason : null
+  const refusal = r.state.is === 'settled' ? refusalOf(r.state.delivery) : notSent
+  const sessionKey = sessionKeyOf(refusal, canShowSession)
 
   return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey }
 }

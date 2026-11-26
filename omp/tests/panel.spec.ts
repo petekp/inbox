@@ -312,15 +312,15 @@ test('PR buttons follow the shared plan order for the block, its threads and its
   const { pr } = prs.drawn[0]!
   const isSent = threadSentIn(lastActions)
   const presses = { lastActions, turns, now: NOW }
-  const block = prBlockActions(pr, isSent, prs.branchRef, presses, prSyncOf(screen.view.sync, pr.ref))
+  const block = prBlockActions(pr, isSent, prs.branchRef, presses, prSyncOf(screen.view.sync, pr.ref)).actions
   expect(block.slice(0, 2).map(a => a.label)).toEqual(['Try again', 'Resolve conflicts'])
   const lines = text(screen, withCursorOn({ ...INITIAL_UI, tab: 'prs' }, prMarkId(ref))).split('\n')
   expect(lines.findIndex(l => l.includes('Refresh PRs'))).toBeLessThan(lines.findIndex(l => l.includes(pr.title)))
   expect(lines.join('\n')).toContain('Last refresh failed: HTTP 502')
   const plans = [
     block,
-    ...waitingThreads(pr).map(t => threadActions(pr, t, presses)),
-    ...blockingChecks(pr).map(c => checkActions(pr, c, presses)),
+    ...waitingThreads(pr).map(t => threadActions(pr, t, presses).actions),
+    ...blockingChecks(pr).map(c => checkActions(pr, c, presses).actions),
   ]
   expect(plans.length).toBeGreaterThan(3)
   let ui: PanelUi = withCursorOn({ ...INITIAL_UI, tab: 'prs' }, prMarkId(pr.ref))
