@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T18:52:30.419Z. 398980 characters follow.
+// Built at 2026-11-26T19:52:55.222Z. 401235 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -5866,7 +5866,14 @@ var addedLinesId = (id) => `added lines ${id}`;
 var panelId = (id) => `panel ${id}`;
 
 // src/held-line.ts
-var NO_LINES_ABOVE = { held: new Map, lineless: new Set, options: new Map, added: new Map };
+var NO_LINES_ABOVE = {
+  held: new Map,
+  lineless: new Set,
+  bare: new Set,
+  comes: new Map,
+  options: new Map,
+  added: new Map
+};
 var HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS;
 var LINE_COMES_MS = NEXT_FRAME_MS + HEIGHT_SETTLE_MS;
 var heldKey = (r) => r.settled ? `settled ${r.id}` : r.id;
@@ -5907,6 +5914,19 @@ function addOptions(blocks, last, now, isAtOnce) {
 function holdLinesAbove(blocks, last, now, isAtOnce = false) {
   const next = new Map;
   const lineless = new Set;
+  const bare = new Set;
+  const comes = new Map;
+  const bareRow = (b, key) => {
+    if (b.feedback === null || isStatusUnder(b))
+      return bare.add(key), b;
+    const was = last.comes.get(key);
+    const isNew = !isAtOnce && last.bare.has(key);
+    const cameAt = was !== undefined && now < was + LINE_COMES_MS ? was : isNew ? now : undefined;
+    if (cameAt === undefined)
+      return b;
+    comes.set(key, cameAt);
+    return { ...b, lineCameAt: cameAt };
+  };
   const shown = blocks.map((b) => {
     if (b.kind !== "row")
       return b;
@@ -5918,7 +5938,7 @@ function holdLinesAbove(blocks, last, now, isAtOnce = false) {
     if (!hasActions(b)) {
       if (kept !== undefined && isUnderWay)
         next.set(key, kept);
-      return b;
+      return bareRow(b, key);
     }
     const isUnder = isStatusUnder(b);
     const isStarting = kept === undefined && f !== null && isUnder && (isUnderWay || source?.is === "queued");
@@ -5952,8 +5972,10 @@ function holdLinesAbove(blocks, last, now, isAtOnce = false) {
     const end = heldLineEndsAt(k, HELD_LEAVE_MS);
     return end === null || k?.leftAt == null ? [] : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter((at) => at > now);
   });
+  for (const at of comes.values())
+    ends.push(...[at + NEXT_FRAME_MS, at + LINE_COMES_MS].filter((t) => t > now));
   ends.push(...withAdded.ends);
-  const held = { held: next, lineless, options: withAdded.options, added: withAdded.added };
+  const held = { held: next, lineless, bare, comes, options: withAdded.options, added: withAdded.added };
   return { blocks: withAdded.blocks, held, nextAt: ends.length === 0 ? null : Math.min(...ends) };
 }
 var isHeldLineShutting = (r, now) => r.heldLine?.leftAt !== undefined && now >= r.heldLine.leftAt + HOLD_MS;
@@ -6153,6 +6175,16 @@ function opacityAt(steps, now) {
     return 0;
   const share = step.ms > 0 ? Math.min(1, Math.max(0, (now - step.at) / step.ms)) : 1;
   return step.from + (step.to - step.from) * easeOut(share);
+}
+function panelOf(state, isStart, last, closing) {
+  const isLeftPanelShown = last?.swap?.inAt === null && isOpenRow(last.swap.from);
+  const wasPanelFolding = last?.track.state === "opening" || last?.track.state === "closing" && last.opened !== null || isLeftPanelShown;
+  const isFrom = isStart && !wasPanelFolding;
+  if (state === "opening")
+    return isFrom ? 0 : 1;
+  if (state === "closing" && closing)
+    return isFrom ? 1 : 0;
+  return null;
 }
 
 // src/title-motion.ts
@@ -6456,20 +6488,42 @@ function heldTabs(tabs, last, motion) {
   });
 }
 
+// src/field-wait.ts
+var MAX_WAIT_MS = HEIGHT_SETTLE_MS - ENTER_FADE_MS;
+function stepFieldWait(last, b, space, now) {
+  if (b.kind !== "row" || !last)
+    return null;
+  const wait = last.fieldWait;
+  if (b.field === null)
+    return wait === null || wait.goneShown !== null ? wait : goneWait(wait, now);
+  if (last.block.kind !== "row" || last.block.field === null)
+    return { since: now, waitMs: null, goneShown: null };
+  if (wait === null || wait.waitMs !== null)
+    return wait;
+  const isGrowing = last.restSpace !== null && space.to > last.restSpace.to;
+  return isGrowing ? { ...wait, waitMs: now - wait.since + enterDelayMs(space.to, space.box) } : wait;
+}
+function goneWait(w, now) {
+  const opening = fieldOpening(w, now);
+  return opening === null ? null : { ...w, goneShown: opening.isOpen && opening.delayMs === 0 };
+}
+function fieldOpening(w, now) {
+  if (w === null)
+    return null;
+  if (w.goneShown !== null)
+    return { isOpen: w.goneShown, delayMs: 0 };
+  const fadesAt = w.since + (w.waitMs ?? MAX_WAIT_MS);
+  if (now >= fadesAt + ENTER_FADE_MS)
+    return null;
+  const isOpen = now > w.since && (w.waitMs !== null || now >= fadesAt);
+  return { isOpen, delayMs: Math.max(0, fadesAt - now) };
+}
+var fieldTimes = (w) => w === null || w.goneShown !== null ? [] : [w.since + NEXT_FRAME_MS, w.since + (w.waitMs ?? MAX_WAIT_MS) + ENTER_FADE_MS, w.since + MAX_WAIT_MS];
+
 // src/motion.ts
 var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
-function panelOf(state, isStart, last, closing) {
-  const isLeftPanelShown = last?.swap?.inAt === null && isOpenRow(last.swap.from);
-  const wasPanelFolding = last?.track.state === "opening" || last?.track.state === "closing" && last.opened !== null || isLeftPanelShown;
-  const isFrom = isStart && !wasPanelFolding;
-  if (state === "opening")
-    return isFrom ? 0 : 1;
-  if (state === "closing" && closing)
-    return isFrom ? 1 : 0;
-  return null;
-}
 function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES) {
   const heightOf = (key) => sizes.get(key);
   const was = isFirst ? NO_TRACKS : last;
@@ -6550,6 +6604,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now);
     const under = pushUnder(stepUnder(last?.under ?? null, block, now, isInput), underPushMs(last, block, restSpace), now);
     const waited = waitSwap(swap, restSpace, rest, now);
+    const fieldWait = stepFieldWait(last, block, restSpace, now);
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
     const title = block.kind === "row" && last ? stepTitle(last.title, titleRestOf(last.block, last.swap, sizes), titleRestOf(block, swap, sizes), now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now)) : null;
     rows.set(block.id, {
@@ -6567,7 +6622,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       panelSteps,
       panelHeldUntil,
       swap: waited,
-      restSpace
+      restSpace,
+      fieldWait
     });
     motion.set(block.id, {
       state: track.state,
@@ -6589,7 +6645,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       status: underMotion(status, now, heightOf(underId(block.id))),
       prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
       former: last && last.block.kind !== block.kind ? last.block : null,
-      swap: swapMotion(waited, now)
+      swap: swapMotion(waited, now),
+      field: fieldOpening(fieldWait, now)
     });
   };
   for (const b of blocks) {
@@ -6632,6 +6689,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     ...underTimes(t.status),
     ...prTailTimes(t.prTail),
     ...swapTimes(t.swap),
+    ...fieldTimes(t.fieldWait),
     holdsUntil,
     closeHoldsUntil,
     opensAfterClose,
@@ -6959,7 +7017,7 @@ function fieldEl(f, p, indent, isInert = false, opening = null) {
   const input = state ? [
     div4().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
-  const glide = { duration: ENTER_FADE_MS, delay: opening ? enterDelayMs(opening.height) : 0 };
+  const glide = { duration: ENTER_FADE_MS, delay: opening?.delayMs ?? 0 };
   const key = `buttons ${f.rowId}`;
   return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => fadeEl(e.id(key), key, opening?.isOpen ? 1 : 0, glide, p)));
 }
@@ -7337,7 +7395,7 @@ function controlsEl(b, p, isInert) {
   const field = b.under?.field ?? null;
   const buttons = b.under?.buttons ?? [];
   const height = p.heights.get(key) ?? 0;
-  const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), height };
+  const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), delayMs: enterDelayMs(height) };
   const fieldBox = field ? div7().w_full().pt(CONTROL_GAP).child(fieldEl(field, p, 0, isInert, opening)) : div7();
   return v_flex3().w_full().items_center().child(sizeEl(key, p, fieldBox).w_full()).when(buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(buttons.map((x) => buttonEl(x, p, isInert)))));
 }
@@ -7729,7 +7787,7 @@ function panelEl(r, shown, m, p, isLeaving, titleEnd) {
   const parts = [
     ...body.els,
     ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, "buttons"))] : [],
-    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, "field"))] : [],
+    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert, m?.field).pt(partPt(body.end, "field"))] : [],
     ...underEls(r, m?.closing ?? shown, m, p, partPt(end, "result"))
   ];
   if (parts.length === 0)
@@ -7833,8 +7891,9 @@ function blockEl(b, p) {
   if (b.kind === "field") {
     const m = p.motion.get(b.id);
     const isShownAsOpening = m?.state === "entering" && m.box !== null && m.fadeMs === 0;
-    const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null;
-    const opening = isShownAsOpening ? { isOpen: m.box === "open", height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade;
+    const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null;
+    const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0);
+    const opening = isShownAsOpening ? { isOpen: m.box === "open", delayMs } : keepsButtonsFade;
     return div16().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
   }
   if (b.kind === "note")
