@@ -417,6 +417,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
 
   const { prsView } = panePrBlocks({
     look,
+    isInline,
     pal,
     Text,
     Box,
@@ -442,6 +443,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     markGlyph,
     divided,
     pressLine,
+    feedbackLabel,
     ...rowFns,
     prKeyAction,
     desktopLabel,

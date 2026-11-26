@@ -91,6 +91,8 @@ class SessionState {
   applyingConversation: Promise<void> = Promise.resolve()
   isReadingAgain = false
   resuming: { is: 'sending' } | { is: 'refused'; why: string } | null = null
+  /** From the person's stop until they type in the session, while Claude Code holds every message the mod sends. */
+  isSendHeld = false
   stopGeneration = 0
   saving: Promise<void> = Promise.resolve()
   /** How many changes went to a saved session that is not drawn, so a load can tell its read is out of date. */

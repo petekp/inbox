@@ -4,7 +4,6 @@ import type { paneDesktopTree } from './pane-desktop-tree'
 import type { PaneRowFrame } from './pane-row-frame'
 import type { PaneRowKeys } from './pane-row-keys'
 import type { PaneRowLines } from './pane-row-lines'
-import { isSupportingPart } from '../../core/view/row-parts'
 import type { RowPart } from '../../core/view/row-parts'
 import {
   DESKTOP_ANSWER_BUTTON_PT,
@@ -40,9 +39,12 @@ export function paneDesktopCard({
   sideAge,
   keyedButton,
   partSpace,
+  restColor,
 }: Pick<PaneBase, 'Box' | 'Text' | 'pal' | 'space'> & {
   /** The space between two parts of the card, from `partSpace`. */
   partSpace: (above: RowPart, below: Exclude<RowPart, 'title'>) => number
+  /** The color of an entry's text after its label, from `paneAskTree`. */
+  restColor: (en: AskEntry) => string | undefined
 } & Pick<PaneRowKeys, 'keyedButton'> &
   Pick<PaneRowFrame, 'desktopFrame'> &
   Pick<ReturnType<typeof paneDesktopTree>, 'desktopTreeLine'> &
@@ -52,7 +54,7 @@ export function paneDesktopCard({
     <Text wrap="wrap">
       {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
       {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
-      <Text color={isSupportingPart(en.part) ? pal.supporting : pal.muted}>{en.rest}</Text>
+      <Text color={restColor(en)}>{en.rest}</Text>
     </Text>
   )
   const line = (rowId: string, en: AskEntry, above: AskEntry | undefined) =>

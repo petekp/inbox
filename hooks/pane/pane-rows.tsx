@@ -1,6 +1,6 @@
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
-import { isStatusUnderActions } from '../../core/view/feedback'
-import { paneState } from '../mod/mod-state'
+import { isStatusUnderActions, stoppedWarningOf } from '../../core/view/feedback'
+import { paneState, sessionState } from '../mod/mod-state'
 import { paneAskTree } from './pane-ask-tree'
 import { paneDesktopCard } from './pane-desktop-card'
 import { paneDesktopTree } from './pane-desktop-tree'
@@ -138,7 +138,7 @@ export function paneRows(
 ) {
   const newTitleColor = newTitleTint({ look, pal, now, ui, shownTab })
   const handleTint = (row: Row) => newTitleColor(row.id, row.handleTone ? pal.mark[row.handleTone] : pal.muted)
-  const { askTree, askEntries, hasTree, treeTextIndent } = paneAskTree(
+  const { askTree, rowEntries, hasTree, restColor, treeTextIndent } = paneAskTree(
     { look, Box, Text, pal, space },
     { branch },
     keyedButton,
@@ -152,6 +152,7 @@ export function paneRows(
     pal,
     space,
     partSpace: spaceBetween,
+    restColor,
     desktopFrame,
     desktopTreeLine,
     gutterMark,
@@ -239,6 +240,15 @@ export function paneRows(
     const f = feedbackLabel(row.id, row)
     const isStatusUnder = f !== null && isStatusUnderActions(f.feedback, isSelected)
     const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
+    const shown = f?.text ?? null
+    const warning = isSelected ? stoppedWarningOf(sessionState.isSendHeld, [...options, ...keys, ...more], shown) : null
+    const { treeEntries, isDesktopTree, descriptionEntries, statusWarning } = rowEntries(row.view, {
+      options,
+      answerRow,
+      textWidth,
+      isSelected,
+      warning,
+    })
     const fitsStatusLine = (text: string) =>
       look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : cellWidth(text) <= textWidth
     const noteLines = row.fold?.note ? partedLines(row.fold.note.split(DOT), fitsStatusLine) : []
@@ -246,6 +256,7 @@ export function paneRows(
       ...noteLines.map(text => ({ text, color: pal.muted })),
       ...(f && !f.isAfterTitle && !isStatusUnder ? [{ text: f.text, color: feedbackColor(f.tone) }] : []),
       ...(isTyping && paneState.fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
+      ...(statusWarning ? [{ text: statusWarning, color: pal.tone.error }] : []),
     ]
 
     const titleWidth = textWidth - TERMINAL_SIDE_CELLS
@@ -272,11 +283,7 @@ export function paneRows(
         : row.bodyAt
           ? row.bodyAt(look === 'desktop' ? fitsTitleLine : s => cellWidth(s) <= textWidth)
           : (row.body ?? null)
-    const treeEntries =
-      row.view && look === 'desktop' && isSelected ? askEntries(row.view, options, answerRow, Infinity) : []
-    const isDesktopTree = treeEntries.some(en => en.pos === 'mid' || en.pos === 'last')
     const isTrunkBridged = look === 'terminal' && isSelected && row.view !== undefined && hasTree(row.view, options)
-    const descriptionEntries = row.view && !isDesktopTree ? askEntries(row.view, options, answerRow, textWidth) : []
     const descriptionsBlock = row.view ? askTree(row.view.id, descriptionEntries, textWidth, spaceBetween) : null
     const bodyEnd: RowPart = body ? (row.bodyEnd ?? 'detail') : 'title'
     const treeEnd = (isDesktopTree ? treeEntries : descriptionEntries).at(-1)?.part ?? bodyEnd

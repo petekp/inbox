@@ -126,7 +126,7 @@ export const CLAUDE_CODE: Client = {
     'stopped-session-send': {
       kind: 'different',
       reason:
-        'The row says the person stopped the session and offers no Go to session, since the person is already in it.',
+        'The open row warns before a press, and a refused row says the person stopped the session. Neither offers Go to session, since the person is already in it.',
     },
     'option-previews': { kind: 'full' },
   },

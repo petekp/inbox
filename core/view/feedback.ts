@@ -5,7 +5,7 @@ import type { RowPress } from '../domain/presses'
 import { retryOf, isRepeatOf } from './pressed'
 import { noteText } from './press-reducer'
 import { SETTLED_MS, pendingDeliveryAt, COMPARE_LIMIT_MS, queuedSentAt } from './timing'
-import { isHandedOffDone, isTerminalLike, DOT, deliveryLabel } from './rows'
+import { isHandedOffDone, isTerminalLike, DOT, deliveryLabel, STOPPED_REASON } from './rows'
 import type { Look, RowView, RowState } from './rows'
 import type { ViewInput } from './view'
 
@@ -330,6 +330,24 @@ function localText(r: LocalResult, look: Look): string {
   const isCommand = parts.some(p => p.kind === 'copy' && p.isCommand)
 
   return `${text}${isCommand ? `. ${runIt(look)}` : ''}`
+}
+
+/** The line an open row or PR block draws above its buttons while Claude Code holds the inbox's messages after a stop. */
+export const STOPPED_WARNING = 'Not sent until you write to Claude: you stopped this session.'
+
+/**
+ * The stopped warning for an open row or PR block with `buttons` and the press result `shown` on it, or null. It shows
+ * while `isSendHeld`, when a button sends a message, and until the row reads the refusal itself.
+ */
+export function stoppedWarningOf(
+  isSendHeld: boolean,
+  buttons: readonly { kind: PressKind }[],
+  shown: string | null,
+): string | null {
+  const sends = buttons.some(b => b.kind === 'talk' || b.kind === 'handoff' || b.kind === 'mark')
+  const isRefusalShown = shown?.includes(STOPPED_REASON) ?? false
+
+  return isSendHeld && sends && !isRefusalShown ? STOPPED_WARNING : null
 }
 
 export function feedbackText(f: Feedback, look: Look): string {
