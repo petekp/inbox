@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T09:08:30.853Z. 393108 characters follow.
+// Built at 2026-11-26T09:46:19.797Z. 394667 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -2134,10 +2134,16 @@ var ROW_COPY = {
   undo: "Undo",
   reopen: "Reopen"
 };
-function closedLineAction(d) {
+var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
+function sessionKeyOf(reason, canShowSession) {
+  return canShowSession && reason === STOPPED_REASON ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+}
+function closedLinePlan(d, canShowSession = false) {
+  const sessionKey = sessionKeyOf(refusalOf(d.delivery), canShowSession);
   if (canUndoRefused(d.delivery))
-    return { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } };
-  return d.how === "dismissed" ? { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } } : null;
+    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
+  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
+  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
 }
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
@@ -2295,6 +2301,7 @@ function closedTitleTone(state) {
     return "error";
   return state.closedAs === "handled" ? "done" : "muted";
 }
+var refusalOf = (delivery) => isSendRefused(delivery) ? delivery.error : null;
 function isSendRefused(delivery) {
   return delivery !== null && typeof delivery === "object";
 }
@@ -2978,8 +2985,6 @@ function doneLabel(last) {
   return DONE_LABELS[last.action]?.(last.text) ?? last.text;
 }
 var STILL_WAITING_AFTER = new Set(["check-fix"]);
-var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
-var isStoppedSession = (f) => f?.is === "notSent" && f.reason === STOPPED_REASON;
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
@@ -3167,6 +3172,10 @@ function again(row, action, label) {
 function withOut(row, actions) {
   return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
 }
+function prPlan(row, actions, canShowSession) {
+  const delivery = row.last?.delivery;
+  return { actions, sessionKey: sessionKeyOf(delivery?.state === "failed" ? delivery.reason : null, canShowSession) };
+}
 function retryAction(retry) {
   return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
 }
@@ -3221,6 +3230,9 @@ function prOrderView(order, drawn, presses, shownSince) {
       showsPress
     } : null
   };
+}
+function rankAgainPlan(actions, presses, canShowSession) {
+  return prPlan(lastPressOf(presses, RANK_AGAIN_ID), actions, canShowSession);
 }
 function prOrderActions(row) {
   return withOut(row, [
@@ -3289,10 +3301,10 @@ function prRefreshActions(row) {
 }
 
 // ../core/view/pr-tab.ts
-function threadActions(pr, t, presses) {
+function threadActions(pr, t, presses, canShowSession = false) {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt);
   const on = { ref: pr.ref, thread: t.id };
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
     {
       press: { action: "thread-address", ...on },
@@ -3325,8 +3337,9 @@ function threadActions(pr, t, presses) {
       isFollowUp: true
     }
   ]);
+  return prPlan(row, actions, canShowSession);
 }
-function checkActions(pr, c, presses) {
+function checkActions(pr, c, presses, canShowSession = false) {
   const row = lastPressOf(presses, prCheckId(pr, c), pr.fetchedAt);
   const on = { ref: pr.ref, check: checkKey(c) };
   const isCancelled = c.bucket === "cancelled";
@@ -3360,9 +3373,10 @@ function checkActions(pr, c, presses) {
       hotkey: "o"
     }
   ]);
-  return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
+  const shown = isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
+  return prPlan(row, shown, canShowSession);
 }
-function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
+function prBlockActions(pr, isThreadSent, branchRef, presses, sync, canShowSession = false) {
   const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt);
   const isReadyShown = shownReadiness(pr, sync, isThreadSent, "Claude")?.status === "ready";
   const waitingOn = threadsOnYou(pr, isThreadSent).length;
@@ -3389,7 +3403,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
       }
     ] : []
   ];
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
     { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
@@ -3402,6 +3416,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
       }
     ]
   ]);
+  return prPlan(row, actions, canShowSession);
 }
 function finishedTabPrs(prState, links) {
   return splitLinked(prState, links).tracked.filter((ref) => {
@@ -3627,7 +3642,9 @@ function rowKeyPlan(r, isAllShown, canShowSession = false) {
         hotkey: a.hotkey
       });
   }
-  const sessionKey = canShowSession && isStoppedSession(r.feedback) ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+  const notSent = r.feedback?.is === "notSent" ? r.feedback.reason : null;
+  const refusal = r.state.is === "settled" ? refusalOf(r.state.delivery) : notSent;
+  const sessionKey = sessionKeyOf(refusal, canShowSession);
   return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey };
 }
 function answerRowOf(r, options) {
@@ -5575,6 +5592,7 @@ var heldLineEndsAt = (kept, leaveMs) => kept?.leftAt == null ? null : kept.leftA
 
 // src/blocks.ts
 var button = (id, label, emphasis, does = { is: "nothing" }, hotkey = null) => ({ id, label, emphasis, isOut: false, hotkey, does });
+var sessionButtons = (id, key) => key ? [button(`${id} session`, key.label, key.emphasis, { is: "focusTerminal" })] : [];
 var isOpenRow = (r) => r.isSelected && !r.isCollapsed;
 var agedText = (a, now) => `${a.lead}${DOT}${shortAgo(now - a.at)}`;
 function emptyBlock(tab, empty, parts = null) {
@@ -8110,7 +8128,8 @@ function threadRow(screen, pr, t, presses) {
   const id = prThreadId(pr, t);
   const text = threadRowText(pr, t, screen.view.lastActions);
   const { rest } = commentParts(t.body);
-  const { keys, more } = splitFollowUps(threadActions(pr, t, presses));
+  const plan = threadActions(pr, t, presses, true);
+  const { keys, more } = splitFollowUps(plan.actions);
   const reply = t.reply ? `@${t.reply.author}: ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}` : null;
   return {
     kind: "row",
@@ -8128,13 +8147,17 @@ function threadRow(screen, pr, t, presses) {
       { part: "detail", text: `${threadWhere(t)}${DOT}@${t.author}`, tone: "muted" },
       ...reply ? [{ part: "detail", text: reply, tone: null }] : []
     ],
-    buttons: [...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
+    buttons: [
+      ...sessionButtons(id, plan.sessionKey),
+      ...[...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`))
+    ],
     field: null
   };
 }
 function checkRow(screen, pr, c, presses) {
   const id = prCheckId(pr, c);
   const text = checkRowText(pr, c);
+  const plan = checkActions(pr, c, presses, true);
   return {
     kind: "row",
     id,
@@ -8147,7 +8170,10 @@ function checkRow(screen, pr, c, presses) {
     isDim: false,
     isSelectable: text.fold === null,
     body: [{ part: "detail", text: text.meta, tone: "muted" }],
-    buttons: checkActions(pr, c, presses).map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
+    buttons: [
+      ...sessionButtons(id, plan.sessionKey),
+      ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`))
+    ],
     field: null
   };
 }
@@ -8193,6 +8219,7 @@ function prBlocks(screen, d, presses, selected) {
   const shown = shownReadiness(pr, sync, isSent, screen.agent);
   const tone = shown ? PR_TONES[shown.status] : null;
   const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions);
+  const plan = prBlockActions(pr, isSent, screen.view.prs.branchRef, presses, sync, true);
   const groups = prBlockRows(pr, false, {
     thread: (t) => threadRow(screen, pr, t, presses),
     check: (c) => checkRow(screen, pr, c, presses)
@@ -8229,7 +8256,10 @@ function prBlocks(screen, d, presses, selected) {
       status: shown && { text: shown.head, tone: tone ? PR_TONE[tone] : "muted" },
       unlisted: shown?.unlisted ?? [],
       error: pr.error ? prRefreshFailedText(pr.error) : null,
-      buttons: prBlockActions(pr, isSent, screen.view.prs.branchRef, presses, sync).map((a, n) => prButton(pr, a, `${pr.ref} ${n}`)),
+      buttons: [
+        ...sessionButtons(pr.ref, plan.sessionKey),
+        ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${n}`))
+      ],
       feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null
     },
     ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, "threads"),
@@ -8267,7 +8297,7 @@ function noticeBlocks(screen, notice) {
     return [{ kind: "banner", id: "gh notice", banner, buttons: [], feedback: null }, ...refreshLine(screen)];
   return [{ kind: "banner", id: PR_REFRESH_ID, banner, buttons: refresh.buttons, feedback: refresh.feedback }];
 }
-function orderLines(screen) {
+function orderLines(screen, presses) {
   const order = screen.view.prs.order;
   if (!order)
     return [];
@@ -8277,7 +8307,11 @@ function orderLines(screen) {
   ];
   if (!changed)
     return lines;
-  const buttons = changed.actions.map((a, n) => prButton(null, a, `order ${n}`));
+  const plan = rankAgainPlan(changed.actions, presses, true);
+  const buttons = [
+    ...sessionButtons(RANK_AGAIN_ID, plan.sessionKey),
+    ...plan.actions.map((a, n) => prButton(null, a, `order ${n}`))
+  ];
   const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null;
   return [...lines, { kind: "line", id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }];
 }
@@ -8310,7 +8344,7 @@ function prTabBlocks(screen, selected) {
   return [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
-    ...orderLines(screen),
+    ...orderLines(screen, presses),
     ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, selected)]),
     ...prs.olderText ? [ruleBetween("older prs"), note("older prs", prs.olderText, "muted")] : []
   ];
@@ -8630,7 +8664,6 @@ function rowDoes(row, press, kind, agent) {
 }
 function rowButtons(row, isAllShown, agent) {
   const { options, keys, more, sessionKey } = rowKeyPlan(row, isAllShown, true);
-  const toSession = sessionKey ? [button(`${row.id} session`, sessionKey.label, sessionKey.emphasis, { is: "focusTerminal" })] : [];
   const answers = options.map((o, n) => ({
     ...button(`${row.id} ${n}`, actionLabel(o.action), o.action.emphasis, rowDoes(row, o.action.press, o.action.kind, agent), o.hotkey ?? null),
     isOut: o.action.isOut,
@@ -8638,7 +8671,7 @@ function rowButtons(row, isAllShown, agent) {
   }));
   return [
     ...answers,
-    ...toSession,
+    ...sessionButtons(row.id, sessionKey),
     ...[...keys, ...more].map((k, n) => {
       const id = `${row.id} ${options.length + n}`;
       if (k.slot === "allOptions")
@@ -8750,7 +8783,7 @@ function rowBlock(row, ui, selected, screen) {
   };
 }
 function closedBlock(d, now) {
-  const action = closedLineAction(d);
+  const { action, sessionKey } = closedLinePlan(d, true);
   const closedDoes = action ? { is: "press", press: action.press, effects: [], kind: null } : { is: "nothing" };
   return {
     kind: "row",
@@ -8765,7 +8798,10 @@ function closedBlock(d, now) {
     isSelectable: false,
     isSelected: false,
     body: [],
-    buttons: action ? [button(`closed ${d.id} 0`, action.label, "quiet", closedDoes)] : [],
+    buttons: [
+      ...sessionButtons(`closed ${d.id}`, sessionKey),
+      ...action ? [button(`closed ${d.id} 0`, action.label, "quiet", closedDoes)] : []
+    ],
     field: null
   };
 }

@@ -5110,13 +5110,19 @@ var ROW_COPY = {
   undo: "Undo",
   reopen: "Reopen"
 };
+var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
+function sessionKeyOf(reason, canShowSession) {
+  return canShowSession && reason === STOPPED_REASON ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+}
 function resumeLabel(isSending) {
   return isSending ? "Resuming\u2026" : "Resume";
 }
-function closedLineAction(d) {
+function closedLinePlan(d, canShowSession = false) {
+  const sessionKey = sessionKeyOf(refusalOf2(d.delivery), canShowSession);
   if (canUndoRefused(d.delivery))
-    return { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } };
-  return d.how === "dismissed" ? { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } } : null;
+    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
+  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
+  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
 }
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
@@ -5264,6 +5270,7 @@ function closedTitleTone(state) {
     return "error";
   return state.closedAs === "handled" ? "done" : "muted";
 }
+var refusalOf2 = (delivery) => isSendRefused(delivery) ? delivery.error : null;
 function isSendRefused(delivery) {
   return delivery !== null && typeof delivery === "object";
 }
@@ -6742,8 +6749,6 @@ function doneLabel(last) {
   return DONE_LABELS[last.action]?.(last.text) ?? last.text;
 }
 var STILL_WAITING_AFTER = new Set(["check-fix"]);
-var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
-var isStoppedSession = (f) => f?.is === "notSent" && f.reason === STOPPED_REASON;
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
@@ -6915,6 +6920,10 @@ function again(row, action, label) {
 }
 function withOut(row, actions) {
   return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+function prPlan(row, actions, canShowSession) {
+  const delivery = row.last?.delivery;
+  return { actions, sessionKey: sessionKeyOf(delivery?.state === "failed" ? delivery.reason : null, canShowSession) };
 }
 function retryAction(retry) {
   return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
@@ -7100,10 +7109,10 @@ function prOrderActions(row) {
 }
 
 // ../core/view/pr-tab.ts
-function threadActions(pr, t, presses) {
+function threadActions(pr, t, presses, canShowSession = false) {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt);
   const on = { ref: pr.ref, thread: t.id };
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
     {
       press: { action: "thread-address", ...on },
@@ -7136,8 +7145,9 @@ function threadActions(pr, t, presses) {
       isFollowUp: true
     }
   ]);
+  return prPlan(row, actions, canShowSession);
 }
-function checkActions(pr, c, presses) {
+function checkActions(pr, c, presses, canShowSession = false) {
   const row = lastPressOf(presses, prCheckId(pr, c), pr.fetchedAt);
   const on = { ref: pr.ref, check: checkKey(c) };
   const isCancelled = c.bucket === "cancelled";
@@ -7171,9 +7181,10 @@ function checkActions(pr, c, presses) {
       hotkey: "o"
     }
   ]);
-  return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
+  const shown = isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
+  return prPlan(row, shown, canShowSession);
 }
-function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
+function prBlockActions(pr, isThreadSent, branchRef, presses, sync, canShowSession = false) {
   const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt);
   const isReadyShown = shownReadiness(pr, sync, isThreadSent, "Claude")?.status === "ready";
   const waitingOn = threadsOnYou(pr, isThreadSent).length;
@@ -7200,7 +7211,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
       }
     ] : []
   ];
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
     { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
@@ -7213,6 +7224,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
       }
     ]
   ]);
+  return prPlan(row, actions, canShowSession);
 }
 function withDismissed(ledger, refs) {
   const order = ledger.prOrder;
@@ -8324,7 +8336,9 @@ function rowKeyPlan(r, isAllShown, canShowSession = false) {
         hotkey: a.hotkey
       });
   }
-  const sessionKey = canShowSession && isStoppedSession(r.feedback) ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+  const notSent = r.feedback?.is === "notSent" ? r.feedback.reason : null;
+  const refusal = r.state.is === "settled" ? refusalOf2(r.state.delivery) : notSent;
+  const sessionKey = sessionKeyOf(refusal, canShowSession);
   return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey };
 }
 function answerRowOf(r, options) {
@@ -10650,7 +10664,7 @@ var isGroupEmpty = (g) => g.rows.length === 0 && closedTotal(g.closed, settledIn
 var closedId = (id) => `closed ${id}`;
 var foldId = (kind) => `fold ${kind}`;
 function closedLines(d) {
-  const action = closedLineAction(d);
+  const action = closedLinePlan(d).action;
   const buttons = action ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }] : [];
   return {
     ...blankLine(closedId(d.id)),
@@ -11688,7 +11702,7 @@ function prEntries(screen, ui, now) {
         age: doneAt(f),
         feedback: f,
         detail: pr.error ? prRefreshFailedText(pr.error) : null,
-        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync)),
+        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync).actions),
         isWaiting: false
       }
     });
@@ -11708,7 +11722,7 @@ function prEntries(screen, ui, now) {
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
           age: doneAt(feedback) ?? t.at,
           feedback,
-          buttons: prButtons(threadActions(pr, t, presses)),
+          buttons: prButtons(threadActions(pr, t, presses).actions),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null
         }
@@ -11730,7 +11744,7 @@ function prEntries(screen, ui, now) {
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 "),
           age: doneAt(feedback) ?? c.finishedAt ?? null,
           feedback,
-          buttons: prButtons(checkActions(pr, c, presses)),
+          buttons: prButtons(checkActions(pr, c, presses).actions),
           isWaiting: isWaiting(id)
         }
       };
