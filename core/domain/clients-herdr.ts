@@ -131,10 +131,7 @@ export const HERDR: LookTable = {
       kind: 'unsupported',
       reason: 'The Herdr app runs apart from the Claude Code terminal, so it cannot scroll that conversation.',
     },
-    'done-press-age': {
-      kind: 'different',
-      reason: 'A row whose press finished keeps showing when it arrived. No reason is recorded: issue #677.',
-    },
+    'done-press-age': { kind: 'full' },
     'delegate-asks': { kind: 'host' },
     'record-earlier-answers': { kind: 'host' },
     'named-pr-link': { kind: 'full' },
