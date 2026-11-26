@@ -93,14 +93,46 @@ export function assertOnlyOmpProbe(toolsFile: string) {
   if (mcp.length > 0) throw new IsolationError(`omp offers MCP tools: ${mcp.map(t => t.name).join(', ')}`)
 }
 
-/**
- * A macOS sandbox profile that lets a process write only under `dir` and the system temp folder, as Codex's
- * `-s read-only` keeps its shell from changing the person's files.
- */
-export function writesOnlyUnder(dir: string): string {
-  const paths = [realpathSync(dir), realpathSync(tmpdir())].map(p => `(subpath ${JSON.stringify(p)})`).join(' ')
+/** The files a run's folder holds for the harness, which the agent must not see. `omp-probe.ts` removes the state once read. */
+const HARNESS_FILES = ['state.json', 'calls.jsonl', 'tools.json']
 
-  return `(version 1)(allow default)(deny file-write*)(allow file-write* ${paths} (literal "/dev/null") (literal "/dev/tty") (regex #"^/dev/fd/"))`
+const HARNESS_NAMES = HARNESS_FILES.map(f => f.replace('.', '\\.')).join('|')
+
+/**
+ * A macOS sandbox profile for an omp run in the case folder `dir`. It lets a process write only under `dir` and the
+ * system temp folder, as Codex's `-s read-only` keeps its shell from changing the person's files. It also keeps every
+ * process from listing a case folder or reading the harness's files in one, so the agent cannot find them from its
+ * working folder. Only the state of this run stays readable, for the probe to read as omp starts.
+ */
+export function ompSandboxProfile(dir: string): string {
+  const own = realpathSync(dir)
+  const paths = [own, realpathSync(tmpdir())].map(p => `(subpath ${JSON.stringify(p)})`).join(' ')
+  const caseFolder = '/inbox-agent-eval-[^/]+'
+  const files = `${caseFolder}/(${HARNESS_NAMES})$`
+
+  return [
+    '(version 1)(allow default)',
+    `(deny file-write*)(allow file-write* ${paths} (literal "/dev/null") (literal "/dev/tty") (regex #"^/dev/fd/"))`,
+    `(deny file-read-data (regex #"${caseFolder}/?$") (regex #"${files}"))`,
+    `(allow file-read-data (literal ${JSON.stringify(`${own}/state.json`)}))`,
+  ].join('')
+}
+
+type OmpEvent = { type?: string; message?: { role?: string; content?: unknown } }
+
+/**
+ * Throws when an assistant message or a tool result of an omp run names a harness file, which means the run could see
+ * past `ompSandboxProfile`.
+ */
+export function assertOmpSawNoHarness(events: OmpEvent[]) {
+  const leak = events.find(
+    e =>
+      e.type === 'message_end' &&
+      (e.message?.role === 'assistant' || e.message?.role === 'toolResult') &&
+      new RegExp(HARNESS_NAMES).test(JSON.stringify(e.message.content)),
+  )
+  if (leak)
+    throw new IsolationError(`an omp run named a harness file: ${JSON.stringify(leak.message?.content).slice(0, 300)}`)
 }
 
 /**
