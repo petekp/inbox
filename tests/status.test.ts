@@ -103,7 +103,7 @@ test('only a subject an open ask holds up says what it waits on, and one waiting
     { ...askItem('i2'), at: 10 * MIN },
   ]
   const stalls = (now: number) =>
-    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? [r.waitsOn, r.stall] : r.kind))
+    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? [r.waitsOn?.text ?? null, r.stall] : r.kind))
 
   const waiting = [
     ['Ask i2?', null],
@@ -135,7 +135,7 @@ test('an open subject unchanged for a day reads how long it has been idle, in wh
   const stalls = (now: number, turn = false) =>
     page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows.flatMap(r =>
       r.kind === 'subject'
-        ? [`${r.name}: ${r.waitsOn ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
+        ? [`${r.name}: ${r.waitsOn?.text ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
         : [],
     )
 

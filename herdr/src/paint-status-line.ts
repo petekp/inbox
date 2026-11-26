@@ -63,7 +63,9 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         .child(markEl(s.mark, t))
         .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
     )
-    .when(s.waitsOn !== undefined, e => e.child(lineEl(s.waitsOn ?? '', colorOf(t, 'needsYou'))))
+    .when(s.waitsOn !== undefined, e =>
+      e.child(lineEl(s.waitsOn?.text ?? '', colorOf(t, s.waitsOn?.tone ?? 'needsYou'))),
+    )
     .children(s.under.map(l => lineEl(l.text, l.level === 'faint' ? faintOf(t) : t.muted)))
     .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)))
 }

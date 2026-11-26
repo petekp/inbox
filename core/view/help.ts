@@ -17,13 +17,13 @@ export const NEEDS_YOU_MARKS = {
 } as const
 
 /** A mark's tone on the Status. Null draws it muted. */
-export type StatusTone = 'needsYou' | 'tasks' | 'done' | 'success' | 'working' | null
+export type StatusTone = 'needsYou' | 'tasks' | 'success' | 'working' | null
 
 export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
   working: { mark: '●', tone: 'working' },
   queued: { mark: '○', tone: null },
   'waits-on-other': { mark: '◌', tone: null },
-  done: { mark: '✓', tone: 'done' },
+  done: { mark: '✓', tone: null },
   dropped: { mark: '✗', tone: null },
 }
 /**
@@ -87,7 +87,7 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     isRunning: false,
     words: 'Waits on something other than you, such as a build or a review',
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on your answer or approval' },
   { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: 'Waits on a step only you can do' },
   {
     mark: NEEDS_YOU_MARKS.question.mark,

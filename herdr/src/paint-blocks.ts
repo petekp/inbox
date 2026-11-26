@@ -18,6 +18,7 @@ import {
   NEST,
   SEP,
   TEXT_X,
+  bodyTextColor,
   colorOf,
   faintOf,
 } from './paint-theme'
@@ -89,7 +90,7 @@ function feedbackEl(f: { text: string; tone: Tone; aged?: Aged }, t: Theme): Ele
 
 /** A line under a row's title, `above` under the part above it, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (
-  l: Omit<BodyLine, 'part'>,
+  l: Omit<BodyLine, 'part'> & { part?: RowPart },
   above: number,
   t: Theme,
   isSelected: boolean,
@@ -97,7 +98,9 @@ const bodyLineEl = (
   p: Paint | null = null,
   isInert = false,
 ): Element => {
-  const color = lineColor(t, isSelected ? t.selected : t.background)
+  const under = isSelected ? t.selected : t.background
+  const color = lineColor(t, under)
+  const textColor = bodyTextColor(t, l, under)
   if (answers.length > 0 && p) {
     const trunk =
       l.tree === 'tee' ? [trunkEl(0, null, t, isSelected)] : l.tree === 'last' ? [trunkEl(0, above, t, isSelected)] : []
@@ -124,8 +127,8 @@ const bodyLineEl = (
         .flex_wrap()
         .pl(MARK_W)
         .pt(above)
-        .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
-    : partedTextEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above)
+        .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, textColor)])
+    : partedTextEl(l.text, textColor, l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above)
 
   return line.relative().children(strokes)
 }
@@ -234,10 +237,10 @@ function bodyEls(
       })
     : from.body
   let end = titleEnd
-  const els = shown.map(({ part, ...l }) => {
-    const above = partPt(end, part)
-    end = part
-    const buttons = part === 'answers' ? answers : buttonOf(l.optionId)
+  const els = shown.map(l => {
+    const above = partPt(end, l.part)
+    end = l.part
+    const buttons = l.part === 'answers' ? answers : buttonOf(l.optionId)
 
     return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)
   })

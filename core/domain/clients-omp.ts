@@ -104,6 +104,11 @@ export const OMP: Client = {
       reason:
         "omp draws muted text with the terminal's dim attribute, which terminals draw at about half strength, near the faint level's 3:1. So faint text there is dim too.",
     },
+    'supporting-text': {
+      kind: 'different',
+      reason:
+        "omp draws muted text with the terminal's dim attribute, and a terminal has no attribute between dim and plain. So supporting text there is dim, as muted text is.",
+    },
     'status-parent-fold': { kind: 'full' },
     'seen-on-screen': { kind: 'full' },
     'status-idle-age': { kind: 'full' },

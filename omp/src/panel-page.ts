@@ -4,6 +4,7 @@ import type { StatusKeyTarget } from '../../core/view/status-keys'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
 import { mergedLine, nameBeforeStall, nameLevelOf, STALL_GAP } from '../../core/view/status-page-parts'
 import type { StatusBranch, StatusRow, StatusStall } from '../../core/view/status-page'
+import type { StatusWaitsOn } from '../../core/view/status-page-parts'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { pageFocus } from './panel-lines'
@@ -58,7 +59,7 @@ export function pageLine(
     chevron = null,
   }: {
     stall?: StatusStall | null
-    waitsOn?: string | null
+    waitsOn?: StatusWaitsOn | null
     text?: string | null
     chevron?: { text: string; paint: (t: string) => string } | null
   } = {},
@@ -70,7 +71,7 @@ export function pageLine(
   const names = stall
     ? stalledName(name, stall, room, namePaint, s)
     : pageText(name, room, STATUS_TEXT_LINES, namePaint)
-  const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, t => s.tone('needsYou', t)) : []
+  const waits = waitsOn ? pageText(waitsOn.text, room, STATUS_TEXT_LINES, t => s.tone(waitsOn.tone, t)) : []
   if (chevron) names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ''} ${chevron.paint(chevron.text)}`
   const seconds = [...waits, ...(text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [])]
 

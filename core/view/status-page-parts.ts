@@ -141,19 +141,19 @@ export type TextLevel = 'muted' | 'faint'
 export type NameLevel = 'plain' | TextLevel
 
 /** Whether a Status row is done (✓), so its name and the line under it draw faint and finished work reads settled. */
-const isSettled = (row: { tone: StatusTone }) => row.tone === 'done'
+const isSettled = (row: { mark: string }) => row.mark === SUBJECT_MARKS.done.mark
 
 /** The level of the line under a Status row's name: faint once the row is done, else muted. */
-export const textLevelOf = (row: { tone: StatusTone }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
+export const textLevelOf = (row: { mark: string }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
 
 /** The level of a Status parent's fold chevron and count: faint once the row is done, as its name is, else muted. */
-export const foldLevelOf = (row: { tone: StatusTone }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
+export const foldLevelOf = (row: { mark: string }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
 
 /** The level of a Prev line, which says what a row or the goal was before it changed: faint under every row. */
 export const WAS_LEVEL: TextLevel = 'faint'
 
 /** The level of a Status row's name: faint once the row is done, else `otherwise`, the level its kind draws its name in. */
-export const nameLevelOf = (row: { tone: StatusTone }, otherwise: NameLevel): NameLevel =>
+export const nameLevelOf = (row: { mark: string }, otherwise: NameLevel): NameLevel =>
   isSettled(row) ? 'faint' : otherwise
 
 /** `text`, or `null` when it only repeats the row's `name`, as `comparableName` compares them. */
@@ -257,6 +257,12 @@ function askWords(items: readonly Item[], ask: { id: string } | null): string | 
   return words || null
 }
 
+/** The words of the oldest open ask that holds a subject up, in the tone of that ask's kind. */
+export type StatusWaitsOn = { text: string; tone: 'needsYou' | 'tasks' }
+
+const askTone = (ask: { kind: Item['kind'] } | null): StatusWaitsOn['tone'] =>
+  ask?.kind === 'task' ? 'tasks' : 'needsYou'
+
 /** What every part of the list reads to place and draw a subject. */
 export type ListContext = {
   isNew: (x: Subject) => boolean
@@ -293,7 +299,9 @@ export function partRows(
     const isWorkRunning = isRunning || under.some(ch => ch.endedAt === null)
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0]! : null
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null
-    const waitsOn = askWords(c.items, c.oldestAskOf(x))
+    const ask = c.oldestAskOf(x)
+    const words = askWords(c.items, ask)
+    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) }
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now)
     rows.push({
       kind: 'subject',

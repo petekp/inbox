@@ -28,7 +28,7 @@ import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
 import { mergedLine, nameLevelOf, STALL_GAP, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
 import type { TextLevel } from '../../core/view/status-page-parts'
-import { levelSpan } from './terminal-text'
+import { levelSpan, waitsOnSpan } from './terminal-text'
 import { isParentCollapsed, milestoneRows } from '../../core/view/status-folds'
 import type { IsCollapsed } from '../../core/view/status-folds'
 import type { PaneStatusParent } from './pane-status-parent'
@@ -226,7 +226,7 @@ export function paneStatusGoal(
       padY: milestonePad(m),
       content: [
         m.foldCount > 0 ? parentName(m, name, stall, 0, isFolded) : statusNameLine(`goal-${m.id}-name`, name, stall, 0),
-        ...(x?.waitsOn ? [statusPageText(`goal-${m.id}-waits-on`, [{ text: x.waitsOn, isNeedsYou: true }], 0)] : []),
+        ...(x?.waitsOn ? [statusPageText(`goal-${m.id}-waits-on`, [waitsOnSpan(x.waitsOn)], 0)] : []),
         ...(m.text ? [statusPageText(`goal-${m.id}-text`, [levelSpan(m.text, textLevelOf(m), isRowSelected)], 0)] : []),
         ...(x?.merged
           ? [
