@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T09:46:19.797Z. 394667 characters follow.
+// Built at 2026-11-26T16:38:19.642Z. 395189 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -78,6 +78,12 @@ function withDrawableText(value, isKept) {
 function clipLabel(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
+function cutForEllipsis(line, fits) {
+  const parts = graphemesOf(line);
+  while (parts.length > 0 && !fits(`${parts.join("")}…`))
+    parts.pop();
+  return parts.join("").replace(/[\s.,;:]+$/, "");
+}
 function wordCuts(line) {
   const words = line.split(" ");
   const cuts = words.map((_, n) => words.slice(0, words.length - n).join(" ").replace(/[\s.,;:]+$/, ""));
@@ -85,6 +91,11 @@ function wordCuts(line) {
 }
 function cutAtWord(line, fits) {
   return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
+}
+function cutLine(line, fits) {
+  if (fits(line))
+    return line;
+  return `${cutAtWord(line, fits) ?? cutForEllipsis(line, fits)}…`;
 }
 var PHRASE_END = /[,;](?=\s)|\s(?=and\s)/g;
 function cutAtPhrase(text, fits) {
@@ -2310,8 +2321,12 @@ function settledLabel(label, delivery, reply) {
     return `${label} · Not sent: ${delivery.error}`;
   return deliveryLabel(sendStepOf(delivery), label, reply);
 }
+var MAX_OUTCOME_CHARS = 120;
+function shortOutcome(outcome) {
+  return cutLine(outcome, (t) => t.length <= MAX_OUTCOME_CHARS);
+}
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(shortOutcome(c.outcome));
 }
 
 // ../core/view/pr-rows.ts
@@ -3893,8 +3908,8 @@ function inboxView({
 }
 function heldLabel(c) {
   if (c.how === "answered")
-    return `Answered: ${c.outcome}`;
-  return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
+    return `Answered: ${shortOutcome(c.outcome)}`;
+  return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
 }
 function footerError(tab, status, page) {
   if (tab === "prs")

@@ -513,6 +513,25 @@ function clip(text2, max) {
 function clipLabel(text2, max) {
   return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
 }
+function cutForEllipsis(line, fits) {
+  const parts = graphemesOf(line);
+  while (parts.length > 0 && !fits(`${parts.join("")}\u2026`)) parts.pop();
+  return parts.join("").replace(/[\s.,;:]+$/, "");
+}
+function wordCuts(line) {
+  const words3 = line.split(" ");
+  const cuts = words3.map(
+    (_, n) => words3.slice(0, words3.length - n).join(" ").replace(/[\s.,;:]+$/, "")
+  );
+  return [...new Set(cuts.filter(Boolean).map((head) => `${head}\u2026`))];
+}
+function cutAtWord(line, fits) {
+  return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
+}
+function cutLine(line, fits) {
+  if (fits(line)) return line;
+  return `${cutAtWord(line, fits) ?? cutForEllipsis(line, fits)}\u2026`;
+}
 function clipMiddle(text2, max, head) {
   if (text2.length <= max) return text2;
   return `${text2.slice(0, head)}${NL2}\u2026[cut]${NL2}${text2.slice(text2.length - (max - head))}`;
@@ -530,6 +549,9 @@ var GRAPHEME = new RegExp(
   String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
   "gu"
 );
+function graphemesOf(text2) {
+  return segmenter ? Array.from(segmenter.segment(text2), (s) => s.segment) : text2.match(GRAPHEME) ?? [];
+}
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -1869,8 +1891,12 @@ function closedMark(state, delivery) {
   if (delivery === "queued") return QUEUED_RESULT;
   return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
 }
+var MAX_OUTCOME_CHARS = 120;
+function shortOutcome(outcome) {
+  return cutLine(outcome, (t) => t.length <= MAX_OUTCOME_CHARS);
+}
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(shortOutcome(c.outcome));
 }
 
 // ../core/view/feedback.ts
@@ -3513,8 +3539,8 @@ function inboxView({
   };
 }
 function heldLabel(c) {
-  if (c.how === "answered") return `Answered: ${c.outcome}`;
-  return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
+  if (c.how === "answered") return `Answered: ${shortOutcome(c.outcome)}`;
+  return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
 }
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {

@@ -5279,8 +5279,12 @@ function settledLabel(label, delivery, reply) {
     return `${label} \xB7 Not sent: ${delivery.error}`;
   return deliveryLabel(sendStepOf(delivery), label, reply);
 }
+var MAX_OUTCOME_CHARS = 120;
+function shortOutcome(outcome) {
+  return cutLine(outcome, (t) => t.length <= MAX_OUTCOME_CHARS);
+}
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(shortOutcome(c.outcome));
 }
 
 // ../core/view/pr-rows.ts
@@ -6532,7 +6536,6 @@ function linkDialogs(s, now = Date.now()) {
   const ledger = questions.reduce((l, q) => q.answer !== undefined && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l, { ...s.ledger, items });
   return { ...s, ledger, dialogQuestions: kept };
 }
-var MAX_DIALOG_ANSWER = 80;
 var PAIR_FORMS = [
   { head: /^Your questions have been answered: /, tail: /\. You can now continue with these answers in mind\.$/ },
   { head: /^The user answered: /, tail: /\. Read the answers carefully[\s\S]*$/ },
@@ -6599,7 +6602,7 @@ function structuredAnswers(questions, answers) {
 }
 function chosenOf(q, answer) {
   const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
-  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
+  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim();
 }
 function noteAnsweredDialog(s, questions, outcome, now) {
   const answers = outcome.answers ? structuredAnswers(questions, outcome.answers) : answersOf(questions, outcome.answer);
@@ -8623,8 +8626,8 @@ function inboxView({
 }
 function heldLabel(c) {
   if (c.how === "answered")
-    return `Answered: ${c.outcome}`;
-  return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
+    return `Answered: ${shortOutcome(c.outcome)}`;
+  return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
 }
 function footerError(tab, status, page) {
   if (tab === "prs")
