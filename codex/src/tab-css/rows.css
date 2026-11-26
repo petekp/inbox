@@ -43,6 +43,13 @@
   height: 8px;
   overflow: visible;
 }
+/* An open task's box, as large as the Tasks heading's checked box. */
+.task-shape {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+  overflow: visible;
+}
 .mark.tasks {
   color: var(--tasks);
 }

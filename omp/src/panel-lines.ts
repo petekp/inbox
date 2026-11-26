@@ -14,7 +14,7 @@ import {
   waitingCount,
   rowTitle,
   rowResultMark,
-  ASK_MARK,
+  openMark,
   settledLabel,
 } from '../../core/view/rows'
 import { feedbackOf, feedbackTone, markedFeedbackText, rowFeedbackText } from '../../core/view/feedback'
@@ -239,15 +239,11 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
   const f = row.feedback
   const state = row.state
   const undo = row.actions.find(a => a.press.action === 'undo')
+  const waitsMark = state.is === 'open' ? openMark(row) : null
 
   return {
     ...blankLine(row.id),
-    lead:
-      row.type === 'finding'
-        ? null
-        : row.state.is === 'open'
-          ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null }
-          : { text: '', tone: null },
+    lead: row.type === 'finding' ? null : { text: waitsMark?.text ?? '', tone: waitsMark?.tone ?? null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === 'settled',

@@ -7,7 +7,7 @@ import type { HelpStep } from '../domain/help-steps'
 import type { EarlierLine } from '../domain/earlier-answers'
 import type { RowPress } from '../domain/presses'
 import { offersUndo } from './pressed'
-import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS } from './help'
+import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS, TASK_MARK } from './help'
 import { canUndoClose, isUndoLeft } from './timing'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
@@ -270,7 +270,7 @@ export function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boole
  * in the row's mark column. `isRunning` says the look draws its running mark in place of `text`, as on the Status,
  * while what the row sent is on its way.
  */
-export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' | 'needsYou' }
+export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' | 'needsYou' | 'tasks' }
 
 const RUNNING_RESULT: ResultMark = { text: RUNNING_MARK, isRunning: true }
 
@@ -291,14 +291,20 @@ export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultM
     : { text: '', isRunning: false }
 }
 
-export const ASK_MARK: ResultMark = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone }
+const QUESTION_MARK: ResultMark = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone }
+const TASK_ROW_MARK: ResultMark = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone }
+
+/** The mark an open row waits on the person with: □ on a task, ◆ on a question or a dialog, none on a finding. */
+export function openMark(row: Pick<RowView, 'type'>): ResultMark | null {
+  return row.type === 'finding' ? null : row.type === 'task' ? TASK_ROW_MARK : QUESTION_MARK
+}
 
 /**
- * A row's mark in the mark column: its result mark, or ◆ on an open question or task, which waits on the person. A
- * running mark replaces ◆ while the agent works on the row.
+ * A row's mark in the mark column: its result mark, or on an open row its `openMark`, which waits on the person. A
+ * running mark replaces it while the agent works on the row.
  */
 export function rowMark(row: Pick<RowView, 'state' | 'feedback' | 'type'>): ResultMark | null {
-  return rowResultMark(row) ?? (row.state.is === 'open' && row.type !== 'finding' ? ASK_MARK : null)
+  return rowResultMark(row) ?? (row.state.is === 'open' ? openMark(row) : null)
 }
 
 export function allRows(v: InboxView): RowView[] {

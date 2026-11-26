@@ -6,7 +6,7 @@ Status: built.
 
 ## Decisions
 
-1. **One list of subjects, with no sections. Rows are ordered by status, then newest change first.** The order is: held by an open ask (◆), working (●), waits on something other than the person (◌), queued (○), then done (✓) and dropped (✗).
+1. **One list of subjects, with no sections. Rows are ordered by status, then newest change first.** The order is: held by an open ask (◆ or □), working (●), waits on something other than the person (◌), queued (○), then done (✓) and dropped (✗).
    - Reason: each piece of work shows once, with its change attached. The earlier six-section page showed one subject in up to six places. Each part reads from what needs the person to what is finished.
    - This replaces ordering each side of the line by last change alone. That put a queued row whose text had just changed above work that had finished, so the marks ran out of order down the page.
 2. **The inbox model edits subjects by id. Code applies each edit.**
@@ -24,6 +24,8 @@ Status: built.
    - Reason: "manual merge ready" becoming "manual merge broken" is a change, though half the words match.
 6. **◆ comes from a link between an open ask and the subjects it holds up.** The Status call writes the link. Code draws ◆ while the ask is open and clears it when the ask closes. One ask can hold up several subjects. There is no "waits on you" status and no "problem" status.
    - Reason: a ◆ set by the model could not see Asks, so it went stale and could disagree with Asks. A problem nobody is fixing is a to-do for the person, so it belongs in Asks, or in Finds when it is outside the task.
+   - Work that only open tasks hold up shows □ in the tasks tone, the mark of an open task's row on Asks. Work that any open question holds up keeps ◆. A delegate at a question or an approval keeps ◆.
+   - Reason: each mark means one thing wherever a look draws it, and a task's row draws □ (Pete, 11-25). A question needs a decision from the person, so it outranks a task when both hold the same work.
    - This replaces the rule that the Status call reads no inbox text. It now reads each open ask's id and first words, so it can link the ask. It never restates one.
 7. **Work filed for later closes as done, with ✓.** The Status call closes a piece the person files out of the session's plan with DONE and the text "filed for later". A piece set aside to come back to in the session stays queued.
    - Reason: filed work left open sat as ○ beside the work still to do. Where it stands says it was filed, so the person can tell it from delivered work.

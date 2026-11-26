@@ -15,10 +15,10 @@ import type { PaneRowParts } from './pane-row-parts'
 import type { PaneRows } from './pane-rows'
 import { DESKTOP_CELL_PT, ROW_COLUMNS } from './pane-sizes'
 import {
-  ASK_MARK,
   closedShown,
   closedTotal,
   DOT,
+  openMark,
   replyHint,
   resumeLabel,
   ROW_COPY,
@@ -50,12 +50,13 @@ export function paneAskRows(
     const asked = r.at === null ? undefined : `${DOT}${ago(now - r.at)}`
     const isHandedOff = r.state.is === 'handedOff'
     const isAsk = r.state.is === 'open'
+    const mark = look === 'terminal' && isAsk ? openMark(r) : null
 
     return {
       id: r.id,
       view: r,
-      handle: look === 'terminal' && r.type !== 'finding' ? (isAsk ? ASK_MARK.text : ' ') : '',
-      ...(look === 'terminal' && isAsk && ASK_MARK.tone ? { handleTone: ASK_MARK.tone } : {}),
+      handle: look === 'terminal' && r.type !== 'finding' ? (mark?.text ?? ' ') : '',
+      ...(mark?.tone ? { handleTone: mark.tone } : {}),
       ...(isHandedOff ? { fold: {} } : {}),
       title: rowTitle(r, look),
       titleAfter: asked,

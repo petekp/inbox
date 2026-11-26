@@ -1,6 +1,9 @@
-import { CLOSED_MARKS, PR_MARKS, SUBJECT_MARKS } from './help'
+import { CLOSED_MARKS, PR_MARKS, SUBJECT_MARKS, TASK_MARK } from './help'
 
 const STROKE = 'fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"'
+
+/** The box of ☑ and □, so an open task's mark matches the Tasks heading's. */
+const taskBox = (t: number) => `<rect x="1" y="${t + 1}" width="6" height="6" rx="1.3" ${STROKE} stroke-width="0.95"/>`
 
 /**
  * The marks the desktop pane draws as Svg shapes in an 8-point box, since its Svg cannot load the app's own font and
@@ -11,10 +14,11 @@ export function markShape(mark: string, midY: number): string | null {
   switch (mark) {
     case '✓':
       return `<polyline points="0.6,${t + 4.4} 3,${t + 6.8} 7.4,${t + 1.4}" ${STROKE} stroke-width="1.4"/>`
+    case TASK_MARK.mark:
+      return taskBox(t)
     case '☑':
       return (
-        `<rect x="1" y="${t + 1}" width="6" height="6" rx="1.3" ${STROKE} stroke-width="0.95"/>` +
-        `<polyline points="2.4,${t + 4.1} 3.6,${t + 5.3} 5.7,${t + 2.8}" ${STROKE} stroke-width="1.1"/>`
+        taskBox(t) + `<polyline points="2.4,${t + 4.1} 3.6,${t + 5.3} 5.7,${t + 2.8}" ${STROKE} stroke-width="1.1"/>`
       )
     case '▲':
       return `<polygon points="4,${t + 0.6} 7.8,${t + 7.4} 0.2,${t + 7.4}" fill="currentColor"/>`

@@ -153,7 +153,7 @@ A delegate whose session publishes no focus, such as one that does not run the i
 From the page alone, the person sees which pieces cannot move until they act. The ◆ goes when they answer.
 
 - **Good:** the open question "Which conflict rule ships?" puts ◆ on `Sync conflicts`.
-- **Good:** one open task, "Sign in to the app store", puts ◆ on both `2.4 release` and `Hotfix release`.
+- **Good:** one open task, "Sign in to the app store", puts □ on both `2.4 release` and `Hotfix release`.
 - **Bad:** ◆ on `Export button` for the conflict question.
 - **Bad:** `● Sync conflicts` while the work cannot move until the answer.
 
