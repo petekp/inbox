@@ -1,7 +1,7 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
-import { NEEDS_YOU_MARKS } from '../../core/view/help'
+import { NEEDS_YOU_MARKS, TASK_MARK } from '../../core/view/help'
 import { RUNNING_PULSE_MS } from '../../core/view/timing'
 import { LEAVE_FADE_MS } from '../../core/view/row-motion'
 import { NEXT_FRAME_MS } from './block-glide'
@@ -13,6 +13,7 @@ import {
   BUTTON_PAD_Y,
   CONTROL_GAP,
   INSIDE_GAP,
+  LINE_HEIGHT,
   MARK_W,
   colorOf,
 } from './paint-theme'
@@ -128,11 +129,15 @@ export const buttonsEl = (
 
 /** A mark, at the start of the column that hangs before the text, so a tab's first marks sit on the panel's edge. */
 export const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null = null): Element =>
-  m?.text === NEEDS_YOU_MARKS.task.mark
-    ? div()
+  m?.text === NEEDS_YOU_MARKS.task.mark || m?.text === TASK_MARK.mark
+    ? h_flex()
         .w(MARK_W)
+        .h(LINE_HEIGHT)
         .flex_none()
-        .child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone))))
+        .items_center()
+        .child(
+          checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)), m.text === NEEDS_YOU_MARKS.task.mark),
+        )
     : div()
         .w(MARK_W)
         .flex_none()

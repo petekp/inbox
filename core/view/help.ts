@@ -1,4 +1,4 @@
-import type { Finding, SubjectStatus } from '../../types'
+import type { Finding, Item, SubjectStatus } from '../../types'
 import type { ClosedState } from '../domain/ledger-close'
 import type { ToneName } from './tones'
 import type { Look } from './rows'
@@ -17,17 +17,27 @@ export const NEEDS_YOU_MARKS = {
 } as const
 
 /** A mark's tone on the Status. Null draws it muted. */
-export type StatusTone = 'needsYou' | 'done' | 'success' | 'working' | null
+export type StatusTone = 'needsYou' | 'tasks' | 'success' | 'working' | null
 
 export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTone }> = {
   working: { mark: '●', tone: 'working' },
   queued: { mark: '○', tone: null },
   'waits-on-other': { mark: '◌', tone: null },
-  done: { mark: '✓', tone: 'done' },
+  done: { mark: '✓', tone: null },
   dropped: { mark: '✗', tone: null },
 }
-/** The mark of an open subject that an open ask holds up, in place of its status's mark, and of a delegate that waits for the person. */
+/**
+ * The mark of an open question, of an open subject or milestone that an open question holds up, in place of its
+ * status's mark, and of a delegate that waits for the person.
+ */
 export const HELD_MARK: { mark: string; tone: 'needsYou' } = { mark: '◆', tone: 'needsYou' }
+
+/** The mark of an open task, and of an open subject or milestone that only open tasks hold up. */
+export const TASK_MARK: { mark: string; tone: 'tasks' } = { mark: '□', tone: 'tasks' }
+
+/** The mark of work the open asks of `kinds` hold up: ◆ while one is a question, since a decision waits on the person. */
+export const heldMarkOf = (kinds: readonly Item['kind'][]): { mark: string; tone: 'needsYou' | 'tasks' } =>
+  kinds.some(k => k === 'question') ? HELD_MARK : TASK_MARK
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
 export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
@@ -77,7 +87,8 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     isRunning: false,
     words: 'Waits on something other than you, such as a build or a review',
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on you' },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on your answer or approval' },
+  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: 'Waits on a step only you can do' },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
     tone: NEEDS_YOU_MARKS.question.tone,

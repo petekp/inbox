@@ -20,7 +20,7 @@ import type { Block, Button, Does, Field, Mark, PathSide, StatusLine, Tone, Tree
 /** The most cells a merged line holds before it cuts its names: three lines of the pane at its usual width. */
 const MERGED_CELLS = 150
 
-const toneOf = (t: StatusTone): Tone => t
+const toneOf = (t: StatusTone): Tone => t ?? 'muted'
 
 const markOf = (mark: string, tone: StatusTone, isRunning: boolean): Mark => ({
   text: mark,
@@ -45,7 +45,7 @@ function keyButtons(id: string, keys: StatusKey[], from = 0): Button[] {
 
 /** A parent's fold, drawn after its name and stall. Null for a row with nothing under it. */
 function foldOf(
-  p: { id: string; foldCount: number; tone: StatusTone },
+  p: { id: string; foldCount: number; mark: string },
   isCollapsed: IsCollapsed,
 ): Pick<Extract<Block, { kind: 'status' }>, 'fold'> {
   if (p.foldCount === 0) return {}

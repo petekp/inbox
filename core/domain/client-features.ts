@@ -68,6 +68,7 @@ export type FeatureId =
   | 'status-named-fold'
   | 'status-parent-fold'
   | 'status-faint-text'
+  | 'supporting-text'
   | 'seen-on-screen'
   | 'status-idle-age'
   | 'question-back-stays-open'
@@ -82,6 +83,7 @@ export type FeatureId =
   | 'session-registry'
   | 'press-preconditions'
   | 'task-results'
+  | 'stopped-session-send'
   | 'option-previews'
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */

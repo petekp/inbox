@@ -181,7 +181,7 @@ test('the Codex tab draws the Status page from a release build’s view, and new
       [
         ['mark tone-needsYou', '◆', ['Label', 'Which label?', 'pick one', 'View question']],
         ['mark working running', '●', ['omp panel', 'reading the draw code']],
-        ['mark done', '✓', ['Page', 'built']],
+        ['mark', '✓', ['Page', 'built']],
       ],
     )
     assert.deepEqual(

@@ -63,8 +63,8 @@ export function MilestoneLine({
           </button>
         )}
         {x?.waitsOn ? (
-          <div class="tone-needsYou clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-            {x.waitsOn}
+          <div class={`tone-${x.waitsOn.tone} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
+            {x.waitsOn.text}
           </div>
         ) : null}
         {m.text ? (

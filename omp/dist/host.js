@@ -1491,6 +1491,10 @@ var CLAUDE_CODE = {
       kind: "different",
       reason: "Desktop draws faint text in one translucent color for both of the app's themes, at 3:1 on each. The ANSI themes, and a theme the mod does not know, draw it in the muted theme key."
     },
+    "supporting-text": {
+      kind: "different",
+      reason: "Desktop and the ANSI themes draw supporting text in the muted theme key. A theme key cannot be mixed, and no one color sits between the desktop app's muted and text colors in both its themes."
+    },
     "status-parent-fold": { kind: "full" },
     "seen-on-screen": { kind: "full" },
     "status-idle-age": { kind: "full" },
@@ -1514,6 +1518,10 @@ var CLAUDE_CODE = {
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The row says the person stopped the session and offers no Go to session, since the person is already in it."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -1658,6 +1666,7 @@ var CODEX = {
     },
     "status-named-fold": { kind: "full" },
     "status-faint-text": { kind: "full" },
+    "supporting-text": { kind: "full" },
     "status-parent-fold": {
       kind: "different",
       reason: "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection."
@@ -1690,6 +1699,10 @@ var CODEX = {
     },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The host holds no message after the person stops a turn, so it never refuses one for that."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -1728,7 +1741,7 @@ var OMP = {
     },
     "exchange-trigger": {
       kind: "different",
-      reason: "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else."
+      reason: "omp's `before_agent_start` event carries only the prompt text, and omp names no source for a turn a background job's result starts, so that turn reads as unknown."
     },
     "settle-window": { kind: "full" },
     "fold-on-typed-message": { kind: "full" },
@@ -1792,6 +1805,10 @@ var OMP = {
       kind: "different",
       reason: "omp draws muted text with the terminal's dim attribute, which terminals draw at about half strength, near the faint level's 3:1. So faint text there is dim too."
     },
+    "supporting-text": {
+      kind: "different",
+      reason: "omp draws muted text with the terminal's dim attribute, and a terminal has no attribute between dim and plain. So supporting text there is dim, as muted text is."
+    },
     "status-parent-fold": { kind: "full" },
     "seen-on-screen": { kind: "full" },
     "status-idle-age": { kind: "full" },
@@ -1815,6 +1832,10 @@ var OMP = {
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The host holds no message after the person stops a turn, so it never refuses one for that."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -2582,10 +2603,12 @@ var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
+  done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var TASK_MARK = { mark: "\u25A1", tone: "tasks" };
+var heldMarkOf = (kinds) => kinds.some((k) => k === "question") ? HELD_MARK : TASK_MARK;
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: "working" };
@@ -2616,7 +2639,8 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
+  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
     tone: NEEDS_YOU_MARKS.question.tone,
@@ -2785,7 +2809,7 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,\u2026]+$/, "");
-var isSettled = (row) => row.tone === "done";
+var isSettled = (row) => row.mark === SUBJECT_MARKS.done.mark;
 var nameLevelOf = (row, otherwise) => isSettled(row) ? "faint" : otherwise;
 var textBeyondName = (name, text) => text && comparableName(text) !== comparableName(name) ? text : null;
 function isNamedLikeSubject(x, under) {
@@ -2837,6 +2861,7 @@ function askWords(items, ask) {
   const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
   return words || null;
 }
+var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -2851,13 +2876,15 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ask = c.oldestAskOf(x);
+    const words = askWords(c.items, ask);
+    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
-      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning,
       ...carried,
       name: x.name,
@@ -3024,7 +3051,7 @@ function milestoneRow(step, o, items) {
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
     id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
     line: step.line,
@@ -5054,6 +5081,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnsw
 var isTerminalLike = (look) => look === "terminal" || look === "omp";
 var ROW_COPY = {
   retry: "Try again",
+  goToSession: "Go to session",
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
@@ -5142,7 +5170,11 @@ function rowResultMark(row) {
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
-var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
+function openMark(row) {
+  return row.type === "finding" ? null : row.type === "task" ? TASK_ROW_MARK : QUESTION_MARK;
+}
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
 }
@@ -6684,6 +6716,8 @@ function doneLabel(last) {
   return DONE_LABELS[last.action]?.(last.text) ?? last.text;
 }
 var STILL_WAITING_AFTER = new Set(["check-fix"]);
+var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
+var isStoppedSession = (f) => f?.is === "notSent" && f.reason === STOPPED_REASON;
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
@@ -8228,7 +8262,7 @@ function keptOpen(rows, added) {
 function rowsIn(entries) {
   return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
-function rowKeyPlan(r, isAllShown) {
+function rowKeyPlan(r, isAllShown, canShowSession = false) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
   const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
@@ -8264,7 +8298,8 @@ function rowKeyPlan(r, isAllShown) {
         hotkey: a.hotkey
       });
   }
-  return { options, keys, more, answerRow: answerRowOf(r, options) };
+  const sessionKey = canShowSession && isStoppedSession(r.feedback) ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+  return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey };
 }
 function answerRowOf(r, options) {
   const described = options.map((o) => r.optionDescriptions.find((d) => d.option === o.action.press.option));
@@ -8769,6 +8804,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const isNew = (x) => o === null || !isSubjectSeen(o, x);
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const holdKindsOf = (x) => s.ledger.items.filter((i) => o?.askSubjects[i.id]?.includes(x.id)).map((i) => i.kind);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
@@ -8817,6 +8853,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const ctx = {
     isNew,
     isHeld,
+    holdKindsOf,
     oldestAskOf,
     items: s.ledger.items,
     running,
@@ -10557,9 +10594,10 @@ function lineOfRow(row, isAllShown) {
   const f = row.feedback;
   const state = row.state;
   const undo = row.actions.find((a) => a.press.action === "undo");
+  const waitsMark = state.is === "open" ? openMark(row) : null;
   return {
     ...blankLine(row.id),
-    lead: row.type === "finding" ? null : row.state.is === "open" ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null } : { text: "", tone: null },
+    lead: row.type === "finding" ? null : { text: waitsMark?.text ?? "", tone: waitsMark?.tone ?? null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
@@ -10937,7 +10975,7 @@ function pageLine(d, indent, mark, name, namePaint, {
   const full = pageRoom(indent, width);
   const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full;
   const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
+  const waits = waitsOn ? pageText(waitsOn.text, room, STATUS_TEXT_LINES, (t) => s.tone(waitsOn.tone, t)) : [];
   if (chevron)
     names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ""} ${chevron.paint(chevron.text)}`;
   const seconds = [...waits, ...text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []];
@@ -13208,6 +13246,29 @@ The answer to a question is the user's to give. Close a question with their answ
 }
 
 // ../core/runtime/session-turns.ts
+function cleared(s) {
+  return {
+    ...s,
+    hostTasks: [],
+    ledger: EMPTY,
+    turn: NO_TURN,
+    told: { inbox: null, closed: [] },
+    pending: [],
+    presence: {
+      ...s.presence,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
+      turnsApplied: s.presence.turnsStarted,
+      isTurnRunning: false
+    },
+    lastActions: {},
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null
+  };
+}
 function notePrompt(host, s, text, isOpen) {
   const matched = matchSent(s, text);
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
@@ -14787,6 +14848,58 @@ function demoSource(deps) {
   };
 }
 
+// src/panel-view.ts
+var screenRows = (ui) => ("size" in ui) ? ui.size().rows : ui.terminal.rows;
+function panelView(tui, ui, panel) {
+  let isDisposed = false;
+  const dispose = () => {
+    if (isDisposed)
+      return;
+    isDisposed = true;
+    panel.dispose();
+  };
+  const paint = (width) => panel.render(width).map((line) => fit(line, width));
+  const { parseKey, extractPrintableText, jsx, signal } = tui;
+  if (parseKey && extractPrintableText) {
+    const handleInput = (raw) => panel.handleInput(parseKey(raw) ?? "", extractPrintableText(raw));
+    const view = { render: paint, handleInput, invalidate: () => {}, dispose };
+    return { view, requestRender: () => ui.requestRender(), dispose };
+  }
+  if (!jsx || !signal)
+    throw new Error("omp's pi-tui has neither parseKey nor jsx");
+  const drawn = signal(0);
+  const onKey = (key) => {
+    if (key.kind !== "release")
+      panel.handleInput(key.id, key.text);
+    return true;
+  };
+  const view = jsx("canvas", {
+    paint: (width) => {
+      drawn();
+      return paint(width);
+    },
+    onKey,
+    onPaste: (paste) => {
+      panel.handleInput("", paste.text);
+      return true;
+    }
+  });
+  return { view, requestRender: () => drawn.set(drawn.peek() + 1), dispose };
+}
+
+// src/inbox-model.ts
+function byNewestRevision(a, b) {
+  const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
+  const [x, y] = [parts(a), parts(b)];
+  const differing = x.findIndex((n, i) => n !== y[i]);
+  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
+}
+function inboxModel(models) {
+  const sonnets = models.list().filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
+  const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
+  return models.resolve("@inbox") ?? sonnet ?? models.resolve("@smol") ?? null;
+}
+
 // ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
 var DARK_TONES = {
@@ -14865,6 +14978,12 @@ function fadedOver(hex, under, share) {
   const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
   return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
+var SUPPORTING_TEXT_SHARE = 0.45;
+var supportingOver = (muted, text) => fadedOver(text, muted, SUPPORTING_TEXT_SHARE);
+var SUPPORTING_TEXT = {
+  dark: supportingOver(MUTED_TEXT.dark, THEME_TEXT.dark),
+  light: supportingOver(MUTED_TEXT.light, THEME_TEXT.light)
+};
 var FAINT_TEXT = {
   dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),
   light: faintOver(MUTED_TEXT.light, THEME_BACKGROUND.light)
@@ -14882,9 +15001,10 @@ function truecolorFill(hex, text) {
   return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`;
 }
 function styleOf(theme) {
-  const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
-  const mode = theme.isLight ? "light" : "dark";
-  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
+  const isLight = "isLight" in theme ? theme.isLight : !theme.dark;
+  const tones = isLight ? LIGHT_TONES : DARK_TONES;
+  const mode = isLight ? "light" : "dark";
+  const tints = isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
   return {
     bold: theme.bold.bind(theme),
     dim: (text) => `${ESC}2m${text}${ESC}22m`,
@@ -15594,6 +15714,7 @@ function isUnattended(ctx) {
   return agent?.kind === "sub" || !ctx.hasUI;
 }
 var sessionIdOf = (ctx) => ctx.sessionManager.getSessionId();
+var isRunContinuing = (event) => event.willContinue === true && event.awaitingAsyncWork !== true;
 
 // src/omp-messages.ts
 function textOfBlocks(content) {
@@ -15749,7 +15870,7 @@ function activityHandlers(context, sessions) {
     });
   };
   const onAgentEnd = (event, ctx) => {
-    if (isUnattended(ctx) || event.willContinue)
+    if (isUnattended(ctx) || isRunContinuing(event))
       return;
     const id = sessionIdOf(ctx);
     if (context.openAsks.delete(id))
@@ -17624,20 +17745,13 @@ function sessionCalls(context) {
 var MESSAGE_TYPE = "inbox";
 function turnHandlers(context, sessions) {
   const { deps, dir, openPanels, prepared, run, memory, dropTools, showBand, sendNotes } = context;
-  const {
-    change,
-    endedTurn,
-    hostFor,
-    updateHostFor,
-    reportCounts,
-    reportEnded,
-    prepare,
-    continueFork,
-    catchUpUnseen,
-    fetchPrsNow
-  } = sessions;
+  const { change, endedTurn, hostFor, updateHostFor, reportCounts, reportEnded, prepare, continueFork, catchUpUnseen } = sessions;
   let noted = null;
   let agentTexts = null;
+  let running = null;
+  let paused = null;
+  let prompted = null;
+  const clears = new Map;
   async function arrive(ctx, id, text, finishedReply) {
     const at = deps.now();
     const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch());
@@ -17672,6 +17786,15 @@ function turnHandlers(context, sessions) {
     memory.shownCwd = () => ctx.cwd;
     reportCounts(id, left === id ? undefined : left);
     context.presses.follow(ctx);
+    const abandoned = running !== id ? running : null;
+    if (abandoned !== null) {
+      running = null;
+      if (agentTexts?.id === abandoned)
+        agentTexts = null;
+      await change(abandoned, (s) => cutOffTurn(s, deps.now())).catch(() => {
+        return;
+      });
+    }
     const saved = await readState(dir, id).catch(() => null);
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some((c) => c.endedAt === null);
     if (isCutOff)
@@ -17704,6 +17827,10 @@ function turnHandlers(context, sessions) {
       noted = null;
     if (agentTexts?.id === id)
       agentTexts = null;
+    if (running === id)
+      running = null;
+    if (paused === id)
+      paused = null;
     if (id !== memory.shownId)
       return;
     memory.shownId = null;
@@ -17716,6 +17843,7 @@ function turnHandlers(context, sessions) {
       return;
     prepare(ctx);
     const id = sessionIdOf(ctx);
+    prompted = id;
     const guidance = guidanceText(OMP2);
     const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance];
     if (noted?.id !== id || noted.prompt !== event.prompt) {
@@ -17750,10 +17878,17 @@ function turnHandlers(context, sessions) {
     if (isUnattended(ctx))
       return;
     const id = sessionIdOf(ctx);
+    if (running === id)
+      return;
+    running = id;
+    if (paused === id)
+      paused = null;
     if (agentTexts?.id === id)
       agentTexts = null;
+    const isPrompted = prompted === id;
+    prompted = null;
     const startedAt = deps.now();
-    await change(id, (s) => turnStarted(s, startedAt)).catch(() => {
+    await change(id, (s) => turnStarted(isPrompted ? s : startTurn(s), startedAt)).catch(() => {
       return;
     });
   };
@@ -17801,42 +17936,81 @@ function turnHandlers(context, sessions) {
     }
   };
   const onAgentEnd = async (event, ctx) => {
-    if (isUnattended(ctx) || event.willContinue)
+    if (isUnattended(ctx) || isRunContinuing(event))
       return;
-    prepare(ctx);
     const id = sessionIdOf(ctx);
+    if (paused === id) {
+      paused = null;
+      return;
+    }
+    if (running === id)
+      running = null;
+    if (prompted === id)
+      prompted = null;
+    if (event.awaitingAsyncWork)
+      paused = id;
+    prepare(ctx);
     const texts = agentTexts?.id === id ? agentTexts.texts : [];
     if (agentTexts?.id === id)
       agentTexts = null;
+    const host = hostFor(ctx);
+    const updateHost = updateHostFor(ctx);
+    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
+    const clearsAtEnd = clears.get(id) ?? 0;
     const last = lastAssistant(event.messages);
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const reply = stop === null ? turnReply(texts, last ? textOfBlocks(last.content) : "") : "";
     const isDialogDismissed = event.messages.some(isDismissedAsk);
-    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const [inHerdr, git] = await Promise.all([
       readState(dir, id).catch(() => null).then((saved) => delegatesInHerdr(saved?.ledger.overview ?? null, run, deps.herdrTarget)),
       gitPlaceIn(run, ctx.cwd)
     ]);
     const endedAt = deps.now();
     let addsPr = false;
+    let isCleared = false;
     const written = await change(id, (s) => {
+      isCleared = (clears.get(id) ?? 0) !== clearsAtEnd;
+      if (isCleared)
+        return s;
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed });
       addsPr = addsTabPr(s, ended);
       const settled = inHerdr ? statusChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...placed(settled, ctx.cwd, git), stop };
     }).catch(() => null);
-    if (!written)
+    if (!written || isCleared)
       return;
-    const host = hostFor(ctx);
     if (addsPr)
-      fetchPrsNow(ctx);
+      host.fetchPrsInBackground();
     if (needsUpdate(written))
-      deps.background(runUpdates(updateHostFor(ctx)));
+      deps.background(runUpdates(updateHost));
     deps.background(wakeAfterSettle(host));
+  };
+  const onSessionClear = async (_event, ctx) => {
+    if (isUnattended(ctx))
+      return;
+    const id = sessionIdOf(ctx);
+    clears.set(id, (clears.get(id) ?? 0) + 1);
+    if (running === id)
+      running = null;
+    if (paused === id)
+      paused = null;
+    if (prompted === id)
+      prompted = null;
+    if (noted?.id === id)
+      noted = null;
+    if (agentTexts?.id === id)
+      agentTexts = null;
+    context.openAsks.delete(id);
+    context.uiStates.delete(id);
+    await change(id, (s) => ({ ...cleared(s), sent: [], heldRows: [], ui: null })).catch(() => {
+      return;
+    });
+    showBand(ctx);
   };
   return {
     start,
     onSessionShutdown,
+    onSessionClear,
     onBeforeAgentStart,
     onInput,
     onAgentStart,
@@ -17878,17 +18052,6 @@ var defaultDeps = {
   questionHistory: (dir) => questionHistoryPlace(process.env, dir),
   registryFolder: registryFolder(process.env)
 };
-function byNewestRevision(a, b) {
-  const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
-  const [x, y] = [parts(a), parts(b)];
-  const differing = x.findIndex((n, i) => n !== y[i]);
-  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
-}
-function inboxModel(ctx) {
-  const sonnets = ctx.models.list().filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
-  const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
-  return ctx.models.resolve("@inbox") ?? sonnet ?? ctx.models.resolve("@smol") ?? null;
-}
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
   useQuestionHistory(deps.questionHistory?.(dir) ?? null);
@@ -17904,7 +18067,7 @@ function createInbox(pi, deps = defaultDeps) {
   const { sendToAgent, onRunStart } = agentSender(pi);
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
-      const model = inboxModel(ctx);
+      const model = inboxModel(ctx.models);
       if (!model) {
         report?.({ model: "none", error: "omp offers no model for the inbox", cause: "error" });
         return null;
@@ -17950,7 +18113,7 @@ function createInbox(pi, deps = defaultDeps) {
       await pi.setActiveTools(kept);
   };
   const inboxModelOf = (ctx) => {
-    const model = inboxModel(ctx);
+    const model = inboxModel(ctx.models);
     const keys = ctx.modelRegistry.authStorage.keys;
     const hasSignIn = (provider) => keys.source(provider) !== undefined || keys.keyless(provider);
     return {
@@ -18016,6 +18179,7 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("session_switch", (event, ctx) => start(ctx, event.reason === "fork" ? event.previousSessionFile : undefined));
   pi.on("session_branch", (event, ctx) => start(ctx, event.previousSessionFile));
   pi.on("session_shutdown", turns.onSessionShutdown);
+  pi.on("session_clear", turns.onSessionClear);
   pi.on("before_agent_start", turns.onBeforeAgentStart);
   pi.on("input", turns.onInput);
   pi.on("agent_start", (event, ctx) => {
@@ -18114,7 +18278,7 @@ function createInbox(pi, deps = defaultDeps) {
   }
   async function openPanelUi(ctx, isDemo) {
     const openedAt = deps.now();
-    const { parseKey, extractPrintableText, truncateToWidth } = await import("@oh-my-pi/pi-tui");
+    const tui = await import("@oh-my-pi/pi-tui");
     const source = isDemo ? demoSource({
       now: deps.now,
       settleWindowMs: deps.settleWindowMs,
@@ -18126,34 +18290,30 @@ function createInbox(pi, deps = defaultDeps) {
     hideBand(ctx);
     if (!isDemo)
       await inbox.openPanel(ctx, openedAt);
+    let dispose = () => {};
     try {
-      await ctx.ui.custom((tui, theme, _keybindings, done) => {
+      await ctx.ui.custom((ui, theme, _keybindings, done) => {
         const panel = createPanel({
           source,
           style: styleOf(theme),
           now: deps.now,
           openedAt,
-          requestRender: () => tui.requestRender(),
+          requestRender: () => shown.requestRender(),
           close: () => done(null),
           timers: {
             every: (fn, ms) => ctx.setInterval(fn, ms),
             after: (fn, ms) => ctx.setTimeout(fn, ms),
             stop: (handle) => ctx.clearTimer(handle)
           },
-          height: () => Math.max(10, tui.terminal.rows - 4)
+          height: () => Math.max(10, screenRows(ui) - 4)
         });
+        const shown = panelView(tui, ui, panel);
+        dispose = shown.dispose;
         panel.start();
-        return {
-          render: (width) => panel.render(width).map((line) => truncateToWidth(line, width)),
-          handleInput: (raw) => {
-            const key = parseKey(raw) ?? "";
-            panel.handleInput(key, extractPrintableText(raw));
-          },
-          invalidate: () => {},
-          dispose: () => panel.dispose()
-        };
+        return shown.view;
       });
     } finally {
+      dispose();
       if (!isDemo)
         inbox.closePanel(ctx);
       showBand(ctx);

@@ -18,7 +18,7 @@ import {
   textBeyondName,
   unplacedChildren,
 } from './status-page-parts'
-import type { ListContext, PartSplit } from './status-page-parts'
+import type { ListContext, PartSplit, StatusWaitsOn } from './status-page-parts'
 import { headPart, milestoneAsSubject, subjectInPlaceOf, withoutRepeatedNow } from './status-repeats'
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
@@ -30,7 +30,7 @@ export type StatusStall = { text: string; tone: 'muted' }
 /**
  * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
  * draws its name with its stall word after it, past `STALL_GAP`. A subject an open ask holds up draws the ask's words in
- * the needs-you tone under its name, and where it stands on the line after.
+ * the tone of the ask's kind under its name, and where it stands on the line after.
  */
 export type StatusRow = {
   /** How many steps in from the list's edge it draws: a subject under a milestone at 1, a child under that subject at 2. */ depth: number
@@ -48,7 +48,7 @@ export type StatusRow = {
       /** "idle 2d" once it has gone without a change. Null while `waitsOn` is set. */
       stall: StatusStall | null
       /** The oldest open ask that holds it up. */
-      waitsOn: string | null
+      waitsOn: StatusWaitsOn | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
@@ -173,6 +173,7 @@ export function statusPage(
   const isNew = (x: Subject) => o === null || !isSubjectSeen(o, x)
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
+  const holdKindsOf = (x: Subject) => s.ledger.items.filter(i => o?.askSubjects[i.id]?.includes(x.id)).map(i => i.kind)
   const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null =>
     isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null
   const placeOf = (x: Subject): StatusPlace =>
@@ -242,6 +243,7 @@ export function statusPage(
   const ctx: ListContext = {
     isNew,
     isHeld,
+    holdKindsOf,
     oldestAskOf,
     items: s.ledger.items,
     running,

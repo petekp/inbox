@@ -95,7 +95,7 @@ Each mark on a subject row fits its piece's state in the facts, and every open p
 
 Judge it in two steps:
 
-1. Check the mark of each row of work against the list of marks above. For a `◆` row, check only that an open ask in the facts holds up that piece. Do not compare a `◆` row's mark with the piece's state.
+1. Check the mark of each row of work against the list of marks above. For a `◆` or `□` row, check only that an open ask in the facts holds up that piece. Do not compare its mark with the piece's state.
 2. List the open pieces in the facts that have no row on the page. Leave out each piece whose line says `The goal does not need it.`: Other work's counts line counts those that are under way, and those not started yet or set aside leave the page with no count. Leave out, too, a piece not started yet whose whole outcome is an open milestone on the page. The `○ N more` fold accounts for the rest. The check fails when that list is not empty and the page has no `○ N more` fold, or the fold counts fewer pieces than the list holds.
 
 The check fails when any of these is on the page:
@@ -103,7 +103,7 @@ The check fails when any of these is on the page:
 - A mark that does not fit its piece's state.
 - An open mark on a row for a piece the facts say is closed, under one of the piece's names or the name its row had on the previous page.
 - An open mark or `✗` on filed work.
-- `◆` on a piece that no open ask holds up.
+- `◆` or `□` on a piece that no open ask holds up.
 - Open pieces that are missing, as step 2 finds.
 
 Examples:
@@ -259,7 +259,7 @@ Judge a milestone's mark by the work it stands for: the facts' milestones it cov
 - `●` or `◐` fits when any of it is being worked on now.
 - `○` fits when none of it has started, or all of it is set aside.
 - `◌` fits when it waits on something outside the session and none of it is being worked on.
-- `◆` fits when an open ask holds up the milestone, or a piece that serves it.
+- `◆` or `□` fits when an open ask holds up the milestone, or a piece that serves it.
 
 The check passes when every milestone row is an outcome the goal needs, its mark fits the work it stands for, and together the rows cover every outcome the goal needs.
 

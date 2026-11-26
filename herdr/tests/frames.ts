@@ -9,7 +9,7 @@ import { type Box, layout, linesOf } from './layout'
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
 const { moveRows, NO_TRACKS } = await import('../src/motion')
-const { Heights, MOVED_TO, pageFormingSince } = await import('../src/heights')
+const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
 const { CUT_OPACITY } = await import('../../core/view/row-motion')
@@ -297,7 +297,6 @@ class Frames {
   private lastShown = new Map<string, number>()
   private last: Map<string, Box> | null = null
   private motionIds: Map<string, string> | null = null
-  private formingSince: number | null = null
   jumps: Jump[] = []
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
@@ -318,8 +317,7 @@ class Frames {
   draw(blocks: Block[], now: number, isInput = false) {
     const isFirst = this.last === null
     const resized = this.heights.takeResized()
-    this.formingSince = pageFormingSince(isFirst, this.formingSince, this.heights.takeChanged(), now)
-    const isForming = this.formingSince !== null
+    const isForming = this.heights.isForming(isFirst, now)
     const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming)
     this.linesAbove = held.held
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)

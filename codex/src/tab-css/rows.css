@@ -43,6 +43,13 @@
   height: 8px;
   overflow: visible;
 }
+/* An open task's box, as large as the Tasks heading's checked box. */
+.task-shape {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+  overflow: visible;
+}
 .mark.tasks {
   color: var(--tasks);
 }
@@ -243,11 +250,8 @@
 .body .tree p {
   margin: 0;
 }
-.body .tree .context-line {
-  color: var(--muted);
-}
 /*
- * The tree hangs from the ◆ in the mark column. The ◆'s cell draws the line down to its row's end, and each branch
+ * The tree hangs from the ◆ or □ in the mark column. The mark's cell draws the line down to its row's end, and each branch
  * of the tree draws the rest from the top of its own block to its tick, `--tree-x` left of the text column.
  */
 .body .tree {

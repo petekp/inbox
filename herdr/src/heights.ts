@@ -36,6 +36,7 @@ export class Heights {
   private sizes = new Map<string, Size>()
   private resized = new Set<string>()
   private isChanged = false
+  private formingSince: number | null = null
   private zoom: number | null = null
 
   /** A block's copy in its old place has no size of its own until it measures, and takes its original's until then. */
@@ -78,12 +79,18 @@ export class Heights {
     return resized
   }
 
-  /** Whether a height changed since the last draw that asked. */
-  takeChanged(): boolean {
+  /**
+   * Whether the page drawn at `now` still forms. A newly shown page (`isFirst`) draws at once, and keeps taking its
+   * heights at once while each draw brings new measures, as when its answers' measured widths stack them, so a row drawn
+   * for the first time comes to rest at its measured height instead of springing to it under its buttons.
+   */
+  isForming(isFirst: boolean, now: number): boolean {
     const isChanged = this.isChanged
     this.isChanged = false
+    const since = this.formingSince
+    this.formingSince = isFirst ? now : since !== null && isChanged && now - since < PAGE_FORMS_MS ? since : null
 
-    return isChanged
+    return this.formingSince !== null
   }
 
   clear() {
@@ -94,23 +101,6 @@ export class Heights {
 
 /** How long a newly shown page keeps taking its heights at once while its measures still change. */
 const PAGE_FORMS_MS = 100
-
-/**
- * When the page drawn at `now` started to form, or null once it is at rest. A newly shown page draws at once, and keeps
- * taking its heights at once while each draw brings new measures (`isChanged`), as when its answers' measured widths
- * stack them, so a row drawn for the first time comes to rest at its measured height instead of springing to it under
- * its buttons.
- */
-export function pageFormingSince(
-  isFirst: boolean,
-  since: number | null,
-  isChanged: boolean,
-  now: number,
-): number | null {
-  if (isFirst) return now
-
-  return since !== null && isChanged && now - since < PAGE_FORMS_MS ? since : null
-}
 
 /** The key a row's title is measured under. */
 export const titleId = (id: string): string => `title ${id}`

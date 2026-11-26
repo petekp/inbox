@@ -159,6 +159,21 @@ export function fadedOver(hex: string, under: string, share: number): string {
   return `#${mixed.map(c => c.toString(16).padStart(2, '0')).join('')}`
 }
 
+/**
+ * How far supporting text sits from muted toward the body text. Supporting text is the step brighter than muted that
+ * the lines explaining an open row's ask draw in, below its title and buttons.
+ */
+export const SUPPORTING_TEXT_SHARE = 0.45
+
+/** The supporting text level: `muted` moved `SUPPORTING_TEXT_SHARE` of the way toward `text`. */
+export const supportingOver = (muted: string, text: string): string => fadedOver(text, muted, SUPPORTING_TEXT_SHARE)
+
+/** Supporting text over `THEME_BACKGROUND`, in the terminal's light and dark palettes. */
+export const SUPPORTING_TEXT = {
+  dark: supportingOver(MUTED_TEXT.dark, THEME_TEXT.dark),
+  light: supportingOver(MUTED_TEXT.light, THEME_TEXT.light),
+}
+
 /** Faint text over `THEME_BACKGROUND`, in the terminal's light and dark palettes. */
 export const FAINT_TEXT = {
   dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),

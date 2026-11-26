@@ -76,9 +76,9 @@ ChatGPT app in place of `codex` in both commands:
 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex
 ```
 
-Then, in the ChatGPT desktop app, trust the plugin's hooks: click the hook icon
-beside the prompt's approval setting, then Allow all. If the icon isn't there,
-open Settings, then Hooks, then Inbox, then Trust all. Codex runs a plugin's
+Then, in the ChatGPT desktop app, trust the plugin's hooks: open Settings,
+then Hooks, then Inbox, then Trust all. A hook icon beside the prompt's approval
+setting may also offer Allow all. Codex runs a plugin's
 hooks only after you trust them. On Codex 0.164.0 and later, an update stops
 the hooks, so trust them again after each update. To open the inbox, open the
 side panel. On its New tab page, click the Inbox tile, or if there is none,
@@ -94,6 +94,10 @@ command from inside the app.
 omp plugin marketplace add petekp/inbox
 omp plugin install inbox@inbox-omp
 ```
+
+The inbox works with omp 18.12.3 through 19.2. `/clear` resets the inbox from
+omp 18.20.1. Older omp sends no event at `/clear`, so the cleared
+conversation's rows stay.
 
 The inbox starts working in the next omp session. `omp plugin list` shows it
 as `inbox@inbox-omp`. It reads `.omp-plugin/marketplace.json`, which omp looks

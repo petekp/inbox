@@ -16,6 +16,7 @@ import {
   PR_MARKS,
   RUNNING_FRAMES,
   SUBJECT_MARKS,
+  TASK_MARK,
 } from '../core/view/help'
 import type { Item, SessionStatus } from '../types'
 import { minutes } from '../evals/status-replay'
@@ -102,7 +103,7 @@ test('only a subject an open ask holds up says what it waits on, and one waiting
     { ...askItem('i2'), at: 10 * MIN },
   ]
   const stalls = (now: number) =>
-    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? [r.waitsOn, r.stall] : r.kind))
+    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? [r.waitsOn?.text ?? null, r.stall] : r.kind))
 
   const waiting = [
     ['Ask i2?', null],
@@ -134,7 +135,7 @@ test('an open subject unchanged for a day reads how long it has been idle, in wh
   const stalls = (now: number, turn = false) =>
     page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows.flatMap(r =>
       r.kind === 'subject'
-        ? [`${r.name}: ${r.waitsOn ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
+        ? [`${r.name}: ${r.waitsOn?.text ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
         : [],
     )
 
@@ -302,6 +303,7 @@ test('the Help legend explains every mark a row or group title draws, once each'
     ...Object.values(SUBJECT_MARKS).map(m => m.mark),
     IDLE_MARK.mark,
     HELD_MARK.mark,
+    TASK_MARK.mark,
     ...Object.values(CLOSED_MARKS),
     ...Object.values(FINDING_GROUPS).map(g => g.mark),
     ...Object.values(NEEDS_YOU_MARKS).map(g => g.mark),

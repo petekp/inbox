@@ -56,10 +56,9 @@ import type { LinesAbove } from './held-line'
 import { NO_TRACKS, moveRows } from './motion'
 import { heldTabs } from './held-form'
 import { nextDrawAt } from './wake'
-import { earliestOf } from '../../core/view/timing'
 import { HeldFades } from './held-fades'
 import type { Tracks } from './motion'
-import { Heights, pageFormingSince, zoomOf } from './heights'
+import { Heights, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
 import type { TimeLeft } from './time-left'
@@ -110,7 +109,6 @@ export default class Inbox extends View {
     return read && { read, ui: this.ui }
   })
   tracksOf = ''
-  private formingSince: number | null = null
   /** The blocks of the last draw, whose buttons give a key's press its label and effects. */
   blocks: Block[] = []
   lastDraw: LastDraw = { tab: 'needsYou', rows: null, pressed: [] }
@@ -341,7 +339,12 @@ export default class Inbox extends View {
     cx.stop_propagation()
     if (move.is === 'event') this.apply([move.event], cx)
     else if (move.is === 'press') this.apply(buttonEvents(move.button.does, this.ui, 'key'), cx, move.button)
-    else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
+    else this.focusTerminal()
+  }
+
+  /** Gives focus to the terminal the look follows, whose session it shows. */
+  focusTerminal(): void {
+    if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
   }
 
   render(cx: Context): Element {
@@ -364,12 +367,14 @@ export default class Inbox extends View {
     const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`
     const isFirst = tracksOf !== this.tracksOf
     const resized = this.heights.takeResized()
-    this.formingSince = pageFormingSince(isFirst, this.formingSince, this.heights.takeChanged(), now)
-    const isForming = this.formingSince !== null
+    const isForming = this.heights.isForming(isFirst, now)
     const paint: Paint = {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
-      press: (b, cx, isAll) => this.apply(buttonEvents(b.does, this.ui, 'click', isAll), cx, b),
+      press: (b, cx, isAll) =>
+        b.does.is === 'focusTerminal'
+          ? this.focusTerminal()
+          : this.apply(buttonEvents(b.does, this.ui, 'click', isAll), cx, b),
       collapse: (id, isCollapsed, cx, isAll) =>
         this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
       select: (id, cx) => this.apply(titleClickEvents(this.ui, id, false, false), cx),
@@ -470,7 +475,7 @@ export default class Inbox extends View {
           .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
-    const wakeAt = nextDrawAt(now, moved, earliestOf([this.fades.drew(), held.nextAt]))
+    const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt])
     if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
 
     return drawn

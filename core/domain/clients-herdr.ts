@@ -107,6 +107,7 @@ export const HERDR: LookTable = {
     },
     'status-named-fold': { kind: 'full' },
     'status-faint-text': { kind: 'full' },
+    'supporting-text': { kind: 'full' },
     'status-parent-fold': {
       kind: 'different',
       reason:
@@ -140,6 +141,7 @@ export const HERDR: LookTable = {
     'session-registry': { kind: 'host' },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'stopped-session-send': { kind: 'full' },
     'option-previews': { kind: 'full' },
   },
 }

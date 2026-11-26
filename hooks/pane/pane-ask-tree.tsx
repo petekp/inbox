@@ -3,6 +3,7 @@ import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
 import type { KeyAction } from './pane-keys'
 import { terminalLabelCells } from './pane-row-keys'
+import { isSupportingPart } from '../../core/view/row-parts'
 import type { RowPart } from '../../core/view/row-parts'
 import type { RowView } from '../../core/view/rows'
 import type { TreePos } from './terminal-text'
@@ -28,7 +29,7 @@ export type AskEntry = {
 
 /**
  * An open question's or task's Holds up line, context, earlier answer and option lines, in that order. In the terminal
- * they hang from the row's ◆ on one connector: the Holds up line and each option on a branch, the context and earlier
+ * they hang from the row's ◆ or □ on one connector: the Holds up line and each option on a branch, the context and earlier
  * answer beside it. Answers that `answerRow` lets sit side by side and that fit `width` share one branch, with the
  * recommendation's reason under them. `askEntries` gives desktop the same entries, which it draws on its own hairline
  * pieces.
@@ -146,7 +147,7 @@ export function paneAskTree(
                 <Text wrap="wrap">
                   {e.lead ? <Text color={pal.muted}>{e.lead}</Text> : null}
                   {e.label ? <Text bold={e.lead !== undefined}>{e.label}</Text> : null}
-                  <Text color={pal.muted}>{e.rest}</Text>
+                  <Text color={isSupportingPart(e.part) ? pal.supporting : pal.muted}>{e.rest}</Text>
                 </Text>
               )}
             </Box>

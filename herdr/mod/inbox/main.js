@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T05:23:57.833Z. 382710 characters follow.
+// Built at 2026-11-26T07:32:47.349Z. 385161 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -825,10 +825,12 @@ var SUBJECT_MARKS = {
   working: { mark: "●", tone: "working" },
   queued: { mark: "○", tone: null },
   "waits-on-other": { mark: "◌", tone: null },
-  done: { mark: "✓", tone: "done" },
+  done: { mark: "✓", tone: null },
   dropped: { mark: "✗", tone: null }
 };
 var HELD_MARK = { mark: "◆", tone: "needsYou" };
+var TASK_MARK = { mark: "□", tone: "tasks" };
+var heldMarkOf = (kinds) => kinds.some((k) => k === "question") ? HELD_MARK : TASK_MARK;
 var RUNNING_FRAMES = ["●", "◉", "◎", "◉"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "◐", tone: "working" };
@@ -859,7 +861,8 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
+  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
     tone: NEEDS_YOU_MARKS.question.tone,
@@ -1018,7 +1021,7 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,…]+$/, "");
-var isSettled = (row) => row.tone === "done";
+var isSettled = (row) => row.mark === SUBJECT_MARKS.done.mark;
 var textLevelOf = (row) => isSettled(row) ? "faint" : "muted";
 var foldLevelOf = (row) => isSettled(row) ? "faint" : "muted";
 var WAS_LEVEL = "faint";
@@ -1073,6 +1076,7 @@ function askWords(items, ask) {
   const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
   return words || null;
 }
+var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -1087,13 +1091,15 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ask = c.oldestAskOf(x);
+    const words = askWords(c.items, ask);
+    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
-      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning,
       ...carried,
       name: x.name,
@@ -1259,7 +1265,7 @@ function milestoneRow(step, o, items) {
   const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
     id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
     line: step.line,
@@ -2118,6 +2124,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnsw
 var isTerminalLike = (look) => look === "terminal" || look === "omp";
 var ROW_COPY = {
   retry: "Try again",
+  goToSession: "Go to session",
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
@@ -2206,9 +2213,13 @@ function rowResultMark(row) {
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
-var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
+function openMark(row) {
+  return row.type === "finding" ? null : row.type === "task" ? TASK_ROW_MARK : QUESTION_MARK;
+}
 function rowMark(row) {
-  return rowResultMark(row) ?? (row.state.is === "open" && row.type !== "finding" ? ASK_MARK : null);
+  return rowResultMark(row) ?? (row.state.is === "open" ? openMark(row) : null);
 }
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
@@ -2960,6 +2971,8 @@ function doneLabel(last) {
   return DONE_LABELS[last.action]?.(last.text) ?? last.text;
 }
 var STILL_WAITING_AFTER = new Set(["check-fix"]);
+var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
+var isStoppedSession = (f) => f?.is === "notSent" && f.reason === STOPPED_REASON;
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
@@ -3571,7 +3584,7 @@ function keptOpen(rows, added) {
 function rowsIn(entries) {
   return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
-function rowKeyPlan(r, isAllShown) {
+function rowKeyPlan(r, isAllShown, canShowSession = false) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
   const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
@@ -3607,7 +3620,8 @@ function rowKeyPlan(r, isAllShown) {
         hotkey: a.hotkey
       });
   }
-  return { options, keys, more, answerRow: answerRowOf(r, options) };
+  const sessionKey = canShowSession && isStoppedSession(r.feedback) ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+  return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey };
 }
 function answerRowOf(r, options) {
   const described = options.map((o) => r.optionDescriptions.find((d) => d.option === o.action.press.option));
@@ -4104,6 +4118,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const isNew = (x) => o === null || !isSubjectSeen(o, x);
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
+  const holdKindsOf = (x) => s.ledger.items.filter((i) => o?.askSubjects[i.id]?.includes(x.id)).map((i) => i.kind);
   const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
@@ -4152,6 +4167,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const ctx = {
     isNew,
     isHeld,
+    holdKindsOf,
     oldestAskOf,
     items: s.ledger.items,
     running,
@@ -5787,6 +5803,8 @@ var ROW_PAD_PT = ITEM_GAP_PT / 2;
 var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
 
 // ../core/view/row-parts.ts
+var SUPPORTING_PARTS = ["holdsUp", "context", "note", "reason"];
+var isSupportingPart = (part) => SUPPORTING_PARTS.includes(part);
 var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
 var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
 var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
@@ -6552,6 +6570,7 @@ var LIGHT_TONES = {
   key: "#243bf5"
 };
 var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
+var THEME_TEXT = { dark: "#ececec", light: "#1b1b1b" };
 var MUTED_TEXT = { dark: "#bdbdbd", light: "#595959" };
 function contrastRatio(a, b) {
   const luminance = (hex) => {
@@ -6583,6 +6602,12 @@ function fadedOver(hex, under, share) {
   const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
   return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
+var SUPPORTING_TEXT_SHARE = 0.45;
+var supportingOver = (muted, text) => fadedOver(text, muted, SUPPORTING_TEXT_SHARE);
+var SUPPORTING_TEXT = {
+  dark: supportingOver(MUTED_TEXT.dark, THEME_TEXT.dark),
+  light: supportingOver(MUTED_TEXT.light, THEME_TEXT.light)
+};
 var FAINT_TEXT = {
   dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),
   light: faintOver(MUTED_TEXT.light, THEME_BACKGROUND.light)
@@ -6611,6 +6636,11 @@ function faintOf(t, under = t.background) {
   const page = flatten(under, t.background);
   return faintOver(flatten(t.muted, page), page);
 }
+function supportingOf(t, under = t.background) {
+  const page = flatten(under, t.background);
+  return supportingOver(flatten(t.muted, page), flatten(t.foreground, page));
+}
+var bodyTextColor = (t, l, under) => l.part && isSupportingPart(l.part) ? supportingOf(t, under) : colorOf(t, l.tone);
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 var TIME_LEFT_DARK_SHARE = 0.12;
 var TIME_LEFT_LIGHT_SHARE = 0.2;
@@ -6681,7 +6711,7 @@ import { h_flex } from "gpui-base";
 import { PathBuilder, div } from "gpui-kit";
 var CHECKBOX_PX = 11;
 var CHECK_PATH = PathBuilder.stroke(1.5).move_to("27%", "53%").line_to("43%", "69%").line_to("74%", "31%").build();
-var checkboxEl = (color) => div().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).border_1().border_color(color).rounded(3).child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`));
+var checkboxEl = (color, isChecked = true) => div().relative().flex_none().w(CHECKBOX_PX).h(CHECKBOX_PX).border_1().border_color(color).rounded(3).when(isChecked, (e) => e.child(window.paint_path(CHECK_PATH, color).absolute().top(0).left(0).size(`${CHECKBOX_PX - 2}px`)));
 
 // src/paint-timer.ts
 import { div as div2 } from "gpui-kit";
@@ -6723,7 +6753,7 @@ var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, ab
   const others = buttons.filter((b) => !b.isFollowUp);
   return h_flex().flex_wrap().items_center().gap(CONTROL_GAP).pt(above).pl(indent - outdent).children(others.map((b) => buttonEl(b, p, isInert, true))).when(followUps.length > 0, (e) => e.child(h_flex().flex_wrap().items_center().ml(outdent).gap_x(CONTROL_GAP).gap_y(INSIDE_GAP).children(followUps.map((b) => buttonEl(b, p, isInert)))));
 };
-var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark ? div3().w(MARK_W).flex_none().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)))) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
+var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark || m?.text === TASK_MARK.mark ? h_flex().w(MARK_W).h(LINE_HEIGHT).flex_none().items_center().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)), m.text === NEEDS_YOU_MARKS.task.mark)) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
 function fadeEl(el, name, opacity, glide, p) {
   const handed = p.fades.fade(name, opacity, glide.duration, glide.delay, p.now);
@@ -7185,7 +7215,7 @@ function statusEl(s, p, isInert) {
       ...s.fold.isFolded ? { count: { id: `fold count ${s.id}`, value: s.fold.count } } : {}
     })
   ] : [];
-  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn?.text ?? "", colorOf(t, s.waitsOn?.tone ?? "needsYou")))).children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 
 // src/paint-pr-status.ts
@@ -7377,7 +7407,9 @@ function feedbackEl(f, t) {
   return h_flex9().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), faintOf(t))]);
 }
 var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
-  const color = lineColor(t, isSelected ? t.selected : t.background);
+  const under = isSelected ? t.selected : t.background;
+  const color = lineColor(t, under);
+  const textColor = bodyTextColor(t, l, under);
   if (answers.length > 0 && p) {
     const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
     return h_flex9().relative().min_w(0).pt(above).child(answersEl(answers, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
@@ -7385,7 +7417,7 @@ var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = fal
   const armAt = above + LINE_HEIGHT / 2;
   const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = l.lead ? h_flex9().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : partedTextEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
+  const line = l.lead ? h_flex9().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, textColor)]) : partedTextEl(l.text, textColor, l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
   return line.relative().children(strokes);
 };
 function rowEl(r, p) {
@@ -7429,10 +7461,10 @@ function bodyEls(from, isSelected, p, isInert, titleEnd) {
     return l.optionId || l.isOptionNote ? [] : [l];
   }) : from.body;
   let end = titleEnd;
-  const els = shown.map(({ part, ...l }) => {
-    const above = partPt(end, part);
-    end = part;
-    const buttons = part === "answers" ? answers : buttonOf(l.optionId);
+  const els = shown.map((l) => {
+    const above = partPt(end, l.part);
+    end = l.part;
+    const buttons = l.part === "answers" ? answers : buttonOf(l.optionId);
     return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert);
   });
   return { els, end };
@@ -8160,7 +8192,7 @@ var LATER_PAD_PT = LIST_GAP_PT / 2;
 
 // src/draw-status.ts
 var MERGED_CELLS = 150;
-var toneOf = (t) => t;
+var toneOf = (t) => t ?? "muted";
 var markOf2 = (mark, tone, isRunning) => ({
   text: mark,
   tone: toneOf(tone),
@@ -8451,7 +8483,8 @@ function rowDoes(row, press, kind, agent) {
   return { is: "press", press, effects, kind };
 }
 function rowButtons(row, isAllShown, agent) {
-  const { options, keys, more } = rowKeyPlan(row, isAllShown);
+  const { options, keys, more, sessionKey } = rowKeyPlan(row, isAllShown, true);
+  const toSession = sessionKey ? [button(`${row.id} session`, sessionKey.label, sessionKey.emphasis, { is: "focusTerminal" })] : [];
   const answers = options.map((o, n) => ({
     ...button(`${row.id} ${n}`, actionLabel(o.action), o.action.emphasis, rowDoes(row, o.action.press, o.action.kind, agent), o.hotkey ?? null),
     isOut: o.action.isOut,
@@ -8459,6 +8492,7 @@ function rowButtons(row, isAllShown, agent) {
   }));
   return [
     ...answers,
+    ...toSession,
     ...[...keys, ...more].map((k, n) => {
       const id = `${row.id} ${options.length + n}`;
       if (k.slot === "allOptions")
@@ -9162,7 +9196,11 @@ class Inbox extends View {
       this.apply([move.event], cx);
     else if (move.is === "press")
       this.apply(buttonEvents(move.button.does, this.ui, "key"), cx, move.button);
-    else if (this.followed.is !== "no-terminal")
+    else
+      this.focusTerminal();
+  }
+  focusTerminal() {
+    if (this.followed.is !== "no-terminal")
       run("pane.focus", { terminal: this.followed.terminal });
   }
   render(cx) {
@@ -9188,7 +9226,7 @@ class Inbox extends View {
     const paint = {
       t,
       mono: theme().typography?.mono ?? "Menlo",
-      press: (b, cx, isAll) => this.apply(buttonEvents(b.does, this.ui, "click", isAll), cx, b),
+      press: (b, cx, isAll) => b.does.is === "focusTerminal" ? this.focusTerminal() : this.apply(buttonEvents(b.does, this.ui, "click", isAll), cx, b),
       collapse: (id, isCollapsed, cx, isAll) => this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
       select: (id, cx) => this.apply(titleClickEvents(this.ui, id, false, false), cx),
       pick: (tab, cx) => this.apply([{ type: "show-tab", tab }], cx),

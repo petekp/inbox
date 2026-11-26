@@ -7,7 +7,7 @@ import type { RowPress } from '../../core/domain/presses'
 import { DOT, shortAgo } from '../../core/view/rows'
 import type { ActionEmphasis } from '../../core/view/rows'
 import type { StatusStall } from '../../core/view/status-page'
-import type { NameLevel, TextLevel } from '../../core/view/status-page-parts'
+import type { NameLevel, StatusWaitsOn, TextLevel } from '../../core/view/status-page-parts'
 import type { PathLine } from '../../core/view/status-path'
 import type { EmptyTab, EmptyText } from '../../core/view/empty-tab'
 import type { ShownTab } from '../../core/view/tabs'
@@ -49,7 +49,7 @@ export type ViewChange =
  * refreshes, which the look shows as under way, and runs itself when each one is an open or a copy. `kind` is the
  * kind of the plan action the button draws, or null for a press that no plan action makes. `type` opens the
  * row's field with `text` in it and `hint` as its placeholder, `send` sends the field's words, and `leave` closes the field, dropping its draft
- * when `isDiscard`.
+ * when `isDiscard`. `focusTerminal` gives focus to the terminal of the session the look shows.
  */
 export type Does =
   | { is: 'view'; change: ViewChange }
@@ -58,6 +58,7 @@ export type Does =
   | { is: 'type'; rowId: string; text: string; hint: string }
   | { is: 'send'; rowId: string }
   | { is: 'leave'; rowId: string; isDiscard: boolean }
+  | { is: 'focusTerminal' }
   | { is: 'nothing' }
 
 /** A button a shared plan lists, as the look draws it. `hotkey` presses it while its row is selected. */
@@ -197,8 +198,8 @@ export type StatusLine = {
    */
   nameLevel: NameLevel
   stall: { text: string; tone: StatusStall['tone'] } | null
-  /** What a subject waits on, in the needs-you tone, as its first line under the name. */
-  waitsOn?: string
+  /** What a subject waits on, in the tone of the ask's kind, as its first line under the name. */
+  waitsOn?: StatusWaitsOn
   /**
    * A Help line's words, in the column that starts after `HELP_COLUMN`. The left column holds the line's key, in `name`, or
    * its mark, or nothing for the version line. Such a line has nothing under it.

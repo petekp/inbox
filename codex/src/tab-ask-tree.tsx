@@ -86,7 +86,7 @@ function Answers({ rowId, options, answerRow, above, isBlocked }: AnswersProps) 
           ))}
         </span>
         {answerRow.recLine ? (
-          <span class="muted option-note" {...partAttrs('answers', 'reason')}>
+          <span class="supporting option-note" {...partAttrs('answers', 'reason')}>
             {answerRow.recLine}
           </span>
         ) : null}
@@ -105,7 +105,7 @@ function Answers({ rowId, options, answerRow, above, isBlocked }: AnswersProps) 
             <ActionButton action={o} isBlocked={isBlocked} />
           </span>
           {o.note ? (
-            <span class="muted option-note" {...partAttrs('answer', 'note')}>
+            <span class="supporting option-note" {...partAttrs('answer', 'note')}>
               {o.note}
             </span>
           ) : null}
@@ -127,7 +127,7 @@ function answersEnd(rowId: string, options: Key[], answerRow: AnswerRow | null):
 
 /**
  * An open question's Holds up line, context, earlier answer and answers, in that order, as the body of its panel. With
- * a Holds up line or an answer, they hang from the ◆ in the row's mark column as one tree. The trunk ends at the last
+ * a Holds up line or an answer, they hang from the ◆ or □ in the row's mark column as one tree. The trunk ends at the last
  * branch, and a line after it hangs from nothing.
  */
 export function askTree(
@@ -148,7 +148,7 @@ export function askTree(
             part: 'holdsUp' as const,
             isBranch: true,
             draw: (place: string, above: RowPart) => (
-              <p class={`branch holds-up muted tree-${place}`} {...partAttrs(above, 'holdsUp')}>
+              <p class={`branch holds-up supporting tree-${place}`} {...partAttrs(above, 'holdsUp')}>
                 {holdsUp}
               </p>
             ),
@@ -161,7 +161,7 @@ export function askTree(
             part: 'context' as const,
             isBranch: false,
             draw: (place: string, above: RowPart) => (
-              <p class={`context-line tree-${place}`} {...partAttrs(above, 'context')}>
+              <p class={`context-line supporting tree-${place}`} {...partAttrs(above, 'context')}>
                 {r.contextLine}
               </p>
             ),
@@ -174,7 +174,7 @@ export function askTree(
             part: 'earlier' as const,
             isBranch: false,
             draw: (place: string, above: RowPart) => (
-              <p class={`context-line tree-${place}`} {...partAttrs(above, 'earlier')}>
+              <p class={`context-line muted tree-${place}`} {...partAttrs(above, 'earlier')}>
                 {earlier.lead}
                 <strong class="option-label">{earlier.answer}</strong>
                 {earlier.rest}
