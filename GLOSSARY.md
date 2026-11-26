@@ -156,8 +156,8 @@ times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
 status's mark, or □ in the tasks tone when only open tasks hold it up, and the item's Asks row reads "Holds up" and the subject's name.
 Its row then has a View question or View task button, which opens Asks with
-the oldest of those items selected, and a line under its name, in the needs-you
-tone, with that item's own words.
+the item that sets the mark selected (the oldest question while one is open, else
+the oldest task), and a line under its name with that item's own words.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Goal**:

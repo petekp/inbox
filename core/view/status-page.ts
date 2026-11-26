@@ -47,7 +47,7 @@ export type StatusRow = {
       text: string | null
       /** "idle 2d" once it has gone without a change. Null while `waitsOn` is set. */
       stall: StatusStall | null
-      /** The oldest open ask that holds it up. */
+      /** The words of the open ask that sets its mark. */
       waitsOn: StatusWaitsOn | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
@@ -57,7 +57,7 @@ export type StatusRow = {
       hasChildren: boolean
       /** Its children, which a fold on its name hides. 0 while it draws none, and its name then takes no press. */
       foldCount: number
-      /** The oldest open ask that holds it up, which its View button opens. Null while no open ask holds it up. */
+      /** The open ask that sets its mark, a question before a task, which its View button opens. Null while no open ask holds it up. */
       ask: { id: string; kind: Item['kind'] } | null
     }
   | {
