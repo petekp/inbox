@@ -157,12 +157,19 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .child(r.age ?? ''),
       ),
     )
-  const lines = titleLineEls(r, shown, m, p, (l, n) => {
-    const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
-    const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, above, t, r.isSelected)
+  const lines = titleLineEls(
+    r,
+    shown,
+    m,
+    p,
+    (l, n) => {
+      const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
+      const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, above, t, r.isSelected)
 
-    return l.isHidden ? el.opacity(0) : el
-  })
+      return l.isHidden ? el.opacity(0) : el
+    },
+    el => panelFadeEl(r, m, p, el),
+  )
   const titleEnd: RowPart = lines.length > 0 ? 'titleStatus' : 'title'
 
   return v_flex()
@@ -347,7 +354,7 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
   const tail = v_flex()
     .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
     .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
-    .when(b.feedback !== null, e => e.child(feedbackEl(b.feedback!, t)))
+    .when(b.feedback !== null, e => (b.feedback ? e.child(feedbackEl(b.feedback, t)) : e))
 
   return v_flex()
     .pl(EDGE)
