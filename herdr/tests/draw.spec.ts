@@ -8,7 +8,7 @@ import { demoSession } from '../../core/view/demo'
 import { sessionView } from '../../core/view/session-view'
 import { goalKeyPlan, statusKeyPlan } from '../../core/view/status-keys'
 import { shownTabs } from '../../core/view/tabs'
-import { NO_HOLDS, SETTLED_MS } from '../../core/view/timing'
+import { SETTLED_MS } from '../../core/view/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { readSession } from '../src/files'
@@ -18,7 +18,7 @@ import { screenOf } from '../src/screen'
 import type { Followed } from '../src/follow'
 import { freshUi } from '../../core/view/ui-controller-types'
 import { HERDR_LOOK, lookUiOf } from '../src/controller'
-import { AGENT, NOW, demoEnvelopeText, demoScreen, finishedScreen, uiOn } from './fixtures'
+import { AGENT, NOW, demoEnvelopeText, demoScreen, finishedScreen, lookPresses, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
   const { options, keys, more } = rowKeyPlan(row, isAllShown)
@@ -218,12 +218,6 @@ test('the Status page joins each parent to the rows under it: work beside the pa
 
 test('each case of the followed terminal draws its own message, and a read session draws the inbox', () => {
   const read = readSession(demoEnvelopeText())
-  const o = {
-    now: NOW,
-    holds: { ...NO_HOLDS, shownSince: NOW },
-    notes: {},
-    queue: { outs: [], lines: {} },
-  }
   const cases: [Followed, Parameters<typeof screenOf>[1]][] = [
     [{ is: 'no-terminal' }, null],
     [{ is: 'no-inbox', terminal: 't1', program: 'zsh' }, null],
@@ -240,12 +234,14 @@ test('each case of the followed terminal draws its own message, and a read sessi
     ],
   ]
   const titles = cases.map(([f, r]) => {
-    const s = screenOf(f, r, uiOn('needsYou'), o)
+    const s = screenOf(f, r, uiOn('needsYou'), lookPresses(r))
     return s.is === 'message' ? s.message.title : null
   })
   expect(titles.every(t => t !== null)).toBe(true)
   expect(new Set(titles).size).toBe(cases.length)
-  expect(screenOf({ is: 'session', terminal: 't1', sessionId: 's1' }, read, uiOn('needsYou'), o).is).toBe('inbox')
+  expect(
+    screenOf({ is: 'session', terminal: 't1', sessionId: 's1' }, read, uiOn('needsYou'), lookPresses(read)).is,
+  ).toBe('inbox')
 })
 
 test('the PRs tab draws Clear merged and closed above the first PR, m presses it from any row, and it does not draw for the branch’s own PR alone', () => {
@@ -287,10 +283,10 @@ test('a subject an open ask holds up draws what it waits on in its own line, and
 })
 
 test('Help names the build the host published, with the next-build mark, and names none for a file without one', () => {
-  const o = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW }, notes: {}, queue: { outs: [], lines: {} } }
   const followed: Followed = { is: 'session', terminal: 't1', sessionId: 's1' }
   const helpVersionOf = (overrides: Record<string, unknown>) => {
-    const screen = screenOf(followed, readSession(demoEnvelopeText(overrides)), uiOn('needsYou'), o)
+    const read = readSession(demoEnvelopeText(overrides))
+    const screen = screenOf(followed, read, uiOn('needsYou'), lookPresses(read))
 
     return screen.is === 'inbox' ? screen.helpVersion : 'no inbox'
   }

@@ -7348,9 +7348,10 @@ function missingText(item, fields) {
 function taskStepsText(item, canSend) {
   return item.helps.length === 0 && canSend("steps") ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
 }
-var REPORT_VERB = String.raw`\b(?:report|tell|let \w+ know|say|reply|answer|confirm)\b`;
+var REPORT_VERB = String.raw`\b(?:report|tell (?:me|us)|let (?:me|us) know)\b`;
+var CONDITIONAL_VERB = String.raw`\b(?:confirm|answer|say|reply|tell \w+)\b`;
 var SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`;
-var NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b`, "i");
+var NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}${SAME_CLAUSE}\bif\b${SAME_CLAUSE}\bor\b`, "i");
 function taskResultsText(item, canSend) {
   const ask = item.ask.trim();
   const asksForResult = ask.endsWith("?") || NAMED_RESULTS_ASK.test(ask);
@@ -8836,7 +8837,7 @@ function seenSubjectIds(row) {
 // ../core/view/session-view.ts
 var PRESS_TIMEOUT_MS = 60000;
 function withoutStaleResult(last, now) {
-  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS)
+  if (last.result?.state !== "pending" || now - last.result.at < PRESS_TIMEOUT_MS)
     return last;
   const { result: _result, ...rest } = last;
   return rest;

@@ -8,7 +8,7 @@ import { drawnGaps, missingTexts, rowTexts, statusFoldIds, statusTexts } from '.
 import type { Expected } from '../../tests/view-contract'
 import { allOf, columnOf } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
-import { AGENT, NOW, uiOn } from './fixtures'
+import { AGENT, NOW, lookPresses, uiOn } from './fixtures'
 import type { LookUi } from '../src/draw'
 import type { Followed } from '../src/follow'
 
@@ -20,14 +20,15 @@ const { bannerEl } = await import('../src/paint-chrome')
 const DAY = 86_400_000
 const THEME = new Proxy({}, { get: () => '#808080' }) as never
 const FOLLOWED: Followed = { is: 'session', terminal: 't1', sessionId: 's1' }
-const PRESSES = { now: NOW, holds: { ...NO_HOLDS, shownSince: NOW - DAY }, notes: {}, queue: { outs: [], lines: {} } }
+const HOLDS = { ...NO_HOLDS, shownSince: NOW - DAY }
 
 function drawn(session: Session, ui: LookUi) {
   const envelope = herdrEnvelope(
     { host: 'claude-code', agent: AGENT, sessionId: 's1', terminal: 't1', writtenAt: NOW },
     session,
   )
-  const screen = screenOf(FOLLOWED, readSession(JSON.stringify(envelope)), ui, PRESSES)
+  const read = readSession(JSON.stringify(envelope))
+  const screen = screenOf(FOLLOWED, read, ui, lookPresses(read, HOLDS))
   if (screen.is !== 'inbox') throw new Error(`the look drew no inbox: ${JSON.stringify(screen)}`)
   const anyNode = [...layoutAtRest(screen.blocks).placed.keys()][0]!
   let list: Painted = anyNode

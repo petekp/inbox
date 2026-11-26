@@ -2904,9 +2904,13 @@ function withUpdate(item, updated) {
 }
 
 // ../core/domain/question-checks.ts
-var REPORT_VERB = String.raw`\b(?:report|tell|let \w+ know|say|reply|answer|confirm)\b`;
+var REPORT_VERB = String.raw`\b(?:report|tell (?:me|us)|let (?:me|us) know)\b`;
+var CONDITIONAL_VERB = String.raw`\b(?:confirm|answer|say|reply|tell \w+)\b`;
 var SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`;
-var NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b`, "i");
+var NAMED_RESULTS_ASK = new RegExp(
+  String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}${SAME_CLAUSE}\bif\b${SAME_CLAUSE}\bor\b`,
+  "i"
+);
 
 // ../core/domain/earlier-answers.ts
 var K1 = 1.2;
@@ -3905,7 +3909,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
 // ../core/view/session-view.ts
 var PRESS_TIMEOUT_MS = 6e4;
 function withoutStaleResult(last, now) {
-  if (last.result?.state !== "pending" || now - last.result.at <= PRESS_TIMEOUT_MS) return last;
+  if (last.result?.state !== "pending" || now - last.result.at < PRESS_TIMEOUT_MS) return last;
   const { result: _result, ...rest } = last;
   return rest;
 }
