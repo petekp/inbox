@@ -399,6 +399,31 @@
     ]
   },
   {
+    "name": "record-question-shortens-long-context",
+    "about": "A record whose context is longer than the row shows is refused with an answer naming the field, and the agent records the question again with a shorter context instead of giving up.",
+    "prompt": "Task: speed up the product API's price lookups. Before you can go on, I have to choose between Redis and an in-process memory cache. Redis adds a server to each environment. The memory cache keeps prices in each process. You recommend the memory cache. Ask me, and give the question this context, word for word: \"The checkout page waits on price lookups that take 900 ms each, the last three incidents all began with a lookup timeout, the team wants a fix before the sale on Friday, and the service runs as one process today but may move to four instances next quarter.\"",
+    "checks": [
+      {
+        "calls": "record",
+        "kind": "question",
+        "has": ["ask", "options", "context"],
+        "result": "^Recorded",
+        "min": 1
+      },
+      {
+        "calls": "record",
+        "kind": "finding",
+        "count": 0
+      },
+      {
+        "reply": "\\?"
+      },
+      {
+        "noIds": true
+      }
+    ]
+  },
+  {
     "name": "approval-gives-something-to-look-at",
     "about": "An approval of something the user can look at is recorded with that page in steps, given at once or after the record's answer says the user can't approve what they can't see.",
     "files": {

@@ -5,9 +5,6 @@ import { words } from './ask-match'
 import { descriptionsFor } from './dialogs'
 import { hasPreviews, isPreviewStep, previewsOf } from './option-previews'
 
-const MAX_CONTEXT = 200
-const MAX_OPTION_NOTE = 120
-
 /**
  * Why a question came up, what picking each option does, and what each option looks like, by its label as the record's
  * options have it.
@@ -19,11 +16,11 @@ type QuestionBody = Pick<Item, 'context' | 'optionDescriptions' | 'optionPreview
  * option order.
  */
 export function questionBody(input: Record<string, unknown>, options: string[]): QuestionBody {
-  const context = typeof input.context === 'string' ? input.context.trim().slice(0, MAX_CONTEXT) : ''
+  const context = typeof input.context === 'string' ? input.context.trim() : ''
   const notes = Array.isArray(input.option_notes) ? input.option_notes : []
   const noted = options.flatMap((option, i) => {
     const note = notes[i]
-    const text = typeof note === 'string' ? note.trim().slice(0, MAX_OPTION_NOTE) : ''
+    const text = typeof note === 'string' ? note.trim() : ''
     return text === '' ? [] : [[option, text] as const]
   })
   const { previews } = previewsOf(input, options)

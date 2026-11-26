@@ -51,3 +51,10 @@ export function text(rng: Rng, plain = 0.4): string {
 
   return Array.from({ length: parts }, () => rng.pick(TEXT_CLASSES[rng.pick(CLASSES)])).join(' ')
 }
+
+/** A text from `text`, cut to the `max` characters of the field it fills, since the inbox refuses a call with a longer one. */
+export function fitting(rng: Rng, max: number, plain = 0.4): string {
+  const t = text(rng, plain)
+
+  return t.trim().length <= max ? t : t.trim().slice(0, max)
+}

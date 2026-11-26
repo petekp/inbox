@@ -69,7 +69,7 @@ export const messages = {
   taskReply: (item: Item, words: string) => `Re the task you left for me, "${item.ask}": ${words}`,
   done: (asks: string[]) => (asks.length === 1 ? `Done: ${asks[0]}` : `Done:\n${asks.map(a => `- ${a}`).join('\n')}`),
   /**
-   * A close reason is cut at 80 characters, so filing asks for the issue's key there.
+   * A close reason over 80 characters is refused, so filing asks for the issue's key there.
    */
   finding: (finding: Finding, how: 'address' | 'issue' | 'explain' | 'discuss' | 'typed', words = '') => {
     const opening =
