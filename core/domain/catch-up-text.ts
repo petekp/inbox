@@ -121,9 +121,9 @@ export function dialogActivity(questions: DialogQuestion[], outcome: DialogOutco
   const head = `asked the user in a dialog${asked}`
   switch (outcome.kind) {
     case 'answered':
-      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`
+      return `${head}; answer: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`
     case 'timed-out':
-      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`
+      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`
     case 'dismissed':
       return `${head}; the user dismissed it without answering`
     case 'open':
