@@ -83,7 +83,7 @@ const WAKE_SLACK_MS = 20
 
 function schedule(at: number | null) {
   const v = tabState.serverView
-  if (tabState.isDisposed || !v) return
+  if (tabState.isDisposed || !v || !tabState.isActive) return
   const readAt = at === null ? null : readWakeAt(tabState.ui, v, Date.now())
   const isRead = readAt !== null && at !== null && readAt <= at
   if (wake && wake.at === at && wake.isRead === isRead) return
@@ -255,7 +255,7 @@ export async function read() {
     tabState.requestedPage = next.devPage
     if (tabState.updateError?.page !== tabState.requestedPage) tabState.updateError = null
     const isPageOld = tabState.requestedPage !== PAGE
-    if (isPageOld && !tabState.updateError) void swapPage(tabState.requestedPage)
+    if (isPageOld && !tabState.updateError && tabState.isActive) void swapPage(tabState.requestedPage)
     tabState.serverNote = next.isPluginFolderGone
       ? {
           text: 'Quit and reopen Codex to load the installed inbox. Its files were moved or removed, so it still runs the version Codex started with.',

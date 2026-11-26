@@ -246,11 +246,13 @@ export function fadePseudoWith(el: HTMLElement, pseudo: string, row: HTMLElement
   return a
 }
 
-/** Whether a fade takes the element out, or holds it out. */
+/** Whether a fade takes the element out now, or has taken it out and holds it there. */
 export const isFadingOut = (el: HTMLElement) => {
   const f = fades.get(el)
+  const fill = f?.anim.effect?.getTiming().fill
+  const isHeld = f?.anim.playState === 'finished' && (fill === 'forwards' || fill === 'both')
 
-  return f !== undefined && f.to === 0 && f.anim.playState !== 'idle'
+  return f !== undefined && f.to === 0 && (isRunning(f.anim) || isHeld)
 }
 
 export const isFadingIn = (el: HTMLElement) => {

@@ -159,10 +159,13 @@ export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | 
 /** A row's own line, and not the lines of the rows inside it, as in a PR block. */
 const OWN_LINE = ':scope > .row > .content > .line'
 
-/** The status a row's line shows after its title: of those it draws for its open and closed forms, the one shown. */
+/**
+ * The status a row's line shows after its title: of those it draws for its open and closed forms, the one shown, and
+ * not one a close fades out.
+ */
 const afterOf = (line: HTMLElement) =>
   [...line.querySelectorAll<HTMLElement>(':scope > .text:not(.short) .after')].find(
-    a => a.getClientRects().length > 0,
+    a => a.getClientRects().length > 0 && !isFadingOut(a.closest<HTMLElement>('.part') ?? a),
   ) ?? null
 
 /** A row's line before a draw: where its height is, the status it showed after its title, and whether it closed. */
