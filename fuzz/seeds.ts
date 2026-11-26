@@ -76,7 +76,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: '"Send"',
     issue: 827,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd13' },
@@ -317,7 +317,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: '"Not applied',
     issue: 950,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(demo, [
         { is: 'key', key: 'x' },
@@ -331,7 +331,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     name: 'folding every fold on the Status tab',
     rule: 'connector-gap',
     issue: 833,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'tab', n: 0, label: 'overview' },
