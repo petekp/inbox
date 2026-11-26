@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { test } from 'node:test'
 import { demoSession } from '../../core/view/demo'
 import { upgradeSession } from '../../core/view/session-files'
-import { startRemoteCommand } from '../../core/remote/remote-commands'
+import { remoteRowDigest, startRemoteCommand } from '../../core/remote/remote-commands'
 import { rowVersion } from '../../core/domain/preconditions'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
 import { commandsOf, EMPTY_LOG, remoteReceipts, withLegacy, withRecord } from '../../core/runtime/remote-command-state'
@@ -120,12 +120,14 @@ function arrived(log: CommandLog, id: string): CommandLog {
 }
 
 test("a companion's second press on a row acts with the version it read before its first", async () => {
-  const f = fixture()
-  const read = f.command()
-  const explain = await f.run({ ...read, press: { action: 'explain', id: 'i1' } })
-  const compare = await f.run({ ...f.command(), expected: read.expected, press: { action: 'compare', id: 'i1' } })
-  assert.deepEqual([explain.error, explain.note, compare.error, compare.note], [null, null, null, null])
-  assert.equal(f.delivered.length, 2)
+  for (const versionOf of [rowVersion, remoteRowDigest]) {
+    const f = fixture()
+    const expected = await versionOf(f.state(), 'i1')
+    const explain = await f.run({ ...f.command(), expected, press: { action: 'explain', id: 'i1' } })
+    const compare = await f.run({ ...f.command(), expected, press: { action: 'compare', id: 'i1' } })
+    assert.deepEqual([explain.error, explain.note, compare.error, compare.note], [null, null, null, null])
+    assert.equal(f.delivered.length, 2)
+  }
 })
 
 test('a companion Done on a task from an earlier turn applies with no message pending, and one from this turn waits for its message', async () => {
