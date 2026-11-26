@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T20:55:58.558Z. 407223 characters follow.
+// Built at 2026-11-26T21:16:09.928Z. 407242 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -5639,8 +5639,8 @@ var FADE_MS = 200;
 var LEAVE_FADE_MS = 120;
 var ENTER_FADE_MS = 150;
 var SLIDE_PX = 8;
-function enterDelayMs(height, from = { x: 0, v: 0 }) {
-  const at = springFrames(from, height).findLastIndex((x) => height - x > SLIDE_PX / 2) + 1;
+function enterDelayMs(height, from = { x: 0, v: 0 }, slackPx = SLIDE_PX / 2) {
+  const at = springFrames(from, height).findLastIndex((x) => height - x > slackPx) + 1;
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS);
 }
 var CUT_OPACITY = 0.2;
