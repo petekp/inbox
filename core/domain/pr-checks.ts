@@ -31,10 +31,15 @@ export function failedSibling(pr: PrView, c: PrCheck): PrCheck | null {
   return run ? (pr.checks.find(f => f.bucket === 'fail' && isSameRun(run, runOf(f))) ?? null) : null
 }
 
+/** The checks a PR block lists, in its order: failing, then cancelled. */
+export function listedChecks(pr: PrView): PrCheck[] {
+  return [...failingChecks(pr), ...cancelledChecks(pr)]
+}
+
 /**
  * The checks that wait on the person, in the order the PR block lists them: failing, then cancelled. A check a failing
  * sibling cancelled waits on that sibling's Fix instead.
  */
 export function blockingChecks(pr: PrView): PrCheck[] {
-  return [...failingChecks(pr), ...cancelledChecks(pr).filter(c => !failedSibling(pr, c))]
+  return listedChecks(pr).filter(c => !failedSibling(pr, c))
 }

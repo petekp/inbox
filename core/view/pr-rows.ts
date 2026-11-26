@@ -3,7 +3,7 @@ import { GH_TIMED_OUT_TEXT } from '../domain/pr-fetch'
 import { baseName } from '../domain/open-targets'
 import { isFoldingPress } from '../domain/last-actions'
 import { clipLabel, clockTime } from '../domain/text'
-import { blockingChecks, cancelledChecks, failedSibling, failingChecks } from '../domain/pr-checks'
+import { blockingChecks, cancelledChecks, failedSibling, failingChecks, listedChecks } from '../domain/pr-checks'
 import {
   commentLine,
   commentParts,
@@ -244,7 +244,8 @@ export function isPrTabRunning(prs: PrView[], lastActions: Record<string, LastAc
 
 /**
  * The rows of the PR blocks `prs` in drawn order, each block's review threads, failing checks, then cancelled checks,
- * and whether each still waits on the person: a thread not sent to the agent, a check whose Fix was not handed off.
+ * and whether each still waits on the person: a thread not sent to the agent, a check whose Fix was not handed off. A
+ * check a failing sibling cancelled waits on that sibling's Fix, not on the person.
  */
 export function prRowWaits(
   prs: PrView[],
@@ -259,13 +260,14 @@ export function prRowWaits(
       const id = prThreadId(pr, t)
       return { id, isWaiting: !isSent(pr, t), isCollapsed: isCollapsed(id) }
     }),
-    ...blockingChecks(pr).map(c => {
+    ...listedChecks(pr).map(c => {
       const id = prCheckId(pr, c)
       const last = lastActions[id]
+      const isFixWaiting = !isFoldingPress(id, last) || last?.delivery?.state === 'failed'
 
       return {
         id,
-        isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === 'failed',
+        isWaiting: failedSibling(pr, c) === null && isFixWaiting,
         isCollapsed: isCollapsed(id),
       }
     }),
