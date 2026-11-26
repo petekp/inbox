@@ -37,10 +37,11 @@ import { SETTLED_MS, isDrawnInPlace } from '../../core/view/timing'
 import { footerError } from '../../core/view/view'
 import type { PressKind } from '../../types'
 import { button, emptyBlock } from './blocks'
+import { HOLD_MS } from './block-glide'
+import { undoPlaceEndsAt } from '../../core/view/ui-controller-clock'
 import type { Block, BodyLine, Button, Does, Field, Mark, RowBlock } from './blocks'
 import { prTabBlocks } from './draw-prs'
 import { prRowWaits } from '../../core/view/pr-rows'
-import { undoPlaceEndsAt } from '../../core/view/ui-controller-clock'
 import { openPrViews } from '../../core/view/pr-views'
 import { statusBlocks } from './draw-status'
 import { GOAL_KEYS_ID, goalSubmitLabel } from '../../core/view/status-keys'
@@ -125,10 +126,10 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
 }
 
 /**
- * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
- * hidden, as the Codex tab hides a spent Undo, so the row does not change shape before it folds. The panel draws Undo on
- * a line of its own, so a hidden one is an empty line. A row whose message waits for the agent stays until the agent
- * takes it, so it drops the place from `undoPlaceEndsAt` rather than hold that empty line.
+ * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. The panel draws Undo on a line of its
+ * own. Once Undo ends, the button keeps its place and its label, muted and taking no press, so the row neither changes
+ * shape before it folds nor shows an empty line. A row whose message waits for the agent stays until the agent takes
+ * it, so from `undoPlaceEndsAt` its spent Undo fades out while its place holds, then its place closes.
  */
 function undoButtons(row: RowView, agent: string, now: number): Button[] {
   if (row.state.is !== 'settled') return []
@@ -144,11 +145,12 @@ function undoButtons(row: RowView, agent: string, now: number): Button[] {
       },
     ]
 
-  const isWaitingForAgent = row.state.delivery === 'queued' && now >= undoPlaceEndsAt(row.state)
+  if (!row.state.offersUndo) return []
+  const leftAt = row.state.delivery === 'queued' ? undoPlaceEndsAt(row.state) : null
+  if (leftAt !== null && now >= leftAt + HOLD_MS) return []
+  const leaving = leftAt !== null && now >= leftAt ? { leftAt } : {}
 
-  return row.state.offersUndo && !isWaitingForAgent
-    ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isHidden: true, runsOutAt }]
-    : []
+  return [{ ...button(id, ROW_COPY.undo, 'quiet'), isSpent: true, ...leaving, runsOutAt }]
 }
 
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */

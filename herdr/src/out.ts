@@ -187,7 +187,7 @@ export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<st
   const lineOf = (id: string): RowLine | null => {
     const out = byRow.get(id)
     if (!out || holdsStatusWhileOut(out.kind)) return lines[id] ?? null
-    const source: Feedback = out.pending ?? { is: 'sending', label: SENDING, at: now }
+    const source: Feedback = out.pending ?? { is: 'sending', label: SENDING, at: now, sentAt: now }
     if (out.result) return { ...resultLine(out.result), source }
     return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted', source }
   }

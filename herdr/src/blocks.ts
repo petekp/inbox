@@ -75,8 +75,12 @@ export type Button = {
   isOption?: true
   /** When the time this button offers runs out, as Undo's does. It draws the time left as a fill that empties. */
   runsOutAt?: number
-  /** A spent Undo, which keeps its place so the row does not change shape, but draws nothing and takes no press. */
-  isHidden?: true
+  /**
+   * A spent Undo, which keeps its place so the row does not change shape. It draws its label muted and takes no press.
+   */
+  isSpent?: true
+  /** When a spent Undo started to leave: it fades out while its place holds, then its place closes. */
+  leftAt?: number
 }
 
 export const button = (
@@ -145,8 +149,13 @@ export type RowBlock = {
   sideBySide?: { optionIds: string[]; recLine: string | null }
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
-  /** The line the row had above its buttons, kept while a press puts its status under them. See `holdLinesAbove`. */
-  heldLine?: { text: string; tone: Tone; isHidden: boolean }
+  /**
+   * The line the row had above its buttons, kept while a press puts its status under them, and when its hold let go,
+   * while it leaves. See `holdLinesAbove`.
+   */
+  heldLine?: { text: string; tone: Tone; isHidden: boolean; leftAt?: number }
+  /** When the status the row draws above its buttons came, while its box still opens to hold it. */
+  lineCameAt?: number
   /** Draws the status under the buttons, where the shared rule puts it above them. See `holdLinesAbove`. */
   isStatusHeldUnder?: true
 }

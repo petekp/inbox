@@ -4,7 +4,7 @@ import { $ } from 'bun'
 import { CUT_OPACITY } from '../core/view/row-motion'
 import { type CodexEv, type CodexSpec, type PageFailure, type PageRun, drive } from './codex-page'
 import { type Rng, rngOf } from './rng'
-import { CODEX_SEEDS, knownIssueOf } from './seeds'
+import { CODEX_SEEDS, apartFrom, knownIssueOf, ownFailures } from './seeds'
 import { without } from './shrink'
 
 /** A Codex tab case: the page's theme, width and reduced motion, and what the person does. */
@@ -191,7 +191,7 @@ export async function runCodex(
         notRunLines.push(`codex seed #${s.issue}, ${s.name}: could not run: ${seedRun.notRun}`)
         continue
       }
-      const { failures } = seedRun
+      const { own: failures, others } = ownFailures('codex', s.issue, seedRun.failures)
       const isAsIssueSays = failures.some(
         f => f.rule === s.rule && (s.detail === undefined || f.detail.includes(s.detail)),
       )
@@ -206,7 +206,7 @@ export async function runCodex(
             : `fails, but not as its issue says (${rules})`
       const isFixedWhileOpen = failures.length === 0 && s.isOpen
       if (isFixedWhileOpen || (failures.length > 0 && !(s.isOpen && isAsIssueSays))) isSeedBroken = true
-      seedLines.push(`codex seed #${s.issue}, ${s.name}: ${verdict}`)
+      seedLines.push(`codex seed #${s.issue}, ${s.name}: ${verdict}${apartFrom(others)}`)
     }
     for (let n = 0; n < runs; n++) {
       const c = caseOf(rngOf(seed, n))

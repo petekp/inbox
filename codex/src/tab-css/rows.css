@@ -208,6 +208,9 @@
 .part.held-hidden {
   visibility: hidden;
 }
+.part.leaving {
+  animation: fade-out var(--leave-fade) forwards;
+}
 .quote,
 .pre-line {
   white-space: pre-line;

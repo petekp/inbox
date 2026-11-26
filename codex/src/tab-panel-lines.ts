@@ -5,7 +5,7 @@ import {
   isStatusUnderActions,
   type FeedbackTone,
 } from '../../core/view/feedback'
-import type { AfterLine } from './tab-held-after'
+import type { DrawnAfter } from './tab-held-after'
 import { tabState } from './tab-state'
 import type { Row } from './tab-state'
 import { errorOf } from './tab-ui'
@@ -43,7 +43,7 @@ type Press = {
   label: string | null
   tone: FeedbackTone
   /** The status the row's line drew after its title, which the form a row leaves keeps. */
-  after?: AfterLine | null
+  after?: DrawnAfter | null
 }
 
 /** The press each row's line last drew, which the form a row leaves keeps while it fades out. */

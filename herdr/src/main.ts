@@ -367,6 +367,7 @@ export default class Inbox extends View {
     const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`
     const isFirst = tracksOf !== this.tracksOf
     const resized = this.heights.takeResized()
+    const isForming = this.heights.isForming(isFirst, now)
     const paint: Paint = {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
@@ -380,7 +381,7 @@ export default class Inbox extends View {
       pick: (tab: ShownTab, cx) => this.apply([{ type: 'show-tab', tab }], cx),
       motion: new Map(),
       heights: this.heights,
-      isAtOnce: key => isFirst || resized.has(key),
+      isAtOnce: key => isForming || resized.has(key),
       measure: (key, size, cx, isWidthDrawn) =>
         this.heights.measure(key, size, zoomOf(settings()), isWidthDrawn) && cx.notify(),
       now,
@@ -413,7 +414,7 @@ export default class Inbox extends View {
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     this.blocks = shown
     this.hints = fieldHints(shown)
-    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
+    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming)
     this.linesAbove = held.held
     const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits)
     this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map(o => o.rowId) }
@@ -474,7 +475,7 @@ export default class Inbox extends View {
           .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
-    const wakeAt = nextDrawAt(now, moved, this.fades.drew())
+    const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt])
     if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
 
     return drawn

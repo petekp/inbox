@@ -107,10 +107,10 @@ function draw() {
   tabState.lastPrs = step?.prs ?? null
   tabState.lastStatus = step?.status ?? null
   tabState.lastBanners = step?.banners ?? null
-  wakeForMoves()
   const app = () => <App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />
   render(app(), root)
   if (settleAnswers(root)) render(app(), root)
+  wakeForMoves()
   watchAnswers()
   animateDraw(before, step?.changed ?? new Set(), step?.drawnAt ?? Date.now())
   if (isPageSwitch) endPageSwitch()

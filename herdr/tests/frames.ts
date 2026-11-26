@@ -3,6 +3,8 @@ import type { Block } from '../src/blocks'
 import type { Paint } from '../src/paint-theme'
 import { checkMotionIds, columnOf, fieldOf } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
+import { boxOf, checkFadeIds, fadesOn } from './fade-boxes'
+import { type Box, layout, linesOf } from './layout'
 
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
@@ -16,10 +18,8 @@ const { HeldFades } = await import('../src/held-fades')
 
 const FRAME_MS = 16
 const PANE_WIDTH = 300
-const WRAP_AT = 40
 const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 
-type Box = { top: number; height: number }
 type Spring = { x: number; v: number; target: number | undefined }
 type Jump = { at: number; id: string; by: number }
 type TitleForm = { at: number; id: string; tall: number; short: number; box: number; isBoxResting: boolean }
@@ -28,50 +28,8 @@ type Cut = { at: number; box: string; text: string; share: number; opacity: numb
 type Fading = { at: number; id: string; height: number; opacity: number }
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean }
 type Shown = { at: number; block: string; text: string; opacity: number; share: number; isFormPart: boolean }
-
-const linesOf = (n: Painted): number =>
-  n.style.isTruncated ? 1 : Math.max(1, Math.ceil((n.text ?? '').length / WRAP_AT))
-
-export function layout(root: Painted, shown: (id: string) => number | undefined, line = 0) {
-  const boxes = new Map<string, Box>()
-  const placed = new Map<Painted, Box>()
-  const sized: { node: Painted; height: number }[] = []
-  const floating: { node: Painted; height: number }[] = []
-  const fits: { id: string | null; height: number; content: number }[] = []
-  const place = (n: Painted, top: number, line: number): number => {
-    const lh = n.style.line ?? line
-    const pt = n.style.pt ?? 0
-    const flow = n.kids.filter(k => !k.style.isAbsolute)
-    for (const k of n.kids)
-      if (k.style.isAbsolute && k.onSize && k.text !== null)
-        floating.push({ node: k, height: (k.style.line ?? lh) * linesOf(k) })
-    let content = 0
-    if (flow.length === 0 && (n.text !== null || n.field !== null)) content = lh * linesOf(n)
-    else if (n.flow === 'row')
-      for (const k of flow) content = Math.max(content, (k.style.mt ?? 0) + place(k, top + pt + (k.style.mt ?? 0), lh))
-    else {
-      let y = top + pt
-      flow.forEach((k, i) => {
-        y += (i > 0 ? (n.style.gap ?? 0) : 0) + (k.style.mt ?? 0)
-        y += place(k, y, lh) + (k.style.mb ?? 0)
-      })
-      content = y - top - pt
-    }
-    const sprung = n.id !== null && n.springs.has('height') ? shown(n.id) : undefined
-    const natural = pt + content + (n.style.pb ?? 0)
-    const height = sprung ?? n.style.h ?? Math.min(natural, n.style.maxH ?? Infinity)
-    const isSet = sprung !== undefined || n.style.h !== undefined || n.style.maxH !== undefined
-    if (n.style.isClipped && isSet) fits.push({ id: n.id, height, content: natural })
-    sized.push({ node: n, height })
-    placed.set(n, { top, height })
-    if (n.id !== null) boxes.set(n.id, { top, height })
-
-    return height
-  }
-  place(root, 0, line)
-
-  return { boxes, sized, floating, placed, fits }
-}
+type ShownLine = { block: string; text: string; top: number; height: number; opacity: number }
+type Rest = { fits: { id: string | null; height: number; content: number }[]; lines: ShownLine[] }
 
 const lengthIn = (length: number | string, height: number): number =>
   typeof length === 'string' && length.endsWith('%') ? (parseFloat(length) / 100) * height : Number(length)
@@ -161,14 +119,6 @@ class Springs {
 }
 
 type Fade = { shown: number; from: number; target: number; elapsed: number; duration: number; delay: number }
-
-const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'status ', 'tall ', 'short ', 'form ', 'trunk ', 'mark ']
-const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))
-
-function boxOf(n: Painted): string | null {
-  for (let up: Painted | null = n; up; up = up.parent) if (fadesOn(up.id)) return up.id ?? null
-  return null
-}
 
 const isThroughLetters = (hidden: number, line: number): boolean =>
   hidden % line > LEADING_PX && hidden % line < line - LEADING_PX
@@ -355,18 +305,27 @@ class Frames {
   cuts: Cut[] = []
   fading: Fading[] = []
   shown: Shown[] = []
+  rest: Rest = { fits: [], lines: [] }
+
+  showPage() {
+    this.last = null
+    this.tracks = NO_TRACKS
+    this.linesAbove = NO_LINES_ABOVE
+    this.motionIds = null
+  }
 
   draw(blocks: Block[], now: number, isInput = false) {
     const isFirst = this.last === null
     const resized = this.heights.takeResized()
-    const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
+    const isForming = this.heights.isForming(isFirst, now)
+    const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming)
     this.linesAbove = held.held
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
     this.tracks = moved.tracks
     const paint = paintOf(
       moved.motion,
       this.heights,
-      key => isFirst || resized.has(key),
+      key => isForming || resized.has(key),
       now,
       this.closedSeen,
       undefined,
@@ -378,11 +337,13 @@ class Frames {
     )
     this.held.drew()
     this.motionIds = checkMotionIds(tree, this.motionIds)
+    checkFadeIds(tree)
     const was = this.springs.shown()
     this.springs.declare(tree)
     const shown = this.springs.shown()
     this.fades.declare(tree)
-    const { boxes, sized, floating, placed } = layout(tree, id => shown.get(id))
+    const { boxes, sized, floating, placed, fits } = layout(tree, id => shown.get(id))
+    const lines: ShownLine[] = []
     for (const [id, fade] of this.fades.states)
       this.fading.push({ at: now, id, height: boxes.get(id)?.height ?? 0, opacity: fade.shown })
     for (const { node, share } of cutTexts(placed)) {
@@ -397,14 +358,17 @@ class Frames {
       const opacity = this.fades.opacityOf(node) * plain
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
       this.shown.push({ at: now, block: blockOf(node), text, opacity, share, isFormPart: isFormPart(node) })
+      const box = placed.get(node)
+      if (box && share > 0) lines.push({ block: blockOf(node), text, opacity, ...box })
     }
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
     this.slides.push(sized.flatMap(({ node }) => (node.transitions.has('top') ? [node.style.top ?? 0] : [])))
     for (const gap of gapsOf(segmentsOf(tree, placed), end)) this.gaps.push({ at: now, ...gap })
+    this.rest = { fits, lines }
     const startsHere = [...moved.motion].filter(([, m]) => m.springId?.endsWith(`${MOVED_TO}${now}`)).map(([id]) => id)
     const isInMovedBlock = (id: string) => startsHere.some(b => id.endsWith(` ${b}`))
-    if (this.last) {
+    if (this.last && !isForming) {
       const stillAt = (id: string) => (was.has(id) && shown.has(id) ? this.lastShown.get(id) : shown.get(id))
       for (const [id, box] of layout(tree, stillAt).boxes) {
         const before = this.last.get(id)
@@ -443,7 +407,7 @@ class Frames {
   }
 }
 
-export type Step = [number, Block[]] | [number, Block[], 'input']
+export type Step = [number, Block[]] | [number, Block[], 'input' | 'page']
 
 export function framesOf(
   steps: Step[],
@@ -458,14 +422,28 @@ export function framesOf(
   cuts: Cut[]
   fading: Fading[]
   shown: Shown[]
+  rest: Rest
 } {
   const frames = new Frames(measureLagMs)
   const [first] = steps
-  if (!first) return { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [], shown: [] }
+  if (!first)
+    return {
+      jumps: [],
+      titles: [],
+      gaps: [],
+      heights: [],
+      slides: [],
+      cuts: [],
+      fading: [],
+      shown: [],
+      rest: frames.rest,
+    }
   const start = 1_000_000
   let drawn: Step | null = null
   for (let at = -500; at < ms; at += FRAME_MS) {
     const step = steps.findLast(([from]) => at >= from) ?? first
+    const isNewPage = steps.some(([from, , kind]) => kind === 'page' && from > at - FRAME_MS && from <= at)
+    if (isNewPage) frames.showPage()
     frames.draw(step[1], start + at, step !== drawn && step[2] === 'input')
     drawn = step
   }
@@ -479,6 +457,7 @@ export function framesOf(
     cuts: frames.cuts.map(c => ({ ...c, at: c.at - start })),
     fading: frames.fading.map(f => ({ ...f, at: f.at - start })),
     shown: frames.shown.map(s => ({ ...s, at: s.at - start })),
+    rest: frames.rest,
   }
 }
 

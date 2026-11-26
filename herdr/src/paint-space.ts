@@ -16,8 +16,9 @@ import {
   SECTION_GAP,
 } from './paint-theme'
 import type { Paint } from './paint-theme'
-import { panelId, prHeadId, prTailId, restId, titleId } from './heights'
-import { prStatusHeight } from './pr-status'
+import { panelId, prHeadId, restId, titleId } from './heights'
+import { PR_TAIL_PARTS, prStatusHeight, prTailHeight, prTailId } from './pr-status'
+import { heldLineDrop, lineRise } from './held-line'
 import { underId } from './under-line'
 import { shortTitleOf } from './title-cut'
 import { shutTo } from './block-glide'
@@ -208,11 +209,12 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
   const panel = m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0
   const former = () => (m?.former ? fitHeight(m.former, undefined, p) : undefined)
   if (b.kind === 'pr') {
-    const parts = [prHeadId(id), underId(id), prTailId(id)].map(key => p.heights.get(key))
-    const [head, status, tail] = parts
-    if (head === undefined || status === undefined || tail === undefined) return former()
+    const head = p.heights.get(prHeadId(id))
+    const status = p.heights.get(underId(id))
+    const tail = PR_TAIL_PARTS.map(part => prTailHeight(b, part, m, p) ?? p.heights.get(prTailId(part, id)))
+    if (head === undefined || status === undefined || tail.some(h => h === undefined)) return former()
 
-    return head + (prStatusHeight(b, m, p) ?? status) + tail
+    return head + (prStatusHeight(b, m, p) ?? status) + tail.reduce((sum: number, h) => sum + (h ?? 0), 0)
   }
   if (b.kind !== 'row') {
     const measured = p.heights.get(id)
@@ -222,7 +224,9 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
   const title = titleHeightOf(b, p)
   const rest = p.heights.get(restId(id))
 
-  return title === undefined || rest === undefined ? former() : 2 * padOf(b) + title + rest - panel
+  if (title === undefined || rest === undefined) return former()
+
+  return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + lineRise(b, p.now, p.heights)
 }
 
 /**
