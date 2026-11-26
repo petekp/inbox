@@ -22,6 +22,7 @@ import { milestoneLastWorkDone } from './replays/milestone-last-work-done'
 import { milestoneDecided } from './replays/milestone-decided'
 import { noGoalYet } from './replays/no-goal-yet'
 import { typedGoalKept } from './replays/typed-goal-kept'
+import { unrelatedTask } from './replays/unrelated-task'
 import { goalTypedWhileRunning } from './replays/goal-typed-while-running'
 import { goalAwaitingMilestones } from './replays/goal-awaiting-milestones'
 import { goalOnBusyPage } from './replays/goal-on-busy-page'
@@ -52,6 +53,7 @@ export const REPLAYS: Replay[] = [
   catchUpShipped,
   goalAwaitingMilestones,
   askHoldsTwo,
+  unrelatedTask,
   oneTaskPlan,
   milestoneWorkDone,
   milestoneReplyLanded,
