@@ -68,7 +68,7 @@ Auto-update is off for this marketplace by default. Turn it on in the
 inbox in local Code sessions.
 
 - It makes two Sonnet calls after each of Claude's replies, one for the rows and one for the Status tab. See [Cost](#cost).
-- It needs Claude Code 2.1.292 or later, and was built and tested with 2.1.300. `plugin.json` declares it, and Claude Code 2.1.323 and later enforce it.
+- It needs Claude Code 2.1.292 or later, and was built and tested with 2.1.300. `plugin.json` declares it, and Claude Code 2.1.332 refuses to install the inbox below it.
 
 ### Codex
 

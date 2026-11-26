@@ -12,10 +12,17 @@ test('a row closed again while its turned-back panel is faint steps the panel do
     await read()
     await settle()
     await after(600)
-    const rowOf = (id: string) =>
-      Array.from(document.querySelectorAll<HTMLElement>('[data-motion]')).find(e => e.dataset.motion?.includes(id))!
+    const rowOf = (id: string) => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>('[data-motion]')).find(e =>
+        e.dataset.motion?.includes(id),
+      )
+      if (!row) throw new Error(`no row for ${id}`)
+      return row
+    }
     const press = async (id: string) => {
-      rowOf(id).querySelector<HTMLElement>('button.line')!.click()
+      const line = rowOf(id).querySelector<HTMLElement>('button.line')
+      if (!line) throw new Error(`row ${id} has no line button`)
+      line.click()
       await settle()
     }
     await press('i1')
