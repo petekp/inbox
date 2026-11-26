@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T05:02:04.275Z. 382123 characters follow.
+// Built at 2026-11-26T05:23:57.833Z. 382710 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -22,6 +22,12 @@ import {
   window as herdrWindow,
   writeTextFile
 } from "herdr";
+
+// ../core/domain/option-previews.ts
+var OPEN_PREVIEWS_LABEL = "Open previews";
+function previewEffects(item) {
+  return item.previewPage ? [{ kind: "open", target: item.previewPage, name: "previews" }] : [];
+}
 
 // ../core/domain/press-labels.ts
 function actionId(p) {
@@ -743,6 +749,14 @@ function helpEffect(item, help) {
 function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
+function localEffects(row, press) {
+  if (!row.item)
+    return [];
+  if (press.action === "previews")
+    return previewEffects(row.item);
+  const step = press.action === "step" && press.step !== undefined ? row.steps[press.step] : undefined;
+  return step ? stepEffects(row.item, step) : [];
+}
 
 // ../core/domain/ledger-close.ts
 function idNumber(id) {
@@ -1389,6 +1403,8 @@ function retryOf(id, last) {
   if (step)
     return { action: "step", id, step: Number(step[1]), label: last.text };
   switch (last.action) {
+    case "previews":
+      return { action: "previews", id };
     case "answer":
       return { action: "answer", id, option: last.text };
     case "explain":
@@ -3413,6 +3429,7 @@ var ACTION_KEYS = {
   "show-explanation": "s",
   explain: "e",
   compare: "p",
+  previews: "o",
   discuss: "d",
   dismiss: "x",
   discard: "x"
@@ -3491,6 +3508,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
+    ...item.previewPage ? [action({ action: "previews", id }, OPEN_PREVIEWS_LABEL, "local")] : [],
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     ...explainActions,
@@ -8429,8 +8447,7 @@ function rowDoes(row, press, kind, agent) {
     return { is: "type", rowId: row.id, text: "", hint: replyHint(row, agent) };
   if (press.action === "discard")
     return { is: "leave", rowId: row.id, isDiscard: true };
-  const step = press.action === "step" ? row.steps[press.step] : undefined;
-  const effects = kind === "local" && row.item && step ? stepEffects(row.item, step) : [];
+  const effects = kind === "local" ? localEffects(row, press) : [];
   return { is: "press", press, effects, kind };
 }
 function rowButtons(row, isAllShown, agent) {

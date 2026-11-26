@@ -836,9 +836,9 @@ var GH_TIMED_OUT_TEXT = `gh did not answer within ${GH_TIMEOUT_MS / 1000} second
 
 // src/host.ts
 import { existsSync } from "fs";
-import { stat as stat6 } from "fs/promises";
+import { stat as stat7 } from "fs/promises";
 import { homedir } from "os";
-import { dirname as dirname6, join as join7 } from "path";
+import { dirname as dirname7, join as join7 } from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 // package.json
 var version = "0.8.0";
@@ -853,6 +853,72 @@ function clipboardCommands(platform) {
 }
 function noClipboardCommand(commands) {
   return `no clipboard command started (${commands.map((c) => c[0]).join(", ")})`;
+}
+
+// src/clipboard.ts
+async function copyToClipboard(text) {
+  const commands = clipboardCommands(process.platform);
+  for (const argv of commands) {
+    try {
+      const child = Bun.spawn(argv, { stdin: Buffer.from(text), stdout: "ignore", stderr: "ignore" });
+      if (await child.exited === 0)
+        return null;
+    } catch {
+      continue;
+    }
+  }
+  return noClipboardCommand(commands);
+}
+
+// ../core/domain/option-previews.ts
+var OPEN_PREVIEWS_LABEL = "Open previews";
+function previewTarget(text) {
+  return /^\/\S/.test(text) || /^https:\/\/\S+$/i.test(text) ? text : null;
+}
+function previewsOf(input, options) {
+  const given = Array.isArray(input.previews) ? input.previews : [];
+  const entries = options.map((option, i) => {
+    const raw = given[i];
+    const text = typeof raw === "string" ? raw.trim() : "";
+    return { option, text, target: text === "" ? null : previewTarget(text) };
+  });
+  return {
+    previews: Object.fromEntries(entries.flatMap((e) => e.target ? [[e.option, e.target]] : [])),
+    isAnyLeftOut: entries.some((e) => e.text !== "" && e.target === null)
+  };
+}
+function previewsLeftOutText(input, options) {
+  return previewsOf(input, options).isAnyLeftOut ? " Some previews were not an absolute file path or an https link, so they are left out." : "";
+}
+function isPreviewStep(help, previews) {
+  const targets = Object.values(previews ?? {});
+  const target = help.kind === "open" ? help.path : help.kind === "link" ? help.url : null;
+  return target !== null && targets.includes(target);
+}
+function hasPreviews(item) {
+  return item.options.some((o) => item.optionPreviews?.[o] !== undefined);
+}
+function previewEffects(item) {
+  return item.previewPage ? [{ kind: "open", target: item.previewPage, name: "previews" }] : [];
+}
+function previewPageData(item) {
+  const isRec = (o) => o === item.rec;
+  const options = [...item.options.filter(isRec), ...item.options.filter((o) => !isRec(o))];
+  return {
+    question: item.ask,
+    context: item.context ?? "",
+    pick: item.rec ?? "",
+    reason: item.recReason ?? "",
+    choices: options.map((name) => ({
+      name,
+      summary: item.optionDescriptions?.[name] ?? "",
+      preview: item.optionPreviews?.[name] ?? ""
+    }))
+  };
+}
+function previewPageText(template, item) {
+  return `${template}${JSON.stringify(previewPageData(item), null, 2)}
+`;
 }
 
 // ../core/domain/press-labels.ts
@@ -871,6 +937,8 @@ function pressText(p) {
       return SHOW_EXPLANATION_LABEL;
     case "step":
       return p.label;
+    case "previews":
+      return OPEN_PREVIEWS_LABEL;
     case "remove-goal":
       return "Remove";
     case "restore-goal":
@@ -1445,7 +1513,8 @@ var CLAUDE_CODE = {
     "named-pr-link": { kind: "full" },
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" },
-    "task-results": { kind: "full" }
+    "task-results": { kind: "full" },
+    "option-previews": { kind: "full" }
   }
 };
 
@@ -1620,7 +1689,8 @@ var CODEX = {
       reason: "Under the Codex app, every chat's hook and server run under the app server, so every chat's entry carries the app server's pid. A closed chat's entry reads as running until the app quits. A Codex CLI session gets its own process."
     },
     "press-preconditions": { kind: "full" },
-    "task-results": { kind: "full" }
+    "task-results": { kind: "full" },
+    "option-previews": { kind: "full" }
   }
 };
 
@@ -1744,7 +1814,8 @@ var OMP = {
     "named-pr-link": { kind: "full" },
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" },
-    "task-results": { kind: "full" }
+    "task-results": { kind: "full" },
+    "option-previews": { kind: "full" }
   }
 };
 
@@ -3149,6 +3220,8 @@ function retryOf(id, last) {
   if (step)
     return { action: "step", id, step: Number(step[1]), label: last.text };
   switch (last.action) {
+    case "previews":
+      return { action: "previews", id };
     case "answer":
       return { action: "answer", id, option: last.text };
     case "explain":
@@ -3326,6 +3399,13 @@ function pressed(ledger, last, p, ctx) {
         last: localLast(last, { action: actionId(p), text: pressText(p) }, pendingResult(effects, ctx.now, ctx.localPressId)),
         effects
       };
+    }
+    case "previews": {
+      const effects = previewEffects(item);
+      if (effects.length === 0)
+        return stale;
+      const pending = pendingResult(effects, ctx.now, ctx.localPressId);
+      return { ledger, last: localLast(last, { action: actionId(p), text: pressText(p) }, pending), effects };
     }
     default:
       return stale;
@@ -7310,25 +7390,32 @@ function questionBody(input, options) {
     const text = typeof note === "string" ? note.trim().slice(0, MAX_OPTION_NOTE) : "";
     return text === "" ? [] : [[option, text]];
   });
+  const { previews } = previewsOf(input, options);
   return {
     ...context ? { context } : {},
-    ...noted.length > 0 ? { optionDescriptions: Object.fromEntries(noted) } : {}
+    ...noted.length > 0 ? { optionDescriptions: Object.fromEntries(noted) } : {},
+    ...Object.keys(previews).length > 0 ? { optionPreviews: previews } : {}
   };
 }
 function withBody(item, body) {
   const notes = body.optionDescriptions ? descriptionsFor(item.options, body.optionDescriptions) : null;
   const optionDescriptions = notes ? { ...item.optionDescriptions, ...notes } : item.optionDescriptions;
+  const previews = body.optionPreviews ? descriptionsFor(item.options, body.optionPreviews) : null;
+  const optionPreviews = previews ? { ...item.optionPreviews, ...previews } : item.optionPreviews;
   return {
     ...item,
     ...body.context ? { context: body.context } : {},
-    ...optionDescriptions ? { optionDescriptions } : {}
+    ...optionDescriptions ? { optionDescriptions } : {},
+    ...optionPreviews ? { optionPreviews, helps: item.helps.filter((h) => !isPreviewStep(h, optionPreviews)) } : {}
   };
 }
 function bodyChanges(before, after) {
   const isNoteChanged = after.options.some((o) => after.optionDescriptions?.[o] !== before.optionDescriptions?.[o]);
+  const isPreviewChanged = after.options.some((o) => after.optionPreviews?.[o] !== before.optionPreviews?.[o]);
   return [
     ...after.context !== before.context ? ["gave it your context"] : [],
-    ...isNoteChanged ? ["gave its options your notes"] : []
+    ...isNoteChanged ? ["gave its options your notes"] : [],
+    ...isPreviewChanged ? ["gave its options your previews"] : []
   ];
 }
 var APPROVAL_ASK = /^\s*(?:approve|ok(?:ay)? to|go ahead|ship|sign off)\b/i;
@@ -7343,7 +7430,7 @@ function missingText(item, fields) {
     return taskStepsText(item, canSend) + taskResultsText(item, canSend);
   if (!item)
     return "";
-  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend);
+  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend) + previewsText(item, canSend);
 }
 function taskStepsText(item, canSend) {
   return item.helps.length === 0 && canSend("steps") ? " It has no steps: when a command, file or link would help the user do it, record it again with steps." : "";
@@ -7377,8 +7464,13 @@ function recText(item, canSend) {
     return canSend("rec") ? ` It has no rec: when you can recommend an option, record it again with ${canSend("why") ? "rec and why" : "rec"}.` : "";
   return item.recReason || !canSend("why") ? "" : " It has no why: record it again with why, so the user sees your reason.";
 }
+function previewsText(item, canSend) {
+  const isUnpreviewedDesignChoice = item.isDesignChoice === true && item.options.length >= 2 && !hasPreviews(item);
+  return isUnpreviewedDesignChoice && canSend("previews") ? " It has no previews: when you made an image, page or file that shows each option, record it again with previews." : "";
+}
 function approvalText(item, canSend) {
-  return isApproval(item) && item.helps.length === 0 && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
+  const hasPreviewPage = Object.keys(item.optionPreviews ?? {}).length > 0;
+  return isApproval(item) && item.helps.length === 0 && !hasPreviewPage && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
 }
 
 // ../core/domain/earlier-answers.ts
@@ -7521,6 +7613,11 @@ var RECORD_SCHEMA = {
       type: "array",
       items: { type: "string" },
       description: "For a question: one note for each option, in the order of options, saying what picking it does, in at most 12 words each."
+    },
+    previews: {
+      type: "array",
+      items: { type: "string" },
+      description: 'For a question: one image, page or file for each option, in the order of options, that shows what picking it looks like, each as an absolute file path or an https link. Give "" for an option with none. The user opens them side by side.'
     },
     rec: {
       type: "string",
@@ -7666,7 +7763,8 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
   const steps = list(input.steps, MAX_STEPS + 3, 4000);
   const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
   const helps = steps.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
-  const leftOut = helps.length < steps.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
+  const stepsLeftOut = helps.length < steps.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
+  const leftOut = stepsLeftOut + (input.kind === "question" ? previewsLeftOutText(input, options) : "");
   const isDesignChoice = input.kind === "question" && input.design_choice === true;
   const kind = input.kind;
   const entry = { kind, ask, options, rec, helps, isDesignChoice, ...recReason ? { recReason } : {} };
@@ -7683,8 +7781,9 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
     items: r.ledger.items.map((i) => i === before && after ? { ...after, ...rewordedAsk } : i)
   };
   if (r.is === "open") {
+    const previewSteps = before && after ? before.helps.length - after.helps.length : 0;
     const changes = [
-      ...r.addedSteps > 0 ? ["added its new steps"] : [],
+      ...r.addedSteps - previewSteps > 0 ? ["added its new steps"] : [],
       ...r.isNewOptions ? ["gave it your options"] : [],
       ...r.isNewlyMarked ? ["marked it as a design choice"] : [],
       ...r.newRec ? [`changed its recommendation to ${r.newRec}`] : [],
@@ -7987,6 +8086,7 @@ var ACTION_KEYS = {
   "show-explanation": "s",
   explain: "e",
   compare: "p",
+  previews: "o",
   discuss: "d",
   dismiss: "x",
   discard: "x"
@@ -8065,6 +8165,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
       isPrimary: option === item.rec,
       isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
     })),
+    ...item.previewPage ? [action({ action: "previews", id }, OPEN_PREVIEWS_LABEL, "local")] : [],
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     ...explainActions,
@@ -9053,6 +9154,183 @@ function withFetchedPrs(s, fetched, branchRef, isGhSignedOut, now, failure = nul
       ...Object.keys(stillUnread).length > 0 ? { unread: stillUnread } : {}
     }
   };
+}
+
+// src/preview-pages.ts
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "fs/promises";
+import { dirname } from "path";
+
+// ../core/domain/question-history.ts
+var HISTORY_VERSION = 1;
+var DAY_MS3 = 24 * 60 * 60000;
+var HISTORY_KEEP_MS = 180 * DAY_MS3;
+var BASELINE_MS = 7 * DAY_MS3;
+var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
+var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
+function historyFileName(host, session) {
+  return `${host}-${session.replace(/[^\w.-]/g, "_")}.json`;
+}
+function isAnswer(c) {
+  if (c.kind !== "question")
+    return false;
+  if (c.how === "answered")
+    return true;
+  return c.how === "update" && !NOT_AN_ANSWER2.test(c.outcome.trim());
+}
+var keyOf2 = (q) => `${q.id}@${q.askedAt ?? ""}`;
+var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+function questionHistory(previous, s, place, now) {
+  const answered = s.ledger.closed.filter(isAnswer).map((c) => ({
+    id: c.id,
+    ask: c.ask,
+    options: c.item?.options ?? [],
+    askedAt: c.item?.at ?? null,
+    answer: c.outcome,
+    answeredAt: c.at,
+    how: c.how,
+    isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
+    earlier: c.item?.earlier ?? null,
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
+  }));
+  const open = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
+  const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));
+  for (const q of answered)
+    byKey.set(keyOf2(q), q);
+  const questions = [...byKey.values()].filter((q) => !open.has(keyOf2(q)) && now - q.answeredAt <= HISTORY_KEEP_MS).sort((a, b) => a.answeredAt - b.answeredAt);
+  return {
+    version: HISTORY_VERSION,
+    host: place.host,
+    session: place.session,
+    repo: place.repo ?? previous?.repo ?? null,
+    created: previous?.created ?? now,
+    savedAt: now,
+    questions
+  };
+}
+function isHistoryChanged(previous, next) {
+  if (!previous)
+    return next.questions.length > 0;
+  const said = (f) => JSON.stringify([f.repo, f.questions]);
+  return said(previous) !== said(next);
+}
+function upgradeHistoryFile(raw) {
+  if (!raw || typeof raw !== "object")
+    return null;
+  const f = raw;
+  if (f.version !== HISTORY_VERSION || !Array.isArray(f.questions) || typeof f.session !== "string")
+    return null;
+  return f;
+}
+function historyDocs(files, now) {
+  return files.flatMap((f) => f.questions.filter((q) => now - q.answeredAt <= HISTORY_KEEP_MS).map((q) => ({
+    key: answerKey(f.host, f.session, q.id),
+    ask: q.ask,
+    answer: q.answer,
+    at: q.answeredAt,
+    repo: f.repo
+  })));
+}
+function answerKey(host, session, id) {
+  return `${host}:${session}:${id}`;
+}
+function historyStart(files, now) {
+  return files.reduce((start, f) => Math.min(start, f.created), now);
+}
+function isEarlierShown(start, now) {
+  return now - start >= BASELINE_MS;
+}
+function inboxStateFolder(env) {
+  const state = env.XDG_STATE_HOME?.trim() || (env.HOME?.trim() ? `${env.HOME.trim()}/.local/state` : "");
+  return state ? `${state.replace(/\/+$/, "")}/inbox` : null;
+}
+function historyFolder(env) {
+  const inbox = inboxStateFolder(env);
+  return inbox ? `${inbox}/questions` : null;
+}
+
+// ../core/runtime/preview-pages.ts
+function previewPlace(env, host, sessionId) {
+  const inbox = inboxStateFolder(env);
+  return inbox ? { folder: `${inbox}/previews`, prefix: `${host}-${sessionId.replace(/[^\w.-]/g, "_")}-` } : null;
+}
+var pagePath = (place, itemId) => `${place.folder}/${place.prefix}${itemId}.html`;
+function withPreviewPages(s, place) {
+  const pageOf = (item) => place && hasPreviews(item) ? pagePath(place, item.id) : undefined;
+  if (s.ledger.items.every((item) => item.previewPage === pageOf(item)))
+    return s;
+  const items = s.ledger.items.map((item) => {
+    const previewPage = pageOf(item);
+    if (previewPage === item.previewPage)
+      return item;
+    if (previewPage)
+      return { ...item, previewPage };
+    const unpaged = { ...item };
+    delete unpaged.previewPage;
+    return unpaged;
+  });
+  return { ...s, ledger: { ...s.ledger, items } };
+}
+var PREVIEW_PAGE_KEEP_MS = 14 * 24 * 60 * 60 * 1000;
+var PREVIEW_PAGE_REFRESH_MS = 24 * 60 * 60 * 1000;
+function previewPages(files, env, host, template, log) {
+  return {
+    placeOf: (sessionId) => previewPlace(env, host, sessionId),
+    write: (place, ledger) => writePreviewPages(files, place, ledger, template, Date.now()).catch((error) => log(previewFailure(error)))
+  };
+}
+function previewFailure(error) {
+  return `inbox: a previews page could not be written: ${error instanceof Error ? error.message : error}`;
+}
+var queues = new Map;
+function writePreviewPages(files, place, ledger, template, now) {
+  const key = place.folder + "/" + place.prefix;
+  const run = (queues.get(key) ?? Promise.resolve()).then(() => syncPages(files, place, ledger, template, now));
+  const settled = run.catch(() => {});
+  queues.set(key, settled);
+  settled.then(() => queues.get(key) === settled && queues.delete(key));
+  return run;
+}
+async function syncPages(files, place, ledger, template, now) {
+  const pages = ledger.items.flatMap((item) => item.previewPage ? [{ item, path: item.previewPage }] : []);
+  const recentlyClosed = ledger.closed.flatMap((c) => c.item?.previewPage && now - closedAt(c) < PREVIEW_PAGE_KEEP_MS ? [c.item.previewPage] : []);
+  const kept = new Set([...pages.map((p) => p.path), ...recentlyClosed]);
+  const shown = await files.list(place.folder);
+  const changedAt = new Map(shown.map((f) => [`${place.folder}/${f.name}`, f.mtimeMs]));
+  const isStale = (path) => now - (changedAt.get(path) ?? now) >= PREVIEW_PAGE_KEEP_MS;
+  const left = [...changedAt.keys()].filter((path) => {
+    const isThisSession = path.startsWith(`${place.folder}/${place.prefix}`);
+    return !kept.has(path) && (isThisSession || isStale(path));
+  });
+  const text = pages.length > 0 ? await files.read(template) : null;
+  if (pages.length > 0 && text === null)
+    throw new Error(`The comparison page template is missing: ${template}`);
+  await Promise.all([
+    ...pages.map(async ({ item, path }) => {
+      const page = previewPageText(text ?? "", item);
+      const isDue = now - (changedAt.get(path) ?? 0) >= PREVIEW_PAGE_REFRESH_MS;
+      if (isDue || await files.read(path) !== page)
+        await files.write(path, page);
+    }),
+    ...left.map((path) => files.remove(path))
+  ]);
+}
+
+// src/preview-pages.ts
+var files = {
+  list: async (folder) => {
+    const names = await readdir(folder).catch(() => []);
+    const found = await Promise.all(names.map((name) => stat(`${folder}/${name}`).then((s) => [{ name, mtimeMs: s.mtimeMs }], () => [])));
+    return found.flat();
+  },
+  read: (path) => readFile(path, "utf8").catch(missingAsNull),
+  write: async (path, text) => {
+    await mkdir(dirname(path), { recursive: true, mode: 448 });
+    await writeFile(path, text, { mode: 384 });
+  },
+  remove: (path) => rm(path, { force: true })
+};
+function ompPreviewPages(env, template, log) {
+  return previewPages(files, env, "omp", template, log);
 }
 
 // ../core/runtime/host-prs.ts
@@ -12302,6 +12580,8 @@ function demoView(now, agent) {
             Pinch: "Touch thumb and finger together to clear the glance.",
             Flick: "Flick the wrist outward to clear it."
           },
+          optionPreviews: { Pinch: "/demo/pinch.png", Flick: "/demo/flick.png" },
+          previewPage: "/demo/previews.html",
           rec: "Pinch",
           recReason: "a flick fires by accident while walking",
           isDesignChoice: true,
@@ -12778,7 +13058,7 @@ async function runSends(host, effects, rowId, rows, at) {
 }
 
 // src/state.ts
-import { mkdir as mkdir3, readdir, readFile as readFile2, rename as rename2, stat as stat2, unlink, writeFile as writeFile3 } from "fs/promises";
+import { mkdir as mkdir4, readdir as readdir2, readFile as readFile3, rename as rename2, stat as stat3, unlink, writeFile as writeFile4 } from "fs/promises";
 import { join as join3 } from "path";
 
 // ../core/runtime/command-store.ts
@@ -12866,21 +13146,21 @@ async function followCommandRows(store, key, s, log) {
 }
 
 // src/command-log.ts
-import { mkdir as mkdir2, readFile, rename, rm, writeFile as writeFile2 } from "fs/promises";
-import { dirname, join as join2 } from "path";
+import { mkdir as mkdir3, readFile as readFile2, rename, rm as rm2, writeFile as writeFile3 } from "fs/promises";
+import { dirname as dirname2, join as join2 } from "path";
 
 // src/herdr-log.ts
-import { appendFile, mkdir, stat, writeFile } from "fs/promises";
+import { appendFile, mkdir as mkdir2, stat as stat2, writeFile as writeFile2 } from "fs/promises";
 import { join } from "path";
 var HERDR_LOG_BYTES = 64 * 1024;
 function herdrLog(dir) {
   const path = join(dir, "herdr.log");
   return (text) => void (async () => {
-    const size = await stat(path).then((s) => s.size, () => 0);
+    const size = await stat2(path).then((s) => s.size, () => 0);
     const line = `${new Date().toISOString()} ${text}
 `;
-    await mkdir(dir, { recursive: true });
-    await (size > HERDR_LOG_BYTES ? writeFile(path, line) : appendFile(path, line));
+    await mkdir2(dir, { recursive: true });
+    await (size > HERDR_LOG_BYTES ? writeFile2(path, line) : appendFile(path, line));
   })().catch(() => {
     return;
   });
@@ -14137,112 +14417,24 @@ var isRunning = async (runner) => isPidRunning(Number(runner.id));
 function commandsPath(dir, sessionId) {
   return commandLogPath(join2(dir, "sessions"), sessionId);
 }
-var files = {
-  read: (path) => readFile(path, "utf8").catch(missingAsNull),
+var files2 = {
+  read: (path) => readFile2(path, "utf8").catch(missingAsNull),
   write: async (path, text) => {
-    await mkdir2(dirname(path), { recursive: true });
-    await writeFile2(path, text);
+    await mkdir3(dirname2(path), { recursive: true });
+    await writeFile3(path, text);
   },
   move: (from, to) => rename(from, to),
   lock: (path, fn) => changes.run(path, fn)
 };
 function ompCommandStore(dir, sessionId, now, onChange) {
-  return fileCommandStore(files, commandsPath(dir, sessionId), { runner: RUNNER, isRunning }, {
+  return fileCommandStore(files2, commandsPath(dir, sessionId), { runner: RUNNER, isRunning }, {
     now,
     log: herdrLog(dir),
     onChange
   });
 }
 function removeCommands(dir, sessionId) {
-  return rm(commandsPath(dir, sessionId), { force: true });
-}
-
-// ../core/domain/question-history.ts
-var HISTORY_VERSION = 1;
-var DAY_MS3 = 24 * 60 * 60000;
-var HISTORY_KEEP_MS = 180 * DAY_MS3;
-var BASELINE_MS = 7 * DAY_MS3;
-var ROW_MEASUREMENT_MS = 21 * DAY_MS3;
-var NOT_AN_ANSWER2 = new RegExp(`^(?:done:|fix sent for |(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES}))`, "i");
-function historyFileName(host, session) {
-  return `${host}-${session.replace(/[^\w.-]/g, "_")}.json`;
-}
-function isAnswer(c) {
-  if (c.kind !== "question")
-    return false;
-  if (c.how === "answered")
-    return true;
-  return c.how === "update" && !NOT_AN_ANSWER2.test(c.outcome.trim());
-}
-var keyOf2 = (q) => `${q.id}@${q.askedAt ?? ""}`;
-var sameAnswer = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
-function questionHistory(previous, s, place, now) {
-  const answered = s.ledger.closed.filter(isAnswer).map((c) => ({
-    id: c.id,
-    ask: c.ask,
-    options: c.item?.options ?? [],
-    askedAt: c.item?.at ?? null,
-    answer: c.outcome,
-    answeredAt: c.at,
-    how: c.how,
-    isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
-    earlier: c.item?.earlier ?? null,
-    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
-  }));
-  const open = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
-  const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));
-  for (const q of answered)
-    byKey.set(keyOf2(q), q);
-  const questions = [...byKey.values()].filter((q) => !open.has(keyOf2(q)) && now - q.answeredAt <= HISTORY_KEEP_MS).sort((a, b) => a.answeredAt - b.answeredAt);
-  return {
-    version: HISTORY_VERSION,
-    host: place.host,
-    session: place.session,
-    repo: place.repo ?? previous?.repo ?? null,
-    created: previous?.created ?? now,
-    savedAt: now,
-    questions
-  };
-}
-function isHistoryChanged(previous, next) {
-  if (!previous)
-    return next.questions.length > 0;
-  const said = (f) => JSON.stringify([f.repo, f.questions]);
-  return said(previous) !== said(next);
-}
-function upgradeHistoryFile(raw) {
-  if (!raw || typeof raw !== "object")
-    return null;
-  const f = raw;
-  if (f.version !== HISTORY_VERSION || !Array.isArray(f.questions) || typeof f.session !== "string")
-    return null;
-  return f;
-}
-function historyDocs(files, now) {
-  return files.flatMap((f) => f.questions.filter((q) => now - q.answeredAt <= HISTORY_KEEP_MS).map((q) => ({
-    key: answerKey(f.host, f.session, q.id),
-    ask: q.ask,
-    answer: q.answer,
-    at: q.answeredAt,
-    repo: f.repo
-  })));
-}
-function answerKey(host, session, id) {
-  return `${host}:${session}:${id}`;
-}
-function historyStart(files, now) {
-  return files.reduce((start, f) => Math.min(start, f.created), now);
-}
-function isEarlierShown(start, now) {
-  return now - start >= BASELINE_MS;
-}
-function inboxStateFolder(env) {
-  const state = env.XDG_STATE_HOME?.trim() || (env.HOME?.trim() ? `${env.HOME.trim()}/.local/state` : "");
-  return state ? `${state.replace(/\/+$/, "")}/inbox` : null;
-}
-function historyFolder(env) {
-  const inbox = inboxStateFolder(env);
-  return inbox ? `${inbox}/questions` : null;
+  return rm2(commandsPath(dir, sessionId), { force: true });
 }
 
 // ../core/runtime/history-store.ts
@@ -14424,7 +14616,7 @@ function upgraded(saved, sessionId) {
   return { version: SESSION_VERSION, sessionId, ...upgradeSession(saved), ui };
 }
 async function readSaved(dir, sessionId) {
-  const saved = await readFile2(statePath(dir, sessionId), "utf8").catch(missingAsNull);
+  const saved = await readFile3(statePath(dir, sessionId), "utf8").catch(missingAsNull);
   return saved === null ? { state: emptyState(sessionId), isSaved: false } : { state: upgraded(JSON.parse(saved), sessionId), isSaved: true };
 }
 async function readState(dir, sessionId) {
@@ -14464,11 +14656,11 @@ async function updateState(dir, sessionId, change, now = Date.now) {
     const next = await movedLegacyCommands(commands, pruned(changed, now(), viewerLeases.peek(sessionId)), log);
     const folder = join3(dir, "sessions");
     if (!madeFolders.has(folder)) {
-      await mkdir3(folder, { recursive: true });
+      await mkdir4(folder, { recursive: true });
       madeFolders.add(folder);
     }
     const tmp = `${path}.${process.pid}-${++tmpCount2}.tmp`;
-    await writeFile3(tmp, JSON.stringify(next));
+    await writeFile4(tmp, JSON.stringify(next));
     await rename2(tmp, path);
     await followCommandRows(commands, commandsPath(dir, sessionId), next, log);
     return next;
@@ -14479,14 +14671,14 @@ function exclusiveRun(dir, sessionId, fn) {
 }
 async function pruneSessions(dir, keep) {
   const folder = join3(dir, "sessions");
-  const names = (await readdir(folder).catch(() => [])).filter(isSessionFile);
+  const names = (await readdir2(folder).catch(() => [])).filter(isSessionFile);
   if (names.length <= KEPT_SESSIONS)
     return;
   const readable = await Promise.all(names.map(async (name) => {
     const path = join3(folder, name);
     try {
-      const { mtimeMs } = await stat2(path);
-      upgraded(JSON.parse(await readFile2(path, "utf8")), name.slice(0, -".json".length));
+      const { mtimeMs } = await stat3(path);
+      upgraded(JSON.parse(await readFile3(path, "utf8")), name.slice(0, -".json".length));
       return { name, path, mtimeMs };
     } catch {
       return null;
@@ -14496,7 +14688,7 @@ async function pruneSessions(dir, keep) {
     if (updateTails.has(path) || exclusiveRuns.isHeld(path))
       continue;
     try {
-      if ((await stat2(path)).mtimeMs !== mtimeMs)
+      if ((await stat3(path)).mtimeMs !== mtimeMs)
         continue;
       await unlink(path);
       await removeCommands(dir, path.slice(folder.length + 1, -".json".length));
@@ -14705,22 +14897,22 @@ function styleOf(theme) {
 }
 
 // src/question-history.ts
-import { mkdir as mkdir4, readdir as readdir2, readFile as readFile3, rename as rename3, stat as stat3, writeFile as writeFile4 } from "fs/promises";
-import { dirname as dirname2, join as join4 } from "path";
+import { mkdir as mkdir5, readdir as readdir3, readFile as readFile4, rename as rename3, stat as stat4, writeFile as writeFile5 } from "fs/promises";
+import { dirname as dirname3, join as join4 } from "path";
 var nodeFs = {
   list: async (folder) => {
-    const names = await readdir2(folder).catch(() => []);
+    const names = await readdir3(folder).catch(() => []);
     const listed = await Promise.all(names.map(async (name) => {
-      const info = await stat3(join4(folder, name)).catch(() => null);
+      const info = await stat4(join4(folder, name)).catch(() => null);
       return info?.isFile() ? { name, mtimeMs: info.mtimeMs } : null;
     }));
     return listed.filter((x) => x !== null);
   },
-  read: (path) => readFile3(path, "utf8"),
+  read: (path) => readFile4(path, "utf8"),
   write: async (path, text) => {
-    await mkdir4(dirname2(path), { recursive: true });
+    await mkdir5(dirname3(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile4(tmp, text);
+    await writeFile5(tmp, text);
     await rename3(tmp, path);
   }
 };
@@ -14733,7 +14925,7 @@ function questionHistoryPlace(env, dir) {
     folder,
     host: "omp",
     keptSessions: async () => {
-      const names = (await readdir2(join4(dir, "sessions")).catch(() => [])).filter(isSessionFile);
+      const names = (await readdir3(join4(dir, "sessions")).catch(() => [])).filter(isSessionFile);
       const read = await Promise.all(names.map(async (name) => {
         const id = name.slice(0, -".json".length);
         const session = await readState(dir, id).catch(() => null);
@@ -15609,8 +15801,8 @@ function activityHandlers(context, sessions) {
 
 // src/host-presses.ts
 import { watch } from "fs";
-import { lstat, mkdir as mkdir5, readdir as readdir3, readFile as readFile4, rename as rename4, rm as rm2, stat as stat4, writeFile as writeFile5 } from "fs/promises";
-import { dirname as dirname3, join as join5 } from "path";
+import { lstat, mkdir as mkdir6, readdir as readdir4, readFile as readFile5, rename as rename4, rm as rm3, stat as stat5, writeFile as writeFile6 } from "fs/promises";
+import { dirname as dirname4, join as join5 } from "path";
 import { fileURLToPath } from "url";
 
 // ../core/view/session-presentation.ts
@@ -15656,6 +15848,7 @@ var PRESS_TARGETS = {
   undo: "id",
   discard: "id",
   step: "id",
+  previews: "id",
   "remove-goal": "id",
   "restore-goal": "id",
   "take-goal": "id",
@@ -16784,35 +16977,35 @@ async function startInHerdrApp(run, files, target, bundledFolder, now, log) {
 
 // src/host-presses.ts
 var pressFiles = {
-  list: (folder) => readdir3(folder),
+  list: (folder) => readdir4(folder),
   read: async (path) => {
-    const problem = pressFileProblem(await stat4(path));
+    const problem = pressFileProblem(await stat5(path));
     if (problem)
       throw new Error(problem);
-    return readFile4(path, "utf8");
+    return readFile5(path, "utf8");
   },
   move: (from, to) => rename4(from, to),
-  remove: (path) => rm2(path, { force: true })
+  remove: (path) => rm3(path, { force: true })
 };
 var startFiles = {
   kind: (path) => lstat(path).then((s) => s.isSymbolicLink() ? "link" : s.isDirectory() ? "folder" : s.isFile() ? "file" : "other", () => null),
-  read: (path) => readFile4(path, "utf8"),
+  read: (path) => readFile5(path, "utf8"),
   write: async (path, text) => {
-    await mkdir5(dirname3(path), { recursive: true });
-    await writeFile5(path, text);
+    await mkdir6(dirname4(path), { recursive: true });
+    await writeFile6(path, text);
   },
-  makeFolder: async (path) => void await mkdir5(path, { recursive: true }),
+  makeFolder: async (path) => void await mkdir6(path, { recursive: true }),
   move: (from, to) => rename4(from, to),
-  remove: (path) => rm2(path, { force: true }),
-  removeFolder: (path) => rm2(path, { recursive: true, force: true }),
-  list: async (folder) => (await readdir3(folder, { withFileTypes: true })).filter((e) => e.isFile() || e.isDirectory()).map((e) => e.name)
+  remove: (path) => rm3(path, { force: true }),
+  removeFolder: (path) => rm3(path, { recursive: true, force: true }),
+  list: async (folder) => (await readdir4(folder, { withFileTypes: true })).filter((e) => e.isFile() || e.isDirectory()).map((e) => e.name)
 };
 async function startOmpInHerdrApp(target, run, log) {
   if (target?.kind !== "terminal")
     return null;
   return startInHerdrApp(run, startFiles, target, bundledHerdrMod(), Date.now(), log);
 }
-var bundledHerdrMod = () => join5(dirname3(fileURLToPath(import.meta.url)), "herdr-mod");
+var bundledHerdrMod = () => join5(dirname4(fileURLToPath(import.meta.url)), "herdr-mod");
 var message4 = (err) => err instanceof Error ? err.message : String(err);
 function ompPresses(target, apply, log) {
   let stopFollowing = null;
@@ -16833,11 +17026,11 @@ function ompPresses(target, apply, log) {
       } catch (err) {
         return log(`Herdr presses not read: ${message4(err)}`);
       }
-      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile4(path, "utf8"), appHome, sessionId, "omp", terminal), (_id, file) => apply(ctx, file), log);
+      const drain = pressDrainer(pressFiles, (sessionId) => isPublishedHere((path) => readFile5(path, "utf8"), appHome, sessionId, "omp", terminal), (_id, file) => apply(ctx, file), log);
       const watchFolder = (wake) => {
         let isStopped = false;
         let watcher = null;
-        mkdir5(folder, { recursive: true }).then(() => {
+        mkdir6(folder, { recursive: true }).then(() => {
           if (isStopped)
             return;
           watcher = watch(folder, () => wake());
@@ -17077,24 +17270,24 @@ function panelCalls(context, sessions, herdrAsk) {
 }
 
 // src/registry.ts
-import { mkdir as mkdir6, readdir as readdir4, readFile as readFile5, rename as rename5, rm as rm3, writeFile as writeFile6 } from "fs/promises";
-import { dirname as dirname4 } from "path";
+import { mkdir as mkdir7, readdir as readdir5, readFile as readFile6, rename as rename5, rm as rm4, writeFile as writeFile7 } from "fs/promises";
+import { dirname as dirname5 } from "path";
 var registryFiles = (log) => ({
-  list: (folder) => readdir4(folder).catch(() => []),
-  read: (path) => readFile5(path, "utf8").catch(missingAsNull),
+  list: (folder) => readdir5(folder).catch(() => []),
+  read: (path) => readFile6(path, "utf8").catch(missingAsNull),
   write: async (path, text) => {
-    await mkdir6(dirname4(path), { recursive: true, mode: 448 });
-    await writeFile6(path, text, { mode: 384 });
+    await mkdir7(dirname5(path), { recursive: true, mode: 448 });
+    await writeFile7(path, text, { mode: 384 });
   },
   move: (from, to) => rename5(from, to),
-  remove: (path) => rm3(path, { force: true }),
+  remove: (path) => rm4(path, { force: true }),
   livePids: async (pids) => new Set(pids.filter(isPidRunning)),
   log
 });
 
 // src/host-sessions.ts
-import { mkdir as mkdir7, readdir as readdir5, rename as rename6, rm as rm4, rmdir, writeFile as writeFile7 } from "fs/promises";
-import { dirname as dirname5, join as join6 } from "path";
+import { mkdir as mkdir8, readdir as readdir6, rename as rename6, rm as rm5, rmdir, writeFile as writeFile8 } from "fs/promises";
+import { dirname as dirname6, join as join6 } from "path";
 
 // ../core/domain/conversation.ts
 var NL7 = `
@@ -17131,10 +17324,10 @@ function flattenConversation(turns) {
 
 // src/commands.ts
 import { constants } from "fs";
-import { access, stat as stat5 } from "fs/promises";
+import { access, stat as stat6 } from "fs/promises";
 function openTarget2(run, target, root, home) {
   return openTarget(run, {
-    stat: (path) => stat5(path).catch(() => null),
+    stat: (path) => stat6(path).catch(() => null),
     isExecutable: (path) => access(path, constants.X_OK).then(() => true, () => false)
   }, target, root, home);
 }
@@ -17146,22 +17339,22 @@ function sessionIdInFile(file) {
 }
 var publishFiles = {
   write: async (path, text) => {
-    await mkdir7(dirname5(path), { recursive: true });
-    await writeFile7(path, text);
+    await mkdir8(dirname6(path), { recursive: true });
+    await writeFile8(path, text);
   },
   move: (from, to) => rename6(from, to),
-  remove: (path) => rm4(path, { force: true }),
-  removeFolder: (path) => rm4(path, { recursive: true, force: true })
+  remove: (path) => rm5(path, { force: true }),
+  removeFolder: (path) => rm5(path, { recursive: true, force: true })
 };
 var recordFiles = {
   write: async (path, text) => {
-    await mkdir7(dirname5(path), { recursive: true });
+    await mkdir8(dirname6(path), { recursive: true });
     const tmp = `${path}.${process.pid}.tmp`;
-    await writeFile7(tmp, text);
+    await writeFile8(tmp, text);
     await rename6(tmp, path);
   },
-  list: (folder) => readdir5(folder).catch(() => []),
-  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm4(p, { force: true }))),
+  list: (folder) => readdir6(folder).catch(() => []),
+  removeFiles: async (paths) => void await Promise.all(paths.map((p) => rm5(p, { force: true }))),
   removeFolder: (path) => rmdir(path)
 };
 var statusRecords = (dir, sessionId) => ({
@@ -17401,8 +17594,16 @@ function sessionCalls(context) {
   function wakeLater(ctx) {
     ctx.setTimeout(() => deps.background(wakeAfterSettle(hostFor(ctx))), deps.settleWindowMs + WAKE_MARGIN_MS);
   }
+  const previews = deps.previewPages?.(context.logHerdr);
+  async function changeByTool(id, fn) {
+    const place = previews?.placeOf(id) ?? null;
+    const saved = await change(id, (s) => withPreviewPages(fn(s), place));
+    if (place)
+      await previews?.write(place, saved.ledger);
+  }
   return {
     change,
+    changeByTool,
     notifyChanged,
     endedTurn,
     hostFor,
@@ -17657,27 +17858,15 @@ async function isUsageLimitOutcome(status, message) {
   const ai = await import("@oh-my-pi/pi-ai");
   return ai.isUsageLimitOutcome(status, message);
 }
-async function copyToClipboard(text) {
-  const commands = clipboardCommands(process.platform);
-  for (const argv of commands) {
-    try {
-      const child = Bun.spawn(argv, { stdin: Buffer.from(text), stdout: "ignore", stderr: "ignore" });
-      if (await child.exited === 0)
-        return null;
-    } catch {
-      continue;
-    }
-  }
-  return noClipboardCommand(commands);
-}
 var defaultDeps = {
   stateDir: (pi) => join7(pi.pi.getAgentDir(), "inbox"),
   now: Date.now,
   newId: randomUUID,
   settleWindowMs: SETTLED_MS,
   home: homedir(),
-  isNextBuild: existsSync(join7(dirname6(dirname6(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
-  comparePage: join7(dirname6(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
+  isNextBuild: existsSync(join7(dirname7(dirname7(fileURLToPath2(import.meta.url))), NEXT_BUILD_MARK)),
+  comparePage: join7(dirname7(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE),
+  previewPages: (log) => ompPreviewPages(process.env, join7(dirname7(fileURLToPath2(import.meta.url)), COMPARE_PAGE_FILE), log),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: (work) => void work.catch(() => {
@@ -17803,7 +17992,7 @@ function createInbox(pi, deps = defaultDeps) {
 `), display: false, attribution: "agent" }, { deliverAs: "nextTurn" })
   };
   const sessions = sessionCalls(context);
-  const { change, fetchPrsNow } = sessions;
+  const { changeByTool, fetchPrsNow } = sessions;
   const turns = turnHandlers(context, sessions);
   const { start } = turns;
   const activity = activityHandlers(context, sessions);
@@ -17859,7 +18048,7 @@ function createInbox(pi, deps = defaultDeps) {
         const input = args;
         const earlier = name === "record" ? await recordMatchesNow(input, deps.now()) : [];
         let addsPr = false;
-        await change(sessionIdOf(ctx), (s) => {
+        await changeByTool(sessionIdOf(ctx), (s) => {
           const r = recorded(OMP2, s, name, input, deps.now(), TOOL_FIELDS, delegate, earlier);
           answer = r;
           addsPr = addsTabPr(s, r.state);
@@ -17971,7 +18160,7 @@ function createInbox(pi, deps = defaultDeps) {
     }
   }
   const openHerdrPanel = herdrPanelOpener();
-  const isFile = (path) => stat6(path).then((s) => s.isFile());
+  const isFile = (path) => stat7(path).then((s) => s.isFile());
   pi.registerCommand("inbox", {
     description: INBOX_COMMAND_TEXT,
     handler: async (args, ctx) => {
