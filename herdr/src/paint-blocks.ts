@@ -330,7 +330,7 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     ...(l.status ? [statusPartEl(l.status.text).text_color(colorOf(t, l.status.tone))] : []),
     ...l.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
   ]
-  const [error, ...tail] = prTailEls(b, p, {
+  const tail = prTailEls(b, p, {
     error: text => lineEl(text, t.ansi1, 0),
     buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing, false, CONTROL_GAP),
     result: f => feedbackEl(f, t),
@@ -348,7 +348,7 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
           .child(partedEl(statusParts(l), t.muted)),
       ),
     )
-    .children(error ? [error, warning, ...tail] : [warning, ...tail])
+    .children([...tail.slice(0, 1), warning, ...tail.slice(1)])
 }
 
 /** A line of text with its buttons after it, under the stopped warning when it has one. */
