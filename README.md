@@ -95,6 +95,10 @@ omp plugin marketplace add petekp/inbox
 omp plugin install inbox@inbox-omp
 ```
 
+The inbox works with omp 18.12.3 through 19.2. `/clear` resets the inbox from
+omp 18.20.1. Older omp sends no event at `/clear`, so the cleared
+conversation's rows stay.
+
 The inbox starts working in the next omp session. `omp plugin list` shows it
 as `inbox@inbox-omp`. It reads `.omp-plugin/marketplace.json`, which omp looks
 for before the `.claude-plugin/` folder that Claude Code reads.
