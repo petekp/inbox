@@ -23,9 +23,9 @@ Then, in the desktop app:
 
 1. Trust the plugin's hooks. Codex runs a plugin's hooks only after you
    trust them. Since Codex 0.164.0 the trust covers every file in the plugin,
-   so an update stops the hooks until you trust them again. Click the hook icon beside the
-   prompt's approval setting, then Allow all. If the icon isn't there, open Settings,
-   then Hooks, then Inbox, then Trust all.
+   so an update stops the hooks until you trust them again. Open Settings, then Hooks,
+   then Inbox, then Trust all. A hook icon beside the prompt's approval setting may
+   also offer Allow all.
    The hooks give Codex the inbox at each prompt, record what it does, and
    update the inbox after each reply.
 2. Open the Inbox tab: click the side panel button at the top right of the
