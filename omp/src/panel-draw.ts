@@ -190,8 +190,15 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const status = line.status
     ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}`
     : ''
+  const source = line.feedback?.source ?? null
+  const isFinishedLocal = source?.is === 'local' && source.result.state !== 'pending'
+  const isLineItsOwnButton = line.buttons.length === 0
   const statusUnder =
-    line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isOpen)
+    line.feedback &&
+    line.settled === null &&
+    !isShut(line, ui) &&
+    isStatusUnderActions(source, isOpen) &&
+    !(isLineItsOwnButton && isFinishedLocal)
       ? line.feedback
       : null
   const clock = line.settled
