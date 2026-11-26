@@ -1,8 +1,11 @@
 import { faintCloseFades, turnBackFades } from '../../core/view/row-motion'
-import type { FadeStep } from '../../core/view/row-motion'
+import type { FadeStep, RowState, RowTrack } from '../../core/view/row-motion'
 import { springStep } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
 import { NEXT_FRAME_MS } from './block-glide'
+import { isOpenRow } from './blocks'
+import type { RowBlock } from './blocks'
+import type { FormSwap } from './form-swap'
 
 /**
  * One step of a turned-back or faintly closing panel's fade, with when it starts and the opacity it starts from. A step
@@ -74,4 +77,21 @@ export function opacityAt(steps: PanelStep[], now: number): number {
   const share = step.ms > 0 ? Math.min(1, Math.max(0, (now - step.at) / step.ms)) : 1
 
   return step.from + (step.to - step.from) * easeOut(share)
+}
+
+/** A row's panel fades in as it opens and out as it closes, from where it is when the move turns back. */
+export function panelOf(
+  state: RowState,
+  isStart: boolean,
+  last: { track: RowTrack; opened: RowBlock | null; swap: FormSwap | null } | undefined,
+  closing: RowBlock | null,
+): number | null {
+  const isLeftPanelShown = last?.swap?.inAt === null && isOpenRow(last.swap.from)
+  const wasPanelFolding =
+    last?.track.state === 'opening' || (last?.track.state === 'closing' && last.opened !== null) || isLeftPanelShown
+  const isFrom = isStart && !wasPanelFolding
+  if (state === 'opening') return isFrom ? 0 : 1
+  if (state === 'closing' && closing) return isFrom ? 1 : 0
+
+  return null
 }
