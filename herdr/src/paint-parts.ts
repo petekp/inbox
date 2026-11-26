@@ -52,13 +52,14 @@ export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false):
     )
     .when(left !== undefined, e => (left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e))
     .child(isWrapping ? div().min_w(0).whitespace_normal().child(b.label) : b.label)
-  const shaped =
-    isPill && runsOutAt === undefined
+  const shaped = !isPill
+    ? base
+    : runsOutAt === undefined
       ? base
           .px(BUTTON_PAD_X)
           .rounded(BUTTON_H / 2)
           .border_1()
-      : base
+      : base.border_1()
   if (b.isSpent) {
     const spent = shaped.text_color(t.muted).opacity(SPENT_OPACITY).disabled(true)
     if (b.leftAt === undefined) return spent

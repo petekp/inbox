@@ -8,7 +8,7 @@ import { columnOf } from './gpui-stand-in'
 import { NOW, demoScreen, dismissedPr, uiOn } from './fixtures'
 
 const { tabBlocks } = await import('../src/draw')
-const { TIMED_W, timeLeftEl } = await import('../src/paint-timer')
+const { FILL_W, timeLeftEl } = await import('../src/paint-timer')
 const { TIME_LEFT_STEP_MS, timeLeftDraws, timeLeftNextAt, timeLeftShare } = await import('../src/time-left')
 const { LINE } = await import('../src/paint-theme')
 
@@ -25,12 +25,12 @@ test('every draw sets an emptying Undo fill near the share its clock leaves, so 
     drawn = timeLeftDraws([row], drawn, now)
     const left = drawn.get('d8 undo')!
     const fill = columnOf([timeLeftEl('d8 undo', left, runsOutAt, now, theme)], LINE).kids[0]!
-    const behind = timeLeftShare(runsOutAt, now) * TIMED_W - (fill.style.w ?? 0)
+    const behind = timeLeftShare(runsOutAt, now) * FILL_W - (fill.style.w ?? 0)
     const glideMs = fill.transitions.get('width') ?? 0
 
     return {
       after,
-      isNearClock: behind >= 0 && behind <= (TIME_LEFT_STEP_MS / SETTLED_MS) * TIMED_W,
+      isNearClock: behind >= 0 && behind <= (TIME_LEFT_STEP_MS / SETTLED_MS) * FILL_W,
       isShown: runsOutAt - now <= TIME_LEFT_STEP_MS || (fill.style.w ?? 0) > 0,
       endsInTime: now + glideMs <= runsOutAt,
     }
