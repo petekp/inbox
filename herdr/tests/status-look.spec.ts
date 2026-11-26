@@ -9,7 +9,7 @@ import { seenSubjectIds } from '../../core/view/status-page'
 import type { StatusDrawn } from '../src/status-look'
 import { allOf, openPanel, writtenFiles } from './gpui-stand-in'
 
-const { isPaneShown, statusPlaced, surelyShown, StatusLook, writeLook } = await import('../src/status-look')
+const { isPaneShown, ownPaneId, statusPlaced, surelyShown, StatusLook, writeLook } = await import('../src/status-look')
 const { tabBlocks } = await import('../src/draw')
 const { NOW, demoScreen, uiOn } = await import('./fixtures')
 
@@ -69,6 +69,24 @@ test('the pane counts as shown only while its window has focus and its tab shows
   expect(isPaneShown('p-inbox', zoomedInbox, spacesWith({ active: true, zoomed: true }), { active: true })).toBe(true)
   expect(isPaneShown('p-inbox', panes, shownTab, null)).toBe(false)
   expect(isPaneShown(undefined, panes, shownTab, { active: true })).toBe(false)
+})
+
+test('a split panel finds its own pane whichever terminal in the tab it follows', () => {
+  const terminals: { address: string; labels: Record<string, string> }[] = [
+    { address: 't1', labels: { 'inbox.panel': 'p-inbox' } },
+    { address: 't2', labels: { 'inbox.session': 's2' } },
+  ]
+  const onePanel = [
+    { pane: 'p-t1', tab: 'tab1', mod: null },
+    { pane: 'p-inbox', tab: 'tab1', mod: 'inbox' },
+    { pane: 'p-other', tab: 'tab2', mod: 'inbox' },
+  ]
+  expect(ownPaneId(undefined, onePanel, 'tab1', terminals, 't1')).toBe('p-inbox')
+  expect(ownPaneId(undefined, onePanel, 'tab1', terminals, 't2')).toBe('p-inbox')
+  expect(ownPaneId('p-header', onePanel, 'tab1', terminals, 't2')).toBe('p-header')
+  const twoPanels = [...onePanel, { pane: 'p-second', tab: 'tab1', mod: 'inbox' }]
+  expect(ownPaneId(undefined, twoPanels, 'tab1', terminals, 't1')).toBe('p-inbox')
+  expect(ownPaneId(undefined, twoPanels, 'tab1', terminals, 't2')).toBeUndefined()
 })
 
 const drawnOf = (sessionId: string, placed: StatusDrawn['placed'], writtenAt = NOW + 100_000): StatusDrawn => ({
