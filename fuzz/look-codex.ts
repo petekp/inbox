@@ -200,7 +200,7 @@ export async function runCodex(
       const verdict =
         failures.length === 0
           ? s.isOpen
-            ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds.ts in the same PR`
+            ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds-codex.ts in the same PR`
             : 'passes'
           : s.isOpen && isAsIssueSays
             ? `fails as its issue says (${rules})`
