@@ -31,6 +31,40 @@ export function withWorkDoneMilestones(o: SessionStatus, now: number): SessionSt
 }
 
 /**
+ * Opens again each done milestone an open ask in `askIds` holds up, itself or through a subject that serves it. One that
+ * is open in one of `earlier`, the Status as the answer's lines left it and then as the answer found it, goes back to
+ * how it stood in the first that holds it open, so a DONE written while an ask holds it changes nothing. Any other opens
+ * with no text, working while some open subject serving it is working or none is open, else waiting on something
+ * outside the session while some of it waits, else queued.
+ */
+export function withHeldMilestonesOpen(
+  o: SessionStatus,
+  now: number,
+  askIds: ReadonlySet<string>,
+  earlier: readonly SessionStatus[],
+): SessionStatus {
+  const isHeld = (m: Milestone) => {
+    const ids = new Set([m.id, ...o.subjects.filter(s => o.serves[s.id] === m.id).map(s => s.id)])
+    return Object.entries(o.askSubjects).some(([ask, to]) => askIds.has(ask) && to.some(id => ids.has(id)))
+  }
+  const reopened = (m: Milestone): Milestone => {
+    const open = earlier.flatMap(e => e.milestones.filter(x => x.id === m.id && isOpen(x)))[0]
+    if (open) return { ...open }
+    const work = o.subjects.filter(s => isOpen(s) && o.serves[s.id] === m.id)
+    const status =
+      work.length === 0 || work.some(s => s.status === 'working')
+        ? 'working'
+        : work.some(s => s.status === 'waits-on-other')
+          ? 'waits-on-other'
+          : 'queued'
+    return { ...m, status, text: '', was: null, changedAt: now, closedAt: null }
+  }
+  if (!o.milestones.some(m => m.status === 'done' && isHeld(m))) return o
+
+  return { ...o, milestones: o.milestones.map(m => (m.status === 'done' && isHeld(m) ? reopened(m) : m)) }
+}
+
+/**
  * Starts each queued milestone whose linked work is under way: working while some of it is working, else waiting on
  * something outside the session. It keeps the text it had while queued, which may be empty.
  */

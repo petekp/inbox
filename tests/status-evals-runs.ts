@@ -344,8 +344,10 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: s2 | -',
     ].join('\n'),
   ],
-  'milestone-decided': [
-    'SET: s1 | working | Decided "!", edit not made yet\nDONE: m1 | ending chosen as "!"\nLINK: i2 | s1',
+  'milestone-decided': ['SET: s1 | working | Decided "!", edit not made yet\nLINK: i2 | s1'],
+  'milestone-held-by-ask': [
+    'SET: s3 | working | cap wired, oldest dropped for now',
+    'DONE: m1 | sync fixed\nSET: s2 | working | flush built, tests pass, check left',
   ],
   'finished-pass': [
     'DONE: s2 | fix merged and pushed\nDONE: m1 | review delivered\nSET: s1 | waits-on-other | Page text done, screenshots needed',

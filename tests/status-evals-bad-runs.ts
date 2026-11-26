@@ -203,9 +203,13 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
   },
   'milestone-decided': {
     at: 0,
-    answer:
-      'SET: s1 | working | Decided "!", edit not made yet\nSET: m1 | working | "!" chosen, edit not made yet\nLINK: i2 | s1',
-    breaks: 'milestones-true',
+    answer: 'SET: s1 | working | Decided "!", edit not made yet',
+    breaks: 'asks-linked',
+  },
+  'milestone-held-by-ask': {
+    at: 0,
+    answer: 'SET: s3 | working | cap wired, oldest dropped for now\nSET: s2 | queued | flush on background built',
+    breaks: 'marks-true',
   },
   'head-after-done': { at: 2, answer: 'HEAD: Greet flags | Adding options to greet', breaks: 'head-follows' },
 }

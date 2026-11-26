@@ -243,7 +243,7 @@ export function applyOps(
       continue
     }
     if (op.kind === 'goal' || op.kind === 'retire' || op.kind === 'milestone' || op.kind === 'serves') {
-      o = applyGoalOp(o, op, now, find, last ?? o, servesLines)
+      o = applyGoalOp(o, op, now, find, askIds, last ?? o, servesLines)
       if (op.kind === 'milestone') markNamed(findMilestone(o, op.name), n)
       if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n)
     } else if (op.kind === 'head') {
@@ -320,7 +320,7 @@ export function applyOps(
   if (o.head && isDescriptionStale(o.head, isTitleKept, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
-  const settled = settleGoal(o, now, readSetAt, named)
+  const settled = settleGoal(o, now, readSetAt, named, askIds, last ?? o)
 
   return withSuggestion(nextRef === null ? settled : withNextMilestone(settled, nextRef, now), ops)
 }
@@ -346,7 +346,7 @@ export function applyStatus(
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last
   const o = changes ? applyOps(last, changes, now, askIds, readSetAt) : read
   if (o === null) return null
-  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map())
+  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map(), askIds, o)
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
 
   const kept = settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }

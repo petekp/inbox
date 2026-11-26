@@ -289,6 +289,13 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
       s.page = p => (p.goal!.milestones[0]!.mark = HELD_MARK.mark)
     },
   },
+  'held-milestone-open': {
+    good: withGoal,
+    bad: s => {
+      withGoal(s)
+      s.after.milestones[1]!.status = 'done'
+    },
+  },
   'other-work-shows-news': {
     good: s => {
       withGoal(s)
