@@ -141,6 +141,26 @@ export function glide(
   glides.set(el, { size, from, to, delay, startsAt: Date.now() + delay, anim, scalesEdges })
 }
 
+/** How far an element's bottom edge sits below the last text or control it draws, in px. */
+export function spaceUnder(el: HTMLElement): number {
+  const doc = el.ownerDocument
+  const texts = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  const range = doc.createRange()
+  let bottom = -Infinity
+  for (let n = texts.nextNode(); n; n = texts.nextNode()) {
+    if (!n.textContent?.trim()) continue
+    range.selectNodeContents(n)
+    const r = range.getBoundingClientRect()
+    if (r.height > 0) bottom = Math.max(bottom, r.bottom)
+  }
+  for (const c of el.querySelectorAll('button, input, textarea, select')) {
+    const r = c.getBoundingClientRect()
+    if (r.height > 0) bottom = Math.max(bottom, r.bottom)
+  }
+
+  return bottom === -Infinity ? 0 : Math.max(0, el.getBoundingClientRect().bottom - bottom)
+}
+
 /** An element's opacity: full unless an animation fades it. */
 export function opacityOf(el: HTMLElement): number {
   const opacity = parseFloat(getComputedStyle(el).opacity)
