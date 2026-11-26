@@ -39,13 +39,14 @@ function isGoalMet(o: SessionStatus): boolean {
 /**
  * How long the work has left the goal, in ms, or null while it has not. The work has left an inferred goal that is not
  * met when none of the work it holds is open and it has not moved forward for `GOAL_LEFT_MS`, so a goal between
- * milestones, or one just set, stays. A goal whose milestones are all done is met, whether or not a saved copy holds
+ * milestones, or one just set and still waiting for its milestones, stays. A goal whose milestones are all done is met, whether or not a saved copy holds
  * its met time. A typed goal is the person's until it is met. The Status call reads this time, and a GOAL or RETIRE
  * line may replace or clear the goal while it is set.
  */
 export function goalLeftFor(o: SessionStatus, now: number): number | null {
   const g = o.goal
-  if (g === null || isGoalMet(o) || g.source !== 'inferred' || heldSubjects(o).some(isOpen)) return null
+  if (g === null || g.isAwaitingMilestones || isGoalMet(o) || g.source !== 'inferred' || heldSubjects(o).some(isOpen))
+    return null
   const left = now - lastProgressAt(o, g)
 
   return left >= GOAL_LEFT_MS ? left : null

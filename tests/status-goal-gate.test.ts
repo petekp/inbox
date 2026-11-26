@@ -3,6 +3,7 @@ import { test } from './test-with-timeout'
 
 import { parseStatus } from '../core/domain/status'
 import { setTypedGoal } from '../core/domain/status-goal-ops'
+import { takeSuggestedGoal } from '../core/domain/status-suggest'
 import { GOAL_LEFT_MS, namesOtherVersion } from '../core/domain/status-limits'
 import { applyStatus } from '../core/domain/status-ops'
 import { statusPrompt } from '../core/domain/status-prompt'
@@ -212,6 +213,20 @@ test('a refusal for work that moved shows only while the work has not left the g
 
   expect(o.goalRefused).toEqual({ line: 'retire', why: 'moved' })
   expect(goalBlock(o, later)).toBe('Notes 2.5 in the store (no work for 30m)')
+})
+
+test('a goal taken from the suggestion waits for its milestones, and is not read as left however long ago it was taken', () => {
+  const met = after(
+    linked(),
+    'DONE: m2 | merged\nDONE: m3 | landed\nDONE: m4 | live\nDONE: s1 | merged\nDONE: s2 | landed\nSUGGEST: Notes 2.6 on TestFlight',
+    20 * MIN,
+  )
+  const taken = takeSuggestedGoal(met, 21 * MIN)
+  const later = 21 * MIN + 51 * MIN
+
+  expect(taken.goal).toMatchObject({ text: 'Notes 2.6 on TestFlight', source: 'inferred', isAwaitingMilestones: true })
+  expect(goalBlock(taken, later)).toBe('Notes 2.6 on TestFlight (just set)')
+  expect(after(taken, 'RETIRE: moved on', later).goal?.text).toBe('Notes 2.6 on TestFlight')
 })
 
 test('a SERVES line whose subject names another version than its milestone links it under none', () => {
