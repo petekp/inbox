@@ -7,7 +7,7 @@ import type { RowPress } from '../domain/presses'
 import type { PrPress } from './pr-press'
 import type { DrawnPr } from './pr-views'
 import { FINDING_GROUPS } from './help'
-import { ROW_COPY, OPTIONS_FOLD_AT, isWaitingRow, optionNote, optionReasonLine, sessionKeyOf } from './rows'
+import { ROW_COPY, OPTIONS_FOLD_AT, isWaitingRow, optionNote, optionReasonLine, refusalOf, sessionKeyOf } from './rows'
 import type { RowState, ActionView, RowView, SettledState, SessionKey } from './rows'
 import { pressOutAction, outAction, isAgain, fixLabel } from './feedback'
 import type { Feedback } from './feedback'
@@ -371,7 +371,9 @@ export function rowKeyPlan(
       })
   }
 
-  const sessionKey = sessionKeyOf(r.feedback?.is === 'notSent' ? r.feedback.reason : null, canShowSession)
+  const notSent = r.feedback?.is === 'notSent' ? r.feedback.reason : null
+  const refusal = r.state.is === 'settled' ? refusalOf(r.state.delivery) : notSent
+  const sessionKey = sessionKeyOf(refusal, canShowSession)
 
   return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey }
 }

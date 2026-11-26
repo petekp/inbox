@@ -3,7 +3,7 @@ import { feedbackOf, feedbackText, feedbackTone, hasAge, markedFeedbackText } fr
 import type { PressState } from '../../core/view/feedback'
 import { prPressEffect } from '../../core/view/pr-press'
 import type { PrAction } from '../../core/view/pr-press'
-import { OTHER_PRS_TEXT, otherPrsStart } from '../../core/view/pr-order'
+import { OTHER_PRS_TEXT, otherPrsStart, rankAgainPlan } from '../../core/view/pr-order'
 import {
   PR_GROUP_TITLES,
   PR_QUOTE_CHARS,
@@ -284,7 +284,7 @@ function noticeBlocks(screen: LookScreen, notice: ReturnType<typeof ghNoticeOf>)
 }
 
 /** The agent's order: its title and reason, then the changed line with Rank again. */
-function orderLines(screen: LookScreen): Block[] {
+function orderLines(screen: LookScreen, presses: PressState): Block[] {
   const order = screen.view.prs.order
   if (!order) return []
   const changed = order.changed
@@ -292,7 +292,11 @@ function orderLines(screen: LookScreen): Block[] {
     { kind: 'line', id: 'pr order', text: order.title, under: order.why, buttons: [], feedback: null },
   ]
   if (!changed) return lines
-  const buttons = changed.actions.map((a, n) => prButton(null, a, `order ${n}`))
+  const plan = rankAgainPlan(changed.actions, presses, true)
+  const buttons = [
+    ...sessionButtons(RANK_AGAIN_ID, plan.sessionKey),
+    ...plan.actions.map((a, n) => prButton(null, a, `order ${n}`)),
+  ]
   const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null
 
   return [...lines, { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }]
@@ -337,7 +341,7 @@ export function prTabBlocks(screen: LookScreen, selected: string | null): Block[
   return [
     ...noticeBlocks(screen, notice),
     ...clearLine(screen),
-    ...orderLines(screen),
+    ...orderLines(screen, presses),
     ...prs.drawn.flatMap((d, n) => [...above(d, n), ...prBlocks(screen, d, presses, selected)]),
     ...(prs.olderText ? [ruleBetween('older prs'), note('older prs', prs.olderText, 'muted')] : []),
   ]

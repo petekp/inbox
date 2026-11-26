@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test'
 
 import { rowKeyPlan } from '../../core/view/action-plan'
-import { CLEAR_FINISHED_ID, prMarkId, prThreadId } from '../../core/view/pr-rows'
+import { CLEAR_FINISHED_ID, prMarkId, prThreadId, RANK_AGAIN_ID } from '../../core/view/pr-rows'
+import { rankAgainPlan } from '../../core/view/pr-order'
 import { actionLabel, STOPPED_REASON } from '../../core/view/rows'
 import type { RowView } from '../../core/view/rows'
 import { demoSession } from '../../core/view/demo'
+import { closeItem } from '../../core/domain/ledger-close'
+import type { Closed } from '../../types'
 import { sessionView } from '../../core/view/session-view'
 import { goalKeyPlan, statusKeyPlan } from '../../core/view/status-keys'
 import { shownTabs } from '../../core/view/tabs'
@@ -72,7 +75,7 @@ test('a row whose message was not sent because the person stopped the session of
   expect(refused('a hook refused it').buttons.map(b => b.label)).not.toContain('Go to session')
 })
 
-test('a PR block, its thread row and a Closed line whose message was not sent because the person stopped the session offer Go to session first', () => {
+test('a PR block, its thread row, Rank again and a Done row or Closed line whose message was not sent because the person stopped the session offer Go to session first', () => {
   const s = demoSession(NOW, AGENT)
   const pr = demoScreen()
     .view.prs.drawn.map(d => d.pr)
@@ -119,6 +122,25 @@ test('a PR block, its thread row and a Closed line whose message was not sent be
     ['Go to session', { is: 'focusTerminal' }],
     ['Undo', { is: 'press', press: { id: done.id, action: 'undo' }, effects: [], kind: null }],
   ])
+
+  const task = s.ledger.items.find(i => i.kind === 'task')
+  if (!task) throw new Error('the demo has no open task')
+  const closing = closeItem(s.ledger, task.id, { how: 'done', outcome: 'done' }, NOW - 1000)
+  const refusedTask = (d: Closed) =>
+    d.id === task.id ? { ...d, doneNotification: { id: 'n2', error: STOPPED_REASON } } : d
+  const inPlace = { ...s, ledger: { ...closing, closed: closing.closed.map(refusedTask) } }
+  const placeHolds = { ...holds, shownSince: NOW - 5000 }
+  const placeScreen = {
+    ...demoScreen(),
+    view: sessionView(inPlace, NOW, SETTLED_MS, placeHolds),
+    shownSince: NOW - 5000,
+  }
+  const settled = tabBlocks(placeScreen, uiOn('needsYou')).find(b => b.id === task.id)
+  expect(firstLabels(settled)).toEqual(['Go to session', 'Undo'])
+
+  const rankAgain = { [RANK_AGAIN_ID]: refused('pr-rank-again', 'Rank again') }
+  const plan = rankAgainPlan([], { lastActions: rankAgain, turns: screen.view.turns, now: NOW }, true)
+  expect(plan.sessionKey?.label).toBe('Go to session')
 })
 
 test('only the selected row shows buttons, and with no row picked the first waiting row opens', () => {

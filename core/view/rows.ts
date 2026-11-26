@@ -129,7 +129,7 @@ export function closedLinePlan(
   d: { id: string; how: Closed['how']; delivery: ClosedDelivery },
   canShowSession = false,
 ): { action: { label: string; press: RowPress } | null; sessionKey: SessionKey | null } {
-  const sessionKey = sessionKeyOf(isSendRefused(d.delivery) ? d.delivery.error : null, canShowSession)
+  const sessionKey = sessionKeyOf(refusalOf(d.delivery), canShowSession)
   if (canUndoRefused(d.delivery))
     return { action: { label: ROW_COPY.undo, press: { id: d.id, action: 'undo' } }, sessionKey }
   const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: 'undo' as const } }
@@ -449,6 +449,9 @@ export function closedTitleTone(state: Pick<SettledState, 'delivery' | 'closedAs
 
   return state.closedAs === 'handled' ? 'done' : 'muted'
 }
+
+/** Why the agent refused a closed row's message, or null when it was not refused. */
+export const refusalOf = (delivery: ClosedDelivery): string | null => (isSendRefused(delivery) ? delivery.error : null)
 
 function isSendRefused(delivery: ClosedDelivery): delivery is { error: string; canUndo: boolean } {
   return delivery !== null && typeof delivery === 'object'
