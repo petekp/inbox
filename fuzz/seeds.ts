@@ -288,11 +288,11 @@ export const CODEX_SEEDS: {
     },
   },
   {
-    name: 'Copy on an open task, whose result wraps after the title',
+    name: 'Copy on an open task, whose result shows under its buttons',
     rule: 'jump',
     detail: 'press-',
     issue: 864,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'light',
@@ -320,6 +320,23 @@ export const CODEX_SEEDS: {
         { is: 'click', on: 'button', n: 2 },
         { is: 'wait', ms: 800 },
         { is: 'click', on: 'button', n: 7 },
+      ],
+    },
+  },
+  {
+    name: 'Compare, then opening another row',
+    rule: 'cut',
+    detail: '"Holds up Flick option" shows at 1.00',
+    issue: 896,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'button', n: 4 },
+        { is: 'click', on: 'row', n: 8 },
       ],
     },
   },
@@ -359,8 +376,7 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   { issue: 898, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
-  { issue: 864, look: 'codex', rule: 'jump', details: ['press-'] },
-  { issue: 864, look: 'codex', rule: 'cut', details: ['"Holds up '] },
+  { issue: 896, look: 'codex', rule: 'cut', details: ['"Holds up ', '"Comparing…"'] },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */

@@ -98,7 +98,7 @@ async function main() {
     if (saved.records !== undefined)
       process.exit((await (await import('./look-mod')).replayMod(args.replay)) === 0 ? 0 : 1)
     if (saved.look === 'codex')
-      process.exit((await (await import('./look-codex')).replayCodex(saved as never, args.replay)) === 0 ? 0 : 1)
+      process.exit(await (await import('./look-codex')).replayCodex(saved as never, args.replay))
     const c = saved as Case
     const failures = await failuresOf(c)
     for (const f of failures.slice(0, 20))
@@ -195,7 +195,7 @@ async function main() {
   const isNewFound = [...counts.values()].some(c => c.issue === null)
   const summary = [
     ...seedLines,
-    `seed ${args.seed}, ${ran} cases in ${Math.round((realNow() - t0) / 1000)} s`,
+    ...(args.looks.length > 0 ? [`seed ${args.seed}, ${ran} cases in ${Math.round((realNow() - t0) / 1000)} s`] : []),
     ...lines,
     ...(rows?.lines ?? []),
     ...(codex?.lines ?? []),
@@ -204,7 +204,8 @@ async function main() {
   writeFileSync(join(out, 'summary.txt'), summary + '\n')
   console.log(summary)
   console.log(`reports: ${out}`)
-  process.exit(!isNewFound && !rows?.isBroken && !codex?.isBroken && !mod?.isBroken && !isSeedBroken ? 0 : 1)
+  const isBroken = isNewFound || rows?.isBroken || codex?.isBroken || mod?.isBroken || isSeedBroken
+  process.exit(isBroken ? 1 : (codex?.notRun ?? 0) > 0 ? 2 : 0)
 }
 
 await main()

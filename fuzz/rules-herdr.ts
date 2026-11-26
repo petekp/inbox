@@ -1,4 +1,5 @@
 import { listWaits, rowKeyPlan } from '../core/view/action-plan'
+import { CUT_OPACITY } from '../core/view/row-motion'
 import { actionLabel } from '../core/view/rows'
 import type { RowView } from '../core/view/rows'
 import type { SessionView } from '../core/view/session-view'
@@ -11,7 +12,6 @@ import { badText, glyphCut } from './rules-text'
 
 const LOOK = 'herdr'
 const FRAME_MS = 16
-const SHOWN = 0.2
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
   const { options, keys, more } = rowKeyPlan(row, isAllShown)
@@ -166,9 +166,9 @@ function motionFailures(run: HerdrRun): Failure[] {
         n => n.block === s.block && (n.text.startsWith(stem(s.text)) || s.text.startsWith(stem(n.text))),
       )
     const shownIn = (list: Iterable<ShownText>, block: string) =>
-      [...list].filter(s => s.block === block && s.opacity * s.share >= SHOWN && s.text.trim() !== '').length
+      [...list].filter(s => s.block === block && s.opacity * s.share >= CUT_OPACITY && s.text.trim() !== '').length
     for (const s of before) {
-      const isShown = s.opacity * s.share >= SHOWN && s.text.trim() !== ''
+      const isShown = s.opacity * s.share >= CUT_OPACITY && s.text.trim() !== ''
       if (!isShown || now.has(keyOf(s)) || !blocksNow.has(s.block) || isStep(t) || goesOn(s)) continue
       if (shownIn(now.values(), s.block) >= shownIn(before, s.block)) continue
       out.push({

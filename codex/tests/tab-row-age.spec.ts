@@ -200,7 +200,7 @@ test('the built tab keeps an open row’s ✓ Explained after its title while Ex
   }
 })
 
-test('the built tab keeps the space of an open row’s failed open, without its words, while Open is out again', async () => {
+test('the built tab draws an open row’s failed open under its buttons in the error color, and Open again replaces it there with nothing after the title', async () => {
   const now = Date.now()
   const first = task().ledger.items[0]
   if (!first) throw new Error('the task fixture has no ledger item')
@@ -217,18 +217,17 @@ test('the built tab keeps the space of an open row’s failed open, without its 
   const tab = await builtTab([item], { i1: last }, { isPressHeld: true })
   const row = () => tab.rowWith('Check the build')
   const open = () => [...(row()?.querySelectorAll('.panel button') ?? [])].find(b => /^Open/.test(b.textContent ?? ''))
-  const pressLine = () =>
-    [...(row()?.querySelectorAll('.panel div') ?? [])].find(d => d.textContent?.trim() === 'Opening plan.md…')
+  const pressLine = () => row()?.querySelector('.panel [data-motion^="press-"]')
   try {
-    await tab.until(() => open() !== undefined && /Could not open plan\.md/.test(row()?.textContent ?? ''))
+    await tab.until(() => open() !== undefined && /Could not open plan\.md/.test(pressLine()?.textContent ?? ''))
+    assert.equal(pressLine()?.className, 'tone-error')
+    assert.equal(row()?.querySelector('.line .after') === null, true)
     const button = open() as { click(): void } | undefined
     if (!button) throw new Error('the open row has no Open button')
     button.click()
-    await tab.until(() => pressLine() !== undefined)
-    assert.ok(pressLine() !== undefined, 'the press’s Opening plan.md… is not under the buttons')
-    const held = row()?.querySelector('.line .text:not(.short) .held-hidden')
-    assert.match(held?.textContent ?? '', /Could not open plan\.md/)
-    assert.equal(held?.getAttribute('aria-hidden'), 'true')
+    await tab.until(() => pressLine()?.textContent?.trim() === 'Opening plan.md…')
+    assert.equal(row()?.querySelector('.line .after') === null, true)
+    assert.equal(row()?.querySelector('.line .held-hidden') === null, true)
   } finally {
     await tab.close()
   }

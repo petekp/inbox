@@ -1,7 +1,7 @@
 import { prMarkId } from '../../core/view/pr-rows'
 import type { PrAction } from '../../core/view/pr-press'
 import type { TabView as View } from './core'
-import { stepRow, withLeaving } from '../../core/view/row-motion'
+import { drawsPanel, stepRow, withLeaving } from '../../core/view/row-motion'
 import type { RowTarget, RowTrack } from '../../core/view/row-motion'
 import { tabState, drawnRows } from './tab-state'
 import { isUndoing } from './tab-press'
@@ -12,6 +12,7 @@ import { prPlan } from './tab-rows'
 import type { PrBlockPlan } from './tab-rows'
 import { prLastLine } from './tab-pr-lines'
 import type { PressLine } from './tab-pr-lines'
+import { keepPanelLines, stepPanelLines } from './tab-panel-lines'
 
 export const PR_GROUPS = ['threads', 'checks', 'cancelled'] as const
 export type PrGroup = (typeof PR_GROUPS)[number]
@@ -82,6 +83,10 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
         r => !listed.has(r.id) && drawnRows.has(r.id),
       )
       const shown = entries.filter(r => step(r.id, !listed.has(r.id) ? 'gone' : r.id === openId ? 'open' : 'closed'))
+      for (const r of shown) {
+        const track = drawnRows.get(r.id)?.track
+        if (track && drawsPanel(track)) stepPanelLines(r, undefined, now, changed, kept)
+      }
       drawn[group] = step(prGroupMotion(id, group), b[group].length > 0 ? 'closed' : 'gone') ? shown : null
     }
     const line = prLastLine(v, b.pr)
@@ -113,7 +118,10 @@ export function stepPrs(v: View, now: number, changed: Set<string>, kept: Set<st
       drawnRows.set(motion, { track, openBlock: { block, tracks } })
       return [block]
     }
-    if (track.hasOpenForm && wasOpen) drawnRows.set(motion, { track, openBlock: wasOpen })
+    if (track.hasOpenForm && wasOpen) {
+      drawnRows.set(motion, { track, openBlock: wasOpen })
+      for (const r of PR_GROUPS.flatMap(g => wasOpen.block.drawn[g] ?? [])) keepPanelLines(r.id, kept)
+    }
     const empty = { threads: null, checks: null, cancelled: null }
 
     return [{ ...b, drawn: empty, line: null, wasOpen: track.hasOpenForm ? (wasOpen ?? null) : null }]

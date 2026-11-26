@@ -62,13 +62,13 @@ export function turnBackFades(height: number, from: SpringState): FadeStep[] {
 /**
  * How a row's panel fades out when the row closes again while its turned-back panel is still faint, its space short of
  * open, from the `opacity` it shows. The space shuts from where it is, at once, so the panel steps at once to
- * `CUT_OPACITY` if it shows more, and fades from there to none over `LEAVE_FADE_MS`. Its text stays drawn while its
- * space shuts, and the shutting edge cuts it only while it is that faint.
+ * `FAINT_OPACITY` if it shows more, and fades from there to none over `LEAVE_FADE_MS`. Its text stays drawn while its
+ * space shuts, and the shutting edge cuts it only while it is under `CUT_OPACITY`.
  */
 export function faintCloseFades(opacity: number): FadeStep[] {
   const out: FadeStep = { to: 0, ms: LEAVE_FADE_MS }
 
-  return opacity > CUT_OPACITY ? [{ to: CUT_OPACITY, ms: 0 }, out] : [out]
+  return opacity > FAINT_OPACITY ? [{ to: FAINT_OPACITY, ms: 0 }, out] : [out]
 }
 
 /**

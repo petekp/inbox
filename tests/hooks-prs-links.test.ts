@@ -147,7 +147,8 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   opened()
   await pressing
   await clock.settle()
-  expect(await pane.find({ text: /^ ·\s✓\sOpened\sPR\s#12$/ })).toBeDefined()
+  expect(await pane.find({ text: /^✓\sOpened\sPR\s#12$/ })).toBeDefined()
+  expect(await pane.find({ text: /·\s✓\sOpened/ })).toBeUndefined()
   await clock.advance(SETTLED_MS / 2 + 1)
   expect(await pane.find({ text: /✓\sOpened\sPR\s#12$/ })).toBeDefined()
   await clock.advance(SETTLED_MS / 2)
@@ -195,7 +196,8 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await pane.press({ key: 'log-acme/greet#12-test-key' })
   await clock.settle()
   expect(w.ran.at(-1)).toEqual(['open', 'https://github.com/acme/greet/actions/runs/7/job/1'])
-  expect(await pane.find({ text: /^\u2007·\s✓\sOpened\sthe\slog$/ })).toBeDefined()
+  expect(await pane.find({ text: /^✓\sOpened\sthe\slog$/ })).toBeDefined()
+  expect(await pane.find({ text: /·\s✓\sOpened\sthe\slog/ })).toBeUndefined()
 
   await pane.press({ key: 'previous' })
   await pane.press({ key: 'discuss-T1-key' })
@@ -233,7 +235,8 @@ test('a PR linked in a reply shows in the PRs tab, a task naming it opens it, it
   await pane.press({ key: 'open-T1' })
   await clock.settle()
   expect(w.ran.filter(argv => argv[0] === 'open').at(-1)).toEqual(['open', 'https://github.com/acme/greet/pull/12#r1'])
-  expect(await pane.find({ text: /^\u2007·\s✓\sOpened\sthe\scomment$/ })).toBeDefined()
+  expect(await pane.find({ text: /^✓\sOpened\sthe\scomment$/ })).toBeDefined()
+  expect(await pane.find({ text: /·\s✓\sOpened\sthe\scomment/ })).toBeUndefined()
   expect(await pane.find({ text: /^ 1$/ })).toBeDefined()
   hasReply = true
   await pane.press({ key: 'tab-findings' })
