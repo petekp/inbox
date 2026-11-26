@@ -30,11 +30,20 @@ const lineOf = (b: Block): Line | null => (b.kind === 'row' && isStatusUnder(b) 
  * goes at once, as a press shows what it did at once.
  */
 export const stepUnder = (last: UnderLine | null, b: Block, now: number, isInput = false): UnderLine | null =>
-  stepLine(last, lineOf(b), b.kind === 'row' && isOpenRow(b) && !b.settled, now, isInput)
+  stepLine(
+    last,
+    lineOf(b),
+    b.kind === 'row' && isOpenRow(b) && !b.settled,
+    now,
+    isInput,
+    (x, y) => x.source?.is === y.source?.is,
+  )
 
 /**
  * A line that comes and goes in a block, at `now`, after `last`, as `stepUnder` says. `isSameForm` says the block
- * keeps the form it drew the line in, so a line that goes stays drawn while it fades.
+ * keeps the form it drew the line in, so a line that goes stays drawn while it fades. A line that `isSameLine` reads as
+ * another while it still comes, such as "Sending…" turning into a longer "Not sent", comes again from this draw, since
+ * its box grows again to its new height.
  */
 export function stepLine<L>(
   last: UnderLine<L> | null,
@@ -42,9 +51,24 @@ export function stepLine<L>(
   isSameForm: boolean,
   now: number,
   isInput: boolean,
+  isSameLine: (a: L, b: L) => boolean = () => true,
 ): UnderLine<L> | null {
   if (line && last?.isLeaving) return { line, since: now, isLeaving: false, isInput, isBack: true }
-  if (line) return last ? { ...last, line } : { line, since: now, isLeaving: false, isInput }
+  if (!line) return leaving(last, isSameForm, now, isInput)
+  if (!last) return { line, since: now, isLeaving: false, isInput }
+  const isEntering = now < last.since + ROW_STATE_MS.entering
+
+  return isEntering && !isSameLine(last.line, line)
+    ? { line, since: now, isLeaving: false, isInput: last.isInput }
+    : { ...last, line }
+}
+
+function leaving<L>(
+  last: UnderLine<L> | null,
+  isSameForm: boolean,
+  now: number,
+  isInput: boolean,
+): UnderLine<L> | null {
   if (!last || !isSameForm || isInput) return null
   if (!last.isLeaving) return { ...last, since: now, isLeaving: true }
 

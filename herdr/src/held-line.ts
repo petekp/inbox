@@ -5,11 +5,11 @@ import type { HeldLine } from '../../core/view/held-line'
 import { agedText } from './blocks'
 import type { Aged, Block, RowBlock, Tone } from './blocks'
 import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
-import { aboveId } from './heights'
+import { aboveId, aboveLineId } from './heights'
 import type { Sizes } from './heights'
 
 /** A row's status line that the panel draws on its own line between the row's title and its buttons. `aged` keeps a status's age counting while the line is held. */
-type LineAbove = { text: string; tone: Tone; aged?: Aged }
+type LineAbove = { text: string; tone: Tone; aged?: Aged; cameAt?: number }
 
 /**
  * What each row holds above its buttons, by row id: the line it last drew there, or null for a row that drew none
@@ -22,6 +22,9 @@ export const NO_LINES_ABOVE: LinesAbove = new Map()
 /** How long a line whose hold let go stays drawn: its fade, then its space closing. */
 const HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS
 
+/** How long a status that comes above a row's buttons takes to come: its box opening, then the line fading in. */
+const LINE_COMES_MS = NEXT_FRAME_MS + HEIGHT_SETTLE_MS
+
 /** Undo takes the place of a settled row's buttons, so a settled row holds nothing from its open form. */
 const heldKey = (r: RowBlock): string => (r.settled ? `settled ${r.id}` : r.id)
 
@@ -31,11 +34,15 @@ const hasActions = (r: RowBlock): boolean => r.buttons.length > 0 || r.field !==
 export const isStatusUnder = (r: RowBlock): boolean =>
   r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)))
 
-const lineOf = (f: NonNullable<RowBlock['feedback']>): LineAbove => ({
+const lineOf = (f: NonNullable<RowBlock['feedback']>, cameAt?: number): LineAbove => ({
   text: f.text,
   tone: f.tone,
   ...(f.aged ? { aged: f.aged } : {}),
+  ...(cameAt === undefined ? {} : { cameAt }),
 })
+
+const isComing = (l: LineAbove | undefined, now: number): l is LineAbove & { cameAt: number } =>
+  l?.cameAt !== undefined && now < l.cameAt + LINE_COMES_MS
 
 /**
  * The blocks with each row's held line, the lines to hold at the next draw, and when a held line next changes how it
@@ -47,11 +54,15 @@ const lineOf = (f: NonNullable<RowBlock['feedback']>): LineAbove => ({
  * A row whose press went out with no line above keeps its status under its buttons, where the press under way read, as
  * with "✓ Explained". A row drawn without buttons during its press, such as one deselected, keeps what it holds for
  * when it shows them again. A row that settles or comes back from settled starts holding afresh.
+ *
+ * A status that comes above the buttons of a row that held no line there opens a box for itself, so the buttons glide
+ * down (`lineCameAt`). In a draw that takes heights at once, `isAtOnce`, it comes at rest.
  */
 export function holdLinesAbove(
   blocks: Block[],
   held: LinesAbove,
   now: number,
+  isAtOnce = false,
 ): { blocks: Block[]; held: LinesAbove; nextAt: number | null } {
   const next = new Map<string, HeldLine<LineAbove> | null>()
   const shown = blocks.map((b): Block => {
@@ -71,7 +82,9 @@ export function holdLinesAbove(
       next.set(key, null)
       return kept === null && f !== null && !isUnder ? { ...b, isStatusHeldUnder: true } : b
     }
-    const own = f !== null && !isUnder ? lineOf(f) : null
+    const cameAt =
+      kept === undefined ? (isAtOnce ? undefined : now) : kept.leftAt === null ? kept.line.cameAt : undefined
+    const own = f !== null && !isUnder ? lineOf(f, cameAt) : null
     const isOwnFailure = f !== null && isFailure(f.source)
     const step = stepHeldLine(
       kept,
@@ -81,7 +94,7 @@ export function holdLinesAbove(
     )
     if (step.kept) next.set(key, step.kept)
     const d = step.drawn
-    if (!d) return b
+    if (!d) return own && isComing(own, now) ? { ...b, lineCameAt: own.cameAt } : b
     const text = d.line.aged ? agedText(d.line.aged, now) : d.line.text
 
     return {
@@ -90,6 +103,8 @@ export function holdLinesAbove(
     }
   })
   const ends = [...next.values()].flatMap(k => {
+    if (isComing(k?.line, now))
+      return [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter(at => at > now)
     const end = heldLineEndsAt(k, HELD_LEAVE_MS)
     return end === null || k?.leftAt == null
       ? []
@@ -109,3 +124,12 @@ const isHeldLineShutting = (r: RowBlock, now: number): boolean =>
  */
 export const heldLineDrop = (r: RowBlock, now: number, heights: Sizes): number =>
   isHeldLineShutting(r, now) ? (heights.get(aboveId(r.id)) ?? 0) : 0
+
+/**
+ * How far a row's measured rest is under the height it moves to while the box of a status that came above its buttons
+ * opens: the line's height less its box's, from the draw after it came. The row's box then springs with the line's box.
+ */
+export const lineRise = (r: RowBlock, now: number, heights: Sizes): number =>
+  r.lineCameAt === undefined || now === r.lineCameAt
+    ? 0
+    : Math.max(0, (heights.get(aboveLineId(r.id)) ?? 0) - (heights.get(aboveId(r.id)) ?? 0))

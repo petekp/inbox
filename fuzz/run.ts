@@ -5,7 +5,7 @@ import type { Failure } from './failure'
 import { caseOf } from './gen'
 import { rngOf } from './rng'
 import { shrink } from './shrink'
-import { SEEDS, knownIssueOf } from './seeds'
+import { SEEDS, apartFrom, knownIssueOf, ownFailures } from './seeds'
 
 const USAGE =
   'usage: fuzz.sh [--look omp|herdr|rows|codex|mod|all] [--seed N] [--runs N] [--case N] [--time S] [--shrinks N] [--known] [--replay <case.json>]'
@@ -113,7 +113,7 @@ async function main() {
   const seedLines: string[] = []
   let isSeedBroken = false
   for (const s of SEEDS.filter(s => args.looks.includes(s.case.look))) {
-    const failures = await failuresOf(s.case)
+    const { own: failures, others } = ownFailures(s.case.look, s.issue, await failuresOf(s.case))
     const rules = [...new Set(failures.map(f => f.rule))].join(', ')
     const isAsIssueSays = failures.some(
       f => f.rule === s.rule && (s.detail === undefined || f.detail.includes(s.detail)),
@@ -130,7 +130,7 @@ async function main() {
             : `fails, but not as its issue says (${rules})`
     const isFixedWhileOpen = failures.length === 0 && s.isOpen
     if (isFixedWhileOpen || (failures.length > 0 && !(s.isOpen && isAsIssueSays))) isSeedBroken = true
-    seedLines.push(`seed #${s.issue}, ${s.name}: ${verdict}`)
+    seedLines.push(`seed #${s.issue}, ${s.name}: ${verdict}${apartFrom(others)}`)
   }
   const write = (
     name: string,

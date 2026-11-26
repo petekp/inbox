@@ -409,7 +409,7 @@ export default class Inbox extends View {
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     this.blocks = shown
     this.hints = fieldHints(shown)
-    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
+    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming)
     this.linesAbove = held.held
     const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits)
     this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map(o => o.rowId) }

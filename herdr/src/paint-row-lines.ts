@@ -1,4 +1,4 @@
-import { ENTER_FADE_MS, LEAVE_FADE_MS } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, FAINT_OPACITY, LEAVE_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import type { Element } from 'gpui-kit'
 import type { RowBlock, Tone } from './blocks'
 import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
@@ -10,12 +10,12 @@ import { fadeEl } from './paint-parts'
 import type { Paint } from './paint-theme'
 
 /** A line a row draws between its title and its panel. */
-type TitleLine = { text: string; tone: Tone; isHidden?: boolean; leftAt?: number }
+type TitleLine = { text: string; tone: Tone; isHidden?: boolean; leftAt?: number; cameAt?: number }
 
 /** The lines a row's form draws between its title and its panel: its settled label, a status after the title, its held line. */
 const linesOf = (r: RowBlock): TitleLine[] => [
   ...(r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : []),
-  ...(r.feedback && !isStatusUnder(r) ? [r.feedback] : []),
+  ...(r.feedback && !isStatusUnder(r) ? [{ ...r.feedback, cameAt: r.lineCameAt }] : []),
   ...(r.heldLine ? [r.heldLine] : []),
 ]
 
@@ -62,11 +62,28 @@ export function titleLineEls(
  */
 function leavingEl(r: RowBlock, l: TitleLine, el: Element, n: number, p: Paint): Element {
   const leftAt = l.leftAt
+  if (l.cameAt !== undefined) return comingEl(r, l.cameAt, el, n, p)
   if (leftAt === undefined) return el
   const isFading = p.now < leftAt + HOLD_MS
   const name = `status above ${r.id} line ${n}`
   const shown = l.isHidden ? el : fadeEl(el, name, p.now === leftAt ? 1 : 0, { duration: LEAVE_FADE_MS, delay: 0 }, p)
   const box = springBox(`fit ${aboveId(r.id)}`, isFading ? p.heights.get(aboveLineId(r.id)) : 0)
+
+  return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)))
+}
+
+/**
+ * A status that came above a row's buttons, as `holdLinesAbove` gives it: its box opens from none, with the row's box,
+ * so the buttons under it glide down, and the line shows faint in its first draw, so a press shows at once, then fades
+ * in once the box is nearly open.
+ */
+function comingEl(r: RowBlock, cameAt: number, el: Element, n: number, p: Paint): Element {
+  const isStart = p.now === cameAt
+  const height = p.heights.get(aboveLineId(r.id))
+  const name = `status above ${r.id} line ${n}`
+  const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) }
+  const shown = fadeEl(el, name, isStart ? FAINT_OPACITY : 1, fade, p)
+  const box = springBox(`fit ${aboveId(r.id)}`, isStart ? 0 : height)
 
   return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)))
 }

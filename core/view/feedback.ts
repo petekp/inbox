@@ -4,7 +4,7 @@ import { isPrRowId } from '../domain/presses'
 import type { RowPress } from '../domain/presses'
 import { retryOf, isRepeatOf } from './pressed'
 import { noteText } from './press-reducer'
-import { SETTLED_MS, pendingDeliveryAt, COMPARE_LIMIT_MS } from './timing'
+import { SETTLED_MS, pendingDeliveryAt, COMPARE_LIMIT_MS, queuedSentAt } from './timing'
 import { isHandedOffDone, isTerminalLike, DOT, deliveryLabel } from './rows'
 import type { Look, RowView, RowState } from './rows'
 import type { ViewInput } from './view'
@@ -46,7 +46,8 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
  * When a row's press under way began, or null while none is: its talk press waits on the agent's reply, its message is
  * sending, or its open or copy runs. A settled row on its tab that was still in place when the press began waits for it
  * to end, so nothing shifts under the row being worked on. A queued or unconfirmed message does not count, since it can
- * wait a whole turn or for good.
+ * wait a whole turn or for good. A message held for Undo counts from when its host sent it, so a row that folded while
+ * it was held does not come back.
  */
 export function pressUnderWaySince(f: Feedback | null): number | null {
   if (f?.is === 'working' || f?.is === 'sending') return f.at
@@ -99,7 +100,7 @@ export function feedbackOf(
       ...(last.kind === 'handoff' ? { isHandoff: true as const } : {}),
     }
   if (pending === 'sending')
-    return { is: 'sending', label: deliveryLabel('sending', last.text, last.reply), at: last.at }
+    return { is: 'sending', label: deliveryLabel('sending', last.text, last.reply), at: queuedSentAt(last) }
   if (isUnreported) return { is: 'noComparison', at: last.at }
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: 'stillOpen', at: last.at }
 

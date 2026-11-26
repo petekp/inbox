@@ -322,7 +322,7 @@ class Frames {
     const resized = this.heights.takeResized()
     this.formingSince = pageFormingSince(isFirst, this.formingSince, this.heights.takeChanged(), now)
     const isForming = this.formingSince !== null
-    const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
+    const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming)
     this.linesAbove = held.held
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
     this.tracks = moved.tracks

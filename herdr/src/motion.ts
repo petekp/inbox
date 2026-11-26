@@ -333,8 +333,10 @@ export function moveRows(
     })
   }
   for (const b of blocks) {
-    const isMoved = moved.has(b.id)
-    const old = isMoved ? undefined : was.rows.get(b.id)
+    const prior = was.rows.get(b.id)
+    const isMovedOn = prior?.track.state === 'entering' && prior.springId?.includes(MOVED_TO) === true
+    const isMoved = moved.has(b.id) && !isMovedOn
+    const old = isMoved ? undefined : prior
     const opens = old !== undefined && targetOf(b) === 'open' && targetOf(old.block) !== 'open'
     const waitsForLeave = opens && !isInput && isHolding
     const isTurningBack = old?.track.state === 'closing' && old.swap?.inAt !== null

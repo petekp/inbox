@@ -153,6 +153,8 @@ export type RowBlock = {
    * while it leaves. See `holdLinesAbove`.
    */
   heldLine?: { text: string; tone: Tone; isHidden: boolean; leftAt?: number }
+  /** When the status the row draws above its buttons came, while its box still opens to hold it. */
+  lineCameAt?: number
   /** Draws the status under the buttons, where the shared rule puts it above them. See `holdLinesAbove`. */
   isStatusHeldUnder?: true
 }

@@ -102,7 +102,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     name: 'the agent closing a row whose Reply field is open',
     rule: 'jump',
     issue: 828,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd14' },
@@ -196,7 +196,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box status above d10',
     issue: 925,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'click', on: 'button', n: 7, label: 'Pinch (recommended)' },
       { is: 'wait', ms: 4287 },
@@ -206,7 +206,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     name: 'the agent ordering PRs again while a PR block moves',
     rule: 'motion-id',
     issue: 926,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'click', on: 'tab', n: 7, label: 'prs' },
       { is: 'order', picks: [4, 4, 3, 2], label: 'Ship it', why: 'Fix the flaky test' },
@@ -219,7 +219,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box panel i1',
     issue: 927,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(emptySession(), [
         { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
@@ -234,7 +234,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: '"Not sent',
     issue: 928,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(demo, [
         { is: 'click', on: 'button', n: 7, label: 'Pinch (recommended)' },
@@ -245,6 +245,72 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       ]),
       outcomes: { deliver: ['accepted', 'rejected'], isHeldUntilRun: false, performFails: [false] },
     },
+  },
+  {
+    name: 'a task with steps that folds after Done',
+    rule: 'cut',
+    detail: 'in its box status above i1',
+    issue: 931,
+    isOpen: true,
+    case: herdr(emptySession(), [
+      { is: 'record', args: { kind: 'task', ask: '同', steps: ['/repo/x', 'git push', 'https://example.com'] } },
+      { is: 'click', on: 'button', n: 0, label: 'Done' },
+      { is: 'wait', ms: 5600 },
+    ]),
+  },
+  {
+    name: 'a press that waits 15 s, then fails under its buttons',
+    rule: 'cut',
+    detail: '"Not applied',
+    issue: 932,
+    isOpen: true,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
+        { is: 'click', on: 'button', n: 2, label: 'Explain' },
+        { is: 'wait', ms: 15200 },
+      ]),
+      takeAfterMs: null,
+    },
+  },
+  {
+    name: 'All 6 options on a question with long options',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 933,
+    isOpen: true,
+    case: herdr(emptySession(), [
+      {
+        is: 'record',
+        args: {
+          kind: 'question',
+          ask: 'Z',
+          options: [
+            `https://example.com/${'path/'.repeat(30)}`,
+            'هل نعيد المحاولة؟',
+            'Fix the flaky test',
+            'zero\u200bwidth\u200bspaces',
+            '✓ Done · Undo … ↵ ❯',
+            '設定画面の名前を変更しますか',
+          ],
+          context: '',
+        },
+      },
+      { is: 'click', on: 'button', n: 4, label: 'All 6 options' },
+    ]),
+  },
+  {
+    name: 'Reply just after Explain',
+    rule: 'cut',
+    detail: '"Explaining…"',
+    issue: 934,
+    isOpen: true,
+    case: herdr(emptySession(), [
+      { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
+      { is: 'click', on: 'button', n: 2, label: 'Explain' },
+      { is: 'wait', ms: 200 },
+      { is: 'click', on: 'button', n: 1, label: 'Reply' },
+    ]),
   },
   {
     name: 'folding every fold on the Status tab',
@@ -468,16 +534,7 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
       ['"Sending…"', 'in its box status '],
     ],
   },
-  { issue: 828, look: 'herdr', rule: 'jump', details: ['panel d', ' thread '] },
-  { issue: 832, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
   { issue: 924, look: 'codex', rule: 'jump', details: [['press-d', ' grew '], ['d11 shrank']] },
-  {
-    issue: 925,
-    look: 'herdr',
-    rule: 'cut',
-    details: ['in its box status above ', 'in its box box ', ['"✓"', 'in its box mark '], ['"Undo"', ' undo']],
-  },
-  { issue: 926, look: 'herdr', rule: 'motion-id', details: [['drawing pr:', '~to ']] },
   {
     issue: 927,
     look: 'herdr',
@@ -487,7 +544,9 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
       ['"Explain"', 'in its box panel '],
     ],
   },
-  { issue: 928, look: 'herdr', rule: 'cut', details: [['"Not sent', 'in its box status ']] },
+  { issue: 931, look: 'herdr', rule: 'cut', details: [['"Done"', 'in its box status above '], ['"Undo"', ' undo']] },
+  { issue: 932, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status ']] },
+  { issue: 934, look: 'herdr', rule: 'cut', details: [['"Explaining…"', 'in its box status ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
   { issue: 896, look: 'codex', rule: 'cut', details: ['"Holds up ', '"Comparing…"'] },
@@ -505,3 +564,27 @@ export function knownIssueOf(f: { look: string; rule: string; detail: string }):
   )
   return k?.issue ?? null
 }
+
+/**
+ * A seed's failures, less those that an open issue other than the seed's own already describes, as when a seed's moves
+ * also show a cut another issue tracks, and those issues.
+ */
+export function ownFailures<F extends { rule: string; detail: string }>(
+  look: string,
+  issue: number,
+  failures: F[],
+): { own: F[]; others: number[] } {
+  const others = new Set<number>()
+  const own = failures.filter(f => {
+    const known = knownIssueOf({ look, rule: f.rule, detail: f.detail })
+    if (known === null || known === issue) return true
+    others.add(known)
+    return false
+  })
+
+  return { own, others: [...others] }
+}
+
+/** How a seed's verdict names the open issues its other failures belong to. */
+export const apartFrom = (others: number[]): string =>
+  others.length === 0 ? '' : `, apart from ${others.map(n => `#${n}`).join(', ')}`
