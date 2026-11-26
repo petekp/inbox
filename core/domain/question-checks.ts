@@ -103,11 +103,11 @@ const SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)
 /**
  * An ask that asks the user to report one of the results it names, as "report Hola or Hello" or "say whether it loads".
  * Verbs such as confirm, answer, say, reply and tell also name a step to do, as "Confirm the 2FA prompt on your phone or
- * security key", so they ask for a result only with "whether", or with "if" before the "or". "Report", "tell me" and
+ * security key", so they ask for a result only with "whether", or with "if" right after the verb and an "or" later. "Report", "tell me" and
  * "let me know" ask for one with the "or" alone.
  */
 const NAMED_RESULTS_ASK = new RegExp(
-  String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}${SAME_CLAUSE}\bif\b${SAME_CLAUSE}\bor\b`,
+  String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}\s+if\b${SAME_CLAUSE}\bor\b`,
   'i',
 )
 

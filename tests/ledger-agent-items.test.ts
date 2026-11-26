@@ -231,8 +231,14 @@ describe('items the agent recorded', () => {
         'Tell the bot your org name or ID in the sign-in page',
         'Reply to the reviewer on GitHub or in Slack',
         'Let Sam know about the outage on Slack or by email',
+        'Confirm the 2FA prompt on your phone if GitHub sends one, or use a backup code',
+        'Answer the security questions if prompted, or use a recovery code',
+        'Sign in to npm and confirm the code if your phone or authenticator asks for one',
+        'Reply to the reviewer if they ask again, on GitHub or in Slack',
+        'Say yes if npm login asks to open the browser, or press Enter',
+        'Tell the bot your org name if it asks, or your org ID',
       ].map(resultsNote),
-    ).toEqual([false, false, false, false, false, false, false, false, false, false, false])
+    ).toEqual(Array(17).fill(false))
   })
 
   test("one stays open after 12 prompts, when the update's items expire", () => {
