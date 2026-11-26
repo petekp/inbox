@@ -141,24 +141,29 @@ export function glide(
   glides.set(el, { size, from, to, delay, startsAt: Date.now() + delay, anim, scalesEdges })
 }
 
-/** How far an element's bottom edge sits below the last text or control it draws, in px. */
-export function spaceUnder(el: HTMLElement): number {
-  const doc = el.ownerDocument
-  const texts = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-  const range = doc.createRange()
-  let bottom = -Infinity
-  for (let n = texts.nextNode(); n; n = texts.nextNode()) {
-    if (!n.textContent?.trim()) continue
-    range.selectNodeContents(n)
-    const r = range.getBoundingClientRect()
-    if (r.height > 0) bottom = Math.max(bottom, r.bottom)
-  }
-  for (const c of el.querySelectorAll('button, input, textarea, select')) {
-    const r = c.getBoundingClientRect()
-    if (r.height > 0) bottom = Math.max(bottom, r.bottom)
-  }
+/** The bottom of the lowest text drawn in `node`, or -Infinity when it draws none. */
+function textBottom(node: Node, range: Range): number {
+  if (node.nodeType !== node.TEXT_NODE)
+    return Math.max(-Infinity, ...[...node.childNodes].map(child => textBottom(child, range)))
+  if (!node.textContent?.trim()) return -Infinity
+  range.selectNodeContents(node)
+  const box = range.getBoundingClientRect()
 
-  return bottom === -Infinity ? 0 : Math.max(0, el.getBoundingClientRect().bottom - bottom)
+  return box.height > 0 ? box.bottom : -Infinity
+}
+
+/**
+ * How far an element's bottom edge sits below the last text or control it draws, in px. Infinity when it draws
+ * neither, since a moving edge can cut nothing in it.
+ */
+export function spaceUnder(el: HTMLElement): number {
+  const controls = [...el.querySelectorAll('button, input, textarea, select')].map(c => c.getBoundingClientRect())
+  const bottom = Math.max(
+    textBottom(el, el.ownerDocument.createRange()),
+    ...controls.filter(c => c.height > 0).map(c => c.bottom),
+  )
+
+  return bottom === -Infinity ? Infinity : Math.max(0, el.getBoundingClientRect().bottom - bottom)
 }
 
 /** An element's opacity: full unless an animation fades it. */
