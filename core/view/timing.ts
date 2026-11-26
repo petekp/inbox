@@ -156,11 +156,12 @@ export function isSendOnItsWay(delivery: ClosedDelivery): boolean {
  * comes due by `foldDueAt`, and folds into its group's Closed fold then. A due row waits while its message is on its way,
  * while a press begun before it came due is still out on a row of its tab, and while the person has been using the list
  * since before then, until they stop for FOLD_QUIET_MS, so nothing moves under a press. A hold keeps only a row that has
- * not folded yet: a press or input that begins after the row came due leaves it folded. A row whose Undo the look still
- * shows, named by `id` in `undoShown`, stays too. Leaving the tab, by switching tab or closing the inbox, folds it at once.
+ * not folded yet: a press, input or message that begins after the row came due leaves it folded. `sentAt` is when a
+ * message that did not leave at its press left, as a Done message does. A row whose Undo the look still shows, named by
+ * `id` in `undoShown`, stays too. Leaving the tab, by switching tab or closing the inbox, folds it at once.
  */
 export function isSettledInPlace(
-  state: Pick<SettledState, 'at' | 'canUndo' | 'delivery'>,
+  state: Pick<SettledState, 'at' | 'canUndo' | 'delivery'> & { sentAt?: number },
   { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, pressOutSince }: Placing,
   id?: string,
 ): boolean {
@@ -169,7 +170,7 @@ export function isSettledInPlace(
   const isWaiting =
     now < dueAt ||
     isUndoShown ||
-    isSendOnItsWay(state.delivery) ||
+    (isSendOnItsWay(state.delivery) && (state.sentAt ?? state.at) <= dueAt) ||
     isPressOutSince(pressOutSince, dueAt) ||
     isListInUseSince(listInput, dueAt, now)
 
