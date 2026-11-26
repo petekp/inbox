@@ -66,7 +66,7 @@ Items from Codex's replies are missing.
 The inbox has not heard from this chat's hooks.
 ```
 
-When no hook has run yet, it reads `The inbox starts with your next message.` When Codex reports the hooks untrusted or stopped by an update, a line under the tab bar says so in every chat, on every tab, and names the hook icon, as "Hooks need trust" in `docs/looks.md` describes. Asks then leaves out its own hook text.
+When no hook has run yet, it reads `The inbox starts with your next message.` When Codex reports the hooks untrusted or stopped by an update, a line under the tab bar says so in every chat, on every tab, and gives Settings, then Hooks, then Inbox, then Trust all, as "Hooks need trust" in `docs/looks.md` describes. Asks then leaves out its own hook text.
 
 **States.**
 
