@@ -1,6 +1,6 @@
 import { desktopButtonPt, desktopLines, desktopTextPt } from './desktop-metrics'
 import { isStatusUnderActions, stoppedWarningOf } from '../../core/view/feedback'
-import { paneState, sessionState } from '../mod/mod-state'
+import { paneState } from '../mod/mod-state'
 import { paneAskTree } from './pane-ask-tree'
 import { paneDesktopCard } from './pane-desktop-card'
 import { paneDesktopTree } from './pane-desktop-tree'
@@ -53,6 +53,7 @@ export function paneRows(
     isAgeInSide,
     listColumns,
     isInline,
+    isSendHeld,
     e,
     blankLine,
     Button,
@@ -101,6 +102,7 @@ export function paneRows(
       | 'isInline'
       | 'e'
       | 'optionsShown'
+      | 'isSendHeld'
       | 'blankLine'
       | 'Button'
       | 'settledLayout'
@@ -215,7 +217,7 @@ export function paneRows(
     /** The desktop field's Box shrinks it below its own width when its line cannot also hold its Send button. */
     const desktopFieldPt = Math.min(DESKTOP_FIELD_PT, desktopFieldLinePt - desktopButtonPt(submitLabel, true))
     /**
-     * A terminal field that passes one row takes all `REPLY_ROWS`. Claude Code's hint beside a field of several rows
+     * A terminal field over one row takes all `REPLY_ROWS`. Claude Code's hint beside a field of several rows
      * changes with the pane's width, so the rows its text wraps to cannot be counted here.
      */
     const fieldRowCount = (text: string) => {
@@ -241,7 +243,7 @@ export function paneRows(
     const isStatusUnder = f !== null && isStatusUnderActions(f.feedback, isSelected)
     const titleAfter = (isStatusUnder ? null : pressedAge(row)) ?? (isAgeInSide ? undefined : row.titleAfter)
     const shown = f?.text ?? null
-    const warning = isSelected ? stoppedWarningOf(sessionState.isSendHeld, [...options, ...keys, ...more], shown) : null
+    const warning = isSelected ? stoppedWarningOf(isSendHeld, [...options, ...keys, ...more], shown) : null
     const { treeEntries, isDesktopTree, descriptionEntries, statusWarning } = rowEntries(row.view, {
       options,
       answerRow,

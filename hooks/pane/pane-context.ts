@@ -115,6 +115,8 @@ export type PaneBase = {
   raise: { color?: string; dimColor: boolean; backgroundColor: string; inverse: boolean }
   raiseEdge: { dimColor: boolean; color: string; inverse: boolean }
   isThreadSent: ReturnType<typeof threadSentIn>
+  /** Claude Code holds the inbox's messages after a stop. Never in the demo, whose presses reach a stand-in agent. */
+  isSendHeld: boolean
   presses: PressState
   lists: DrawnLists<Row>
   needsYouGroups: ((typeof NEEDS_YOU_GROUPS)[number] & { entries: DrawnEntry<Row>[]; rows: Row[] })[]

@@ -41,7 +41,6 @@ import { glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } fr
 import { cellWidth, clipLabel } from '../../core/domain/text'
 import { runningMark } from '../../core/view/timing'
 import { prStoppedWarningOf } from '../../core/view/feedback'
-import { sessionState } from '../mod/mod-state'
 import { partSpace } from './pane-part-space'
 
 export function panePrRows(
@@ -191,6 +190,7 @@ export function panePrBlocks({
   Box,
   blankLine,
   isThreadSent,
+  isSendHeld,
   lastActions,
   prState,
   presses,
@@ -230,6 +230,7 @@ export function panePrBlocks({
   | 'Box'
   | 'blankLine'
   | 'isThreadSent'
+  | 'isSendHeld'
   | 'lastActions'
   | 'prState'
   | 'presses'
@@ -303,7 +304,7 @@ export function panePrBlocks({
       prKeyAction(a, pr.ref),
     )
     const shownPress = isPrLastShown ? (feedbackLabel(prMarkId(pr.ref))?.text ?? null) : null
-    const warning = prStoppedWarningOf(sessionState.isSendHeld, prActions, shownPress)
+    const warning = prStoppedWarningOf(isSendHeld, prActions, shownPress)
 
     const fits = (text: string) =>
       look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : cellWidth(text) <= listColumns - 2
