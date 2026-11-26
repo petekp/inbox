@@ -45,6 +45,9 @@ import { withRolloutArrivals } from './rollout-arrivals'
 import { hasUserMessageSince, newestTurnEvent, turnIn, withCurrentRollout } from './transcript'
 import { isAppSession } from './rollout-rows'
 import { reconcileUpdateStatus } from './update'
+import { delegatesSettled } from '../../core/domain/children'
+import { delegatesInHerdr, herdrCheckGate } from '../../core/remote/herdr'
+import { statusChanged } from '../../core/runtime/session-status'
 
 const ROLLOUT_LOOKUP_MS = 60_000
 
@@ -122,6 +125,7 @@ export function makeSessionHost(
             ? copyToClipboard(deps.exec, e.text)
             : open(s, e.target),
       refreshPrsIfDue: async () => fetchPrsWhenDue(id, await readState(dir, id), true),
+      checkDelegatesIfDue: async () => checkDelegatesWhenDue(id, await readState(dir, id), true),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true, true), true),
       fetchPrsInBackground: () => fetchPrsNow(id),
       gh: {
@@ -192,6 +196,21 @@ export function makeSessionHost(
 
   function fetchPrsNow(id: string) {
     background.track(prFetches.fetchNow(id, () => fetchPrs(hostFor(id), true)))
+  }
+
+  const isHerdrCheckDue = herdrCheckGate()
+
+  /**
+   * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS` while a look shows the Status, so a
+   * delegate's row follows Herdr while the session waits. The look's next view shows the change.
+   */
+  function checkDelegatesWhenDue(id: string, s: SessionState, shown = s.shownTab === 'overview') {
+    if (!shown || !isHerdrCheckDue(id, now())) return
+    background.track(
+      delegatesInHerdr(s.ledger.overview, deps.exec).then(states => {
+        if (states) return updateState(dir, id, x => statusChanged(x, o => delegatesSettled(o, states, now())), now)
+      }),
+    )
   }
 
   function fetchPrsWhenDue(id: string, s: SessionState, shown = s.shownTab === 'prs') {
@@ -299,5 +318,5 @@ export function makeSessionHost(
   }
   const open = (s: SessionState, target: string) => openTarget(deps.exec, files, target, s.root, s.home)
 
-  return { wakeAfterSettle, fetchPrsNow, fetchPrsWhenDue, served, onPress, onHerdrFile }
+  return { wakeAfterSettle, fetchPrsNow, fetchPrsWhenDue, checkDelegatesWhenDue, served, onPress, onHerdrFile }
 }

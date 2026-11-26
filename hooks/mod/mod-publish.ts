@@ -3,6 +3,7 @@ import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import { sessionFolder } from './mod-commands'
 import { later } from './mod-drawn'
 import { publishToHerdr } from './mod-herdr'
+import { checkDelegatesIfDue } from './mod-pane-open'
 import type { Mod } from './mod-ports'
 import { wakeAfterSettle } from './mod-press-run'
 import { pollPrs } from './mod-prs'
@@ -75,6 +76,7 @@ export async function herdrPress(m: PublishCalls, id: string, f: HerdrFile): Pro
   const host = {
     ...m.hostOf(currentOwner(), 'terminal'),
     refreshPrsIfDue: () => pollPrs(m, true),
+    checkDelegatesIfDue: async () => void checkDelegatesIfDue(m).catch(() => undefined),
     viewers: viewerLeases.of(id, () => void m.publishStatus()),
     commands: m.saves.commands?.(id, () => void m.publishStatus()),
   }

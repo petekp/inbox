@@ -1,14 +1,9 @@
 import type { Run } from '../domain/gh'
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../domain/gh'
 import type { HerdrTarget } from './herdr'
+import { PANEL_LABEL } from './herdr-labels'
 
 const HERDR_APP_TIMEOUT_MS = 5000
-
-/**
- * The terminal label that names the pane showing the Herdr look beside it. Herdr keeps a mod pane with its tab, so the
- * panel outlives the host that opened it, and every host in the terminal reads this label.
- */
-const PANEL_LABEL = 'inbox.panel'
 
 /** What `herdr-app do pane.focus` prints for a pane id the app no longer has. */
 const NO_SUCH_PANE = 'no such pane'

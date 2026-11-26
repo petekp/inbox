@@ -3,7 +3,7 @@ import type { ClientId } from '../domain/client-features'
 import { pressFolder, publishedSessionPath } from './herdr'
 import { herdrEnvelope } from './herdr-envelope'
 import type { EnvelopeSource } from './herdr-envelope'
-import { fileTime, isLookFile, isPressFile, isPrsShownFile, pressFile } from './herdr-press-file'
+import { fileTime, isLookFile, isPressFile, isPrsShownFile, isStatusShownFile, pressFile } from './herdr-press-file'
 import { withCollapse } from '../view/collapse'
 import type { HerdrFile } from './herdr-press-file'
 import { startPress } from '../runtime/host-press'
@@ -349,7 +349,7 @@ export type HerdrFileHost<S extends Session> = PressHost<S> & { viewers: ViewerS
 /**
  * Applies a viewer's heartbeat to the viewer store, which leaves the saved session alone. When a viewer stops showing
  * the Status, its look is counted as `lookReportedOn` counts it, and that is saved before the lease, so a failed save
- * leaves the heartbeat to be applied again. A viewer on the PRs tab makes the host read the session's PRs if they are due.
+ * leaves the heartbeat to be applied again. A viewer on the PRs tab makes the host read the session's PRs if they are due, and one on the Status makes it ask Herdr about the session's delegates if a check is due.
  */
 async function applyViewerUpdate<S extends Session>(host: HerdrFileHost<S>, file: RemoteViewerUpdate): Promise<void> {
   const now = await host.now()
@@ -380,12 +380,13 @@ async function applyViewerUpdate<S extends Session>(host: HerdrFileHost<S>, file
   }
   await host.viewers.update(current => updateRemoteViewer(current, file, now))
   if (!viewer.released && viewer.tab === 'prs') await host.refreshPrsIfDue?.()
+  if (!viewer.released && viewer.tab === 'overview') await host.checkDelegatesIfDue?.()
 }
 
 /**
  * Applies a file the Herdr look wrote. A look at the Status counts as `lookReportedOn` counts it, a collapse is
- * saved as `withCollapse` saves it, and a report that the look shows the PRs tab makes the host read the session's PRs
- * if they are due. A press is applied, then named as the session's `lastHerdrPress`, so the next publish tells the look
+ * saved as `withCollapse` saves it, a report that the look shows the PRs tab makes the host read the session's PRs
+ * if they are due, and one that it shows the Status makes the host ask Herdr about the session's delegates if due. A press is applied, then named as the session's `lastHerdrPress`, so the next publish tells the look
  * the outcome even when the press changed nothing, and why when the host applied nothing. A press runs only within
  * `PRESS_LIFETIME_MS` of when the look made it and while its `when` holds, unless the look already ran it. When the look ran the press's opens and copies, `perform` answers
  * with their result instead of running them again. A message the host holds until the agent's turn ends is saved as
@@ -408,6 +409,10 @@ export async function startHerdrFile<S extends Session>(
   }
   if (isPrsShownFile(file)) {
     await host.refreshPrsIfDue?.()
+    return finished(LOOK_OUTCOME)
+  }
+  if (isStatusShownFile(file)) {
+    await host.checkDelegatesIfDue?.()
     return finished(LOOK_OUTCOME)
   }
   if (!isPressFile(file)) {

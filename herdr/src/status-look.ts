@@ -1,4 +1,5 @@
 import { HERDR_FORMAT } from '../../core/remote/herdr'
+import { PANEL_LABEL } from '../../core/remote/herdr-labels'
 import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import { LOOK_MIN_MS } from '../../core/domain/status-children'
 import type { ReportedLook } from '../../core/domain/status-children'
@@ -15,6 +16,8 @@ import { LINE_HEIGHT } from './paint-theme'
 import { newPressId, pressPath } from './press-file'
 import type { QueueIo } from './press-queue'
 
+/** How often a pointer moving or scrolling over the list counts as list use, so a move does not run the controller per frame. */
+export const LIST_INPUT_STEP_MS = 250
 /** How often the look checks whether its Status is on screen. A look ends at the last check that found it shown. */
 export const LOOK_TICK_MS = 1_000
 /** How often the look reads its session again when no folder change came, and how long it waits to watch again. */
@@ -24,6 +27,25 @@ export const AGE_TICK_MS = 60_000
 
 /** A check this long after the last one ends the look at the last one, as when the Mac slept with the Status shown. */
 const LOOK_GAP_MS = 3 * LOOK_TICK_MS
+
+/**
+ * The look's own pane: the one `props()` names, else the tab's one inbox pane, else, among several, the one the
+ * `inbox.panel` label names on the terminal the look follows. Herdr names the pane in `props()` only for a pane header,
+ * so a panel split beside a terminal has none there.
+ */
+export function ownPaneId(
+  propsPane: string | undefined,
+  panes: readonly { pane: string; tab: string; mod?: string | null }[],
+  tab: string,
+  terminals: readonly { address: string; labels?: Record<string, string> | null }[],
+  followed: string | null,
+): string | undefined {
+  if (propsPane) return propsPane
+  const inboxPanes = panes.filter(p => p.tab === tab && p.mod === 'inbox').map(p => p.pane)
+  if (inboxPanes.length === 1) return inboxPanes[0]
+  const labelled = terminals.find(t => t.address === followed)?.labels?.[PANEL_LABEL]
+  return labelled !== undefined && inboxPanes.includes(labelled) ? labelled : undefined
+}
 
 /**
  * Whether the Herdr app shows the look's pane: it has a window and that window has focus, the pane's tab is the tab

@@ -73,20 +73,19 @@ import { runHere } from './run-here'
 import { screenOf } from './screen'
 import { ViewCache } from './view-cache'
 import { LookReports } from './look-reports'
-import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, statusDrawn } from './status-look'
+import { AGE_TICK_MS, LIST_INPUT_STEP_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, ownPaneId } from './status-look'
+import { statusDrawn } from './status-look'
 
 const { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home })
 
 type Timer = { cancel(): void }
-
-/** How often a pointer moving or scrolling over the list counts as list use, so a move does not run the controller per frame. */
-const LIST_INPUT_STEP_MS = 250
 
 type Read = Extract<ReadSession, { is: 'read' }>
 
 export default class Inbox extends View {
   tab: string | null = null
   last: string | null = null
+  pane: string | undefined = undefined
   followed: Followed = { is: 'no-terminal' }
   sessionId: string | null = null
   read: ReadSession | null = null
@@ -249,7 +248,7 @@ export default class Inbox extends View {
 
   /** Writes the look at the Status for its session's host once the pane stops showing it. */
   async checkLook(isClosing = false): Promise<void> {
-    const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow())
+    const isShown = !isClosing && isPaneShown(this.pane, panes(), spaces(), herdrWindow())
     const page = { tab: this.ui.tab, sessionId: this.sessionId, read: this.read }
     await this.look.check(queueIo, appHome(), isShown, page, Date.now())
   }
@@ -286,6 +285,7 @@ export default class Inbox extends View {
     const terminalRecords = terminals().map(({ address, labels, program }) => ({ address, labels, program }))
     this.followed = follow({ focused: focused(), panes: panes(), terminals: terminalRecords }, this.tab, this.last)
     if (this.followed.is !== 'no-terminal') this.last = this.followed.terminal
+    this.pane = ownPaneId(props()?.pane, panes(), this.tab, terminalRecords, this.last)
     const sessionId = this.followed.is === 'session' ? this.followed.sessionId : null
     if (sessionId === this.sessionId) return
     const now = Date.now()

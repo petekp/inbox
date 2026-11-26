@@ -27,7 +27,7 @@ import { localEffects } from '../../core/domain/help-steps'
 import { groupEmptyText, tabBarBanners } from '../../core/view/banners'
 import type { BannerView } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
-import { feedbackTone, rowFeedbackText, stoppedWarningOf } from '../../core/view/feedback'
+import { feedbackTone, hasAge, rowFeedbackText, stoppedWarningOf } from '../../core/view/feedback'
 import { FINDING_GROUPS } from '../../core/view/help'
 import { earlierLineText } from '../../core/domain/earlier-answers'
 import type { SessionView } from '../../core/view/session-view'
@@ -216,6 +216,14 @@ function sideBySideOf(row: RowView, isAllShown: boolean): Pick<RowBlock, 'sideBy
     : {}
 }
 
+/** How long ago the row's press was made, once it has an age, else how long ago the row arrived. A settled row draws none. */
+function rowAge(row: RowView, now: number): string | null {
+  if (row.state.is === 'settled') return null
+  const at = row.feedback && hasAge(row.feedback) ? row.feedback.at : row.at
+
+  return at === null ? null : shortAgo(now - at)
+}
+
 function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: LookScreen): RowBlock {
   const { state, feedback: f } = row
   const isSettled = state.is === 'settled'
@@ -233,7 +241,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     depth: 0,
     mark: markOf(rowMark(row)),
     title: rowTitle(row, LOOK),
-    age: row.at === null ? null : shortAgo(screen.now - row.at),
+    age: rowAge(row, screen.now),
     feedback: text && f ? { text, tone: feedbackTone(f), source: f } : null,
     settled: isSettled
       ? {

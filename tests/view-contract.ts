@@ -237,7 +237,7 @@ export const LOOK_GAPS: Record<Look, Partial<Record<FieldName, FeatureId>>> = {
   desktop: {},
   codex: {},
   omp: {},
-  herdr: { 'row.pressAge': 'done-press-age' },
+  herdr: {},
 }
 
 const folded = (s: string): string => s.replace(/\s+/g, ' ').trim()
