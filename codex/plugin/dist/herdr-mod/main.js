@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T20:16:29.825Z. 407091 characters follow.
+// Built at 2026-11-26T20:55:58.558Z. 407223 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -3681,6 +3681,8 @@ function answersFitLine(widths, gap, room) {
 }
 
 // ../core/domain/earlier-answers.ts
+var EARLIER_TEXT_CHARS = 200;
+var shortText = (text) => cutLine(text, (t) => t.length <= EARLIER_TEXT_CHARS);
 var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
 shall may might must not no yes now still also just again already instead yet any all some each per via up out over
@@ -3703,8 +3705,8 @@ function earlierLineOf(earlier, now) {
   const where = earlier.repo ? `, in ${earlier.repo},` : "";
   return {
     lead: "You answered ",
-    answer: earlier.answer,
-    rest: ` ${agoText(now - earlier.at)}${where} to “${earlier.ask}”`
+    answer: shortText(earlier.answer),
+    rest: ` ${agoText(now - earlier.at)}${where} to “${shortText(earlier.ask)}”`
   };
 }
 function earlierLineText(line) {

@@ -2099,6 +2099,7 @@ var K1 = 1.2;
 var B = 0.75;
 var RELATIVE_FLOOR = 0.22;
 var EARLIER_TEXT_CHARS = 200;
+var shortText = (text2) => cutLine(text2, (t) => t.length <= EARLIER_TEXT_CHARS);
 var STOP_WORDS2 = new Set(
   `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
@@ -2156,8 +2157,8 @@ function bestEarlier(index, question, skip) {
 function earlierOf(match, isShown) {
   const { doc } = match;
   return {
-    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
-    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    ask: doc.ask,
+    answer: doc.answer,
     at: doc.at,
     repo: doc.repo,
     score: Math.round(match.score * 1e3) / 1e3,
@@ -2178,8 +2179,8 @@ function earlierLineOf(earlier, now) {
   const where = earlier.repo ? `, in ${earlier.repo},` : "";
   return {
     lead: "You answered ",
-    answer: earlier.answer,
-    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
+    answer: shortText(earlier.answer),
+    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${shortText(earlier.ask)}\u201D`
   };
 }
 
