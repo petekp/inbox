@@ -14,7 +14,7 @@ import { MOVED_TO, NO_SIZES, copyIdOf, panelId, restId, titleId } from './height
 import type { Sizes } from './heights'
 import { titleRestOf } from './title-cut'
 import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce } from './block-glide'
-import { aimSpace, faintCloseSteps, opacityAt, stepsFrom } from './panel-steps'
+import { aimSpace, faintCloseSteps, opacityAt, panelOf, stepsFrom } from './panel-steps'
 import type { PanelSpace, PanelStep } from './panel-steps'
 import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
@@ -28,6 +28,7 @@ import { panelShownOf, stepSwap, swapHoldsUntil, swapMotion, swapTimes, swapWait
 import { takeSwap, waitSwap } from './form-swap'
 import type { FormSwap, SwapMotion } from './form-swap'
 import { heldForm } from './held-form'
+import { stepWarning, warningId } from './warning-line'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
@@ -35,7 +36,7 @@ import { heldForm } from './held-form'
  * of a row's title between its one-line and wrapped forms. `springId` names the boxes of a block that moved to another
  * place, which are new so that they start from no height, and is null for a block that never moved. `isInputMove` says
  * the block's move started in a draw that followed the person's input. `under` is the status under a row's buttons as
- * it comes and goes, `status` a PR block's status line, and `prTail` the lines under it. `panelSpace` is the spring of the row's panel space, and `panelSteps` the steps an opening row's
+ * it comes and goes, `status` a PR block's status line, `prTail` the lines under it, and `warning` the stopped warning. `panelSpace` is the spring of the row's panel space, and `panelSteps` the steps an opening row's
  * panel fades in, each with its start, when the open turned a close back, or the steps a closing row's panel fades out
  * in when the close started while that panel was still faint (`faintCloseFades`). `panelHeldUntil` is when a closing row's
  * panel has faded out, so its box lets go of the panel's height. `restSpace` is the spring of the part of a row's box
@@ -52,6 +53,7 @@ type Tracked = {
   under: UnderLine | null
   status: UnderLine<PrLine> | null
   prTail: PrTail | null
+  warning: UnderLine<string> | null
   panelSpace: PanelSpace | null
   panelSteps: PanelStep[] | null
   panelHeldUntil: number
@@ -88,7 +90,7 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * while a leaving block holds its space if the close starts in the draw that block starts to leave. `shutForMs` is how long the box of a block that turned
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
  * still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a row's buttons
- * draws as it comes and goes, and `status` and `prTail` how a PR block's lines do. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
+ * draws as it comes and goes, `status` and `prTail` how a PR block's lines do, and `warning` the stopped warning. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
  * is dismissed, so its box keeps that form's height until the new form measures.
  */
 export type RowMotion = {
@@ -110,6 +112,7 @@ export type RowMotion = {
   under: UnderMotion | null
   status: UnderMotion<PrLine> | null
   prTail: PrTailMotion | null
+  warning: UnderMotion<string> | null
   former: Block | null
   swap: SwapMotion | null
 }
@@ -118,18 +121,6 @@ const targetOf = (b: Block): RowTarget =>
   b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : isOpenRow(b) ? 'open' : 'closed'
 
 const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
-
-/** A row's panel fades in as it opens and out as it closes, from where it is when the move turns back. */
-function panelOf(state: RowState, isStart: boolean, last: Tracked | undefined, closing: RowBlock | null) {
-  const isLeftPanelShown = last?.swap?.inAt === null && isOpenRow(last.swap.from)
-  const wasPanelFolding =
-    last?.track.state === 'opening' || (last?.track.state === 'closing' && last.opened !== null) || isLeftPanelShown
-  const isFrom = isStart && !wasPanelFolding
-  if (state === 'opening') return isFrom ? 0 : 1
-  if (state === 'closing' && closing) return isFrom ? 1 : 0
-
-  return null
-}
 
 /**
  * Steps every block through the shared row states. A block the publish dropped stays drawn while it leaves, after the
@@ -240,6 +231,7 @@ export function moveRows(
     const under = stepUnder(last?.under ?? null, block, now, isInput)
     const status = stepPrStatus(last?.status ?? null, block, now, isFirst)
     const prTail = block.kind === 'pr' ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInput) : null
+    const warning = stepWarning(last?.warning ?? null, last?.block, block, now, isFirst, isInput)
     const isTurnedBack = isStart && track.state === 'opening' && last?.track.state === 'closing' && last.opened !== null
     const panelHeight = heightOf(panelId(block.id))
     const lastSteps = last?.panelSteps ?? null
@@ -303,6 +295,7 @@ export function moveRows(
       under,
       status,
       prTail,
+      warning,
       panelSpace,
       panelSteps,
       panelHeldUntil,
@@ -328,6 +321,7 @@ export function moveRows(
       under: underMotion(under, now, heightOf(underId(block.id))),
       status: underMotion(status, now, heightOf(underId(block.id))),
       prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
+      warning: underMotion(warning, now, heightOf(warningId(block.id))),
       former: last && last.block.kind !== block.kind ? last.block : null,
       swap: swapMotion(waited, now),
     })
@@ -379,6 +373,7 @@ export function moveRows(
       ...underTimes(t.under),
       ...underTimes(t.status),
       ...prTailTimes(t.prTail),
+      ...underTimes(t.warning),
       ...swapTimes(t.swap),
       holdsUntil,
       closeHoldsUntil,

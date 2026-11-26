@@ -112,7 +112,7 @@ export type BodyLine = {
 /** The parts of a row the look draws as lines under its title. A PR row's lines are its `detail`. */
 type BodyPart = Extract<
   RowPart,
-  'holdsUp' | 'context' | 'earlier' | 'detail' | 'file' | 'answer' | 'note' | 'answers' | 'reason' | 'status'
+  'holdsUp' | 'context' | 'earlier' | 'detail' | 'file' | 'answer' | 'note' | 'answers' | 'reason'
 >
 
 export type RowBlock = {
@@ -153,6 +153,8 @@ export type RowBlock = {
   sideBySide?: { optionIds: string[]; recLine: string | null }
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
+  /** An open row's stopped warning, from `stoppedWarningOf`, drawn above its answers, else above its buttons. */
+  warning?: string
   /**
    * The line the row had above its buttons, kept while a press puts its status under them, and when its hold let go,
    * while it leaves. See `holdLinesAbove`.

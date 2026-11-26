@@ -46,6 +46,7 @@ import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
 import { NO_BREAK_SPACE, feedbackEl, partedTextEl, wordEls } from './paint-text'
 import { ARM_END, answersEl, armEl, isSideBySide, trunkEl } from './paint-tree'
+import { isWarningDrawn, rowWarningEl, warningBoxEl } from './paint-warning'
 
 /** A line under a row's title, `above` under the part above it, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (
@@ -162,7 +163,8 @@ function rowEl(r: RowBlock, p: Paint): Element {
 /**
  * A row's body lines, each `partGap` under the part above, from `titleEnd`, the title's last part. Answers that
  * `isSideBySide` lets share the first answer's line, as the last branch, with the recommendation's reason on one line
- * under them in place of each answer's note. Returns the lines and the last part they draw.
+ * under them in place of each answer's note. The stopped warning's box, from `warn`, goes above the answers. Returns the
+ * lines, the last part they draw and whether they hold the warning's box.
  */
 function bodyEls(
   from: RowBlock,
@@ -170,7 +172,8 @@ function bodyEls(
   p: Paint,
   isInert: boolean,
   titleEnd: RowPart,
-): { els: Element[]; end: RowPart } {
+  warn: (gap: number, gapBelow: number, isOnTree: boolean) => Element | null,
+): { els: Element[]; end: RowPart; isWarned: boolean } {
   const buttonOf = (id: string | undefined) => from.buttons.filter(b => b.id === id)
   const sideBySide = isSideBySide(from, p) ? from.sideBySide : null
   const answers = sideBySide ? from.buttons.filter(b => sideBySide.optionIds.includes(b.id)) : []
@@ -196,15 +199,19 @@ function bodyEls(
       })
     : from.body
   let end = titleEnd
-  const els = shown.map(l => {
-    const above = partPt(end, l.part)
+  let isWarned = false
+  const els = shown.flatMap(l => {
+    const isFirstAnswer = !isWarned && (l.optionId !== undefined || l.part === 'answers')
+    const warning = isFirstAnswer ? warn(partPt(end, l.part), partPt('status', l.part), l.tree !== undefined) : null
+    const above = warning ? 0 : partPt(end, l.part)
+    isWarned ||= isFirstAnswer
     end = l.part
     const buttons = l.part === 'answers' ? answers : buttonOf(l.optionId)
 
-    return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)
+    return [...(warning ? [warning] : []), bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)]
   })
 
-  return { els, end }
+  return { els, end, isWarned }
 }
 
 /**
@@ -233,14 +240,24 @@ function panelEl(
   const actions = from.buttons.filter(b => !b.isOption)
   const hasAnswers = from.buttons.some(b => b.isOption)
   const followsAnswers = hasAnswers && actions[0]?.emphasis !== 'quiet'
-  const body = bodyEls(from, r.isSelected, p, isInert, titleEnd)
+  const warn = (gap: number, gapBelow: number, isOnTree: boolean) => {
+    if (!isWarningDrawn(from, m, p)) return null
+    const line = (text: string) =>
+      bodyLineEl({ part: 'status', text, tone: 'error' }, 0, p.t, r.isSelected).pb(gapBelow)
+    const box = warningBoxEl(r.id, from.warning ?? null, p, line, from !== r)
+    return rowWarningEl(box, gap, isOnTree ? trunkEl(0, null, p.t, r.isSelected) : null)
+  }
+  const body = bodyEls(from, r.isSelected, p, isInert, titleEnd, warn)
   const end: RowPart = from.field ? 'field' : actions.length > 0 ? 'buttons' : body.end
+  const next = from.field ? 'field' : 'buttons'
+  const warning =
+    !body.isWarned && end !== body.end ? warn(partPt(body.end, next), partPt('status', next), false) : null
+  const gapOf = (part: typeof next) => (warning ? 0 : partPt(body.end, part))
   const parts = [
     ...body.els,
-    ...(actions.length > 0
-      ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons'))]
-      : []),
-    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field'))] : []),
+    ...(warning ? [warning] : []),
+    ...(actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, gapOf('buttons'))] : []),
+    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(gapOf('field'))] : []),
     ...underEls(r, m?.closing ?? shown, m, p, partPt(end, 'result')),
   ]
   if (parts.length === 0) return []
@@ -313,13 +330,12 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     ...(l.status ? [statusPartEl(l.status.text).text_color(colorOf(t, l.status.tone))] : []),
     ...l.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
   ]
-  const tail = prTailEls(b, p, {
+  const [error, ...tail] = prTailEls(b, p, {
     error: text => lineEl(text, t.ansi1, 0),
-    warning: text => lineEl(text, colorOf(t, 'error'), 0).pt(CONTROL_GAP),
-    buttons: (buttons, isGoing) =>
-      buttonsEl(buttons, p, 0, isInert || isGoing, false, b.warning ? LIST_GAP : CONTROL_GAP),
+    buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing, false, CONTROL_GAP),
     result: f => feedbackEl(f, t),
   })
+  const warning = warningBoxEl(b.id, b.warning, p, text => lineEl(text, colorOf(t, 'error'), 0).pt(CONTROL_GAP))
 
   return v_flex()
     .pl(EDGE)
@@ -332,7 +348,7 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
           .child(partedEl(statusParts(l), t.muted)),
       ),
     )
-    .children(tail)
+    .children(error ? [error, warning, ...tail] : [warning, ...tail])
 }
 
 /** A line of text with its buttons after it, under the stopped warning when it has one. */
@@ -342,13 +358,7 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
   return v_flex()
     .pl(EDGE)
     .pr(EDGE)
-    .when(b.warning !== undefined, e =>
-      e.child(
-        lineEl(b.warning ?? '', colorOf(t, 'error'), 0)
-          .pt(0)
-          .pb(LIST_GAP),
-      ),
-    )
+    .child(warningBoxEl(b.id, b.warning ?? null, p, text => lineEl(text, colorOf(t, 'error'), 0).pb(LIST_GAP)))
     .child(
       h_flex()
         .gap(CONTROL_GAP)

@@ -19,6 +19,7 @@ import type { Paint } from './paint-theme'
 import { panelId, prHeadId, restId, titleId } from './heights'
 import { PR_TAIL_PARTS, prStatusHeight, prTailHeight, prTailId } from './pr-status'
 import { heldLineDrop, lineRise } from './held-line'
+import { warningBoxId, warningRise } from './warning-line'
 import { underId } from './under-line'
 import { shortTitleOf } from './title-cut'
 import { shutTo } from './block-glide'
@@ -212,21 +213,26 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
     const head = p.heights.get(prHeadId(id))
     const status = p.heights.get(underId(id))
     const tail = PR_TAIL_PARTS.map(part => prTailHeight(b, part, m, p) ?? p.heights.get(prTailId(part, id)))
-    if (head === undefined || status === undefined || tail.some(h => h === undefined)) return former()
+    const warning = p.heights.get(warningBoxId(id))
+    if (head === undefined || status === undefined || warning === undefined || tail.some(h => h === undefined))
+      return former()
+    const lines = tail.reduce((sum: number, h) => sum + (h ?? 0), warning + warningRise(b, m, p))
 
-    return head + (prStatusHeight(b, m, p) ?? status) + tail.reduce((sum: number, h) => sum + (h ?? 0), 0)
+    return head + (prStatusHeight(b, m, p) ?? status) + lines
   }
   if (b.kind !== 'row') {
     const measured = p.heights.get(id)
 
-    return measured === undefined ? former() : measured - panel
+    return measured === undefined ? former() : measured - panel + warningRise(b, m, p)
   }
   const title = titleHeightOf(b, p)
   const rest = p.heights.get(restId(id))
 
   if (title === undefined || rest === undefined) return former()
 
-  return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + lineRise(b, p.now, p.heights)
+  const rise = lineRise(b, p.now, p.heights) + warningRise(b, m, p)
+
+  return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + rise
 }
 
 /**

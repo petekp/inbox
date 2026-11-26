@@ -177,8 +177,8 @@ function plannedKinds(row: RowView, isAllShown: boolean): { kind: PressKind }[] 
   ]
 }
 
-/** The row's lines under its title. The stopped warning, `warning`, draws last before the answers, in red. */
-function rowBody(row: RowView, isAllShown: boolean, warning: string | null): BodyLine[] {
+/** The row's lines under its title. */
+function rowBody(row: RowView, isAllShown: boolean): BodyLine[] {
   const options = rowKeyPlan(row, isAllShown).options.map((o, n): BodyLine[] => [
     { part: 'answer', optionId: `${row.id} ${n}`, text: '', tone: 'muted' },
     ...(o.note ? [{ part: 'note' as const, text: o.note, tone: 'muted' as const, isOptionNote: true as const }] : []),
@@ -202,7 +202,6 @@ function rowBody(row: RowView, isAllShown: boolean, warning: string | null): Bod
     { part: 'earlier', text: row.earlierLine ? earlierLineText(row.earlierLine) : '', tone: 'muted', ...contextTree },
     { part: 'detail', text: row.detail ?? '', tone: null },
     { part: 'file', text: row.fileName ? `${ROW_COPY.relevantFile}${row.fileName}` : '', tone: 'muted' },
-    ...(warning ? [{ part: 'status' as const, text: warning, tone: 'error' as const, ...contextTree }] : []),
     ...options.flatMap((_, n) => branchLines(holdsUp.length + n)),
   ]
 
@@ -248,7 +247,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     isSelectable: !isSettled,
     isSelected,
     ...(isCollapsed && { isCollapsed }),
-    body: isOpen ? rowBody(row, isAllShown, warning) : [],
+    body: isOpen ? rowBody(row, isAllShown) : [],
     ...(isOpen ? sideBySideOf(row, isAllShown) : {}),
     buttons: isSettled
       ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)]
@@ -256,6 +255,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
         ? rowButtons(row, isAllShown, screen.agent).filter(b => !isTyping || b.isOption)
         : [],
     field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
+    ...(warning && { warning }),
   }
 }
 
