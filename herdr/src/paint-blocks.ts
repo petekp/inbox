@@ -32,11 +32,14 @@ import type { RowMotion } from './motion'
 import type { SwapMotion } from './form-swap'
 import { padOf, sizeEl, titleEl } from './paint-space'
 import { PATH_X, lineColor } from './paint-strokes'
-import { panelId, restId } from './heights'
+import { panelId, prHeadId, prTailId, restId } from './heights'
+import { prStatusEl } from './paint-pr-status'
+import type { PrLine } from './pr-status'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { titleTextEl } from './paint-title-text'
+import { titleLineEls } from './paint-row-lines'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
 import { DOT } from '../../core/view/rows'
@@ -154,11 +157,12 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .child(r.age ?? ''),
       ),
     )
-  const lines = [
-    ...(shown.settled ? [{ text: shown.settled.label, tone: shown.settled.tone }] : []),
-    ...(shown.feedback && !isStatusUnder(shown) ? [shown.feedback] : []),
-    ...(shown.heldLine ? [shown.heldLine] : []),
-  ]
+  const lines = titleLineEls(r, shown, m, p, (l, n) => {
+    const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
+    const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, above, t, r.isSelected)
+
+    return l.isHidden ? el.opacity(0) : el
+  })
   const titleEnd: RowPart = lines.length > 0 ? 'titleStatus' : 'title'
 
   return v_flex()
@@ -180,14 +184,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
         v_flex()
           .id(`form ${r.id}`)
           .when(swap !== null, e => swapFadeEl(swap, e))
-          .children(
-            lines.map((l, n) => {
-              const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
-              const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, above, t, r.isSelected)
-
-              return 'isHidden' in l && l.isHidden ? el.opacity(0) : el
-            }),
-          )
+          .children(lines)
           .children(panelEl(r, shown, m, p, isLeaving, titleEnd)),
       ),
     )
@@ -275,7 +272,7 @@ function panelEl(
       ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons'))]
       : []),
     ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field'))] : []),
-    ...underEls(r, shown, m, p, partPt(end, 'result')),
+    ...underEls(r, m?.closing ?? shown, m, p, partPt(end, 'result')),
   ]
   if (parts.length === 0) return []
   const key = panelId(r.id)
@@ -342,20 +339,28 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     .items_start()
     .child(div().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title))
     .when(!p.isNarrow, e => e.child(div().flex_none().ml(INSET).text_color(t.muted).child(b.number)))
-  const statusParts = [
+  const statusParts = (l: PrLine) => [
     ...(p.isNarrow ? [div().flex_none().text_color(t.muted).child(b.number)] : []),
-    ...(b.status ? [statusPartEl(b.status.text).text_color(colorOf(t, b.status.tone))] : []),
-    ...b.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
+    ...(l.status ? [statusPartEl(l.status.text).text_color(colorOf(t, l.status.tone))] : []),
+    ...l.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
   ]
+  const tail = v_flex()
+    .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
+    .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
+    .when(b.feedback !== null, e => e.child(feedbackEl(b.feedback!, t)))
 
   return v_flex()
     .pl(EDGE)
     .pr(EDGE)
-    .child(title)
-    .when(statusParts.length > 0, e => e.child(div().pt(INSIDE_GAP).child(partedEl(statusParts, t.muted))))
-    .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
-    .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
-    .when(b.feedback !== null, e => e.child(feedbackEl(b.feedback!, t)))
+    .child(sizeEl(prHeadId(b.id), p, title))
+    .child(
+      prStatusEl(b, p, l =>
+        div()
+          .pt(INSIDE_GAP)
+          .child(partedEl(statusParts(l), t.muted)),
+      ),
+    )
+    .child(sizeEl(prTailId(b.id), p, tail))
 }
 
 function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {

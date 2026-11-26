@@ -16,7 +16,9 @@ import {
   SECTION_GAP,
 } from './paint-theme'
 import type { Paint } from './paint-theme'
-import { panelId, restId, titleId } from './heights'
+import { panelId, prHeadId, prTailId, restId, titleId } from './heights'
+import { prStatusHeight } from './pr-status'
+import { underId } from './under-line'
 import { shortTitleOf } from './title-cut'
 import { shutTo } from './block-glide'
 import { contentStrokeEls, feedsOf, passingOf, runsIn, spaceColumnEl, strokeFadesOf } from './paint-strokes'
@@ -139,7 +141,7 @@ export function spacesOf(
 const springHeight = <E extends Element>(el: E): E => el.spring('height', HEIGHT_SPRING)
 
 /** A box whose height spring is always declared, at `height`, or at its content's height when undefined. */
-const springBox = (id: string, height: number | undefined): Element =>
+export const springBox = (id: string, height: number | undefined): Element =>
   springHeight(
     v_flex()
       .id(id)
@@ -197,13 +199,21 @@ export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
 /**
  * The height a block's content box moves to: its measured height, less a closing row's panel while `isPanelLeftOut`.
  * A row's height is its padding, its title's and the rest's, each measured on its own, so the row's box springs in step
- * with its title's box. A block that changed kind takes its former form's height until its new form measures, so its
+ * with its title's box. A PR's is its title's, its status line box's and the lines' under it, so its box springs in step
+ * with its status line's box. A block that changed kind takes its former form's height until its new form measures, so its
  * box glides between the two. Undefined until the block's first measure.
  */
 function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undefined {
   const id = b.id
   const panel = m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0
   const former = () => (m?.former ? fitHeight(m.former, undefined, p) : undefined)
+  if (b.kind === 'pr') {
+    const parts = [prHeadId(id), underId(id), prTailId(id)].map(key => p.heights.get(key))
+    const [head, status, tail] = parts
+    if (head === undefined || status === undefined || tail === undefined) return former()
+
+    return head + (prStatusHeight(b, m, p) ?? status) + tail
+  }
   if (b.kind !== 'row') {
     const measured = p.heights.get(id)
 
