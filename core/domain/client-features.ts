@@ -82,6 +82,7 @@ export type FeatureId =
   | 'session-registry'
   | 'press-preconditions'
   | 'task-results'
+  | 'stopped-session-send'
   | 'option-previews'
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */

@@ -18,3 +18,4 @@ Part of [the look map](../looks.md#omp).
 | Turn with no prompt (`exchange-trigger`) | Every turn has the prompt's words, so no exchange reads "unknown". | `before_agent_start` carries only the prompt text. | `core/runtime/session-turns.ts:endTurn` |
 | Show explanation (`show-explanation`) | Never drawn. | omp's conversation is the terminal's own scrollback, which no extension can scroll. | `core/view/session-view.ts:sessionView` |
 | Desktop Codex connection (`codex-desktop-companion`) | Unsupported; omp publishes its sessions through Herdr. | The connection targets Codex's saved chats and MCP host, which omp does not use. | `codex/src/companion-listener.ts` |
+| A message sent after a stop (`stopped-session-send`) | Never refused for a stop. | omp holds no message after the person stops a turn. | `omp/src/host.ts` |

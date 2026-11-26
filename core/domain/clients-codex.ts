@@ -196,6 +196,10 @@ export const CODEX: Client = {
     },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'stopped-session-send': {
+      kind: 'different',
+      reason: 'The host holds no message after the person stops a turn, so it never refuses one for that.',
+    },
     'option-previews': { kind: 'full' },
   },
 }
