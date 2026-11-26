@@ -10,14 +10,23 @@ import { tempDir } from './helpers'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 
-function checkVersions(t: TestContext, versions: { claude: string; codex: string; omp: string }) {
+function checkVersions(
+  t: TestContext,
+  versions: { claude: string; codex: string; omp: string },
+  claudeCode = { range: '>=2.1.292', readme: '2.1.292' },
+) {
   const root = tempDir()
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const write = (path: string, json: object) => {
     mkdirSync(dirname(join(root, path)), { recursive: true })
     writeFileSync(join(root, path), JSON.stringify(json))
   }
-  write('.claude-plugin/plugin.json', { name: 'inbox', version: versions.claude })
+  write('.claude-plugin/plugin.json', {
+    name: 'inbox',
+    version: versions.claude,
+    engines: { 'claude-code': claudeCode.range },
+  })
+  writeFileSync(join(root, 'README.md'), `- It needs Claude Code ${claudeCode.readme} or later.\n`)
   write('codex/plugin/.codex-plugin/plugin.json', { name: 'inbox', version: versions.codex })
   write('omp/package.json', { name: 'inbox', version: versions.omp })
   mkdirSync(join(root, 'scripts'))
@@ -36,4 +45,15 @@ test('the version check passes when the three manifests agree, and names each ma
     /codex\/plugin\/\.codex-plugin\/plugin\.json has version 1\.2\.4, and \.claude-plugin\/plugin\.json has 1\.2\.3\./,
   )
   assert.doesNotMatch(differing.stderr, /omp\/package\.json/)
+})
+
+test('the version check fails when the Claude Code range in plugin.json differs from the README’s', t => {
+  const same = { claude: '1.2.3', codex: '1.2.3', omp: '1.2.3' }
+  const differing = checkVersions(t, same, { range: '>=2.1.292', readme: '2.1.300' })
+  assert.equal(differing.status, 1)
+  assert.match(
+    differing.stderr,
+    /engines\["claude-code"\] ">=2\.1\.292", and README\.md says Claude Code 2\.1\.300 or later/,
+  )
+  assert.equal(checkVersions(t, same, { range: '>=2.1.300', readme: '2.1.300' }).status, 0)
 })
