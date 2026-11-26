@@ -148,9 +148,9 @@ A delegate whose session publishes no focus, such as one that does not run the i
 
 ### Which pieces wait on me?
 
-#### 8. ◆ marks every piece an open ask holds up, and only those
+#### 8. ◆ or □ marks every piece an open ask holds up, and only those
 
-From the page alone, the person sees which pieces cannot move until they act. The ◆ goes when they answer.
+From the page alone, the person sees which pieces cannot move until they act. ◆ marks a piece any open question holds up, and □ one that only open tasks hold up. The mark goes when they answer or do the task.
 
 - **Good:** the open question "Which conflict rule ships?" puts ◆ on `Sync conflicts`.
 - **Good:** one open task, "Sign in to the app store", puts □ on both `2.4 release` and `Hotfix release`.

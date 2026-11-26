@@ -69,7 +69,7 @@ export type Line = {
   /** Extra indent, for the rows under a PR. A row on a tree takes none: its arm shows where it hangs. */
   depth: number
   tree?: TreePlace
-  /** The mark before the title: ◆ on an open question or task. A Finds row has none, so its title starts in the mark's place. */
+  /** The mark before the title: ◆ on an open question, □ on an open task. A Finds row has none, so its title starts in the mark's place. */
   lead: Lead | null
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
   mark: ResultMark | null

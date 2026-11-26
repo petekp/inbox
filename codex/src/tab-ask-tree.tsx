@@ -127,7 +127,7 @@ function answersEnd(rowId: string, options: Key[], answerRow: AnswerRow | null):
 
 /**
  * An open question's Holds up line, context, earlier answer and answers, in that order, as the body of its panel. With
- * a Holds up line or an answer, they hang from the ◆ in the row's mark column as one tree. The trunk ends at the last
+ * a Holds up line or an answer, they hang from the ◆ or □ in the row's mark column as one tree. The trunk ends at the last
  * branch, and a line after it hangs from nothing.
  */
 export function askTree(

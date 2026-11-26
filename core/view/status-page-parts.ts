@@ -170,8 +170,9 @@ function isNamedLikeSubject(x: Subject, under: readonly Child[]): boolean {
 
 /**
  * What the one child that is named like its subject gives the subject's row: a moving mark while it works, the
- * needs-you mark while it is blocked, and ✓ once it finished, unless an open ask holds the subject up, which keeps its
- * own mark and words. Such a row has no stall word.
+ * needs-you mark while it is blocked, and ✓ once it finished. An open ask that holds the subject up keeps its own mark
+ * and words over a working or finished child. A blocked child's ◆ replaces a task's □, since the delegate waits on a
+ * decision. Such a row has no stall word.
  */
 function carriedByChild(
   c: Child,

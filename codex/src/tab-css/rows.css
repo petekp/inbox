@@ -251,7 +251,7 @@
   color: var(--muted);
 }
 /*
- * The tree hangs from the ◆ in the mark column. The ◆'s cell draws the line down to its row's end, and each branch
+ * The tree hangs from the ◆ or □ in the mark column. The mark's cell draws the line down to its row's end, and each branch
  * of the tree draws the rest from the top of its own block to its tick, `--tree-x` left of the text column.
  */
 .body .tree {
