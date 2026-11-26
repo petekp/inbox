@@ -258,4 +258,15 @@ describe('earlier answers in the record answer', () => {
     const again = recordItem(CLAUDE_CODE, added.ledger, lockAsk, NOW, TOOL_FIELDS, found)
     expect(again.result).not.toContain('Yes, after five')
   })
+
+  test('cut a long earlier answer at a word with an ellipsis', () => {
+    const long = 'In-process memory cache, sized for the nightly restart, '.repeat(8)
+    const found = [doc('b', 'Should the kiosk lock after five idle minutes?', long)]
+    const added = recordItem(CLAUDE_CODE, EMPTY, lockAsk, NOW, TOOL_FIELDS, found)
+    const shown = /They answered "(.*)"\./.exec(added.result)?.[1] ?? ''
+    expect(shown.endsWith('…')).toBe(true)
+    expect(shown.length).toBeLessThanOrEqual(200)
+    expect(long.startsWith(shown.slice(0, -1))).toBe(true)
+    expect(long.charAt(shown.length - 1)).toBe(' ')
+  })
 })

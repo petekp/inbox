@@ -1,9 +1,12 @@
 import { agoText } from './earlier-answers'
 import type { AnswerDoc } from './earlier-answers'
-import { clipLabel } from './text'
+import { cutLine } from './text'
 
 /** The most characters an earlier ask or answer keeps in the `record` answer. */
 const MATCH_TEXT_CHARS = 200
+
+/** `text` whole, or cut at a word with an ellipsis, so the agent never copies a word cut in half into a close reason. */
+const shortText = (text: string) => cutLine(text, t => t.length <= MATCH_TEXT_CHARS)
 
 /**
  * What the `record` answer adds after a new question when the person answered questions like it before: each earlier
@@ -15,7 +18,7 @@ export function earlierAnswersText(id: string, earlier: readonly AnswerDoc[], no
   const lines = earlier.map(doc => {
     const where = doc.repo ? `, in ${doc.repo}` : ''
 
-    return `- ${agoText(now - doc.at)}${where}: "${clipLabel(doc.ask, MATCH_TEXT_CHARS)}" They answered "${clipLabel(doc.answer, MATCH_TEXT_CHARS)}".`
+    return `- ${agoText(now - doc.at)}${where}: "${shortText(doc.ask)}" They answered "${shortText(doc.answer)}".`
   })
 
   return [
