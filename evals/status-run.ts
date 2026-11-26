@@ -106,18 +106,18 @@ const path = resultsPath(values.out, about)
 
 async function judge(
   input: Parameters<typeof judgePrompt>[0],
-): Promise<{ answer: string | null; verdicts: JudgeVerdict[] | null }> {
-  const { text } = await claude(judgePrompt(input), judgeSystem, JUDGE_MODEL, JUDGE_EFFORT)
+): Promise<{ answer: string | null; verdicts: JudgeVerdict[] | null; costUsd: number | null }> {
+  const { text, costUsd = null } = await claude(judgePrompt(input), judgeSystem, JUDGE_MODEL, JUDGE_EFFORT)
   if (text === null) throw new Error('the judge gave no answer')
 
-  return { answer: text, verdicts: parseJudgeAnswer(text) }
+  return { answer: text, verdicts: parseJudgeAnswer(text), costUsd }
 }
 
 if (judgePages !== null) await checkJudge(judgePages)
 
 /** Judges every page in the chosen sets, once, and prints each wrong verdict. Exits 0 only when every page was called right. */
 async function checkJudge(sets: JudgePageSet[]): Promise<never> {
-  type PageRun = Run & { set: number; answer: string | null; mistakes: string[] }
+  type PageRun = Run & { set: number; answer: string | null; mistakes: string[]; costUsd: number | null }
   const jobs: Job<PageRun>[] = sets.flatMap(s =>
     s.pages.map(page => {
       const base = {
@@ -133,11 +133,11 @@ async function checkJudge(sets: JudgePageSet[]): Promise<never> {
       }
       return {
         go: async () => {
-          const { answer, verdicts } = await judge(page)
+          const { answer, verdicts, costUsd } = await judge(page)
           const mistakes = pageMistakes(page, verdicts)
-          return { ...base, answer, mistakes, error: null, failed: mistakes }
+          return { ...base, answer, mistakes, costUsd, error: null, failed: mistakes }
         },
-        unrun: (error: string) => ({ ...base, answer: null, mistakes: [], error, failed: [] }),
+        unrun: (error: string) => ({ ...base, answer: null, mistakes: [], costUsd: null, error, failed: [] }),
       }
     }),
   )
@@ -153,6 +153,8 @@ async function checkJudge(sets: JudgePageSet[]): Promise<never> {
       console.log(`  x ${r.name}: ${why}`)
     }
   }
+  const judgeCost = results.reduce((n, r) => n + (r.costUsd ?? 0), 0)
+  console.log(`Judge calls cost ${judgeCost.toFixed(2)} US dollars.`)
   console.log(`Results: ${path}`)
   const isRight =
     results.length === sets.reduce((n, s) => n + s.pages.length, 0) &&
