@@ -22,6 +22,8 @@ import type { TitleGlide, TitleMotion } from './title-motion'
 import { stepUnder, underId, underMotion, underTimes } from './under-line'
 import { movedOf } from './moved-blocks'
 import type { UnderLine, UnderMotion } from './under-line'
+import { stepPrStatus } from './pr-status'
+import type { PrLine } from './pr-status'
 import { panelShownOf, stepSwap, swapHoldsUntil, swapMotion, swapTimes, swapWaitsUntil } from './form-swap'
 import { takeSwap, waitSwap } from './form-swap'
 import type { FormSwap, SwapMotion } from './form-swap'
@@ -33,7 +35,7 @@ import { heldForm } from './held-form'
  * of a row's title between its one-line and wrapped forms. `springId` names the boxes of a block that moved to another
  * place, which are new so that they start from no height, and is null for a block that never moved. `isInputMove` says
  * the block's move started in a draw that followed the person's input. `under` is the status under a row's buttons as
- * it comes and goes. `panelSpace` is the spring of the row's panel space, and `panelSteps` the steps an opening row's
+ * it comes and goes, and `status` a PR block's status line. `panelSpace` is the spring of the row's panel space, and `panelSteps` the steps an opening row's
  * panel fades in, each with its start, when the open turned a close back, or the steps a closing row's panel fades out
  * in when the close started while that panel was still faint (`faintCloseFades`). `panelHeldUntil` is when a closing row's
  * panel has faded out, so its box lets go of the panel's height. `restSpace` is the spring of the part of a row's box
@@ -48,6 +50,7 @@ type Tracked = {
   springId: string | null
   isInputMove: boolean
   under: UnderLine | null
+  status: UnderLine<PrLine> | null
   panelSpace: PanelSpace | null
   panelSteps: PanelStep[] | null
   panelHeldUntil: number
@@ -84,7 +87,7 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * while a leaving block holds its space if the close starts in the draw that block starts to leave. `shutForMs` is how long the box of a block that turned
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
  * still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a row's buttons
- * draws as it comes and goes. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
+ * draws as it comes and goes, and `status` how a PR block's status line does. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
  * is dismissed, so its box keeps that form's height until the new form measures.
  */
 export type RowMotion = {
@@ -104,6 +107,7 @@ export type RowMotion = {
   isHeightHeld: boolean
   springId: string | null
   under: UnderMotion | null
+  status: UnderMotion<PrLine> | null
   former: Block | null
   swap: SwapMotion | null
 }
@@ -232,6 +236,7 @@ export function moveRows(
     const isReleased = isInput && opensRow && track.state === 'closing'
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
     const under = stepUnder(last?.under ?? null, block, now, isInput)
+    const status = stepPrStatus(last?.status ?? null, block, now, isFirst)
     const isTurnedBack = isStart && track.state === 'opening' && last?.track.state === 'closing' && last.opened !== null
     const panelHeight = heightOf(panelId(block.id))
     const lastSteps = last?.panelSteps ?? null
@@ -293,6 +298,7 @@ export function moveRows(
       springId,
       isInputMove,
       under,
+      status,
       panelSpace,
       panelSteps,
       panelHeldUntil,
@@ -316,6 +322,7 @@ export function moveRows(
       isHeightHeld: isHeld,
       springId,
       under: underMotion(under, now, heightOf(underId(block.id))),
+      status: underMotion(status, now, heightOf(underId(block.id))),
       former: last && last.block.kind !== block.kind ? last.block : null,
       swap: swapMotion(waited, now),
     })
@@ -363,6 +370,7 @@ export function moveRows(
       ...(t.glide ? [t.glide.endsAt, t.glide.opensAt ?? 0, t.glide.shutAt ?? 0] : []),
       ...titleTimes(t.title),
       ...underTimes(t.under),
+      ...underTimes(t.status),
       ...swapTimes(t.swap),
       holdsUntil,
       closeHoldsUntil,
