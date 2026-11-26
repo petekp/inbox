@@ -76,7 +76,7 @@ export async function herdrPress(m: PublishCalls, id: string, f: HerdrFile): Pro
   const host = {
     ...m.hostOf(currentOwner(), 'terminal'),
     refreshPrsIfDue: () => pollPrs(m, true),
-    checkDelegatesIfDue: () => checkDelegatesIfDue(m),
+    checkDelegatesIfDue: async () => void checkDelegatesIfDue(m).catch(() => undefined),
     viewers: viewerLeases.of(id, () => void m.publishStatus()),
     commands: m.saves.commands?.(id, () => void m.publishStatus()),
   }

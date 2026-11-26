@@ -1,4 +1,4 @@
-import { HERDR_FORMAT } from '../../core/remote/herdr'
+import { HERDR_CHECK_MS, HERDR_FORMAT } from '../../core/remote/herdr'
 import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import type { ReadSession } from './files'
 import { newPressId, pressPath } from './press-file'
@@ -6,10 +6,11 @@ import type { QueueIo } from './press-queue'
 import { StatusLook, writeLook } from './status-look'
 
 /**
- * How often the look tells the host the tab it reports is still shown. The host reads PRs at most every two minutes,
- * and asks Herdr about delegates at most every `HERDR_CHECK_MS`.
+ * How often the look tells the host each tab it reports is still shown. The host reads PRs at most every two minutes.
+ * It asks Herdr about delegates at most every `HERDR_CHECK_MS`, timed by its own clock when it reads a report, so the
+ * Status reports twice as often and the host's limit alone sets the pace.
  */
-const SHOWN_REPORT_MS = 30_000
+const SHOWN_REPORT_MS: Record<ReportedTab, number> = { prs: 30_000, overview: HERDR_CHECK_MS / 2 }
 
 /** The tabs whose showing the host acts on: the PRs tab, whose PRs it reads, and the Status, whose delegates it follows. */
 type ReportedTab = 'prs' | 'overview'
@@ -31,7 +32,7 @@ function shownTarget(
   return { sessionId, terminal: read.envelope.terminal, tab }
 }
 
-/** When the look last told a host which tab it shows, so it tells again on opening the tab and each `SHOWN_REPORT_MS`. */
+/** When the look last told a host which tab it shows, so it tells again on opening the tab and each `SHOWN_REPORT_MS` of the tab. */
 class ShownReport {
   private last: { sessionId: string; tab: ReportedTab; at: number } | null = null
 
@@ -43,7 +44,7 @@ class ShownReport {
     }
     const last = this.last
     const isSame = last?.sessionId === target.sessionId && last.tab === target.tab
-    if (isSame && now - last.at < SHOWN_REPORT_MS) return null
+    if (isSame && now - last.at < SHOWN_REPORT_MS[target.tab]) return null
     this.last = { sessionId: target.sessionId, tab: target.tab, at: now }
 
     return target

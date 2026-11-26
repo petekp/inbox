@@ -349,7 +349,7 @@ export type HerdrFileHost<S extends Session> = PressHost<S> & { viewers: ViewerS
 /**
  * Applies a viewer's heartbeat to the viewer store, which leaves the saved session alone. When a viewer stops showing
  * the Status, its look is counted as `lookReportedOn` counts it, and that is saved before the lease, so a failed save
- * leaves the heartbeat to be applied again. A viewer on the PRs tab makes the host read the session's PRs if they are due.
+ * leaves the heartbeat to be applied again. A viewer on the PRs tab makes the host read the session's PRs if they are due, and one on the Status makes it ask Herdr about the session's delegates if a check is due.
  */
 async function applyViewerUpdate<S extends Session>(host: HerdrFileHost<S>, file: RemoteViewerUpdate): Promise<void> {
   const now = await host.now()
@@ -380,6 +380,7 @@ async function applyViewerUpdate<S extends Session>(host: HerdrFileHost<S>, file
   }
   await host.viewers.update(current => updateRemoteViewer(current, file, now))
   if (!viewer.released && viewer.tab === 'prs') await host.refreshPrsIfDue?.()
+  if (!viewer.released && viewer.tab === 'overview') await host.checkDelegatesIfDue?.()
 }
 
 /**
