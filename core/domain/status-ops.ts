@@ -243,7 +243,7 @@ export function applyOps(
       continue
     }
     if (op.kind === 'goal' || op.kind === 'retire' || op.kind === 'milestone' || op.kind === 'serves') {
-      o = applyGoalOp(o, op, now, find, last ?? o, servesLines)
+      o = applyGoalOp(o, op, now, find, askIds, last ?? o, servesLines)
       if (op.kind === 'milestone') markNamed(findMilestone(o, op.name), n)
       if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n)
     } else if (op.kind === 'head') {

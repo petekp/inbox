@@ -32,28 +32,29 @@ export function withWorkDoneMilestones(o: SessionStatus, now: number): SessionSt
 
 /**
  * Opens again each done milestone an open ask in `askIds` holds up, itself or through a subject that serves it. One that
- * was open in `before`, the Status the answer found, goes back to how it stood there, so a DONE written while an ask
- * holds it changes nothing. Any other opens with no text, working while some open subject serving it is working or none
- * is open, else waiting on something outside the session while some of it waits, else queued.
+ * is open in one of `earlier`, the Status as the answer's lines left it and then as the answer found it, goes back to
+ * how it stood in the first that holds it open, so a DONE written while an ask holds it changes nothing. Any other opens
+ * with no text, working while some open subject serving it is working or none is open, else waiting on something
+ * outside the session while some of it waits, else queued.
  */
 export function withHeldMilestonesOpen(
   o: SessionStatus,
   now: number,
   askIds: ReadonlySet<string>,
-  before: SessionStatus,
+  earlier: readonly SessionStatus[],
 ): SessionStatus {
   const isHeld = (m: Milestone) => {
     const ids = new Set([m.id, ...o.subjects.filter(s => o.serves[s.id] === m.id).map(s => s.id)])
     return Object.entries(o.askSubjects).some(([ask, to]) => askIds.has(ask) && to.some(id => ids.has(id)))
   }
   const reopened = (m: Milestone): Milestone => {
-    const earlier = before.milestones.find(x => x.id === m.id)
-    if (earlier && isOpen(earlier)) return { ...earlier }
-    const open = o.subjects.filter(s => isOpen(s) && o.serves[s.id] === m.id)
+    const open = earlier.flatMap(e => e.milestones.filter(x => x.id === m.id && isOpen(x)))[0]
+    if (open) return { ...open }
+    const work = o.subjects.filter(s => isOpen(s) && o.serves[s.id] === m.id)
     const status =
-      open.length === 0 || open.some(s => s.status === 'working')
+      work.length === 0 || work.some(s => s.status === 'working')
         ? 'working'
-        : open.some(s => s.status === 'waits-on-other')
+        : work.some(s => s.status === 'waits-on-other')
           ? 'waits-on-other'
           : 'queued'
     return { ...m, status, text: '', was: null, changedAt: now, closedAt: null }

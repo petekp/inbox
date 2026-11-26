@@ -278,7 +278,8 @@ function goalLineRefusal(
  * lines. A revision that leaves open work with no place is refused with that work. It also needs `MILESTONES_MIN` milestones, and restates neither the goal, in its
  * words or its milestones, nor the goal it replaced, nor a removed one. RETIRE clears the goal when `goalRefusal` allows it, so
  * never a goal the same answer set. The gate reads the milestones as the answer's subject lines close them, so a GOAL
- * may follow the DONE that finishes the goal's last work. A refused line is saved for the next call to read.
+ * may follow the DONE that finishes the goal's last work, but not a DONE for a milestone an open ask in `askIds` holds
+ * up. A refused line is saved for the next call to read.
  * Milestones and links need a goal. A SERVES line whose subject names another version than its milestone, as "2.6
  * beta" under "2.5 published", links the subject under none: another version's work is never part of the outcome.
  */
@@ -287,11 +288,14 @@ export function applyGoalOp(
   op: Extract<Op, { kind: 'goal' | 'retire' | 'milestone' | 'serves' }>,
   now: number,
   findSubject: (ref: string) => Subject | null,
+  askIds: ReadonlySet<string>,
   start: SessionStatus = o,
   servesLines: readonly Extract<Op, { kind: 'serves' }>[] = [],
 ): SessionStatus {
   if (op.kind === 'goal' || op.kind === 'retire') {
-    const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now)
+    const settled = o.goal?.isAwaitingMilestones
+      ? o
+      : withHeldMilestonesOpen(withWorkDoneMilestones(o, now), now, askIds, [o, start])
     const milestones =
       op.kind === 'goal'
         ? op.milestones
@@ -329,8 +333,9 @@ export function applyGoalOp(
  * call that read this goal applies: that answer keeps up to `MILESTONES_MAX` of the milestones it names in `named` and
  * has not dropped, in the order of the lines that first name them, which is its plan, and the rest go. While the goal waits, the carried milestones do not count toward that limit. Until it keeps one, the goal still waits for its milestones. Otherwise each milestone whose linked work closed is
  * closed, as `withWorkDoneMilestones` says, each queued one whose linked work is under way starts, and each done one
- * that an open ask in `askIds` holds up opens again, as `withHeldMilestonesOpen` says against
- * `before`, the Status the answer found. The was line goes once the person has seen it,
+ * that an open ask in `askIds` holds up opens again, as `withHeldMilestonesOpen` says against `saved` and then
+ * `before`, the Status the answer found, also in the answer that gives a typed goal its milestones. The was line goes
+ * once the person has seen it,
  * and the goal is met while every milestone that is not dropped is done. Met follows the milestones, so a milestone
  * that opens again unmeets it. `readSetAt` is when the goal the call read was set, or null when it read none: a call
  * that read an earlier goal wrote for that goal.
@@ -345,11 +350,11 @@ export function settleGoal(
 ): SessionStatus {
   const g = saved.goal
   if (g === null) return saved
-  const o = g.isAwaitingMilestones
-    ? saved
-    : withHeldMilestonesOpen(withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now), now, askIds, before)
-  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt
+  const worked = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now)
+  const isCarrying = g.isAwaitingMilestones && !isAnswerForNewGoal
+  const o = isCarrying ? worked : withHeldMilestonesOpen(worked, now, askIds, [saved, before])
+  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt
   const milestones = isAnswerForNewGoal
     ? o.milestones
         .filter(m => named.has(m.id) && m.status !== 'dropped')
