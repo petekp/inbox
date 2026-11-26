@@ -1,6 +1,6 @@
 import { FADE_MS, LEAVE_FADE_MS } from '../../core/view/row-motion'
 import type { SpringState } from '../../core/view/springs'
-import { atEndGlides, closeTitle, LINE } from './tab-title-motion'
+import { atEndGlides, closedLineHeight, closeTitle, LINE } from './tab-title-motion'
 import { fade, glide, glides, isOpeningShort, isRunning, opacityOf, springOf } from './tab-glide'
 import type { Glide } from './tab-glide'
 import { closeHoldsUp, fadeFaintPanel, fadingParts, shownPanel, trunkBeside } from './tab-panel-fade'
@@ -89,7 +89,8 @@ export function retargetClose(el: HTMLElement) {
   const wait = waitLeft(g)
   const closed = closedForm(el)
   glide(el, 'height', from, closed.height, true, false, wait)
-  if (line && lineGlide && closed.lineFrom) glide(line, 'height', closed.lineFrom, lineGlide.to, true, false, lineWait)
+  if (line && lineGlide && closed.lineFrom && closed.lineTo !== null)
+    glide(line, 'height', closed.lineFrom, closedLineHeight(line, closed.lineTo), true, false, lineWait)
 }
 
 function keepTop(el: HTMLElement, part: HTMLElement, top: number) {
