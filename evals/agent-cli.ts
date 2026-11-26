@@ -101,8 +101,9 @@ const HARNESS_NAMES = HARNESS_FILES.map(f => f.replace('.', '\\.')).join('|')
 /**
  * A macOS sandbox profile for an omp run in the case folder `dir`. It lets a process write only under `dir` and the
  * system temp folder, as Codex's `-s read-only` keeps its shell from changing the person's files. It also keeps every
- * process from listing a case folder or reading the harness's files in one, so the agent cannot find them from its
- * working folder. Only the state of this run stays readable, for the probe to read as omp starts.
+ * process from listing a case folder or reading, moving or removing the harness's files in one, so the agent cannot
+ * find them from its working folder. Only the state of this run stays readable and removable, for the probe to read
+ * and remove as omp starts.
  */
 export function ompSandboxProfile(dir: string): string {
   const own = realpathSync(dir)
@@ -115,6 +116,8 @@ export function ompSandboxProfile(dir: string): string {
     `(deny file-write*)(allow file-write* ${paths} (literal "/dev/null") (literal "/dev/tty") (regex #"^/dev/fd/"))`,
     `(deny file-read-data (regex #"${caseFolder}/?$") (regex #"${files}"))`,
     `(allow file-read-data (literal ${JSON.stringify(`${own}/state.json`)}))`,
+    `(deny file-write-unlink (regex #"${files}"))`,
+    `(allow file-write-unlink (literal ${JSON.stringify(`${own}/state.json`)}))`,
   ].join('')
 }
 
