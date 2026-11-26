@@ -5249,7 +5249,7 @@ function presentedSession(session) {
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = presentedSession(session);
   const { lastHerdrPress } = session;
-  const { projectFolder, isFetchingPrs, isReadFailed, isNextBuild, ...rest } = source;
+  const { projectFolder, isFetchingPrs, isReadFailed, isSendHeld, isNextBuild, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
@@ -5257,6 +5257,7 @@ function herdrEnvelope(source, session, isTrimmed = false) {
     ...isTrimmed && { trimmed: true },
     ...isFetchingPrs && { isFetchingPrs: true },
     ...isReadFailed && { isReadFailed: true },
+    ...isSendHeld && { isSendHeld: true },
     ...isNextBuild && { isNextBuild: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared

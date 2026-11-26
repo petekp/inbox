@@ -1,8 +1,8 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T19:52:55.222Z. 401235 characters follow.
+// Built at 2026-11-26T20:16:29.825Z. 407091 characters follow.
 
 // src/main.ts
-import { View, div as div17 } from "gpui-kit";
+import { View, div as div19 } from "gpui-kit";
 import { InputState, Scrollbar, v_flex as v_flex8 } from "gpui-base";
 import {
   appHome,
@@ -3053,6 +3053,13 @@ function localText(r, look) {
   const isCommand = parts.some((p) => p.kind === "copy" && p.isCommand);
   return `${text}${isCommand ? `. ${runIt(look)}` : ""}`;
 }
+var STOPPED_WARNING = "Not sent until you write to Claude: you stopped this session.";
+var warningOf = (isSendHeld, sends, shown) => {
+  const isRefusalShown = shown?.includes(STOPPED_REASON) ?? false;
+  return isSendHeld && sends && !isRefusalShown ? STOPPED_WARNING : null;
+};
+var stoppedWarningOf = (isSendHeld, buttons, shown) => warningOf(isSendHeld, buttons.some((b) => b.kind === "talk" || b.kind === "handoff" || b.kind === "mark"), shown);
+var prStoppedWarningOf = (isSendHeld, buttons, shown) => warningOf(isSendHeld, buttons.some((b) => b.kind === "talk" || b.kind === "handoff"), shown);
 function feedbackText(f, look) {
   switch (f.is) {
     case "note":
@@ -5409,6 +5416,7 @@ function readSession(text) {
     projectFolder: typeof file.projectFolder === "string" && file.projectFolder.startsWith("/") ? file.projectFolder : null,
     isFetchingPrs: file.isFetchingPrs === true,
     isReadFailed: file.isReadFailed === true,
+    isSendHeld: file.isSendHeld === true,
     turnReadFailedAt: typeof file.turnReadFailedAt === "number" ? file.turnReadFailedAt : null,
     openDialog: file.openDialog === "question" || file.openDialog === "permission" ? { kind: file.openDialog, text: typeof file.openDialogText === "string" ? file.openDialogText : null } : null
   };
@@ -6488,6 +6496,26 @@ function heldTabs(tabs, last, motion) {
   });
 }
 
+// src/warning-line.ts
+var warningOf2 = (b) => b.kind === "row" || b.kind === "pr" || b.kind === "line" ? b.warning ?? null : null;
+var keepsForm = (b) => b.kind === "row" ? isOpenRow(b) && !b.settled : b.kind === "pr" || b.kind === "line";
+function stepWarning(last, was, b, now, isFirst, isInput) {
+  const line = warningOf2(b);
+  const isNewForm = was === undefined || b.kind === "row" && !(was.kind === "row" && isOpenRow(was));
+  if (line !== null && (isFirst || isNewForm))
+    return { line, since: -Infinity, isLeaving: false, isInput: false };
+  return stepLine(last, line, keepsForm(b), now, isInput);
+}
+var warningId = (id) => `warning ${id}`;
+var warningBoxId = (id) => `warning box ${id}`;
+var isWarningAtRest = (b, m) => b.kind === "row" && (m?.closing ?? m?.swap?.from ?? b) !== b;
+var warningHeight = (id, m, p, isAtRest) => isAtRest || m?.warning?.opacity === null ? undefined : lineHeight(warningId(id), m?.warning ?? null, m, p);
+function warningRise(b, m, p) {
+  const isDrawn = b.kind === "pr" || b.kind === "line" || b.kind === "row" && isOpenRow(b) && !b.settled;
+  const to = isDrawn ? warningHeight(b.id, m, p, isWarningAtRest(b, m)) : undefined;
+  return to === undefined ? 0 : to - (p.heights.get(warningBoxId(b.id)) ?? 0);
+}
+
 // src/field-wait.ts
 var MAX_WAIT_MS = HEIGHT_SETTLE_MS - ENTER_FADE_MS;
 function stepFieldWait(last, b, space, now) {
@@ -6520,8 +6548,10 @@ function fieldOpening(w, now) {
 }
 var fieldTimes = (w) => w === null || w.goneShown !== null ? [] : [w.since + NEXT_FRAME_MS, w.since + (w.waitMs ?? MAX_WAIT_MS) + ENTER_FADE_MS, w.since + MAX_WAIT_MS];
 
-// src/motion.ts
+// src/tracks.ts
 var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
+
+// src/motion.ts
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
 function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES) {
@@ -6582,6 +6612,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
     const status = stepPrStatus(last?.status ?? null, block, now, isFirst);
     const prTail = block.kind === "pr" ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInput) : null;
+    const warning = stepWarning(last?.warning ?? null, last?.block, block, now, isFirst, isInput);
     const isTurnedBack = isStart && track.state === "opening" && last?.track.state === "closing" && last.opened !== null;
     const panelHeight = heightOf(panelId(block.id));
     const lastSteps = last?.panelSteps ?? null;
@@ -6618,6 +6649,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       under,
       status,
       prTail,
+      warning,
       panelSpace,
       panelSteps,
       panelHeldUntil,
@@ -6644,6 +6676,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       under: underMotion(under, now, heightOf(underId(block.id))),
       status: underMotion(status, now, heightOf(underId(block.id))),
       prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
+      warning: underMotion(warning, now, heightOf(warningId(block.id))),
       former: last && last.block.kind !== block.kind ? last.block : null,
       swap: swapMotion(waited, now),
       field: fieldOpening(fieldWait, now)
@@ -6688,6 +6721,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     ...underTimes(t.under),
     ...underTimes(t.status),
     ...prTailTimes(t.prTail),
+    ...underTimes(t.warning),
     ...swapTimes(t.swap),
     ...fieldTimes(t.fieldWait),
     holdsUntil,
@@ -6779,8 +6813,8 @@ function nextHeld(was, to, delayMs, now) {
 }
 
 // src/paint-blocks.ts
-import { div as div16 } from "gpui-kit";
-import { h_flex as h_flex9, v_flex as v_flex7 } from "gpui-base";
+import { div as div18 } from "gpui-kit";
+import { h_flex as h_flex10, v_flex as v_flex7 } from "gpui-base";
 
 // ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
@@ -7312,19 +7346,21 @@ function fitHeight(b, m, p) {
     const head = p.heights.get(prHeadId(id));
     const status = p.heights.get(underId(id));
     const tail = PR_TAIL_PARTS.map((part) => prTailHeight(b, part, m, p) ?? p.heights.get(prTailId(part, id)));
-    if (head === undefined || status === undefined || tail.some((h) => h === undefined))
+    const warning = p.heights.get(warningBoxId(id));
+    if (head === undefined || status === undefined || warning === undefined || tail.some((h) => h === undefined))
       return former();
-    return head + (prStatusHeight(b, m, p) ?? status) + tail.reduce((sum, h) => sum + (h ?? 0), 0);
+    const lines = tail.reduce((sum, h) => sum + (h ?? 0), warning + warningRise(b, m, p));
+    return head + (prStatusHeight(b, m, p) ?? status) + lines;
   }
   if (b.kind !== "row") {
     const measured = p.heights.get(id);
-    return measured === undefined ? former() : measured - panel;
+    return measured === undefined ? former() : measured - panel + warningRise(b, m, p);
   }
   const title = titleHeightOf(b, p);
   const rest = p.heights.get(restId(id));
   if (title === undefined || rest === undefined)
     return former();
-  const rise = lineRise(b, p.now, p.heights) + addedRise(b, p.now, p.heights);
+  const rise = lineRise(b, p.now, p.heights) + addedRise(b, p.now, p.heights) + warningRise(b, m, p);
   return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + rise;
 }
 function contentEl(b, m, p, el, strokes) {
@@ -7474,7 +7510,7 @@ function statusEl(s, p, isInert) {
 
 // src/paint-pr-status.ts
 import { div as div10 } from "gpui-kit";
-function prLineEl(key, height, s, atRest, lineEl, p) {
+function lineBoxEl(key, height, s, atRest, lineEl, p) {
   const moving = height === undefined ? null : s;
   const line = height === undefined ? atRest : s?.line ?? null;
   const drawn = (line === null ? null : lineEl(line)) ?? div10();
@@ -7484,7 +7520,7 @@ function prLineEl(key, height, s, atRest, lineEl, p) {
 function prStatusEl(b, p, lineEl) {
   const m = p.motion.get(b.id);
   const isShown = (l) => p.isNarrow || l.status !== null || l.unlisted.length > 0;
-  return prLineEl(underId(b.id), prStatusHeight(b, m, p), m?.status ?? null, b, (l) => isShown(l) ? lineEl(l) : null, p);
+  return lineBoxEl(underId(b.id), prStatusHeight(b, m, p), m?.status ?? null, b, (l) => isShown(l) ? lineEl(l) : null, p);
 }
 function prTailEls(b, p, els) {
   const m = p.motion.get(b.id);
@@ -7493,12 +7529,12 @@ function prTailEls(b, p, els) {
     const height = prTailHeight(b, part, m, p);
     const t = m?.prTail ?? null;
     if (part === "error")
-      return prLineEl(key, height, t?.error ?? null, b.error, els.error, p);
+      return lineBoxEl(key, height, t?.error ?? null, b.error, els.error, p);
     if (part === "buttons") {
       const atRest = b.buttons.length > 0 ? b.buttons : null;
-      return prLineEl(key, height, t?.buttons ?? null, atRest, (l) => els.buttons(l, atRest === null), p);
+      return lineBoxEl(key, height, t?.buttons ?? null, atRest, (l) => els.buttons(l, atRest === null), p);
     }
-    return prLineEl(key, height, t?.result ?? null, b.feedback, els.result, p);
+    return lineBoxEl(key, height, t?.result ?? null, b.feedback, els.result, p);
   };
   return PR_TAIL_PARTS.map(box);
 }
@@ -7679,14 +7715,27 @@ function partedEl(parts, dotColor) {
   return div14().overflow_hidden().min_w(0).child(h_flex7().flex_wrap().items_start().ml(-SEP_W).children(items));
 }
 
-// src/paint-tree.ts
+// src/paint-text.ts
 import { div as div15 } from "gpui-kit";
 import { h_flex as h_flex8 } from "gpui-base";
+var NO_BREAK_SPACE = " ";
+var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
+var partedTextEl = (text, color, indent, t) => text.includes(DOT) ? div15().pl(indent).pt(INSIDE_GAP).child(partedEl(text.split(DOT).map((part) => statusPartEl(part).text_color(color)), t.muted)) : lineEl(text, color, indent);
+function feedbackEl(f, t) {
+  const cut = f.aged?.lead.length ?? f.text.length;
+  if (f.tone === "muted" || cut >= f.text.length)
+    return partedTextEl(f.text, colorOf(t, f.tone), 0, t).pt(CONTROL_GAP);
+  return h_flex8().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), faintOf(t))]);
+}
+
+// src/paint-tree.ts
+import { div as div16 } from "gpui-kit";
+import { h_flex as h_flex9 } from "gpui-base";
 var trunkEl = (top, height, t, isSelected) => {
-  const el = div15().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
+  const el = div16().absolute().left(PATH_X - EDGE).top(top).w(1).border_l_1().border_color(lineColor(t, isSelected ? t.selected : t.background));
   return height === null ? el.bottom(0) : el.h(height);
 };
-var armEl = (from, to, top, color) => div15().absolute().left(from).top(top).w(to - from).h(1).border_t_1().border_color(color);
+var armEl = (from, to, top, color) => div16().absolute().left(from).top(top).w(to - from).h(1).border_t_1().border_color(color);
 var ARM_END = NEST - SMALL_GAP;
 var answerKey = (buttonId) => `answer ${buttonId}`;
 function isSideBySide(r, p) {
@@ -7699,31 +7748,40 @@ var answersEl = (answers, p, isInert, isLast, t, isSelected) => {
   const arm = armEl(PATH_X - EDGE, ARM_END, "50%", lineColor(t, isSelected ? t.selected : t.background));
   const isAlone = answers.length === 1;
   const buttons = answers.map((b) => buttonEl(b, p, isInert, isAlone).on_size_change((size, cx) => p.measure(answerKey(b.id), size, cx, true)));
-  return h_flex8().relative().min_w(0).pl(MARK_W).child(isAlone ? buttons[0] : h_flex8().flex_wrap().gap(CONTROL_GAP).children(buttons)).children(isLast ? [arm, trunkEl(0, "50%", t, isSelected)] : [arm]);
+  return h_flex9().relative().min_w(0).pl(MARK_W).child(isAlone ? buttons[0] : h_flex9().flex_wrap().gap(CONTROL_GAP).children(buttons)).children(isLast ? [arm, trunkEl(0, "50%", t, isSelected)] : [arm]);
 };
 
-// src/paint-blocks.ts
-var NO_BREAK_SPACE = " ";
-var wordEls = (text, color) => text.split(" ").filter((word) => word).map((word) => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color));
-var partedTextEl = (text, color, indent, t) => text.includes(DOT) ? div16().pl(indent).pt(INSIDE_GAP).child(partedEl(text.split(DOT).map((part) => statusPartEl(part).text_color(color)), t.muted)) : lineEl(text, color, indent);
-function feedbackEl(f, t) {
-  const cut = f.aged?.lead.length ?? f.text.length;
-  if (f.tone === "muted" || cut >= f.text.length)
-    return partedTextEl(f.text, colorOf(t, f.tone), 0, t).pt(CONTROL_GAP);
-  return h_flex9().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), faintOf(t))]);
+// src/paint-warning.ts
+import { div as div17 } from "gpui-kit";
+function warningBoxEl(id, atRest, p, lineEl, isLeftForm = false) {
+  const m = p.motion.get(id);
+  const box = isLeftForm ? heldBoxEl(id, atRest, p, lineEl) : lineBoxEl(warningId(id), warningHeight(id, m, p, false), m?.warning ?? null, atRest, lineEl, p);
+  return sizeEl(warningBoxId(id), p, box);
 }
+function heldBoxEl(id, line, p, lineEl) {
+  const key = warningId(id);
+  const height = p.heights.get(warningBoxId(id)) ?? 0;
+  const isOpen = height >= (p.heights.get(key) ?? 0);
+  const drawn = (line === null ? div17() : lineEl(line)).id(key);
+  const faded = fadeEl(drawn, key, 0, { duration: isOpen ? LEAVE_FADE_MS : 0, delay: 0 }, p);
+  return div17().id(`fit ${key}`).flex_none().overflow_hidden().h(height).child(sizeEl(key, p, faded));
+}
+var isWarningDrawn = (r, m, p) => r.settled === null && (r.warning !== undefined || Boolean(m?.warning) || (p.heights.get(warningBoxId(r.id)) ?? 0) > 0);
+var rowWarningEl = (box, gap, trunk) => div17().relative().pt(gap).child(box).children(trunk ? [trunk] : []);
+
+// src/paint-blocks.ts
 var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
   const under = isSelected ? t.selected : t.background;
   const color = lineColor(t, under);
   const textColor = bodyTextColor(t, l, under);
   if (answers.length > 0 && p) {
     const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
-    return h_flex9().relative().min_w(0).pt(above).child(answersEl(answers, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
+    return h_flex10().relative().min_w(0).pt(above).child(answersEl(answers, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
   }
   const armAt = above + LINE_HEIGHT / 2;
   const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = l.lead ? h_flex9().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, textColor)]) : partedTextEl(l.text, textColor, l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
+  const line = l.lead ? h_flex10().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, textColor)]) : partedTextEl(l.text, textColor, l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
   return line.relative().children(strokes);
 };
 function rowEl(r, p) {
@@ -7737,7 +7795,7 @@ function rowEl(r, p) {
   const hasTree = (m?.closing ?? shown).body.some((l) => l.tree !== undefined);
   const mark = markEl(shown.mark, t, markTintOf(shown, p)).id(`mark ${r.id}`);
   const trunk = trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`);
-  const line = h_flex9().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div16().flex_none().ml(INSET).text_color(faintOf(t, r.isSelected ? t.selected : t.background)).child(r.age ?? "")));
+  const line = h_flex10().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div18().flex_none().ml(INSET).text_color(faintOf(t, r.isSelected ? t.selected : t.background)).child(r.age ?? "")));
   const lines = titleLineEls(r, shown, m, p, (l, n) => {
     const above = partPt(n === 0 ? "title" : "titleStatus", "titleStatus");
     const el = bodyLineEl(hasTree ? { ...l, tree: "trunk" } : l, above, t, r.isSelected);
@@ -7746,7 +7804,7 @@ function rowEl(r, p) {
   const titleEnd = lines.length > 0 ? "titleStatus" : "title";
   return v_flex7().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex7().id(`form ${r.id}`).when(swap !== null, (e) => swapFadeEl(swap, e)).children(lines).children(panelEl(r, shown, m, p, isLeaving, titleEnd))));
 }
-function bodyEls(from, isSelected, p, isInert, titleEnd) {
+function bodyEls(from, isSelected, p, isInert, titleEnd, warn) {
   const buttonOf = (id) => from.buttons.filter((b) => b.id === id);
   const sideBySide = isSideBySide(from, p) ? from.sideBySide : null;
   const answers = sideBySide ? from.buttons.filter((b) => sideBySide.optionIds.includes(b.id)) : [];
@@ -7767,13 +7825,17 @@ function bodyEls(from, isSelected, p, isInert, titleEnd) {
     return l.optionId || l.isOptionNote ? [] : [l];
   }) : from.body;
   let end = titleEnd;
-  const els = shown.map((l) => {
-    const above = partPt(end, l.part);
+  let isWarned = false;
+  const els = shown.flatMap((l) => {
+    const isFirstAnswer = !isWarned && (l.optionId !== undefined || l.part === "answers");
+    const warning = isFirstAnswer ? warn(partPt(end, l.part), partPt("status", l.part), l.tree !== undefined) : null;
+    const above = warning ? 0 : partPt(end, l.part);
+    isWarned ||= isFirstAnswer;
     end = l.part;
     const buttons = l.part === "answers" ? answers : buttonOf(l.optionId);
-    return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert);
+    return [...warning ? [warning] : [], bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)];
   });
-  return { els: addedOptionsEls(from, shown, els, p), end };
+  return { els: addedOptionsEls(from, shown, els, p), end, isWarned };
 }
 var swapFadeEl = (swap, el) => swap ? el.opacity(swap.opacity).transition("opacity", { duration: swap.fadeMs, easing: "ease-out" }) : el;
 function panelEl(r, shown, m, p, isLeaving, titleEnd) {
@@ -7782,12 +7844,23 @@ function panelEl(r, shown, m, p, isLeaving, titleEnd) {
   const actions = from.buttons.filter((b) => !b.isOption);
   const hasAnswers = from.buttons.some((b) => b.isOption);
   const followsAnswers = hasAnswers && actions[0]?.emphasis !== "quiet";
-  const body = bodyEls(from, r.isSelected, p, isInert, titleEnd);
+  const warn = (gap, gapBelow, isOnTree) => {
+    if (!isWarningDrawn(from, m, p))
+      return null;
+    const line = (text) => bodyLineEl({ part: "status", text, tone: "error" }, 0, p.t, r.isSelected).pb(gapBelow);
+    const box = warningBoxEl(r.id, from.warning ?? null, p, line, from !== r);
+    return rowWarningEl(box, gap, isOnTree ? trunkEl(0, null, p.t, r.isSelected) : null);
+  };
+  const body = bodyEls(from, r.isSelected, p, isInert, titleEnd, warn);
   const end = from.field ? "field" : actions.length > 0 ? "buttons" : body.end;
+  const next = from.field ? "field" : "buttons";
+  const warning = !body.isWarned && end !== body.end ? warn(partPt(body.end, next), partPt("status", next), false) : null;
+  const gapOf = (part) => warning ? 0 : partPt(body.end, part);
   const parts = [
     ...body.els,
-    ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, "buttons"))] : [],
-    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert, m?.field).pt(partPt(body.end, "field"))] : [],
+    ...warning ? [warning] : [],
+    ...actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, gapOf("buttons"))] : [],
+    ...from.field ? [fieldEl(from.field, p, MARK_W, isInert, m?.field).pt(gapOf("field"))] : [],
     ...underEls(r, m?.closing ?? shown, m, p, partPt(end, "result"))
   ];
   if (parts.length === 0)
@@ -7822,37 +7895,38 @@ function underEls(r, from, m, p, above) {
 }
 function prEl(b, p, isInert) {
   const { t } = p;
-  const title = h_flex9().items_start().child(div16().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div16().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
+  const title = h_flex10().items_start().child(div18().flex_1().min_w(0).font_semibold().whitespace_normal().child(b.title)).when(!p.isNarrow, (e) => e.child(div18().flex_none().ml(INSET).text_color(t.muted).child(b.number)));
   const statusParts = (l) => [
-    ...p.isNarrow ? [div16().flex_none().text_color(t.muted).child(b.number)] : [],
+    ...p.isNarrow ? [div18().flex_none().text_color(t.muted).child(b.number)] : [],
     ...l.status ? [statusPartEl(l.status.text).text_color(colorOf(t, l.status.tone))] : [],
     ...l.unlisted.map((u) => statusPartEl(u).text_color(t.muted))
   ];
   const tail = prTailEls(b, p, {
     error: (text) => lineEl(text, t.ansi1, 0),
-    buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing),
+    buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing, false, CONTROL_GAP),
     result: (f) => feedbackEl(f, t)
   });
-  return v_flex7().pl(EDGE).pr(EDGE).child(sizeEl(prHeadId(b.id), p, title)).child(prStatusEl(b, p, (l) => div16().pt(INSIDE_GAP).child(partedEl(statusParts(l), t.muted)))).children(tail);
+  const warning = warningBoxEl(b.id, b.warning, p, (text) => lineEl(text, colorOf(t, "error"), 0).pt(CONTROL_GAP));
+  return v_flex7().pl(EDGE).pr(EDGE).child(sizeEl(prHeadId(b.id), p, title)).child(prStatusEl(b, p, (l) => div18().pt(INSIDE_GAP).child(partedEl(statusParts(l), t.muted)))).children([...tail.slice(0, 1), warning, ...tail.slice(1)]);
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex7().pl(EDGE).pr(EDGE).child(h_flex9().gap(CONTROL_GAP).items_center().child(div16().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex9().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
+  return v_flex7().pl(EDGE).pr(EDGE).child(warningBoxEl(b.id, b.warning ?? null, p, (text) => lineEl(text, colorOf(t, "error"), 0).pb(LIST_GAP))).child(h_flex10().gap(CONTROL_GAP).items_center().child(div18().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex10().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
 function headingEl(b, p, isInert) {
   const { t } = p;
-  const buttons = h_flex9().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
+  const buttons = h_flex10().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
-    return h_flex9().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex9().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
-  return h_flex9().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div16().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div16().text_color(t.muted).child(`${SEP}${b.count}`))).child(div16().flex_1()).when(b.aside !== undefined, (e) => e.child(div16().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
+    return h_flex10().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex10().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
+  return h_flex10().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div18().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div18().text_color(t.muted).child(`${SEP}${b.count}`))).child(div18().flex_1()).when(b.aside !== undefined, (e) => e.child(div18().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
 var countsEl = (counts, t) => {
-  const items = counts.items.map((c) => h_flex9().flex_none().children([
-    div16().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
+  const items = counts.items.map((c) => h_flex10().flex_none().children([
+    div18().flex_none().text_color(colorOf(t, c.mark.tone)).child(c.mark.text),
     statusPartEl(`${NO_BREAK_SPACE}${c.text}`).text_color(t.muted)
   ]));
   const [first, ...rest] = items;
-  const head = h_flex9().flex_wrap().min_w(0).children([...wordEls(counts.label, t.muted), ...first ? [first] : []]);
+  const head = h_flex10().flex_wrap().min_w(0).children([...wordEls(counts.label, t.muted), ...first ? [first] : []]);
   return partedEl([head, ...rest], t.muted);
 };
 function foldEl(b, p, isInert) {
@@ -7867,7 +7941,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex9().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div16().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert, level: fold?.level ?? "muted" })));
+  return h_flex10().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div18().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert, level: fold?.level ?? "muted" })));
 }
 function blockEl(b, p) {
   const { t } = p;
@@ -7894,15 +7968,15 @@ function blockEl(b, p) {
     const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null;
     const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0);
     const opening = isShownAsOpening ? { isOpen: m.box === "open", delayMs } : keepsButtonsFade;
-    return div16().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
+    return div18().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
   }
   if (b.kind === "note")
     return noteEl(b, t, (b.buttons ?? []).map((x) => buttonEl(x, p, isLeaving)));
   if (b.kind === "caption")
-    return div16().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
+    return div18().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? feedbackEl(b.feedback, t) : null);
-  return div16();
+  return div18();
 }
 
 // src/out.ts
@@ -8278,6 +8352,7 @@ function threadRow(screen, pr, t, presses) {
   const plan = threadActions(pr, t, presses, true);
   const { keys, more } = splitFollowUps(plan.actions);
   const reply = t.reply ? `@${t.reply.author}: ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}` : null;
+  const feedback = prFeedback(screen, id);
   return {
     kind: "row",
     id,
@@ -8285,7 +8360,7 @@ function threadRow(screen, pr, t, presses) {
     mark: markOf(text.mark),
     title: text.title,
     age: t.at === null ? null : shortAgo(screen.now - t.at),
-    feedback: prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: "muted", source: null } : null),
+    feedback: feedback ?? (text.fold?.note ? { text: text.fold.note, tone: "muted", source: null } : null),
     settled: null,
     isDim: text.mark.isDone,
     isSelectable: text.fold === null,
@@ -8298,13 +8373,15 @@ function threadRow(screen, pr, t, presses) {
       ...sessionButtons(id, plan.sessionKey),
       ...[...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`))
     ],
-    field: null
+    field: null,
+    warning: stoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null)
   };
 }
 function checkRow(screen, pr, c, presses) {
   const id = prCheckId(pr, c);
   const text = checkRowText(pr, c);
   const plan = checkActions(pr, c, presses, true);
+  const feedback = prFeedback(screen, id);
   return {
     kind: "row",
     id,
@@ -8312,7 +8389,7 @@ function checkRow(screen, pr, c, presses) {
     mark: markOf(text.mark),
     title: text.lead ? `${text.lead} / ${text.title}` : text.title,
     age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
-    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: "muted", source: null } : null),
+    feedback: feedback ?? (text.fold ? { text: text.fold.note, tone: "muted", source: null } : null),
     settled: null,
     isDim: false,
     isSelectable: text.fold === null,
@@ -8321,7 +8398,8 @@ function checkRow(screen, pr, c, presses) {
       ...sessionButtons(id, plan.sessionKey),
       ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`))
     ],
-    field: null
+    field: null,
+    warning: stoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null)
   };
 }
 function settledPr(d) {
@@ -8367,6 +8445,8 @@ function prBlocks(screen, d, presses, selected) {
   const tone = shown ? PR_TONES[shown.status] : null;
   const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions);
   const plan = prBlockActions(pr, isSent, screen.view.prs.branchRef, presses, sync, true);
+  const feedback = isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null;
+  const warning = prStoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null);
   const groups = prBlockRows(pr, false, {
     thread: (t) => threadRow(screen, pr, t, presses),
     check: (c) => checkRow(screen, pr, c, presses)
@@ -8385,12 +8465,14 @@ function prBlocks(screen, d, presses, selected) {
       const isSelected = r.isSelectable && r.id === selected;
       const isCollapsed = screen.view.collapsed.includes(r.id);
       const isOpen = isSelected && !isCollapsed;
+      const { warning, ...row } = r;
       return {
-        ...r,
+        ...row,
         isSelected,
         ...isCollapsed && { isCollapsed },
         body: isOpen ? r.body : [],
-        buttons: isOpen ? r.buttons : []
+        buttons: isOpen ? r.buttons : [],
+        ...isOpen && warning && { warning }
       };
     })
   ];
@@ -8403,11 +8485,12 @@ function prBlocks(screen, d, presses, selected) {
       status: shown && { text: shown.head, tone: tone ? PR_TONE[tone] : "muted" },
       unlisted: shown?.unlisted ?? [],
       error: pr.error ? prRefreshFailedText(pr.error) : null,
+      warning,
       buttons: [
         ...sessionButtons(pr.ref, plan.sessionKey),
         ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${n}`))
       ],
-      feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null
+      feedback
     },
     ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, "threads"),
     ...rowsOf(PR_GROUP_TITLES.checks, groups.checks, "checks"),
@@ -8460,7 +8543,9 @@ function orderLines(screen, presses) {
     ...plan.actions.map((a, n) => prButton(null, a, `order ${n}`))
   ];
   const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null;
-  return [...lines, { kind: "line", id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }];
+  const warning = prStoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null);
+  const line = { kind: "line", id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback };
+  return [...lines, warning ? { ...line, warning } : line];
 }
 function clearLine(screen) {
   const buttons = screen.view.prs.clear.map((a, n) => prButton(null, a, `clear ${n}`));
@@ -8867,6 +8952,13 @@ function fieldOf(rowId, isDiscard, send = ROW_COPY.send) {
     ]
   };
 }
+function plannedKinds(row, isAllShown) {
+  const { options, keys, more } = rowKeyPlan(row, isAllShown, true);
+  return [
+    ...options.map((o) => ({ kind: o.action.kind })),
+    ...[...keys, ...more].flatMap((k) => ("action" in k) ? [{ kind: k.action.kind }] : ("kind" in k) ? [{ kind: k.kind }] : [])
+  ];
+}
 function rowBody(row, isAllShown) {
   const options = rowKeyPlan(row, isAllShown).options.map((o, n) => [
     { part: "answer", optionId: `${row.id} ${n}`, text: "", tone: "muted" },
@@ -8905,6 +8997,7 @@ function rowBlock(row, ui, selected, screen) {
   const isCollapsed = screen.view.collapsed.includes(row.id);
   const isOpen = isSelected && !isCollapsed;
   const isTyping = ui.typing === row.id;
+  const warning = isOpen ? stoppedWarningOf(screen.isSendHeld, plannedKinds(row, isAllShown), text) : null;
   return {
     kind: "row",
     id: row.id,
@@ -8926,7 +9019,8 @@ function rowBlock(row, ui, selected, screen) {
     body: isOpen ? rowBody(row, isAllShown) : [],
     ...isOpen ? sideBySideOf(row, isAllShown) : {},
     buttons: isSettled ? [...rowButtons(row, isAllShown, screen.agent), ...undoButtons(row, screen.agent, screen.now)] : isOpen ? rowButtons(row, isAllShown, screen.agent).filter((b) => !isTyping || b.isOption) : [],
-    field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null
+    field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === "discard") : null,
+    ...warning && { warning }
   };
 }
 function closedBlock(d, now) {
@@ -9108,7 +9202,8 @@ function screenOf(followed, read, ui, o) {
     now: o.now,
     shownSince: o.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
-    isFetchingPrs: read.isFetchingPrs
+    isFetchingPrs: read.isFetchingPrs,
+    isSendHeld: read.isSendHeld
   };
   return {
     is: "inbox",
@@ -9612,7 +9707,7 @@ class Inbox extends View {
       if (isNew)
         this.apply([{ type: "list-input" }], cx);
     };
-    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex8().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div17().flex_1().min_h(0).relative().child(v_flex8().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
+    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex8().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div19().flex_1().min_h(0).relative().child(v_flex8().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
