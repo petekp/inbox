@@ -21,19 +21,17 @@ export type Effect =
 export type PressResult =
   { ledger: Ledger; last: LastAction | null; effects: Effect[]; reopenedId?: string; dropLast?: true } | { stale: true }
 
+/** Whether a row closed with Done still waits for the message that tells the agent, which only the current turn's tasks get. */
+export function isDoneNoticeDue(c: Ledger['closed'][number], turn: Ledger['turn']): boolean {
+  return c.how === 'done' && c.outcome === 'done' && !c.isSentToAgent && !c.doneNotification && c.item?.turn === turn
+}
+
 export function doneWake(
   ledger: Ledger,
   ctx: { now: number; windowMs: number; isTurnRunning: boolean },
 ): { text: string; ids: string[] } | null {
   if (ctx.isTurnRunning) return null
-  const waited = ledger.closed.filter(
-    c =>
-      c.how === 'done' &&
-      c.outcome === 'done' &&
-      !c.isSentToAgent &&
-      !c.doneNotification &&
-      c.item?.turn === ledger.turn,
-  )
+  const waited = ledger.closed.filter(c => isDoneNoticeDue(c, ledger.turn))
   if (waited.length === 0 || waited.some(c => ctx.now - c.at < ctx.windowMs)) return null
 
   return { text: messages.done(waited.map(c => c.ask)), ids: waited.map(c => c.id) }
