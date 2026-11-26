@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T04:35:17.361Z. 382096 characters follow.
+// Built at 2026-11-26T05:02:04.275Z. 382123 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -2974,7 +2974,7 @@ function isAgain(last, action, isOut) {
 }
 function isStatusUnderActions(f, isOpen) {
   const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
-  return isOpen && (isPressOut(f) || isDoneStillWaiting);
+  return isOpen && (isPressOut(f) || f?.is === "local" || isDoneStillWaiting);
 }
 var holdsStatusWhileOut = (kind) => kind === "mark";
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
@@ -5599,7 +5599,7 @@ function turnBackFades(height, from) {
 }
 function faintCloseFades(opacity) {
   const out = { to: 0, ms: LEAVE_FADE_MS };
-  return opacity > CUT_OPACITY ? [{ to: CUT_OPACITY, ms: 0 }, out] : [out];
+  return opacity > FAINT_OPACITY ? [{ to: FAINT_OPACITY, ms: 0 }, out] : [out];
 }
 function titleSwapMs(height, from) {
   return (springFrames(from, height).length - 1) * FRAME_MS;
@@ -6112,7 +6112,7 @@ function underMotion(u, now, height) {
   if (now >= u.since + ROW_STATE_MS.entering)
     return at(null, 0, 0);
   if (isStart)
-    return at(u.isInput ? CUT_OPACITY : 0, 0, 0, true);
+    return at(u.isInput ? FAINT_OPACITY : 0, 0, 0, true);
   return at(1, ENTER_FADE_MS, enterDelayMs(height ?? 0));
 }
 var underTimes = (u) => !u ? [] : u.isLeaving ? [u.since + NEXT_FRAME_MS, u.since + LEAVE_ENDS_MS] : [u.since + NEXT_FRAME_MS, u.since + ROW_STATE_MS.entering];

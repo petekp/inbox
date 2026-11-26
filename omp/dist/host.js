@@ -6631,7 +6631,7 @@ function isAgain(last, action, isOut) {
 }
 function isStatusUnderActions(f, isOpen) {
   const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
-  return isOpen && (isPressOut(f) || isDoneStillWaiting);
+  return isOpen && (isPressOut(f) || f?.is === "local" || isDoneStillWaiting);
 }
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
@@ -10509,7 +10509,10 @@ function drawLine(line, isSelected, d) {
   const isOnTree = line.tree === "mid" || line.tree === "last";
   const pad = isOnTree ? 0 : line.depth * 2;
   const status = line.status ? `  ${line.status.tone ? s.tone(line.status.tone, line.status.text) : s.dim(line.status.text)}${s.dim(line.status.rest)}` : "";
-  const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(line.feedback.source, isOpen) ? line.feedback : null;
+  const source = line.feedback?.source ?? null;
+  const isFinishedLocal = source?.is === "local" && source.result.state !== "pending";
+  const isLineItsOwnButton = line.buttons.length === 0;
+  const statusUnder = line.feedback && line.settled === null && !isShut(line, ui) && isStatusUnderActions(source, isOpen) && !(isLineItsOwnButton && isFinishedLocal) ? line.feedback : null;
   const clock = line.settled ? closedTitleClock(new Map(Object.entries(ui.closedSeen)), line.id, line.settled.at, now) : line.isPrHead ? undefined : newRowIn(newRowsOf(ui), line.id, ui.tab);
   const tintTone = line.settled ? line.settled.tint : "key";
   const tintShare = steppedTitleTint(clock, now);
