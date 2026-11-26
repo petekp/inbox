@@ -1,7 +1,14 @@
-import { ENTER_FADE_MS, enterDelayMs, LEAVE_FADE_MS, titleFades, titleSwapMs } from '../../core/view/row-motion'
+import {
+  ENTER_FADE_MS,
+  enterDelayMs,
+  LEAVE_FADE_MS,
+  SLIDE_PX,
+  titleFades,
+  titleSwapMs,
+} from '../../core/view/row-motion'
 import { FRAME_MS } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
-import { fade, fadeShown, glide, glides, isRunning, springOf, stopFadeOut, waitLeftMs } from './tab-glide'
+import { fade, fadeShown, glide, glides, isFadingOut, isRunning, springOf, stopFadeOut, waitLeftMs } from './tab-glide'
 
 /**
  * A row's line. While the row opens or closes it is a block that draws the title, wrapped as the open row's is, with
@@ -82,13 +89,6 @@ function dropsOpenAfter(line: HTMLElement, to: number): boolean {
   return openAftersOf(line).length > 0 && needs - to >= 0.5
 }
 
-/**
- * Starts a closing row's title move, from the line's height `from` to the closed title's height `to`. The title fades to
- * its closed form while the line holds its height, as the row's panel fades out, and the line shrinks after `delay` ms,
- * with its row. A line that holds too briefly for the fade takes the closed form at once. A title the closed form shows
- * whole keeps its full form, unless an open it turns back had hidden it. A status only the open form draws, which the
- * closed line has no room for, fades out with the title, or goes at once with it, so the shrinking line never cuts it.
- */
 /** The height a closing row's line comes to rest at, given its closed title's height `to`. */
 export function closedLineHeight(line: HTMLElement, to: number): number {
   const title = titleOf(line)
@@ -96,7 +96,15 @@ export function closedLineHeight(line: HTMLElement, to: number): number {
   return title && !dropsOpenAfter(line, to) ? Math.max(to, title.short.getBoundingClientRect().height) : to
 }
 
-export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
+/**
+ * Starts a closing row's title move, from the line's height `from` to the closed title's height `to`. The title fades to
+ * its closed form while the line holds its height, as the row's panel fades out, and the line shrinks after `delay` ms,
+ * with its row. A line that holds too briefly for the fade takes the closed form at once. A title the closed form shows
+ * whole keeps its full form, unless an open it turns back had hidden it. A status only the open form draws, which the
+ * closed line has no room for, fades out with the title, or goes at once with it, so the shrinking line never cuts it.
+ * Returns the height the line comes to rest at.
+ */
+export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number): number {
   const title = titleOf(line)
   const isFaded = delay >= LEAVE_FADE_MS
   const isAfterDropped = dropsOpenAfter(line, to)
@@ -105,13 +113,36 @@ export function closeTitle(line: HTMLElement, from: SpringState, to: number, del
   const end = closedLineHeight(line, to)
   if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null)) swapTitle(title, false, 0, isFaded)
   glide(line, 'height', from, end, true, false, delay)
+
+  return end
+}
+
+/** A box that grows from `from` to `to` after `delay` ms, such as a closing row or its line. */
+type Growth = { box: HTMLElement; from: SpringState; to: number; delay: number }
+
+/**
+ * Fades in each status of a closing row's line that a box grows to hold, as a press's status that joins it on a line
+ * of its own, once every such box has passed the status's text, so no growing edge cuts it. A status every box already
+ * holds stays as it shows, and so does one fading out.
+ */
+export function showGrownAfters(line: HTMLElement, growths: Growth[]) {
+  for (const part of aftersOf(line)) {
+    if (part.getClientRects().length === 0 || isFadingOut(part)) continue
+    const waits = growths.flatMap(({ box, from, to, delay }) => {
+      const bottom = part.getBoundingClientRect().bottom - box.getBoundingClientRect().top
+      if (to - from.x < 0.5 || bottom - from.x < 0.5) return []
+
+      return [delay + enterDelayMs(to, from, Math.min(SLIDE_PX / 2, Math.max(0, to - bottom)))]
+    })
+    if (waits.length > 0) fade(part, fadeShown(part) ?? 0, 1, ENTER_FADE_MS, false, false, Math.max(...waits))
+  }
 }
 
 /**
  * Lets go of a line held or gliding, once its row's state is no longer `closing`, so the row measures its natural
  * height. A row whose close has ended takes the closed form's height, with its meta, at once, since its own height
- * already holds that space, and shows the full title. `showClosedLine` fades in what the close hid. While the row opens, it returns where the
- * line was, so `openTitle` moves on from there. Null when the row holds no line, or the line was at rest.
+ * already holds that space, and shows the full title. `showClosedLine` fades in what the close hid. While the row
+ * opens, it returns where the line was, so `openTitle` moves on from there. Null when the row holds no line, or the line was at rest.
  */
 export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | null {
   const line = el.querySelector<HTMLElement>(LINE)

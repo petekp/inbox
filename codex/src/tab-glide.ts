@@ -246,6 +246,13 @@ export function fadePseudoWith(el: HTMLElement, pseudo: string, row: HTMLElement
   return a
 }
 
+/** Whether a fade takes the element out, or holds it out. */
+export const isFadingOut = (el: HTMLElement) => {
+  const f = fades.get(el)
+
+  return f !== undefined && f.to === 0 && f.anim.playState !== 'idle'
+}
+
 export const isFadingIn = (el: HTMLElement) => {
   const f = fades.get(el)
 
