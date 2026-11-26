@@ -2220,6 +2220,23 @@ function withWorkDoneMilestones(o, now) {
   });
   return isChanged ? { ...o, milestones } : o;
 }
+function withHeldMilestonesOpen(o, now, askIds, earlier) {
+  const isHeld = (m) => {
+    const ids = new Set([m.id, ...o.subjects.filter((s) => o.serves[s.id] === m.id).map((s) => s.id)]);
+    return Object.entries(o.askSubjects).some(([ask, to]) => askIds.has(ask) && to.some((id) => ids.has(id)));
+  };
+  const reopened = (m) => {
+    const open = earlier.flatMap((e) => e.milestones.filter((x) => x.id === m.id && isOpen(x)))[0];
+    if (open)
+      return { ...open };
+    const work = o.subjects.filter((s) => isOpen(s) && o.serves[s.id] === m.id);
+    const status = work.length === 0 || work.some((s) => s.status === "working") ? "working" : work.some((s) => s.status === "waits-on-other") ? "waits-on-other" : "queued";
+    return { ...m, status, text: "", was: null, changedAt: now, closedAt: null };
+  };
+  if (!o.milestones.some((m) => m.status === "done" && isHeld(m)))
+    return o;
+  return { ...o, milestones: o.milestones.map((m) => m.status === "done" && isHeld(m) ? reopened(m) : m) };
+}
 function withWorkStartedMilestones(o, now) {
   const startedAs = (m) => {
     if (m.status !== "queued")
@@ -2418,9 +2435,9 @@ function goalLineRefusal(o, op, revisedFrom) {
     return "restates";
   return revisedFrom !== null || hasWorkForGoal(o) ? null : "no-work";
 }
-function applyGoalOp(o, op, now, findSubject, start = o, servesLines = []) {
+function applyGoalOp(o, op, now, findSubject, askIds, start = o, servesLines = []) {
   if (op.kind === "goal" || op.kind === "retire") {
-    const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now);
+    const settled = o.goal?.isAwaitingMilestones ? o : withHeldMilestonesOpen(withWorkDoneMilestones(o, now), now, askIds, [o, start]);
     const milestones = op.kind === "goal" ? op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status, text: clipWords(m.text, TEXT_KEPT) })) : [];
     const placed = new Map(servesLines.flatMap((l) => {
       const s = findSubject(l.subject);
@@ -2446,13 +2463,15 @@ function applyGoalOp(o, op, now, findSubject, start = o, servesLines = []) {
   const isOtherVersion = milestone !== null && namesOtherVersion(subject.name, milestone.name);
   return { ...o, serves: { ...o.serves, [subject.id]: milestone === null || isOtherVersion ? "none" : milestone.id } };
 }
-function settleGoal(saved, now, readSetAt, named) {
+function settleGoal(saved, now, readSetAt, named, askIds, before) {
   const g = saved.goal;
   if (g === null)
     return saved;
-  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
-  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
+  const worked = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
+  const isCarrying = g.isAwaitingMilestones && !isAnswerForNewGoal;
+  const o = isCarrying ? worked : withHeldMilestonesOpen(worked, now, askIds, [saved, before]);
+  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").sort((x, y) => named.get(x.id) - named.get(y.id)).slice(0, MILESTONES_MAX) : o.milestones;
   const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
   const kept = milestones.filter((m) => m.status !== "dropped");
@@ -13559,7 +13578,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       continue;
     }
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find, last ?? o, servesLines);
+      o = applyGoalOp(o, op, now, find, askIds, last ?? o, servesLines);
       if (op.kind === "milestone")
         markNamed(findMilestone(o, op.name), n);
       if (op.kind === "serves" && op.milestone !== null)
@@ -13647,7 +13666,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   const isTitleKept = !!o.head && !!last?.head && o.head.title === last.head.title;
   if (o.head && isDescriptionStale(o.head, isTitleKept, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: "" } };
-  const settled = settleGoal(o, now, readSetAt, named);
+  const settled = settleGoal(o, now, readSetAt, named, askIds, last ?? o);
   return withSuggestion(nextRef === null ? settled : withNextMilestone(settled, nextRef, now), ops);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
@@ -13657,7 +13676,7 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
   const o = changes ? applyOps(last, changes, now, askIds, readSetAt) : read;
   if (o === null)
     return null;
-  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map);
+  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map, askIds, o);
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
   const kept = settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
   return withNoGoalNoted(kept, answer, askIds);
