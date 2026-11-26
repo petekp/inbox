@@ -115,5 +115,9 @@ export const prHeadId = (id: string): string => `head ${id}`
 export const aboveId = (id: string): string => `above ${id}`
 export const aboveLineId = (id: string): string => `above line ${id}`
 
+/** The keys the options an open row adds are measured under: their box as it opens, and the options in it. */
+export const addedId = (id: string): string => `added ${id}`
+export const addedLinesId = (id: string): string => `added lines ${id}`
+
 /** The key a row's panel is measured under, beside the row's own height. */
 export const panelId = (id: string): string => `panel ${id}`

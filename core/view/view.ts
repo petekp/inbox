@@ -148,9 +148,9 @@ export function inboxView({
     needsYou: placingOn(pressOutSinceWhere(isItemId)),
     findings: placingOn(pressOutSinceWhere(isFindingId)),
   }
-  const isInPlace = (id: string, at: number, canUndo: boolean, last?: LastAction) =>
+  const isInPlace = (id: string, at: number, canUndo: boolean, last?: LastAction, sentAt?: number) =>
     isSettledInPlace(
-      { at, canUndo, delivery: pendingDeliveryAt(last, now) },
+      { at, canUndo, delivery: pendingDeliveryAt(last, now), ...(sentAt !== undefined && { sentAt }) },
       isFindingId(id) ? placingFor.findings : placingFor.needsYou,
       id,
     )
@@ -160,6 +160,11 @@ export function inboxView({
     return (c.how === 'answered' || c.how === 'done') && last?.kind === 'mark' && last.at === closedAt(c)
       ? last
       : undefined
+  }
+  /** When a Done close's message left. It leaves once its settle window passes and no turn runs (`doneWake`). */
+  const doneSentAt = (c: Closed | ClosedFinding) => {
+    const delivery = c.how === 'done' ? pressedSend(c)?.delivery : undefined
+    return delivery && 'sentAt' in delivery ? delivery.sentAt : undefined
   }
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
   const replyAfter = (c: Closed | ClosedFinding) => {
@@ -189,7 +194,14 @@ export function inboxView({
     return (
       replyAfter(c) !== null ||
       (!isDiscarded(c) &&
-        (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c))))
+        (isHeld(c) ||
+          isInPlace(
+            c.id,
+            at,
+            isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs),
+            pressedSend(c),
+            doneSentAt(c),
+          )))
     )
   }
   const placedItems = new Map(

@@ -1,6 +1,18 @@
 import type { Painted } from './gpui-stand-in'
 
-const FADE_PREFIXES = ['box ', 'panel ', 'buttons ', 'status ', 'tall ', 'short ', 'form ', 'trunk ', 'mark ', 'spent ']
+const FADE_PREFIXES = [
+  'box ',
+  'panel ',
+  'buttons ',
+  'status ',
+  'tall ',
+  'short ',
+  'form ',
+  'trunk ',
+  'mark ',
+  'spent ',
+  'added ',
+]
 export const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))
 
 export function checkFadeIds(root: Painted) {
