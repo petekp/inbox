@@ -23,7 +23,7 @@ import {
 } from '../../core/view/rows'
 import { rowKeyPlan } from '../../core/view/action-plan'
 import type { RowWait } from '../../core/view/action-plan'
-import { stepEffects } from '../../core/domain/help-steps'
+import { localEffects } from '../../core/domain/help-steps'
 import { groupEmptyText, tabBarBanners } from '../../core/view/banners'
 import type { BannerView } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
@@ -81,8 +81,7 @@ const markOf = (m: ResultMark | null): Mark | null =>
 function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string): Does {
   if (press.action === 'type') return { is: 'type', rowId: row.id, text: '', hint: replyHint(row, agent) }
   if (press.action === 'discard') return { is: 'leave', rowId: row.id, isDiscard: true }
-  const step = press.action === 'step' ? row.steps[press.step] : undefined
-  const effects = kind === 'local' && row.item && step ? stepEffects(row.item, step) : []
+  const effects = kind === 'local' ? localEffects(row, press) : []
 
   return { is: 'press', press, effects, kind }
 }

@@ -118,5 +118,6 @@ export const CLAUDE_CODE: Client = {
     'session-registry': { kind: 'full' },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'option-previews': { kind: 'full' },
   },
 }

@@ -9,7 +9,7 @@ import { feedbackOf } from '../../core/view/feedback'
 import { earliestOf, heldReplies, isDrawnInPlace } from '../../core/view/timing'
 import type { Feedback, PressState } from '../../core/view/feedback'
 import type { RowView } from '../../core/view/rows'
-import { stepEffects } from '../../core/domain/help-steps'
+import { localEffects } from '../../core/domain/help-steps'
 import type { Effect } from '../../core/view/press-reducer'
 import { pendingResult } from '../../core/view/pressed'
 import { checkActions, threadActions } from '../../core/view/pr-tab'
@@ -78,11 +78,9 @@ const sendReply = (id: string, text: string) => pressRow({ action: 'type', id, t
 function rowKeys(r: RowView): { options: Key[]; keys: Key[]; more: Key[]; answerRow: AnswerRow | null } {
   const actions = ledgerActions(r, tabState.ui.optionsShown.includes(r.id), outOn(r.id)?.action ?? null, {
     press: (p, kind, by) => {
-      const step = p.action === 'step' ? r.steps[p.step] : undefined
+      const effects = kind === 'local' ? localEffects(r, p) : []
       const pending: Feedback | null =
-        kind === 'local' && r.item && step
-          ? { is: 'local', result: pendingResult(stepEffects(r.item, step), Date.now()) }
-          : null
+        effects.length > 0 ? { is: 'local', result: pendingResult(effects, Date.now()) } : null
       pressRow(p, by, { pending, kind })
     },
     reply: () => dispatch([{ type: 'open-field', id: r.id }]),

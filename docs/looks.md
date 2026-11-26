@@ -20,6 +20,7 @@ Every source file in `core/`, `hooks/`, `codex/src`, `omp/src` and `herdr/src` n
 - [Shared modules](looks/files-shared.md)
 - [Shared modules for the Status](looks/files-shared-status.md)
 - [Shared modules for Herdr](looks/files-shared-herdr.md)
+- [Shared modules for a question's body and previews](looks/files-shared-questions.md)
 - [Shared modules for the band, sync state and press checks](looks/files-shared-sync.md)
 - [The shared UI controller](looks/files-shared-controller.md)
 - [The mod](looks/files-mod.md)

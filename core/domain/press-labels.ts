@@ -1,5 +1,6 @@
 import type { PrPress } from '../view/pr-press'
 import type { RowPress } from './presses'
+import { OPEN_PREVIEWS_LABEL } from './option-previews'
 
 export function actionId(p: RowPress | PrPress): string {
   return p.action === 'step' ? `step-${p.step}` : p.action
@@ -17,6 +18,8 @@ export function pressText(p: RowPress): string {
       return SHOW_EXPLANATION_LABEL
     case 'step':
       return p.label
+    case 'previews':
+      return OPEN_PREVIEWS_LABEL
     case 'remove-goal':
       return 'Remove'
     case 'restore-goal':

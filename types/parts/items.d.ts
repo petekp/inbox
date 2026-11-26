@@ -36,6 +36,13 @@ export type Item = {
    */
   optionDescriptions?: Record<string, string>
   /**
+   * What each option looks like, by its label as `options` has it: an absolute file path or an https link, from the
+   * `previews` of the agent's records.
+   */
+  optionPreviews?: Record<string, string>
+  /** The absolute path of the page its host wrote with every option's preview side by side. Set while one is written. */
+  previewPage?: string
+  /**
    * The closest answer the person gave to an earlier question, found once when the question was added. Missing on a
    * task, on a question with no match over the floor, and on an item saved before the search ran.
    */

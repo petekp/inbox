@@ -196,5 +196,6 @@ export const CODEX: Client = {
     },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'option-previews': { kind: 'full' },
   },
 }

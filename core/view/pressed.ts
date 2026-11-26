@@ -8,6 +8,7 @@ import type { AnswerMessage, PressTexts } from '../domain/press-messages'
 import type { Effect, PressResult } from './press-reducer'
 import type { RowPress } from '../domain/presses'
 import { goalPressed } from '../domain/goal-press'
+import { previewEffects } from '../domain/option-previews'
 import { GOAL_KEYS_ID } from './status-keys'
 
 export function offersUndo(c: Pick<Closed, 'how'>): boolean {
@@ -55,6 +56,8 @@ export function retryOf(id: string, last: LastAction): RowPress | null {
   const step = /^step-(\d+)$/.exec(last.action)
   if (step) return { action: 'step', id, step: Number(step[1]), label: last.text }
   switch (last.action) {
+    case 'previews':
+      return { action: 'previews', id }
     case 'answer':
       return { action: 'answer', id, option: last.text }
     case 'explain':
@@ -271,6 +274,13 @@ export function pressed(ledger: Ledger, last: LastAction | undefined, p: RowPres
         ),
         effects,
       }
+    }
+    case 'previews': {
+      const effects = previewEffects(item)
+      if (effects.length === 0) return stale
+      const pending = pendingResult(effects, ctx.now, ctx.localPressId)
+
+      return { ledger, last: localLast(last, { action: actionId(p), text: pressText(p) }, pending), effects }
     }
     default:
       return stale

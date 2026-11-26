@@ -3,14 +3,21 @@
 import type { Item } from '../../types'
 import { words } from './ask-match'
 import { descriptionsFor } from './dialogs'
+import { hasPreviews, isPreviewStep, previewsOf } from './option-previews'
 
 const MAX_CONTEXT = 200
 const MAX_OPTION_NOTE = 120
 
-/** Why a question came up, and what picking each option does, by its label as the record's options have it. */
-type QuestionBody = Pick<Item, 'context' | 'optionDescriptions'>
+/**
+ * Why a question came up, what picking each option does, and what each option looks like, by its label as the record's
+ * options have it.
+ */
+type QuestionBody = Pick<Item, 'context' | 'optionDescriptions' | 'optionPreviews'>
 
-/** The body of a `record` call for a question with `options`: its `context`, and its `option_notes` in option order. */
+/**
+ * The body of a `record` call for a question with `options`: its `context`, and its `option_notes` and `previews` in
+ * option order.
+ */
 export function questionBody(input: Record<string, unknown>, options: string[]): QuestionBody {
   const context = typeof input.context === 'string' ? input.context.trim().slice(0, MAX_CONTEXT) : ''
   const notes = Array.isArray(input.option_notes) ? input.option_notes : []
@@ -19,35 +26,43 @@ export function questionBody(input: Record<string, unknown>, options: string[]):
     const text = typeof note === 'string' ? note.trim().slice(0, MAX_OPTION_NOTE) : ''
     return text === '' ? [] : [[option, text] as const]
   })
+  const { previews } = previewsOf(input, options)
 
   return {
     ...(context ? { context } : {}),
     ...(noted.length > 0 ? { optionDescriptions: Object.fromEntries(noted) } : {}),
+    ...(Object.keys(previews).length > 0 ? { optionPreviews: previews } : {}),
   }
 }
 
 /**
  * `item` with a record's body. A record of an open question may list its options in other words, so each note goes to
- * the item's option it names. A new context replaces the old, and a new note replaces that option's old one.
+ * the item's option it names. A new context replaces the old, and a new note or preview replaces that option's old one.
+ * A step that opens a preview leaves the steps, since the row shows it through Open previews.
  */
 export function withBody(item: Item, body: QuestionBody): Item {
   const notes = body.optionDescriptions ? descriptionsFor(item.options, body.optionDescriptions) : null
   const optionDescriptions = notes ? { ...item.optionDescriptions, ...notes } : item.optionDescriptions
+  const previews = body.optionPreviews ? descriptionsFor(item.options, body.optionPreviews) : null
+  const optionPreviews = previews ? { ...item.optionPreviews, ...previews } : item.optionPreviews
 
   return {
     ...item,
     ...(body.context ? { context: body.context } : {}),
     ...(optionDescriptions ? { optionDescriptions } : {}),
+    ...(optionPreviews ? { optionPreviews, helps: item.helps.filter(h => !isPreviewStep(h, optionPreviews)) } : {}),
   }
 }
 
 /** What a record of an open question changed in its body, as an "Already open" answer lists it. */
 export function bodyChanges(before: Item, after: Item): string[] {
   const isNoteChanged = after.options.some(o => after.optionDescriptions?.[o] !== before.optionDescriptions?.[o])
+  const isPreviewChanged = after.options.some(o => after.optionPreviews?.[o] !== before.optionPreviews?.[o])
 
   return [
     ...(after.context !== before.context ? ['gave it your context'] : []),
     ...(isNoteChanged ? ['gave its options your notes'] : []),
+    ...(isPreviewChanged ? ['gave its options your previews'] : []),
   ]
 }
 
@@ -72,7 +87,7 @@ export function missingText(item: Item | undefined, fields: readonly string[]): 
   if (item?.kind === 'task') return taskStepsText(item, canSend) + taskResultsText(item, canSend)
   if (!item) return ''
 
-  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend)
+  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend) + previewsText(item, canSend)
 }
 
 function taskStepsText(item: Item, canSend: (field: string) => boolean): string {
@@ -138,8 +153,18 @@ function recText(item: Item, canSend: (field: string) => boolean): string {
     : ' It has no why: record it again with why, so the user sees your reason.'
 }
 
+function previewsText(item: Item, canSend: (field: string) => boolean): string {
+  const isUnpreviewedDesignChoice = item.isDesignChoice === true && item.options.length >= 2 && !hasPreviews(item)
+
+  return isUnpreviewedDesignChoice && canSend('previews')
+    ? ' It has no previews: when you made an image, page or file that shows each option, record it again with previews.'
+    : ''
+}
+
 function approvalText(item: Item, canSend: (field: string) => boolean): string {
-  return isApproval(item) && item.helps.length === 0 && canSend('steps')
+  const hasPreviewPage = Object.keys(item.optionPreviews ?? {}).length > 0
+
+  return isApproval(item) && item.helps.length === 0 && !hasPreviewPage && canSend('steps')
     ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps."
     : ''
 }

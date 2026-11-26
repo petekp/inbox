@@ -20,6 +20,8 @@ export type RowPress =
       id: string
     }
   | { action: 'step'; id: string; step: number; label: string }
+  /** Opens the page its host wrote with every option's preview side by side. */
+  | { action: 'previews'; id: string }
   /** Removes the Status page's goal. `id` is `GOAL_KEYS_ID`. A typed goal is a `type` press on that id. */
   | { action: 'remove-goal'; id: string }
   /** Undo of Remove goal: brings back the goal the person removed. `id` is `GOAL_KEYS_ID`. */
