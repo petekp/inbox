@@ -362,6 +362,9 @@ function pressFile(text) {
   if ("prsShown" in file) {
     return isRecord2(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
   }
+  if ("statusShown" in file) {
+    return isRecord2(file.statusShown) && isTime(file.statusShown.at) ? { ok: true, file } : { ok: false, reason: "statusShown without a time" };
+  }
   if ("collapse" in file) {
     const c = file.collapse;
     const isCollapse = isRecord2(c) && typeof c.row === "string" && typeof c.isCollapsed === "boolean" && isTime(c.at);

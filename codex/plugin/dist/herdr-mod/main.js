@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T21:16:09.928Z. 407242 characters follow.
+// Built at 2026-11-26T21:53:24.858Z. 408584 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -1589,6 +1589,7 @@ var HC_BLOCKED = new Set(["blocked", "error"]);
 
 // ../core/remote/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
+var PANEL_LABEL = "inbox.panel";
 var PRESS_LABEL = "inbox.press";
 
 // ../core/domain/ask-subject.ts
@@ -2685,6 +2686,7 @@ var COUNT_TOKENS = {
   prs: "inbox-prs"
 };
 var CLEARED_TOKENS = Object.fromEntries([STATUS_TOKEN, STOP_TOKEN, FOCUS_TOKEN, ...Object.values(COUNT_TOKENS)].map((name) => [name, null]));
+var HERDR_CHECK_MS = 30000;
 var HERDR_FORMAT = 1;
 function publishedSessionsFolder(appHome) {
   return `${appHome}/inbox/sessions`;
@@ -6996,12 +6998,15 @@ var checkboxEl = (color, isChecked = true) => div().relative().flex_none().w(CHE
 // src/paint-timer.ts
 import { div as div2 } from "gpui-kit";
 var TIMED_W = 64;
+var BORDER_PT = 1;
+var FILL_W = TIMED_W - 2 * BORDER_PT;
+var FILL_H = BUTTON_H - 2 * BORDER_PT;
 function timeLeftEl(id, left, runsOutAt, now, t) {
-  const cut = div2().id(`time left ${id}`).absolute().top(0).left(0).h(BUTTON_H).overflow_hidden().child(div2().w(TIMED_W).h(BUTTON_H).rounded(BUTTON_H / 2).bg(timeLeftFillOf(t)));
+  const cut = div2().id(`time left ${id}`).absolute().top(0).left(0).h(FILL_H).overflow_hidden().child(div2().w(FILL_W).h(FILL_H).rounded(FILL_H / 2).bg(timeLeftFillOf(t)));
   if (left.is === "paused")
-    return cut.w(left.share * TIMED_W);
+    return cut.w(left.share * FILL_W);
   const step = Math.min(TIME_LEFT_STEP_MS, Math.max(0, runsOutAt - now));
-  return cut.w(timeLeftShare(runsOutAt, now + step) * TIMED_W).transition("width", { duration: step, easing: "linear" });
+  return cut.w(timeLeftShare(runsOutAt, now + step) * FILL_W).transition("width", { duration: step, easing: "linear" });
 }
 
 // src/paint-parts.ts
@@ -7012,7 +7017,7 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
   const left = p.timeLeft.get(b.id);
   const isWrapping = canWrap && runsOutAt === undefined;
   const base = h_flex().id(b.isSpent ? `spent ${b.id}` : `button ${b.id}`).when(!isWrapping, (e) => e.flex_none().h(BUTTON_H)).when(isWrapping, (e) => e.flex_shrink_1().min_w(0).min_h(BUTTON_H).py(BUTTON_PAD_Y)).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isWrapping ? div3().min_w(0).whitespace_normal().child(b.label) : b.label);
-  const shaped = isPill && runsOutAt === undefined ? base.px(BUTTON_PAD_X).rounded(BUTTON_H / 2).border_1() : base;
+  const shaped = !isPill ? base : runsOutAt === undefined ? base.px(BUTTON_PAD_X).rounded(BUTTON_H / 2).border_1() : base.border_1();
   if (b.isSpent) {
     const spent = shaped.text_color(t.muted).opacity(SPENT_OPACITY).disabled(true);
     if (b.leftAt === undefined)
@@ -8068,8 +8073,9 @@ function drawOuts(blocks, outs, lines, now) {
   const outRows = new Set(byRow.keys());
   const lineOf = (id) => {
     const out = byRow.get(id);
-    if (!out || holdsStatusWhileOut(out.kind))
-      return lines[id] ?? null;
+    const refused = lines[id];
+    if (!out || holdsStatusWhileOut(out.kind) || refused)
+      return refused ?? null;
     const source = out.pending ?? { is: "sending", label: SENDING, at: now, sentAt: now };
     if (out.result)
       return { ...resultLine(out.result), source };
@@ -8204,6 +8210,10 @@ class PressQueue {
         out.isTaken = await this.io.isGone(out.path);
     const now = this.io.now();
     const settled = settleOuts(this.outs, view, lastPress, now);
+    const stillOut = new Set([...settled.outs, ...settled.toClaim].map((o) => o.rowId));
+    for (const out of this.outs)
+      if (!stillOut.has(out.rowId))
+        delete this.lines[out.rowId];
     this.outs = settled.outs;
     this.lines = { ...this.lines, ...settled.lines };
     this.ended.push(...settled.ended);
@@ -8990,6 +9000,12 @@ function sideBySideOf(row, isAllShown) {
   const { options, answerRow } = rowKeyPlan(row, isAllShown);
   return answerRow ? { sideBySide: { optionIds: options.map((_, n) => `${row.id} ${n}`), recLine: answerRow.recLine } } : {};
 }
+function rowAge(row, now) {
+  if (row.state.is === "settled")
+    return null;
+  const at = row.feedback && hasAge(row.feedback) ? row.feedback.at : row.at;
+  return at === null ? null : shortAgo(now - at);
+}
 function rowBlock(row, ui, selected, screen) {
   const { state, feedback: f } = row;
   const isSettled = state.is === "settled";
@@ -9006,7 +9022,7 @@ function rowBlock(row, ui, selected, screen) {
     depth: 0,
     mark: markOf3(rowMark(row)),
     title: rowTitle(row, LOOK2),
-    age: row.at === null ? null : shortAgo(screen.now - row.at),
+    age: rowAge(row, screen.now),
     feedback: text && f ? { text, tone: feedbackTone(f), source: f } : null,
     settled: isSettled ? {
       label: settledLabel(state.label, state.delivery, state.reply),
@@ -9262,10 +9278,20 @@ class ViewCache {
 }
 
 // src/status-look.ts
+var LIST_INPUT_STEP_MS = 250;
 var LOOK_TICK_MS = 1000;
 var REREAD_MS = 1e4;
 var AGE_TICK_MS = 60000;
 var LOOK_GAP_MS = 3 * LOOK_TICK_MS;
+function ownPaneId(propsPane, panes, tab, terminals, followed) {
+  if (propsPane)
+    return propsPane;
+  const inboxPanes = panes.filter((p) => p.tab === tab && p.mod === "inbox").map((p) => p.pane);
+  if (inboxPanes.length === 1)
+    return inboxPanes[0];
+  const labelled = terminals.find((t) => t.address === followed)?.labels?.[PANEL_LABEL];
+  return labelled !== undefined && inboxPanes.includes(labelled) ? labelled : undefined;
+}
 function isPaneShown(paneId, panes, spaces, window2) {
   const own = panes.find((p) => p.pane === paneId);
   const tab = spaces.find((s) => s.active)?.tabs.find((t) => t.id === own?.tab);
@@ -9346,14 +9372,14 @@ async function writeLook(io, appHome, ended) {
 }
 
 // src/look-reports.ts
-var PRS_REPORT_MS = 30000;
-function prsShownTarget(isPaneShown, tab, sessionId, read) {
-  if (!isPaneShown || tab !== "prs" || sessionId === null || read?.is !== "read")
+var SHOWN_REPORT_MS = { prs: 30000, overview: HERDR_CHECK_MS / 2 };
+function shownTarget(isPaneShown, tab, sessionId, read) {
+  if (!isPaneShown || tab !== "prs" && tab !== "overview" || sessionId === null || read?.is !== "read")
     return null;
-  return { sessionId, terminal: read.envelope.terminal };
+  return { sessionId, terminal: read.envelope.terminal, tab };
 }
 
-class PrsShownReport {
+class ShownReport {
   last = null;
   check(target, now) {
     if (target === null) {
@@ -9361,39 +9387,40 @@ class PrsShownReport {
       return null;
     }
     const last = this.last;
-    if (last?.sessionId === target.sessionId && now - last.at < PRS_REPORT_MS)
+    const isSame = last?.sessionId === target.sessionId && last.tab === target.tab;
+    if (isSame && now - last.at < SHOWN_REPORT_MS[target.tab])
       return null;
-    this.last = { sessionId: target.sessionId, at: now };
+    this.last = { sessionId: target.sessionId, tab: target.tab, at: now };
     return target;
   }
 }
-async function writePrsShown(io, appHome, target, now) {
+async function writeShown(io, appHome, target, now) {
   const id = newPressId(now, io.random());
-  const file = { format: HERDR_FORMAT, id, prsShown: { at: now } };
+  const file = target.tab === "prs" ? { format: HERDR_FORMAT, id, prsShown: { at: now } } : { format: HERDR_FORMAT, id, statusShown: { at: now } };
   if (await io.write(pressPath(appHome, target.sessionId, id), JSON.stringify(file)) === null)
     await io.wake(target.terminal, id);
 }
 
 class LookReports {
   status = new StatusLook;
-  prs = new PrsShownReport;
+  shown = new ShownReport;
   async check(io, appHome, isPaneShown, page, now) {
     const ended = this.status.check(isPaneShown, now);
     if (ended)
       await writeLook(io, appHome, ended);
-    const target = this.prs.check(prsShownTarget(isPaneShown, page.tab, page.sessionId, page.read), now);
+    const target = this.shown.check(shownTarget(isPaneShown, page.tab, page.sessionId, page.read), now);
     if (target)
-      await writePrsShown(io, appHome, target, now);
+      await writeShown(io, appHome, target, now);
   }
 }
 
 // src/main.ts
 var { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home });
-var LIST_INPUT_STEP_MS = 250;
 
 class Inbox extends View {
   tab = null;
   last = null;
+  pane = undefined;
   followed = { is: "no-terminal" };
   sessionId = null;
   read = null;
@@ -9539,7 +9566,7 @@ class Inbox extends View {
     });
   }
   async checkLook(isClosing = false) {
-    const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow());
+    const isShown = !isClosing && isPaneShown(this.pane, panes(), spaces(), herdrWindow());
     const page = { tab: this.ui.tab, sessionId: this.sessionId, read: this.read };
     await this.look.check(queueIo, appHome(), isShown, page, Date.now());
   }
@@ -9572,6 +9599,7 @@ class Inbox extends View {
     this.followed = follow2({ focused: focused(), panes: panes(), terminals: terminalRecords }, this.tab, this.last);
     if (this.followed.is !== "no-terminal")
       this.last = this.followed.terminal;
+    this.pane = ownPaneId(props()?.pane, panes(), this.tab, terminalRecords, this.last);
     const sessionId = this.followed.is === "session" ? this.followed.sessionId : null;
     if (sessionId === this.sessionId)
       return;

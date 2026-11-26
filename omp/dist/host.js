@@ -3948,6 +3948,7 @@ function childAgents(stdout, parent) {
 
 // ../core/remote/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
+var PANEL_LABEL = "inbox.panel";
 
 // ../core/domain/ask-subject.ts
 var NAMED_THING = /#\d+|\b\d{2,}\b|\b[A-Z][A-Z0-9]+-\d+\b|https?:\/\/|[\w~.-]*\/[\w.-]+|\b[\w-]+\.[a-z]{1,5}\b|`[^`]+`|"[^"]+"|\u201C[^\u201D]+\u201D/;
@@ -5835,7 +5836,6 @@ function pressFolder(appHome, sessionId) {
 
 // ../core/remote/herdr-open.ts
 var HERDR_APP_TIMEOUT_MS = 5000;
-var PANEL_LABEL = "inbox.panel";
 var NO_SUCH_PANE = "no such pane";
 function paneOf(ls, terminal) {
   const list = (value) => Array.isArray(value) ? value : [];
@@ -16050,8 +16050,9 @@ function herdrEnvelope(source, session, isTrimmed = false) {
 // ../core/remote/herdr-press-file.ts
 var isLookFile = (file) => ("look" in file);
 var isPrsShownFile = (file) => ("prsShown" in file);
+var isStatusShownFile = (file) => ("statusShown" in file);
 var isPressFile = (file) => file.format === HERDR_FORMAT && ("press" in file);
-var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPrsShownFile(file) ? file.prsShown.at : isPressFile(file) ? file.pressedAt : file.collapse.at;
+var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPrsShownFile(file) ? file.prsShown.at : isStatusShownFile(file) ? file.statusShown.at : isPressFile(file) ? file.pressedAt : file.collapse.at;
 var PRESS_TARGETS = {
   answer: "id",
   type: "id",
@@ -16149,6 +16150,9 @@ function pressFile(text) {
   }
   if ("prsShown" in file) {
     return isRecord2(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
+  }
+  if ("statusShown" in file) {
+    return isRecord2(file.statusShown) && isTime(file.statusShown.at) ? { ok: true, file } : { ok: false, reason: "statusShown without a time" };
   }
   if ("collapse" in file) {
     const c = file.collapse;
@@ -17034,6 +17038,8 @@ async function applyViewerUpdate(host, file) {
   await host.viewers.update((current) => updateRemoteViewer(current, file, now));
   if (!viewer.released && viewer.tab === "prs")
     await host.refreshPrsIfDue?.();
+  if (!viewer.released && viewer.tab === "overview")
+    await host.checkDelegatesIfDue?.();
 }
 async function startHerdrFile(host, file, sessionId = "") {
   if (file.format === 2) {
@@ -17050,6 +17056,10 @@ async function startHerdrFile(host, file, sessionId = "") {
   }
   if (isPrsShownFile(file)) {
     await host.refreshPrsIfDue?.();
+    return finished(LOOK_OUTCOME);
+  }
+  if (isStatusShownFile(file)) {
+    await host.checkDelegatesIfDue?.();
     return finished(LOOK_OUTCOME);
   }
   if (!isPressFile(file)) {
@@ -17712,6 +17722,7 @@ function sessionCalls(context) {
       },
       perform: async (_s, effect) => effect.kind === "scroll" ? NO_CONVERSATION_SCROLL : effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
       refreshPrsIfDue: async () => fetchPrsWhenDue(ctx, true),
+      checkDelegatesIfDue: async () => checkDelegatesWhenDue(ctx),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true), true),
       fetchPrsInBackground: () => fetchPrsNow(ctx),
       gh: {
