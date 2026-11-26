@@ -85,6 +85,21 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     ]),
   },
   {
+    name: 'selecting another row just after Reply',
+    rule: 'cut',
+    detail: '"Send"',
+    issue: 827,
+    isOpen: false,
+    case: herdr(demo, [
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'row', n: 0, label: 'd13' },
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'button', n: 0, label: 'Reply' },
+      { is: 'wait', ms: 60 },
+      { is: 'click', on: 'row', n: 0, label: 'd14' },
+    ]),
+  },
+  {
     name: 'leaving a row just after Explain',
     rule: 'jump',
     issue: 828,
