@@ -158,7 +158,7 @@ export type RowBlock = {
    * while it leaves. See `holdLinesAbove`.
    */
   heldLine?: { text: string; tone: Tone; isHidden: boolean; leftAt?: number }
-  /** When the status the row draws above its buttons came, while its box still opens to hold it. */
+  /** When the status the row draws after its title, above any buttons, came, while its box still opens to hold it. */
   lineCameAt?: number
   /** The first of the options the open row added, as "All N options" does, and when, while their box still opens. */
   addedOptions?: AddedOptions

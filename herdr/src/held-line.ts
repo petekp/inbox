@@ -14,17 +14,27 @@ type LineAbove = { text: string; tone: Tone; aged?: Aged; cameAt?: number }
 /**
  * What each row holds above its buttons, by row id: the line it last drew there, or null for a row that drew none
  * there when its press went out, so its status stays under its buttons. `lineless` names the rows that last drew their
- * buttons with no line above them. `options` gives each open row's option ids as last drawn, and `added` the options
- * a row added while their box opens.
+ * buttons with no line above them, and `bare` the rows that last drew no buttons and no line after their title.
+ * `comes` gives when the status after the title of a row with no buttons came, while its box opens. `options` gives
+ * each open row's option ids as last drawn, and `added` the options a row added while their box opens.
  */
 export type LinesAbove = {
   held: ReadonlyMap<string, HeldLine<LineAbove> | null>
   lineless: ReadonlySet<string>
+  bare: ReadonlySet<string>
+  comes: ReadonlyMap<string, number>
   options: ReadonlyMap<string, string[]>
   added: ReadonlyMap<string, AddedOptions>
 }
 
-export const NO_LINES_ABOVE: LinesAbove = { held: new Map(), lineless: new Set(), options: new Map(), added: new Map() }
+export const NO_LINES_ABOVE: LinesAbove = {
+  held: new Map(),
+  lineless: new Set(),
+  bare: new Set(),
+  comes: new Map(),
+  options: new Map(),
+  added: new Map(),
+}
 
 /** How long a line whose hold let go stays drawn: its fade, then its space closing. */
 const HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS
@@ -104,8 +114,9 @@ function addOptions(blocks: Block[], last: LinesAbove, now: number, isAtOnce: bo
  * when it shows them again. A row that settles or comes back from settled starts holding afresh.
  *
  * A status that comes above the buttons of a row that last drew them with no line above opens a box for itself, so the
- * buttons glide down (`lineCameAt`). A row that shows its buttons again, such as one selected, draws its line at rest,
- * as does a draw that takes heights at once, `isAtOnce`.
+ * buttons glide down (`lineCameAt`). So does a status that comes after the title of a row that last drew no buttons and
+ * no line there, such as a folded row whose press is not applied, so the row's box grows with it. A row that shows its
+ * buttons again, such as one selected, draws its line at rest, as does a draw that takes heights at once, `isAtOnce`.
  */
 export function holdLinesAbove(
   blocks: Block[],
@@ -115,6 +126,17 @@ export function holdLinesAbove(
 ): { blocks: Block[]; held: LinesAbove; nextAt: number | null } {
   const next = new Map<string, HeldLine<LineAbove> | null>()
   const lineless = new Set<string>()
+  const bare = new Set<string>()
+  const comes = new Map<string, number>()
+  const bareRow = (b: RowBlock, key: string): Block => {
+    if (b.feedback === null || isStatusUnder(b)) return (bare.add(key), b)
+    const was = last.comes.get(key)
+    const isNew = !isAtOnce && last.bare.has(key)
+    const cameAt = was !== undefined && now < was + LINE_COMES_MS ? was : isNew ? now : undefined
+    if (cameAt === undefined) return b
+    comes.set(key, cameAt)
+    return { ...b, lineCameAt: cameAt }
+  }
   const shown = blocks.map((b): Block => {
     if (b.kind !== 'row') return b
     const key = heldKey(b)
@@ -124,7 +146,7 @@ export function holdLinesAbove(
     const isUnderWay = isPressUnderWay(source)
     if (!hasActions(b)) {
       if (kept !== undefined && isUnderWay) next.set(key, kept)
-      return b
+      return bareRow(b, key)
     }
     const isUnder = isStatusUnder(b)
     const isStarting = kept === undefined && f !== null && isUnder && (isUnderWay || source?.is === 'queued')
@@ -164,8 +186,9 @@ export function holdLinesAbove(
       : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter(at => at > now)
   })
 
+  for (const at of comes.values()) ends.push(...[at + NEXT_FRAME_MS, at + LINE_COMES_MS].filter(t => t > now))
   ends.push(...withAdded.ends)
-  const held = { held: next, lineless, options: withAdded.options, added: withAdded.added }
+  const held = { held: next, lineless, bare, comes, options: withAdded.options, added: withAdded.added }
 
   return { blocks: withAdded.blocks, held, nextAt: ends.length === 0 ? null : Math.min(...ends) }
 }

@@ -14,7 +14,7 @@ import { MOVED_TO, NO_SIZES, copyIdOf, panelId, restId, titleId } from './height
 import type { Sizes } from './heights'
 import { titleRestOf } from './title-cut'
 import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce } from './block-glide'
-import { aimSpace, faintCloseSteps, opacityAt, stepsFrom } from './panel-steps'
+import { aimSpace, faintCloseSteps, opacityAt, panelOf, stepsFrom } from './panel-steps'
 import type { PanelSpace, PanelStep } from './panel-steps'
 import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
@@ -28,6 +28,8 @@ import { panelShownOf, stepSwap, swapHoldsUntil, swapMotion, swapTimes, swapWait
 import { takeSwap, waitSwap } from './form-swap'
 import type { FormSwap, SwapMotion } from './form-swap'
 import { heldForm } from './held-form'
+import { fieldOpening, fieldTimes, stepFieldWait } from './field-wait'
+import type { FieldOpening, FieldWait } from './field-wait'
 
 /**
  * A block's track, the block as last drawn, the open form a row last drew while it keeps its panel, and the box glide
@@ -39,7 +41,7 @@ import { heldForm } from './held-form'
  * panel fades in, each with its start, when the open turned a close back, or the steps a closing row's panel fades out
  * in when the close started while that panel was still faint (`faintCloseFades`). `panelHeldUntil` is when a closing row's
  * panel has faded out, so its box lets go of the panel's height. `restSpace` is the spring of the part of a row's box
- * under its title.
+ * under its title. `fieldWait` is a row's reply field as its press brings it in.
  */
 type Tracked = {
   track: RowTrack
@@ -57,6 +59,7 @@ type Tracked = {
   panelHeldUntil: number
   swap: FormSwap | null
   restSpace: PanelSpace | null
+  fieldWait: FieldWait | null
 }
 
 /**
@@ -89,7 +92,8 @@ export const NO_TRACKS: Tracks = { rows: new Map(), order: [], holdsUntil: 0, dr
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
  * still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a row's buttons
  * draws as it comes and goes, and `status` and `prTail` how a PR block's lines do. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
- * is dismissed, so its box keeps that form's height until the new form measures.
+ * is dismissed, so its box keeps that form's height until the new form measures. `field` is how the buttons of a row's reply field draw
+ * while the field comes, null at rest.
  */
 export type RowMotion = {
   state: RowState
@@ -112,24 +116,13 @@ export type RowMotion = {
   prTail: PrTailMotion | null
   former: Block | null
   swap: SwapMotion | null
+  field: FieldOpening | null
 }
 
 const targetOf = (b: Block): RowTarget =>
   b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : isOpenRow(b) ? 'open' : 'closed'
 
 const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
-
-/** A row's panel fades in as it opens and out as it closes, from where it is when the move turns back. */
-function panelOf(state: RowState, isStart: boolean, last: Tracked | undefined, closing: RowBlock | null) {
-  const isLeftPanelShown = last?.swap?.inAt === null && isOpenRow(last.swap.from)
-  const wasPanelFolding =
-    last?.track.state === 'opening' || (last?.track.state === 'closing' && last.opened !== null) || isLeftPanelShown
-  const isFrom = isStart && !wasPanelFolding
-  if (state === 'opening') return isFrom ? 0 : 1
-  if (state === 'closing' && closing) return isFrom ? 1 : 0
-
-  return null
-}
 
 /**
  * Steps every block through the shared row states. A block the publish dropped stays drawn while it leaves, after the
@@ -280,6 +273,7 @@ export function moveRows(
       now,
     )
     const waited = waitSwap(swap, restSpace, rest, now)
+    const fieldWait = stepFieldWait(last, block, restSpace, now)
     const panelSpace = aimSpace(
       last?.panelSpace ?? null,
       holdsPanel ? (panelHeight ?? last?.panelSpace?.to ?? 0) : 0,
@@ -312,6 +306,7 @@ export function moveRows(
       panelHeldUntil,
       swap: waited,
       restSpace,
+      fieldWait,
     })
     motion.set(block.id, {
       state: track.state,
@@ -334,6 +329,7 @@ export function moveRows(
       prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
       former: last && last.block.kind !== block.kind ? last.block : null,
       swap: swapMotion(waited, now),
+      field: fieldOpening(fieldWait, now),
     })
   }
   for (const b of blocks) {
@@ -384,6 +380,7 @@ export function moveRows(
       ...underTimes(t.status),
       ...prTailTimes(t.prTail),
       ...swapTimes(t.swap),
+      ...fieldTimes(t.fieldWait),
       holdsUntil,
       closeHoldsUntil,
       opensAfterClose,

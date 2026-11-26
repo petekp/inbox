@@ -281,7 +281,7 @@ function panelEl(
     ...(actions.length > 0
       ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons'))]
       : []),
-    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field'))] : []),
+    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert, m?.field).pt(partPt(body.end, 'field'))] : []),
     ...underEls(r, m?.closing ?? shown, m, p, partPt(end, 'result')),
   ]
   if (parts.length === 0) return []
@@ -516,8 +516,9 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'field') {
     const m = p.motion.get(b.id)
     const isShownAsOpening = m?.state === 'entering' && m.box !== null && m.fadeMs === 0
-    const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null
-    const opening = isShownAsOpening ? { isOpen: m.box === 'open', height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade
+    const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null
+    const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0)
+    const opening = isShownAsOpening ? { isOpen: m.box === 'open', delayMs } : keepsButtonsFade
 
     return div()
       .pl(b.isAtEdge ? EDGE : TEXT_X)
