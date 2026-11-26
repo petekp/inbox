@@ -40,7 +40,7 @@ import { desktopTextPt } from './desktop-metrics'
 import { glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } from './terminal-text'
 import { cellWidth, clipLabel } from '../../core/domain/text'
 import { runningMark } from '../../core/view/timing'
-import { stoppedWarningOf } from '../../core/view/feedback'
+import { prStoppedWarningOf } from '../../core/view/feedback'
 import { sessionState } from '../mod/mod-state'
 import { partSpace } from './pane-part-space'
 
@@ -303,7 +303,7 @@ export function panePrBlocks({
       prKeyAction(a, pr.ref),
     )
     const shownPress = isPrLastShown ? (feedbackLabel(prMarkId(pr.ref))?.text ?? null) : null
-    const warning = stoppedWarningOf(sessionState.isSendHeld, prActions, shownPress)
+    const warning = prStoppedWarningOf(sessionState.isSendHeld, prActions, shownPress)
 
     const fits = (text: string) =>
       look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : cellWidth(text) <= listColumns - 2
