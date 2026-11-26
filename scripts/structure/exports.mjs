@@ -20,7 +20,10 @@ const ENTRY_POINTS = {
   'herdr/src/main.ts': { names: ['default'], why: 'The Herdr app loads the built mod and renders its default export.' },
   'core/domain/clients.ts': { names: ['CLIENTS'], why: 'scripts/structure/clients.mjs reads it.' },
   'core/domain/client-features.ts': { names: ['FeatureId'], why: 'scripts/structure/clients.mjs reads it.' },
-  'core/view/tones.ts': { names: ['DARK_TONES', 'LIGHT_TONES'], why: 'codex/build.mjs reads them for the tab colors.' },
+  'core/view/tones.ts': {
+    names: ['DARK_TONES', 'LIGHT_TONES', 'SUPPORTING_TEXT_SHARE'],
+    why: 'codex/build.mjs reads them for the tab colors.',
+  },
   'omp/src/host.ts': { names: ['default'], why: 'omp loads the built bundle and calls its default export.' },
   'prototypes/exact-inbox/app.ts': { names: ['answer', 'grants'], why: 'Exact loads the client data module.' },
   'prototypes/exact-inbox/app.contract.d.ts': { names: '*', why: 'Exact generates client data-source declarations.' },

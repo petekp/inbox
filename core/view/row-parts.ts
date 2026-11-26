@@ -38,6 +38,15 @@ export const ROW_PARTS = [
 export type RowPart = (typeof ROW_PARTS)[number]
 
 /**
+ * The parts of an open row that draw at the supporting text level of `core/view/tones.ts`: the Holds up line, why the
+ * agent asked, and each answer's note or the recommendation's reason. The other lines under the title draw muted.
+ */
+const SUPPORTING_PARTS: readonly RowPart[] = ['holdsUp', 'context', 'note', 'reason']
+
+/** Whether `part` draws at the supporting text level, a step brighter than muted. */
+export const isSupportingPart = (part: RowPart): boolean => SUPPORTING_PARTS.includes(part)
+
+/**
  * The steps of the scale a gap between two parts takes. `inside` and `list` join two parts into one group, as a title
  * and the line under it, or an answer and its note. `child`, `control` and `item` sit between groups. Every step inside
  * a group is smaller than every step between groups, so space shows what belongs together.

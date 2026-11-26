@@ -8,7 +8,6 @@ import type { Drawn } from './pane-status-tops'
 import { parentChevron } from '../../core/view/status-folds'
 import { foldLevelOf } from '../../core/view/status-page-parts'
 import type { TextLevel } from '../../core/view/status-page-parts'
-import type { StatusTone } from '../../core/view/help'
 import { type StatusStall, STATUS_TEXT_LINES } from '../../core/view/status-page'
 import { levelSpan, type TerminalSpan, terminalSpanLines } from './terminal-text'
 import { cellWidth } from '../../core/domain/text'
@@ -129,7 +128,7 @@ export function paneStatusParent(
   }
   /** `p`'s name line, with the chevron of its fold, folded or open over its `foldCount` rows, at `foldLevelOf`'s level. */
   const parentName = (
-    p: { id: string; tone: StatusTone; foldCount: number },
+    p: { id: string; mark: string; foldCount: number },
     name: TerminalSpan,
     stall: StatusStall | null,
     depth: number,

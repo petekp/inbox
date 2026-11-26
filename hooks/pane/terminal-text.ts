@@ -3,7 +3,7 @@ import { cellWidth, cutAtWord, cutForEllipsis, cutLine } from '../../core/domain
 import { ROW_COLUMNS } from './pane-sizes'
 import { DOT } from '../../core/view/rows'
 import { parseInline, type Span } from '../../core/view/inline'
-import type { NameLevel } from '../../core/view/status-page-parts'
+import type { NameLevel, StatusWaitsOn } from '../../core/view/status-page-parts'
 
 /**
  * `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. With `isCutAtWord`, the
@@ -74,9 +74,14 @@ export type TerminalSpan = Span & {
   /** The span sits on the selection color, so faint text takes the palette's `selectionFaint`. */
   isOnSelection?: true
   isNeedsYou?: true
+  isTasks?: true
   isDone?: true
   isUnbroken?: true
 }
+
+/** An ask's words under the work it holds up, in the tone of the ask's kind. */
+export const waitsOnSpan = (w: StatusWaitsOn): TerminalSpan =>
+  w.tone === 'tasks' ? { text: w.text, isTasks: true } : { text: w.text, isNeedsYou: true }
 
 export function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []

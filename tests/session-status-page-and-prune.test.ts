@@ -53,7 +53,7 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
     ['Part 3', '◆', 'needsYou'],
     ['Part 2', '◌', null],
     ['Part 1', '○', null],
-    ['Part 0', '✓', 'done'],
+    ['Part 0', '✓', null],
   ])
   expect(allRows(sessionView(held, 3000, 1000, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBe(
     'Holds up Part 3',

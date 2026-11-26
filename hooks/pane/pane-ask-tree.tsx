@@ -3,6 +3,7 @@ import type { PaneBase } from './pane-context'
 import type { PaneRowLines } from './pane-row-lines'
 import type { KeyAction } from './pane-keys'
 import { terminalLabelCells } from './pane-row-keys'
+import { isSupportingPart } from '../../core/view/row-parts'
 import type { RowPart } from '../../core/view/row-parts'
 import type { RowView } from '../../core/view/rows'
 import type { TreePos } from './terminal-text'
@@ -146,7 +147,7 @@ export function paneAskTree(
                 <Text wrap="wrap">
                   {e.lead ? <Text color={pal.muted}>{e.lead}</Text> : null}
                   {e.label ? <Text bold={e.lead !== undefined}>{e.label}</Text> : null}
-                  <Text color={pal.muted}>{e.rest}</Text>
+                  <Text color={isSupportingPart(e.part) ? pal.supporting : pal.muted}>{e.rest}</Text>
                 </Text>
               )}
             </Box>

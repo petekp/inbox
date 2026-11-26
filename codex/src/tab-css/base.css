@@ -15,6 +15,9 @@
   /* The share of muted in faint text: 3:1 on Codex's light colors, FAINT_TEXT_CONTRAST in core/view/tones.ts. */
   --faint-share: 95%;
   --faint: color-mix(in srgb, var(--muted) var(--faint-share), var(--bg));
+  /* A step brighter than muted: muted moved toward the text by --supporting-share, SUPPORTING_TEXT_SHARE in
+     core/view/tones.ts. */
+  --supporting: color-mix(in srgb, var(--text) var(--supporting-share), var(--muted));
   --hover: color-mix(in srgb, var(--key) 14%, transparent);
   --soft: color-mix(in oklab, var(--text) 8%, transparent);
   --soft-hover: color-mix(in oklab, var(--text) 10%, transparent);
@@ -87,6 +90,9 @@ button {
 }
 .muted {
   color: var(--muted);
+}
+.supporting {
+  color: var(--supporting);
 }
 .faint {
   color: var(--faint);

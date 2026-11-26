@@ -68,6 +68,7 @@ export type FeatureId =
   | 'status-named-fold'
   | 'status-parent-fold'
   | 'status-faint-text'
+  | 'supporting-text'
   | 'seen-on-screen'
   | 'status-idle-age'
   | 'question-back-stays-open'

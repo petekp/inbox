@@ -107,6 +107,7 @@ export const HERDR: LookTable = {
     },
     'status-named-fold': { kind: 'full' },
     'status-faint-text': { kind: 'full' },
+    'supporting-text': { kind: 'full' },
     'status-parent-fold': {
       kind: 'different',
       reason:

@@ -11,6 +11,8 @@ import {
   LIGHT_TONES,
   FAINT_TEXT,
   faintOver,
+  SUPPORTING_TEXT,
+  supportingOver,
   MUTED_TEXT,
   THEME_BACKGROUND,
   THEME_TEXT,
@@ -39,6 +41,8 @@ type Palette = {
   raisedText?: string
   selection?: string
   muted: string
+  /** The supporting text level, a step brighter than `muted`: `core/view/tones.ts:supportingOver`. */
+  supporting: string
   /** The faint text level, a step below `muted`: `core/view/tones.ts:faintOver`. */
   faint: string
   /** Faint text on `selection`, as `selectionLine` is a connector there: `core/view/tones.ts:faintOver` over it. */
@@ -75,6 +79,7 @@ const DARK_PALETTE: Palette = {
   raised: '#4c4c4c',
   selection: DARK_SELECTION,
   muted: MUTED_TEXT.dark,
+  supporting: SUPPORTING_TEXT.dark,
   faint: FAINT_TEXT.dark,
   age: '#a3a3a3',
   key: DARK_TONES.key,
@@ -94,6 +99,7 @@ const LIGHT_PALETTE: Palette = {
   raised: '#d0d0d0',
   selection: LIGHT_SELECTION,
   muted: MUTED_TEXT.light,
+  supporting: SUPPORTING_TEXT.light,
   faint: FAINT_TEXT.light,
   age: '#666666',
   key: LIGHT_TONES.key,
@@ -110,6 +116,7 @@ const DARK_ANSI_PALETTE: Palette = {
   raised: 'inactive',
   raisedText: 'inverseText',
   muted: 'inactive',
+  supporting: 'inactive',
   faint: 'inactive',
   age: 'inactive',
   key: 'suggestion',
@@ -135,6 +142,7 @@ const LIGHT_ANSI_PALETTE: Palette = {
   raised: 'text',
   raisedText: 'userMessageBackgroundHover',
   muted: 'inactive',
+  supporting: 'inactive',
   faint: 'inactive',
   age: 'inactive',
   key: 'suggestion',
@@ -172,6 +180,7 @@ const PALETTES: Record<string, Palette> = {
     tab: '#dcdcdc',
     raised: '#c8c8c8',
     muted: '#545454',
+    supporting: supportingOver('#545454', THEME_TEXT.light),
     faint: faintOver('#545454', THEME_BACKGROUND.light),
     selectionFaint: faintOver('#545454', LIGHT_SELECTION),
     age: '#5e5e5e',
@@ -188,6 +197,7 @@ const THEME_KEY_PALETTE: Palette = {
   raised: 'subtle',
   raisedText: 'text',
   muted: 'inactive',
+  supporting: 'inactive',
   faint: 'inactive',
   age: 'inactive',
   key: 'remember',
@@ -227,6 +237,8 @@ const DESKTOP_PALETTE: Palette = {
   raisedText: 'text',
   selection: 'rgba(128, 120, 105, 0.14)',
   muted: 'inactive',
+  // A theme key cannot be mixed, and no one color sits between the app's muted and text colors in both its themes.
+  supporting: 'inactive',
   faint: DESKTOP_FAINT,
   selectionFaint: DESKTOP_SELECTION_FAINT,
   age: DESKTOP_AGE,

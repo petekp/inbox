@@ -98,6 +98,7 @@ async function toneVars() {
       `--opportunity: ${t.opportunity};`,
       `--error: ${t.error};`,
       `--error-mark: ${t.errorMark};`,
+      `--supporting-share: ${tones.SUPPORTING_TEXT_SHARE * 100}%;`,
     ].join(' ')
 
   return { light: vars(tones.LIGHT_TONES), dark: vars(tones.DARK_TONES) }
