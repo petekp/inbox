@@ -234,6 +234,12 @@ test('a dialog’s answer text closes each copy with that question’s own answe
     await record('Which name?', ['red', 'green'])
     await ask({ question: 'Which name?', options: ['red', 'green'] })
   })
+  const typed =
+    'Use the staging box for the first week, then move the whole queue over once the backfill has caught up and the alerts stay quiet for two days'
+  await turn('t5', answered(`"Where should it run?"="${typed}"`), async () => {
+    await record('Where should it run?', ['staging', 'production'])
+    await ask({ question: 'Where should it run?', options: ['staging', 'production'] })
+  })
   await turn('t4', answered('"Which branch?"="next", "Push it now?"="No"'), async () => {
     await record('Which branch?', ['main', 'next'])
     await record('Push it now?', ['Yes', 'No'])
@@ -249,6 +255,7 @@ test('a dialog’s answer text closes each copy with that question’s own answe
     ['Run the migration?', 'Yes'],
     ['Delete the cache?', 'Only the old entries'],
     ['Which name?', 'the "blue" one'],
+    ['Where should it run?', typed],
     ['Which branch?', 'next'],
     ['Push it now?', 'No'],
   ])

@@ -22,7 +22,7 @@ import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
 import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt, earliestOf } from './timing'
 import type { ListInput } from './timing'
-import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark } from './rows'
+import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, shortOutcome } from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
 import { doneLabel, feedbackOf, fixLabel, feedbackIn, pressUnderWaySince, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
@@ -382,9 +382,9 @@ export function inboxView({
 }
 
 function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
-  if (c.how === 'answered') return `Answered: ${c.outcome}`
+  if (c.how === 'answered') return `Answered: ${shortOutcome(c.outcome)}`
 
-  return c.how === 'claude' ? capitalized(c.outcome) : `Closed: ${c.outcome}`
+  return c.how === 'claude' ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`
 }
 
 /**

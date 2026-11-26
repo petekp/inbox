@@ -1,7 +1,7 @@
 import type { Item, Closed, PressKind, Finding } from '../../types'
 import { closedState } from '../domain/ledger-close'
 import type { ClosedState } from '../domain/ledger-close'
-import { ago } from '../domain/text'
+import { ago, cutLine } from '../domain/text'
 import { capitalized } from '../domain/press-labels'
 import type { HelpStep } from '../domain/help-steps'
 import type { EarlierLine } from '../domain/earlier-answers'
@@ -463,7 +463,17 @@ export function settledLabel(label: string, delivery: ClosedDelivery, reply?: st
   return deliveryLabel(sendStepOf(delivery), label, reply)
 }
 
+const MAX_OUTCOME_CHARS = 120
+
+/**
+ * An outcome as a closed row shows it: whole, or cut at a word with an ellipsis when over `MAX_OUTCOME_CHARS`, so a
+ * long answer the person typed does not fill the row. The record keeps the whole text.
+ */
+export function shortOutcome(outcome: string): string {
+  return cutLine(outcome, t => t.length <= MAX_OUTCOME_CHARS)
+}
+
 /** A closed record's outcome as a look shows it. A finding a question replaced says where it went. */
 export function outcomeLabel(c: { outcome: string; askedAs?: string }): string {
-  return c.askedAs ? 'Now a question in Asks' : capitalized(c.outcome)
+  return c.askedAs ? 'Now a question in Asks' : capitalized(shortOutcome(c.outcome))
 }
