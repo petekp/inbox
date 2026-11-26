@@ -180,7 +180,7 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
   })
 })
 
-test('a subject that open asks hold up offers View on the oldest ask, named for its kind, an ask with no time counting as oldest, and no button once the asks close', () => {
+test('a subject that open asks hold up offers View on the ask that sets its mark, a question before a task and the oldest of a kind, an ask with no time counting as oldest, and no button once the asks close', () => {
   const o = after(
     null,
     'NEW: working | Offline mode | queue built\nNEW: working | Docs | outline ready\nLINK: i1 | s1\nLINK: i2 | s1\nLINK: i3 | s1',
@@ -197,7 +197,8 @@ test('a subject that open asks hold up offers View on the oldest ask, named for 
       statusKeyPlan(r).map(k => `${r.id} ${k.label} ${k.press.action === 'show-ask' ? k.press.askId : ''}`),
     )
 
-  expect(viewOf([asks.i1, asks.i2])).toEqual([['s1 View task i2'], []])
+  expect(viewOf([asks.i1, asks.i2])).toEqual([['s1 View question i1'], []])
+  expect(viewOf([asks.i2])).toEqual([['s1 View task i2'], []])
   expect(viewOf([asks.i1, asks.i2, asks.i3])).toEqual([['s1 View question i3'], []])
   expect(viewOf([asks.i1])).toEqual([['s1 View question i1'], []])
   expect(viewOf([])).toEqual([[], []])

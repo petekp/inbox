@@ -80,14 +80,14 @@ test('a subject an open ask holds up says what it waits on, in the ask own words
     new Set(['i1', 'i2']),
   )
   const items = [
-    { ...askItem('i2'), ask: 'later one', at: 300 },
-    { ...askItem('i1'), kind: 'task' as const, ask: 'Approve\n  the   store listing', at: 200 },
+    { ...askItem('i2'), kind: 'task' as const, ask: 'Approve\n  the   store listing', at: 300 },
+    { ...askItem('i1'), ask: 'Which\n  version?', at: 200 },
   ]
   const [row] = page(o, 20 * MIN, {}, items).rows
 
   expect(row).toMatchObject({
-    waitsOn: { text: 'Approve the store listing', tone: 'tasks' },
+    waitsOn: { text: 'Which version?', tone: 'needsYou' },
     stall: null,
-    ask: { id: 'i1', kind: 'task' },
+    ask: { id: 'i1', kind: 'question' },
   })
 })

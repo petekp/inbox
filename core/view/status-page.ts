@@ -6,7 +6,7 @@ import { statusSync } from './sync-state'
 import type { StatusSync, TurnSync } from './sync-state'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
-import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
+import { askSettingMark, asksLinkedTo, goalPage, metMilestonesFold } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
 import {
   childRow,
@@ -174,8 +174,8 @@ export function statusPage(
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
   const holdKindsOf = (x: Subject) => s.ledger.items.filter(i => o?.askSubjects[i.id]?.includes(x.id)).map(i => i.kind)
-  const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null =>
-    isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null
+  const askSettingMarkOf = (x: Subject): { id: string; kind: Item['kind'] } | null =>
+    isHeld(x) ? askSettingMark(asksLinkedTo(s.ledger.items, o?.askSubjects ?? {}, x.id)) : null
   const placeOf = (x: Subject): StatusPlace =>
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
@@ -244,7 +244,7 @@ export function statusPage(
     isNew,
     isHeld,
     holdKindsOf,
-    oldestAskOf,
+    askSettingMarkOf,
     items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning && turn.is === 'fresh',
