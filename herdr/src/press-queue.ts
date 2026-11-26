@@ -163,12 +163,15 @@ export class PressQueue {
   /**
    * Ends the presses a read of the session answers, as `settleOuts` says, after checking which written files a host
    * took. A press past its give-up time that no host took is taken back first, so it cannot apply later. When a host
-   * took it in the meantime, it waits again as taken. `takeEnded` then gives how each ended press went.
+   * took it in the meantime, it waits again as taken. A refusal its row got meanwhile goes when the press ends, since
+   * the press it waited on is no longer out. `takeEnded` then gives how each ended press went.
    */
   async settle(view: SessionView, lastPress: LastPress | null, agent: string): Promise<void> {
     for (const out of this.outs) if (out.isWritten) out.isTaken = await this.io.isGone(out.path)
     const now = this.io.now()
     const settled = settleOuts(this.outs, view, lastPress, now)
+    const stillOut = new Set([...settled.outs, ...settled.toClaim].map(o => o.rowId))
+    for (const out of this.outs) if (!stillOut.has(out.rowId)) delete this.lines[out.rowId]
     this.outs = settled.outs
     this.lines = { ...this.lines, ...settled.lines }
     this.ended.push(...settled.ended)
