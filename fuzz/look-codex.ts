@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { $ } from 'bun'
+import { CUT_OPACITY } from '../core/view/row-motion'
 import { type CodexEv, type CodexSpec, type PageFailure, type PageRun, drive } from './codex-page'
 import { type Rng, rngOf } from './rng'
 import { CODEX_SEEDS, knownIssueOf } from './seeds'
@@ -81,8 +82,13 @@ async function close(): Promise<void> {
   await server.exited
 }
 
+/** What a case found, or why it could not run, as when the tab page did not load. */
+type CaseRun = PageRun | { notRun: string }
+
+const isNotRun = (r: CaseRun): r is { notRun: string } => 'notRun' in r
+
 /** Runs one case in a fresh demo, a new thread id, and returns what the page found. */
-async function runCase(c: CodexCase, freezeOn?: string): Promise<PageRun> {
+async function runCase(c: CodexCase, freezeOn?: string): Promise<CaseRun> {
   await browse('set', 'viewport', String(c.width), '900')
   await browse('set', 'media', c.theme, ...(c.isReduced ? ['reduced-motion'] : []))
   await browse('open', `http://127.0.0.1:${PORT}/?theme=${c.theme}&thread=fuzz-${Date.now()}-${thread++}`)
@@ -95,16 +101,19 @@ async function runCase(c: CodexCase, freezeOn?: string): Promise<PageRun> {
     await Bun.sleep(300)
   }
   await Bun.sleep(600)
-  const spec: CodexSpec = { events: c.events, isReduced: c.isReduced, restMs: REST_MS, freezeOn }
+  const spec: CodexSpec = {
+    events: c.events,
+    isReduced: c.isReduced,
+    restMs: REST_MS,
+    cutOpacity: CUT_OPACITY,
+    freezeOn,
+  }
   const out = await browse('eval', `(${drive.toString()})(${JSON.stringify(spec)})`)
   try {
     return JSON.parse(out.stdout.toString()) as PageRun
   } catch {
-    return {
-      failures: [{ rule: 'no-run', at: 0, after: -1, detail: out.stderr.toString().slice(0, 200) }],
-      notes: [],
-      frames: 0,
-    }
+    const why = (out.stderr.toString() || out.stdout.toString()).trim().split('\n')[0] ?? ''
+    return { notRun: why.slice(0, 200) || 'the page gave no answer' }
   }
 }
 
@@ -118,7 +127,9 @@ function boxKindOf(detail: string): string {
 
 const kindOf = (f: PageFailure) => `${f.rule} ${issueOf(f) ?? `new ${boxKindOf(f.detail)}`}`
 
-const failsWith = async (c: CodexCase, kind: string) => (await runCase(c)).failures.some(f => kindOf(f) === kind)
+const failuresOf = (r: CaseRun): PageFailure[] => (isNotRun(r) ? [] : r.failures)
+
+const failsWith = async (c: CodexCase, kind: string) => failuresOf(await runCase(c)).some(f => kindOf(f) === kind)
 
 async function shrunkOf(c: CodexCase, kind: string): Promise<CodexCase> {
   let best = c
@@ -159,19 +170,28 @@ function report(c: CodexCase, f: PageFailure, run: PageRun, from: string, again:
   ].join('\n')
 }
 
-/** Runs the seeds, then `runs` generated cases; writes one report per new rule broken, and returns summary lines. */
+/**
+ * Runs the seeds, then `runs` generated cases; writes one report per new rule broken, and returns summary lines.
+ * `notRun` counts the cases that could not run, which are judged neither passed nor failed.
+ */
 export async function runCodex(
   seed: number,
   runs: number,
   out: string,
-): Promise<{ lines: string[]; isBroken: boolean }> {
+): Promise<{ lines: string[]; isBroken: boolean; notRun: number }> {
   await open()
   const counts = new Map<string, { cases: number; issue: number | null }>()
   const seedLines: string[] = []
+  const notRunLines: string[] = []
   let isSeedBroken = false
   try {
     for (const s of CODEX_SEEDS) {
-      const { failures } = await runCase(s.case)
+      const seedRun = await runCase(s.case)
+      if (isNotRun(seedRun)) {
+        notRunLines.push(`codex seed #${s.issue}, ${s.name}: could not run: ${seedRun.notRun}`)
+        continue
+      }
+      const { failures } = seedRun
       const isAsIssueSays = failures.some(
         f => f.rule === s.rule && (s.detail === undefined || f.detail.includes(s.detail)),
       )
@@ -191,6 +211,10 @@ export async function runCodex(
     for (let n = 0; n < runs; n++) {
       const c = caseOf(rngOf(seed, n))
       const run = await runCase(c)
+      if (isNotRun(run)) {
+        notRunLines.push(`codex case ${n}: could not run: ${run.notRun}`)
+        continue
+      }
       const kinds = new Map(run.failures.map(f => [kindOf(f), f]))
       for (const [kind, first] of kinds) {
         const count = counts.get(kind) ?? { cases: 0, issue: issueOf(first) }
@@ -201,7 +225,7 @@ export async function runCodex(
         const name = `codex-${kind.replace(/ new ?/, '-').replace(/[^a-z-]/gi, '')}`
         const shrunk = await shrunkOf(c, kind)
         const runs3 = [await runCase(shrunk), await runCase(shrunk), await runCase(shrunk)]
-        const isNew = (r: PageRun) => r.failures.some(f => kindOf(f) === kind)
+        const isNew = (r: CaseRun): r is PageRun => failuresOf(r).some(f => kindOf(f) === kind)
         const again = runs3.filter(isNew).length
         const kept = again > 0 ? shrunk : c
         const shown = runs3.find(isNew) ?? run
@@ -212,9 +236,10 @@ export async function runCodex(
             : `Found by seed ${seed}, case ${n}, shown as found. Shrunk to ${shrunk.events.length} events, it did not fail again`
         writeFileSync(join(out, `${name}.json`), JSON.stringify(kept, null, 2))
         const frozen = await runCase(kept, rule)
-        if (frozen.isFrozen) await browse('screenshot', join(out, `${name}.png`))
+        const isFrozen = !isNotRun(frozen) && frozen.isFrozen === true
+        if (isFrozen) await browse('screenshot', join(out, `${name}.png`))
         const replay = join('fuzz', 'out', basename(out), `${name}.json`)
-        const frame = frozen.isFrozen
+        const frame = isFrozen
           ? `\n## Frame\n\n\`${name}.png\` shows the page paused at the first ${rule} failure of another run.\n`
           : ''
         const text = report(kept, f, shown, from, again)
@@ -231,23 +256,37 @@ export async function runCodex(
       : `codex ${kind.replace(/ \d+$/, '')}: ${c.cases} of ${runs} cases, known as #${c.issue}`,
   )
   const isNewFound = [...counts.values()].some(c => c.issue === null)
-  return { lines: [...seedLines, `codex: ${runs} cases`, ...lines], isBroken: isNewFound || isSeedBroken }
+  const ranLine = `codex: ${runs - notRunLines.filter(l => l.startsWith('codex case')).length} of ${runs} cases ran`
+
+  return {
+    lines: [...seedLines, ranLine, ...lines, ...notRunLines],
+    isBroken: isNewFound || isSeedBroken,
+    notRun: notRunLines.length,
+  }
 }
 
-/** Runs one saved Codex case again, prints what the page found, and captures its first failing frame beside the case. */
+/**
+ * Runs one saved Codex case again, prints what the page found, and captures its first failing frame beside the case.
+ * Returns the exit status: 0 when it passes, 1 when it fails and 2 when it could not run.
+ */
 export async function replayCodex(c: CodexCase, path: string): Promise<number> {
   await open()
   try {
     const run = await runCase(c)
+    if (isNotRun(run)) {
+      console.log(`could not run: ${run.notRun}`)
+      return 2
+    }
     const first = run.failures[0]
-    if (first && (await runCase(c, first.rule)).isFrozen) {
+    const frozen = first ? await runCase(c, first.rule) : null
+    if (frozen && !isNotRun(frozen) && frozen.isFrozen) {
       await browse('screenshot', path.replace(/\.json$/, '.png'))
       console.log(`frame: ${path.replace(/\.json$/, '.png')}`)
     }
     for (const f of run.failures.slice(0, 20))
       console.log(`codex ${f.rule} at ${f.at} ms after event ${f.after}: ${f.detail}`)
     console.log(run.failures.length === 0 ? 'passes' : `${run.failures.length} failures`)
-    return run.failures.length
+    return run.failures.length === 0 ? 0 : 1
   } finally {
     await close()
   }

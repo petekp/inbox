@@ -12,6 +12,7 @@ declare module 'claude-code' {
       context?: string
       options?: string[]
       option_notes?: string[]
+      previews?: string[]
       rec?: string
       why?: string
       steps?: string[]

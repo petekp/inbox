@@ -46,6 +46,8 @@ import type { SessionState } from './state'
 import { CODEX, inboxToolText } from './texts'
 import type { CodexHerdrAsk } from './server-herdr'
 import type { SteerResult, SteerTarget } from './app-steer'
+import { withPreviewPages } from '../../core/runtime/preview-pages'
+import type { PreviewPages } from '../../core/runtime/preview-pages'
 
 export type ServerDeps = {
   dir: string
@@ -70,6 +72,8 @@ export type ServerDeps = {
   isNextBuild?: boolean
   /** The page template for a comparison, beside the handler's bundle. */
   comparePage: string
+  /** Where each session's previews pages go, and the write that fills them. Without it, no page is written. */
+  previewPages?: PreviewPages
   /**
    * Where a chat the inbox has not seen is caught up from when its tab opens. Without it, the chat catches up at its
    * first hook.
@@ -170,12 +174,14 @@ export function makeServer(given: ServerDeps): Server {
         let added = null as SessionState | null
         const delegate = (await deps.delegate?.().catch(() => null)) ?? null
         const earlier = name === 'record' ? await recordMatchesNow(args, now()) : []
-        await codexStore(dir, id, now, deps.onWrite).update(s => {
+        const place = deps.previewPages?.placeOf(id) ?? null
+        const saved = await codexStore(dir, id, now, deps.onWrite).update(s => {
           const r = recorded(CODEX, s, name, args, now(), listedToolFields(), delegate, earlier)
           result = r.result
           if (addsTabPr(s, r.state)) added = r.state
-          return heard(r.state)
+          return withPreviewPages(heard(r.state), place)
         })
+        if (place) await deps.previewPages?.write(place, saved.ledger)
         if (added) {
           linkedPrs.asked(added)
           fetchPrsNow(id)

@@ -49,7 +49,7 @@ export type ViewChange =
  * refreshes, which the look shows as under way, and runs itself when each one is an open or a copy. `kind` is the
  * kind of the plan action the button draws, or null for a press that no plan action makes. `type` opens the
  * row's field with `text` in it and `hint` as its placeholder, `send` sends the field's words, and `leave` closes the field, dropping its draft
- * when `isDiscard`.
+ * when `isDiscard`. `focusTerminal` gives focus to the terminal of the session the look shows.
  */
 export type Does =
   | { is: 'view'; change: ViewChange }
@@ -58,6 +58,7 @@ export type Does =
   | { is: 'type'; rowId: string; text: string; hint: string }
   | { is: 'send'; rowId: string }
   | { is: 'leave'; rowId: string; isDiscard: boolean }
+  | { is: 'focusTerminal' }
   | { is: 'nothing' }
 
 /** A button a shared plan lists, as the look draws it. `hotkey` presses it while its row is selected. */

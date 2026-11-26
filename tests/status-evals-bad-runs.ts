@@ -196,6 +196,11 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     answer: `${GOOD_RUNS['milestone-last-work-done']![0]!}\nNEW: working | Branch checks | checks running\nSERVES: Branch checks | m2`,
     breaks: 'milestones-true',
   },
+  'unrelated-task': {
+    at: 0,
+    answer: `${GOOD_RUNS['unrelated-task']![0]!}\nLINK: i3 | s1`,
+    breaks: 'asks-linked',
+  },
   'milestone-decided': {
     at: 0,
     answer:

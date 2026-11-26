@@ -389,7 +389,7 @@ class Frames {
       const box = boxOf(node)
       const opacity = this.fades.opacityOf(node)
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
-      if (opacity > CUT_OPACITY) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
+      if (opacity >= CUT_OPACITY) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
     }
     for (const { node, share } of shownTexts(placed)) {
       let plain = 1

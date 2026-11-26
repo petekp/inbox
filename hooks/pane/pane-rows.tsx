@@ -244,7 +244,7 @@ export function paneRows(
     const noteLines = row.fold?.note ? partedLines(row.fold.note.split(DOT), fitsStatusLine) : []
     const status = [
       ...noteLines.map(text => ({ text, color: pal.muted })),
-      ...(f && !f.isAfterTitle ? [{ text: f.text, color: feedbackColor(f.tone) }] : []),
+      ...(f && !f.isAfterTitle && !isStatusUnder ? [{ text: f.text, color: feedbackColor(f.tone) }] : []),
       ...(isTyping && paneState.fieldWithoutKeys === row.id ? [{ text: ROW_COPY.clickField, color: pal.muted }] : []),
     ]
 
@@ -330,7 +330,7 @@ export function paneRows(
         )}
         {isStatusUnder ? (
           <Box key="result" marginTop={spaceBetween(actionsPart, 'result')}>
-            <Text color={pal.muted} wrap="wrap">
+            <Text color={f.tone === 'error' ? pal.tone.error : pal.muted} wrap="wrap">
               {withDoneText(f.text, f.doneText)}
             </Text>
           </Box>

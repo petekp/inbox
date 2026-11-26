@@ -47,15 +47,11 @@ const idOf = (n: number) => `i${n + 1}`
 function feedbackOf(c: RowCase): LastAction | null {
   if (c.feedback === 'above')
     return {
-      kind: 'local',
-      action: 'open',
-      text: 'Open',
+      kind: 'talk',
+      action: 'discuss',
+      text: 'Discuss',
       at: NOW - 1000,
-      result: {
-        state: 'failed',
-        at: NOW - 1000,
-        parts: [{ kind: 'open', name: 'notes.md', isCommand: false, error: 'No such file' }],
-      },
+      delivery: { state: 'failed', reason: 'The session ended', id: 'd1' },
     }
   if (c.feedback === 'under')
     return { kind: 'talk', action: 'discuss', text: 'Discuss', at: NOW - 1000, turnsStarted: 0 }

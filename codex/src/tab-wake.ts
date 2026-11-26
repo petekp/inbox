@@ -3,17 +3,19 @@ import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import { tabState, drawnRows, root } from './tab-state'
 import { later, cancelTimer } from './tab-host'
 import { reducedMotion } from './tab-motion'
+import { hasScrolledSince, scrollToNearest } from './tab-scroll'
 
-/** Scrolls the open row into view, and again once its height has come to rest. */
+/** Scrolls the open row into view, and again once its height has come to rest unless the person has scrolled since. */
 export function revealSelected() {
   if (tabState.isDisposed) return
-  const behavior: ScrollBehavior = reducedMotion.matches ? 'auto' : 'smooth'
-  const reveal = () =>
-    [...root.querySelectorAll('.row.selected')]
-      .find(row => !row.closest('.form-left'))
-      ?.scrollIntoView({ block: 'nearest', behavior })
+  const reveal = () => {
+    if (tabState.isDisposed) return
+    const row = [...root.querySelectorAll('.row.selected')].find(r => !r.closest('.form-left'))
+    if (row) scrollToNearest(row, !reducedMotion.matches)
+  }
+  const revealedAt = performance.now()
   reveal()
-  if (!reducedMotion.matches) later(reveal, HEIGHT_SETTLE_MS)
+  if (!reducedMotion.matches) later(() => !hasScrolledSince(revealedAt) && reveal(), HEIGHT_SETTLE_MS)
 }
 
 const TIMER_SLACK_MS = 50

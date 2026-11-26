@@ -11,6 +11,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-panel-fade.ts` | Codex adapter. A row's panel fades: through a list of steps, the parts of a closing panel that fade, and a faint turned-back panel's close. |
 | `codex/src/tab-form-swap.ts` | Codex adapter. The fades of a row's change between its settled form and another: the form it leaves, drawn over the form it takes, fades out while the height holds, and the new form's lines fade in once the height moves. |
 | `codex/src/tab-wake.ts` | Codex adapter. The timed work after a draw: scrolling the open row into view, and the draw when the next move ends. |
+| `codex/src/tab-scroll.ts` | Codex adapter. Scrolls a row into view with the least move, on two of the row glides' springs in a row, so a scroll eases in and a new target keeps its speed. |
 | `codex/src/tab-glide.ts` | Codex adapter. The Web Animations each move plays: the spring glide of a height or offset, and fades. |
 | `codex/src/tab-new-keys.ts` | Codex adapter. Fades in the buttons a draw brings into a block it drew before, such as a row's buttons that come back as its reply field closes, once the block's box has nearly grown to hold them. |
 | `codex/src/tab-title-motion.ts` | Codex adapter. When a row's title fades between its full and clamped forms while its line grows or shrinks, so the fade runs while the line rests and the line never cuts a line of the title that shows. |
@@ -30,6 +31,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
 | `codex/src/tab-parted.tsx` | Codex adapter. `Sep`, the ` · ` that leads each part of a `.parted` line, so a part that starts a line hides its dot. Its layout is in `tab-css/parted.css`. |
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
+| `codex/src/tab-panel-lines.ts` | Codex adapter. A row's press as its line draws it, and the motion state of the press status under an open row's buttons and its status lines above them, on every tab. |
 | `codex/src/tab-held-after.ts` | Codex adapter. The status an open row's line keeps after its title while the row's status goes under its buttons. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
 | `codex/src/tab-prs.tsx` | Codex adapter. The PRs tab: PR blocks, their keys, the order lines, and settled PRs. |
@@ -56,6 +58,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/state.ts` | Codex host. One JSON state file per session, under a lock. `SessionState` extends the shared `Session` from `types/index.d.ts`. |
 | `codex/src/lock.ts` | Codex host. `withLock` and `tryWithLock`: a lock on a file path that the hook, update and MCP server processes share, which a lock of a process that ended gives up. |
 | `codex/src/registry.ts` | Codex host. `registryOnWrite`: writes the session registry entry after each state written, from the hook, update and server processes. A SessionStart hook gives the Codex process above it as the entry's pid, and the server gives its parent. `eachOnWrite` runs it beside the Herdr report. |
+| `codex/src/preview-pages.ts` | Codex host. `codexPreviewPages`: the previews pages through `core/runtime/preview-pages.ts` with Node's file calls, which the server writes after each inbox tool call. |
 | `codex/src/pid.ts` | Codex host. `isPidRunning`, which the command log and the session registry use to tell whether a process runs. |
 | `codex/src/command-log.ts` | Codex host. `codexCommandStore`: a session's command log, in `<id>.commands.json` beside its state, under the file's lock, since the hook, update and server processes can all change it. |
 | `codex/src/herdr-terminal.ts` | Codex host. The Codex session that runs in each Herdr app terminal, in `herdr-terminals/` under the data folder. A SessionStart hook saves the session and its Codex process there and removes the files of the Codex sessions that ran in the terminal before. A SessionEnd hook marks the terminal as running no session, removes the session's file and clears the terminal's labels. `herdrOnWrite` publishes and reports only the session the terminal runs, and `followCodexPresses` applies presses only for it while its Codex process runs. |

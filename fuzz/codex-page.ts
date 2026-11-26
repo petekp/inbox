@@ -5,8 +5,11 @@ export type CodexEv =
   | { is: 'click'; on: 'row' | 'button' | 'tab'; n: number }
   | { is: 'type'; text: string }
 
-/** `freezeOn` names a rule: the page pauses its animations at that rule's first failure, for a capture. */
-export type CodexSpec = { events: CodexEv[]; isReduced: boolean; restMs: number; freezeOn?: string }
+/**
+ * `freezeOn` names a rule: the page pauses its animations at that rule's first failure, for a capture. `cutOpacity` is
+ * `CUT_OPACITY`: text at it or above that a box cuts counts as a cut.
+ */
+export type CodexSpec = { events: CodexEv[]; isReduced: boolean; restMs: number; cutOpacity: number; freezeOn?: string }
 
 /** A rule a frame broke, found in the page. `at` is ms since the first event. */
 export type PageFailure = { rule: string; at: number; after: number; detail: string }
@@ -19,7 +22,6 @@ export type PageRun = { failures: PageFailure[]; notes: string[]; frames: number
  * it uses nothing from outside its own body.
  */
 export async function drive(spec: CodexSpec): Promise<PageRun> {
-  const SHOWN = 0.2
   const CUT_FROM = 0.05
   const CUT_TO = 0.95
   const JUMP_PX = 8
@@ -104,7 +106,7 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
           bottom = Math.min(bottom, s.clip[1])
         }
       }
-      if (!clipper || opacity < SHOWN) continue
+      if (!clipper || opacity < spec.cutOpacity) continue
       const range = d.createRange()
       range.setStartBefore(texts[0] as ChildNode)
       range.setEndAfter(texts[texts.length - 1] as ChildNode)

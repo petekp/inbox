@@ -1,6 +1,7 @@
 import type { Help, Item } from '../../types'
 import { baseName } from './open-targets'
 import { messages } from './press-messages'
+import { previewEffects } from './option-previews'
 import type { Effect } from '../view/press-reducer'
 import { namedPrs, parseRef } from './prs'
 import { clipLabel } from './text'
@@ -160,4 +161,16 @@ function helpEffect(item: Item, help: Help): Effect {
 
 export function stepEffects(item: Item, step: HelpStep): Effect[] {
   return step.step.map(h => helpEffect(item, h))
+}
+
+/** The opens and copies a Local press on a row runs, which a look shows as pending as soon as it is pressed. */
+export function localEffects(
+  row: { item: Item | null; steps: readonly HelpStep[] },
+  press: { action: string; step?: number },
+): Effect[] {
+  if (!row.item) return []
+  if (press.action === 'previews') return previewEffects(row.item)
+  const step = press.action === 'step' && press.step !== undefined ? row.steps[press.step] : undefined
+
+  return step ? stepEffects(row.item, step) : []
 }

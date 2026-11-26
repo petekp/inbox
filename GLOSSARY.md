@@ -51,6 +51,18 @@ comparison as JSON and appends it to a copy of the template
 their measures, then the previews. The agent's reply has no table: it gives the
 pick, the reason, anything unexpected and the page's path.
 
+**Option preview**:
+An image, page or file that shows what picking one of a question's options
+looks like, as an absolute file path or an https link. The agent gives one for
+each option when it records the question. Stored as `Item.optionPreviews`.
+
+**Previews page**:
+The page with every option's preview side by side, which a question's Open
+previews button opens. The host writes it from the comparison page template
+when the agent records the question, and rewrites it at each later inbox tool
+call: record, close or order_prs. A closed question's page stays 14 days, so
+Undo finds it, and a page unchanged for 14 days is removed.
+
 **Task**:
 Something only the person can do, such as signing in. When the agent needs
 the result back, such as a check on the person's screen, the task carries the

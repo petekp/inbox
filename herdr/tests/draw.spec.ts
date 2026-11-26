@@ -9,6 +9,7 @@ import { sessionView } from '../../core/view/session-view'
 import { goalKeyPlan, statusKeyPlan } from '../../core/view/status-keys'
 import { shownTabs } from '../../core/view/tabs'
 import { SETTLED_MS } from '../../core/view/timing'
+import { STOPPED_REASON } from '../../core/view/feedback'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { readSession } from '../src/files'
@@ -21,9 +22,10 @@ import { HERDR_LOOK, lookUiOf } from '../src/controller'
 import { AGENT, NOW, demoEnvelopeText, demoScreen, finishedScreen, lookPresses, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
-  const { options, keys, more } = rowKeyPlan(row, isAllShown)
+  const { options, keys, more, sessionKey } = rowKeyPlan(row, isAllShown, true)
   return [
     ...options.map(o => actionLabel(o.action)),
+    ...(sessionKey ? [sessionKey.label] : []),
     ...[...keys, ...more].map(k => (k.slot === 'allOptions' || k.slot === 'retry' ? k.label : actionLabel(k.action))),
   ]
 }
@@ -46,6 +48,29 @@ test('a selected row draws its buttons in the shared key plan order', () => {
       const drawn = rowsOf(tabBlocks(screen, ui)).find(b => b.id === row.id)!
       expect(drawn.buttons.map(b => b.label)).toEqual(plannedLabels(row, isAllShown))
     }
+})
+
+test('a row whose message was not sent because the person stopped the session offers Go to session, which focuses its terminal', () => {
+  const s = demoSession(NOW, AGENT)
+  const question = demoScreen().view.needsYou.questions.find(r => r.state.is === 'open')
+  if (!question) throw new Error('the demo has no open question')
+  const refused = (reason: string) => {
+    const last = { kind: 'talk' as const, action: 'discuss', text: 'Discuss', at: NOW - 1000 }
+    const delivery = { state: 'failed' as const, reason }
+    const session = { ...s, lastActions: { ...s.lastActions, [question.id]: { ...last, delivery } } }
+    const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
+    const screen = { ...demoScreen(), view: sessionView(session, NOW, SETTLED_MS, holds) }
+    const drawn = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: question.id }))).find(b => b.id === question.id)
+    if (!drawn) throw new Error('the question was not drawn')
+    return drawn
+  }
+
+  const stopped = refused(STOPPED_REASON)
+  expect(stopped.feedback?.text).toBe(
+    'Not sent: you stopped this session. It takes inbox messages again after you write to it.',
+  )
+  expect(stopped.buttons.find(b => b.label === 'Go to session')?.does).toEqual({ is: 'focusTerminal' })
+  expect(refused('a hook refused it').buttons.map(b => b.label)).not.toContain('Go to session')
 })
 
 test('only the selected row shows buttons, and with no row picked the first waiting row opens', () => {

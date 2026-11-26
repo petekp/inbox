@@ -263,6 +263,9 @@ function baseName(path) {
   return path.replace(/\/+$/, "").split("/").pop() ?? path;
 }
 
+// ../core/domain/option-previews.ts
+var OPEN_PREVIEWS_LABEL = "Open previews";
+
 // ../core/domain/pr-checks.ts
 function failingChecks(pr) {
   return pr.checks.filter((c) => c.bucket === "fail");
@@ -993,6 +996,8 @@ function retryOf(id, last) {
   const step = /^step-(\d+)$/.exec(last.action);
   if (step) return { action: "step", id, step: Number(step[1]), label: last.text };
   switch (last.action) {
+    case "previews":
+      return { action: "previews", id };
     case "answer":
       return { action: "answer", id, option: last.text };
     case "explain":
@@ -1277,6 +1282,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnsw
 }
 var ROW_COPY = {
   retry: "Try again",
+  goToSession: "Go to session",
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
@@ -2165,6 +2171,11 @@ var RECORD_SCHEMA = {
       items: { type: "string" },
       description: "For a question: one note for each option, in the order of options, saying what picking it does, in at most 12 words each."
     },
+    previews: {
+      type: "array",
+      items: { type: "string" },
+      description: 'For a question: one image, page or file for each option, in the order of options, that shows what picking it looks like, each as an absolute file path or an https link. Give "" for an option with none. The user opens them side by side.'
+    },
     rec: {
       type: "string",
       description: "For a question: the option you recommend, copied from options. Leave it out when you recommend none."
@@ -2412,6 +2423,7 @@ var ACTION_KEYS = {
   "show-explanation": "s",
   explain: "e",
   compare: "p",
+  previews: "o",
   discuss: "d",
   dismiss: "x",
   discard: "x"
@@ -2479,6 +2491,7 @@ function actionsOf(row, last, state, feedback, isUndoOut = false, canScrollConve
         isFolded: isFolding && n >= OPTIONS_FOLD_AT - 1
       })
     ),
+    ...item.previewPage ? [action({ action: "previews", id }, OPEN_PREVIEWS_LABEL, "local")] : [],
     ...stepActions,
     action({ action: "type", id, text: "" }, "Reply", "mark"),
     ...explainActions,

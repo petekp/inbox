@@ -87,6 +87,7 @@ export type ActionIcon = 'done' | 'retry' | 'open' | 'copy' | 'run'
 
 export const ROW_COPY = {
   retry: 'Try again',
+  goToSession: 'Go to session',
   send: 'Send',
   cancel: 'Cancel',
   discard: 'Discard',

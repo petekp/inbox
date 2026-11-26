@@ -11,7 +11,7 @@ import { version } from '../package.json'
 import type { AssistantMessage, Context, Model } from '@oh-my-pi/pi-ai'
 import type { ExtensionAPI, ExtensionContext } from '@oh-my-pi/pi-coding-agent'
 
-import { clipboardCommands, noClipboardCommand } from '../../core/runtime/clipboard-commands'
+import { copyToClipboard } from './clipboard'
 import { TIMED_OUT_CODE, UNSTARTABLE_CODE } from '../../core/domain/gh'
 import { herdrReporter, herdrTarget } from '../../core/remote/herdr'
 import { delegateReader } from '../../core/remote/hc-terminals'
@@ -20,6 +20,8 @@ import { herdrPanelOpener } from '../../core/remote/herdr-open'
 import type { Run } from '../../core/domain/gh'
 import { COMPARE_PAGE_FILE } from '../../core/domain/press-messages'
 import { recorded } from '../../core/runtime/session-presses'
+import type { PreviewPages } from '../../core/runtime/preview-pages'
+import { ompPreviewPages } from './preview-pages'
 import { addsTabPr, prFetchTracker } from '../../core/runtime/host-prs'
 import type { SessionHost } from '../../core/runtime/session-host'
 import { agentTools } from '../../core/runtime/tools'
@@ -76,6 +78,8 @@ export type HostDeps = {
   isNextBuild: boolean
   /** The page template for a comparison, beside the extension's bundle. */
   comparePage: string
+  /** Each session's previews pages, which log a failure with `log`. Without it, no page is written. */
+  previewPages?: (log: (text: string) => void) => PreviewPages
   complete: Complete
   /** Copies text to the clipboard. Returns why it could not, or null. */
   copy: (text: string) => Promise<string | null>
@@ -109,20 +113,6 @@ async function isUsageLimitOutcome(status: number | undefined, message: string):
   return ai.isUsageLimitOutcome(status, message)
 }
 
-async function copyToClipboard(text: string): Promise<string | null> {
-  const commands = clipboardCommands(process.platform)
-  for (const argv of commands) {
-    try {
-      const child = Bun.spawn(argv, { stdin: Buffer.from(text), stdout: 'ignore', stderr: 'ignore' })
-      if ((await child.exited) === 0) return null
-    } catch {
-      continue
-    }
-  }
-
-  return noClipboardCommand(commands)
-}
-
 const defaultDeps: HostDeps = {
   stateDir: pi => join(pi.pi.getAgentDir(), 'inbox'),
   now: Date.now,
@@ -131,6 +121,8 @@ const defaultDeps: HostDeps = {
   home: homedir(),
   isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
   comparePage: join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
+  previewPages: log =>
+    ompPreviewPages(process.env, join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE), log),
   complete: defaultComplete,
   copy: copyToClipboard,
   background: work => void work.catch(() => undefined),
@@ -288,7 +280,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       ),
   }
   const sessions = sessionCalls(context)
-  const { change, fetchPrsNow } = sessions
+  const { changeByTool, fetchPrsNow } = sessions
   const turns = turnHandlers(context, sessions)
   const { start } = turns
   const activity = activityHandlers(context, sessions)
@@ -346,7 +338,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
         const input = args as Record<string, unknown>
         const earlier = name === 'record' ? await recordMatchesNow(input, deps.now()) : []
         let addsPr = false
-        await change(sessionIdOf(ctx), s => {
+        await changeByTool(sessionIdOf(ctx), s => {
           const r = recorded(OMP, s, name, input, deps.now(), TOOL_FIELDS, delegate, earlier)
           answer = r
           addsPr = addsTabPr(s, r.state)
