@@ -25,7 +25,10 @@ export const advanceMotion: typeof AdvanceMotion = ([
   before,
   now,
   reduced,
+  feedbacks = [],
 ]) => {
+  const feedbackFor = (id: string, version: string) =>
+    feedbacks.find(entry => entry.row === id && entry.version === version)
   const sameSession = before.session === inbox.key
   const draw = (groups: typeof inbox.askGroups, previous: Frame['asks'], selected: string): Frame['asks'] => {
     const oldGroups = sameSession ? previous : []
@@ -59,6 +62,7 @@ export const advanceMotion: typeof AdvanceMotion = ([
         const track = stepRow(trackOf(prior), target, now, recorded.added.rows.includes(row.id), reduced)
         if (!track) continue
         const keepsPanel = prior && track.hasOpenForm && ['closing', 'settling', 'leaving'].includes(track.state)
+        const note = feedbackFor(row.id, row.version)
         rows.push({
           guarded: !reduced && isMoving(track.state) && isGuarded(track.since, now),
           id: row.id,
@@ -69,6 +73,8 @@ export const advanceMotion: typeof AdvanceMotion = ([
           hasPanel: track.hasOpenForm,
           target,
           arriving: track.state === 'entering',
+          localText: note?.text ?? '',
+          localFailed: note?.failed ?? false,
         })
       }
       const retained = new Set(rows.map(row => row.id))
@@ -97,6 +103,7 @@ export const advanceMotion: typeof AdvanceMotion = ([
     const track = stepRow(trackOf(prior), target, now, sameSession && !oldPrIds.has(row.id), reduced)
     if (!track) continue
     const keepsPanel = prior && track.hasOpenForm && ['closing', 'settling', 'leaving'].includes(track.state)
+    const note = feedbackFor(row.id, row.version)
     prs.push({
       id: row.id,
       row,
@@ -107,6 +114,8 @@ export const advanceMotion: typeof AdvanceMotion = ([
       target,
       arriving: track.state === 'entering',
       guarded: !reduced && isMoving(track.state) && isGuarded(track.since, now),
+      localText: note?.text ?? '',
+      localFailed: note?.failed ?? false,
     })
   }
   const deadlines = [...asks, ...finds].flatMap(group =>

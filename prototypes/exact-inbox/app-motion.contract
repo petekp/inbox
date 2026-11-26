@@ -4,17 +4,19 @@ members App
   state visualFrame: VisualFrame = VisualFrame(session="", signature="", asks=[], finds=[], prs=[], deadline=0)
   derive openAsk = expandedRow(inbox.asks, activePlace.asksExpanded, effectiveCollapsed)
   derive openFind = expandedRow(inbox.findings, activePlace.findsExpanded, effectiveCollapsed)
-  derive motionKey = `${selectedSession}:${inbox.rowVersion}:${inbox.prVersion}:${openAsk}:${openFind}:${selectedPr}:${viewport.prefersReducedMotion}:${isSendingRow}:${submittedKey}`
+  derive sessionFeedbacks = localFeedbacks.filter(f => f.session == selectedSession)
+  derive feedbackKey = sessionFeedbacks.map(f => `${f.sequence}:${f.row}:${f.version}:${f.pending}:${f.failed}:${f.text}`).join("|")
+  derive motionKey = `${selectedSession}:${inbox.rowVersion}:${inbox.prVersion}:${openAsk}:${openFind}:${selectedPr}:${viewport.prefersReducedMotion}:${isSendingRow}:${submittedKey}:${feedbackKey}`
   mutation nextFrame as shape VisualFrame queue then applyVisualFrame
   task updateMotion when matchingInbox and visualFrame.signature != motionKey key=motionKey
     after(1, updateMotion)
   task settleMotion when matchingInbox and visualFrame.session == selectedSession and visualFrame.deadline > 0 key=`${motionKey}:${visualFrame.deadline}`
     every(frame, settleVisualFrame)
   action settleVisualFrame
-    if performanceNow() >= visualFrame.deadline and not pending(nextFrame)
+    if time.epochAtZero + performanceNow() >= visualFrame.deadline and not pending(nextFrame)
       updateMotion()
   action updateMotion
-    send nextFrame = advanceMotion(motionKey, inbox, openAsk, openFind, selectedPr, isSendingRow ? submittedRow : "", submittedKey, visualFrame, performanceNow(), viewport.prefersReducedMotion)
+    send nextFrame = advanceMotion(motionKey, inbox, openAsk, openFind, selectedPr, isSendingRow ? submittedRow : "", submittedKey, visualFrame, time.epochAtZero + performanceNow(), viewport.prefersReducedMotion, sessionFeedbacks)
   action applyVisualFrame
     match nextFrame
       case some(value)

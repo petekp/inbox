@@ -1,5 +1,5 @@
 use rowLayout, rowEntry from "./motion.contract"
-use Inbox, LocalFeedback, localNote, isPrRow, VisualPr from "./model.contract"
+use Inbox, isPrRow, VisualPr from "./model.contract"
 use InlineText from "./inline-text.contract"
 
 component PrPane
@@ -11,7 +11,6 @@ component PrPane
     guarded: bool
     compact: bool
     prefix: string
-    localFeedbacks: LocalFeedback[]
     localActive: bool
     onFold: action
     onAction: action
@@ -49,8 +48,8 @@ component PrPane
                 for control in v.panel.controls key=control.key
                   button press=onAction(control) disabled=(control.disabled or busy or (control.scope == "row" and (guarded or v.guarded or v.target != "open")) or (control.command == "local" and localActive) or (sending and submittedKey == control.key)) buttonStyle=(control.primary ? "filled" : "bordered") testId=`pr-action-${control.key}` min-height=(compact ? 26 : 44)
                     text control.label
-          if localNote(localFeedbacks, v.row.id, v.row.version).text != ""
-            text localNote(localFeedbacks, v.row.id, v.row.version).text color=(localNote(localFeedbacks, v.row.id, v.row.version).failed ? "-exact-system-red" : "-exact-secondary-label")
+          if v.localText != ""
+            text v.localText color=(v.localFailed ? "-exact-system-red" : "-exact-secondary-label")
           else if sending and v.row.controls.map(c => c.key).includes(submittedKey)
             text "Sending…" color="-exact-secondary-label"
           else if v.row.feedback != ""

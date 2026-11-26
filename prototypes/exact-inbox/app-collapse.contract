@@ -25,13 +25,14 @@ members App
   action foldAll(mode: string)
     foldError = ""
     foldErrorSession = selectedSession
-    interaction = interaction + 1
+    let nextInteraction = interaction + 1
+    interaction = nextInteraction
     if matchingInbox and not pending(changedFolds)
       match first(inbox.foldPlans.filter(plan => plan.tab == nav.tab))
         case some(plan)
           send changedFolds = changeFolds(foldSignature, selectedSession, plan, Place(activePlace, collapsed=effectiveCollapsed), mode)
         case none
-          interaction = interaction
+          foldError = ""
   action applyFolds
     match changedFolds
       case some(change)

@@ -1,6 +1,7 @@
 import { chmod, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fixtureSession } from './fixture-state'
+import { previewPageText } from '../../../core/domain/option-previews'
 import { publishSession, pressDrainer, startHerdrFile } from '../../../core/remote/herdr-app'
 import { REMOTE_ACTIONS } from '../../../core/remote/remote-commands'
 import { followCommandRows, movedLegacyCommands } from '../../../core/runtime/command-store'
@@ -70,6 +71,13 @@ artifactTask.helps = [
   { kind: 'open', path: join(root, 'sample-note.txt') },
   { kind: 'open', path: join(root, 'sample-comparison.html') },
 ]
+const previewQuestion = state.ledger.items.find(item => item.previewPage)
+if (previewQuestion) {
+  const compareTemplate = await readFile(join(repo, 'hooks/compare-page.html'), 'utf8')
+  const previewPath = join(root, 'sample-previews.html')
+  await writeFile(previewPath, previewPageText(compareTemplate, previewQuestion))
+  previewQuestion.previewPage = previewPath
+}
 let writes = Promise.resolve()
 const commands = memoryCommandStore()
 const viewers = memoryViewerStores()

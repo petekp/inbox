@@ -38,7 +38,8 @@ component StatusPane
             else if s.mark != ""
               text s.mark color=s.color
             column flex=1 min-width=0 gap=4
-              text s.title font-weight=(s.bold ? 600 : 400) color=(s.bold ? "-exact-label" : s.color)
+              if s.title != ""
+                text s.title font-weight=(s.bold ? 600 : 400) color=(s.bold ? "-exact-label" : s.color)
               if s.waitsOn != ""
                 text s.waitsOn color="-exact-system-orange"
               if s.detail != ""

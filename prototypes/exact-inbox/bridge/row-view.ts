@@ -31,6 +31,7 @@ import type { RowView } from '../../../core/view/rows'
 import type { SessionView } from '../../../core/view/session-view'
 import type { Effect } from '../../../core/view/press-reducer'
 import { stepEffects } from '../../../core/domain/help-steps'
+import { previewEffects } from '../../../core/domain/option-previews'
 import { pendingResult } from '../../../core/view/pressed'
 import { feedbackText } from '../../../core/view/feedback'
 import type { RowPress } from '../../../core/domain/presses'
@@ -137,10 +138,13 @@ function actionPlan(
       }
     const a = p.slot === 'retry' ? { ...p, isOut: false, isPrimary: false } : p.action
     const isLocal = a.kind === 'local'
-    const effects =
-      isLocal && a.press.action === 'step' && row.item && row.steps[a.press.step]
+    const effects = !isLocal
+      ? []
+      : a.press.action === 'step' && row.item && row.steps[a.press.step]
         ? stepEffects(row.item, row.steps[a.press.step]!)
-        : []
+        : a.press.action === 'previews' && row.item
+          ? previewEffects(row.item)
+          : []
     const localEffects = effects.filter((effect): effect is Exclude<Effect, { kind: 'send' }> => effect.kind !== 'send')
     const canRunLocally =
       isLocal &&

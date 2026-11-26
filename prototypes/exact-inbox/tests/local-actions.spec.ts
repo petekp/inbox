@@ -177,11 +177,11 @@ test('row selection preserves an open reply and follows new work after explicit 
 test('visual rows retain outgoing panels and closed history appears after departure', () => {
   const row = view.askGroups[0]!.rows.find(row => row.state === 'open')!
   const blank = { session: '', signature: '', asks: [], finds: [], prs: [], deadline: 0 }
-  const opened = advanceMotion(['open', view, row.id, '', '', '', '', blank, 0, false])
-  const closing = advanceMotion(['close', view, '', '', '', '', '', opened, 10, false])
+  const opened = advanceMotion(['open', view, row.id, '', '', '', '', blank, 0, false, []])
+  const closing = advanceMotion(['close', view, '', '', '', '', '', opened, 10, false, []])
   expect(closing.asks[0]!.rows.find(r => r.id === row.id)!.phase).toBe('closing')
   expect(closing.asks[0]!.rows.find(r => r.id === row.id)!.panel.title).toBe(row.title)
-  const reversed = advanceMotion(['reverse', view, row.id, '', '', '', '', closing, 30, false])
+  const reversed = advanceMotion(['reverse', view, row.id, '', '', '', '', closing, 30, false, []])
   expect(reversed.asks[0]!.rows.find(r => r.id === row.id)!.phase).toBe('opening')
   const closed = {
     id: row.id,
@@ -204,25 +204,25 @@ test('visual rows retain outgoing panels and closed history appears after depart
       closedAll: g.rows.some(r => r.id === row.id) ? [...g.closedAll, closed] : g.closedAll,
     })),
   }
-  const leaving = advanceMotion(['gone', removed, '', '', '', '', '', reversed, 40, false])
+  const leaving = advanceMotion(['gone', removed, '', '', '', '', '', reversed, 40, false, []])
   expect(leaving.asks[0]!.rows.some(r => r.id === row.id && r.phase === 'leaving')).toBe(true)
   expect(leaving.asks[0]!.closedAll.some(r => r.id === row.id)).toBe(false)
-  const finished = advanceMotion(['gone', removed, '', '', '', '', '', leaving, 10000, false])
+  const finished = advanceMotion(['gone', removed, '', '', '', '', '', leaving, 10000, false, []])
   expect(finished.asks[0]!.rows.some(r => r.id === row.id)).toBe(false)
   expect(finished.asks[0]!.closedAll.some(r => r.id === row.id)).toBe(true)
-  const reduced = advanceMotion(['reduced', removed, '', '', '', '', '', reversed, 40, true])
+  const reduced = advanceMotion(['reduced', removed, '', '', '', '', '', reversed, 40, true, []])
   expect(reduced.asks[0]!.rows.some(r => r.id === row.id)).toBe(false)
   expect(reduced.deadline).toBe(0)
   const pr = view.prLines.find(line => line.kind === 'thread')!
-  const prOpen = advanceMotion(['pr-open', view, '', '', pr.id, '', '', blank, 0, false])
-  const prClosed = advanceMotion(['pr-close', view, '', '', '', '', '', prOpen, 10, false])
+  const prOpen = advanceMotion(['pr-open', view, '', '', pr.id, '', '', blank, 0, false, []])
+  const prClosed = advanceMotion(['pr-close', view, '', '', '', '', '', prOpen, 10, false, []])
   expect(prClosed.prs.find(line => line.id === pr.id)).toMatchObject({ phase: 'closing', panel: pr })
-  const prReversed = advanceMotion(['pr-reverse', view, '', '', pr.id, '', '', prClosed, 30, false])
+  const prReversed = advanceMotion(['pr-reverse', view, '', '', pr.id, '', '', prClosed, 30, false, []])
   expect(prReversed.prs.find(line => line.id === pr.id)?.phase).toBe('opening')
   const withoutPr = { ...view, prLines: view.prLines.filter(line => line.id !== pr.id) }
-  const prLeaving = advanceMotion(['pr-gone', withoutPr, '', '', '', '', '', prReversed, 40, false])
+  const prLeaving = advanceMotion(['pr-gone', withoutPr, '', '', '', '', '', prReversed, 40, false, []])
   expect(prLeaving.prs.find(line => line.id === pr.id)?.phase).toBe('leaving')
-  const prGone = advanceMotion(['pr-gone', withoutPr, '', '', '', '', '', prLeaving, 10000, false])
+  const prGone = advanceMotion(['pr-gone', withoutPr, '', '', '', '', '', prLeaving, 10000, false, []])
   expect(prGone.prs.some(line => line.id === pr.id)).toBe(false)
 })
 
@@ -326,4 +326,20 @@ test('runtime-origin discovery returns the local origin on loopback and refuses 
     headers: { origin: 'https://other.example' },
   })
   expect(forbidden.status).toBe(403)
+})
+
+test('Open previews prepares and serves the question preview page with sandbox CSP', async () => {
+  const response = await post('/api/local', request('Open previews'))
+  expect(response.status).toBe(200)
+  const work = (await response.json()) as Result<'prepareLocal'>
+  expect(work.ok).toBe(true)
+  expect(work.effects).toHaveLength(1)
+  expect(work.effects[0]!.kind).toBe('open')
+  const served = await fetch(origin + work.effects[0]!.value)
+  expect(served.status).toBe(200)
+  expect(served.headers.get('content-type')).toBe('text/html; charset=utf-8')
+  expect(served.headers.get('content-security-policy')).toContain("sandbox allow-scripts; default-src 'none'")
+  const html = await served.text()
+  expect(html).toContain('Pinch')
+  expect(html).toContain('Flick')
 })

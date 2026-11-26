@@ -1,7 +1,7 @@
 use RowActions from "./row-actions.contract"
 use rowLayout, rowFade, rowEntry, rowSlide, rowExit from "./motion.contract"
 use ReplyPane from "./reply-pane.contract"
-use localNote, LocalFeedback, VisualGroup from "./model.contract"
+use VisualGroup from "./model.contract"
 use InlineText from "./inline-text.contract"
 
 component InboxRows
@@ -22,7 +22,6 @@ component InboxRows
     groups: VisualGroup[]
     reduced: bool
     compact: bool
-    localFeedbacks: LocalFeedback[]
     localActive: bool
     session: string
     onLocal: action
@@ -105,8 +104,8 @@ component InboxRows
               if r.row.state == "settled"
                 column padding-top=8
                   RowActions(item=r.row, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
-              if r.row.feedback != "" or (r.row.id == submittedRow and isSendingRow) or localNote(localFeedbacks, r.row.id, r.row.version).text != ""
-                text (localNote(localFeedbacks, r.row.id, r.row.version).text != "" ? localNote(localFeedbacks, r.row.id, r.row.version).text : r.row.id == submittedRow and isSendingRow ? "Sending…" : r.row.feedback) font-size="0.92em" color=(localNote(localFeedbacks, r.row.id, r.row.version).failed ? "-exact-system-red" : "-exact-secondary-label") testId=`feedback-${r.row.id}`
+              if r.row.feedback != "" or (r.row.id == submittedRow and isSendingRow) or r.localText != ""
+                text (r.localText != "" ? r.localText : r.row.id == submittedRow and isSendingRow ? "Sending…" : r.row.feedback) font-size="0.92em" color=(r.localFailed ? "-exact-system-red" : "-exact-secondary-label") testId=`feedback-${r.row.id}`
           if g.empty != ""
             text g.empty -exact-layout-transition=rowLayout(reduced) padding-left=24 color="-exact-secondary-label"
           if g.closedLabel != ""

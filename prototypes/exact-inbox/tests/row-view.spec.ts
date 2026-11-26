@@ -311,3 +311,20 @@ test('stop banners offer Resume only with the advertised capability and expose p
   expect(signIn[0]?.key).toBe('')
   expect(signIn[0]?.body).toContain('/login')
 })
+
+test('tasks with result options project result buttons in shared order without Done', async () => {
+  const now = Date.now()
+  const state = fixtureSession(now)
+  const task = state.ledger.items.find(item => item.kind === 'task')!
+  task.options = ['Hola', 'Hello']
+  const view = sessionView(state, now, 1000)
+  const allowed = new Map<string, { press: RowPress; disabled: boolean }>()
+  const groups = projectRowGroups(binding, view, new Map([[task.id, await remoteRowDigest(state, task.id)]]), allowed)
+  const row = groups.askGroups.flatMap(group => group.rows).find(r => r.id === task.id)!
+  expect(row.options).toEqual([])
+  const labels = row.shownActions.map(action => action.label)
+  expect(labels.indexOf('Hola')).toBeGreaterThanOrEqual(0)
+  expect(labels.indexOf('Hello')).toBe(labels.indexOf('Hola') + 1)
+  expect(labels.indexOf('Reply')).toBe(labels.indexOf('Hello') + 1)
+  expect(labels).not.toContain('Done')
+})

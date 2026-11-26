@@ -306,6 +306,9 @@ shape Recovery
   draft: string
   text: string
 
+shape Clock
+  epochAtZero: number
+
 shape ViewerAck
   enabled: bool
   generation: number
@@ -352,8 +355,6 @@ shape LocalFeedback
   pending: bool
   failed: bool
 
-fn localNote(notes: LocalFeedback[], row: string, version: string): LocalFeedback = match first(notes.filter(n => n.row == row and n.version == version)) { case some(n) => n, case none => LocalFeedback(sequence=0, session="", row=row, version=version, text="", pending=false, failed=false) }
-
 shape RowSelection
   prs: string
   prIds: string[]
@@ -379,6 +380,8 @@ shape VisualRow
   hasPanel: bool
   target: string
   arriving: bool
+  localText: string
+  localFailed: bool
 
 shape VisualGroup
   id: string
@@ -404,6 +407,8 @@ shape VisualPr
   hasPanel: bool
   target: string
   arriving: bool
+  localText: string
+  localFailed: bool
 
 shape VisualFrame
   session: string
