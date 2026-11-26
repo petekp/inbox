@@ -117,7 +117,7 @@ var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
+  done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
@@ -152,7 +152,7 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
   { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,

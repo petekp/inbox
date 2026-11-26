@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T06:24:10.827Z. 384132 characters follow.
+// Built at 2026-11-26T07:32:47.349Z. 385161 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -825,7 +825,7 @@ var SUBJECT_MARKS = {
   working: { mark: "●", tone: "working" },
   queued: { mark: "○", tone: null },
   "waits-on-other": { mark: "◌", tone: null },
-  done: { mark: "✓", tone: "done" },
+  done: { mark: "✓", tone: null },
   dropped: { mark: "✗", tone: null }
 };
 var HELD_MARK = { mark: "◆", tone: "needsYou" };
@@ -861,7 +861,7 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
   { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
@@ -1021,7 +1021,7 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,…]+$/, "");
-var isSettled = (row) => row.tone === "done";
+var isSettled = (row) => row.mark === SUBJECT_MARKS.done.mark;
 var textLevelOf = (row) => isSettled(row) ? "faint" : "muted";
 var foldLevelOf = (row) => isSettled(row) ? "faint" : "muted";
 var WAS_LEVEL = "faint";
@@ -1076,6 +1076,7 @@ function askWords(items, ask) {
   const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
   return words || null;
 }
+var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -1090,7 +1091,9 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ask = c.oldestAskOf(x);
+    const words = askWords(c.items, ask);
+    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
@@ -5800,6 +5803,8 @@ var ROW_PAD_PT = ITEM_GAP_PT / 2;
 var BANNER_PAD_Y_PT = CONTROL_GAP_PT;
 
 // ../core/view/row-parts.ts
+var SUPPORTING_PARTS = ["holdsUp", "context", "note", "reason"];
+var isSupportingPart = (part) => SUPPORTING_PARTS.includes(part);
 var GROUP_STEPS = { inside: INSIDE_GAP_PT, list: LIST_GAP_PT };
 var BETWEEN_STEPS = { child: CHILD_GAP_PT, control: CONTROL_GAP_PT, item: ITEM_GAP_PT };
 var STEP_PT = { ...GROUP_STEPS, ...BETWEEN_STEPS };
@@ -6565,6 +6570,7 @@ var LIGHT_TONES = {
   key: "#243bf5"
 };
 var THEME_BACKGROUND = { dark: "#1e1e1e", light: "#ffffff" };
+var THEME_TEXT = { dark: "#ececec", light: "#1b1b1b" };
 var MUTED_TEXT = { dark: "#bdbdbd", light: "#595959" };
 function contrastRatio(a, b) {
   const luminance = (hex) => {
@@ -6596,6 +6602,12 @@ function fadedOver(hex, under, share) {
   const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
   return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
+var SUPPORTING_TEXT_SHARE = 0.45;
+var supportingOver = (muted, text) => fadedOver(text, muted, SUPPORTING_TEXT_SHARE);
+var SUPPORTING_TEXT = {
+  dark: supportingOver(MUTED_TEXT.dark, THEME_TEXT.dark),
+  light: supportingOver(MUTED_TEXT.light, THEME_TEXT.light)
+};
 var FAINT_TEXT = {
   dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),
   light: faintOver(MUTED_TEXT.light, THEME_BACKGROUND.light)
@@ -6624,6 +6636,11 @@ function faintOf(t, under = t.background) {
   const page = flatten(under, t.background);
   return faintOver(flatten(t.muted, page), page);
 }
+function supportingOf(t, under = t.background) {
+  const page = flatten(under, t.background);
+  return supportingOver(flatten(t.muted, page), flatten(t.foreground, page));
+}
+var bodyTextColor = (t, l, under) => l.part && isSupportingPart(l.part) ? supportingOf(t, under) : colorOf(t, l.tone);
 var tint = (c, share) => `${c.slice(0, 7)}${Math.round(share * 255).toString(16).padStart(2, "0")}`;
 var TIME_LEFT_DARK_SHARE = 0.12;
 var TIME_LEFT_LIGHT_SHARE = 0.2;
@@ -7198,7 +7215,7 @@ function statusEl(s, p, isInert) {
       ...s.fold.isFolded ? { count: { id: `fold count ${s.id}`, value: s.fold.count } } : {}
     })
   ] : [];
-  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn ?? "", colorOf(t, "needsYou")))).children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn?.text ?? "", colorOf(t, s.waitsOn?.tone ?? "needsYou")))).children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
 }
 
 // src/paint-pr-status.ts
@@ -7390,7 +7407,9 @@ function feedbackEl(f, t) {
   return h_flex9().flex_wrap().pt(CONTROL_GAP).children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), faintOf(t))]);
 }
 var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = false) => {
-  const color = lineColor(t, isSelected ? t.selected : t.background);
+  const under = isSelected ? t.selected : t.background;
+  const color = lineColor(t, under);
+  const textColor = bodyTextColor(t, l, under);
   if (answers.length > 0 && p) {
     const trunk = l.tree === "tee" ? [trunkEl(0, null, t, isSelected)] : l.tree === "last" ? [trunkEl(0, above, t, isSelected)] : [];
     return h_flex9().relative().min_w(0).pt(above).child(answersEl(answers, p, isInert, l.tree === "last", t, isSelected)).children(trunk);
@@ -7398,7 +7417,7 @@ var bodyLineEl = (l, above, t, isSelected, answers = [], p = null, isInert = fal
   const armAt = above + LINE_HEIGHT / 2;
   const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color);
   const strokes = l.tree === "trunk" ? [trunkEl(0, null, t, isSelected)] : l.tree === "tee" ? [trunkEl(0, null, t, isSelected), arm] : l.tree === "last" ? [trunkEl(0, armAt + 1, t, isSelected), arm] : [];
-  const line = l.lead ? h_flex9().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))]) : partedTextEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
+  const line = l.lead ? h_flex9().flex_wrap().pl(MARK_W).pt(above).children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, textColor)]) : partedTextEl(l.text, textColor, l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above);
   return line.relative().children(strokes);
 };
 function rowEl(r, p) {
@@ -7442,10 +7461,10 @@ function bodyEls(from, isSelected, p, isInert, titleEnd) {
     return l.optionId || l.isOptionNote ? [] : [l];
   }) : from.body;
   let end = titleEnd;
-  const els = shown.map(({ part, ...l }) => {
-    const above = partPt(end, part);
-    end = part;
-    const buttons = part === "answers" ? answers : buttonOf(l.optionId);
+  const els = shown.map((l) => {
+    const above = partPt(end, l.part);
+    end = l.part;
+    const buttons = l.part === "answers" ? answers : buttonOf(l.optionId);
     return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert);
   });
   return { els, end };
@@ -8173,7 +8192,7 @@ var LATER_PAD_PT = LIST_GAP_PT / 2;
 
 // src/draw-status.ts
 var MERGED_CELLS = 150;
-var toneOf = (t) => t;
+var toneOf = (t) => t ?? "muted";
 var markOf2 = (mark, tone, isRunning) => ({
   text: mark,
   tone: toneOf(tone),

@@ -1172,7 +1172,7 @@ var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
+  done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
@@ -1208,7 +1208,7 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
   { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
@@ -1337,6 +1337,7 @@ function askWords(items, ask) {
   const words3 = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
   return words3 || null;
 }
+var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -1350,7 +1351,9 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning2 || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ask = c.oldestAskOf(x);
+    const words3 = askWords(c.items, ask);
+    const waitsOn = words3 === null ? null : { text: words3, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",

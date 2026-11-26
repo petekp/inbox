@@ -1491,6 +1491,10 @@ var CLAUDE_CODE = {
       kind: "different",
       reason: "Desktop draws faint text in one translucent color for both of the app's themes, at 3:1 on each. The ANSI themes, and a theme the mod does not know, draw it in the muted theme key."
     },
+    "supporting-text": {
+      kind: "different",
+      reason: "Desktop and the ANSI themes draw supporting text in the muted theme key. A theme key cannot be mixed, and no one color sits between the desktop app's muted and text colors in both its themes."
+    },
     "status-parent-fold": { kind: "full" },
     "seen-on-screen": { kind: "full" },
     "status-idle-age": { kind: "full" },
@@ -1662,6 +1666,7 @@ var CODEX = {
     },
     "status-named-fold": { kind: "full" },
     "status-faint-text": { kind: "full" },
+    "supporting-text": { kind: "full" },
     "status-parent-fold": {
       kind: "different",
       reason: "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection."
@@ -1799,6 +1804,10 @@ var OMP = {
     "status-faint-text": {
       kind: "different",
       reason: "omp draws muted text with the terminal's dim attribute, which terminals draw at about half strength, near the faint level's 3:1. So faint text there is dim too."
+    },
+    "supporting-text": {
+      kind: "different",
+      reason: "omp draws muted text with the terminal's dim attribute, and a terminal has no attribute between dim and plain. So supporting text there is dim, as muted text is."
     },
     "status-parent-fold": { kind: "full" },
     "seen-on-screen": { kind: "full" },
@@ -2594,7 +2603,7 @@ var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
+  done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
@@ -2630,7 +2639,7 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
   { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
@@ -2800,7 +2809,7 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,\u2026]+$/, "");
-var isSettled = (row) => row.tone === "done";
+var isSettled = (row) => row.mark === SUBJECT_MARKS.done.mark;
 var nameLevelOf = (row, otherwise) => isSettled(row) ? "faint" : otherwise;
 var textBeyondName = (name, text) => text && comparableName(text) !== comparableName(name) ? text : null;
 function isNamedLikeSubject(x, under) {
@@ -2852,6 +2861,7 @@ function askWords(items, ask) {
   const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
   return words || null;
 }
+var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -2866,7 +2876,9 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ask = c.oldestAskOf(x);
+    const words = askWords(c.items, ask);
+    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
@@ -10963,7 +10975,7 @@ function pageLine(d, indent, mark, name, namePaint, {
   const full = pageRoom(indent, width);
   const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full;
   const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
+  const waits = waitsOn ? pageText(waitsOn.text, room, STATUS_TEXT_LINES, (t) => s.tone(waitsOn.tone, t)) : [];
   if (chevron)
     names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ""} ${chevron.paint(chevron.text)}`;
   const seconds = [...waits, ...text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []];
@@ -14891,6 +14903,12 @@ function fadedOver(hex, under, share) {
   const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
   return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
+var SUPPORTING_TEXT_SHARE = 0.45;
+var supportingOver = (muted, text) => fadedOver(text, muted, SUPPORTING_TEXT_SHARE);
+var SUPPORTING_TEXT = {
+  dark: supportingOver(MUTED_TEXT.dark, THEME_TEXT.dark),
+  light: supportingOver(MUTED_TEXT.light, THEME_TEXT.light)
+};
 var FAINT_TEXT = {
   dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),
   light: faintOver(MUTED_TEXT.light, THEME_BACKGROUND.light)
