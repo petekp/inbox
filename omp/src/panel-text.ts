@@ -25,11 +25,21 @@ export function fit(s: string, width: number): string {
 /** The fewest cells a title keeps when it is cut so the result mark after it stays in view. */
 const MARKED_TITLE_CELLS = 12
 
+/** The fewest cells a result label keeps when its line is short, so the label is cut at a word, not dropped. */
+const MARKED_LABEL_CELLS = 12
+
 /** A title cut to `room` cells, but never below `MARKED_TITLE_CELLS`, so a line's result mark is not cut off. */
 export function cutTitle(title: string, room: number): string {
   const cells = Math.max(MARKED_TITLE_CELLS, room)
 
   return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}…`
+}
+
+/** A settled row's result label cut at a word (`cutLine`) to the cells left beside the title's minimum, as every look cuts it. */
+export function cutSettledLabel(label: string, room: number): string {
+  const cells = Math.max(MARKED_LABEL_CELLS, room - MARKED_TITLE_CELLS)
+
+  return cutLine(label, text => cellWidth(text) <= cells)
 }
 
 /** A settled row's title cut at a word (`cutLine`) to `room` cells, but never below `MARKED_TITLE_CELLS`, as every look cuts it. */

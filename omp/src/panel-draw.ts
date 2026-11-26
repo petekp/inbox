@@ -14,7 +14,17 @@ import type { ResultMark } from '../../core/view/rows'
 import { askTreeLines } from './panel-ask-tree'
 import { AGENT, LEAD_CELLS, focusOf, isShut } from './panel-lines'
 import type { ButtonFace, Lead, Line } from './panel-lines'
-import { cutSettledTitle, cutTitle, fit, indented, spread, titleLines, visibleLength, wrapText } from './panel-text'
+import {
+  cutSettledLabel,
+  cutSettledTitle,
+  cutTitle,
+  fit,
+  indented,
+  spread,
+  titleLines,
+  visibleLength,
+  wrapText,
+} from './panel-text'
 import type { PanelScreen, PanelUi, Style, Tone } from './panel'
 
 /** The tint a row's title, lead and mark take, at its strength now. */
@@ -210,11 +220,6 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const tintShare = steppedTitleTint(clock, now)
   const tint: Tint | undefined = tintTone && tintShare > 0 ? { tone: tintTone, share: tintShare } : undefined
   const mark = markText(line.mark, now, s, line.settled ? tint : undefined)
-  const after = line.settled
-    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ''}`
-    : line.feedback && !statusUnder
-      ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
-      : ''
   // omp marks a selected item with ❯, its `nav.cursor` symbol, and draws a fold's chevron as › and v.
   const cursor = isSelected ? s.tone('accent', '❯') : ' '
   // A row on its group's tree puts its arm under the heading's mark, in the column the cursor takes on other lines, so
@@ -225,6 +230,20 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
     : `${line.tree === 'off' ? ' ' : ''} ${' '.repeat(pad)}${cursor} ${lead}`
   const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width
+  const settledLabel = line.settled
+    ? cutSettledLabel(
+        line.settled.label,
+        besideAge -
+          visibleLength(head) -
+          visibleLength(`  ${mark}`) -
+          (line.settled.undo ? visibleLength(`  ${UNDO_KEY} Undo`) : 0),
+      )
+    : ''
+  const after = line.settled
+    ? `  ${mark}${line.settled.tone === 'done' ? s.tone('done', settledLabel) : s.dim(settledLabel)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ''}`
+    : line.feedback && !statusUnder
+      ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
+      : ''
   const paintTitle = (text: string) => {
     const own = line.isDim
       ? s.dim(text)
