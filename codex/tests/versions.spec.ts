@@ -51,6 +51,9 @@ test('the version check fails when the Claude Code range in plugin.json differs 
   const same = { claude: '1.2.3', codex: '1.2.3', omp: '1.2.3' }
   const differing = checkVersions(t, same, { range: '>=2.1.292', readme: '2.1.300' })
   assert.equal(differing.status, 1)
-  assert.match(differing.stderr, /engines\["claude-code"\] ">=2\.1\.292", and README\.md says Claude Code 2\.1\.300 or later/)
+  assert.match(
+    differing.stderr,
+    /engines\["claude-code"\] ">=2\.1\.292", and README\.md says Claude Code 2\.1\.300 or later/,
+  )
   assert.equal(checkVersions(t, same, { range: '>=2.1.300', readme: '2.1.300' }).status, 0)
 })

@@ -24,7 +24,9 @@ if (differing.length > 0) {
 }
 
 const declared = JSON.parse(readFileSync(join(ROOT, '.claude-plugin/plugin.json'), 'utf8')).engines?.['claude-code']
-const readmeMinimum = /It needs Claude Code (\d+\.\d+\.\d+) or later/.exec(readFileSync(join(ROOT, 'README.md'), 'utf8'))?.[1]
+const readmeMinimum = /It needs Claude Code (\d+\.\d+\.\d+) or later/.exec(
+  readFileSync(join(ROOT, 'README.md'), 'utf8'),
+)?.[1]
 
 if (readmeMinimum === undefined || declared !== `>=${readmeMinimum}`) {
   console.error(
