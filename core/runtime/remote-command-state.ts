@@ -1,4 +1,4 @@
-import { refuseDoneNotification, reopenOnFailure } from '../view/press-reducer'
+import { isDoneNoticeDue, refuseDoneNotification, reopenOnFailure } from '../view/press-reducer'
 import type { Delivery, RemoteCommandRecord, Session } from '../../types'
 
 /**
@@ -58,6 +58,16 @@ export const withRecord = (log: CommandLog, id: string, record: RemoteCommandRec
 })
 
 /**
+ * Whether a row closed with Done waits on the message that tells the agent: one was sent and has not failed, or the
+ * host will send one, which it does only for the current turn's tasks (`isDoneNoticeDue`).
+ */
+function awaitsDoneNotice(c: Session['ledger']['closed'][number], s: Session): boolean {
+  return c.doneNotification ? !c.doneNotification.error : isDoneNoticeDue(c, s.ledger.turn)
+}
+
+const isDoneAwaited = (s: Session, row: string) => s.ledger.closed.some(c => c.id === row && awaitsDoneNotice(c, s))
+
+/**
  * The log brought up to date with what `s` says about its commands: the delivery of each command's row and the Done
  * message of each row a command closed. The session is saved before the log, so the log can be behind it, never ahead.
  */
@@ -75,7 +85,7 @@ export function remoteCommandState(log: CommandLog, s: Session): CommandLog {
       (delivery?.state === 'held' ||
         delivery?.state === 'queued' ||
         delivery?.state === 'unconfirmed' ||
-        (last.action === 'done' && !delivery))
+        (last.action === 'done' && !delivery && isDoneAwaited(s, row)))
     const error = delivery?.state === 'failed' ? delivery.reason.slice(0, 256) : command.error
     const state = delivery?.state === 'failed' ? 'failed' : command.state
     if (
@@ -94,7 +104,7 @@ export function remoteCommandState(log: CommandLog, s: Session): CommandLog {
     if (!id || !command || command.state === 'cancelled' || command.state === 'expired' || command.state === 'refused')
       continue
     const deliveryId = closed.doneNotification?.id ?? command.deliveryId
-    const pendingDelivery = !command.delivered && !closed.doneNotification?.error
+    const pendingDelivery = !command.delivered && awaitsDoneNotice(closed, s)
     if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
       commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } }
   }
@@ -131,10 +141,10 @@ export function pendingCommandRows(s: Session): string[] {
     const isWaiting =
       delivery?.state === 'held' ||
       ((delivery?.state === 'queued' || delivery?.state === 'unconfirmed') && delivery.id === undefined) ||
-      (last.action === 'done' && !delivery)
+      (last.action === 'done' && !delivery && isDoneAwaited(s, row))
     return last.commandId && isWaiting ? [row] : []
   })
-  const closed = s.ledger.closed.flatMap(c => (c.commandId && !c.doneNotification ? [c.id] : []))
+  const closed = s.ledger.closed.flatMap(c => (c.commandId && isDoneNoticeDue(c, s.ledger.turn) ? [c.id] : []))
 
   return [...rows, ...closed]
 }

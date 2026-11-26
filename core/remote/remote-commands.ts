@@ -13,7 +13,7 @@ import type { RowPress } from '../domain/presses'
 import type { PressHost, PressOutcome } from '../runtime/host-press'
 import { startPress } from '../runtime/host-press'
 import { NO_HOLDS } from '../view/timing'
-import { PRESS_LIFETIME_MS } from '../domain/preconditions'
+import { canonical, PRESS_LIFETIME_MS, rowFields, rowVersion } from '../domain/preconditions'
 
 export type RemoteCommand = {
   format: 2
@@ -30,27 +30,6 @@ const MAX_COMMANDS = 128
 const MAX_COMMAND_BYTES = 128_000
 const OUTCOME_RESERVE_BYTES = 4096
 
-export function remoteRowVersion(s: Session, id: string): string {
-  if (id === 'goal') {
-    const overview = s.ledger.overview
-    return JSON.stringify([
-      overview?.goal ?? null,
-      overview?.goalRemoved ?? null,
-      overview?.suggestedGoal ?? null,
-      s.lastActions[id] ?? null,
-    ])
-  }
-  const item = s.ledger.items.find(row => row.id === id)
-  const normalized = item && Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'dialog'))
-  return JSON.stringify([
-    normalized ?? null,
-    s.ledger.findings.find(row => row.id === id) ?? null,
-    s.ledger.closed.find(row => row.id === id) ?? null,
-    s.ledger.closedFindings.find(row => row.id === id) ?? null,
-    s.lastActions[id] ?? null,
-  ])
-}
-
 async function digestText(text: string): Promise<string> {
   const subtle = crypto.subtle
   if (!('digest' in subtle) || typeof subtle.digest !== 'function')
@@ -60,23 +39,14 @@ async function digestText(text: string): Promise<string> {
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** A companion's row version: a SHA-256 of the same `rowFields` a look's `rowVersion` hashes. */
 export async function remoteRowDigest(s: Session, id: string): Promise<string> {
-  const row = JSON.parse(remoteRowVersion(s, id))
-  const canonical = JSON.stringify(row, (_key, value) =>
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map(key => [key, value[key]]),
-        )
-      : value,
-  )
-  return `row-sha256-v1:${await digestText(canonical)}`
+  return `row-sha256-v2:${await digestText(canonical(rowFields(s, id)))}`
 }
 
 async function matchesRow(s: Session, command: RemoteCommand): Promise<boolean> {
   return (
-    command.expected === remoteRowVersion(s, command.press.id) ||
+    command.expected === rowVersion(s, command.press.id) ||
     command.expected === (await remoteRowDigest(s, command.press.id))
   )
 }

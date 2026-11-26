@@ -12,7 +12,7 @@ import { codexHerdrAsk, followCodexPresses, followCodexSaves } from '../src/serv
 import { builtAtLine } from '../../core/remote/herdr-install'
 import { readState, updateState } from '../src/state'
 import { codexCommandStore } from '../src/command-log'
-import { remoteRowVersion } from '../../core/remote/remote-commands'
+import { rowVersion } from '../../core/domain/preconditions'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
 import { NO_HOLDS } from '../../core/view/timing'
 import { herdrTerminal } from '../src/herdr-terminal'
@@ -348,7 +348,7 @@ test('a remote typed reply retains its outcome and does not queue twice after th
     id: `${(1_000_000).toString(36)}-remote-command-fixture`,
     session: 'remote-session',
     issuedAt: 1_000_000,
-    expected: remoteRowVersion(initial, 'i1'),
+    expected: rowVersion(initial, 'i1'),
     press: { action: 'type', id: 'i1', text: 'The preview looks good.' },
   }
   const log = () => codexCommandStore(dir, 'remote-session', () => 1_000_000).read()

@@ -13,7 +13,7 @@ import { TOOL_FIELDS } from '../core/domain/tool-schemas'
 import type { Closed, Session } from '../types'
 import { fakeHost } from './session-fake-host'
 import { memoryViewerStores } from '../core/runtime/remote-viewers'
-import { remoteRowVersion } from '../core/remote/remote-commands'
+import { rowVersion } from '../core/domain/preconditions'
 import type { RemoteCommand } from '../core/remote/remote-commands'
 import { remoteReceipts } from '../core/runtime/remote-command-state'
 import { memoryCommandStore } from './memory-command-store'
@@ -289,7 +289,7 @@ describe('pressDrainer', () => {
       id: '1-remote-command-fixture',
       session: 's1',
       issuedAt: 1,
-      expected: remoteRowVersion(await turn.host.read(), row),
+      expected: rowVersion(await turn.host.read(), row),
       press: { action: 'explain', id: row },
     }
     turn.files[`${dir}/c1.json`] = JSON.stringify(command)
