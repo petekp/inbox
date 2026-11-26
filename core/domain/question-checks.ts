@@ -3,7 +3,7 @@
 import type { Item } from '../../types'
 import { words } from './ask-match'
 import { descriptionsFor } from './dialogs'
-import { isPreviewStep, previewsOf } from './option-previews'
+import { hasPreviews, isPreviewStep, previewsOf } from './option-previews'
 
 const MAX_CONTEXT = 200
 const MAX_OPTION_NOTE = 120
@@ -87,7 +87,7 @@ export function missingText(item: Item | undefined, fields: readonly string[]): 
   if (item?.kind === 'task') return taskStepsText(item, canSend) + taskResultsText(item, canSend)
   if (!item) return ''
 
-  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend)
+  return bodyText(item, canSend) + recText(item, canSend) + approvalText(item, canSend) + previewsText(item, canSend)
 }
 
 function taskStepsText(item: Item, canSend: (field: string) => boolean): string {
@@ -151,6 +151,14 @@ function recText(item: Item, canSend: (field: string) => boolean): string {
   return item.recReason || !canSend('why')
     ? ''
     : ' It has no why: record it again with why, so the user sees your reason.'
+}
+
+function previewsText(item: Item, canSend: (field: string) => boolean): string {
+  const isUnpreviewedDesignChoice = item.isDesignChoice === true && item.options.length >= 2 && !hasPreviews(item)
+
+  return isUnpreviewedDesignChoice && canSend('previews')
+    ? ' It has no previews: when you made an image, page or file that shows each option, record it again with previews.'
+    : ''
 }
 
 function approvalText(item: Item, canSend: (field: string) => boolean): string {
