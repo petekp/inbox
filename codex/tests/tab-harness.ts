@@ -19,8 +19,8 @@ export const item = (id: string, ask: string, at: number): Item => ({
   at,
 })
 
-export type Move = { key: string; delay: number; startsAt: number; scalesEdges: boolean }
-export type Fade = {
+type Move = { key: string; delay: number; startsAt: number; scalesEdges: boolean }
+type Fade = {
   el: HTMLElement
   from: number
   to: number
@@ -189,7 +189,7 @@ export async function inTab(run: (tab: Harness) => Promise<void>, context: TestC
   }
 }
 
-export type Harness = {
+type Harness = {
   window: Window
   state: ReturnType<typeof emptyState>
   moves: Move[]
