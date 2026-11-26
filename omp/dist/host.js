@@ -1514,6 +1514,10 @@ var CLAUDE_CODE = {
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The row says the person stopped the session and offers no Go to session, since the person is already in it."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -1690,6 +1694,10 @@ var CODEX = {
     },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The host holds no message after the person stops a turn, so it never refuses one for that."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -1815,6 +1823,10 @@ var OMP = {
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The host holds no message after the person stops a turn, so it never refuses one for that."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -5054,6 +5066,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnsw
 var isTerminalLike = (look) => look === "terminal" || look === "omp";
 var ROW_COPY = {
   retry: "Try again",
+  goToSession: "Go to session",
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
@@ -6684,6 +6697,8 @@ function doneLabel(last) {
   return DONE_LABELS[last.action]?.(last.text) ?? last.text;
 }
 var STILL_WAITING_AFTER = new Set(["check-fix"]);
+var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
+var isStoppedSession = (f) => f?.is === "notSent" && f.reason === STOPPED_REASON;
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
@@ -8228,7 +8243,7 @@ function keptOpen(rows, added) {
 function rowsIn(entries) {
   return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
-function rowKeyPlan(r, isAllShown) {
+function rowKeyPlan(r, isAllShown, canShowSession = false) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
   const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
@@ -8264,7 +8279,8 @@ function rowKeyPlan(r, isAllShown) {
         hotkey: a.hotkey
       });
   }
-  return { options, keys, more, answerRow: answerRowOf(r, options) };
+  const sessionKey = canShowSession && isStoppedSession(r.feedback) ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+  return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey };
 }
 function answerRowOf(r, options) {
   const described = options.map((o) => r.optionDescriptions.find((d) => d.option === o.action.press.option));

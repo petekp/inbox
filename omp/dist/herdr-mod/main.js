@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T05:23:57.833Z. 382710 characters follow.
+// Built at 2026-11-26T05:45:56.936Z. 383373 characters follow.
 
 // src/main.ts
 import { View, div as div17 } from "gpui-kit";
@@ -2118,6 +2118,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnsw
 var isTerminalLike = (look) => look === "terminal" || look === "omp";
 var ROW_COPY = {
   retry: "Try again",
+  goToSession: "Go to session",
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
@@ -2960,6 +2961,8 @@ function doneLabel(last) {
   return DONE_LABELS[last.action]?.(last.text) ?? last.text;
 }
 var STILL_WAITING_AFTER = new Set(["check-fix"]);
+var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
+var isStoppedSession = (f) => f?.is === "notSent" && f.reason === STOPPED_REASON;
 function isFailure(f) {
   return f?.is === "notSent" || f?.is === "local" && f.result.state === "failed";
 }
@@ -3571,7 +3574,7 @@ function keptOpen(rows, added) {
 function rowsIn(entries) {
   return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
-function rowKeyPlan(r, isAllShown) {
+function rowKeyPlan(r, isAllShown, canShowSession = false) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
   const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
@@ -3607,7 +3610,8 @@ function rowKeyPlan(r, isAllShown) {
         hotkey: a.hotkey
       });
   }
-  return { options, keys, more, answerRow: answerRowOf(r, options) };
+  const sessionKey = canShowSession && isStoppedSession(r.feedback) ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+  return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey };
 }
 function answerRowOf(r, options) {
   const described = options.map((o) => r.optionDescriptions.find((d) => d.option === o.action.press.option));
@@ -8451,7 +8455,8 @@ function rowDoes(row, press, kind, agent) {
   return { is: "press", press, effects, kind };
 }
 function rowButtons(row, isAllShown, agent) {
-  const { options, keys, more } = rowKeyPlan(row, isAllShown);
+  const { options, keys, more, sessionKey } = rowKeyPlan(row, isAllShown, true);
+  const toSession = sessionKey ? [button(`${row.id} session`, sessionKey.label, sessionKey.emphasis, { is: "focusTerminal" })] : [];
   const answers = options.map((o, n) => ({
     ...button(`${row.id} ${n}`, actionLabel(o.action), o.action.emphasis, rowDoes(row, o.action.press, o.action.kind, agent), o.hotkey ?? null),
     isOut: o.action.isOut,
@@ -8459,6 +8464,7 @@ function rowButtons(row, isAllShown, agent) {
   }));
   return [
     ...answers,
+    ...toSession,
     ...[...keys, ...more].map((k, n) => {
       const id = `${row.id} ${options.length + n}`;
       if (k.slot === "allOptions")
@@ -9162,7 +9168,11 @@ class Inbox extends View {
       this.apply([move.event], cx);
     else if (move.is === "press")
       this.apply(buttonEvents(move.button.does, this.ui, "key"), cx, move.button);
-    else if (this.followed.is !== "no-terminal")
+    else
+      this.focusTerminal();
+  }
+  focusTerminal() {
+    if (this.followed.is !== "no-terminal")
       run("pane.focus", { terminal: this.followed.terminal });
   }
   render(cx) {
@@ -9188,7 +9198,7 @@ class Inbox extends View {
     const paint = {
       t,
       mono: theme().typography?.mono ?? "Menlo",
-      press: (b, cx, isAll) => this.apply(buttonEvents(b.does, this.ui, "click", isAll), cx, b),
+      press: (b, cx, isAll) => b.does.is === "focusTerminal" ? this.focusTerminal() : this.apply(buttonEvents(b.does, this.ui, "click", isAll), cx, b),
       collapse: (id, isCollapsed, cx, isAll) => this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
       select: (id, cx) => this.apply(titleClickEvents(this.ui, id, false, false), cx),
       pick: (tab, cx) => this.apply([{ type: "show-tab", tab }], cx),

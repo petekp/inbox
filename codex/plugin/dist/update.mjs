@@ -1778,6 +1778,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnsw
 }
 var ROW_COPY = {
   retry: "Try again",
+  goToSession: "Go to session",
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
