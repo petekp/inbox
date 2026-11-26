@@ -110,7 +110,7 @@ export function closeTitle(line: HTMLElement, from: SpringState, to: number, del
 /**
  * Lets go of a line held or gliding, once its row's state is no longer `closing`, so the row measures its natural
  * height. A row whose close has ended takes the closed form's height, with its meta, at once, since its own height
- * already holds that space, and shows the full title and the statuses the close hid. While the row opens, it returns where the
+ * already holds that space, and shows the full title. `showClosedLine` fades in what the close hid. While the row opens, it returns where the
  * line was, so `openTitle` moves on from there. Null when the row holds no line, or the line was at rest.
  */
 export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | null {
@@ -128,9 +128,11 @@ export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | 
 /** A row's own line, and not the lines of the rows inside it, as in a PR block. */
 const OWN_LINE = ':scope > .row > .content > .line'
 
-/** The status a row's line shows after its title. A closing row hides the one only its closed form draws. */
+/** The status a row's line shows after its title: of those it draws for its open and closed forms, the one shown. */
 const afterOf = (line: HTMLElement) =>
-  line.querySelector<HTMLElement>(':scope > .text:not(.short) > .part:not(.closed-only) .after')
+  [...line.querySelectorAll<HTMLElement>(':scope > .text:not(.short) .after')].find(
+    a => a.getClientRects().length > 0,
+  ) ?? null
 
 /** A row's line before a draw: where its height is, the status it showed after its title, and whether it closed. */
 export type DrawnLine = { el: HTMLElement; from: SpringState; after: string | null; isClosing: boolean }
