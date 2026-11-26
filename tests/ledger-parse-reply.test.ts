@@ -276,6 +276,22 @@ describe('parseReply', () => {
     expect(u?.added.map(a => a.ask)).toEqual(['Keep tabs / spaces as they are?'])
   })
 
+  test('a question whose ask names choices is kept unless its options are exactly those choices', () => {
+    const u = parseReply(
+      [
+        'NEW: decide | - | Pick Vitest / Jest for the tests | Vitest / Jest | Vitest | -',
+        'NEW: decide | - | Merge now / after review | Now / After review | - | -',
+        'NEW: decide | - | 東京 / 大阪、どちらに移しますか？ | 東京 / 大阪 | - | -',
+        'NEW: decide | - | Push / Not yet | push / not yet | - | -',
+      ].join('\n'),
+    )
+    expect(u?.added.map(a => a.ask)).toEqual([
+      'Pick Vitest / Jest for the tests',
+      'Merge now / after review',
+      '東京 / 大阪、どちらに移しますか？',
+    ])
+  })
+
   test('returns null for prose with no keys', () => {
     expect(parseReply('Sure! Here is the ledger you asked for.')).toBe(null)
   })

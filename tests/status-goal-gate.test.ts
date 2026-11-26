@@ -279,6 +279,17 @@ test('a GOAL that cuts part of an inferred goal replaces it while its work is op
   expect(after(o, `${cut}\nSERVES: s2 | Cleanup done`, at).serves).toEqual({ s1: cleanup.id, s2: cleanup.id })
 })
 
+test('a GOAL that cuts part of an inferred goal places work by the id of a kept milestone', () => {
+  const o = after(linked(), 'SET: m2 | working | crash fix in review', 22 * MIN)
+  const at = 25 * MIN
+  const cut = 'GOAL: Notes 2.5 on the web | done Sync fixed; working Cleanup done; queued Web release live'
+  const revised = after(o, `${cut}\nSERVES: s2 | m2`, at)
+  const cleanup = revised.milestones.find(m => m.name === 'Cleanup done')!
+
+  expect(revised.goal).toMatchObject({ text: 'Notes 2.5 on the web', setAt: at })
+  expect(revised.serves).toEqual({ s1: cleanup.id, s2: cleanup.id })
+})
+
 test('a milestone the GOAL line names dropped is cut and holds no work, and one it names done or the answer finished is not cut', () => {
   const o = linked()
   const at = 25 * MIN
