@@ -9,7 +9,7 @@ import { sessionView } from '../core/view/session-view'
 import { applyPrPress, checkActions } from '../core/view/pr-tab'
 import { footerError, inboxView, perTurnStatus } from '../core/view/view'
 import { NO_SESSION_PRS } from '../core/domain/help-steps'
-import { deliveryLabel, rowMark, settledLabel } from '../core/view/rows'
+import { deliveryLabel, outcomeLabel, rowMark, settledLabel } from '../core/view/rows'
 import { allRows } from '../core/view/rows'
 import type { RowView } from '../core/view/rows'
 import { cellWidth } from '../core/domain/text'
@@ -45,6 +45,18 @@ test('the shared view draws an ask, an answer and a PR title without their escap
   expect(answer?.press).toEqual({ action: 'answer', id: 'd11', option })
   expect(view.prs.drawn.find(d => d.pr.ref === ref)?.pr.title).toBe('Add pinch')
   expect(tainted).toEqual(stored)
+})
+
+test('a closed row shows a long outcome cut at a word with an ellipsis, and a short one whole', () => {
+  const typed =
+    'Use the staging box for the first week, then move the whole queue over once the backfill has caught up and the alerts stay quiet for two days'
+  const label = outcomeLabel({ outcome: typed })
+
+  expect(label.endsWith('…')).toBe(true)
+  expect(label.length).toBeLessThanOrEqual(120)
+  expect(typed.startsWith(label.slice(0, -1))).toBe(true)
+  expect(typed.charAt(label.length - 1)).toBe(' ')
+  expect(outcomeLabel({ outcome: 'only the old entries' })).toBe('Only the old entries')
 })
 
 test('a failing check whose name holds escapes draws without them, and the Fix press a look builds from it reaches the saved check', () => {
