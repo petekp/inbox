@@ -19,7 +19,7 @@ import type { PanelSpace, PanelStep } from './panel-steps'
 import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
 import type { TitleGlide, TitleMotion } from './title-motion'
-import { stepUnder, underId, underMotion, underTimes } from './under-line'
+import { pushUnder, stepUnder, underId, underMotion, underPushMs, underTimes } from './under-line'
 import { movedOf } from './moved-blocks'
 import type { UnderLine, UnderMotion } from './under-line'
 import { prTailMotion, prTailTimes, stepPrStatus, stepPrTail } from './pr-status'
@@ -237,7 +237,6 @@ export function moveRows(
     )
     const isReleased = isInput && opensRow && track.state === 'closing'
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
-    const under = stepUnder(last?.under ?? null, block, now, isInput)
     const status = stepPrStatus(last?.status ?? null, block, now, isFirst)
     const prTail = block.kind === 'pr' ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInput) : null
     const isTurnedBack = isStart && track.state === 'opening' && last?.track.state === 'closing' && last.opened !== null
@@ -275,6 +274,11 @@ export function moveRows(
     const isPanelLeftOut = isLeftOut || (wasClosing && block.kind === 'row')
     const leftOut = isPanelLeftOut ? (panelHeight ?? 0) : 0
     const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now)
+    const under = pushUnder(
+      stepUnder(last?.under ?? null, block, now, isInput),
+      underPushMs(last, block, restSpace),
+      now,
+    )
     const waited = waitSwap(swap, restSpace, rest, now)
     const panelSpace = aimSpace(
       last?.panelSpace ?? null,
