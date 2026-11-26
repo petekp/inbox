@@ -2,7 +2,15 @@ import { isSameTaskList, ompTodoFromBranch } from '../../core/domain/host-tasks'
 import { guidanceText } from '../../core/domain/model-text'
 import { gitPlaceIn } from '../../core/domain/gh'
 import { delegatesInHerdr } from '../../core/remote/herdr'
-import { cleared, messageTyped, notePrompt, turnStarted, placed, cutOffTurn } from '../../core/runtime/session-turns'
+import {
+  cleared,
+  messageTyped,
+  notePrompt,
+  startTurn,
+  turnStarted,
+  placed,
+  cutOffTurn,
+} from '../../core/runtime/session-turns'
 import { needsUpdate, statusChanged } from '../../core/runtime/session-status'
 import { childrenCutOff, delegatesSettled } from '../../core/domain/children'
 import { runUpdates } from '../../core/runtime/session-host'
@@ -25,18 +33,8 @@ export const MESSAGE_TYPE = 'inbox'
 
 export function turnHandlers(context: HostContext, sessions: SessionCalls) {
   const { deps, dir, openPanels, prepared, run, memory, dropTools, showBand, sendNotes } = context
-  const {
-    change,
-    endedTurn,
-    hostFor,
-    updateHostFor,
-    reportCounts,
-    reportEnded,
-    prepare,
-    continueFork,
-    catchUpUnseen,
-    fetchPrsNow,
-  } = sessions
+  const { change, endedTurn, hostFor, updateHostFor, reportCounts, reportEnded, prepare, continueFork, catchUpUnseen } =
+    sessions
 
   let noted: { id: string; prompt: string; notes: string[] } | null = null
 
@@ -54,6 +52,10 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
    * it, omp 19.2 sends a plain `agent_end` with the same messages, which ends no turn.
    */
   let paused: string | null = null
+  /** The session whose prompt reached `before_agent_start` and has not started a run yet. */
+  let prompted: string | null = null
+  /** How many times each session was cleared, so a reply that ends across a `/clear` stays out of the new conversation. */
+  const clears = new Map<string, number>()
 
   /**
    * Counts a prompt that reached the agent: matches it to a press and returns the notes the agent is told.
@@ -152,6 +154,7 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     if (isUnattended(ctx)) return
     prepare(ctx)
     const id = sessionIdOf(ctx)
+    prompted = id
     const guidance = guidanceText(OMP)
     const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance]
     // omp can run this handler again for one prompt. The prompt counts once.
@@ -193,8 +196,11 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     running = id
     if (paused === id) paused = null
     if (agentTexts?.id === id) agentTexts = null
+    // A run that a background job's result starts has no prompt, which would have counted its turn.
+    const isPrompted = prompted === id
+    prompted = null
     const startedAt = deps.now()
-    await change(id, s => turnStarted(s, startedAt)).catch(() => undefined)
+    await change(id, s => turnStarted(isPrompted ? s : startTurn(s), startedAt)).catch(() => undefined)
   }
 
   const onTurnStart = async (_event: unknown, ctx: OmpContext) => {
@@ -253,16 +259,21 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
       return
     }
     if (running === id) running = null
+    if (prompted === id) prompted = null
     if (event.awaitingAsyncWork) paused = id
     prepare(ctx)
     const texts = agentTexts?.id === id ? agentTexts.texts : []
     if (agentTexts?.id === id) agentTexts = null
+    // Taken before the first wait: a `/fork` during the reply switches `ctx` to the fork before this handler ends.
+    const host = hostFor(ctx)
+    const updateHost = updateHostFor(ctx)
+    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
+    const clearsAtEnd = clears.get(id) ?? 0
     const last = lastAssistant(event.messages)
     const stop = await stopOf(last, deps.isUsageLimit, deps.now())
     const reply = stop === null ? turnReply(texts, last ? textOfBlocks(last.content) : '') : ''
     // Escape on the ask dialog aborts the turn, so it ends with no reply text.
     const isDialogDismissed = event.messages.some(isDismissedAsk)
-    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch())
     // Herdr and git are asked outside the change: each run can last its whole timeout, and the session's changes run
     // one at a time.
     const [inHerdr, git] = await Promise.all([
@@ -273,29 +284,33 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     ])
     const endedAt = deps.now()
     let addsPr = false
+    let isCleared = false
     const written = await change(id, s => {
+      isCleared = (clears.get(id) ?? 0) !== clearsAtEnd
+      if (isCleared) return s
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed })
       addsPr = addsTabPr(s, ended)
       const settled = inHerdr ? statusChanged(ended, o => delegatesSettled(o, inHerdr, endedAt)) : ended
 
       return { ...placed(settled, ctx.cwd, git), stop }
     }).catch(() => null)
-    if (!written) return
-    const host = hostFor(ctx)
-    if (addsPr) fetchPrsNow(ctx)
-    if (needsUpdate(written)) deps.background(runUpdates(updateHostFor(ctx)))
+    if (!written || isCleared) return
+    if (addsPr) host.fetchPrsInBackground()
+    if (needsUpdate(written)) deps.background(runUpdates(updateHost))
     deps.background(wakeAfterSettle(host))
   }
 
   /**
-   * omp 19.2's `/clear` starts a new conversation in the same session, so the rows and Status the cleared one made go,
+   * omp's `/clear`, from 18.20.1, starts a new conversation in the same session, so the rows and Status the cleared one made go,
    * as at `/clear` in Claude Code and Codex. The question history keeps the answers.
    */
   const onSessionClear = async (_event: unknown, ctx: OmpContext) => {
     if (isUnattended(ctx)) return
     const id = sessionIdOf(ctx)
+    clears.set(id, (clears.get(id) ?? 0) + 1)
     if (running === id) running = null
     if (paused === id) paused = null
+    if (prompted === id) prompted = null
     if (noted?.id === id) noted = null
     if (agentTexts?.id === id) agentTexts = null
     context.openAsks.delete(id)

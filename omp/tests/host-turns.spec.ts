@@ -364,3 +364,50 @@ test('the agent task list at a reply is the latest todo entry on the branch, inc
   await settle()
   expect(state().hostTasks).toEqual([])
 })
+
+test('a run that waits on a background job ends its turn at the pause, the job result starts a counted turn, and a repeated end adds none', async () => {
+  createInbox(pi(), deps())
+  await prompt('Spawn a child')
+  await call('agent_start', { type: 'agent_start' })
+  await endAgent('The child is running.', { willContinue: true, awaitingAsyncWork: true })
+  await settle()
+  expect(state().presence).toMatchObject({ isTurnRunning: false, turnsStarted: 1 })
+  expect(w.completions.at(-1)?.prompt).toContain('The child is running.')
+
+  await call('agent_start', { type: 'agent_start' })
+  expect(state().presence).toMatchObject({ isTurnRunning: true, turnsStarted: 2 })
+  await endAgent('The child finished.', { awaitingAsyncWork: true })
+  await settle()
+  expect(state().presence.isTurnRunning).toBe(false)
+  expect(w.completions.at(-1)?.prompt).toContain('The child finished.')
+
+  const calls = w.completions.length
+  await endAgent('The child finished.')
+  await settle()
+  expect(w.completions.length).toBe(calls)
+  expect(state().presence.turnsStarted).toBe(2)
+})
+
+test('/clear drops the session rows and Status, and a reply that ends across it stays out', async () => {
+  createInbox(pi(), deps())
+  await prompt('Ask me about the database')
+  await call('agent_start', { type: 'agent_start' })
+  await record({ kind: 'question', ask: 'Which database should the app use?', options: ['SQLite', 'Postgres'] })
+  await endAgent('I asked about the database.')
+  await settle()
+  expect(state().ledger.items.length).toBe(1)
+
+  await call('session_clear', { type: 'session_clear' })
+  expect(state().ledger.items).toEqual([])
+  expect(state().presence.isTurnRunning).toBe(false)
+
+  await prompt('Start the API')
+  await call('agent_start', { type: 'agent_start' })
+  const calls = w.completions.length
+  const ended = endAgent('The API is started.')
+  await call('session_clear', { type: 'session_clear' })
+  await ended
+  await settle()
+  expect(w.completions.length).toBe(calls)
+  expect(state().pending).toEqual([])
+})

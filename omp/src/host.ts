@@ -280,7 +280,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   // `previousSessionFile`. A `/branch` in the same file keeps the id, and the fork step then finds nothing to copy.
   pi.on('session_branch', (event, ctx) => start(ctx, event.previousSessionFile))
   pi.on('session_shutdown', turns.onSessionShutdown)
-  // omp 19.2 sends session_clear at `/clear`. Older omp never sends it, and its types do not list it.
+  // omp sends session_clear at `/clear` from 18.20.1. Older omp never sends it, and the pinned types do not list it.
   ;(pi.on as (event: string, handler: typeof turns.onSessionClear) => void)('session_clear', turns.onSessionClear)
   pi.on('before_agent_start', turns.onBeforeAgentStart)
   pi.on('input', turns.onInput)

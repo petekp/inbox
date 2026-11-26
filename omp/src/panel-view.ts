@@ -62,7 +62,10 @@ export function panelView(
       return paint(width)
     },
     onKey,
-    onPaste: () => true,
+    onPaste: (paste: { text: string }) => {
+      panel.handleInput('', paste.text)
+      return true
+    },
   })
 
   return { view, requestRender: () => drawn.set(drawn.peek() + 1), dispose }
