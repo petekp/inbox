@@ -38,6 +38,8 @@ import {
   workflowTasks,
 } from './mod-records'
 import { isLastSaveRefused } from './mod-saves'
+import { modPreviewPlace, writeModPreviewPages } from './mod-preview-pages'
+import { withPreviewPages } from '../../core/runtime/preview-pages'
 import { answerToolCall, currentOwner } from './mod-sessions'
 import { mod, sessionState } from './mod-state'
 import { noteActivity } from './mod-updates'
@@ -76,20 +78,22 @@ export async function runTool(
   input: Record<string, unknown>,
   toolUseId: string | undefined,
 ): Promise<string> {
-  const [now, delegate, earlier] = await Promise.all([
+  const owner = currentOwner()
+  const [now, delegate, earlier, place] = await Promise.all([
     m.clock.now(),
     modDelegate(m.herdr),
     tool === 'record' ? modRecordMatches(m.history, input) : [],
+    modPreviewPlace(m, owner.id).catch(() => null),
   ])
-  const owner = currentOwner()
   let answer: Omit<ToolAnswer, 'ledger'> = { result: '', personLine: null }
   let addsPr = false
-  await m.commit(owner, s => {
+  const saved = await m.commit(owner, s => {
     const r = answerToolCall(s, tool, input, now, delegate, earlier)
     answer = r
     addsPr = addsTabPr(s, r.state)
-    return r.state
+    return withPreviewPages(r.state, place)
   })
+  if (place) await writeModPreviewPages(m, place, saved)
   if (addsPr) void m.fetchPrs(await isPrsTabShown(m))
   const { personLine } = answer
   if (personLine !== null && toolUseId)

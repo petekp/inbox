@@ -140,5 +140,6 @@ export const HERDR: LookTable = {
     'session-registry': { kind: 'host' },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'option-previews': { kind: 'full' },
   },
 }

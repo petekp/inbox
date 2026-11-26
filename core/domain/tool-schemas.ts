@@ -32,6 +32,12 @@ export const RECORD_SCHEMA = {
       description:
         'For a question: one note for each option, in the order of options, saying what picking it does, in at most 12 words each.',
     },
+    previews: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'For a question: one image, page or file for each option, in the order of options, that shows what picking it looks like, each as an absolute file path or an https link. Give "" for an option with none. The user opens them side by side.',
+    },
     rec: {
       type: 'string',
       description:

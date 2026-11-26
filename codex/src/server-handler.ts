@@ -15,6 +15,7 @@ import { questionHistoryPlace } from './question-history'
 import { listHooksTrust } from './hook-trust'
 import { herdrOnWrite } from './host'
 import { eachOnWrite, registryOnWrite } from './registry'
+import { codexPreviewPages } from './preview-pages'
 import { herdrLog } from './herdr-log'
 import { codexHerdrAsk, followCodexPresses, followCodexSaves, startCodexInHerdrApp } from './server-herdr'
 import { COMPARE_PAGE_FILE } from '../../core/domain/press-messages'
@@ -107,6 +108,7 @@ export function createHandler(
     isPluginFolderGone,
     isNextBuild: existsSync(join(dirname(dirname(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK)),
     comparePage: join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE),
+    previewPages: codexPreviewPages(process.env, join(dirname(fileURLToPath(import.meta.url)), COMPARE_PAGE_FILE), log),
     onWrite: eachOnWrite(
       herdrOnWrite(process.env, run, dir, Date.now, log),
       registryOnWrite(process.env, dir, Date.now, process.ppid, log),

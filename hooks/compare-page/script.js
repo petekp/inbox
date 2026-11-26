@@ -40,14 +40,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const previews = list(data.previews).filter(p => p && typeof p === 'object')
   let choices = list(data.choices)
     .map(c => (typeof c === 'string' ? { name: c } : c && typeof c === 'object' ? c : {}))
-    .map(c => ({ name: text(c.name), summary: text(c.summary) }))
+    .map(c => ({ name: text(c.name), summary: text(c.summary), preview: text(c.preview) }))
     .filter(c => c.name)
   if (choices.length === 0) {
     problems.push('The data lists no choices.')
     const seen = new Map()
     for (const m of measures)
       for (const name of Object.keys(m.values || {})) if (!seen.has(keyOf(name))) seen.set(keyOf(name), name)
-    choices = [...seen.values()].map(name => ({ name: text(name), summary: '' }))
+    choices = [...seen.values()].map(name => ({ name: text(name), summary: '', preview: '' }))
   }
   const byKey = new Map(choices.map(c => [keyOf(c.name), c]))
   function choiceNamed(name, where) {
@@ -57,6 +57,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const question = text(data.question)
+  const context = text(data.context)
+  const hasChoicePreviews = choices.some(c => c.preview)
+  const isGalleryOnly = hasChoicePreviews && measures.length === 0
   const pick = text(data.pick) ? choiceNamed(data.pick, 'the pick') : undefined
   const pickName = pick ? pick.name : text(data.pick)
   const before = text(data.pickBefore)
@@ -113,7 +116,10 @@ document.addEventListener('DOMContentLoaded', () => {
     'header',
     { class: 'verdict' },
     question && h('h1', { class: 'question' }, inline(question)),
-    pickName ? h('p', { class: 'pick' }, pickName, tag()) : h('p', { class: 'pick is-missing' }, 'No pick'),
+    context && h('p', { class: 'context' }, inline(context)),
+    pickName
+      ? h('p', { class: 'pick' }, pickName, tag())
+      : !isGalleryOnly && h('p', { class: 'pick is-missing' }, 'No pick'),
     before &&
       pickName &&
       h(
@@ -249,6 +255,43 @@ document.addEventListener('DOMContentLoaded', () => {
       }),
     )
 
+  const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp|avif|svg)(?:[?#].*)?$/i
+  const PAGE_FILE = /\.html?$/i
+  const fileUrl = path => 'file://' + path.split('/').map(encodeURIComponent).join('/')
+  const previewUrl = preview => (preview.startsWith('/') ? fileUrl(preview) : preview)
+  function media(choice) {
+    const preview = choice.preview
+    if (!preview) return h('div', { class: 'media is-empty' }, 'No preview')
+    const url = previewUrl(preview)
+    const alt = `Preview of ${choice.name}`
+    if (IMAGE_FILE.test(preview))
+      return h('a', { class: 'media', href: url, target: '_blank' }, h('img', { src: url, alt, loading: 'lazy' }))
+    if (preview.startsWith('/') && PAGE_FILE.test(preview))
+      return h('div', { class: 'media is-page' }, h('iframe', { src: url, title: alt, loading: 'lazy' }))
+    return h('a', { class: 'media is-link', href: url, target: '_blank' }, preview.split('/').pop() || preview)
+  }
+  const gallery =
+    hasChoicePreviews &&
+    h(
+      'section',
+      { class: 'gallery', 'aria-label': 'Previews' },
+      choices.map(choice =>
+        h(
+          'figure',
+          { class: isPick(choice) ? 'shot is-pick' : 'shot' },
+          media(choice),
+          h(
+            'figcaption',
+            null,
+            h('span', { class: 'shot-name' }, choice.name, isPick(choice) && tag()),
+            choice.summary && h('p', { class: 'summary' }, inline(choice.summary)),
+            choice.preview &&
+              h('a', { class: 'full', href: previewUrl(choice.preview), target: '_blank' }, 'Open full size'),
+          ),
+        ),
+      ),
+    )
+
   const caveats = list(data.caveats).map(text).filter(Boolean)
   const method = list(data.method).map(text).filter(Boolean)
   const folds =
@@ -290,7 +333,8 @@ document.addEventListener('DOMContentLoaded', () => {
     )
 
   document.head.append(columnsFit, h('style', null, previewRowsFit.join('\n')))
-  page.replaceChildren(verdict, problemNote || '', matrix, cards, previewSection || '', folds || '')
+  const choiceViews = isGalleryOnly ? [gallery] : [matrix, cards, gallery || '']
+  page.replaceChildren(verdict, problemNote || '', ...choiceViews, previewSection || '', folds || '')
   new IntersectionObserver(([entry]) => {
     matrix.classList.toggle('is-stuck', !entry.isIntersecting && entry.boundingClientRect.top < 0)
   }).observe(stuckMark)

@@ -227,6 +227,8 @@ export function demoView(now: number, agent: string): DemoCopy {
             Pinch: 'Touch thumb and finger together to clear the glance.',
             Flick: 'Flick the wrist outward to clear it.',
           },
+          optionPreviews: { Pinch: '/demo/pinch.png', Flick: '/demo/flick.png' },
+          previewPage: '/demo/previews.html',
           rec: 'Pinch',
           recReason: 'a flick fires by accident while walking',
           isDesignChoice: true,

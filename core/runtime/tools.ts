@@ -8,6 +8,7 @@ import type { Host } from '../domain/model-text'
 import { MAX_ORDERED_PRS, tabPrs } from '../domain/pr-fetch'
 import { isDismissed } from '../view/pr-views'
 import { bodyChanges, missingText, questionBody, withBody } from '../domain/question-checks'
+import { previewsLeftOutText } from '../domain/option-previews'
 import { earlierAnswersText } from '../domain/record-matches'
 import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA } from '../domain/tool-schemas'
 import { CLOSE_ID_RULE } from '../domain/inbox-text'
@@ -159,12 +160,13 @@ export function recordItem(
     .flatMap(step => stepHelp(step) ?? [])
     .filter(isUsable)
     .slice(0, MAX_STEPS)
-  const leftOut =
+  const stepsLeftOut =
     helps.length < steps.length
       ? input.kind === 'task'
         ? ' Some steps were not a command, a file path or a link, so they are left out.'
         : ' Some steps were not an absolute file path or a link, so they are left out.'
       : ''
+  const leftOut = stepsLeftOut + (input.kind === 'question' ? previewsLeftOutText(input, options) : '')
 
   const isDesignChoice = input.kind === 'question' && input.design_choice === true
   const kind: Item['kind'] = input.kind
