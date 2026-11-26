@@ -11,7 +11,7 @@ type Visual = Frame['asks'][number]['rows'][number]
 
 const trackOf = (row: Pick<Visual, 'phase' | 'since' | 'hasPanel'> | undefined): RowTrack | undefined =>
   row && Object.hasOwn(ROW_STATE_MS, row.phase)
-    ? { state: row.phase as RowState, since: row.since, hasPanel: row.hasPanel }
+    ? { state: row.phase as RowState, since: row.since, hasOpenForm: row.hasPanel }
     : undefined
 
 export const advanceMotion: typeof AdvanceMotion = ([
@@ -58,7 +58,7 @@ export const advanceMotion: typeof AdvanceMotion = ([
               : 'closed'
         const track = stepRow(trackOf(prior), target, now, recorded.added.rows.includes(row.id), reduced)
         if (!track) continue
-        const keepsPanel = prior && track.hasPanel && ['closing', 'settling', 'leaving'].includes(track.state)
+        const keepsPanel = prior && track.hasOpenForm && ['closing', 'settling', 'leaving'].includes(track.state)
         rows.push({
           guarded: !reduced && isMoving(track.state) && isGuarded(track.since, now),
           id: row.id,
@@ -66,7 +66,7 @@ export const advanceMotion: typeof AdvanceMotion = ([
           panel: keepsPanel ? prior.panel : row,
           phase: track.state,
           since: track.since,
-          hasPanel: track.hasPanel,
+          hasPanel: track.hasOpenForm,
           target,
           arriving: track.state === 'entering',
         })
@@ -96,14 +96,14 @@ export const advanceMotion: typeof AdvanceMotion = ([
     const target: RowTarget = !prIds.has(row.id) ? 'gone' : !selectable || selectedPr === row.id ? 'open' : 'closed'
     const track = stepRow(trackOf(prior), target, now, sameSession && !oldPrIds.has(row.id), reduced)
     if (!track) continue
-    const keepsPanel = prior && track.hasPanel && ['closing', 'settling', 'leaving'].includes(track.state)
+    const keepsPanel = prior && track.hasOpenForm && ['closing', 'settling', 'leaving'].includes(track.state)
     prs.push({
       id: row.id,
       row,
       panel: keepsPanel ? prior.panel : row,
       phase: track.state,
       since: track.since,
-      hasPanel: track.hasPanel,
+      hasPanel: track.hasOpenForm,
       target,
       arriving: track.state === 'entering',
       guarded: !reduced && isMoving(track.state) && isGuarded(track.since, now),

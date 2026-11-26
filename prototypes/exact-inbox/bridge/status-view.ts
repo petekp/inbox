@@ -96,7 +96,7 @@ export function projectStatus(
       })
     if (r.kind === 'counts')
       return line(r.id, r.counts.map(c => `${c.mark} ${c.text}`).join(' · '), { kind: r.kind, depth: r.depth })
-    return line(r.id, r.text, {
+    return line(r.id, r.text ?? '', {
       kind: r.kind,
       seen: seenSubjectIds(r),
       depth: r.depth,
