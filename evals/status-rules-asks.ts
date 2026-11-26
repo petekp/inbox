@@ -45,7 +45,7 @@ export const ASK_RULES: Rule[] = [
     id: 'asks-linked',
     reads: 'facts',
     property: 8,
-    text: 'Each open ask is linked only to subjects it holds up, or to the milestone a piece it holds up is the whole of, and an ask that holds up nothing is linked to none.',
+    text: 'Each open ask is linked only to subjects it holds up, or to the milestone a piece it holds up is the whole of, and an ask that holds up nothing is linked to none, or only to a subject of its own when its facts allow one.',
     failures: ({ result }) => {
       const o = result.session.ledger.overview
       return result.facts.asks.flatMap(a => {
@@ -57,6 +57,11 @@ export const ASK_RULES: Rule[] = [
         const heldMilestones = pieces
           .flatMap(p => milestonesAsPiece(p, result.facts, o))
           .filter(m => ids.includes(m.id))
+        if (pieces.length === 0 && a.neverHoldsUp)
+          return result.facts.pieces
+            .filter(p => a.neverHoldsUp?.includes(p.id))
+            .flatMap(p => linked.filter(s => new RegExp(p.match, 'i').test(s.name)))
+            .map(s => `"${item.ask}" never holds up ${s.name}, and is linked to it`)
         if (pieces.length === 0)
           return [
             ...linked.map(s => `"${item.ask}" holds up nothing, and is linked to ${label(s)}`),

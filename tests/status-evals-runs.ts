@@ -336,6 +336,14 @@ export const GOOD_RUNS: Record<string, string[]> = {
     ].join('\n'),
   ],
   'milestone-last-work-done': ['DONE: s9 | API on main, checks passed\nHEAD: Notes app | Fixing card animations'],
+  'unrelated-task': [
+    [
+      'MILESTONE: working | English greeting chosen | Hello or Hi open',
+      'MILESTONE: queued | Greeting shipped | after the choice',
+      'SERVES: s1 | English greeting chosen',
+      'SERVES: s2 | -',
+    ].join('\n'),
+  ],
   'milestone-decided': [
     'SET: s1 | working | Decided "!", edit not made yet\nDONE: m1 | ending chosen as "!"\nLINK: i2 | s1',
   ],

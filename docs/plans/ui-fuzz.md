@@ -112,8 +112,10 @@ Motion rules run on the frames `framesOf` draws from 0 ms, the case's start. The
 
 Recent bugs are seed cases in `fuzz/seeds.ts`, which every run checks before its generated cases. A seed for a closed issue must pass, and the run fails when it does not. A seed for an open issue is expected to fail with its rule, and the run says so without failing. When it passes, the run fails and says to close the issue and mark the seed closed.
 
-- Herdr: #771 (a row that settles while it opens), #811's second Copy press, and #827's Undo bringing a dismissed task back and Explain on a task, pass. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line.
-- From the first runs: #827, #828, #830, #831, #832 and #833, each with its seed. #829 was a false report from the frame replay animating a tab switch, and is closed.
+A known failure in `KNOWN` matches on part of its detail, so keep that part as narrow as its issue. #832's part, any cut in a panel's box, also matched a cut that a tab shown again makes. That cut was found only once #832's seed closed, and is now #898.
+
+- Herdr: #771 (a row that settles while it opens), #811's second Copy press, #827's Undo bringing a dismissed task back and Explain on a task, #828's leave just after Explain and #832's collapse just after Explain, pass. #811's collapse right after Undo is not reproduced: the stand-in shows no cut of the title's second line.
+- From the first runs: #827, #828, #830, #831, #832 and #833, each with its seed. #898 has its seed too. #829 was a false report from the frame replay animating a tab switch, and is closed.
 - Codex tab: #834, #835, #836 and #837, each with its seed. #772 and #783 (open or close just after Undo) have no seed yet. #798 and #806 need agent events, which the Codex driver does not send.
 - Terminal and desktop: #830, with its seed.
 

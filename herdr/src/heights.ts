@@ -88,5 +88,9 @@ export const titleId = (id: string): string => `title ${id}`
 /** The key a row's lines under its title, with its panel, are measured under. */
 export const restId = (id: string): string => `rest ${id}`
 
+/** A PR block's title, and the lines under its status line: its error, buttons and press result. */
+export const prHeadId = (id: string): string => `head ${id}`
+export const prTailId = (id: string): string => `tail ${id}`
+
 /** The key a row's panel is measured under, beside the row's own height. */
 export const panelId = (id: string): string => `panel ${id}`
