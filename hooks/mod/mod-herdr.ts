@@ -48,6 +48,7 @@ type DrawnForHerdr = {
   session: Session
   dialogs: readonly Dialog[]
   isUnread: boolean
+  isSendHeld: boolean
 }
 
 /**
@@ -294,10 +295,8 @@ export async function publishToHerdr(
       const target = await targetOf(calls)
       if (!target) return null
       const appHome = target.kind === 'terminal' ? target.appHome : null
-      const [{ id, root, session, dialogs, isUnread, receipts, viewers, remoteHistoryAfter }, now] = await Promise.all([
-        drawn(),
-        calls.now(),
-      ])
+      const [{ id, root, session, dialogs, isUnread, isSendHeld, receipts, viewers, remoteHistoryAfter }, now] =
+        await Promise.all([drawn(), calls.now()])
       if (isExiting) return null
       const isPublished =
         target.kind === 'terminal' &&
@@ -318,6 +317,7 @@ export async function publishToHerdr(
             projectFolder: root,
             isFetchingPrs: session.prViews.isFetching,
             isReadFailed: isUnread,
+            isSendHeld,
             ...(dialogs[0] && { openDialog: dialogs[0].kind, openDialogText: dialogs[0].text }),
             ...(mod.version ? { version: mod.version, isNextBuild: mod.isNextBuild } : {}),
           },

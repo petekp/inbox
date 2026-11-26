@@ -75,6 +75,26 @@ test("Claude Code's hold on messages after the person stopped the session reads 
   expect(await pane.find({ text: STOPPED_WARNING })).toBeDefined()
 })
 
+test('the session file the mod publishes for Herdr says Claude Code holds the inbox messages from a stop until the person types', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  const isHeldInFile = () => {
+    const path = Object.keys(w.written).find(p => p.startsWith('/app/inbox/sessions/'))
+    if (!path) throw new Error('the mod published no session file')
+    return (JSON.parse(w.written[path] ?? '{}') as { isSendHeld?: boolean }).isSendHeld === true
+  }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't1', reason: 'aborted' })
+  await clock.settle()
+  expect(isHeldInFile()).toBe(true)
+
+  await $.prompt.submit({ text: 'carry on', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  expect(isHeldInFile()).toBe(false)
+})
+
 test('a press during a turn reads Queued until its prompt enters, a refused reply reopens its field with its words, and a press that will not enter is undone with Not sent and [Try again]', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   const prompts: string[] = []

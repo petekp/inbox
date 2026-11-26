@@ -9,7 +9,7 @@ import { pollPrs } from './mod-prs'
 import { removeModRegistry, writeModRegistry } from './mod-registry'
 import { readRemoteState } from './mod-saves'
 import { conversation, currentOwner } from './mod-sessions'
-import { viewerLeases } from './mod-state'
+import { sessionState, viewerLeases } from './mod-state'
 import { SETTLED_MS } from '../../core/view/timing'
 
 type PublishCalls = Pick<
@@ -58,6 +58,7 @@ export async function publishStatus(m: PublishCalls, isEnding = false, isExit = 
           dialogs,
           ...(await readRemoteState(m.saves, conversation.id, session, viewerLeases.peek(conversation.id))),
           isUnread: unreadable === conversation.id,
+          isSendHeld: sessionState.isSendHeld,
         }
       },
       isExit,

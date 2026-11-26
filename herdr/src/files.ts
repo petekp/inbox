@@ -26,6 +26,8 @@ export function isSessionChange(changed: readonly string[], appHome: string, ses
  * `projectFolder`: the absolute folder the host opens a relative path against, or null when the host gave none.
  * `isFetchingPrs`: the host had a PR fetch running. A file from a host that does not say reads as not fetching.
  * `isReadFailed`: the host could not read the saved inbox. A file from a host that does not say reads as read.
+ * `isSendHeld`: Claude Code holds the inbox's messages after the person stopped the session. A file from a host that
+ * does not say reads as not held.
  * `turnReadFailedAt`: when Codex first failed to read whether the running turn still runs, or null.
  * `openDialog`: the agent's own dialog that waits on the person, or null. Its text is null from a host that names only
  * its kind.
@@ -43,6 +45,7 @@ export type ReadSession =
       projectFolder: string | null
       isFetchingPrs: boolean
       isReadFailed: boolean
+      isSendHeld: boolean
       turnReadFailedAt: number | null
       openDialog: OpenDialog | null
     }
@@ -93,6 +96,7 @@ export function readSession(text: string | null): ReadSession {
       typeof file.projectFolder === 'string' && file.projectFolder.startsWith('/') ? file.projectFolder : null,
     isFetchingPrs: file.isFetchingPrs === true,
     isReadFailed: file.isReadFailed === true,
+    isSendHeld: file.isSendHeld === true,
     turnReadFailedAt: typeof file.turnReadFailedAt === 'number' ? file.turnReadFailedAt : null,
     openDialog:
       file.openDialog === 'question' || file.openDialog === 'permission'

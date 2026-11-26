@@ -51,6 +51,7 @@ The Herdr look is a Herdr app mod. It draws the inbox of the session that a host
 | `herdr/src/paint-chevron.ts` | Herdr adapter. A fold's chevron, drawn as a path from the Codex tab's chevron icon, turned down when open, with the count of the rows a folded parent hides. A bright copy lies over it and shows on hover, since the kit styles an element only on its own hover. |
 | `herdr/src/paint-blocks.ts` | Herdr adapter. Paints each block with `gpui-kit` and `gpui-base`: rows, with a leaving block's buttons, text field and fold inert, text fields, Status lines, PRs, headings, folds, rules, notes, empty states and banner blocks. |
 | `herdr/src/paint-parted.ts` | Herdr adapter. `partedEl`: parts joined by a dot, wrapping whole, with the dot of a part that starts a line hidden. |
+| `herdr/src/paint-text.ts` | Herdr adapter. Text that wraps word by word in two colors, a line of dot-joined parts that breaks between them, and a press's result line, with an aged result's age faint. |
 | `herdr/src/paint-field.ts` | Herdr adapter. A text field with its buttons under it, for a row's reply field and any other field block. |
 | `herdr/src/paint-status-line.ts` | Herdr adapter. A Status line and a Help line: the mark or key, the name, its stall, fold chevron and buttons, and the parts a line is built from. |
 | `herdr/src/paint-empty.ts` | Herdr adapter. An empty tab's block: its title, hint and any line, buttons, field or feedback under them, centred across and down the list's room. |

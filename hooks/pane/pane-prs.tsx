@@ -422,12 +422,21 @@ export function panePrBlocks({
     if (!order) return []
     const changed = order.changed
     const pressed = changed?.showsPress ? pressLine(RANK_AGAIN_ID) : null
+    const shownRank = changed?.showsPress ? (feedbackLabel(RANK_AGAIN_ID)?.text ?? null) : null
+    const warning = changed ? prStoppedWarningOf(isSendHeld, changed.actions, shownRank) : null
     const lines = (
       <Box flexDirection="column">
         <Text wrap="wrap">{order.title}</Text>
         {order.why ? mutedLine(order.why) : null}
         {changed ? (
           <Box flexDirection="column" marginTop={look === 'desktop' ? 1 : 0}>
+            {warning ? (
+              <Box marginBottom={partSpace(look, isInline)('status', 'buttons')}>
+                <Text color={pal.tone.error} wrap="wrap">
+                  {warning}
+                </Text>
+              </Box>
+            ) : null}
             <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
               {changed.text ? <Text wrap="wrap">{changed.text}</Text> : null}
               {prOrderKeys.length > 0 ? keyRow(RANK_AGAIN_ID, prOrderKeys) : null}

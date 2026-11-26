@@ -1,11 +1,11 @@
 import { div } from 'gpui-kit'
-import type { Color, Element } from 'gpui-kit'
+import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import { partPt } from '../../core/view/row-parts'
 import type { RowPart } from '../../core/view/row-parts'
 import { LEAVE_FADE_MS, ROW_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
-import type { Aged, Block, BodyLine, Button, LineBlock, PrBlock, RowBlock, Tone } from './blocks'
+import type { Block, BodyLine, Button, LineBlock, PrBlock, RowBlock } from './blocks'
 import {
   BUTTON_LABEL_X,
   CONTROL_GAP,
@@ -14,6 +14,7 @@ import {
   INSET,
   INSIDE_GAP,
   LINE_HEIGHT,
+  LIST_GAP,
   MARK_W,
   NEST,
   SEP,
@@ -43,50 +44,8 @@ import { titleTextEl } from './paint-title-text'
 import { titleLineEls } from './paint-row-lines'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
-import { DOT } from '../../core/view/rows'
+import { NO_BREAK_SPACE, feedbackEl, partedTextEl, wordEls } from './paint-text'
 import { ARM_END, answersEl, armEl, isSideBySide, trunkEl } from './paint-tree'
-
-const NO_BREAK_SPACE = '\u00a0'
-
-/**
- * A paragraph of two colors. gpui-kit has no inline span, so each word is an item of a wrapping row, followed by a
- * no-break space. That space is as wide as the font's own at any text size, and a line end does not trim it. A word
- * wider than the line wraps inside its item. The paragraph flows as one text, and its wrapped lines start back at the
- * row's left edge.
- */
-const wordEls = (text: string, color: Color): Element[] =>
-  text
-    .split(' ')
-    .filter(word => word)
-    .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
-
-/**
- * A line of text `indent` in from its row's edge. A line of DOT-joined parts, such as a fold's note or a thread's place
- * and author, breaks between its parts, so no line starts or ends with a dot.
- */
-const partedTextEl = (text: string, color: Color, indent: number, t: Theme): Element =>
-  text.includes(DOT)
-    ? div()
-        .pl(indent)
-        .pt(INSIDE_GAP)
-        .child(
-          partedEl(
-            text.split(DOT).map(part => statusPartEl(part).text_color(color)),
-            t.muted,
-          ),
-        )
-    : lineEl(text, color, indent)
-
-/** A press's result under its buttons. An aged result's age draws faint whatever the result's color. */
-function feedbackEl(f: { text: string; tone: Tone; aged?: Aged }, t: Theme): Element {
-  const cut = f.aged?.lead.length ?? f.text.length
-  if (f.tone === 'muted' || cut >= f.text.length) return partedTextEl(f.text, colorOf(t, f.tone), 0, t).pt(CONTROL_GAP)
-
-  return h_flex()
-    .flex_wrap()
-    .pt(CONTROL_GAP)
-    .children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), faintOf(t))])
-}
 
 /** A line under a row's title, `above` under the part above it, with its part of the tree that hangs from the row's mark. */
 const bodyLineEl = (
@@ -356,7 +315,9 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
   ]
   const tail = prTailEls(b, p, {
     error: text => lineEl(text, t.ansi1, 0),
-    buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing),
+    warning: text => lineEl(text, colorOf(t, 'error'), 0).pt(CONTROL_GAP),
+    buttons: (buttons, isGoing) =>
+      buttonsEl(buttons, p, 0, isInert || isGoing, false, b.warning ? LIST_GAP : CONTROL_GAP),
     result: f => feedbackEl(f, t),
   })
 
@@ -374,12 +335,20 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     .children(tail)
 }
 
+/** A line of text with its buttons after it, under the stopped warning when it has one. */
 function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
   const { t } = p
 
   return v_flex()
     .pl(EDGE)
     .pr(EDGE)
+    .when(b.warning !== undefined, e =>
+      e.child(
+        lineEl(b.warning ?? '', colorOf(t, 'error'), 0)
+          .pt(0)
+          .pb(LIST_GAP),
+      ),
+    )
     .child(
       h_flex()
         .gap(CONTROL_GAP)

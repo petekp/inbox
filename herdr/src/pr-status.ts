@@ -10,9 +10,13 @@ export type PrLine = Pick<PrBlock, 'status' | 'unlisted'>
 /** A PR block's press result, as "Merging…", at the block's foot. */
 type PrResult = NonNullable<PrBlock['feedback']>
 
-/** The lines under a PR block's status line, each as it comes and goes: its error, its buttons and its press result. */
+/**
+ * The lines under a PR block's status line, each as it comes and goes: its error, the stopped warning, its buttons and
+ * its press result.
+ */
 export type PrTail = {
   error: UnderLine<string> | null
+  warning: UnderLine<string> | null
   buttons: UnderLine<Button[]> | null
   result: UnderLine<PrResult> | null
 }
@@ -20,6 +24,7 @@ export type PrTail = {
 /** How each line under a PR block's status line draws, as `underMotion` says. */
 export type PrTailMotion = {
   error: UnderMotion<string> | null
+  warning: UnderMotion<string> | null
   buttons: UnderMotion<Button[]> | null
   result: UnderMotion<PrResult> | null
 }
@@ -61,6 +66,7 @@ export function stepPrTail(last: PrTail | null, b: Block, now: number, isFirst: 
 
   return {
     error: stepPrLine(last?.error ?? null, pr?.error ?? null, b, now, isFirst, isInput),
+    warning: stepPrLine(last?.warning ?? null, pr?.warning ?? null, b, now, isFirst, isInput),
     buttons: stepPrLine(last?.buttons ?? null, buttons, b, now, isFirst, false),
     result: stepPrLine(last?.result ?? null, pr?.feedback ?? null, b, now, isFirst, isInput),
   }
@@ -69,16 +75,17 @@ export function stepPrTail(last: PrTail | null, b: Block, now: number, isFirst: 
 /** The key a line under a PR block's status line is measured and faded under. */
 export const prTailId = (part: PrTailPart, id: string): string => `status ${part} ${id}`
 
-export const PR_TAIL_PARTS: PrTailPart[] = ['error', 'buttons', 'result']
+export const PR_TAIL_PARTS: PrTailPart[] = ['error', 'warning', 'buttons', 'result']
 
 export const prTailMotion = (t: PrTail, id: string, now: number, heightOf: (key: string) => number | undefined) => ({
   error: underMotion(t.error, now, heightOf(prTailId('error', id))),
+  warning: underMotion(t.warning, now, heightOf(prTailId('warning', id))),
   buttons: underMotion(t.buttons, now, heightOf(prTailId('buttons', id))),
   result: underMotion(t.result, now, heightOf(prTailId('result', id))),
 })
 
 export const prTailTimes = (t: PrTail | null): number[] =>
-  t ? [...underTimes(t.error), ...underTimes(t.buttons), ...underTimes(t.result)] : []
+  t ? [...underTimes(t.error), ...underTimes(t.warning), ...underTimes(t.buttons), ...underTimes(t.result)] : []
 
 /**
  * The height a PR block's line box moves to, or undefined when it takes its content's height: in a draw that takes

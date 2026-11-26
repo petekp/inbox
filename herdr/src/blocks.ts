@@ -112,7 +112,7 @@ export type BodyLine = {
 /** The parts of a row the look draws as lines under its title. A PR row's lines are its `detail`. */
 type BodyPart = Extract<
   RowPart,
-  'holdsUp' | 'context' | 'earlier' | 'detail' | 'file' | 'answer' | 'note' | 'answers' | 'reason'
+  'holdsUp' | 'context' | 'earlier' | 'detail' | 'file' | 'answer' | 'note' | 'answers' | 'reason' | 'status'
 >
 
 export type RowBlock = {
@@ -233,6 +233,8 @@ export type PrBlock = {
   status: { text: string; tone: Tone } | null
   unlisted: string[]
   error: string | null
+  /** The stopped warning above its buttons, from `prStoppedWarningOf`, or null. */
+  warning: string | null
   buttons: Button[]
   feedback: { text: string; tone: Tone } | null
 }
@@ -260,10 +262,14 @@ export function emptyBlock(tab: ShownTab, empty: EmptyTab, parts: EmptyUnderPart
   }
 }
 
-/** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
+/**
+ * A line with a text and the buttons after it, as the PR order's changed line or the refresh line. `warning` is the
+ * stopped warning above it, from `prStoppedWarningOf`.
+ */
 export type LineBlock = {
   kind: 'line'
   id: string
+  warning?: string
   text: string | null
   under: string | null
   buttons: Button[]

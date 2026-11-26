@@ -44,6 +44,7 @@ export function prStatusEl(b: PrBlock, p: Paint, lineEl: (l: PrLine) => Element)
 /** How a PR block draws each line under its status line. A going line's buttons take no press. */
 type PrTailEls = {
   error: (text: string) => Element
+  warning: (text: string) => Element
   buttons: (buttons: Button[], isGoing: boolean) => Element
   result: (f: NonNullable<PrBlock['feedback']>) => Element
 }
@@ -56,6 +57,7 @@ export function prTailEls(b: PrBlock, p: Paint, els: PrTailEls): Element[] {
     const height = prTailHeight(b, part, m, p)
     const t = m?.prTail ?? null
     if (part === 'error') return prLineEl(key, height, t?.error ?? null, b.error, els.error, p)
+    if (part === 'warning') return prLineEl(key, height, t?.warning ?? null, b.warning, els.warning, p)
     if (part === 'buttons') {
       const atRest = b.buttons.length > 0 ? b.buttons : null
       return prLineEl(key, height, t?.buttons ?? null, atRest, l => els.buttons(l, atRest === null), p)

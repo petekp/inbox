@@ -1,5 +1,12 @@
 import type { PrCheck, PrThread, PrView } from '../../types'
-import { feedbackOf, feedbackText, feedbackTone, hasAge, markedFeedbackText } from '../../core/view/feedback'
+import {
+  feedbackOf,
+  feedbackText,
+  feedbackTone,
+  hasAge,
+  markedFeedbackText,
+  prStoppedWarningOf,
+} from '../../core/view/feedback'
 import type { PressState } from '../../core/view/feedback'
 import { prPressEffect } from '../../core/view/pr-press'
 import type { PrAction } from '../../core/view/pr-press'
@@ -189,6 +196,8 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
   const tone = shown ? PR_TONES[shown.status] : null
   const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
   const plan = prBlockActions(pr, isSent, screen.view.prs.branchRef, presses, sync, true)
+  const feedback = isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null
+  const warning = prStoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null)
   const groups = prBlockRows(pr, false, {
     thread: t => threadRow(screen, pr, t, presses),
     check: c => checkRow(screen, pr, c, presses),
@@ -229,11 +238,12 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
       status: shown && { text: shown.head, tone: tone ? PR_TONE[tone] : 'muted' },
       unlisted: shown?.unlisted ?? [],
       error: pr.error ? prRefreshFailedText(pr.error) : null,
+      warning,
       buttons: [
         ...sessionButtons(pr.ref, plan.sessionKey),
         ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${n}`)),
       ],
-      feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null,
+      feedback,
     },
     ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, 'threads'),
     ...rowsOf(PR_GROUP_TITLES.checks, groups.checks, 'checks'),
@@ -298,8 +308,10 @@ function orderLines(screen: LookScreen, presses: PressState): Block[] {
     ...plan.actions.map((a, n) => prButton(null, a, `order ${n}`)),
   ]
   const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null
+  const warning = prStoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null)
+  const line: Block = { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }
 
-  return [...lines, { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }]
+  return [...lines, warning ? { ...line, warning } : line]
 }
 
 /** Clear merged and closed, on its own line under the notice and Refresh PRs, with its button at the line's end. */
