@@ -66,7 +66,9 @@ test('a row whose message was not sent because the person stopped the session of
   }
 
   const stopped = refused(STOPPED_REASON)
-  expect(stopped.feedback?.text).toBe('Not sent: you stopped this session. Type in it, then press Send again.')
+  expect(stopped.feedback?.text).toBe(
+    'Not sent: you stopped this session. It takes inbox messages again after you write to it.',
+  )
   expect(stopped.buttons.find(b => b.label === 'Go to session')?.does).toEqual({ is: 'focusTerminal' })
   expect(refused('a hook refused it').buttons.map(b => b.label)).not.toContain('Go to session')
 })

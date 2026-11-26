@@ -56,7 +56,9 @@ test("Claude Code's hold on messages after the person stopped the session reads 
   await clock.advance(SETTLED_MS)
   expect(w.sent.at(-1)).toBe('Re "Use Node or Python?": Node')
   expect(
-    await pane.find({ text: 'Not sent: you stopped this session. Type in it, then press Send again.' }),
+    await pane.find({
+      text: 'Not sent: you stopped this session. It takes inbox messages again after you write to it.',
+    }),
   ).toBeDefined()
 })
 

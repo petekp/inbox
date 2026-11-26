@@ -196,7 +196,7 @@ const STILL_WAITING_AFTER = new Set(['check-fix'])
  * Why a message did not send when Claude Code held it after the person stopped the session. Claude Code holds plugin
  * messages until the person types in that session, and a press from outside it, as in the Herdr look, does not count.
  */
-export const STOPPED_REASON = 'you stopped this session. Type in it, then press Send again.'
+export const STOPPED_REASON = 'you stopped this session. It takes inbox messages again after you write to it.'
 
 /** Whether a row's message did not send because the person stopped its session. */
 export const isStoppedSession = (f: Feedback | null): boolean => f?.is === 'notSent' && f.reason === STOPPED_REASON
