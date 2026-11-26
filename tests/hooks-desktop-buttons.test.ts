@@ -144,6 +144,27 @@ test('the desktop pane draws each action as one button and the tabs as one click
   expect(await pane.find({ key: 'close-pane' })).toBeUndefined()
 })
 
+test('on desktop, an answer’s button label too long for its row is cut with an ellipsis after its last whole word that fits', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.surfaces = ['desktop']
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: null, isInteractive: false })
+  const option = 'Keep the second greeting and drop the first one everywhere'
+  await $.tool.call({ tool: 'mcp__inbox__record', kind: 'question', ask: 'Which greeting?', options: [option, 'Both'] })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop', props: { ...PANE.props, bodyColumns: 30 } })
+  const cuts: string[] = []
+  for (let columns = 30; columns <= 50; columns++) {
+    await pane.redraw({ ...PANE.props, bodyColumns: columns })
+    const shown = String((await pane.find({ key: 'answer-i1-0' }))?.props.label ?? '')
+    if (shown.endsWith('…')) cuts.push(shown.slice(0, -1))
+  }
+
+  expect(cuts.length).toBeGreaterThan(3)
+  expect(cuts.filter(kept => !option.startsWith(kept) || option.charAt(kept.length) !== ' ')).toEqual([])
+})
+
 test('on desktop, the pointer moving over an open row keeps a closed row from folding without selecting that row or saving the pane, until it has been still for FOLD_QUIET_MS', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
