@@ -35,9 +35,9 @@ import {
 import { checkActions, prBlockActions, threadActions } from '../../core/view/pr-tab'
 import { type DrawnPr, isDismissed } from '../../core/view/pr-views'
 import { checkKey, commentLine, commentParts, readableComment, threadWhere } from '../../core/domain/prs'
-import { DOT, settledLabel, settledMark, type SettledState } from '../../core/view/rows'
+import { DOT, settledMark, type SettledState } from '../../core/view/rows'
 import { desktopTextPt } from './desktop-metrics'
-import { glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } from './terminal-text'
+import { desktopSettledLine, glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } from './terminal-text'
 import { cellWidth, clipLabel } from '../../core/domain/text'
 import { runningMark } from '../../core/view/timing'
 import { prStoppedWarningOf } from '../../core/view/feedback'
@@ -255,7 +255,9 @@ export function panePrBlocks({
     const undo: PrPress | null = state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null
     const key = `settled-pr:${pr.ref}`
     const mark = settledMark(state)
-    if (look === 'desktop')
+    if (look === 'desktop') {
+      const desktopLine = desktopSettledLine(what, state, listColumns)
+
       return section(
         desktopFrame({
           key,
@@ -265,16 +267,22 @@ export function panePrBlocks({
           isSideCentered: true,
           children: [
             <Text wrap="wrap">
-              {what}
-              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery, state.reply)}`}</Text>
+              {desktopLine.title}
+              {desktopLine.after.isUnder ? null : <Text color={pal.muted}>{desktopLine.after.text}</Text>}
             </Text>,
+            desktopLine.after.isUnder ? (
+              <Text key="label" wrap="wrap" color={pal.muted}>
+                {desktopLine.after.text}
+              </Text>
+            ) : null,
           ],
         }),
       )
+    }
 
     return section(
       <Box key={key} paddingLeft={1}>
-        {settledContent(what, state, undo, mark)}
+        {settledContent(what, state, undo, mark, listColumns - 2)}
       </Box>,
     )
   }

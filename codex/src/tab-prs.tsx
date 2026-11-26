@@ -1,5 +1,6 @@
 import { settledMark, settledLabel } from '../../core/view/rows'
 import { Sep } from './tab-parted'
+import { SettledResultPart } from './tab-title-cut'
 import { bannerOf } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
 import type { SettledState } from '../../core/view/rows'
@@ -71,10 +72,7 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
             <span class="part what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="part settled-result">
-              <Sep />
-              <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
-            </span>
+            <SettledResultPart text={settledLabel(state.label, state.delivery, state.reply)} />
             {error ? (
               <span class="part tone-error">
                 <Sep />

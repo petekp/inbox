@@ -3,7 +3,7 @@ import { test } from './test-with-timeout'
 
 import type { Earlier, Item, Session } from '../types'
 import { demoSession } from '../core/view/demo'
-import { answerIndex, bestEarlier, earlierLineOf, earlierLineText } from '../core/domain/earlier-answers'
+import { answerIndex, bestEarlier, earlierLineOf, earlierLineText, earlierOf } from '../core/domain/earlier-answers'
 import type { AnswerDoc } from '../core/domain/earlier-answers'
 import { historyStep, recordMatches } from '../core/runtime/history-store'
 import type { HistoryPlace } from '../core/runtime/history-store'
@@ -205,6 +205,29 @@ describe('the history step on a save', () => {
     const place = { ...seeded, fs: { ...seeded.fs, list: () => Promise.reject(new Error('locked')) } }
     const changed = added()
     expect(await historyStep(place, 's1', before, changed, NOW)).toBe(changed)
+  })
+})
+
+describe('a long earlier answer', () => {
+  const typed =
+    'Use the staging box for the first week, then move the whole queue over once the backfill has caught up, the alerts have stayed quiet for two full days, and the on-call engineer has signed off on the plan in writing'
+  const match = { doc: doc('long', 'Where should it run?', typed), score: 0.5 }
+
+  test('stays whole on the item, so a repeat of it counts as the same answer', () => {
+    const earlier = earlierOf(match, true)
+    expect(earlier.answer).toBe(typed)
+    const item = { ...question('i1', 'Where should it run?', ['staging', 'production']), earlier }
+    const ledger = closeItem({ ...EMPTY, items: [item] }, 'i1', { how: 'answered', outcome: typed }, NOW)
+    const file = questionHistory(null, { ...emptySession(), ledger }, { host: 'codex', session: 's1', repo: null }, NOW)
+    expect(file.questions.map(q => q.isAnsweredWithEarlier)).toEqual([true])
+  })
+
+  test('is cut at a word with an ellipsis where the row draws it', () => {
+    const line = earlierLineOf(earlierOf(match, true), NOW)
+    expect(line?.answer.endsWith('…')).toBe(true)
+    expect(line?.answer.length).toBeLessThanOrEqual(200)
+    expect(typed.startsWith(line?.answer.slice(0, -1) ?? '')).toBe(true)
+    expect(typed.charAt((line?.answer.length ?? 0) - 1)).toBe(' ')
   })
 })
 
