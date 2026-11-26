@@ -160,9 +160,13 @@ export type RowBlock = {
   heldLine?: { text: string; tone: Tone; isHidden: boolean; leftAt?: number }
   /** When the status the row draws above its buttons came, while its box still opens to hold it. */
   lineCameAt?: number
+  /** The first of the options the open row added, as "All N options" does, and when, while their box still opens. */
+  addedOptions?: AddedOptions
   /** Draws the status under the buttons, where the shared rule puts it above them. See `holdLinesAbove`. */
   isStatusHeldUnder?: true
 }
+
+export type AddedOptions = { firstId: string; cameAt: number }
 
 /** A status's words and the time its age counts from. */
 export type Aged = { lead: string; at: number }

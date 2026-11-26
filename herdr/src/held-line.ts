@@ -2,10 +2,10 @@ import { isFailure, isStatusUnderActions } from '../../core/view/feedback'
 import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import { heldLineEndsAt, isPressUnderWay, stepHeldLine } from '../../core/view/held-line'
 import type { HeldLine } from '../../core/view/held-line'
-import { agedText } from './blocks'
-import type { Aged, Block, RowBlock, Tone } from './blocks'
+import { agedText, isOpenRow } from './blocks'
+import type { AddedOptions, Aged, Block, RowBlock, Tone } from './blocks'
 import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
-import { aboveId, aboveLineId } from './heights'
+import { aboveId, aboveLineId, addedId, addedLinesId } from './heights'
 import type { Sizes } from './heights'
 
 /** A row's status line that the panel draws on its own line between the row's title and its buttons. `aged` keeps a status's age counting while the line is held. */
@@ -14,14 +14,17 @@ type LineAbove = { text: string; tone: Tone; aged?: Aged; cameAt?: number }
 /**
  * What each row holds above its buttons, by row id: the line it last drew there, or null for a row that drew none
  * there when its press went out, so its status stays under its buttons. `lineless` names the rows that last drew their
- * buttons with no line above them.
+ * buttons with no line above them. `options` gives each open row's option ids as last drawn, and `added` the options
+ * a row added while their box opens.
  */
 export type LinesAbove = {
   held: ReadonlyMap<string, HeldLine<LineAbove> | null>
   lineless: ReadonlySet<string>
+  options: ReadonlyMap<string, string[]>
+  added: ReadonlyMap<string, AddedOptions>
 }
 
-export const NO_LINES_ABOVE: LinesAbove = { held: new Map(), lineless: new Set() }
+export const NO_LINES_ABOVE: LinesAbove = { held: new Map(), lineless: new Set(), options: new Map(), added: new Map() }
 
 /** How long a line whose hold let go stays drawn: its fade, then its space closing. */
 const HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS
@@ -47,6 +50,47 @@ const lineOf = (f: NonNullable<RowBlock['feedback']>, cameAt?: number): LineAbov
 
 const isComing = (l: LineAbove | undefined, now: number): l is LineAbove & { cameAt: number } =>
   l?.cameAt !== undefined && now < l.cameAt + LINE_COMES_MS
+
+/**
+ * The options an open row added at `now`, after `was`, given the option ids it drew last, `last`, and now, `ids`: the
+ * ones it adds after those it kept, as "All N options" does, while their box opens. A draw that takes heights at once
+ * draws them at rest.
+ */
+function stepAdded(
+  was: AddedOptions | undefined,
+  last: string[] | undefined,
+  ids: string[],
+  now: number,
+  isAtOnce: boolean,
+) {
+  if (isAtOnce) return null
+  if (was && ids.includes(was.firstId) && now < was.cameAt + LINE_COMES_MS) return was
+  const isAdded =
+    last !== undefined && last.length > 0 && ids.length > last.length && last.every((id, n) => ids[n] === id)
+  const firstId = isAdded ? ids[last.length] : undefined
+
+  return firstId === undefined ? null : { firstId, cameAt: now }
+}
+
+/**
+ * The blocks with the options each open row added, as `stepAdded` gives them. They open a box of their own, so the
+ * buttons under them glide down as the row's box grows.
+ */
+function addOptions(blocks: Block[], last: LinesAbove, now: number, isAtOnce: boolean) {
+  const options = new Map<string, string[]>()
+  const added = new Map<string, AddedOptions>()
+  const shown = blocks.map((b): Block => {
+    if (b.kind !== 'row' || !isOpenRow(b) || !hasActions(b)) return b
+    const ids = b.buttons.filter(x => x.isOption).map(x => x.id)
+    options.set(b.id, ids)
+    const a = stepAdded(last.added.get(b.id), last.options.get(b.id), ids, now, isAtOnce)
+    if (a) added.set(b.id, a)
+    return a ? { ...b, addedOptions: a } : b
+  })
+  const ends = [...added.values()].flatMap(a => [a.cameAt + NEXT_FRAME_MS, a.cameAt + LINE_COMES_MS])
+
+  return { blocks: shown, options, added, ends: ends.filter(at => at > now) }
+}
 
 /**
  * The blocks with each row's held line, the lines to hold at the next draw, and when a held line next changes how it
@@ -110,6 +154,7 @@ export function holdLinesAbove(
       heldLine: { text, tone: d.line.tone, isHidden: d.isHidden, ...(d.leftAt === null ? {} : { leftAt: d.leftAt }) },
     }
   })
+  const withAdded = addOptions(shown, last, now, isAtOnce)
   const ends = [...next.values()].flatMap(k => {
     if (isComing(k?.line, now))
       return [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter(at => at > now)
@@ -119,7 +164,10 @@ export function holdLinesAbove(
       : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter(at => at > now)
   })
 
-  return { blocks: shown, held: { held: next, lineless }, nextAt: ends.length === 0 ? null : Math.min(...ends) }
+  ends.push(...withAdded.ends)
+  const held = { held: next, lineless, options: withAdded.options, added: withAdded.added }
+
+  return { blocks: withAdded.blocks, held, nextAt: ends.length === 0 ? null : Math.min(...ends) }
 }
 
 /** Whether a row's held line that let go has faded, so its box shuts. */
@@ -141,3 +189,9 @@ export const lineRise = (r: RowBlock, now: number, heights: Sizes): number =>
   r.lineCameAt === undefined || now === r.lineCameAt
     ? 0
     : Math.max(0, (heights.get(aboveLineId(r.id)) ?? 0) - (heights.get(aboveId(r.id)) ?? 0))
+
+/** As `lineRise`, for the box of the options an open row added. */
+export const addedRise = (r: RowBlock, now: number, heights: Sizes): number =>
+  r.addedOptions === undefined || now === r.addedOptions.cameAt
+    ? 0
+    : Math.max(0, (heights.get(addedLinesId(r.id)) ?? 0) - (heights.get(addedId(r.id)) ?? 0))

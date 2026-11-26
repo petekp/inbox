@@ -40,7 +40,7 @@ import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { titleTextEl } from './paint-title-text'
-import { titleLineEls } from './paint-row-lines'
+import { addedOptionsEls, titleLineEls } from './paint-row-lines'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
 import { DOT } from '../../core/view/rows'
@@ -245,7 +245,7 @@ function bodyEls(
     return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)
   })
 
-  return { els, end }
+  return { els: addedOptionsEls(from, shown, els, p), end }
 }
 
 /**
