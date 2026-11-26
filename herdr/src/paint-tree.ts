@@ -40,18 +40,18 @@ const answerKey = (buttonId: string) => `answer ${buttonId}`
 
 /**
  * Whether a row's answers draw side by side: when its block offers that form and the answers' buttons, as last
- * measured, fit the row's text column. Before a button first measures, its row draws them side by side, so the common
- * case of short answers draws in its final form at once.
+ * measured, fit the row's text column. Before a button first measures, its row draws them side by side if those that
+ * measured fit, so the common case of short answers draws in its final form at once, and answers added to ones that
+ * did not fit, as "All N options" adds them, draw stacked at once.
  */
 export function isSideBySide(
   r: RowBlock,
   p: Paint,
 ): r is RowBlock & { sideBySide: NonNullable<RowBlock['sideBySide']> } {
   if (!r.sideBySide) return false
-  const widths = r.sideBySide.optionIds.map(id => p.heights.widthOf(answerKey(id)))
-  if (widths.some(w => w === undefined)) return true
+  const widths = r.sideBySide.optionIds.flatMap(id => p.heights.widthOf(answerKey(id)) ?? [])
 
-  return answersFitLine(widths as number[], CONTROL_GAP, p.rowTextRoom)
+  return answersFitLine(widths, CONTROL_GAP, p.rowTextRoom)
 }
 
 /**

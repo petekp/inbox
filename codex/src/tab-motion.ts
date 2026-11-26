@@ -13,16 +13,7 @@ import type { SpringState } from '../../core/view/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
 import { later } from './tab-host'
 import { fadeForms, swapsForm } from './tab-form-swap'
-import {
-  atEndGlides,
-  closeTitle,
-  drawnLine,
-  glideLine,
-  openTitle,
-  releaseLine,
-  showClosedLine,
-  LINE,
-} from './tab-title-motion'
+import { atEndGlides, drawnLine, glideLine, openTitle, releaseLine, showClosedLine } from './tab-title-motion'
 import type { DrawnLine } from './tab-title-motion'
 import {
   fade,
@@ -39,15 +30,8 @@ import {
   stopFadeOut,
   waitLeftMs,
 } from './tab-glide'
-import {
-  closeHoldsUp,
-  fadeFaintPanel,
-  fadeThrough,
-  fadingParts,
-  openHoldsUp,
-  shownPanel,
-  trunkBeside,
-} from './tab-panel-fade'
+import { fadeThrough, fadingParts, openHoldsUp, shownPanel, trunkBeside } from './tab-panel-fade'
+import { collapse, naturalHeight, retargetClose, topIn } from './tab-collapse'
 import { showConnectors } from './tab-connectors'
 import { drawnKeys, showNewKeys } from './tab-new-keys'
 
@@ -73,8 +57,6 @@ type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; 
 const OPEN_PART = '.panel, .pr-body'
 
 const isShownTab = (el: HTMLElement) => el.classList.contains('shown')
-
-const topIn = (el: HTMLElement, part: Element) => part.getBoundingClientRect().top - el.getBoundingClientRect().top
 
 export function measure(): Drawing {
   const heights = new Map<string, Drawn>()
@@ -123,13 +105,6 @@ let closeWaitMs = 0
  * the draw took.
  */
 let drawnAt = 0
-
-/** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. */
-function naturalHeight(el: HTMLElement): number {
-  glides.get(el)?.anim.cancel()
-
-  return atEndGlides(el, () => el.getBoundingClientRect().height)
-}
 
 /** Whether a leaving element no longer holds its space: its space has begun to shrink, or it left before its space opened. */
 function isSpaceShort(el: HTMLElement): boolean {
@@ -281,6 +256,7 @@ function moveRow(
   const waitsForLeave = state === 'opening' || waitLeft > 0 || el.querySelector(NEW_NOTE) !== null
   const delay = Math.max(isOwnMove ? 0 : Math.max(waitsForLeave ? heightWaitMs : 0, waitLeft), closeWait)
   if (track && changed.has(key) && startState(el, track, from, isFresh, was?.openTop ?? null)) return
+  if (state === 'closing' && !isFresh) retargetClose(el)
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
     if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, Math.max(heightWaitMs, closeWaitMs))
@@ -359,56 +335,6 @@ function isInsideLeaving(el: HTMLElement): boolean {
   const outer = el.parentElement?.closest<HTMLElement>('[data-motion]')
 
   return outer !== null && outer !== undefined && drawnRows.get(outer.dataset.motion!)?.track.state === 'leaving'
-}
-
-/**
- * Shrinks an entry to the height it comes to rest at, over what it drew open and still draws, inert: a closing row's
- * panel or a PR block's body. A closing row's panel fades out first, while the entry holds its height, so the shrinking
- * height never cuts a line of it that shows. A panel that shows nothing yet, as one still waiting to fade in, hides at
- * once and holds nothing. A turned-back panel that shows faint while its space is still short of open holds nothing
- * either, and fades out in the steps of `faintCloseFades` while the height shrinks. A settling PR
- * block's dismissed head replaces the line above its body, so the body keeps the top it had at `openTop` while the
- * height shrinks over it. A settling row draws its settled line, under the form it leaves while that form fades
- * (`fadeForms`).
- */
-function collapse(
-  el: HTMLElement,
-  from: SpringState,
-  state: 'closing' | 'settling',
-  openTop: number | null,
-  delay: number,
-) {
-  const isShort = state === 'closing' && isOpeningShort(el, from)
-  const part = el.querySelector<HTMLElement>('.closing[inert]')
-  // A closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
-  const row = el.querySelector<HTMLElement>('.row.closing')
-  const line = row?.querySelector<HTMLElement>(LINE) ?? null
-  const lineFrom = line ? springOf(line, line.getBoundingClientRect().height) : null
-  if (line) glides.get(line)?.anim.cancel()
-  row?.classList.remove('closing')
-  if (part) part.style.display = 'none'
-  const target = naturalHeight(el)
-  const title = line?.querySelector<HTMLElement>(':scope > .text:not(.short)')
-  const lineTo = title ? title.getBoundingClientRect().height : null
-  if (part) part.style.display = ''
-  row?.classList.add('closing')
-  if (part && state === 'settling' && openTop !== null) keepTop(el, part, openTop)
-  const shown = state === 'closing' ? shownPanel(el) : null
-  if (shown && isShort) fadeFaintPanel(shown)
-  else if (shown)
-    for (const p of [...fadingParts(shown), ...trunkBeside(shown, true)]) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
-  else if (part && state === 'closing') for (const p of [part, ...trunkBeside(part, true)]) fade(p, 0, 0, 0, true)
-  if (part && state === 'closing') closeHoldsUp(part, shown !== null)
-  const opacity = opacityOf(el)
-  const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0)
-  glide(el, 'height', from, target, true, false, shrinksAfter)
-  if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, shrinksAfter)
-  if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)
-}
-
-function keepTop(el: HTMLElement, part: HTMLElement, top: number) {
-  const margin = parseFloat(getComputedStyle(part).marginTop) || 0
-  part.style.marginTop = `${margin + top - topIn(el, part)}px`
 }
 
 /**

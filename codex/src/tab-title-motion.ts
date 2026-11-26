@@ -89,13 +89,20 @@ function dropsOpenAfter(line: HTMLElement, to: number): boolean {
  * whole keeps its full form, unless an open it turns back had hidden it. A status only the open form draws, which the
  * closed line has no room for, fades out with the title, or goes at once with it, so the shrinking line never cuts it.
  */
+/** The height a closing row's line comes to rest at, given its closed title's height `to`. */
+export function closedLineHeight(line: HTMLElement, to: number): number {
+  const title = titleOf(line)
+
+  return title && !dropsOpenAfter(line, to) ? Math.max(to, title.short.getBoundingClientRect().height) : to
+}
+
 export function closeTitle(line: HTMLElement, from: SpringState, to: number, delay: number) {
   const title = titleOf(line)
   const isFaded = delay >= LEAVE_FADE_MS
   const isAfterDropped = dropsOpenAfter(line, to)
   if (isAfterDropped)
     for (const part of openAftersOf(line)) fade(part, fadeShown(part) ?? 1, 0, isFaded ? LEAVE_FADE_MS : 0, true)
-  const end = title && !isAfterDropped ? Math.max(to, title.short.getBoundingClientRect().height) : to
+  const end = closedLineHeight(line, to)
   if (title && (from.x - end >= 0.5 || fadeShown(title.full) !== null)) swapTitle(title, false, 0, isFaded)
   glide(line, 'height', from, end, true, false, delay)
 }

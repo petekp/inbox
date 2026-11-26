@@ -98,7 +98,7 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   expect(text(unheldScreen(), onPage)).not.toContain('View ')
 })
 
-test('View on a Status row shows Asks with the oldest ask that holds it up selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
+test('View on a Status row shows Asks with the ask that sets its mark selected, by its key or Enter, sends nothing, and holds the ask’s buttons through a second Enter', () => {
   const screen = goallessScreen()
   for (const key of ['v', 'enter']) {
     const result = keyed(screen, onPage, key, NOW)
