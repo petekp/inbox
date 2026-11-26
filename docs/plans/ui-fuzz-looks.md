@@ -10,7 +10,7 @@ This is part of [the UI fuzz plan](ui-fuzz.md). It covers the two looks that run
 
 `drive` in `fuzz/codex-page.ts` runs inside the page. It opens a new thread, so each case starts from the demo session. It fires each event at the tab's iframe, then samples every animation frame until the page has been still for 1.5 s. A click sends pointer and mouse events before the click, as a person's does. It checks these rules on each frame:
 
-- `cut`: no text that shows at 0.2 opacity or more (`CUT_OPACITY` in `core/view/row-motion.ts`) has between 5% and 95% of its own text rect inside a box whose height is changing and that clips. Frames within 50 ms of a tab or Help switch are left out, since a new page draws at rest.
+- `cut`: no text that shows at 0.2 opacity or more (`CUT_OPACITY` in `core/view/row-motion.ts`) has between 5% and 95% of its own text rect inside a box whose height is changing and that clips, or inside a clipping box that holds still after the text showed whole in the frame before, as when a line above the text grows in one draw. Frames within 50 ms of a tab or Help switch are left out, since a new page draws at rest.
 - `jump`: no box moves by a spike, a step of 8 px or more that is over three times the steps before and after it. The detail says whether the box grew, shrank or moved. A box pushed by a spike in a box above it is left out. A stall in a box above, a frame where its height stood still during its glide, is named as the cause.
 - `reduced`: with reduced motion, no box moves in three frames in a row.
 - `bad-text` and `no-throw`: no text holds `NaN`, `undefined` or `[object Object]`, and the page throws no error.
@@ -19,7 +19,7 @@ Each new kind of failure, a rule and its issue or the kind of box, is shrunk by 
 
 Positions add the page's scroll offset, so a scroll does not count as a move. Runs are in real time, so a failure can come and go between runs. `--look all` leaves the Codex tab out for that reason.
 
-Results so far, on seeds 1 to 3 with 30 to 50 cases each. The fixed seeds for #834 to #837 run before the generated cases, and each is marked open in `fuzz/seeds.ts`:
+Results so far, on seeds 1 to 3 with 30 to 50 cases each. The fixed seeds for #834 to #837 run before the generated cases, in `fuzz/seeds-codex.ts`:
 
 - #834: a press's new line, or a PR comment's line from its thread, pushes full-opacity lines past the edge of its growing box.
 - #835: Explain on a row that is still opening makes the row 24 px taller in one frame.
@@ -30,6 +30,8 @@ Results so far, on seeds 1 to 3 with 30 to 50 cases each. The fixed seeds for #8
 - Not filed: once, a 12 px shrink and then a cut of "Reply" at 0.27 opacity, after ArrowUp, a 120 ms wait and a click on the open row. It came back in 1 of 3 replays.
 
 The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/seeds.ts`) and no seed fails differently from its issue. A seed whose issue is open but that now passes fails the run, and its line says to close the issue and mark the seed closed. A case whose tab page did not load, as can happen when the machine is under load, is judged neither passed nor failed. Its line says it could not run and why, and the run exits 2 when nothing failed. The seed for #836 fails in about 2 of 3 runs, so it can pass and fail the run. `check.sh` does not run this look, since it runs in real time.
+
+Every seed for #834 to #837 and #959 now passes, and #968 has an open seed. #772 and #783 (open or close just after Undo) have no seed yet.
 
 Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so the seeds for #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line) cannot run there.
 

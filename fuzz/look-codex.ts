@@ -4,7 +4,8 @@ import { $ } from 'bun'
 import { CUT_OPACITY } from '../core/view/row-motion'
 import { type CodexEv, type CodexSpec, type PageFailure, type PageRun, drive } from './codex-page'
 import { type Rng, rngOf } from './rng'
-import { CODEX_SEEDS, apartFrom, knownIssueOf, ownFailures } from './seeds'
+import { apartFrom, knownIssueOf, ownFailures } from './seeds'
+import { CODEX_SEEDS } from './seeds-codex'
 import { without } from './shrink'
 
 /** A Codex tab case: the page's theme, width and reduced motion, and what the person does. */
@@ -199,7 +200,7 @@ export async function runCodex(
       const verdict =
         failures.length === 0
           ? s.isOpen
-            ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds.ts in the same PR`
+            ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds-codex.ts in the same PR`
             : 'passes'
           : s.isOpen && isAsIssueSays
             ? `fails as its issue says (${rules})`

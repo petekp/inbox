@@ -1,7 +1,7 @@
 import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
 import type { Case, Ev } from './case'
-import type { CodexCase } from './look-codex'
+import { CODEX_SEEDS } from './seeds-codex'
 import type { ModCase } from './mod-case'
 import { openIds } from './agent'
 import { START } from './gen'
@@ -23,6 +23,7 @@ const omp = (events: Ev[]): Case => ({ ...herdr(emptySession(), events), look: '
 const demo = demoSession(START, 'Claude')
 const ESC = String.fromCodePoint(0x1b)
 const BEL = String.fromCodePoint(7)
+const LONG_URL = `https://example.com/${'path/'.repeat(30)}`
 
 /**
  * Fixed cases from bugs the looks had, which every run includes. A seed for an open issue is expected to fail with
@@ -343,6 +344,87 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     },
   },
   {
+    name: 'Fix on a PR check whose refresh fails',
+    rule: 'cut',
+    detail: '"Could not refresh',
+    issue: 957,
+    isOpen: false,
+    case: {
+      ...herdr(demo, [
+        { is: 'click', on: 'tab', n: 7, label: 'prs' },
+        { is: 'key', key: 'j' },
+        { is: 'click', on: 'button', n: 6, label: 'Fix' },
+      ]),
+      outcomes: { deliver: ['accepted'], isHeldUntilRun: false, performFails: [true] },
+      takeAfterMs: 2000,
+    },
+  },
+  {
+    name: 'a row that opens as the terminal goes back to its shell',
+    rule: 'cut',
+    detail: 'in its box panel d18',
+    issue: 971,
+    isOpen: true,
+    case: herdr(demo, [{ is: 'click', on: 'row', n: 7, label: 'd18' }, { is: 'wait', ms: 187 }, { is: 'end' }]),
+  },
+  {
+    name: 'the same long question recorded again with a trailing space',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 972,
+    isOpen: true,
+    case: {
+      ...herdr(emptySession(), [
+        {
+          is: 'record',
+          args: { kind: 'question', ask: LONG_URL, options: ['Leave it gone', 'Bring it back'], rec: 'Leave it gone' },
+        },
+        { is: 'wait', ms: 1000 },
+        { is: 'record', args: { kind: 'question', ask: `${LONG_URL} `, options: ['Ship it'], context: 'Y' } },
+      ]),
+      takeAfterMs: 20,
+    },
+  },
+  {
+    name: 'Reply pressed just after an option',
+    rule: 'cut',
+    detail: '"Send"',
+    issue: 956,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        {
+          is: 'record',
+          args: {
+            kind: 'question',
+            ask: 'Show glances while you are walking or driving?',
+            options: ['Yes', 'No'],
+            rec: 'No',
+          },
+        },
+        { is: 'wait', ms: 400 },
+        { is: 'click', on: 'button', n: 0, label: 'No (recommended)' },
+        { is: 'click', on: 'button', n: 6, label: 'Reply' },
+      ]),
+      outcomes: { deliver: ['rejected'], isHeldUntilRun: false, performFails: [false] },
+    },
+  },
+  {
+    name: 'a press nobody takes, under a status above the buttons',
+    rule: 'cut',
+    detail: 'in its box panel d18',
+    issue: 967,
+    isOpen: true,
+    case: {
+      ...herdr(demo, [
+        { is: 'click', on: 'row', n: 7, label: 'd18' },
+        { is: 'key', key: 'x' },
+        { is: 'wait', ms: 12010 },
+      ]),
+      takeAfterMs: null,
+    },
+  },
+  {
     name: 'folding every fold on the Status tab',
     rule: 'connector-gap',
     issue: 833,
@@ -353,229 +435,6 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       { is: 'wait', ms: 1000 },
       { is: 'key', key: 'w' },
     ]),
-  },
-]
-
-/** Fixed Codex tab cases, run before each Codex pass. A seed whose issue is open is expected to fail with `rule`. */
-export const CODEX_SEEDS: {
-  name: string
-  issue: number
-  isOpen: boolean
-  rule: string
-  detail?: string
-  case: CodexCase
-}[] = [
-  {
-    name: 'an option pressed just after Open previews',
-    rule: 'jump',
-    detail: 'press-d11',
-    issue: 924,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'dark',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'button', n: 2 },
-        { is: 'click', on: 'button', n: 0 },
-      ],
-    },
-  },
-  {
-    name: 'a row clicked after j and r on the PRs tab',
-    rule: 'cut',
-    detail: '"@review-bot"',
-    issue: 936,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'key', key: '4' },
-        { is: 'key', key: 'j' },
-        { is: 'key', key: 'r' },
-        { is: 'click', on: 'row', n: 1 },
-      ],
-    },
-  },
-  {
-    name: 'File issue on a Finds row that is still opening',
-    rule: 'cut',
-    detail: '"Asked to file"',
-    issue: 955,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'tab', n: 2 },
-        { is: 'click', on: 'row', n: 3 },
-        { is: 'click', on: 'button', n: 1 },
-      ],
-    },
-  },
-  {
-    name: 'Reply just after Open previews',
-    rule: 'jump',
-    detail: 'd11 shrank',
-    issue: 924,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'dark',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'wait', ms: 300 },
-        { is: 'click', on: 'button', n: 2 },
-        { is: 'click', on: 'button', n: 3 },
-      ],
-    },
-  },
-  {
-    name: 'opening a PR comment from its thread',
-    rule: 'cut',
-    detail: '"Open comment"',
-    issue: 834,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'tab', n: 3 },
-        { is: 'click', on: 'button', n: 4 },
-      ],
-    },
-  },
-  {
-    name: 'Explain on a row that is still opening',
-    rule: 'jump',
-    detail: ' grew ',
-    issue: 835,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'dark',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 2 },
-        { is: 'key', key: 'e' },
-      ],
-    },
-  },
-  {
-    name: 'a row glide that starts again mid-move',
-    rule: 'jump',
-    detail: 'height stood still',
-    issue: 836,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'dark',
-      width: 520,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 5 },
-        { is: 'click', on: 'row', n: 1 },
-        { is: 'wait', ms: 350 },
-        { is: 'click', on: 'row', n: 2 },
-      ],
-    },
-  },
-  {
-    name: 'Explain on a row that is still opening, then opening another row',
-    rule: 'cut',
-    issue: 834,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 520,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 7 },
-        { is: 'click', on: 'button', n: 3 },
-        { is: 'click', on: 'row', n: 1 },
-      ],
-    },
-  },
-  {
-    name: 'opening a row again just as its close ends',
-    rule: 'cut',
-    issue: 863,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 520,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 1 },
-        { is: 'wait', ms: 300 },
-        { is: 'key', key: 'ArrowUp' },
-      ],
-    },
-  },
-  {
-    name: 'Copy on an open task, whose result shows under its buttons',
-    rule: 'jump',
-    detail: 'press-',
-    issue: 864,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 520,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 5 },
-        { is: 'click', on: 'button', n: 0 },
-      ],
-    },
-  },
-  {
-    name: 'Cancel on the Reply field',
-    rule: 'cut',
-    detail: '"Reply" shows at 1.00',
-    issue: 837,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 7 },
-        { is: 'click', on: 'button', n: 2 },
-        { is: 'wait', ms: 800 },
-        { is: 'click', on: 'button', n: 7 },
-      ],
-    },
-  },
-  {
-    name: 'Compare, then opening another row',
-    rule: 'cut',
-    detail: '"Holds up Flick option" shows at 1.00',
-    issue: 896,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'dark',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'button', n: 4 },
-        { is: 'click', on: 'row', n: 8 },
-      ],
-    },
   },
 ]
 
@@ -629,6 +488,27 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
     ],
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
+  {
+    issue: 967,
+    look: 'herdr',
+    rule: 'cut',
+    details: [
+      [' again"', 'in its box panel d18'],
+      ['"Done"', 'in its box panel d18'],
+      ['"Dismiss"', 'in its box panel d18'],
+      ['"Not applied', 'in its box status above d18'],
+    ],
+  },
+  {
+    issue: 971,
+    look: 'herdr',
+    rule: 'cut',
+    details: [
+      ['"Reply"', 'in its box panel d18'],
+      ['"Explain"', 'in its box panel d18'],
+    ],
+  },
+  { issue: 968, look: 'codex', rule: 'cut', details: ['"Run gesture tests"'] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
 ]

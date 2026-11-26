@@ -71,7 +71,7 @@ function segmentsOf(root: Painted, placed: Map<Painted, Box>, isHidden: (n: Pain
 
 function gapsOf(segments: Segment[], end: number): { id: string; x: number; y: number }[] {
   const isMet = (s: Segment, y: number) =>
-    segments.some(o => o !== s && o.x === s.x && o.y0 <= y + 0.5 && o.y1 >= y - 0.5)
+    segments.some(o => o !== s && !o.isHidden && o.x === s.x && o.y0 <= y + 0.5 && o.y1 >= y - 0.5)
   const ends = segments
     .filter(s => !s.isHidden)
     .flatMap(s => [
@@ -301,7 +301,8 @@ class Frames {
   private lastShown = new Map<string, number>()
   private last: Map<string, Box> | null = null
   private motionIds: Map<string, string> | null = null
-  private strokesOut = new Map<string, number>()
+  private fadeEnds = new Map<string, number>()
+  private drawnIds = new Set<string>()
   jumps: Jump[] = []
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
@@ -320,17 +321,24 @@ class Frames {
   }
 
   private hiddenStrokes(root: Painted, now: number): (n: Painted) => boolean {
-    const out = new Map<string, number>()
+    const fadeEnds = new Map<string, number>()
+    const drawn = new Set<string>()
     const walk = (n: Painted) => {
-      if (n.style.isAbsolute && n.id && n.style.opacity === 0) out.set(n.id, this.strokesOut.get(n.id) ?? now)
+      if (n.id) drawn.add(n.id)
+      if (n.id && n.style.opacity === 0) {
+        const startsNow = this.drawnIds.has(n.id) ? now + (n.transitions.get('opacity') ?? 0) : -Infinity
+        fadeEnds.set(n.id, this.fadeEnds.get(n.id) ?? startsNow)
+      }
       n.kids.forEach(walk)
     }
     walk(root)
-    this.strokesOut = out
+    this.fadeEnds = fadeEnds
+    this.drawnIds = drawn
+    const isFadedOut = (n: Painted) => now >= (n.id ? (fadeEnds.get(n.id) ?? Infinity) : Infinity)
 
     return n => {
-      const since = n.id ? out.get(n.id) : undefined
-      return since !== undefined && now - since >= (n.transitions.get('opacity') ?? 0)
+      for (let up: Painted | null = n; up; up = up.parent) if (isFadedOut(up)) return true
+      return false
     }
   }
 
