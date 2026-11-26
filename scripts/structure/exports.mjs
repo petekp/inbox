@@ -23,6 +23,14 @@ const ENTRY_POINTS = {
   'core/view/tones.ts': { names: ['DARK_TONES', 'LIGHT_TONES'], why: 'codex/build.mjs reads them for the tab colors.' },
   'omp/src/host.ts': { names: ['default'], why: 'omp loads the built bundle and calls its default export.' },
   'prototypes/exact-inbox/app.ts': { names: ['answer', 'grants'], why: 'Exact loads the client data module.' },
+  'prototypes/exact-inbox/tools/client-rules.ts': {
+    names: ['formatLocal', 'advanceSelection', 'advanceMotion', 'helpLegend', 'loadKeys', 'changeFolds'],
+    why: 'prepare-client.ts bundles these functions for app.ts as client-shared.js.',
+  },
+  'prototypes/exact-inbox/client-shared.d.ts': {
+    names: ['formatLocal', 'advanceSelection', 'advanceMotion', 'helpLegend', 'loadKeys', 'changeFolds'],
+    why: 'These declarations type the generated client-shared.js imports in app.ts.',
+  },
   'prototypes/exact-inbox/app.contract.d.ts': { names: '*', why: 'Exact generates client data-source declarations.' },
   'types/index.d.ts': { names: '*', why: 'scripts/build-types.mjs builds it from types/parts for the mod.' },
   'videos/remotion.config.ts': { names: '*', why: 'Remotion loads it by name.' },

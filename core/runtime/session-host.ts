@@ -146,6 +146,8 @@ export type SessionHost<S extends Session> = {
   comparePage: string
   /** Whether a background subagent's report reaches the chat, from the host's `compare-in-background` support. */
   compareInBackground: boolean
+  /** Whether a remote Inbox client can send a Resume press for a stopped turn on this host. */
+  supportsResume?: boolean
 }
 
 /**

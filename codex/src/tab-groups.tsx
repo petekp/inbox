@@ -32,6 +32,7 @@ function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): Clos
   return closedShown(closed, settledIn(entries), tabState.ui.closedAll.includes(kind)).map(d => ({
     id: d.id,
     how: d.how,
+    canRestore: d.canRestore,
     ask: d.ask,
     outcomeLabel: d.outcomeLabel,
     mark: d.mark,
@@ -85,6 +86,7 @@ function groupEmpty(title: string, rest: Entry[]): GroupEmpty | null {
 type ClosedLine = {
   id: string
   how: Parameters<typeof closedLineAction>[0]['how']
+  canRestore?: boolean
   ask: string
   outcomeLabel: string
   mark: ResultMark
@@ -211,6 +213,7 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
     closedShown(closedOf(kind), settled, tabState.ui.closedAll.includes(kind)).map(f => ({
       id: f.id,
       how: f.how,
+      canRestore: f.canRestore,
       ask: f.title,
       outcomeLabel: f.outcomeLabel,
       mark: f.mark,

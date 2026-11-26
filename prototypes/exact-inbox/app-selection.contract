@@ -1,0 +1,21 @@
+use RowSelection, Place, selectionFor from "./model.contract"
+
+members App
+  state rowSelections: RowSelection[] = []
+  derive selectionHistory = selectionFor(rowSelections, selectedSession)
+  derive selectionKey = `${selectedSession}:${inbox.asks.map(r => `${r.id}:${r.waiting}`).join(",")}:${inbox.findings.map(r => `${r.id}:${r.waiting}`).join(",")}:${inbox.prLines.filter(r => r.kind == "thread" or r.kind == "check").map(r => `${r.id.length}:${r.id}:${r.waiting}`).join("")}:${activePlace.prsExpanded}:${activePlace.asksExpanded}:${activePlace.findsExpanded}:${effectiveCollapsed.join(",")}`
+  mutation nextSelection as shape RowSelection queue then applySelection
+  task updateSelection when matchingInbox and navigationLoaded and selectionHistory.signature != selectionKey key=selectionKey
+    after(1, updateSelection)
+  action updateSelection
+    send nextSelection = advanceSelection(selectionKey, inbox, Place(activePlace, collapsed=effectiveCollapsed), selectionHistory)
+  action applySelection
+    match nextSelection
+      case some(value)
+        if value.session == selectedSession and value.signature == selectionKey
+          rowSelections = rowSelections.filter(r => r.session != value.session).concat([value])
+          if activePlace.asksExpanded != value.asks or activePlace.findsExpanded != value.finds or activePlace.prsExpanded != value.prs
+            places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, asksExpanded=value.asks, findsExpanded=value.finds, prsExpanded=value.prs)])
+            navigationRevision = navigationRevision + 1
+      case none
+        rowSelections = rowSelections

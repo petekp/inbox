@@ -318,6 +318,7 @@ export function paneAskTabs(
       const closed = closedShown(closedOf, settled, closedAll.includes(g.kind)).map(f => ({
         id: f.id,
         how: f.how,
+        canRestore: f.canRestore,
         ask: f.title,
         at: f.closedAt,
         outcomeLabel: f.outcomeLabel,

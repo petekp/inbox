@@ -109,8 +109,10 @@ export function resumeLabel(isSending: boolean): string {
 export function closedLineAction(d: {
   id: string
   how: Closed['how']
+  canRestore?: boolean
   delivery: ClosedDelivery
 }): { label: string; press: RowPress } | null {
+  if (d.canRestore === false) return null
   if (canUndoRefused(d.delivery)) return { label: ROW_COPY.undo, press: { id: d.id, action: 'undo' } }
   return d.how === 'dismissed' ? { label: ROW_COPY.reopen, press: { id: d.id, action: 'undo' } } : null
 }

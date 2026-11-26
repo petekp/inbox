@@ -1,22 +1,39 @@
+component TabButton
+  props
+    name: string
+    label: string
+    icon: string
+    selected: bool
+    wideWeb: bool
+    shown: bool
+    onPick: action
+  view
+    if wideWeb
+      button role="tab" aria-controls=`panel-${name}` aria-selected=selected press=onPick(name) testId=`tab-${name}` flex=1 display=(shown ? "flex" : "none") appearance="none" min-height=36 align-items="center" justify-content="center" border-width=0 background-color="transparent" color=(selected ? "-exact-system-blue" : "-exact-secondary-label")
+        text label
+    else
+      button role="tab" aria-controls=`panel-${name}` aria-selected=selected press=onPick(name) testId=`tab-${name}` flex=1 display=(shown ? "flex" : "none") appearance="auto"
+        image icon
+        text label
+
 component TabBar
   props
+    helpShown: bool
+    onHelp: action
+    asksBadge: string
+    findsBadge: string
+    prsBadge: string
     tab: string
     wideWeb: bool
     onPick: action
   view
-    row role="tablist" testId="tabs" margin-left=(wideWeb ? 260 : 0)
-      button role="tab" aria-controls="panel-sessions" aria-selected=(tab == "sessions") press=onPick("sessions") testId="tab-sessions" flex=1 display=(wideWeb ? "none" : "flex")
-        image "symbol:list"
-        text "Sessions"
-      button role="tab" aria-controls="panel-status" aria-selected=(tab == "status") press=onPick("status") testId="tab-status" flex=1
-        image "symbol:chart"
-        text "Status"
-      button role="tab" aria-controls="panel-asks" aria-selected=(tab == "asks") press=onPick("asks") testId="tab-asks" flex=1
-        image "symbol:messages"
-        text "Asks"
-      button role="tab" aria-controls="panel-findings" aria-selected=(tab == "findings") press=onPick("findings") testId="tab-findings" flex=1
-        image "symbol:info"
-        text "Finds"
-      button role="tab" aria-controls="panel-prs" aria-selected=(tab == "prs") press=onPick("prs") testId="tab-prs" flex=1
-        image "symbol:repeat"
-        text "PRs"
+    row role="tablist" appearance=(wideWeb ? "none" : "auto") testId="tabs" margin-left=(wideWeb ? 260 : 0)
+      TabButton(name="sessions", label="Sessions", icon="symbol:list", selected=tab == "sessions", wideWeb=wideWeb, shown=not wideWeb, onPick=onPick)
+      TabButton(name="status", label="Status", icon="symbol:chart", selected=tab == "status", wideWeb=wideWeb, shown=true, onPick=onPick)
+      TabButton(name="asks", label=(asksBadge == "" ? "Asks" : `Asks ${asksBadge}`), icon="symbol:messages", selected=tab == "asks", wideWeb=wideWeb, shown=true, onPick=onPick)
+      TabButton(name="findings", label=(findsBadge == "" ? "Finds" : `Finds ${findsBadge}`), icon="symbol:info", selected=tab == "findings", wideWeb=wideWeb, shown=true, onPick=onPick)
+      TabButton(name="prs", label=(prsBadge == "" ? "PRs" : `PRs ${prsBadge}`), icon="symbol:repeat", selected=tab == "prs", wideWeb=wideWeb, shown=true, onPick=onPick)
+
+      if wideWeb
+        button press=onHelp aria-label=(helpShown ? "Close help" : "Help") aria-pressed=helpShown appearance="none" min-width=44 min-height=36 testId="help-web"
+          text "?"

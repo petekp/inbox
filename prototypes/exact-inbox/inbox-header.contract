@@ -1,5 +1,9 @@
+use HostBanner from "./model.contract"
 component InboxHeader
   props
+    banners: HostBanner[]
+    busy: bool
+    onAction: action
     name: string
     connection: string
     readOnly: bool
@@ -25,3 +29,12 @@ component InboxHeader
       if receiptError != ""
         row
           text receiptError color="-exact-system-red"
+
+      for banner in banners key=banner.id
+        column gap=6 padding=10 background-color="-exact-tertiary-fill" border-radius=8
+          text banner.title font-weight=600 color=(banner.tone == "error" ? "-exact-system-red" : "-exact-label")
+          if banner.body != ""
+            text banner.body color="-exact-secondary-label"
+          if banner.key != ""
+            button press=onAction(banner.key, false, "session", banner.label) disabled=(banner.disabled or readOnly or busy)
+              text banner.label

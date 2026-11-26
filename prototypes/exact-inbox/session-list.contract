@@ -12,24 +12,29 @@ component SessionList
     onScroll: action
     onSearch: action
     onSelect: action
+  action searchKey(k: string, event: KeyboardEvent)
+    if not event.isComposing and k == "Escape"
+      blur()
+      preventDefault()
+    stopPropagation()
   view
-    list scroll=onScroll scrollTop=restoreTop appearance="auto" listStyle="plain" flex=1 min-height=0 testId=(rail ? "rail-list" : "sessions-list")
+    list scroll=onScroll scrollTop=restoreTop appearance="none" flex=1 min-height=0 testId=(rail ? "rail-list" : "sessions-list")
       section
         row
-          input value=search input=onSearch placeholder="Find a session" aria-label="Find a session" flex=1
+          input key=searchKey value=search input=onSearch placeholder="Find a session" aria-label="Find a session" flex=1
         if error != ""
           row
             text error color="-exact-system-red"
         for s in entries key=s.id
-          button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` background-color=(selected == s.id ? "-exact-tertiary-fill" : "transparent")
-            row padding=12
+          button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` appearance="none" width="100%" border-width=0 border-radius=8 padding=0 text-align="left" background-color=(selected == s.id ? "-exact-tertiary-fill" : "transparent")
+            row padding=12 width="100%" box-sizing="border-box"
               column flex=1 gap=4
                 text s.name
-                text (s.project != "" ? `${s.project} · ${s.agent}` : s.agent) font="-exact-subheadline" color="-exact-secondary-label"
+                text (s.project != "" ? `${s.project} · ${s.agent}` : s.agent) font-size="0.92em" color="-exact-secondary-label"
                 if s.duplicate
-                  text s.location font="-exact-footnote" color="-exact-secondary-label"
-                text s.host font="-exact-footnote" color="-exact-secondary-label"
-                text sessionLabel(s) font="-exact-footnote" color="-exact-secondary-label"
+                  text s.location font-size="0.85em" color="-exact-secondary-label"
+                text s.host font-size="0.85em" color="-exact-secondary-label"
+                text sessionLabel(s) font-size="0.85em" color="-exact-secondary-label"
         if entries.length == 0
           row
             text (loading ? "Reading your sessions…" : error != "" ? error : "No matching sessions.")

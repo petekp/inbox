@@ -11,31 +11,29 @@ const instructions = [
   'When both are answered, write a short sample release note using those choices. Create no new asks.',
 ].join(' ')
 
-const child = Bun.spawn(
-  [
-    Bun.which('claude') ?? 'claude',
-    '--model',
-    'sonnet',
-    '--plugin-dir',
-    resolve(runtimeRoot, 'plugin'),
-    '--setting-sources',
-    '',
-    '--settings',
-    resolve(runtimeRoot, 'claude-config/settings.json'),
-    '--strict-mcp-config',
-    '--mcp-config',
-    '{"mcpServers":{}}',
-    '--tools',
-    '',
-    '--',
-    instructions,
-  ],
-  {
-    env: agentEnvironment(),
-    cwd: resolve(runtimeRoot, 'session'),
-    stdin: 'inherit',
-    stdout: 'inherit',
-    stderr: 'inherit',
-  },
+const cli = Bun.which('claude')
+if (!cli || typeof process.execve !== 'function')
+  throw new Error('The prototype needs Claude Code and a Bun version with process.execve.')
+const args = [
+  cli,
+  '--model',
+  'sonnet',
+  '--plugin-dir',
+  resolve(runtimeRoot, 'plugin'),
+  '--setting-sources',
+  '',
+  '--settings',
+  resolve(runtimeRoot, 'claude-config/settings.json'),
+  '--strict-mcp-config',
+  '--mcp-config',
+  '{"mcpServers":{}}',
+  '--tools',
+  '',
+  '--',
+  instructions,
+]
+const env = Object.fromEntries(
+  Object.entries(agentEnvironment()).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
 )
-process.exit(await child.exited)
+process.chdir(resolve(runtimeRoot, 'session'))
+process.execve(cli, args, env)

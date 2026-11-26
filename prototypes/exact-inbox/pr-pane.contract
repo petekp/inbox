@@ -1,0 +1,57 @@
+use rowLayout, rowEntry from "./motion.contract"
+use Inbox, LocalFeedback, localNote, isPrRow, VisualPr from "./model.contract"
+use InlineText from "./inline-text.contract"
+
+component PrPane
+  props
+    visual: VisualPr[]
+    reduced: bool
+    inbox: Inbox
+    selected: string
+    guarded: bool
+    compact: bool
+    prefix: string
+    localFeedbacks: LocalFeedback[]
+    localActive: bool
+    onFold: action
+    onAction: action
+    busy: bool
+    sending: bool
+    submittedKey: string
+  view
+    section
+      if inbox.prNotice != ""
+        text inbox.prNotice color="-exact-system-red"
+      if inbox.prEmptyTitle != ""
+        text inbox.prEmptyTitle font-weight=600
+        text inbox.prEmptyHint color="-exact-secondary-label"
+      for v in visual key=v.id
+        column id=`${prefix}-pr-${v.row.id}` gap=6 padding=(v.target == "gone" ? "0px" : "10px 0") height=(v.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(v.target == "gone") aria-hidden=(v.target == "gone") -exact-layout-transition=rowLayout(reduced) animation=rowEntry(reduced, v.arriving)
+          if isPrRow(v.row)
+            button press=onFold(v.row.id, v.row.collapse) appearance="none" display="flex" width="100%" min-height=(compact ? 32 : 44) padding=0 text-align="left" align-items="start" aria-expanded=(selected == v.row.id) testId=`pr-select-${v.row.id}`
+              row gap=8 align-items="start" width="100%"
+                if v.row.running
+                  progress aria-label="Working" width=16 height=16
+                else
+                  text v.row.mark color=v.row.color width="1em"
+                text v.row.title color="-exact-label" font-weight=600 flex=1 min-width=0
+          else
+            text v.row.title font-weight=(v.row.kind == "block" or v.row.kind == "heading" or v.row.kind == "group" ? 600 : 400) color=(v.row.failed ? "-exact-system-red" : "-exact-label")
+          if v.row.detail != "" and (not isPrRow(v.row) or selected != v.row.id)
+            text v.row.detail color=(isPrRow(v.row) ? "-exact-secondary-label" : v.row.color)
+          column height=(not isPrRow(v.row) or v.target == "open" ? "auto" : "0px") overflow="hidden" inert=(isPrRow(v.row) and v.target != "open") aria-hidden=(isPrRow(v.row) and v.target != "open") -exact-layout-transition=rowLayout(reduced)
+            InlineText(parts=v.panel.quote)
+            if v.panel.openDetail != ""
+              text v.panel.openDetail color="-exact-secondary-label"
+            InlineText(parts=v.panel.reply)
+            if v.panel.controls.length > 0
+              row appearance="none" gap=8 flex-wrap="wrap"
+                for control in v.panel.controls key=control.key
+                  button press=onAction(control) disabled=(control.disabled or busy or (control.scope == "row" and (guarded or v.guarded or v.target != "open")) or (control.command == "local" and localActive) or (sending and submittedKey == control.key)) buttonStyle=(control.primary ? "filled" : "bordered") testId=`pr-action-${control.key}` min-height=(compact ? 26 : 44)
+                    text control.label
+          if localNote(localFeedbacks, v.row.id, v.row.version).text != ""
+            text localNote(localFeedbacks, v.row.id, v.row.version).text color=(localNote(localFeedbacks, v.row.id, v.row.version).failed ? "-exact-system-red" : "-exact-secondary-label")
+          else if sending and v.row.controls.map(c => c.key).includes(submittedKey)
+            text "Sending…" color="-exact-secondary-label"
+          else if v.row.feedback != ""
+            text v.row.feedback color=(v.row.failed ? "-exact-system-red" : "-exact-secondary-label")

@@ -1,7 +1,8 @@
+use LocalOpenTarget from "./app-local-actions.contract"
 use InboxBody from "./inbox-body.contract"
 use TabBar from "./tab-bar.contract"
 use SessionList from "./session-list.contract"
-use terminalReceipt, statusSampleVersion, visible, ViewerAck, sessionPath, Recovery, Inbox, Receipt, Draft, Directory, Place, Navigation, Viewport, Page, firstId, draftFor, replyAction, placeFor, sessionName, savedReply, connectionText, containsAction, matchingSessions, urlTab, readProblem from "./model.contract"
+use CollapseEntry, expandedRow, hasOpenRow, LocalFeedback, terminalReceipt, statusSampleVersion, visible, ViewerAck, sessionPath, Recovery, Inbox, Receipt, Draft, Directory, Place, Navigation, Viewport, Page, firstId, draftFor, replyAction, placeFor, sessionName, containsAction, matchingSessions, urlTab, readProblem from "./model.contract"
 
 routes nav
   tab sessions "/sessions"
@@ -26,7 +27,6 @@ component App
   state replyId = "" persist
   state drafts: Draft[] = []
   state draftsLoaded = false
-  state draftRevision = 0
   state receiptId = ""
   state recoveredId = ""
   state submittedKey = ""
@@ -39,15 +39,17 @@ component App
   state visibleStatus: string[] = []
   state statusSample = ""
   derive statusSampleKey = statusSampleVersion(inbox, selectedSession, top(nav).id)
+  members "./app-local-actions.contract"
   state interaction = 0
   state recentInput = false
   mutation viewerAck as shape ViewerAck queue
-  resource directory = loadSessions() as shape Directory else empty()
+  resource directory = loadSessions(selectedSession) as shape Directory else empty()
   resource savedNavigation = loadNavigation() as shape Navigation else empty()
   resource viewport = exactViewport() as shape Viewport
   resource page = exactPage() as shape Page
-  resource inbox = loadInbox(selectedSession) when selectedSession != "" as shape Inbox else empty()
-  mutation navigationSaved as shape Receipt queue
+  resource inbox = loadInbox(selectedSession) with activePlace.folds, activePlace.collapsed, activePlace.collapses when selectedSession != "" as shape Inbox else empty()
+  mutation navigationSaved as shape Receipt queue refreshes savedNavigation
+  derive compact = page.navigationType != "" and viewport.width >= 600
   derive wideWeb = page.navigationType != "" and viewport.width >= 960
   derive activePlace = placeFor(places, selectedSession)
   derive expanded = nav.tab == "findings" ? activePlace.findsExpanded : activePlace.asksExpanded
@@ -59,19 +61,22 @@ component App
   resource recovery = loadRecovery(selectedSession) when selectedSession != "" as shape Recovery else empty()
   resource savedDrafts = loadDrafts() as shape Draft[] else empty()
   resource receipt = loadReceipt(receiptId) when receiptId != "" as shape Receipt else empty()
-  mutation sent as shape Receipt queue refreshes inbox then sentPress
-  mutation stored as shape Receipt queue
-  mutation forgotten as shape Receipt queue refreshes recovery
-  derive selected = expanded != "" ? expanded : firstId(nav.tab == "findings" ? inbox.findings : inbox.asks)
-  derive disconnected = not matchingInbox or not inbox.connected or failed(inbox)
-  derive connectionLabel = not current(inbox) and not failed(inbox) ? "Connecting…" : connectionText(inbox, disconnected)
-  derive readError = readProblem(failed(savedDrafts), failed(inbox), inbox.failure)
+  mutation sent as shape Receipt queue refreshes inbox, recovery, savedDrafts then sentPress
+  mutation stored as shape Receipt queue refreshes savedDrafts, recovery
+  mutation forgotten as shape Receipt queue refreshes recovery, savedDrafts
+  derive selected = expandedRow((nav.tab == "findings" ? inbox.findings : inbox.asks), expanded, effectiveCollapsed)
+  derive compatibilityError = match failure(inbox) { case some(f) => f.reason == "helper-version" ? f.message : "", case none => "" }
+  derive readError = not failed(savedDrafts) and compatibilityError != "" ? compatibilityError : readProblem(failed(savedDrafts), failed(inbox), inbox.failure)
   derive activeDraft = draftFor(drafts, replyId)
   derive draft = activeDraft.text
   derive replyTitle = activeDraft.title
-  derive liveReplyKey = replyAction(inbox.asks.concat(inbox.findings), activeDraft.row)
-  derive replyOpen = replyId != "" and activeDraft.session == inbox.key and matchingInbox
-  derive replyWaiting = receiptId != "" and not failed(receipt) and (receipt.state == "" or receipt.state == "submitted")
+  derive liveReplyKey = activeDraft.row == "goal" ? (activeDraft.key == inbox.statusGoalKey ? inbox.statusGoalKey : "") : replyAction(inbox.asks.concat(inbox.findings), activeDraft.row)
+  derive replyOpen = replyId != "" and activeDraft.session == selectedSession and draftsLoaded
+  derive replyIsGoal = activeDraft.row == "goal"
+  derive replyIsDetached = (not matchingInbox or not hasOpenRow(inbox, activeDraft.row)) and not replyIsGoal
+  derive replyTabMatches = (nav.tab == "asks" and inbox.asks.map(r => r.id).includes(activeDraft.row)) or (nav.tab == "findings" and inbox.findings.map(r => r.id).includes(activeDraft.row))
+  derive replyVisible = replyOpen and (replyIsDetached or (replyIsGoal and nav.tab == "status") or (replyTabMatches and selected == activeDraft.row))
+  derive replyWaiting = submittedSession == selectedSession and receiptId != "" and not failed(receipt) and (receipt.state == "" or receipt.state == "submitted")
   derive replyAvailable = liveReplyKey != "" and activeDraft.session == inbox.key
   derive canSendReply = draft.trim() != "" and not pending(sent) and not pending(forgotten) and not disconnected and replyAvailable and not replyWaiting and not inbox.readOnly
   derive receiptError = failed(receipt) ? "Can’t check delivery. Your reply is kept." : (receipt.state == "unconfirmed" or terminalReceipt(receipt.state)) ? receipt.error : ""
@@ -82,11 +87,12 @@ component App
   derive wasSubmitted = match sent { case some(r) => r.ok, case none => false }
   derive mutationError = submittedSession != selectedSession ? "" : failed(sent) ? "Couldn’t confirm delivery. Refresh before trying again." : pressError
   derive hostHasNotApplied = containsAction(inbox, submittedRow, submittedKey)
-  derive isSendingRow = submittedSession == selectedSession and not disconnected and not failed(sent) and sendError == "" and pressError == "" and (pending(sent) or (wasSubmitted and hostHasNotApplied))
+  derive isSendingRow = submittedSession == selectedSession and not disconnected and not failed(sent) and sendError == "" and pressError == "" and (pending(sent) or replyWaiting or (wasSubmitted and hostHasNotApplied))
 
+  members "./app-connection.contract"
   task poll mount
     every(1000, refreshInbox)
-  task restoreNavigation when current(savedNavigation) and not navigationLoaded
+  task restoreNavigation when current(savedNavigation) and not pending(savedNavigation) and current(page) and not navigationLoaded
     after(1, restoreNavigation)
   task firstSession when navigationLoaded and selectedSession == "" and current(directory) and directory.defaultId != ""
     after(1, selectDefault)
@@ -100,17 +106,16 @@ component App
     after(1, restoreRoute)
   task showRailSelection when wideWeb and navigationLoaded and selectedSession != "" and nav.tab == "sessions" key=selectedSession
     after(1, showRailSelection)
-  task restoreReply when draftsLoaded and matchingInbox and not replyOpen and savedReply(drafts, inbox.key) != "" key=selectedSession
-    after(1, restoreReply)
   task restoreScroll when matchingInbox and nav.tab != "sessions" key=`${selectedSession}:${nav.tab}:${restoreRevision}:${top(nav).id}`
     after(1, restoreScroll)
-  task restore when current(savedDrafts) and not draftsLoaded
+  task restore when current(savedDrafts) and not pending(savedDrafts) and not failed(savedDrafts) and not draftsLoaded
     after(1, restoreDrafts)
-  task save when draftRevision > 0 key=draftRevision
-    after(250, saveDrafts)
+  state heartbeatQueued = false
+  task flushHeartbeat when heartbeatQueued and not pending(viewerAck)
+    after(1, renewViewer)
   task heartbeat when selectedSession != ""
     every(15000, renewViewer)
-  task viewerChanged when selectedSession != "" key=`${selectedSession}:${page.visibilityState}:${page.onLine}:${nav.tab}:${heldReplies.join(",")}:${visibleStatus.join(",")}:${statusSample}`
+  task viewerChanged when selectedSession != "" key=`${selectedSession}:${page.visibilityState}:${page.onLine}:${helpShown}:${nav.tab}:${heldReplies.join(",")}:${visibleStatus.join(",")}:${statusSample}`
     after(1, renewViewer)
   task activity when interaction > 0 key=interaction
     after(1, interacted)
@@ -118,10 +123,12 @@ component App
     after(1000, quiet)
   task moving when recentInput
     every(500, renewViewer)
-  task statusVisibility when nav.tab == "status" and page.visibilityState == "visible"
+  task statusVisibility when nav.tab == "status" and page.visibilityState == "visible" and not helpShown
     every(500, sampleStatus)
-  task recover when not pending(sent) and current(recovery) and recovery.id != "" and (submittedSession != selectedSession or (receiptId == "" and recoveredId != recovery.id)) key=`${selectedSession}:${recovery.id}`
+  task recover when not pending(sent) and current(recovery) and not pending(recovery) and recovery.id != "" and (submittedSession != selectedSession or (receiptId == "" and recoveredId != recovery.id)) key=`${selectedSession}:${recovery.id}`
     after(1, restorePending)
+  task recoveryWake when selectedSession != "" and not disconnected key=selectedSession
+    after(1, refreshRecovery)
   task pollReceipt when receiptId != ""
     every(500, refreshReceipt)
   task rejected when receiptId != "" and current(receipt) and terminalReceipt(receipt.state) key=receipt.id
@@ -130,18 +137,24 @@ component App
     after(1, finishPress)
 
   action interacted
+    let startingInput = not recentInput
     recentInput = true
-    sendHeartbeat(true)
+    if startingInput
+      sendHeartbeat(true)
   action quiet
     recentInput = false
   action renewViewer
     sendHeartbeat(recentInput)
   action sendHeartbeat(listActive: bool)
-    send viewerAck = heartbeat(selectedSession, page.visibilityState == "visible" and page.onLine and nav.tab != "sessions", nav.tab, heldReplies, (nav.tab == "status" and matchingInbox and statusSample == statusSampleKey ? visibleStatus : []), inbox.updatedAt, performanceNow(), listActive)
+    if pending(viewerAck)
+      heartbeatQueued = true
+    else
+      heartbeatQueued = false
+      send viewerAck = heartbeat(selectedSession, page.visibilityState == "visible" and page.onLine and nav.tab != "sessions" and not helpShown, nav.tab, heldReplies, (nav.tab == "status" and matchingInbox and statusSample == statusSampleKey ? visibleStatus : []), inbox.updatedAt, performanceNow(), listActive)
   action sampleStatus
     statusSample = statusSampleKey
     let bounds = frame(`content-${top(nav).id}`)
-    visibleStatus = inbox.statusRows.filter(s => visible(frame(`content-${top(nav).id}-status-${s.id}`), bounds)).map(s => s.id)
+    visibleStatus = inbox.statusRows.filter(s => visible(frame(`content-${top(nav).id}-status-${s.id}`), bounds)).map(s => s.seen).flat()
   action restorePending
     if not pending(sent)
       recoveredId = recovery.id
@@ -151,98 +164,35 @@ component App
       submittedDraft = recovery.draft
       submittedText = recovery.text
       receiptId = recovery.id
-  action restoreListLayout
-    listRestore = listTop
-    listReady = true
-  action alignRouteTab
-    nav = replace(select(nav, top(nav).name), top(nav).url)
-  action restoreNavigation
-    places = savedNavigation.places
-    let nextSession = searchParam(top(nav), "session") != "" ? searchParam(top(nav), "session") : savedNavigation.selected
-    selectedSession = nextSession
-    search = savedNavigation.search
-    listTop = savedNavigation.listTop
-    let rememberedReply = placeFor(savedNavigation.places, nextSession).reply
-    replyId = rememberedReply != "" ? rememberedReply : replyId
-    if searchParam(top(nav), "session") == "" and nextSession != "" and (nav.tab == "asks" or (nav.tab == "sessions" and savedNavigation.tab != "sessions"))
-      let kept = placeFor(savedNavigation.places, nextSession)
-      nav = replace(select(nav, kept.tab), sessionPath(kept.tab, nextSession))
-    navigationLoaded = true
-  action saveNavigation
-    send navigationSaved = saveNavigation(selectedSession, search, places, nav.tab, listTop)
-  action selectDefault
-    selectedSession = directory.defaultId
-    if wideWeb and nav.tab == "sessions"
-      nav = open(nav, sessionPath("asks", directory.defaultId))
-    places = places.concat([Place(placeFor(places, directory.defaultId), name=sessionName(directory.entries, directory.defaultId))])
-    navigationRevision = navigationRevision + 1
-  action restoreRoute
-    let id = searchParam(top(nav), "session")
-    let kept = placeFor(places, id)
-    selectedSession = id
-    replyId = kept.reply
-    places = places.filter(p => p.id != id).concat([Place(kept, tab=nav.tab)])
-    scrollOwner = ""
-    restoreRevision = restoreRevision + 1
-    navigationRevision = navigationRevision + 1
-  action listScrolled(rail: bool, x: number, y: number)
-    if listReady and navigationLoaded and current(directory) and rail == wideWeb and (rail or nav.tab == "sessions")
-      listTop = max(0, y)
-      navigationRevision = navigationRevision + 1
-  action searchSessions(value: string)
-    search = value
-    listTop = 0
-    listRestore = 0
-    navigationRevision = navigationRevision + 1
-  action selectSession(id: string)
-    let kept = placeFor(places, id)
-    places = places.filter(p => p.id != id).concat([Place(kept, name=sessionName(directory.entries, id))])
-    selectedSession = id
-    scrollOwner = ""
-    restoreRevision = restoreRevision + 1
-    replyId = kept.reply
-    nav = open(nav, sessionPath(kept.tab, id))
-    navigationRevision = navigationRevision + 1
-  action showRailSelection
-    nav = replace(select(nav, activePlace.tab), sessionPath(activePlace.tab, selectedSession))
-    scrollOwner = ""
-    restoreRevision = restoreRevision + 1
-    navigationRevision = navigationRevision + 1
-  action restoreReply
-    let id = savedReply(drafts, inbox.key)
-    replyId = id
-    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply=id)])
-    navigationRevision = navigationRevision + 1
-  action openSavedReply(id: string)
-    replyId = id
-    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply=id)])
-    navigationRevision = navigationRevision + 1
-  action restoreScroll
-    restoredTop = nav.tab == "status" ? activePlace.statusTop : nav.tab == "findings" ? activePlace.findsTop : activePlace.asksTop
-    scrollOwner = `${selectedSession}:${nav.tab}:${top(nav).id}`
-  action scrolled(routeId: number, tab: string, x: number, y: number)
-    interaction = interaction + 1
-    if matchingInbox and nav.tab == tab and scrollOwner == `${selectedSession}:${tab}:${routeId}` and top(nav).id == routeId
-      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, asksTop=tab == "asks" ? max(0, y) : activePlace.asksTop, findsTop=tab == "findings" ? max(0, y) : activePlace.findsTop, statusTop=tab == "status" ? max(0, y) : activePlace.statusTop)])
-      navigationRevision = navigationRevision + 1
+  members "./app-navigation.contract"
+  action refreshRecovery
+    refresh recovery
+  action manualRefresh
+    refreshInbox()
+    refresh recovery
   action refreshInbox
-    refresh directory
-    refresh inbox
-    if not navigationLoaded
+    if failed(inbox) or (matchingInbox and not inbox.connected)
+      verifiedSession = ""
+    if not pending(directory)
+      refresh directory
+    if not pending(inbox)
+      refresh inbox
+    if not navigationLoaded and not pending(savedNavigation)
       refresh savedNavigation
-    if not draftsLoaded
+    if not draftsLoaded and not pending(savedDrafts)
       refresh savedDrafts
   action restoreDrafts
     drafts = savedDrafts
     draftsLoaded = true
-  action saveDrafts
-    send stored = saveDrafts(drafts)
   action refreshReceipt
     refresh receipt
   action follow(url: string)
+    helpShown = false
     nav = go(select(nav, urlTab(url)), url)
     navigationRevision = navigationRevision + 1
   action pick(tab: string)
+    helpShown = false
+    revealAsk = ""
     listRestore = listTop
     scrollOwner = ""
     restoreRevision = restoreRevision + 1
@@ -252,94 +202,55 @@ component App
       places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, tab=tab)])
       nav = open(nav, sessionPath(tab, selectedSession))
     navigationRevision = navigationRevision + 1
-  action toggle(id: string)
+  action toggle(id: string, captured: string)
+    foldError = ""
     interaction = interaction + 1
-    let value = selected == id ? "closed" : id
-    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, asksExpanded=nav.tab == "asks" ? value : activePlace.asksExpanded, findsExpanded=nav.tab == "findings" ? value : activePlace.findsExpanded)])
+    let isClosing = selected == id
+    let canKeep = isClosing and captured != ""
+    let value = isClosing and not canKeep ? "closed" : id
+    let collapsed = canKeep ? effectiveCollapsed.filter(x => x != id).concat([id]) : effectiveCollapsed.filter(x => x != id)
+    let records = activePlace.collapses.filter(entry => entry.id != id)
+    let kept = canKeep ? records.concat([CollapseEntry(id=id, value=captured)]) : records
+    let nextReply = isClosing and activeDraft.row == id ? "" : replyId
+    replyId = nextReply
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply=nextReply, collapsed=collapsed, collapses=kept, asksExpanded=nav.tab == "asks" ? value : activePlace.asksExpanded, findsExpanded=nav.tab == "findings" ? value : activePlace.findsExpanded)])
     navigationRevision = navigationRevision + 1
-  action choose(key: string, input: bool, row: string, title: string)
+  action toggleFold(id: string)
+    foldError = ""
     interaction = interaction + 1
-    if input
-      let id = `${inbox.key}:${row}`
-      let kept = draftFor(drafts, id)
-      drafts = drafts.filter(d => d.id != id).concat([Draft(id=id, row=row, session=inbox.key, title=title, key=key, text=kept.text)])
-      draftRevision = draftRevision + 1
-      replyId = id
-      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply=id)])
-      navigationRevision = navigationRevision + 1
-    else
-      receiptId = ""
-      submittedDraft = ""
-      submittedText = ""
-      submittedSession = selectedSession
-      submittedKey = key
-      submittedRow = row
-      sendingReply = false
-      pressError = ""
-      send sent = press(selectedSession, key, "", row, "")
-  action edit(v: string)
-    interaction = interaction + 1
-    drafts = drafts.map(d => d.id == replyId ? Draft(d, text=v) : d)
-    draftRevision = draftRevision + 1
-  action sendReply
-    if canSendReply
-      receiptId = ""
-      submittedSession = selectedSession
-      submittedKey = liveReplyKey
-      submittedRow = activeDraft.row
-      submittedDraft = replyId
-      submittedText = draft
-      sendingReply = true
-      pressError = ""
-      send sent = press(selectedSession, liveReplyKey, draft, activeDraft.row, replyId)
-  action discard
-    send stored = discardDraft(replyId)
-    drafts = drafts.filter(d => d.id != replyId)
-    draftRevision = draftRevision + 1
-    replyId = ""
-    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply="")])
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, folds=activePlace.folds.includes(id) ? activePlace.folds.filter(x => x != id) : activePlace.folds.concat([id]), earlier=activePlace.earlier.filter(x => x != id))])
     navigationRevision = navigationRevision + 1
-  action sentPress
-    pressError = sendError
-    if sentId != ""
-      receiptId = sentId
-  action settlePending
-    if receiptId != "" and receipt.id == receiptId
-      pressError = receipt.error
-      recoveredId = receiptId
-      send forgotten = forgetPending(receiptId, false)
-      receiptId = ""
-  action finishPress
-    if hasConfirmedReceipt
-      let isUnedited = draftFor(drafts, submittedDraft).text == submittedText
-      if isUnedited
-        drafts = drafts.filter(d => d.id != submittedDraft)
-        places = places.map(p => p.reply == submittedDraft ? Place(p, reply="") : p)
-        navigationRevision = navigationRevision + 1
-        draftRevision = draftRevision + 1
-        if replyId == submittedDraft
-          replyId = ""
-      send forgotten = forgetPending(receiptId, true)
-      receiptId = ""
-      submittedDraft = ""
-      submittedText = ""
-      refresh inbox
+  members "./app-status.contract"
+  members "./app-selection.contract"
+  members "./app-motion.contract"
+  members "./app-help.contract"
+  members "./app-keyboard.contract"
+  members "./app-pr-controls.contract"
+  members "./app-collapse.contract"
+  action showEarlier(id: string)
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, earlier=activePlace.earlier.filter(x => x != id).concat([id]))])
+    navigationRevision = navigationRevision + 1
+  members "./app-replies.contract"
 
   view
-    main navigationKey=`${top(nav).id}` navigate=follow testId="app" width="100%" height="100%"
+    main key=keyPressed navigationKey=`${top(nav).id}` navigate=follow testId="app" width="100%" height="100%" font="-exact-body" font-size=(compact ? "13px" : "inherit") line-height=(compact ? "20px" : "normal")
       display="flex" flex-direction="column"
-      column position="absolute" left=0 top=0 bottom=0 width=260 display=(wideWeb ? "flex" : "none") padding=16 gap=12 background-color="-exact-secondary-background" testId="session-rail"
-        text "Sessions" role="heading" aria-level=1
+      column position="absolute" left=0 top=0 bottom=0 width=260 box-sizing="border-box" display=(wideWeb ? "flex" : "none") padding=16 gap=12 background-color="-exact-secondary-background" testId="session-rail"
+        text "Sessions" role="heading" aria-level=2 font-size=16 font-weight=600
         SessionList(entries=matches, search=search, selected=selectedSession, error=(failed(directory) ? "Can’t read your sessions." : directory.error), loading=not current(directory), rail=true, restoreTop=listRestore, onScroll=listScrolled(true), onSearch=searchSessions, onSelect=selectSession)
+      if wideWeb
+        TabBar(helpShown=helpShown, onHelp=toggleHelp, asksBadge=(matchingInbox ? inbox.asksBadge : ""), findsBadge=(matchingInbox ? inbox.findsBadge : ""), prsBadge=(matchingInbox ? inbox.prsBadge : ""), tab=nav.tab, wideWeb=true, onPick=pick)
       column flex=1 min-height=0 position="relative" margin-left=(wideWeb ? 260 : 0)
         for t in nav.tabs key=t.name
           column role="tabpanel" id=`panel-${t.name}` position="absolute" inset=0
             for e in t.stack key=e.id
               column navigationKey=`${e.id}` navigationScroll=`content-${e.id}` position="absolute" inset=0
                 display="flex" flex-direction="column"
-                header display="flex" align-items="center" padding="8px 16px"
-                  text "Inbox" role="heading" aria-level=1 flex=1
-                  button press=refreshInbox aria-label="Refresh Inbox" testId=`refresh-${t.name}`
+                header display=(wideWeb ? "none" : "flex") align-items="center" padding="8px 16px"
+                  text (t.name == "sessions" ? "Sessions" : shownName) role="heading" aria-level=1 flex=1
+                  button press=toggleHelp aria-label=(helpShown ? "Close help" : "Help") testId=`help-${t.name}`
+                    text (helpShown ? "Done" : "?")
+                  button press=manualRefresh aria-label="Refresh Inbox" testId=`refresh-${t.name}`
                     text "Refresh"
                 if failed(savedNavigation) or failed(navigationSaved)
                   text (failed(savedNavigation) ? "Can’t read your saved navigation. Refresh to try again." : "Couldn’t save your place. Keep Inbox open.") color="-exact-system-red"
@@ -348,5 +259,7 @@ component App
                 else if t.name == "sessions"
                   SessionList(entries=matches, search=search, selected=selectedSession, error=(failed(directory) ? "Can’t read your sessions." : directory.error), loading=not current(directory), rail=false, restoreTop=listRestore, onScroll=listScrolled(false), onSearch=searchSessions, onSelect=selectSession)
                 else
-                  InboxBody(inbox=inbox, tab=t.name, contentId=`content-${e.id}`, top=restoredTop, matching=matchingInbox, draftsLoaded=draftsLoaded, name=shownName, connection=connectionLabel, readError=readError, actionError=mutationError, receiptError=(submittedSession == selectedSession and receiptId != "" ? receiptError : ""), selected=selected, submittedRow=submittedRow, submittedKey=submittedKey, isSendingRow=isSendingRow, disconnected=disconnected, busy=(pending(sent) or pending(forgotten)), saved=drafts.filter(d => d.session == inbox.key and d.text.trim() != "" and d.id != replyId), replyOpen=replyOpen, replyTitle=replyTitle, replyText=draft, canSend=canSendReply, replyMessage=(draftError != "" ? draftError : replyWaiting ? "Waiting for the agent…" : not replyAvailable ? "This item changed. Your draft is kept." : ""), onScroll=scrolled(e.id, t.name), onToggle=toggle, onChoose=choose, onOpen=openSavedReply, onEdit=edit, onDiscard=discard, onSend=sendReply)
-      TabBar(tab=nav.tab, wideWeb=wideWeb, onPick=pick)
+                  InboxBody(prFrameReady=prFrameReady, sendLabel=keyMap.sendLabel, discardLabel=keyMap.discardLabel, selectedPr=selectedPr, prGuarded=prGuarded, onPrAction=prAction, collapsed=effectiveCollapsed, onPrFold=clickPrFold, helpShown=helpShown, helpInfo=helpInfo, helpLoading=not current(helpInfo), helpFailed=failed(helpInfo), visual=visualFrame, reduced=viewport.prefersReducedMotion, inbox=inbox, compact=compact, localFeedbacks=localFeedbacks.filter(f => f.session == selectedSession), localActive=localActive, onLocal=startLocal, onStatus=statusPressed, tab=t.name, contentId=`content-${e.id}`, top=restoredTop, matching=matchingInbox and visualFrame.session == selectedSession, draftsLoaded=draftsLoaded, name=shownName, connection=connectionLabel, readError=readError, actionError=(foldErrorSession == selectedSession and foldError != "" ? foldError : mutationError), receiptError=(submittedSession == selectedSession and receiptId != "" ? receiptError : ""), selected=selected, optionsShown=activePlace.options, folds=activePlace.folds, earlier=activePlace.earlier, submittedRow=submittedRow, submittedKey=submittedKey, isSendingRow=isSendingRow, disconnected=disconnected, busy=(pending(sent) or pending(forgotten)), saved=drafts.filter(d => d.session == selectedSession and d.text.trim() != "" and (d.id != replyId or not replyVisible)), replyOpen=replyVisible, replyTitle=replyTitle, replyRow=activeDraft.row, goalReply=activeDraft.row == "goal", replyText=draft, canSend=canSendReply, replyMessage=(draftError != "" ? draftError : replyWaiting ? (activeDraft.row == "goal" ? "Saving goal…" : "Waiting for the agent…") : disconnected ? "Reconnect to send. Your reply is kept." : not replyAvailable ? "This item changed. Your draft is kept." : ""), onScroll=scrolled(e.id, t.name), onToggle=clickRow, onFold=clickFold, onEarlier=showEarlier, onChoose=choose, onOpen=openSavedReply, onEdit=edit, onDiscard=discard, onCancel=cancelReply, onSend=sendReply)
+      LocalOpenTarget(sequence=localSequence, index=localIndex, onOpened=localOpened)
+      if not wideWeb
+        TabBar(helpShown=helpShown, onHelp=toggleHelp, asksBadge=(matchingInbox ? inbox.asksBadge : ""), findsBadge=(matchingInbox ? inbox.findsBadge : ""), prsBadge=(matchingInbox ? inbox.prsBadge : ""), tab=nav.tab, wideWeb=false, onPick=pick)

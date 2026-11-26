@@ -242,6 +242,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
 type ClosedLine = {
   id: string
   how: Closed['how']
+  canRestore?: boolean
   title: string
   at: number
   outcomeLabel: string

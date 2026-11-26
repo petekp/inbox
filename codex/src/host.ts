@@ -111,7 +111,7 @@ export function herdrOnWrite(
             receipts: remoteReceipts(commands),
             viewers: remoteViewerReceipts(viewers.leases),
             remoteProtocol: 2,
-            remoteActions: REMOTE_ACTIONS,
+            remoteActions: REMOTE_ACTIONS.filter(action => action !== 'resume'),
             remoteHistoryAfter: commands.floor,
             host: 'codex',
             agent: CODEX.agent,

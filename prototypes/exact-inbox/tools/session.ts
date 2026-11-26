@@ -27,7 +27,8 @@ async function start() {
     await mkdir(folder, { recursive: true, mode: 0o700 })
   await mkdir(resolve(plugin, '.claude-plugin'), { recursive: true })
   await cp(resolve(repoRoot, '.claude-plugin/plugin.json'), resolve(plugin, '.claude-plugin/plugin.json'))
-  for (const part of ['hooks', 'types']) await cp(resolve(repoRoot, part), resolve(plugin, part), { recursive: true })
+  for (const part of ['core', 'hooks', 'types'])
+    await cp(resolve(repoRoot, part), resolve(plugin, part), { recursive: true })
   await writeInitialConfig(resolve(appHome, 'inbox/herdr-mod.json'), { format: 1, answer: 'no', at: Date.now() })
   await writeInitialConfig(resolve(config, 'settings.json'), {
     permissions: { allow: ['mcp__inbox__record', 'mcp__inbox__close'] },

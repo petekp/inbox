@@ -30,6 +30,19 @@ await command([
   'wasm32-unknown-unknown',
 ])
 await command(['rustup', 'target', 'add', '--toolchain', '1.99.1', 'aarch64-apple-ios-sim', 'aarch64-apple-ios'])
+const { WEB_TOOLCHAIN } = await import(resolve(sdkRoot, 'scripts/cargo-check.mjs'))
+await command([
+  'rustup',
+  'toolchain',
+  'install',
+  WEB_TOOLCHAIN,
+  '--profile',
+  'minimal',
+  '--component',
+  'rust-src',
+  '--component',
+  'llvm-tools',
+])
 await command([process.execPath, 'install', '--frozen-lockfile'], { cwd: sdkRoot })
 await command(['cargo', '+1.99.1', 'fetch', '--locked', '--manifest-path', 'Cargo.toml'], { cwd: sdkRoot })
 await command(

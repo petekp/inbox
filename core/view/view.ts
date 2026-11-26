@@ -86,7 +86,7 @@ export type InboxView = {
 }
 
 /** A closed entry as a look draws it. `mark` is `closedMark` of the entry and its delivery. */
-type ClosedView<T> = T & { delivery: ClosedDelivery; outcomeLabel: string; mark: ResultMark }
+type ClosedView<T> = T & { canRestore: boolean; delivery: ClosedDelivery; outcomeLabel: string; mark: ResultMark }
 
 const HOLDS_UP_TEXT = 'Holds up'
 
@@ -338,7 +338,13 @@ export function inboxView({
             ? pendingDeliveryAt(lastActions[d.id], now)
             : null
 
-      return { ...d, outcomeLabel: outcomeLabel(d), delivery, mark: closedMark(closedState(d), delivery) }
+      return {
+        ...d,
+        canRestore: d.item !== undefined,
+        outcomeLabel: outcomeLabel(d),
+        delivery,
+        mark: closedMark(closedState(d), delivery),
+      }
     })
   const fixesSent: ClosedView<ClosedFinding>[] = ledger.findings
     .filter(f => isFixSent(lastActions[f.id]))
@@ -348,6 +354,7 @@ export function inboxView({
 
       return {
         ...f,
+        canRestore: true,
         how: 'answered',
         outcome,
         outcomeLabel: outcomeLabel({ ...f, outcome }),
@@ -372,7 +379,13 @@ export function inboxView({
       closed: [
         ...ledger.closedFindings
           .filter(f => !held.has(f.id))
-          .map(f => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null, mark: closedMark(closedState(f), null) })),
+          .map(f => ({
+            ...f,
+            canRestore: true,
+            outcomeLabel: outcomeLabel(f),
+            delivery: null,
+            mark: closedMark(closedState(f), null),
+          })),
         ...fixesSent,
       ].sort((a, b) => b.closedAt - a.closedAt),
     },

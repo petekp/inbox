@@ -119,5 +119,6 @@ export const CLAUDE_CODE: Client = {
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
     'option-previews': { kind: 'full' },
+    'remote-resume': { kind: 'full' },
   },
 }

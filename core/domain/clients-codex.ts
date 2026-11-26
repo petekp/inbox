@@ -197,5 +197,6 @@ export const CODEX: Client = {
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
     'option-previews': { kind: 'full' },
+    'remote-resume': { kind: 'unsupported', reason: 'Codex records no stopped-turn state to resume.' },
   },
 }

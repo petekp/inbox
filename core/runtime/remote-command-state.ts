@@ -1,4 +1,4 @@
-import { refuseDoneNotification, reopenOnFailure } from '../view/press-reducer'
+import { needsDoneNotification, refuseDoneNotification, reopenOnFailure } from '../view/press-reducer'
 import type { Delivery, RemoteCommandRecord, Session } from '../../types'
 
 /**
@@ -94,7 +94,10 @@ export function remoteCommandState(log: CommandLog, s: Session): CommandLog {
     if (!id || !command || command.state === 'cancelled' || command.state === 'expired' || command.state === 'refused')
       continue
     const deliveryId = closed.doneNotification?.id ?? command.deliveryId
-    const pendingDelivery = !command.delivered && !closed.doneNotification?.error
+    const pendingDelivery =
+      !command.delivered &&
+      !closed.doneNotification?.error &&
+      (!!closed.doneNotification || needsDoneNotification(closed, s.ledger.turn))
     if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
       commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } }
   }
@@ -134,7 +137,7 @@ export function pendingCommandRows(s: Session): string[] {
       (last.action === 'done' && !delivery)
     return last.commandId && isWaiting ? [row] : []
   })
-  const closed = s.ledger.closed.flatMap(c => (c.commandId && !c.doneNotification ? [c.id] : []))
+  const closed = s.ledger.closed.flatMap(c => (c.commandId && needsDoneNotification(c, s.ledger.turn) ? [c.id] : []))
 
   return [...rows, ...closed]
 }

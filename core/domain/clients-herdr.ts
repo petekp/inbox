@@ -141,5 +141,6 @@ export const HERDR: LookTable = {
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
     'option-previews': { kind: 'full' },
+    'remote-resume': { kind: 'host' },
   },
 }

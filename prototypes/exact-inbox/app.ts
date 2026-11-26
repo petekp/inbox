@@ -1,76 +1,26 @@
+import { loadSavedNavigation, storeNavigation } from './client-navigation'
+/// <reference path="./clipboard.d.ts" />
+import { loadCachedInbox, loadCachedDirectory } from './client-cache'
 import {
+  loadSavedDrafts,
   readPending,
   settlePending,
-  keepPending,
-  recoverDrafts,
+  prepareSubmission,
+  SubmissionRefusedError,
   storeDrafts,
-  discardPendingDraft,
+  discardSavedDraft,
 } from './client-recovery'
+import { writeText } from '@exact/clipboard'
+import { advanceMotion, advanceSelection, formatLocal, helpLegend, loadKeys, changeFolds } from './client-shared.js'
+import { record, strings, isReceipt } from './client-view'
 import type { Answer, Result, Sources } from './app.contract.d.ts'
 
-const API = import.meta.env.API_BASE_URL ?? 'http://127.0.0.1:8877'
-export const grants = `net.fetch ${API}\nfs.read app:/data/drafts.json\nfs.write app:/data/drafts.json\nfs.read app:/data/navigation.json\nfs.write app:/data/navigation.json\nfs.read app:/data/pending\nfs.write app:/data/pending`
-const NAVIGATION = 'app:/data/navigation.json'
-const DRAFTS = 'app:/data/drafts.json'
+const CONFIGURED_API = import.meta.env.API_BASE_URL ?? 'http://127.0.0.1:8877'
+const LOCAL_ORIGINS = ['http://127.0.0.1:8877', 'http://localhost:8877']
+const pageOrigin = typeof globalThis.location?.origin === 'string' ? globalThis.location.origin : ''
+const API = LOCAL_ORIGINS.includes(pageOrigin) ? pageOrigin : CONFIGURED_API
+export const grants = `net.fetch ${CONFIGURED_API}\nnet.fetch http://127.0.0.1:8877\nnet.fetch http://localhost:8877\nfs.read app:/data/drafts.json\nfs.write app:/data/drafts.json\nfs.read app:/data/navigation.json\nfs.read app:/data/navigation-v2.json\nfs.write app:/data/navigation-v2.json\nfs.read app:/data/pending\nfs.write app:/data/pending\nfs.read app:/data/views.json\nfs.write app:/data/views.json`
 const viewingTimes = new Map<string, number>()
-
-const record = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-const strings = (value: Record<string, unknown>, names: string[]) =>
-  names.every(name => typeof value[name] === 'string')
-
-function isButton(value: unknown): boolean {
-  return (
-    record(value) &&
-    strings(value, ['key', 'label', 'reason']) &&
-    ['primary', 'disabled', 'input'].every(key => typeof value[key] === 'boolean')
-  )
-}
-
-function isRow(value: unknown): boolean {
-  return (
-    record(value) &&
-    strings(value, ['id', 'kind', 'title', 'detail', 'context', 'recommendation', 'feedback', 'state', 'mark']) &&
-    Array.isArray(value.actions) &&
-    value.actions.every(isButton)
-  )
-}
-
-function isSnapshot(value: unknown): value is Result<'loadInbox'> {
-  if (
-    !record(value) ||
-    !strings(value, [
-      'connectionState',
-      'key',
-      'session',
-      'name',
-      'failure',
-      'statusError',
-      'statusTitle',
-      'statusDetail',
-    ])
-  )
-    return false
-  if (!['connected', 'running', 'fresh', 'readOnly'].every(key => typeof value[key] === 'boolean')) return false
-  if (
-    !['updatedAt', 'serverNow', 'questionCount', 'taskCount'].every(
-      key => typeof value[key] === 'number' && Number.isFinite(value[key]),
-    )
-  )
-    return false
-  if (!Array.isArray(value.asks) || !value.asks.every(isRow)) return false
-  if (!Array.isArray(value.findings) || !value.findings.every(isRow)) return false
-  return (
-    Array.isArray(value.statusRows) &&
-    value.statusRows.every(
-      row => record(row) && strings(row, ['id', 'title', 'detail', 'mark']) && typeof row.depth === 'number',
-    )
-  )
-}
-
-function isReceipt(value: unknown): value is Result<'press'> {
-  return record(value) && strings(value, ['id', 'state', 'error']) && typeof value.ok === 'boolean'
-}
 
 async function request(path: string, init: RequestInit = {}): Promise<unknown> {
   const response = await fetch(`${API}${path}`, {
@@ -78,8 +28,18 @@ async function request(path: string, init: RequestInit = {}): Promise<unknown> {
     exactTimeout: 10000,
     headers: { 'content-type': 'application/json', ...init.headers },
   })
-  if (!response.ok) throw new Error('The local Inbox helper refused the request.')
-  return response.json()
+  const value: unknown = await response.json().catch(error => {
+    if (response.ok) throw error
+    return null
+  })
+  if (!response.ok)
+    throw Object.assign(
+      new Error(
+        record(value) && typeof value.error === 'string' ? value.error : 'The local Inbox helper refused the request.',
+      ),
+      { status: response.status },
+    )
+  return value
 }
 
 type Viewer = {
@@ -96,6 +56,76 @@ const viewers = new Map<string, Viewer>()
 let viewerId = ''
 
 const sources: Sources = {
+  loadKeys: () => loadKeys(),
+  changeFolds: args => changeFolds(args),
+  prepareLocal: async ([sequence, session, key, row, version]) => {
+    const operation = Array.from(crypto.getRandomValues(new Uint32Array(4)), n => n.toString(16).padStart(8, '0')).join(
+      '',
+    )
+    try {
+      const value = await request('/api/local', {
+        method: 'POST',
+        body: JSON.stringify({ session, key, row, version, operation }),
+      })
+      if (
+        !record(value) ||
+        value.ok !== true ||
+        value.id !== operation ||
+        value.session !== session ||
+        value.row !== row ||
+        value.version !== version ||
+        !Array.isArray(value.effects) ||
+        value.effects.length === 0 ||
+        !value.effects.every(effect => {
+          if (!record(effect) || !strings(effect, ['kind', 'value', 'name']) || typeof effect.isCommand !== 'boolean')
+            return false
+          if (effect.kind === 'copy') return true
+          if (effect.kind !== 'open') return false
+          if (/^\/api\/artifacts\/[a-f0-9]{64}$/.test(String(effect.value))) return true
+          try {
+            const url = new URL(String(effect.value))
+            return url.protocol === 'https:' && !url.username && !url.password
+          } catch {
+            return false
+          }
+        })
+      )
+        throw new Error('The local action could not be read.')
+      return {
+        ...value,
+        effects: value.effects.map(effect => ({
+          ...effect,
+          value:
+            effect.kind === 'open' && effect.value.startsWith('/api/artifacts/')
+              ? new URL(effect.value, API).href
+              : effect.value,
+        })),
+        sequence,
+      } as Result<'prepareLocal'>
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'This action could not be prepared.',
+        id: operation,
+        sequence,
+        session,
+        row,
+        version,
+        effects: [],
+      }
+    }
+  },
+  copyLocal: async ([sequence, index, text]) => {
+    try {
+      await writeText(text)
+      return { sequence, index, error: '' }
+    } catch {
+      return { sequence, index, error: 'The device did not allow copying.' }
+    }
+  },
+  formatLocal: args => formatLocal(args),
+  advanceSelection: args => advanceSelection(args),
+  advanceMotion: args => advanceMotion(args),
   heartbeat: async ([session, active, tab, replies, shownRows, seenAt, clientNow, listActive]) => {
     const hostTab = tab === 'status' ? 'overview' : tab === 'asks' || tab === 'sessions' ? 'needsYou' : tab
     for (const [previousSession, previous] of viewers) {
@@ -195,170 +225,116 @@ const sources: Sources = {
       draft: p.draft,
       text: p.text,
     })
-    if (pending.id) return publicRecovery(pending)
-    const value = await request('/api/press', {
-      method: 'POST',
-      body: JSON.stringify({
-        session,
-        operation: pending.protocol === 2 ? pending.journal : undefined,
-        viewer: pending.viewer,
-        key: pending.key,
-        text: pending.text,
-        shownSince: 0,
-      }),
-    })
-    if (!isReceipt(value) || !value.id) throw new Error('The saved action could not be recovered.')
-    const recovered = { ...pending, id: value.id, receipt: value }
-    await keepPending(storage, recovered)
-    return publicRecovery(recovered)
+    try {
+      const value = await request('/api/press', {
+        method: 'POST',
+        body: JSON.stringify({
+          session,
+          recover: true,
+          operation: pending.protocol === 2 ? pending.journal : undefined,
+          viewer: pending.viewer,
+          key: pending.key,
+          text: pending.text,
+          shownSince: 0,
+        }),
+      })
+      if (!isReceipt(value) || value.id !== pending.id) throw new Error('The saved action could not be recovered.')
+    } catch {}
+    return publicRecovery(pending)
   },
   forgetPending: async ([id, confirmed], _store, storage) => {
     await settlePending(storage, id, confirmed)
     return { ok: true, id, state: 'stored', error: '' }
   },
-  loadSessions: async () => {
-    const value = await request('/api/sessions')
+  loadHelp: async ([session]) => {
+    const value = await request(`/api/help?session=${encodeURIComponent(session)}`).catch(() => helpLegend())
     if (
       !record(value) ||
-      !strings(value, ['defaultId', 'error']) ||
-      !Array.isArray(value.entries) ||
-      !value.entries.every(
-        s =>
-          record(s) &&
-          strings(s, [
-            'id',
-            'session',
-            'name',
-            'project',
-            'location',
-            'host',
-            'agent',
-            'state',
-            'reason',
-            'attention',
-          ]) &&
-          typeof s.asks === 'number' &&
-          typeof s.fresh === 'boolean' &&
-          typeof s.readOnly === 'boolean' &&
-          typeof s.duplicate === 'boolean',
+      !strings(value, ['heading', 'version']) ||
+      !Array.isArray(value.rows) ||
+      !value.rows.every(
+        row => record(row) && strings(row, ['id', 'mark', 'words', 'color']) && typeof row.running === 'boolean',
       )
     )
-      throw new Error('The session list could not be read.')
-    return value as Result<'loadSessions'>
+      throw new Error('The Help page could not be read.')
+    const guide = helpLegend()
+    return { ...value, keysHeading: guide.keysHeading, keys: guide.keys } as Result<'loadHelp'>
   },
-  loadNavigation: async (_args, _store, storage) => {
-    try {
-      const value: unknown = JSON.parse(new TextDecoder().decode(await storage.fs.readFile(NAVIGATION)))
-      if (
-        !record(value) ||
-        !strings(value, ['selected', 'search']) ||
-        !Array.isArray(value.places) ||
-        !value.places.every(
-          p =>
-            record(p) &&
-            strings(p, ['id', 'name', 'tab', 'asksExpanded', 'findsExpanded', 'reply']) &&
-            ['asksTop', 'findsTop', 'statusTop'].every(k => typeof p[k] === 'number' && Number.isFinite(p[k])),
-        )
-      )
-        throw new Error('Saved navigation could not be read.')
-      return {
-        ...value,
-        listTop: typeof value.listTop === 'number' && Number.isFinite(value.listTop) ? value.listTop : 0,
-        tab: typeof value.tab === 'string' ? value.tab : 'sessions',
-      } as Result<'loadNavigation'>
-    } catch (error) {
-      if ((error as { code?: string }).code === 'ENOENT')
-        return { selected: '', search: '', places: [], tab: 'sessions', listTop: 0 }
-      throw error
-    }
-  },
+  loadSessions: async ([session], _store, storage) =>
+    loadCachedDirectory(storage, API, () => request(`/api/sessions?session=${encodeURIComponent(session)}`)),
+  loadNavigation: (_args, _store, storage) => loadSavedNavigation(storage),
   saveNavigation: async ([selected, search, places, tab, listTop], _store, storage) => {
-    await storage.fs.atomicWriteFile(
-      NAVIGATION,
-      new TextEncoder().encode(JSON.stringify({ selected, search, places, tab, listTop })),
-    )
+    await storeNavigation(storage, { selected, search, places, tab, listTop })
     return { ok: true, id: '', state: 'stored', error: '' }
   },
-  loadDrafts: async (_args, _store, storage) => {
-    try {
-      const bytes = await storage.fs.readFile(DRAFTS)
-      const value: unknown = JSON.parse(new TextDecoder().decode(bytes))
-      if (
-        !Array.isArray(value) ||
-        !value.every(d => record(d) && strings(d, ['id', 'row', 'session', 'title', 'key', 'text']))
-      )
-        throw new Error('Saved replies could not be read.')
-      const drafts = await recoverDrafts(storage, value as Result<'loadDrafts'>)
-      const legacy = drafts.filter(d => !/^[a-f0-9]{64}$/.test(d.session))
-      if (!legacy.length) return drafts
-      const directory = await request('/api/sessions')
-      if (!record(directory) || !Array.isArray(directory.entries))
-        throw new Error('Saved replies could not be matched to their sessions.')
-      const entries = directory.entries
-      const upgraded = drafts.map(d => {
-        if (/^[a-f0-9]{64}$/.test(d.session)) return d
-        const matches = entries.filter(
-          (e: unknown) => record(e) && e.session === d.session && e.id === directory.defaultId,
-        )
-        if (matches.length !== 1 || typeof matches[0].id !== 'string') return d
-        return { ...d, session: matches[0].id, id: `${matches[0].id}:${d.row}` }
-      })
-      await storage.fs.atomicWriteFile(DRAFTS, new TextEncoder().encode(JSON.stringify(upgraded)))
-      return upgraded
-    } catch (error) {
-      if ((error as { code?: string }).code === 'ENOENT') return recoverDrafts(storage, [])
-      throw error
-    }
-  },
+  loadDrafts: async (_args, _store, storage) => loadSavedDrafts(storage, () => request('/api/sessions')),
   saveDrafts: async ([drafts], _store, storage) => {
     await storeDrafts(storage, drafts)
     return { ok: true, id: '', state: 'stored', error: '' }
   },
-  discardDraft: async ([id], _store, storage) => {
-    await discardPendingDraft(storage, id)
+  discardDraft: async ([id, drafts], _store, storage) => {
+    await discardSavedDraft(storage, id, drafts)
     return { ok: true, id, state: 'stored', error: '' }
   },
-  loadInbox: async ([session]) => {
+  loadInbox: async ([session, folds, collapsed, collapses], _store, storage) => {
     const shownSince = viewingTimes.get(session) ?? 0
-    const value = await request(
-      `/api/view?session=${encodeURIComponent(session)}&since=${shownSince}&viewer=${encodeURIComponent(viewers.get(session)?.id ?? '')}`,
+    const value = await loadCachedInbox(storage, API, session, () =>
+      request('/api/view', {
+        method: 'POST',
+        body: JSON.stringify({
+          schema: 2,
+          session,
+          since: shownSince,
+          viewer: viewers.get(session)?.id ?? '',
+          folds,
+          collapsed,
+          collapses,
+        }),
+      }),
     )
-    if (!isSnapshot(value)) throw new Error('The local Inbox helper returned an invalid view.')
-    if (shownSince === 0) viewingTimes.set(session, value.serverNow)
+    if (value.connected && shownSince === 0) viewingTimes.set(session, value.serverNow)
     return value
   },
-  press: async ([session, key, text, row, draft], _store, storage) => {
-    const existing = (await readPending(storage)).find(p => p.session === session && p.key === key && p.text === text)
-    const pending =
-      existing ??
-      (await keepPending(storage, {
-        protocol: 2,
+  press: async ([session, key, text, row, draft, previousId, undo], _store, storage) => {
+    let prepared: Awaited<ReturnType<typeof prepareSubmission>>
+    try {
+      prepared = await prepareSubmission(storage, {
         session,
         key,
         text,
         row,
         draft,
-        id: '',
+        previousId,
+        undo,
         viewer: viewers.get(session)?.id,
-      }))
-    const value = await request('/api/press', {
-      method: 'POST',
-      body: JSON.stringify({
-        session,
-        operation: pending.protocol === 2 ? pending.journal : undefined,
-        viewer: pending.viewer,
-        key,
-        text,
-        shownSince: viewingTimes.get(session) ?? 0,
-      }),
-    })
-    if (!isReceipt(value)) throw new Error('The local Inbox helper returned an invalid receipt.')
-    await keepPending(storage, { ...pending, id: value.id, receipt: value })
-    return value
+      })
+    } catch (error) {
+      if (!(error instanceof SubmissionRefusedError)) throw error
+      return { ok: false, id: '', state: 'refused', error: error.message }
+    }
+    const id = prepared.kind === 'receipt' ? prepared.id : prepared.action.id
+    try {
+      const value =
+        prepared.kind === 'receipt'
+          ? await request(`/api/receipt?id=${encodeURIComponent(id)}`)
+          : await request('/api/press', {
+              method: 'POST',
+              body: JSON.stringify({
+                session: prepared.action.session,
+                operation: prepared.action.protocol === 2 ? prepared.action.journal : undefined,
+                viewer: prepared.action.viewer,
+                key: prepared.action.key,
+                text: prepared.action.text,
+                shownSince: viewingTimes.get(session) ?? 0,
+              }),
+            })
+      if (!isReceipt(value) || value.id !== id) throw new Error('The local Inbox helper returned an invalid receipt.')
+      return value
+    } catch {
+      return { ok: false, id, state: 'unconfirmed', error: 'Delivery is not confirmed. Your reply is kept.' }
+    }
   },
-  loadReceipt: async ([id], _store, storage) => {
-    const saved = (await readPending(storage)).find(p => p.id === id)?.receipt
-    if (saved && ['stale', 'failed', 'refused', 'cancelled', 'expired'].includes(saved.state)) return saved
+  loadReceipt: async ([id]) => {
     const value = await request(`/api/receipt?id=${encodeURIComponent(id)}`)
     if (!isReceipt(value)) throw new Error('The local Inbox helper returned an invalid receipt.')
     return value

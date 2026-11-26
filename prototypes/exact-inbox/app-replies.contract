@@ -1,0 +1,90 @@
+use isUndoAction, terminalReceipt, Draft, Place, draftFor from "./model.contract"
+
+members App
+  action choose(key: string, input: bool, row: string, title: string)
+    foldError = ""
+    interaction = interaction + 1
+    if key.startsWith("options:")
+      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, options=activePlace.options.filter(x => x != row).concat([row]))])
+      navigationRevision = navigationRevision + 1
+    else if input
+      let id = `${inbox.key}:${row}`
+      let kept = draftFor(drafts, id)
+      let nextDrafts = drafts.filter(d => d.id != id).concat([Draft(id=id, row=row, session=inbox.key, title=title, key=key, text=kept.text)])
+      drafts = nextDrafts
+      send stored = saveDrafts(nextDrafts)
+      replyId = id
+      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply=id, collapsed=activePlace.collapsed.filter(x => x != row), asksExpanded=nav.tab == "asks" ? row : activePlace.asksExpanded, findsExpanded=nav.tab == "findings" ? row : activePlace.findsExpanded)])
+      navigationRevision = navigationRevision + 1
+    else if not disconnected and not inbox.readOnly
+      receiptId = ""
+      submittedDraft = ""
+      submittedText = ""
+      submittedSession = selectedSession
+      submittedKey = key
+      submittedRow = row
+      sendingReply = false
+      pressError = ""
+      send sent = press(selectedSession, key, "", row, "", "", isUndoAction(inbox, key))
+  action edit(v: string)
+    interaction = interaction + 1
+    let nextDrafts = drafts.map(d => d.id == replyId ? Draft(d, text=v) : d)
+    drafts = nextDrafts
+    send stored = saveDrafts(nextDrafts)
+  action sendReply
+    foldError = ""
+    if canSendReply
+      let sameReply = submittedSession == selectedSession and submittedRow == activeDraft.row and submittedText == draft and not hasConfirmedReceipt and not terminalReceipt(receipt.state)
+      let previous = sameReply ? receiptId : ""
+      receiptId = ""
+      submittedSession = selectedSession
+      submittedKey = liveReplyKey
+      submittedRow = activeDraft.row
+      submittedDraft = replyId
+      submittedText = draft
+      sendingReply = true
+      pressError = ""
+      send sent = press(selectedSession, liveReplyKey, draft, activeDraft.row, replyId, previous, false)
+  action cancelReply
+    replyId = ""
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply="")])
+    navigationRevision = navigationRevision + 1
+  action discard
+    let nextDrafts = drafts.filter(d => d.id != replyId)
+    drafts = nextDrafts
+    send stored = discardDraft(replyId, nextDrafts)
+    replyId = ""
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply="")])
+    navigationRevision = navigationRevision + 1
+  action sentPress
+    pressError = sendError
+    if not wasSubmitted
+      refresh recovery
+    if sentId != ""
+      receiptId = sentId
+  action settlePending
+    if receiptId != "" and receipt.id == receiptId
+      pressError = receipt.error
+      recoveredId = receiptId
+      send forgotten = forgetPending(receiptId, false)
+      receiptId = ""
+      submittedKey = ""
+  action finishPress
+    if hasConfirmedReceipt
+      pressError = ""
+      recoveredId = receiptId
+      let isUnedited = draftFor(drafts, submittedDraft).text == submittedText
+      if isUnedited
+        let nextDrafts = drafts.filter(d => d.id != submittedDraft)
+        drafts = nextDrafts
+        places = places.map(p => p.reply == submittedDraft ? Place(p, reply="") : p)
+        navigationRevision = navigationRevision + 1
+        send stored = saveDrafts(nextDrafts)
+        if replyId == submittedDraft
+          replyId = ""
+      send forgotten = forgetPending(receiptId, true)
+      receiptId = ""
+      submittedDraft = ""
+      submittedText = ""
+      submittedKey = ""
+      refresh inbox

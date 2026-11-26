@@ -1,3 +1,9 @@
+import { VIEW_REQUEST_BYTES } from '../view-limits'
+import { artifactResponse } from './artifacts'
+import { viewRequest } from './view-request'
+import { helpView } from './help-view'
+import { clientSnapshot } from './client-schema'
+import { prepareLocal } from './local-actions'
 import { heartbeat } from './viewers'
 import { resolve, sep } from 'node:path'
 import { readFile } from 'node:fs/promises'
@@ -50,17 +56,53 @@ const json = (body: unknown, status = 200) =>
 const server = Bun.serve({
   hostname: '127.0.0.1',
   port,
-  maxRequestBodySize: 64 * 1024,
+  maxRequestBodySize: VIEW_REQUEST_BYTES,
   async fetch(request) {
     if (!authorize(request)) return json({ error: 'This device cannot access this Inbox.' }, 403)
     const url = new URL(request.url)
+    if (request.method === 'GET' && url.pathname.startsWith('/api/artifacts/'))
+      return artifactResponse(url.pathname.slice('/api/artifacts/'.length))
+    if (request.method === 'POST' && url.pathname === '/api/local') {
+      if (request.headers.get('content-type')?.split(';')[0] !== 'application/json')
+        return json({ error: 'Use a JSON request.' }, 415)
+      try {
+        return json(await prepareLocal(await request.json()))
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'This action could not be prepared.' }, 400)
+      }
+    }
+    if (request.method === 'GET' && url.pathname === '/api/help')
+      return json(await helpView(url.searchParams.get('session') ?? ''))
     if (request.method === 'GET' && url.pathname === '/api/sessions') return json(await sessionDirectory())
-    if (request.method === 'GET' && url.pathname === '/api/view') {
-      const since = Number(url.searchParams.get('since') ?? Date.now())
-      const shownSince = Number.isFinite(since) ? Math.min(since, Date.now()) : Date.now()
-      return json(
-        await selectedView(url.searchParams.get('session') ?? '', shownSince, url.searchParams.get('viewer') ?? ''),
-      )
+    if ((request.method === 'GET' || request.method === 'POST') && url.pathname === '/api/view') {
+      try {
+        let input: unknown
+        if (request.method === 'POST') {
+          if (request.headers.get('content-type')?.split(';')[0] !== 'application/json')
+            return json({ error: 'Use a JSON request.' }, 415)
+          const body = await request.text()
+          if (Buffer.byteLength(body) > VIEW_REQUEST_BYTES)
+            return json({ error: 'The view preferences are too large.' }, 413)
+          input = JSON.parse(body)
+        } else
+          input = {
+            session: url.searchParams.get('session') ?? '',
+            viewer: url.searchParams.get('viewer') ?? '',
+            since: Number(url.searchParams.get('since') ?? 0),
+            schema: url.searchParams.get('schema'),
+            folds: (url.searchParams.get('folds') ?? '').split(',').filter(Boolean),
+            collapsed: (url.searchParams.get('collapsed') ?? '').split(',').filter(Boolean),
+          }
+        const requested = viewRequest(input)
+        return json(
+          clientSnapshot(
+            await selectedView(requested.session, requested.since, requested.viewer, requested.preferences),
+            requested.schema,
+          ),
+        )
+      } catch (error) {
+        return json({ error: error instanceof Error ? error.message : 'The Inbox view could not be read.' }, 400)
+      }
     }
     if (request.method === 'POST' && (url.pathname === '/api/press' || url.pathname === '/api/viewer')) {
       if (request.headers.get('content-type')?.split(';')[0] !== 'application/json')
@@ -68,9 +110,8 @@ const server = Bun.serve({
       const body = await request.text()
       if (body.length > 64 * 1024) return json({ error: 'The reply is too long.' }, 413)
       try {
-        return json(
-          await (url.pathname === '/api/viewer' ? heartbeat(JSON.parse(body)) : submitPress(JSON.parse(body))),
-        )
+        const value = JSON.parse(body)
+        return json(await (url.pathname === '/api/viewer' ? heartbeat(value) : submitPress(value)))
       } catch (error) {
         return json(
           { ok: false, id: '', state: 'failed', error: error instanceof Error ? error.message : 'The press failed.' },

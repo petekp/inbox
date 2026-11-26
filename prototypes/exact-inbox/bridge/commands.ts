@@ -1,21 +1,26 @@
+import { pressRowId } from '../../../core/view/pr-press'
+import type { PrPress } from '../../../core/view/pr-press'
+import { submissionId, legacySubmissionId, MAX_REPLY_LENGTH } from '../submission-id'
+import { publishInboxFile, notifyInbox } from './publication'
+import { agentClock } from './remote-clock'
 import { pressFile } from '../../../core/remote/herdr-press-file'
 import { selectedBinding } from './catalog'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { pressFolder } from '../../../core/remote/herdr'
 import { pressFileText } from '../../../herdr/src/press-file'
 import { actionId } from '../../../core/domain/press-labels'
 import type { RowPress } from '../../../core/domain/presses'
 import { NO_HOLDS } from '../../../core/view/timing'
 import { runtimeRoot } from '../tools/paths'
-import { appHome, coreRequest, demoEndpoint } from './core'
-import type { SessionBinding } from './binding'
+import { appHome, demoEndpoint } from './core'
+import type { HostBinding } from './binding'
 import { currentView } from './view'
 import type { Result } from '../app.contract'
 
 type PressRequest = {
   operation?: string
+  recover?: boolean
   viewer?: string
   session?: string
   key: string
@@ -26,12 +31,12 @@ type Receipt = Result<'press'>
 type PreparedReceipt = Receipt & {
   protocol?: 2
   command?: string
-  binding?: SessionBinding
+  binding?: HostBinding
   key: string
   text: string
   session: string
-  terminal: string
-  press: RowPress
+  terminal?: string
+  press: RowPress | PrPress
   submittedAt?: number
   sent?: { pressId: string; rowId: string }
 }
@@ -43,11 +48,13 @@ const reading = new Map<string, Promise<Receipt>>()
 function readPressRequest(value: unknown): PressRequest {
   if (!value || typeof value !== 'object') throw new Error('A press must be an object.')
   const v = value as Record<string, unknown>
-  if (Object.keys(v).some(k => !['operation', 'viewer', 'session', 'key', 'text', 'shownSince'].includes(k)))
+  if (Object.keys(v).some(k => !['operation', 'recover', 'viewer', 'session', 'key', 'text', 'shownSince'].includes(k)))
     throw new Error('Unknown press field.')
   if (typeof v.key !== 'string' || !/^[a-f0-9]{64}$/.test(v.key)) throw new Error('Invalid action.')
-  if (typeof v.text !== 'string' || v.text.length > 8000) throw new Error('Reply must be at most 8,000 characters.')
-  if (typeof v.shownSince !== 'number' || !Number.isFinite(v.shownSince)) throw new Error('Invalid viewing time.')
+  if (typeof v.text !== 'string' || v.text.length > MAX_REPLY_LENGTH)
+    throw new Error('Reply must be at most 8,000 characters.')
+  if (typeof v.shownSince !== 'number' || !Number.isFinite(v.shownSince) || v.shownSince < 0)
+    throw new Error('Invalid viewing time.')
   if (v.session !== undefined && (typeof v.session !== 'string' || !/^[a-f0-9]{64}$/.test(v.session)))
     throw new Error('Invalid session.')
   if (v.viewer !== undefined && (typeof v.viewer !== 'string' || !/^[\w-]{16,100}$/.test(v.viewer)))
@@ -57,14 +64,22 @@ function readPressRequest(value: unknown): PressRequest {
     (typeof v.operation !== 'string' || !/^[a-f0-9]{32}$/.test(v.operation) || typeof v.session !== 'string')
   )
     throw new Error('Invalid operation identity.')
+  if (v.recover !== undefined && typeof v.recover !== 'boolean') throw new Error('Invalid recovery request.')
   return {
+    recover: v.recover === true,
     operation: v.operation as string | undefined,
     viewer: v.viewer as string | undefined,
     session: v.session as string | undefined,
     key: v.key,
     text: v.text,
-    shownSince: Math.min(v.shownSince, Date.now()),
+    shownSince: v.shownSince,
   }
+}
+
+function commandIssuedAt(saved: PreparedReceipt): number | null {
+  if (!saved.command) return saved.submittedAt ?? null
+  const parsed = pressFile(saved.command)
+  return parsed.ok && parsed.file.format === 2 && parsed.file.kind === 'command' ? parsed.file.issuedAt : null
 }
 
 function publicReceipt(saved: Receipt): Receipt {
@@ -91,8 +106,8 @@ async function atomicWrite(path: string, text: string) {
 
 async function publish(request: PressRequest): Promise<Receipt> {
   const id = request.operation
-    ? createHash('sha256').update(request.session!).update('\0').update(request.operation).digest('hex')
-    : createHash('sha256').update(request.key).update('\0').update(request.text).digest('hex')
+    ? await submissionId(request.session!, request.operation)
+    : await legacySubmissionId(request.key, request.text)
   const receipts = join(runtimeRoot, 'receipts')
   await mkdir(receipts, { recursive: true, mode: 0o700 })
   const path = join(receipts, `${id}.json`)
@@ -111,17 +126,18 @@ async function publish(request: PressRequest): Promise<Receipt> {
       if (
         process.env.INBOX_EXPERIMENTAL_PROTOCOL === '2' &&
         current?.envelope.remoteProtocol === 2 &&
-        !previous.binding.machine &&
+        current.canPublish &&
         !current.envelope.receipts?.[previous.sent.pressId] &&
-        (previous.submittedAt ?? 0) > (current.envelope.remoteHistoryAfter ?? 0) &&
-        Date.now() - (previous.submittedAt ?? 0) < 24 * 60 * 60_000
+        (commandIssuedAt(previous) ?? 0) > (current.envelope.remoteHistoryAfter ?? 0) &&
+        current.snapshot.serverNow - (commandIssuedAt(previous) ?? 0) < 24 * 60 * 60_000
       ) {
-        const folder = pressFolder(previous.binding.appHome, previous.session)
-        await mkdir(folder, { recursive: true, mode: 0o700 })
-        await atomicWrite(join(folder, `${previous.sent.pressId}.json`), previous.command)
+        await publishInboxFile(previous.binding, previous.sent.pressId, previous.command)
+        void notifyInbox(previous.binding, previous.sent.pressId).catch(() => undefined)
       }
     }
-    return publicReceipt(previous)
+    const retryLegacyFailure =
+      !request.operation && !request.recover && ['refused', 'stale', 'failed'].includes(previous.state)
+    if (!retryLegacyFailure) return publicReceipt(previous)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
@@ -130,67 +146,97 @@ async function publish(request: PressRequest): Promise<Receipt> {
     await atomicWrite(path, JSON.stringify(receipt))
     return publicReceipt(receipt)
   }
+  if (request.recover) return refuse('refused', 'This reply was not sent. It is kept as a draft.')
   if (process.env.INBOX_EXPERIMENTAL_PROTOCOL === '2' && !request.operation)
     return refuse('refused', 'Update Inbox before sending this reply.')
-  const binding = request.session ? await selectedBinding(request.session) : null
-  const current = await currentView(request.shownSince, binding, true, request.viewer ?? '')
-  const useProtocol = process.env.INBOX_EXPERIMENTAL_PROTOCOL === '2' && current?.envelope.remoteProtocol === 2
-  if (process.env.INBOX_EXPERIMENTAL_PROTOCOL === '2' && current && !useProtocol)
-    return refuse('refused', 'Update this session’s Inbox before replying.')
-  if (binding && !useProtocol) {
-    const pinned = await currentView(request.shownSince, null, true)
-    if (!pinned || JSON.stringify(pinned.binding) !== JSON.stringify(binding))
-      throw new Error('This session is read-only.')
-  }
-  if (binding?.machine) throw new Error('Remote command publication is not enabled.')
-  const allowed = current?.allowed.get(request.key)
-  if (!current || !allowed || allowed.disabled)
-    return refuse('stale', 'This changed before your press. Refresh and try again.')
-  const isReply = allowed.press.action === 'type'
-  if (isReply && !request.text.trim()) return refuse('refused', 'Write a reply first.')
-  if (!isReply && request.text !== '') throw new Error('This action does not accept reply text.')
-  const press = isReply ? { ...allowed.press, text: request.text } : allowed.press
-  const now = Date.now()
-  const fileId = `${now.toString(36)}-${id}`
-  const prepared: PreparedReceipt = {
-    ...(useProtocol && {
-      protocol: 2 as const,
-      command: JSON.stringify({
-        format: 2,
-        kind: 'command',
-        id: fileId,
-        session: current.envelope.sessionId,
-        issuedAt: now,
-        expected: current.versions.get(press.id),
-        press,
+  let publicationBinding: HostBinding
+  let now: number
+  let fileId: string
+  let prepared: PreparedReceipt
+  try {
+    const binding = request.session ? await selectedBinding(request.session) : null
+    const current = await currentView(request.shownSince, binding, true, request.viewer ?? '')
+    const useProtocol = process.env.INBOX_EXPERIMENTAL_PROTOCOL === '2' && current?.envelope.remoteProtocol === 2
+    if (process.env.INBOX_EXPERIMENTAL_PROTOCOL === '2' && current && !useProtocol)
+      return refuse('refused', 'Update this session’s Inbox before replying.')
+    if (binding && !useProtocol) {
+      const pinned = await currentView(request.shownSince, null, true)
+      const samePinnedSession =
+        pinned !== null &&
+        pinned.binding.source !== 'codex' &&
+        binding.source !== 'codex' &&
+        pinned.binding.source === binding.source &&
+        pinned.binding.socket === binding.socket &&
+        pinned.binding.appHome === binding.appHome &&
+        pinned.binding.session === binding.session &&
+        pinned.binding.terminal === binding.terminal &&
+        pinned.binding.machine === binding.machine &&
+        pinned.binding.machineId === binding.machineId
+      if (!samePinnedSession) throw new Error('This session is read-only.')
+    }
+    if (current && !current.canPublish)
+      return refuse('refused', 'Replies are paused until this host’s clock can be read.')
+    const allowed = current?.allowed.get(request.key)
+    if (!current || !allowed || allowed.disabled)
+      return refuse('stale', 'This changed before your press. Refresh and try again.')
+    if (allowed.localEffects) return refuse('refused', 'This action runs on the viewing device.')
+    if (allowed.press.action === 'resume' && (!useProtocol || !current.envelope.remoteActions?.includes('resume')))
+      return refuse('refused', 'This session does not support remote Resume.')
+    const isReply = allowed.press.action === 'type'
+    if (isReply && !request.text.trim()) return refuse('refused', 'Write a reply first.')
+    if (!isReply && request.text !== '') throw new Error('This action does not accept reply text.')
+    const press = isReply ? { ...allowed.press, text: request.text } : allowed.press
+    publicationBinding = current.binding
+    const clock = await agentClock(current.binding, true)
+    if (!clock.reliable || !clock.privateFiles)
+      return refuse('refused', 'Replies are paused until this host’s clock can be read.')
+    now = clock.now
+    fileId = `${now.toString(36)}-${id}`
+    prepared = {
+      ...(useProtocol && {
+        protocol: 2 as const,
+        command: JSON.stringify({
+          format: 2,
+          kind: 'command',
+          id: fileId,
+          session: current.envelope.sessionId,
+          issuedAt: now,
+          expected: current.versions.get(pressRowId(press)),
+          press,
+        }),
       }),
-    }),
-    binding: current.binding,
-    id,
-    key: request.key,
-    text: request.text,
-    ok: false,
-    state: 'unconfirmed',
-    session: current.envelope.sessionId,
-    terminal: current.envelope.terminal,
-    press,
-    submittedAt: now,
-    sent: { pressId: fileId, rowId: press.id },
-    error: 'Delivery is not confirmed. Refresh before trying another answer.',
+      binding: current.binding,
+      id,
+      key: request.key,
+      text: request.text,
+      ok: false,
+      state: 'unconfirmed',
+      session: current.envelope.sessionId,
+      terminal: current.envelope.terminal,
+      press,
+      submittedAt: Date.now(),
+      sent: { pressId: fileId, rowId: pressRowId(press) },
+      error: 'Delivery is not confirmed. Refresh before trying another answer.',
+    }
+    if (
+      prepared.command &&
+      (!pressFile(prepared.command).ok || Buffer.byteLength(prepared.command, 'utf8') > 64 * 1024)
+    )
+      return refuse('refused', 'This action is too large to send. Your reply is kept.')
+  } catch (error) {
+    return refuse('refused', error instanceof Error ? error.message : 'This action could not be sent.')
   }
-  if (prepared.command && (!pressFile(prepared.command).ok || Buffer.byteLength(prepared.command, 'utf8') > 64 * 1024))
-    return refuse('refused', 'This action is too large to send. Your reply is kept.')
   await atomicWrite(path, JSON.stringify(prepared))
-  const folder = pressFolder(current.binding.appHome, current.envelope.sessionId)
-  await mkdir(folder, { recursive: true, mode: 0o700 })
-  await atomicWrite(
-    join(folder, `${fileId}.json`),
-    prepared.command ??
-      pressFileText(fileId, now, press, {
-        ...NO_HOLDS,
-        shownSince: request.shownSince,
-      }),
-  )
+  try {
+    await publishInboxFile(
+      publicationBinding,
+      fileId,
+      prepared.command ??
+        pressFileText(fileId, now, prepared.press, { ...NO_HOLDS, shownSince: Math.min(request.shownSince, now) }),
+    )
+  } catch {
+    return publicReceipt(prepared)
+  }
   const submitted: PreparedReceipt = {
     ...prepared,
     ok: true,
@@ -198,14 +244,7 @@ async function publish(request: PressRequest): Promise<Receipt> {
     error: '',
   }
   await atomicWrite(path, JSON.stringify(submitted))
-  void coreRequest(
-    'terminal.label',
-    {
-      terminal: current.envelope.terminal,
-      labels: { 'inbox.press': fileId },
-    },
-    current.binding,
-  ).catch(error =>
+  void notifyInbox(publicationBinding, fileId).catch(error =>
     console.warn('The prototype could not notify its agent:', error instanceof Error ? error.message : String(error)),
   )
   return publicReceipt(submitted)
@@ -233,15 +272,14 @@ async function reconcileReceipt(id: string): Promise<Receipt> {
     receipt.state === 'refused' ||
     receipt.state === 'expired'
   if (isFinal || !('sent' in receipt) || !receipt.sent) return publicReceipt(receipt)
-  const current = await currentView(
-    0,
-    receipt.binding ?? {
-      ...demoEndpoint,
-      appHome,
-      session: receipt.session,
-      terminal: receipt.terminal,
-    },
-  )
+  const binding =
+    receipt.binding ??
+    (typeof receipt.terminal === 'string'
+      ? { ...demoEndpoint, appHome, session: receipt.session, terminal: receipt.terminal }
+      : null)
+  if (!binding) throw new Error('This receipt has no saved host identity.')
+  const current = await currentView(0, binding, true)
+
   if (!current || current.envelope.sessionId !== receipt.session || current.envelope.terminal !== receipt.terminal)
     return {
       ...publicReceipt(receipt),
@@ -252,8 +290,10 @@ async function reconcileReceipt(id: string): Promise<Receipt> {
   if (receipt.protocol === 2) {
     const outcome = current.envelope.receipts?.[receipt.sent.pressId]
     if (!outcome) {
-      const outsideHistory = (receipt.submittedAt ?? 0) <= (current.envelope.remoteHistoryAfter ?? 0)
-      const expired = Date.now() - (receipt.submittedAt ?? 0) >= 24 * 60 * 60_000
+      const outsideHistory = (commandIssuedAt(receipt) ?? Infinity) <= (current.envelope.remoteHistoryAfter ?? 0)
+      const issuedAt = commandIssuedAt(receipt)
+      const expired =
+        current.canPublish && issuedAt !== null && current.snapshot.serverNow - issuedAt >= 24 * 60 * 60_000
       if (!outsideHistory && !expired) return pendingReceipt(receipt)
       const ended = {
         ...receipt,

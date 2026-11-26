@@ -50,6 +50,11 @@ export function coreRequest(
   endpoint?: CoreEndpoint,
 ): Promise<{ terminals: Terminal[] }>
 export function coreRequest(
+  method: 'terminal.get',
+  params: { terminal: string },
+  endpoint?: CoreEndpoint,
+): Promise<Terminal>
+export function coreRequest(
   method: 'terminal.label',
   params: { terminal: string; labels: Record<string, string> },
   endpoint?: CoreEndpoint,
@@ -65,7 +70,7 @@ export async function coreRequest(
   endpoint: CoreEndpoint = demoEndpoint,
 ): Promise<unknown> {
   const child = Bun.spawn(['hc', 'connect'], {
-    env: coreEnvironment(endpoint),
+    env: endpoint ? coreEnvironment(endpoint) : process.env,
     stdin: 'pipe',
     stdout: 'pipe',
     stderr: 'pipe',
@@ -108,4 +113,72 @@ export async function currentTerminal(): Promise<Terminal | null> {
   const matches = terminals.filter(t => t.labels?.['inbox.prototype'] === 'exact')
   if (matches.length > 1) throw new Error('More than one prototype session is running.')
   return matches[0] ?? null
+}
+
+export async function agentExec(
+  endpoint: (CoreEndpoint & { machineId?: string }) | null,
+  argv: string[],
+  input?: string,
+  outputLimit = 1024,
+): Promise<unknown> {
+  const command = endpoint?.machineId
+    ? [
+        'hc',
+        'exec',
+        '--on',
+        endpoint.machineId,
+        '--timeout',
+        '5',
+        ...(input === undefined ? [] : ['-i']),
+        '--',
+        ...argv,
+      ]
+    : argv
+  const child = Bun.spawn(command, {
+    env: endpoint ? coreEnvironment(endpoint) : process.env,
+    stdin: input === undefined ? 'ignore' : 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  if (input !== undefined && child.stdin) {
+    child.stdin.write(input)
+    child.stdin.end()
+  }
+  const timeout = setTimeout(() => child.kill(), 7000)
+  try {
+    const [stdout, stderr, code] = await Promise.all([
+      limitedText(child.stdout, outputLimit, () => child.kill()),
+      limitedText(child.stderr, 4096, () => child.kill()),
+      child.exited,
+    ])
+    if (code !== 0) throw new Error(stderr.trim() || 'The operation could not be confirmed.')
+    try {
+      return JSON.parse(stdout)
+    } catch {
+      throw new Error('The operation returned an unreadable acknowledgment.')
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function limitedText(stream: ReadableStream<Uint8Array>, limit: number, stop: () => void): Promise<string> {
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (true) {
+      const part = await reader.read()
+      if (part.done) break
+      size += part.value.byteLength
+      if (size > limit) {
+        stop()
+        throw new Error('The host response is too large.')
+      }
+      chunks.push(part.value)
+    }
+    return Buffer.concat(chunks).toString('utf8')
+  } finally {
+    reader.releaseLock()
+  }
 }

@@ -277,6 +277,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
 type ClosedLine = {
   id: string
   how: Parameters<typeof closedLineAction>[0]['how']
+  canRestore?: boolean
   title: string
   at: number
   outcomeLabel: string

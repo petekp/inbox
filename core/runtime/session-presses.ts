@@ -1,3 +1,4 @@
+import { isResumable, RESUME_TEXT } from '../view/banners'
 import { settledCollapses } from '../view/collapse'
 import { remoteHeldRows } from './remote-viewers'
 import { pendingCommandRows } from './remote-command-state'
@@ -61,6 +62,32 @@ export function pressOn(
   texts: PressTexts,
   localPressId?: string,
 ): Pressed | { stale: true } {
+  if (p.action === 'resume') {
+    const previous = s.lastActions.session
+    const alreadyRequested =
+      s.stop &&
+      previous &&
+      previous.at >= s.stop.at &&
+      previous.turnsStarted === s.presence.turnsStarted &&
+      previous.delivery?.state !== 'failed'
+    if (p.id !== 'session' || !s.stop || !isResumable(s.stop) || s.presence.isTurnRunning || alreadyRequested)
+      return { stale: true }
+    return {
+      ledger: s.ledger,
+      lasts: {
+        session: {
+          kind: 'handoff',
+          action: 'resume',
+          text: 'Resume',
+          at,
+          turnsStarted: s.presence.turnsStarted,
+          delivery: { state: 'queued', message: RESUME_TEXT },
+        },
+      },
+      drop: [],
+      effects: [{ kind: 'send', text: RESUME_TEXT, by: null }],
+    }
+  }
   if (isRepeatWhileOut(s, p, at, drawn)) return { ledger: s.ledger, lasts: {}, drop: [], effects: [] }
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId }
   if (isPrPress(p)) return applyPrPress(s.ledger, s.prViews, s.lastActions, p, ctx)

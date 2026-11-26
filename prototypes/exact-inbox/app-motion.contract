@@ -1,0 +1,24 @@
+use expandedRow, VisualFrame from "./model.contract"
+
+members App
+  state visualFrame: VisualFrame = VisualFrame(session="", signature="", asks=[], finds=[], prs=[], deadline=0)
+  derive openAsk = expandedRow(inbox.asks, activePlace.asksExpanded, effectiveCollapsed)
+  derive openFind = expandedRow(inbox.findings, activePlace.findsExpanded, effectiveCollapsed)
+  derive motionKey = `${selectedSession}:${inbox.rowVersion}:${inbox.prVersion}:${openAsk}:${openFind}:${selectedPr}:${viewport.prefersReducedMotion}:${isSendingRow}:${submittedKey}`
+  mutation nextFrame as shape VisualFrame queue then applyVisualFrame
+  task updateMotion when matchingInbox and visualFrame.signature != motionKey key=motionKey
+    after(1, updateMotion)
+  task settleMotion when matchingInbox and visualFrame.session == selectedSession and visualFrame.deadline > 0 key=`${motionKey}:${visualFrame.deadline}`
+    every(frame, settleVisualFrame)
+  action settleVisualFrame
+    if performanceNow() >= visualFrame.deadline and not pending(nextFrame)
+      updateMotion()
+  action updateMotion
+    send nextFrame = advanceMotion(motionKey, inbox, openAsk, openFind, selectedPr, isSendingRow ? submittedRow : "", submittedKey, visualFrame, performanceNow(), viewport.prefersReducedMotion)
+  action applyVisualFrame
+    match nextFrame
+      case some(value)
+        if value.session == selectedSession and value.signature == motionKey
+          visualFrame = value
+      case none
+        visualFrame = visualFrame

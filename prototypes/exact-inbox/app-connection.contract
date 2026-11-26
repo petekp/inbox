@@ -1,0 +1,23 @@
+use connectionText from "./model.contract"
+
+members App
+  state observedSession = ""
+  state verifiedSession = ""
+  derive disconnected = not matchingInbox or not inbox.connected or failed(inbox) or verifiedSession != selectedSession
+  derive connectionLabel = ((not current(inbox) and not failed(inbox)) or (matchingInbox and inbox.connected and verifiedSession != selectedSession)) ? "Connecting…" : connectionText(inbox, disconnected)
+  task connectionChanged when observedSession != selectedSession key=selectedSession
+    after(1, resetConnection)
+  task connectionLost when verifiedSession == selectedSession and selectedSession != "" and (failed(inbox) or (matchingInbox and not inbox.connected))
+    after(1, loseConnection)
+  action loseConnection
+    if failed(inbox) or (matchingInbox and not inbox.connected)
+      verifiedSession = ""
+  task connectionVerified when matchingInbox and observedSession == selectedSession and not pending(inbox) and not failed(inbox) and inbox.connected and verifiedSession != selectedSession key=selectedSession
+    after(1, confirmConnection)
+  action resetConnection
+    if observedSession != selectedSession
+      observedSession = selectedSession
+      verifiedSession = ""
+  action confirmConnection
+    if matchingInbox and observedSession == selectedSession and not pending(inbox) and not failed(inbox) and inbox.connected
+      verifiedSession = selectedSession

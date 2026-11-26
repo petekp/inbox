@@ -128,5 +128,6 @@ export const OMP: Client = {
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
     'option-previews': { kind: 'full' },
+    'remote-resume': { kind: 'full' },
   },
 }

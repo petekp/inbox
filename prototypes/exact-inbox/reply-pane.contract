@@ -1,5 +1,11 @@
+use rowExit, rowLayout from "./motion.contract"
 component ReplyPane
   props
+    hint: string
+    discardLabel: string
+    reduced: bool
+    goalReply: bool
+    submitLabel: string
     title: string
     draft: string
     canSend: bool
@@ -8,19 +14,31 @@ component ReplyPane
     tab: string
     onEdit: action
     onDiscard: action
+    onCancel: action
     onSend: action
+  action typedKey(k: string, event: KeyboardEvent)
+    if not event.isComposing and k == "Escape"
+      onCancel()
+      blur()
+      preventDefault()
+    else if not event.isComposing and k == "Enter" and not event.shiftKey
+      if canSend
+        onSend()
+      preventDefault()
+    stopPropagation()
   view
-    section
-      header
-        text title
+    section -exact-exit-animation=rowExit(reduced) -exact-layout-transition=rowLayout(reduced)
+      if title != ""
+        header
+          text title
       row
-        textarea value=draft input=onEdit placeholder="Write a reply…" aria-label="Reply"
+        textarea autofocus key=typedKey value=draft input=onEdit placeholder=hint aria-label=(goalReply ? "Goal" : hint)
           rows=3 flex=1 min-width=0 testId=`reply-${tab}`
       row
         button press=onDiscard disabled=(not canDiscard) testId=`discard-${tab}`
-          text "Discard"
+          text discardLabel
         button press=onSend buttonStyle="filled" disabled=(not canSend)
           testId=`send-${tab}`
-          text "Send reply"
+          text submitLabel
       footer
         text message

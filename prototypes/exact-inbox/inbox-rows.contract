@@ -1,10 +1,37 @@
-use Row from "./model.contract"
+use RowActions from "./row-actions.contract"
+use rowLayout, rowFade, rowEntry, rowSlide, rowExit from "./motion.contract"
+use ReplyPane from "./reply-pane.contract"
+use localNote, LocalFeedback, VisualGroup from "./model.contract"
+use InlineText from "./inline-text.contract"
 
 component InboxRows
   props
-    rows: Row[]
+    prefix: string
+    sendLabel: string
+    discardLabel: string
+    replyRow: string
+    replyOpen: bool
+    replyTitle: string
+    replyText: string
+    canSend: bool
+    replyMessage: string
+    onEdit: action
+    onDiscard: action
+    onCancel: action
+    onSend: action
+    groups: VisualGroup[]
+    reduced: bool
+    compact: bool
+    localFeedbacks: LocalFeedback[]
+    localActive: bool
+    session: string
+    onLocal: action
+    optionsShown: string[]
+    folds: string[]
+    earlier: string[]
+    emptyTitle: string
+    emptyHint: string
     findings: bool
-    fresh: bool
     waiting: bool
     selected: string
     submittedRow: string
@@ -13,34 +40,89 @@ component InboxRows
     disconnected: bool
     pending: bool
     onToggle: action
+    onFold: action
+    onEarlier: action
     onChoose: action
   view
-    for r in rows key=r.id
-      section testId=`row-${r.id}`
-        button press=onToggle(r.id) color="-exact-label" testId=`select-${r.id}`
-          row gap=10 align-items="start"
-            text r.mark color="-exact-secondary-label" width="1em" min-width="1em" text-align="center"
-            column flex=1 min-width=0 gap=4
-              text r.title
-              if r.feedback != "" or (r.id == submittedRow and isSendingRow)
-                text (r.id == submittedRow and isSendingRow ? "Sending…" : r.feedback) font="-exact-subheadline" color="-exact-secondary-label" testId=`feedback-${r.id}`
-        if selected == r.id
-          row
-            column flex=1 min-width=0 gap=12 padding-left=22
-              if r.context != ""
-                text r.context font="-exact-subheadline" color="-exact-secondary-label"
-              if r.detail != ""
-                text r.detail
-              row flex-wrap="wrap" gap=8
-                for a in r.actions key=a.key
-                  button press=onChoose(a.key, a.input, r.id, r.title) buttonStyle=(a.primary ? "filled" : "bordered")
-                    disabled=(a.disabled or disconnected or pending or (a.key == submittedKey and isSendingRow)) testId=`action-${a.key}`
-                    text a.label
-              if r.recommendation != ""
-                text r.recommendation font="-exact-subheadline" color="-exact-secondary-label"
-              for a in r.actions.filter(x => x.reason != "") key=a.key
-                text a.reason font="-exact-footnote" color="-exact-secondary-label"
-    if rows.length == 0 and not disconnected
+    if waiting and groups.filter(g => g.rows.length > 0).length == 0
       section
-        row
-          text (not fresh ? "Inbox may be out of date." : waiting ? "Open this session in Herdr to handle its pending input." : findings ? "No findings." : "Nothing needed.") color="-exact-secondary-label" testId=`empty-${findings ? "findings" : "asks"}`
+        text "Open this session in Herdr to handle its pending input." color="-exact-secondary-label"
+    else if emptyTitle != "" and not disconnected and groups.filter(g => g.rows.length > 0).length == 0
+      section
+        column padding=24 gap=8 align-items="center"
+          text emptyTitle color="-exact-secondary-label" testId=`empty-${findings ? "findings" : "asks"}`
+          if emptyHint != ""
+            text emptyHint color="-exact-tertiary-label" text-align="center"
+    else
+      for g in groups key=g.id
+        section testId=`group-${g.id}` padding-bottom=24 -exact-layout-transition=rowLayout(reduced)
+          row gap=8 padding-bottom=8
+            text g.mark color=g.color
+            text g.title role="heading" aria-level=2 font-size="1em" font-weight=600
+            if g.count > 0
+              text `${g.count}` color="-exact-secondary-label"
+          for r in g.rows key=r.id
+            column id=`${prefix}-row-${r.id}` gap=0 padding=(r.target == "gone" ? "0px" : "6px 0") height=(r.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(r.target == "gone") aria-hidden=(r.target == "gone") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "gone" ? 0 : 1) translate=rowSlide(r.target == "gone") transition=rowFade(reduced) animation=rowEntry(reduced, r.arriving) testId=`row-${r.row.id}`
+              button press=onToggle(r.row.id, r.row.collapse) appearance="none" background-color="transparent" border-width=0 padding=0 width="100%" text-align="left" aria-expanded=(selected == r.row.id) color="-exact-label" testId=`select-${r.row.id}` min-height=(compact ? 32 : 44)
+                row gap=10 align-items="start" width="100%"
+                  column width="1em" min-width="1em" align-items="center"
+                    if r.row.running
+                      progress aria-label="Working" width=(compact ? 12 : 16) height=(compact ? 12 : 16)
+                    else
+                      text r.row.mark color=r.row.markColor width="100%" text-align="center"
+                  column flex=1 min-width=0 gap=4
+                    InlineText(parts=r.row.titleParts)
+                    if r.row.holdsUpParts.length > 0 and selected != r.row.id
+                      column color="-exact-secondary-label" font-size="0.92em"
+                        InlineText(parts=r.row.holdsUpParts)
+                  if r.row.age != ""
+                    text r.row.age font-size="0.85em" color="-exact-tertiary-label"
+              column min-width=0 gap=0 padding-left=24 height=(r.target == "open" ? "auto" : "0px") overflow="hidden" inert=(r.target != "open") aria-hidden=(r.target != "open") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "open" ? 1 : 0) translate=rowSlide(r.target != "open") transition=rowFade(reduced)
+                column gap=8 padding-top=8
+                  if r.panel.state != "settled"
+                    if r.panel.holdsUpParts.length > 0
+                      column color="-exact-secondary-label" font-size="0.92em"
+                        InlineText(parts=r.panel.holdsUpParts)
+                    if r.panel.contextParts.length > 0
+                      column font-size="0.92em" color="-exact-secondary-label"
+                        InlineText(parts=r.panel.contextParts)
+                    if r.panel.earlierParts.length > 0
+                      column font-size="0.92em" color="-exact-secondary-label"
+                        InlineText(parts=r.panel.earlierParts)
+                    if r.panel.detailParts.length > 0
+                      InlineText(parts=r.panel.detailParts)
+                    if r.panel.fileName != ""
+                      row gap=4 flex-wrap="wrap" font-size="0.92em"
+                        text r.panel.fileLabel color="-exact-secondary-label"
+                        text r.panel.fileName font-family="monospace"
+                  if r.panel.state != "settled"
+                    RowActions(item=r.panel, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+                  if replyOpen and replyRow == r.row.id and r.row.state != "settled"
+                    ReplyPane(discardLabel=discardLabel, hint=r.panel.replyHint, reduced=reduced, goalReply=false, submitLabel=sendLabel, title="", draft=replyText, canSend=canSend and not r.guarded, canDiscard=not pending and not r.guarded, message=replyMessage, tab=(findings ? "findings" : "asks"), onEdit=onEdit, onDiscard=onDiscard, onCancel=onCancel, onSend=onSend)
+                  if r.panel.state != "settled"
+                    for a in r.panel.shownActions.filter(x => x.reason != "") key=a.key
+                      text a.reason font-size="0.85em" color="-exact-secondary-label"
+              if r.row.state == "settled"
+                column padding-top=8
+                  RowActions(item=r.row, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+              if r.row.feedback != "" or (r.row.id == submittedRow and isSendingRow) or localNote(localFeedbacks, r.row.id, r.row.version).text != ""
+                text (localNote(localFeedbacks, r.row.id, r.row.version).text != "" ? localNote(localFeedbacks, r.row.id, r.row.version).text : r.row.id == submittedRow and isSendingRow ? "Sending…" : r.row.feedback) font-size="0.92em" color=(localNote(localFeedbacks, r.row.id, r.row.version).failed ? "-exact-system-red" : "-exact-secondary-label") testId=`feedback-${r.row.id}`
+          if g.empty != ""
+            text g.empty -exact-layout-transition=rowLayout(reduced) padding-left=24 color="-exact-secondary-label"
+          if g.closedLabel != ""
+            button -exact-layout-transition=rowLayout(reduced) press=onFold(g.id) appearance="none" background-color="transparent" border-width=0 padding=0 text-align="left" min-height=(compact ? 28 : 44) aria-expanded=folds.includes(g.id) testId=`closed-fold-${g.id}`
+              text `${folds.includes(g.id) ? "▾" : "▸"} ${g.closedLabel}` color="-exact-secondary-label"
+          if folds.includes(g.id)
+            for r in (earlier.includes(g.id) ? g.closedAll : g.closed) key=r.id
+              row gap=10 padding="6px 0" align-items="start" -exact-layout-transition=rowLayout(reduced) -exact-exit-animation=rowExit(reduced) testId=`closed-${r.id}`
+                text r.mark width="1em" color=r.color
+                column flex=1 min-width=0 gap=4 color="-exact-secondary-label"
+                  InlineText(parts=r.title)
+                  text (r.id == submittedRow and isSendingRow ? "Sending…" : r.outcome) font-size="0.92em"
+                  for a in r.actions key=a.key
+                    button press=onChoose(a.key, a.input, r.id, r.title.map(s => s.text).join("")) disabled=(a.disabled or disconnected or pending or (r.id == submittedRow and isSendingRow)) testId=`action-${a.key}` min-height=(compact ? 26 : 44)
+                      text a.label
+                text r.age font-size="0.85em" color="-exact-tertiary-label"
+            if not earlier.includes(g.id) and g.earlierLabel != ""
+              button press=onEarlier(g.id) testId=`earlier-${g.id}`
+                text g.earlierLabel

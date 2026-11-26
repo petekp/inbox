@@ -103,7 +103,7 @@ export function makeCompanion(
       serverNow: deps.now(),
       version: VERSION,
       isFetchingPrs: isPrFetchRunning(state),
-      remoteActions: REMOTE_ACTIONS,
+      remoteActions: REMOTE_ACTIONS.filter(action => action !== 'resume'),
       remoteHistoryAfter: commands.floor,
       receipts: remoteReceipts(commands),
       viewers: remoteViewerReceipts(viewers.leases),

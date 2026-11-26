@@ -1,3 +1,7 @@
+import { REMOTE_PR_ACTIONS, isRemotePrPress } from './remote-press'
+import { isPrPress, pressRowId } from '../view/pr-press'
+import type { PrPress } from '../view/pr-press'
+import { isPrRowId } from '../domain/presses'
 import {
   blockRemoteDeferred,
   confirmRemoteDelivery,
@@ -12,6 +16,7 @@ import type { RemoteCommandRecord, Session } from '../../types'
 import type { RowPress } from '../domain/presses'
 import type { PressHost, PressOutcome } from '../runtime/host-press'
 import { startPress } from '../runtime/host-press'
+import { pressOn } from '../runtime/session-presses'
 import { NO_HOLDS } from '../view/timing'
 import { PRESS_LIFETIME_MS } from '../domain/preconditions'
 
@@ -22,7 +27,7 @@ export type RemoteCommand = {
   session: string
   issuedAt: number
   expected: string
-  press: RowPress
+  press: RowPress | PrPress
 }
 
 const LIFETIME_MS = PRESS_LIFETIME_MS
@@ -31,6 +36,15 @@ const MAX_COMMAND_BYTES = 128_000
 const OUTCOME_RESERVE_BYTES = 4096
 
 export function remoteRowVersion(s: Session, id: string): string {
+  if (id === 'session')
+    return JSON.stringify([s.stop, s.presence.turnsStarted, s.presence.isTurnRunning, s.lastActions.session ?? null])
+  if (isPrRowId(id))
+    return JSON.stringify([
+      s.prViews,
+      s.ledger.prs,
+      s.ledger.prOrder,
+      Object.fromEntries(Object.entries(s.lastActions).filter(([key]) => isPrRowId(key))),
+    ])
   if (id === 'goal') {
     const overview = s.ledger.overview
     return JSON.stringify([
@@ -76,8 +90,8 @@ export async function remoteRowDigest(s: Session, id: string): Promise<string> {
 
 async function matchesRow(s: Session, command: RemoteCommand): Promise<boolean> {
   return (
-    command.expected === remoteRowVersion(s, command.press.id) ||
-    command.expected === (await remoteRowDigest(s, command.press.id))
+    command.expected === remoteRowVersion(s, pressRowId(command.press)) ||
+    command.expected === (await remoteRowDigest(s, pressRowId(command.press)))
   )
 }
 
@@ -105,7 +119,7 @@ const rejected = (error: string): PressOutcome => ({
   wakesAfterSettle: false,
 })
 
-export const REMOTE_ACTIONS: readonly RowPress['action'][] = [
+export const LEGACY_REMOTE_ACTIONS: readonly RowPress['action'][] = [
   'type',
   'answer',
   'done',
@@ -114,16 +128,29 @@ export const REMOTE_ACTIONS: readonly RowPress['action'][] = [
   'dismiss',
   'discuss',
   'explain',
-  'compare',
   'issue',
   'discard',
+]
+export const REMOTE_ACTIONS: readonly (RowPress | PrPress)['action'][] = [
+  ...LEGACY_REMOTE_ACTIONS,
+  ...REMOTE_PR_ACTIONS,
+  'compare',
+  'step',
   'remove-goal',
   'restore-goal',
   'take-goal',
+  'resume',
 ]
 
-export function supportsRemotePress(p: Pick<RowPress, 'action'>): boolean {
-  return REMOTE_ACTIONS.includes(p.action)
+function supportsRemotePress(p: RowPress | PrPress, host: Pick<PressHost<Session>, 'supportsResume'>): boolean {
+  if (p.action === 'resume') return host.supportsResume === true
+  return isPrPress(p) ? isRemotePrPress(p) : REMOTE_ACTIONS.includes(p.action)
+}
+
+function isAgentStep<S extends Session>(s: S, p: RowPress | PrPress, now: number, host: PressHost<S>): boolean {
+  if (p.action !== 'step') return true
+  const planned = pressOn(s, p, now, { settleWindowMs: host.settleWindowMs, holds: NO_HOLDS }, host)
+  return !('stale' in planned) && planned.effects.length > 0 && planned.effects.every(effect => effect.kind === 'send')
 }
 
 function isUnresolved(c: RemoteCommandRecord): boolean {
@@ -166,7 +193,9 @@ async function settled<S extends Session>(
 ): Promise<PressOutcome> {
   if (outcome.error || outcome.isUnconfirmed)
     await host
-      .update(s => blockRemoteDeferred(s, command.id, command.press.id, 'This action could not be confirmed saved.'))
+      .update(s =>
+        blockRemoteDeferred(s, command.id, pressRowId(command.press), 'This action could not be confirmed saved.'),
+      )
       .catch(() => undefined)
   const s = await host.read()
   await store.update(log => {
@@ -252,7 +281,7 @@ export async function startRemoteCommand<S extends Session>(
       if (isRefusal || (!isUnresolved(c) && now - c.acceptedAt >= LIFETIME_MS)) drop(id)
     }
     const expired = !validTime || command.issuedAt <= floor
-    const supported = supportsRemotePress(command.press)
+    const supported = supportsRemotePress(command.press, host) && isAgentStep(s, command.press, now, host)
     const stale = !expired && supported && !(await matchesRow(s, command))
     const record: RemoteCommandRecord = {
       payload,
@@ -267,7 +296,7 @@ export async function startRemoteCommand<S extends Session>(
           : stale
             ? 'This item changed before the action.'
             : null,
-      row: command.press.id,
+      row: pressRowId(command.press),
       deliveryId: null,
       delivered: false,
     }

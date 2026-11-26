@@ -28,6 +28,8 @@ export type RowPress =
   | { action: 'restore-goal'; id: string }
   /** Set on the suggested goal: makes it the goal. `id` is `GOAL_KEYS_ID`. */
   | { action: 'take-goal'; id: string }
+  /** Resumes a stopped turn from a remote Inbox client. */
+  | { action: 'resume'; id: 'session' }
 
 export type PrActionId =
   | 'thread-address'

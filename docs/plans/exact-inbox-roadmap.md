@@ -1,34 +1,36 @@
 # Exact Inbox roadmap
 
-Status: building. Milestones 1 and 2 are implemented. Milestone 3 is in final acceptance; ordinary activation remains held. The clients are privately installed, with Codex Inbox as the visual and behavioral reference.
+Status: building. The installed iPhone and helper can load current session views; the web bundle remains on milestone 3. The desktop Codex connection is not enabled. The overnight candidate removes the demo control and repairs reply recovery, compatibility errors, discovery delays and outcome retention. Its updates are prepared for review, not installed.
+
+The current batch stops at checked source and install artifacts. The next work uses the bounded milestones below.
 
 The destination is a session browser that opens a complete Inbox for any supported active Herdr session. A person can find the session that needs them, answer it, and return to another session without losing their place or draft. Each session retains its own Status, Asks, Finds and PRs.
 
 ## Starting point and scope
 
-The prototype has demonstrated the full connection through Exact, a local helper, Herdr Core and private Tailscale HTTPS. A signed iPhone app is installed. Both clients have displayed an existing Claude session, and a web reply reached that session with an exact confirmation. The original task remained open. Earlier isolated checks exercised native replies and Undo; the existing-session phone check was read-only.
+The private connection runs through Exact, a local helper, Herdr Core and Tailscale HTTPS. The AppDrop-installed iPhone app and web client have sent replies to an isolated real agent. Durable receipts survived duplicate submission and a host restart. The normal session connection is enabled.
 
-The helper currently pins one session. It validates the Core socket, terminal, session and publisher, and keeps receipts attached to their original connection. The clients show partial Asks and Finds, a simplified read-only Status, and locally saved drafts. This is a working trial, not a parity release.
+The candidate adds shared row controls, private file snapshots, Status and PR actions, Help, demo sessions, offline recovery, and a desktop Codex connection. Simulator platform-touch checks cover native replies and draft recovery. Physical-iPhone and accessibility acceptance remain.
 
 | Area | Current state | Completion milestone |
 | --- | --- | --- |
-| Session navigation | One pinned Claude session | 2, then interactive use after 3 |
-| Delivery and drafts | Exact confirmations and local drafts; missed acknowledgments and concurrent holds remain limited | 3 |
-| Asks and Finds | Partial shared rows and actions; closed folds and restore controls missing | 4 |
-| Links, files and copying | Local actions visible but unavailable | 4 |
-| Status | Simplified read-only projection | 5 |
-| PRs | No client view | 5 |
-| Codex and omp sessions | Current binding accepts Claude only | 5 |
-| Visual and interaction parity | Codex is the reference; the current look differs | Throughout, final gate in 6 |
-| This Codex desktop chat | Still uses its existing Inbox | 6 |
+| Session navigation | Directory, wide-web rail and mobile Sessions tab; saved place per session | 2 |
+| Delivery and drafts | Durable receipts, recovery, viewer holds and unchanged-draft clearing | 3 |
+| Asks and Finds | Shared groups, content, option folds, closed history and restoration; selection and motion remain partial | 4 |
+| Links, files and copying | Device copy, HTTPS opens, private file snapshots and Compare; full host acceptance remains | 4 |
+| Status | Shared hierarchy, folds, goal controls and visible-subject reporting; final acceptance remains | 5 |
+| PRs | Shared projection and durable action transport; safe fixture checks passed | 5 |
+| Codex and omp sessions | Supported publishers and isolated real Claude/Codex acceptance; live omp acceptance remains | 5 |
+| Visual and interaction parity | Codex remains the reference; motion, touch and accessibility checks remain | Throughout, final gate in 6 |
+| This Codex desktop chat | Adapter implemented and verified with an isolated real Codex chat; this chat is not connected | 6 |
 
-The milestone 3 integration passed the full repository gate before its final launcher adjustments. Live acceptance is being repeated on the integrated host and the AppDrop-installed iPhone build. Physical touch and accessibility remain later acceptance requirements.
+Milestone 3 passed the repository gate before installation. The parity branch needs its own gate and review before activation. Older installed clients retain their original response shape; new clients request the newer view schema explicitly.
 
-The reference is the current Codex implementation and shared rules, not a screenshot alone. Start from [the look map](../looks.md), [Codex's file map](../looks/files-codex.md), [the feature record](../../core/domain/clients.ts), and [the prototype](../../prototypes/exact-inbox/README.md). The inspected repository base is `3701e97c14f6dfe571a42121d49749f2e8793cdb`; the prototype is working-copy code. Refresh the reference when implementation starts and track subsequent changes explicitly.
+The reference is the current Codex implementation and shared rules, not a screenshot alone. Start from [the look map](../looks.md), [Codex's file map](../looks/files-codex.md), [the feature record](../../core/domain/clients.ts), and [the prototype](../../prototypes/exact-inbox/README.md). Milestone 3 was integrated in `5285cb125e792f3ae03f34456d331a1831b06c9e`. Check subsequent shared changes when updating the parity branch.
 
-Private installation remains a product constraint. Agent state, model credentials and GitHub credentials stay on their owning computer. Tailscale supplies private connectivity. The helper exposes Inbox operations, not Core's unrestricted terminal API.
+Private installation remains a product constraint. Authoritative agent state, model credentials and GitHub credentials stay on the owning computer. Clients keep projected snapshots, drafts and requested files. Tailscale supplies private connectivity. The helper exposes Inbox operations, not Core's unrestricted terminal API.
 
-A combined feed of every session's rows, agent launching, terminal control, public hosting and push notifications are outside this parity milestone. Navigating between session inboxes is in scope. Bringing this existing Codex desktop chat into the web app is a later adoption gate within this roadmap, because it needs a host adapter beyond the current Herdr terminal connection.
+A combined feed of every session's rows, agent launching, terminal control, public hosting and push notifications are outside this parity milestone. Navigating between session inboxes is in scope. Bringing this existing Codex desktop chat into the web app is a later adoption gate within this roadmap, because its installed host connection and restart have not been activated.
 
 ## Delivery milestones
 
@@ -111,6 +113,17 @@ Run focused checks as work lands. Run the required repository/release checks wit
 Add the adapter for this existing Codex desktop chat without transferring ownership of its state or running duplicate updates. Prove that session identity, item IDs, history, decisions and drafts survive, and that replies reach the original chat. Keep the existing Codex Inbox available as a return path.
 
 Exit condition: use real work across supported active Herdr sessions from web and iPhone without losing drafts, misrouting replies or concealing stale data. Complete the parity inventory and the controlled Codex-chat handoff before treating the new client as the primary Inbox.
+
+## Next reviewable milestones
+
+| Milestone | Visible result | Stop condition |
+| --- | --- | --- |
+| Install the reviewed candidate | Web and iPhone use the same checked helper and expose no demo control. | With an existing draft, verify an ordinary phone launch, one isolated real-agent reply, reconnect and rollback. Stop for review. |
+| Connect this Codex chat | Its existing Inbox opens from web and iPhone without moving its ledger or starting another updater. | Verify identity, history, one reply and the original client as a return path. Stop before broader adoption. |
+| Verify remaining hosts and identity changes | The acceptance inventory names each supported host and its limits. | Check live omp separately, then an isolated Core restart or terminal move with a draft. Stop after each host/check. |
+| Finish native interaction acceptance | The agreed screens work with keyboard, larger text and VoiceOver. | Check the selected state/transition matrix on the physical phone. Review defects before adding features. |
+
+Each milestone gets its own pass, fail, blocked and not-run record. Source implementation, simulator checks and installed-device acceptance remain separate.
 
 ## Delivery order and completion rule
 

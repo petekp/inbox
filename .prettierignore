@@ -30,3 +30,5 @@ hooks/compare-page.html
 prototypes/exact-inbox/.exact/
 prototypes/exact-inbox/.vscode/
 prototypes/exact-inbox/app.contract.d.ts
+prototypes/exact-inbox/bun.lock
+prototypes/exact-inbox/client-shared.js

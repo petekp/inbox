@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 export const appRoot = resolve(import.meta.dir, '..')
@@ -14,11 +15,15 @@ function buildEnvironment(): NodeJS.ProcessEnv {
     EXACT_FEEDBACK: '0',
     EXACT_TOOLS_ORIGIN: 'none',
     EXACT_SHOW_SIMULATOR: '0',
-    CARGO_HOME: resolve(buildRoot, 'exact-cargo'),
-    RUSTUP_HOME: resolve(buildRoot, 'exact-rustup'),
+    ...(existsSync(resolve(buildRoot, 'exact-cargo/bin/cargo'))
+      ? { CARGO_HOME: resolve(buildRoot, 'exact-cargo') }
+      : {}),
+    ...(existsSync(resolve(buildRoot, 'exact-rustup/toolchains'))
+      ? { RUSTUP_HOME: resolve(buildRoot, 'exact-rustup') }
+      : {}),
     CARGO_TARGET_DIR: resolve(buildRoot, 'exact-target'),
     BUN_INSTALL_CACHE_DIR: resolve(buildRoot, 'exact-bun-cache'),
-    CARGO_BUILD_JOBS: '4',
+    CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? '2',
     CHROME: process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   }
 }

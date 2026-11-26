@@ -1,0 +1,91 @@
+use firstId, KeyMap, Place from "./model.contract"
+
+members App
+  resource keyMap = loadKeys() as shape KeyMap else empty()
+  action keyPressed(k: string, event: KeyboardEvent)
+    if not event.isComposing and not event.metaKey and not event.ctrlKey and not event.altKey
+      if k == "?" or (k == "Escape" and helpShown)
+        helpShown = k == "?" and not helpShown
+        preventDefault()
+      else
+        match first(keyMap.tabs.filter(t => t.key == k))
+          case some(tab)
+            pick(tab.tab)
+            preventDefault()
+          case none
+            if not helpShown and matchingInbox
+              if k == keyMap.foldAll
+                foldAll("toggle")
+                preventDefault()
+              else if k == keyMap.undo
+                undoLatest()
+                preventDefault()
+              else if nav.tab == "prs"
+                prKey(k)
+              else if nav.tab == "asks" or nav.tab == "findings"
+                rowKey(k)
+  action rowKey(k: string)
+    let rows = nav.tab == "findings" ? inbox.findings : inbox.asks
+    let ids = rows.map(r => r.id)
+    let direction = k == "j" or k == "ArrowDown" ? 1 : k == "k" or k == "ArrowUp" ? -1 : 0
+    if direction != 0 and ids.length > 0
+      let from = first(rows.filter(r => r.id == expanded))
+      let target = match from { case some(row) => direction > 0 ? row.next : row.previous, case none => direction > 0 ? firstId(rows) : firstId(rows.slice(rows.length - 1)) }
+      match first(ids.filter(id => id == target))
+        case some(id)
+          places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, collapsed=effectiveCollapsed.filter(x => x != id), asksExpanded=nav.tab == "asks" ? id : activePlace.asksExpanded, findsExpanded=nav.tab == "findings" ? id : activePlace.findsExpanded)])
+          navigationRevision = navigationRevision + 1
+          scrollIntoView(`content-${top(nav).id}-row-${id}`, block="nearest")
+        case none
+          interaction = interaction
+      preventDefault()
+    else
+      match first(rows.filter(r => r.id == expanded))
+        case some(row)
+          if k == keyMap.collapse
+            toggle(row.id, row.collapse)
+            preventDefault()
+          else if selected == row.id and not disconnected and not pending(sent) and not pending(forgotten)
+            let motionRows = (nav.tab == "findings" ? visualFrame.finds : visualFrame.asks).map(g => g.rows).flat()
+            let frameMatches = visualFrame.session == selectedSession and visualFrame.signature == motionKey
+            let rowReady = motionRows.filter(r => r.id == row.id and ((r.target == "open" and r.hasPanel) or r.target == "settled" or r.target == "undoing") and not r.guarded).length > 0
+            if frameMatches and rowReady
+              let actions = activePlace.options.includes(row.id) ? row.allActions : row.shownActions
+              match first(actions.filter(a => a.hotkey == k and not a.disabled))
+                case some(item)
+                  if item.command == "local"
+                    startLocal(item, selectedSession, row.id, row.version)
+                  else if not (isSendingRow and item.key == submittedKey)
+                    choose(item.key, item.input, row.id, row.title)
+                  preventDefault()
+                case none
+                  interaction = interaction
+        case none
+          interaction = interaction
+  action undoLatest
+    if not disconnected and not inbox.readOnly and not pending(sent) and not pending(forgotten)
+      if nav.tab == "prs"
+        match first(inbox.prLines.filter(r => r.latestUndo))
+          case some(row)
+            match first(row.controls.filter(c => c.command == "undo" and not c.disabled))
+              case some(control)
+                choose(control.key, false, control.row, row.title)
+              case none
+                interaction = interaction
+          case none
+            interaction = interaction
+      else if nav.tab == "asks" or nav.tab == "findings"
+        let rows = nav.tab == "findings" ? inbox.findings : inbox.asks
+        let drawn = (nav.tab == "findings" ? visualFrame.finds : visualFrame.asks).map(g => g.rows).flat()
+        if visualFrame.session == selectedSession and visualFrame.signature == motionKey
+          match first(rows.filter(r => r.latestUndo))
+            case some(row)
+              let ready = drawn.filter(r => r.id == row.id and r.row.version == row.version and r.target == "settled" and not r.guarded).length > 0
+              if ready
+                match first(row.shownActions.filter(a => a.command == "undo" and not a.disabled))
+                  case some(item)
+                    choose(item.key, false, row.id, row.title)
+                  case none
+                    interaction = interaction
+            case none
+              interaction = interaction

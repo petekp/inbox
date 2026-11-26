@@ -174,6 +174,7 @@ function sessionHost(
     settleWindowMs: opts.settleWindowMs,
     comparePage: comparePagePath(m.pluginRoot),
     compareInBackground: isCompareInBackground('claude-code'),
+    supportsResume: true,
     newId: () => crypto.randomUUID(),
   }
 }

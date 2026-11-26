@@ -83,6 +83,7 @@ export type FeatureId =
   | 'press-preconditions'
   | 'task-results'
   | 'option-previews'
+  | 'remote-resume'
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */
 export type ClientId = 'claude-code' | 'codex' | 'omp'

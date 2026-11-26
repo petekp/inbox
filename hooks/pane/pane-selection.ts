@@ -71,6 +71,7 @@ export function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, strin
 }
 
 export type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how'> & {
+  canRestore?: boolean
   outcomeLabel: string
   delivery: Parameters<typeof settledLabel>[1]
   mark: ResultMark

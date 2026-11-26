@@ -8,3 +8,7 @@
 /.env.local
 
 /.vscode/
+
+/client-shared.js
+
+/motion.contract

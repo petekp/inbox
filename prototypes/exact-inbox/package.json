@@ -8,7 +8,11 @@
     "agent:start": "bun tools/session.ts start",
     "agent:status": "bun tools/session.ts status",
     "agent:stop": "bun tools/session.ts stop",
-    "start": "bun bridge/server.ts"
+    "start": "bun bridge/server.ts",
+    "fixture": "bun tools/fixture.ts",
+    "test": "bun test tests"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@exact/clipboard": "file:../../.derived-data/exact-framework/packages/clipboard"
+  }
 }

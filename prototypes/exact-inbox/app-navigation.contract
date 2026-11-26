@@ -1,0 +1,79 @@
+use Place, placeFor, sessionName, sessionPath, draftFor from "./model.contract"
+
+members App
+  action restoreListLayout
+    listRestore = listTop
+    listReady = true
+  action alignRouteTab
+    nav = replace(select(nav, top(nav).name), top(nav).url)
+  action restoreNavigation
+    places = savedNavigation.places
+    let nextSession = searchParam(top(nav), "session") != "" ? searchParam(top(nav), "session") : savedNavigation.selected
+    selectedSession = nextSession
+    search = savedNavigation.search
+    listTop = savedNavigation.listTop
+    let rememberedReply = placeFor(savedNavigation.places, nextSession).reply
+    replyId = savedNavigation.places.map(p => p.id).includes(nextSession) ? rememberedReply : replyId
+    if searchParam(top(nav), "session") == "" and nextSession != "" and (nav.tab == "asks" or (page.navigationType == "" and nav.tab == "sessions" and savedNavigation.tab != "sessions"))
+      let kept = placeFor(savedNavigation.places, nextSession)
+      nav = replace(select(nav, kept.tab), sessionPath(kept.tab, nextSession))
+    navigationLoaded = true
+  action saveNavigation
+    send navigationSaved = saveNavigation(selectedSession, search, places, nav.tab, listTop)
+  action selectDefault
+    selectedSession = directory.defaultId
+    if wideWeb and nav.tab == "sessions"
+      nav = open(nav, sessionPath("asks", directory.defaultId))
+    places = places.concat([Place(placeFor(places, directory.defaultId), name=sessionName(directory.entries, directory.defaultId))])
+    navigationRevision = navigationRevision + 1
+  action restoreRoute
+    helpShown = false
+    let id = searchParam(top(nav), "session")
+    let kept = placeFor(places, id)
+    selectedSession = id
+    replyId = kept.reply
+    places = places.filter(p => p.id != id).concat([Place(kept, tab=nav.tab)])
+    scrollOwner = ""
+    restoreRevision = restoreRevision + 1
+    navigationRevision = navigationRevision + 1
+  action listScrolled(rail: bool, x: number, y: number)
+    if listReady and navigationLoaded and current(directory) and rail == wideWeb and (rail or nav.tab == "sessions")
+      listTop = max(0, y)
+      navigationRevision = navigationRevision + 1
+  action searchSessions(value: string)
+    search = value
+    listTop = 0
+    listRestore = 0
+    navigationRevision = navigationRevision + 1
+  action selectSession(id: string)
+    helpShown = false
+    revealAsk = ""
+    let kept = placeFor(places, id)
+    places = places.filter(p => p.id != id).concat([Place(kept, name=sessionName(directory.entries, id))])
+    selectedSession = id
+    scrollOwner = ""
+    restoreRevision = restoreRevision + 1
+    replyId = kept.reply
+    nav = open(nav, sessionPath(kept.tab, id))
+    navigationRevision = navigationRevision + 1
+  action showRailSelection
+    nav = replace(select(nav, activePlace.tab), sessionPath(activePlace.tab, selectedSession))
+    scrollOwner = ""
+    restoreRevision = restoreRevision + 1
+    navigationRevision = navigationRevision + 1
+  action openSavedReply(id: string)
+    let saved = draftFor(drafts, id)
+    let tab = saved.row == "goal" ? "status" : inbox.findings.map(r => r.id).includes(saved.row) ? "findings" : "asks"
+    replyId = id
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, tab=tab, reply=id, collapsed=activePlace.collapsed.filter(x => x != saved.row), asksExpanded=tab == "asks" ? saved.row : activePlace.asksExpanded, findsExpanded=tab == "findings" ? saved.row : activePlace.findsExpanded)])
+    nav = open(nav, sessionPath(tab, selectedSession))
+    navigationRevision = navigationRevision + 1
+  action restoreScroll
+    restoredTop = nav.tab == "status" ? activePlace.statusTop : nav.tab == "findings" ? activePlace.findsTop : nav.tab == "prs" ? activePlace.prsTop : activePlace.asksTop
+    scrollOwner = `${selectedSession}:${nav.tab}:${top(nav).id}`
+  action scrolled(routeId: number, tab: string, x: number, y: number)
+    interaction = interaction + 1
+    statusSample = ""
+    if matchingInbox and nav.tab == tab and scrollOwner == `${selectedSession}:${tab}:${routeId}` and top(nav).id == routeId
+      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, asksTop=tab == "asks" ? max(0, y) : activePlace.asksTop, findsTop=tab == "findings" ? max(0, y) : activePlace.findsTop, statusTop=tab == "status" ? max(0, y) : activePlace.statusTop, prsTop=tab == "prs" ? max(0, y) : activePlace.prsTop)])
+      navigationRevision = navigationRevision + 1

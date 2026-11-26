@@ -1,0 +1,32 @@
+use HelpInfo from "./model.contract"
+
+component HelpPane
+  props
+    info: HelpInfo
+    loading: bool
+    failed: bool
+  view
+    section
+      header
+        text "Help"
+      if failed
+        text "Couldn’t load Help. Close it and try again." color="-exact-system-red"
+      else if loading
+        progress aria-label="Loading Help"
+      else
+        row gap=12 justify-content="space-between"
+          text info.keysHeading font-weight=600
+          if info.version != ""
+            text info.version color="-exact-secondary-label"
+        for item in info.keys key=item.keys
+          row gap=12 padding="8px 0" align-items="start"
+            text item.keys font-weight=600 min-width=64
+            text item.does flex=1 color="-exact-secondary-label"
+        text info.heading font-weight=600 padding-top=16
+        for line in info.rows key=line.id
+          row appearance="none" gap=12 padding="8px 0" align-items="start"
+            if line.running
+              progress aria-label="Working" width=18 height=18
+            else
+              text line.mark color=line.color width=24 text-align="center"
+            text line.words flex=1

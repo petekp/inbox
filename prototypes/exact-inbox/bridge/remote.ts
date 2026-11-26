@@ -1,3 +1,4 @@
+import { forgetRemoteClock } from './remote-clock'
 import { readFile } from 'node:fs/promises'
 import { resolve, isAbsolute } from 'node:path'
 import { runtimeRoot } from '../tools/paths'
@@ -39,24 +40,29 @@ export function publishedTerminal(binding: SessionBinding) {
 
 const remoteReads = new Map<string, { at: number; result: Promise<string> }>()
 
-export async function readPublished(binding: SessionBinding): Promise<string> {
+export async function readPublished(binding: SessionBinding, fresh = false): Promise<string> {
   const path = publishedSessionPath(binding.appHome, binding.session)
   if (!binding.machine) return readFile(path, 'utf8')
   const { machines } = await coreRequest('machine.list', {}, binding)
-  if (!machines.some(m => m.name === binding.machine && m.id === binding.machineId && m.state === 'connected'))
+  if (!machines.some(m => m.name === binding.machine && m.id === binding.machineId && m.state === 'connected')) {
+    forgetRemoteClock(binding)
     throw new Error('The agent host is disconnected.')
+  }
   const key = JSON.stringify([binding.socket, binding.machineId, binding.machine, path])
+  const now = performance.now()
+  for (const [oldKey, old] of remoteReads) if (now - old.at >= 1000) remoteReads.delete(oldKey)
   const cached = remoteReads.get(key)
-  if (cached && Date.now() - cached.at < 1000) return cached.result
-  const result = coreRequest('file.read', { on: binding.machine, path }, binding)
+  if (!fresh && cached) return cached.result
+  const result = coreRequest('file.read', { on: binding.machineId!, path }, binding)
     .then(value => {
       if (value.last < value.lines) throw new Error('The remote Inbox file is incomplete.')
       return value.text
     })
     .catch(error => {
-      remoteReads.delete(key)
+      if (remoteReads.get(key)?.result === result) remoteReads.delete(key)
+      forgetRemoteClock(binding)
       throw error
     })
-  remoteReads.set(key, { at: Date.now(), result })
+  remoteReads.set(key, { at: now, result })
   return result
 }

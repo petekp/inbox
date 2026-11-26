@@ -1,0 +1,54 @@
+use InlineText from "./inline-text.contract"
+use Button, Row from "./model.contract"
+
+component RowActions
+  props
+    item: Row
+    optionsShown: bool
+    compact: bool
+    session: string
+    disconnected: bool
+    pending: bool
+    localActive: bool
+    submittedKey: string
+    isSendingRow: bool
+    onChoose: action
+    onLocal: action
+  derive buttons = optionsShown ? item.allActions : item.shownActions
+  derive answers = optionsShown ? item.allOptions : item.options
+  derive answerKeys = answers.map(option => option.button.key)
+  view
+    column gap=10
+      for option in answers key=option.id
+        column gap=4 align-items="start"
+          RowActionButton(a=option.button, item=item, compact=compact, session=session, disconnected=disconnected, pending=pending, localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+          if option.body.length > 0 or option.reason.length > 0
+            column color="-exact-secondary-label" font-size="0.92em" gap=2
+              if option.body.length > 0
+                InlineText(parts=option.body)
+              if option.reason.length > 0
+                InlineText(parts=option.reason)
+      row appearance="none" flex-wrap="wrap" gap=8
+        for a in buttons.filter(button => not answerKeys.includes(button.key)) key=a.key
+          RowActionButton(a=a, item=item, compact=compact, session=session, disconnected=disconnected, pending=pending, localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+
+component RowActionButton
+  props
+    a: Button
+    item: Row
+    compact: bool
+    session: string
+    disconnected: bool
+    pending: bool
+    localActive: bool
+    submittedKey: string
+    isSendingRow: bool
+    onChoose: action
+    onLocal: action
+  view
+    if a.command == "local"
+      button press=onLocal(a, session, item.id, item.version) buttonStyle=(a.primary ? "filled" : "bordered") disabled=(a.disabled or disconnected or pending or localActive) testId=`action-${a.key}` min-height=(compact ? 26 : 44)
+        text a.label
+    else
+      button press=onChoose(a.key, a.input, item.id, item.title) buttonStyle=(a.primary ? "filled" : "bordered") disabled=(a.disabled or disconnected or (pending and a.command != "options") or (a.key == submittedKey and isSendingRow)) testId=`action-${a.key}` min-height=(compact ? 26 : 44)
+        text a.label
