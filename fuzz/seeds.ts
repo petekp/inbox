@@ -402,6 +402,24 @@ export const CODEX_SEEDS: {
     },
   },
   {
+    name: 'File issue on a Finds row that is still opening',
+    rule: 'cut',
+    detail: '"Asked to file"',
+    issue: 955,
+    isOpen: false,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'tab', n: 2 },
+        { is: 'click', on: 'row', n: 3 },
+        { is: 'click', on: 'button', n: 1 },
+      ],
+    },
+  },
+  {
     name: 'Reply just after Open previews',
     rule: 'jump',
     detail: 'd11 shrank',

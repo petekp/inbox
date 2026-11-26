@@ -21,13 +21,14 @@ export const SLIDE_PX = 8
 
 /**
  * How long the content of a space that opens to `height` px, from none at rest or from `from`, waits before it fades
- * in, in ms: until the space stays within half of `SLIDE_PX` of open, so the edge of a space still opening never cuts
- * the letters of content that slides down into it. A space that was shutting keeps shutting for a moment before it
- * turns, so the wait follows its speed as well as its height. A tall space comes the last few px slowly, so the wait is
- * at most what lets the fade end as the height spring comes to rest.
+ * in, in ms: until the space stays within `slackPx` of open, half of `SLIDE_PX` by default, so the edge of a space
+ * still opening never cuts the letters of content that slides down into it. A space that slides with its content gains
+ * nothing from the slide, so its slack is the space under its content. A space that was shutting keeps shutting for a
+ * moment before it turns, so the wait follows its speed as well as its height. A tall space comes the last few px
+ * slowly, so the wait is at most what lets the fade end as the height spring comes to rest.
  */
-export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 }): number {
-  const at = springFrames(from, height).findLastIndex(x => height - x > SLIDE_PX / 2) + 1
+export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 }, slackPx = SLIDE_PX / 2): number {
+  const at = springFrames(from, height).findLastIndex(x => height - x > slackPx) + 1
 
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
 }

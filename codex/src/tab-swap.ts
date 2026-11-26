@@ -79,6 +79,11 @@ export function restoreState(incoming?: Kept): boolean {
 }
 
 const PAGE_START_MS = 2_000
+/**
+ * How many times a swap reads the new page's first view while the old page takes a newer one meanwhile, as a press's
+ * answer or a poll. After the last, the new page shows the view it read, and its first poll brings it up to date.
+ */
+const PREPARE_TRIES = 3
 
 export const PAGE = handoff?.page ?? inboxWindow.__inboxPage
 let isSwapping = false
@@ -157,8 +162,16 @@ export async function swapPage(target: string) {
     const candidate = await waitFor(candidateReady, PAGE_START_MS)
     if (!(await waitFor(candidate.initialize(), READ_TIMEOUT_MS))) throw new Error('The new page could not connect.')
     const deadline = Date.now() + PRESS_TIMEOUT_MS
-    while (tabState.activePresses > 0 && Date.now() < deadline) await new Promise<void>(resolve => later(resolve, 30))
-    if (tabState.activePresses > 0) throw new Error('The current press is still running.')
+    for (let tries = 0; ; tries++) {
+      while (tabState.activePresses > 0 && Date.now() < deadline) await new Promise<void>(resolve => later(resolve, 30))
+      if (tabState.activePresses > 0) throw new Error('The current press is still running.')
+      if (!candidate.prepare) break
+      const seen = tabState.serverView
+      const prepared = waitFor(candidate.prepare(keptOf(tabState.ui, tabState.isDemo)), READ_TIMEOUT_MS)
+      if (!(await prepared)) throw new Error('The new page could not read the inbox.')
+      const isCurrent = tabState.serverView === seen && tabState.activePresses === 0
+      if (isCurrent || tries >= PREPARE_TRIES - 1) break
+    }
     if (tabState.isDisposed || tabState.requestedPage !== target || staged.aborted) return
     const kept = keptOf(tabState.ui, tabState.isDemo)
     root.replaceWith(nextRoot)

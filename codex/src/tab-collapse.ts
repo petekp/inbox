@@ -1,6 +1,6 @@
 import { FADE_MS, LEAVE_FADE_MS } from '../../core/view/row-motion'
 import type { SpringState } from '../../core/view/springs'
-import { atEndGlides, closedLineHeight, closeTitle, LINE } from './tab-title-motion'
+import { atEndGlides, closedLineHeight, closeTitle, showGrownAfters, LINE } from './tab-title-motion'
 import { fade, glide, glides, isOpeningShort, isRunning, opacityOf, springOf } from './tab-glide'
 import type { Glide } from './tab-glide'
 import { closeHoldsUp, fadeFaintPanel, fadingParts, shownPanel, trunkBeside } from './tab-panel-fade'
@@ -70,7 +70,13 @@ export function collapse(
   const opacity = opacityOf(el)
   const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0)
   glide(el, 'height', from, target, true, false, shrinksAfter)
-  if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, shrinksAfter)
+  if (line && lineFrom && lineTo !== null) {
+    const lineEnd = closeTitle(line, lineFrom, lineTo, shrinksAfter)
+    showGrownAfters(line, [
+      { box: line, from: lineFrom, to: lineEnd, delay: shrinksAfter },
+      { box: el, from, to: target, delay: shrinksAfter },
+    ])
+  }
   if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)
 }
 
@@ -89,8 +95,13 @@ export function retargetClose(el: HTMLElement) {
   const wait = waitLeft(g)
   const closed = closedForm(el)
   glide(el, 'height', from, closed.height, true, false, wait)
-  if (line && lineGlide && closed.lineFrom && closed.lineTo !== null)
-    glide(line, 'height', closed.lineFrom, closedLineHeight(line, closed.lineTo), true, false, lineWait)
+  if (!line || !lineGlide || !closed.lineFrom || closed.lineTo === null) return
+  const lineTo = closedLineHeight(line, closed.lineTo)
+  glide(line, 'height', closed.lineFrom, lineTo, true, false, lineWait)
+  showGrownAfters(line, [
+    { box: line, from: closed.lineFrom, to: lineTo, delay: lineWait },
+    { box: el, from, to: closed.height, delay: wait },
+  ])
 }
 
 function keepTop(el: HTMLElement, part: HTMLElement, top: number) {

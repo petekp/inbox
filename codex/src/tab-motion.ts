@@ -4,6 +4,7 @@ import {
   FADE_MS,
   isMoving,
   LEAVE_FADE_MS,
+  SLIDE_PX,
   turnBackFades,
 } from '../../core/view/row-motion'
 import type { RowTrack } from '../../core/view/row-motion'
@@ -12,7 +13,7 @@ import type { SpringState } from '../../core/view/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
 import { later } from './tab-host'
 import { fadeForms, swapsForm } from './tab-form-swap'
-import { drawnLine, glideLine, openTitle, releaseLine } from './tab-title-motion'
+import { atEndGlides, drawnLine, glideLine, openTitle, releaseLine, showClosedLine } from './tab-title-motion'
 import type { DrawnLine } from './tab-title-motion'
 import {
   fade,
@@ -24,6 +25,7 @@ import {
   isScalingEdges,
   isUnderWay,
   opacityOf,
+  spaceUnder,
   springOf,
   stopFadeOut,
   waitLeftMs,
@@ -115,13 +117,18 @@ function isSpaceShort(el: HTMLElement): boolean {
 
 /**
  * Grows an element in from `from` after `delay` ms, holding it there until then, then fades its content in once its
- * space is nearly open. Content still partly shown, as in a leave turned back, fades back in at once.
+ * space is nearly open. Its fade slides the element with its content, so the space must first pass the content's last
+ * line. Content still partly shown, as in a leave turned back, fades back in at once.
  */
 function growIn(el: HTMLElement, from: SpringState, opacity: number, delay: number) {
   const to = naturalHeight(el)
+  const slack = Math.min(
+    SLIDE_PX / 2,
+    atEndGlides(el, () => spaceUnder(el)),
+  )
   const start = delay > 0 ? { x: from.x, v: 0 } : from
   glide(el, 'height', start, to, false, true, delay)
-  const waits = opacity > 0.01 ? 0 : enterDelayMs(to, start)
+  const waits = opacity > 0.01 ? 0 : enterDelayMs(to, start, slack)
   fade(el, opacity, 1, ENTER_FADE_MS, false, true, delay + waits)
 }
 
@@ -223,6 +230,7 @@ function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const closeWait = state === 'opening' && changed.has(key) ? closeWaitMs : 0
   const held = state === 'closing' ? null : releaseLine(el, state === 'opening')
   moveRow(el, was, changed, carried, closeWait)
+  if (state === 'closed' && was?.line?.isClosing) showClosedLine(el, was.line)
   const wait = Math.max(tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0, closeWait)
   if (state === 'opening' && (held || changed.has(key))) openTitle(el, wait, held)
   if (changed.has(key) && swapsForm(el)) fadeForms(el, was?.openShown ?? 1)
