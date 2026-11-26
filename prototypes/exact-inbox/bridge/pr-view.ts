@@ -102,6 +102,8 @@ export function projectPrs(
         href,
         key,
         row,
+        emphasis: a.emphasis,
+        out: a.isOut,
         disabled,
         primary: a.emphasis === 'primary',
         version: command?.version ?? '',
@@ -123,6 +125,8 @@ export function projectPrs(
     collapse: collapse(id),
     title,
     kind: 'text',
+    number: '',
+    isFirstBlock: false,
     detail: '',
     quote: [],
     reply: [],
@@ -175,8 +179,10 @@ export function projectPrs(
     const ready = shownReadiness(pr, sync, sent, agent) ?? readiness(pr, sent, agent)
     const settled = state.is !== 'open'
     rows.push(
-      line(prMarkId(pr.ref), `#${pr.number} ${pr.title}`, {
+      line(prMarkId(pr.ref), pr.title, {
         kind: 'block',
+        number: `#${pr.number}`,
+        isFirstBlock: drawn === view.prs.drawn[0],
         latestUndo: undo?.ref === pr.ref,
         href: safeLink(pr.url),
         color: color(PR_TONES[ready.status]),

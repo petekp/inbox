@@ -1,11 +1,114 @@
-import { ENTER_FADE_MS, FADE_MS, SLIDE_PX } from '../../../core/view/row-motion'
+import { FADE_MS, ENTER_FADE_MS, LEAVE_FADE_MS, SLIDE_PX } from '../../../core/view/row-motion'
 import { HEIGHT_SPRING } from '../../../core/view/springs'
+import {
+  DARK_TONES,
+  fadedOver,
+  faintOver,
+  LIGHT_TONES,
+  MUTED_TEXT,
+  THEME_BACKGROUND,
+  THEME_TEXT,
+} from '../../../core/view/tones'
 import { resolve } from 'node:path'
+
+const lightDark = (light: string, dark: string) => `light-dark(${light}, ${dark})`
+
+function buildForma(): string {
+  const lightBg = '#ffffff'
+  const darkBg = THEME_BACKGROUND.dark
+  const lightInk = '#1f1f1f'
+  const darkInk = THEME_TEXT.dark
+  const lightMuted = MUTED_TEXT.light
+  const darkMuted = MUTED_TEXT.dark
+  const lightSelected = fadedOver(lightInk, lightBg, 0.06)
+  const darkSelected = fadedOver(darkInk, darkBg, 0.08)
+
+  const toneTokens = (
+    [
+      'needsYou',
+      'issue',
+      'findings',
+      'tasks',
+      'prs',
+      'done',
+      'success',
+      'opportunity',
+      'working',
+      'error',
+      'errorMark',
+      'key',
+    ] as const
+  ).map(name => `  tone.${name} = ${lightDark(LIGHT_TONES[name], DARK_TONES[name])}`)
+
+  const bannerTokens = (
+    [
+      ['error', LIGHT_TONES.error, DARK_TONES.error],
+      ['warning', LIGHT_TONES.needsYou, DARK_TONES.needsYou],
+      ['notice', LIGHT_TONES.key, DARK_TONES.key],
+      ['ask', LIGHT_TONES.key, DARK_TONES.key],
+    ] as const
+  ).flatMap(([name, lightTone, darkTone]) => [
+    `  banner.${name}.fill = ${lightDark(fadedOver(lightTone, lightBg, 0.09), fadedOver(darkTone, darkBg, 0.09))}`,
+    `  banner.${name}.line = ${lightDark(fadedOver(lightTone, lightBg, 0.3), fadedOver(darkTone, darkBg, 0.3))}`,
+  ])
+
+  return [
+    'forma brand',
+    '',
+    'theme',
+    `  surface.bg = ${lightDark(lightBg, darkBg)}`,
+    `  surface.rail = ${lightDark('#f7f7f8', '#1c1c1e')}`,
+    `  surface.raised = ${lightDark(fadedOver(lightInk, lightBg, 0.09), fadedOver(darkInk, darkBg, 0.11))}`,
+    `  surface.selected = ${lightDark(lightSelected, darkSelected)}`,
+    `  surface.soft = ${lightDark(fadedOver(lightInk, lightBg, 0.08), fadedOver(darkInk, darkBg, 0.12))}`,
+    `  surface.hover = ${lightDark(fadedOver(lightInk, lightBg, 0.04), fadedOver(darkInk, darkBg, 0.06))}`,
+    `  border.key = ${lightDark(fadedOver(lightInk, lightBg, 0.28), fadedOver(darkInk, darkBg, 0.28))}`,
+    `  border.input = ${lightDark(fadedOver(lightInk, lightBg, 0.15), fadedOver(darkInk, darkBg, 0.15))}`,
+    `  tree.row = ${lightDark(fadedOver(lightInk, lightSelected, 0.32), fadedOver(darkInk, darkSelected, 0.32))}`,
+    `  tree.status = ${lightDark(fadedOver(lightInk, lightBg, 0.2), fadedOver(darkInk, darkBg, 0.2))}`,
+    `  ink.primary = ${lightDark(lightInk, darkInk)}`,
+    `  ink.muted = ${lightDark(lightMuted, darkMuted)}`,
+    `  ink.faint = ${lightDark(faintOver(lightMuted, lightBg), faintOver(darkMuted, darkBg))}`,
+    `  ink.age = ${lightDark(fadedOver(lightMuted, lightBg, 0.9), fadedOver(darkMuted, darkBg, 0.85))}`,
+    `  ink.on-primary = ${lightDark(lightBg, darkBg)}`,
+    ...toneTokens,
+    ...bannerTokens,
+    '',
+  ].join('\n')
+}
 
 export async function prepareClient(): Promise<void> {
   const frequency = (2 * Math.PI) / (HEIGHT_SPRING.response / 1000)
   const spring = `-exact-spring(${frequency * frequency}, ${2 * HEIGHT_SPRING.damping * frequency}, 1)`
-  const motion = `keyframes inboxEnter\n  from opacity=0 translate="0px -${SLIDE_PX}px"\n  to opacity=1 translate="0px 0px"\n\nkeyframes inboxLeave\n  to opacity=0\n\nfn rowLayout(still: bool): string = still ? "none" : "${spring}"\nfn rowFade(still: bool): string = still ? "none" : "opacity ${FADE_MS}ms ease-out, translate ${FADE_MS}ms ease-out"\nfn rowEntry(still: bool, arriving: bool): string = still or not arriving ? "none" : "inboxEnter ${ENTER_FADE_MS}ms ease-out both"\nfn rowExit(still: bool): string = still ? "none" : "inboxLeave ${FADE_MS}ms ease-out both"\nfn rowSlide(hidden: bool): string = hidden ? "0px -${SLIDE_PX}px" : "0px 0px"\n`
+  const motion = [
+    'keyframes inboxEnter',
+    `  from opacity=0 translate="0px -${SLIDE_PX}px"`,
+    '  to opacity=1 translate="0px 0px"',
+    '',
+    'keyframes inboxLeave',
+    '  to opacity=0',
+    '',
+    'keyframes runningPulse',
+    '  50% opacity=0.3',
+    '',
+    `fn rowLayout(still: bool): string = still ? "none" : "${spring}"`,
+    `fn rowFade(still: bool): string = still ? "none" : "opacity ${FADE_MS}ms ease-out, translate ${FADE_MS}ms ease-out"`,
+    `fn rowCloseFade(still: bool): string = still ? "none" : "opacity ${LEAVE_FADE_MS}ms ease-out, translate ${LEAVE_FADE_MS}ms ease-out"`,
+    `fn rowBgFade(still: bool): string = still ? "none" : "background-color ${LEAVE_FADE_MS}ms ease-out"`,
+    `fn rowEntry(still: bool, arriving: bool): string = still or not arriving ? "none" : "inboxEnter ${ENTER_FADE_MS}ms ease-out both"`,
+    `fn rowExit(still: bool): string = still ? "none" : "inboxLeave ${LEAVE_FADE_MS}ms ease-out both"`,
+    `fn rowSlide(hidden: bool): string = hidden ? "0px -${SLIDE_PX}px" : "0px 0px"`,
+    'fn markPulse(still: bool, running: bool): string = still or not running ? "none" : "runningPulse 1800ms ease-in-out infinite"',
+    '',
+  ].join('\n')
+  const formaPath = resolve(import.meta.dir, '../app.forma')
+  const forma = buildForma()
+  if (
+    (await Bun.file(formaPath)
+      .text()
+      .catch(() => null)) !== forma
+  )
+    await Bun.write(formaPath, forma)
   const motionPath = resolve(import.meta.dir, '../motion.contract')
   if (
     (await Bun.file(motionPath)

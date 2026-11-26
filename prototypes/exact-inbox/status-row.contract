@@ -1,0 +1,108 @@
+use ButtonLabel from "./action-button.contract"
+use StatusAction from "./model.contract"
+use MarkGlyph from "./mark-glyph.contract"
+use ActionIcon from "./action-icon.contract"
+
+component StatusRowView
+  props
+    s: StatusLine
+    prefix: string
+    pending: bool
+    readOnly: bool
+    reduced: bool
+    onAction: action
+  derive foldActions = s.actions.filter(a => a.action == "toggle-fold" or a.action == "toggle-collapse")
+  derive keyActions = s.actions.filter(a => a.action != "toggle-fold" and a.action != "toggle-collapse")
+  derive indent = s.depth * 24
+  derive nameColor = s.isMutedName or s.level == "faint" ? "ink.faint" : s.bold ? "ink.primary" : "ink.muted"
+  derive hasFold = foldActions.length > 0
+  view
+    column id=`${prefix}-status-${s.id}` padding="0 16px"
+      if s.spaceAbove > 0
+        box height=s.spaceAbove
+      if s.kind == "part"
+        column padding-top=s.padTop padding-bottom=s.padBottom gap=2
+          row gap=8 align-items="center"
+            if s.title != ""
+              text s.title font-weight=(s.isPartTitle ? 600 : 400) color=(s.isPartTitle ? "ink.primary" : "ink.muted")
+            box flex=1 height=1 background-color="surface.soft"
+          if s.detail != ""
+            text s.detail color="ink.muted"
+      else if s.kind == "done-fold" or s.kind == "counts"
+        row padding-left=(indent + 24) padding-top=s.padTop padding-bottom=s.padBottom
+          match first(foldActions)
+            case some(fa)
+              button press=onAction(fa) disabled=(fa.disabled or pending) appearance="none" border-width=0 background-color="transparent" padding="0 4px" margin-left=-4 border-radius=5
+                :active
+                  background-color="surface.soft"
+                row gap=4 align-items="center"
+                  text s.title color=(s.kind == "done-fold" ? "ink.faint" : "ink.primary")
+                  ActionIcon(name=(s.foldOpen ? "chevron-down" : "chevron-right"), color=(s.kind == "done-fold" ? "ink.faint" : "ink.muted"), size=12)
+            case none
+              text s.title color=(s.kind == "done-fold" ? "ink.faint" : "ink.muted")
+      else
+        row position="relative" padding-top=s.padTop padding-bottom=s.padBottom
+          if s.hasChildren or s.pathLine == "continues"
+            box position="absolute" left=(indent + 5) top=(s.padTop + 18) bottom=0 border-left="1px solid tree.status"
+          else if s.pathLine == "to-next"
+            box position="absolute" left=(indent + 5) top=(s.padTop + 18) bottom=0 border-left="1px dashed tree.status"
+          if s.branch == "mid"
+            box position="absolute" left=((s.depth - 1) * 24 + 5) top=0 bottom=0 border-left="1px solid tree.status"
+            box position="absolute" left=((s.depth - 1) * 24 + 5) top=(s.padTop + 10) width=16 border-top="1px solid tree.status"
+          else if s.branch == "last"
+            box position="absolute" left=((s.depth - 1) * 24 + 5) top=0 height=(s.padTop + 10) border-left="1px solid tree.status"
+            box position="absolute" left=((s.depth - 1) * 24 + 5) top=(s.padTop + 10) width=16 border-top="1px solid tree.status"
+          if s.jointBeside == "continues"
+            box position="absolute" left=5 top=0 bottom=0 border-left="1px solid tree.status"
+          else if s.jointBeside == "to-next"
+            box position="absolute" left=5 top=0 bottom=0 border-left="1px dashed tree.status"
+          else if s.jointBeside == "connector"
+            box position="absolute" left=5 top=0 bottom=0 border-left="1px solid tree.status"
+          else if s.jointArm == "elbow"
+            box position="absolute" left=5 top=0 height=(s.padTop + 10) border-left="1px solid tree.status"
+          if s.jointArm != ""
+            box position="absolute" left=5 top=(s.padTop + 10) width=16 border-top="1px solid tree.status"
+
+          row margin-left=indent gap=8 align-items="start" flex=1 min-width=0
+            column width=16 padding-top=6 align-items="center"
+              if s.mark != "" or s.running
+                MarkGlyph(mark=s.mark, color=s.color, running=s.running, reduced=reduced, size=8)
+            column flex=1 min-width=0 gap=0
+              if hasFold
+                match first(foldActions)
+                  case some(fa)
+                    button press=onAction(fa) disabled=(fa.disabled or pending) appearance="none" border-width=0 background-color="transparent" padding="0 4px" margin-left=-4 border-radius=5 text-align="left"
+                      :active
+                        background-color="surface.soft"
+                      row gap=4 align-items="center" flex-wrap="wrap"
+                        text
+                          text s.title font-weight=(s.bold ? 600 : 400) color=nameColor
+                          if s.stall != ""
+                            text ` · ${s.stall}` font-weight=400 color="ink.muted"
+                        ActionIcon(name=(s.foldOpen ? "chevron-down" : "chevron-right"), color=(s.level == "faint" ? "ink.faint" : "ink.muted"), size=12)
+                        if not s.foldOpen and s.foldCount > 0
+                          text `${s.foldCount}` font-size=12 color=(s.level == "faint" ? "ink.faint" : "ink.muted") font-variant-numeric="tabular-nums"
+                  case none
+                    text s.title
+              else
+                text
+                  text s.title font-weight=(s.bold ? 600 : 400) color=nameColor
+                  if s.stall != ""
+                    text ` · ${s.stall}` font-weight=400 color="ink.muted"
+              if s.waitsOn != ""
+                text s.waitsOn color="tone.needsYou" line-clamp=2 text-overflow="ellipsis"
+              if s.detail != ""
+                text s.detail color=(s.level == "faint" ? "ink.faint" : "ink.muted") line-clamp=2 text-overflow="ellipsis"
+              if s.merged != ""
+                text s.merged color="ink.muted" line-clamp=1 text-overflow="ellipsis"
+              if s.was != ""
+                text s.was color="ink.faint"
+              if keyActions.length > 0
+                row gap=8 flex-wrap="wrap" padding-top=6
+                  for a in keyActions key=a.action
+                    button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=1 border-style="solid" border-color="border.key" border-radius=14 background-color="transparent" padding="3px 10px" min-height=26 opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
+                      :active
+                        background-color="surface.soft"
+                      ButtonLabel(label=a.label, icon="", color="ink.primary")
+
+use StatusLine from "./model.contract"

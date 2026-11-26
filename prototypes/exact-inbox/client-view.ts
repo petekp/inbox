@@ -16,8 +16,8 @@ function isSpan(value: unknown): boolean {
 function isButton(value: unknown): boolean {
   return (
     record(value) &&
-    strings(value, ['key', 'label', 'reason', 'command', 'icon', 'hotkey', 'pendingText']) &&
-    ['primary', 'disabled', 'input'].every(key => typeof value[key] === 'boolean')
+    strings(value, ['key', 'label', 'emphasis', 'reason', 'command', 'icon', 'hotkey', 'pendingText']) &&
+    ['primary', 'out', 'disabled', 'input'].every(key => typeof value[key] === 'boolean')
   )
 }
 function isOption(value: unknown): boolean {
@@ -50,8 +50,10 @@ function isRow(value: unknown): boolean {
       'age',
       'markTone',
       'markColor',
+      'feedbackTone',
     ]) &&
     typeof value.latestUndo === 'boolean' &&
+    typeof value.hasTree === 'boolean' &&
     typeof value.waiting === 'boolean' &&
     typeof value.running === 'boolean' &&
     list(value.actions, isButton) &&
@@ -85,7 +87,7 @@ function isGroup(value: unknown): boolean {
 function isStatusAction(value: unknown): boolean {
   return (
     record(value) &&
-    strings(value, ['key', 'collapse', 'action', 'target', 'label', 'text']) &&
+    strings(value, ['key', 'collapse', 'action', 'target', 'label', 'text', 'emphasis']) &&
     typeof value.disabled === 'boolean'
   )
 }
@@ -122,6 +124,8 @@ export function isSnapshot(value: unknown): value is Result<'loadInbox'> {
       'statusGoalKey',
       'statusSubmitLabel',
       'statusLabel',
+      'statusMark',
+      'statusMarkColor',
       'statusWas',
       'statusNow',
       'statusOffer',
@@ -134,7 +138,12 @@ export function isSnapshot(value: unknown): value is Result<'loadInbox'> {
     ])
   )
     return false
-  if (!['connected', 'running', 'fresh', 'readOnly'].every(key => typeof value[key] === 'boolean')) return false
+  if (
+    !['connected', 'running', 'fresh', 'readOnly', 'statusHasGoal', 'statusIsMet'].every(
+      key => typeof value[key] === 'boolean',
+    )
+  )
+    return false
   if (
     !['updatedAt', 'serverNow', 'questionCount', 'taskCount'].every(
       key => typeof value[key] === 'number' && Number.isFinite(value[key]),
@@ -163,6 +172,7 @@ export function isSnapshot(value: unknown): value is Result<'loadInbox'> {
         strings(row, [
           'id',
           'kind',
+          'number',
           'title',
           'detail',
           'openDetail',
@@ -174,7 +184,9 @@ export function isSnapshot(value: unknown): value is Result<'loadInbox'> {
           'next',
           'previous',
         ]) &&
-        ['running', 'folded', 'failed', 'latestUndo', 'waiting'].every(k => typeof row[k] === 'boolean') &&
+        ['running', 'folded', 'failed', 'latestUndo', 'waiting', 'isFirstBlock'].every(
+          k => typeof row[k] === 'boolean',
+        ) &&
         list(row.quote, isSpan) &&
         list(row.reply, isSpan) &&
         list(
@@ -186,6 +198,7 @@ export function isSnapshot(value: unknown): value is Result<'loadInbox'> {
               'href',
               'key',
               'row',
+              'emphasis',
               'command',
               'version',
               'scope',
@@ -193,10 +206,11 @@ export function isSnapshot(value: unknown): value is Result<'loadInbox'> {
               'icon',
               'pendingText',
             ]) &&
-            typeof c.disabled === 'boolean' &&
-            typeof c.primary === 'boolean',
+            ['out', 'disabled', 'primary'].every(k => typeof c[k] === 'boolean'),
         ),
     ) &&
+    list(value.statusHeadingActions, isStatusAction) &&
+    list(value.statusOfferActions, isStatusAction) &&
     list(value.statusActions, isStatusAction) &&
     list(value.asks, isRow) &&
     list(value.findings, isRow) &&
@@ -206,10 +220,27 @@ export function isSnapshot(value: unknown): value is Result<'loadInbox'> {
       value.statusRows,
       row =>
         record(row) &&
-        strings(row, ['id', 'title', 'detail', 'mark', 'kind', 'color', 'waitsOn', 'was', 'merged']) &&
-        typeof row.depth === 'number' &&
-        typeof row.bold === 'boolean' &&
-        typeof row.running === 'boolean' &&
+        strings(row, [
+          'id',
+          'title',
+          'detail',
+          'mark',
+          'kind',
+          'color',
+          'waitsOn',
+          'was',
+          'merged',
+          'stall',
+          'level',
+          'branch',
+          'pathLine',
+          'jointArm',
+          'jointBeside',
+        ]) &&
+        ['depth', 'padTop', 'padBottom', 'spaceAbove', 'foldCount'].every(k => typeof row[k] === 'number') &&
+        ['bold', 'running', 'isMutedName', 'isPartTitle', 'hasChildren', 'foldOpen'].every(
+          k => typeof row[k] === 'boolean',
+        ) &&
         list(row.seen, id => typeof id === 'string') &&
         list(row.actions, isStatusAction),
     )

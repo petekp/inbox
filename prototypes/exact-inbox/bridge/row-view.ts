@@ -4,7 +4,7 @@ import type { PrPress } from '../../../core/view/pr-press'
 import { latestUndo, steppedIndex } from '../../../core/view/action-plan'
 import { createHash } from 'node:crypto'
 import { rowKeyPlan } from '../../../core/view/action-plan'
-import { rowFeedbackText } from '../../../core/view/feedback'
+import { rowFeedbackText, feedbackTone } from '../../../core/view/feedback'
 import { toneColors } from '../../../core/view/tones'
 import type { ToneName } from '../../../core/view/tones'
 import { parseInline } from '../../../core/view/inline'
@@ -22,8 +22,10 @@ import {
   isWaitingRow,
   actionLabel,
   replyHint,
-  rowResultMark,
+  rowMark,
   settledLabel,
+  settledTone,
+  closedTitleTone,
   shortAgo,
   waitingCount,
 } from '../../../core/view/rows'
@@ -127,7 +129,9 @@ function actionPlan(
       return {
         key: `options:${row.id}`,
         label: p.label,
+        emphasis: p.emphasis,
         primary: false,
+        out: false,
         disabled: false,
         input: false,
         reason: '',
@@ -162,7 +166,9 @@ function actionPlan(
     return {
       key,
       label: actionLabel(a),
+      emphasis: a.emphasis,
       primary: a.emphasis === 'primary',
+      out: a.isOut,
       disabled,
       input: a.press.action === 'type',
       reason:
@@ -205,12 +211,15 @@ function projectRow(
       reason: [],
     }))
   const settled = row.state.is === 'settled' ? row.state : null
-  const mark = rowResultMark(row)
-  const tone =
-    mark?.tone ??
-    (row.finding
-      ? FINDING_GROUPS[row.finding.kind].tone
-      : NEEDS_YOU_MARKS[row.type === 'task' ? 'task' : 'question'].tone)
+  const mark = rowMark(row)
+  const tone: ToneName | null = settled
+    ? closedTitleTone(settled) === 'error'
+      ? 'errorMark'
+      : (mark?.tone ?? null)
+    : (mark?.tone ?? null)
+  const hasOptions = rowKeyPlan(row, false).options.length > 0
+  const hasTree =
+    row.type === 'question' && !settled && Boolean(row.holdsUpLine || row.contextLine || row.earlierLine || hasOptions)
   return {
     latestUndo: false,
     next: '',
@@ -228,12 +237,14 @@ function projectRow(
     feedback: settled
       ? settledLabel(settled.label, settled.delivery, settled.reply)
       : (rowFeedbackText(row, 'codex') ?? ''),
+    feedbackTone: settled
+      ? closedTitleTone(settled) === 'error'
+        ? 'error'
+        : settledTone(settled)
+      : feedbackTone(row.feedback),
+    hasTree,
     state: row.state.is,
-    mark:
-      mark?.text ??
-      (row.finding
-        ? FINDING_GROUPS[row.finding.kind].mark
-        : NEEDS_YOU_MARKS[row.type === 'task' ? 'task' : 'question'].mark),
+    mark: mark?.text ?? '',
     actions: allActions.map(action =>
       action.command === 'local'
         ? { ...action, disabled: true, reason: 'Open this from the agent’s computer.' }
@@ -252,7 +263,7 @@ function projectRow(
     fileLabel: ROW_COPY.relevantFile,
     fileName: row.fileName ?? '',
     age: row.at === null ? '' : shortAgo(now - row.at),
-    markTone: tone,
+    markTone: tone ?? '',
     markColor: markColor(tone),
     waiting: isWaitingRow(row),
     running: mark?.isRunning ?? false,
@@ -299,7 +310,9 @@ export function projectRowGroups(
         actions.push({
           key,
           label: action.label,
+          emphasis: 'quiet',
           primary: false,
+          out: false,
           disabled: false,
           input: false,
           reason: '',

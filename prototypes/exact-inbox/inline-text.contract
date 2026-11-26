@@ -7,6 +7,19 @@ component InlineText
     text
       for s in parts key=s.id
         if s.href != ""
-          text s.text href=s.href font-weight=(s.bold ? 700 : 400) font-style=(s.italic ? "italic" : "normal") font-family=(s.code ? "monospace" : "inherit") text-decoration=(s.strike ? "line-through" : "none")
+          text s.text href=s.href font-weight=(s.bold ? 600 : 400) font-style=(s.italic ? "italic" : "normal") font-family=(s.code ? "monospace" : "inherit") text-decoration=(s.strike ? "line-through" : "underline") color="ink.primary"
         else
-          text s.text font-weight=(s.bold ? 700 : 400) font-style=(s.italic ? "italic" : "normal") font-family=(s.code ? "monospace" : "inherit") text-decoration=(s.strike ? "line-through" : "none")
+          text s.text font-weight=(s.bold ? 600 : 400) font-style=(s.italic ? "italic" : "normal") font-family=(s.code ? "monospace" : "inherit") text-decoration=(s.strike ? "line-through" : "none")
+
+component ClampedInlineText
+  props
+    parts: InlineSpan[]
+    maxLines: number
+    bold: bool
+  view
+    text line-clamp=maxLines text-overflow=(maxLines > 0 ? "ellipsis" : "clip")
+      for s in parts key=s.id
+        if s.href != ""
+          text s.text href=s.href font-weight=(s.bold or bold ? 600 : 400) font-style=(s.italic ? "italic" : "normal") font-family=(s.code ? "monospace" : "inherit") text-decoration=(s.strike ? "line-through" : "underline") color="ink.primary"
+        else
+          text s.text font-weight=(s.bold or bold ? 600 : 400) font-style=(s.italic ? "italic" : "normal") font-family=(s.code ? "monospace" : "inherit") text-decoration=(s.strike ? "line-through" : "none")

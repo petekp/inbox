@@ -1,8 +1,10 @@
 use RowActions from "./row-actions.contract"
-use rowLayout, rowFade, rowEntry, rowSlide, rowExit from "./motion.contract"
+use rowLayout, rowFade, rowBgFade, rowEntry, rowSlide, rowExit from "./motion.contract"
 use ReplyPane from "./reply-pane.contract"
 use VisualGroup from "./model.contract"
-use InlineText from "./inline-text.contract"
+use InlineText, ClampedInlineText from "./inline-text.contract"
+use MarkGlyph from "./mark-glyph.contract"
+use ActionIcon from "./action-icon.contract"
 
 component InboxRows
   props
@@ -44,84 +46,109 @@ component InboxRows
     onChoose: action
   view
     if waiting and groups.filter(g => g.rows.length > 0).length == 0
-      section
-        text "Open this session in Herdr to handle its pending input." color="-exact-secondary-label"
+      column padding="32px 16px" align-items="center"
+        text "Open this session in Herdr to handle its pending input." color="ink.muted" text-align="center"
     else if emptyTitle != "" and not disconnected and groups.filter(g => g.rows.length > 0).length == 0
-      section
-        column padding=24 gap=8 align-items="center"
-          text emptyTitle color="-exact-secondary-label" testId=`empty-${findings ? "findings" : "asks"}`
-          if emptyHint != ""
-            text emptyHint color="-exact-tertiary-label" text-align="center"
+      column padding="36px 24px" gap=6 align-items="center"
+        text emptyTitle font-weight=600 color="ink.primary" text-align="center" testId=`empty-${findings ? "findings" : "asks"}`
+        if emptyHint != ""
+          text emptyHint color="ink.muted" text-align="center" max-width=360
     else
-      for g in groups key=g.id
-        section testId=`group-${g.id}` padding-bottom=24 -exact-layout-transition=rowLayout(reduced)
-          row gap=8 padding-bottom=8
-            text g.mark color=g.color
-            text g.title role="heading" aria-level=2 font-size="1em" font-weight=600
-            if g.count > 0
-              text `${g.count}` color="-exact-secondary-label"
-          for r in g.rows key=r.id
-            column id=`${prefix}-row-${r.id}` gap=0 padding=(r.target == "gone" ? "0px" : "6px 0") height=(r.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(r.target == "gone") aria-hidden=(r.target == "gone") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "gone" ? 0 : 1) translate=rowSlide(r.target == "gone") transition=rowFade(reduced) animation=rowEntry(reduced, r.arriving) testId=`row-${r.row.id}`
-              button press=onToggle(r.row.id, r.row.collapse) appearance="none" background-color="transparent" border-width=0 padding=0 width="100%" text-align="left" aria-expanded=(selected == r.row.id) color="-exact-label" testId=`select-${r.row.id}` min-height=(compact ? 32 : 44)
-                row gap=10 align-items="start" width="100%"
-                  column width="1em" min-width="1em" align-items="center"
-                    if r.row.running
-                      progress aria-label="Working" width=(compact ? 12 : 16) height=(compact ? 12 : 16)
-                    else
-                      text r.row.mark color=r.row.markColor width="100%" text-align="center"
-                  column flex=1 min-width=0 gap=4
-                    InlineText(parts=r.row.titleParts)
-                    if r.row.holdsUpParts.length > 0 and selected != r.row.id
-                      column color="-exact-secondary-label" font-size="0.92em"
-                        InlineText(parts=r.row.holdsUpParts)
-                  if r.row.age != ""
-                    text r.row.age font-size="0.85em" color="-exact-tertiary-label"
-              column min-width=0 gap=0 padding-left=24 height=(r.target == "open" ? "auto" : "0px") overflow="hidden" inert=(r.target != "open") aria-hidden=(r.target != "open") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "open" ? 1 : 0) translate=rowSlide(r.target != "open") transition=rowFade(reduced)
-                column gap=8 padding-top=8
-                  if r.panel.state != "settled"
-                    if r.panel.holdsUpParts.length > 0
-                      column color="-exact-secondary-label" font-size="0.92em"
-                        InlineText(parts=r.panel.holdsUpParts)
-                    if r.panel.contextParts.length > 0
-                      column font-size="0.92em" color="-exact-secondary-label"
-                        InlineText(parts=r.panel.contextParts)
-                    if r.panel.earlierParts.length > 0
-                      column font-size="0.92em" color="-exact-secondary-label"
-                        InlineText(parts=r.panel.earlierParts)
-                    if r.panel.detailParts.length > 0
-                      InlineText(parts=r.panel.detailParts)
-                    if r.panel.fileName != ""
-                      row gap=4 flex-wrap="wrap" font-size="0.92em"
-                        text r.panel.fileLabel color="-exact-secondary-label"
-                        text r.panel.fileName font-family="monospace"
-                  if r.panel.state != "settled"
-                    RowActions(item=r.panel, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
-                  if replyOpen and replyRow == r.row.id and r.row.state != "settled"
-                    ReplyPane(discardLabel=discardLabel, hint=r.panel.replyHint, reduced=reduced, goalReply=false, submitLabel=sendLabel, title="", draft=replyText, canSend=canSend and not r.guarded, canDiscard=not pending and not r.guarded, message=replyMessage, tab=(findings ? "findings" : "asks"), onEdit=onEdit, onDiscard=onDiscard, onCancel=onCancel, onSend=onSend)
-                  if r.panel.state != "settled"
-                    for a in r.panel.shownActions.filter(x => x.reason != "") key=a.key
-                      text a.reason font-size="0.85em" color="-exact-secondary-label"
-              if r.row.state == "settled"
-                column padding-top=8
-                  RowActions(item=r.row, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
-              if r.row.feedback != "" or (r.row.id == submittedRow and isSendingRow) or r.localText != ""
-                text (r.localText != "" ? r.localText : r.row.id == submittedRow and isSendingRow ? "Sending…" : r.row.feedback) font-size="0.92em" color=(r.localFailed ? "-exact-system-red" : "-exact-secondary-label") testId=`feedback-${r.row.id}`
-          if g.empty != ""
-            text g.empty -exact-layout-transition=rowLayout(reduced) padding-left=24 color="-exact-secondary-label"
-          if g.closedLabel != ""
-            button -exact-layout-transition=rowLayout(reduced) press=onFold(g.id) appearance="none" background-color="transparent" border-width=0 padding=0 text-align="left" min-height=(compact ? 28 : 44) aria-expanded=folds.includes(g.id) testId=`closed-fold-${g.id}`
-              text `${folds.includes(g.id) ? "▾" : "▸"} ${g.closedLabel}` color="-exact-secondary-label"
-          if folds.includes(g.id)
-            for r in (earlier.includes(g.id) ? g.closedAll : g.closed) key=r.id
-              row gap=10 padding="6px 0" align-items="start" -exact-layout-transition=rowLayout(reduced) -exact-exit-animation=rowExit(reduced) testId=`closed-${r.id}`
-                text r.mark width="1em" color=r.color
-                column flex=1 min-width=0 gap=4 color="-exact-secondary-label"
-                  InlineText(parts=r.title)
-                  text (r.id == submittedRow and isSendingRow ? "Sending…" : r.outcome) font-size="0.92em"
-                  for a in r.actions key=a.key
-                    button press=onChoose(a.key, a.input, r.id, r.title.map(s => s.text).join("")) disabled=(a.disabled or disconnected or pending or (r.id == submittedRow and isSendingRow)) testId=`action-${a.key}` min-height=(compact ? 26 : 44)
-                      text a.label
-                text r.age font-size="0.85em" color="-exact-tertiary-label"
-            if not earlier.includes(g.id) and g.earlierLabel != ""
-              button press=onEarlier(g.id) testId=`earlier-${g.id}`
-                text g.earlierLabel
+      column gap=0
+        for g, gi in groups key=g.id
+          column testId=`group-${g.id}` padding="8px 0" -exact-layout-transition=rowLayout(reduced)
+            if gi > 0
+              box height=1 margin="0 0 12px 40px" background-color="surface.soft"
+            row gap=8 padding="0 16px 4px 16px" align-items="center"
+              column width=16 align-items="center"
+                MarkGlyph(mark=g.mark, color=g.color, running=false, reduced=reduced, size=13)
+              text g.title role="heading" aria-level=2 font-weight=600 color="ink.primary"
+              if g.count > 0
+                text `${g.count}` color="ink.muted" font-variant-numeric="tabular-nums"
+            for r in g.rows key=r.id
+              column id=`${prefix}-row-${r.id}` gap=0 padding=(r.target == "gone" ? "0px" : "6px 16px") background-color=(r.target == "open" or r.phase == "closing" ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(r.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(r.target == "gone") aria-hidden=(r.target == "gone") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "gone" ? 0 : 1) translate=rowSlide(r.target == "gone") animation=rowEntry(reduced, r.arriving) testId=`row-${r.row.id}`
+                button press=onToggle(r.row.id, r.row.collapse) appearance="none" background-color="transparent" border-width=0 padding=0 width="100%" text-align="left" aria-expanded=(selected == r.row.id) color="ink.primary" testId=`select-${r.row.id}` min-height=(compact ? 24 : 36)
+                  row gap=8 align-items="start" width="100%"
+                    column width=16 padding-top=6 align-items="center"
+                      if r.row.mark != "" or r.row.running
+                        MarkGlyph(mark=r.row.mark, color=r.row.markColor, running=r.row.running, reduced=reduced, size=8)
+                    column flex=1 min-width=0 gap=0
+                      ClampedInlineText(parts=r.row.titleParts, maxLines=(r.target == "open" or r.phase == "closing" ? 0 : 2), bold=(r.target == "open" or r.phase == "closing"))
+                      if r.row.holdsUpParts.length > 0 and selected != r.row.id
+                        column color="ink.muted"
+                          ClampedInlineText(parts=r.row.holdsUpParts, maxLines=1, bold=false)
+                    if r.row.age != ""
+                      text r.row.age font-size=12 color="ink.faint" font-variant-numeric="tabular-nums" white-space="nowrap" padding-left=8
+                column position="relative" min-width=0 gap=0 padding-left=24 height=(r.target == "open" ? "auto" : "0px") overflow="hidden" inert=(r.target != "open") aria-hidden=(r.target != "open") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "open" ? 1 : 0) translate=rowSlide(r.target != "open") transition=rowFade(reduced)
+                  if r.panel.hasTree
+                    box position="absolute" left=7 top=0 bottom=0 border-left="1.5px solid tree.row"
+                  column gap=0 padding-top=0
+                    if r.panel.state != "settled"
+                      if r.panel.holdsUpParts.length > 0
+                        column position="relative" color="ink.muted"
+                          if r.panel.hasTree
+                            box position="absolute" left=-17 top=10 width=11 border-top="1.5px solid tree.row"
+                          InlineText(parts=r.panel.holdsUpParts)
+                      if r.panel.contextParts.length > 0
+                        column position="relative" color="ink.muted" padding-top=(r.panel.holdsUpParts.length > 0 ? 8 : 0)
+                          if r.panel.hasTree
+                            box position="absolute" left=-17 top=(r.panel.holdsUpParts.length > 0 ? 18 : 10) width=11 border-top="1.5px solid tree.row"
+                          InlineText(parts=r.panel.contextParts)
+                      if r.panel.earlierParts.length > 0
+                        column position="relative" color="ink.muted" padding-top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 ? 8 : 0)
+                          if r.panel.hasTree
+                            box position="absolute" left=-17 top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 ? 18 : 10) width=11 border-top="1.5px solid tree.row"
+                          InlineText(parts=r.panel.earlierParts)
+                      if r.panel.detailParts.length > 0
+                        column color="ink.primary" white-space="pre-line"
+                          InlineText(parts=r.panel.detailParts)
+                      if r.panel.fileName != ""
+                        row gap=6 flex-wrap="wrap" align-items="center" padding-top=4
+                          text r.panel.fileLabel color="ink.muted"
+                          text r.panel.fileName font-family="monospace" font-size=12 padding="1px 4px" border-radius=4 background-color="surface.soft" color="ink.primary"
+                    if r.panel.state != "settled"
+                      column padding-top=8
+                        RowActions(item=r.panel, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+                    if replyOpen and replyRow == r.row.id and r.row.state != "settled"
+                      column padding-top=8
+                        ReplyPane(discardLabel=discardLabel, hint=r.panel.replyHint, reduced=reduced, goalReply=false, submitLabel=sendLabel, title="", draft=replyText, canSend=canSend and not r.guarded, canDiscard=not pending and not r.guarded, message=replyMessage, tab=(findings ? "findings" : "asks"), onEdit=onEdit, onDiscard=onDiscard, onCancel=onCancel, onSend=onSend)
+                    if r.panel.state != "settled"
+                      for a in r.panel.shownActions.filter(x => x.reason != "") key=a.key
+                        text a.reason font-size=12 color="ink.muted" padding-top=4
+                if r.row.state == "settled"
+                  column padding-top=6 padding-left=24
+                    RowActions(item=r.row, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+                if r.row.feedback != "" or (r.row.id == submittedRow and isSendingRow) or r.localText != ""
+                  text (r.localText != "" ? r.localText : r.row.id == submittedRow and isSendingRow ? "Sending…" : r.row.feedback) padding-left=24 padding-top=2 color=(r.localFailed or r.row.feedbackTone == "error" ? "tone.error" : r.row.feedbackTone == "done" ? "tone.done" : "ink.muted") testId=`feedback-${r.row.id}`
+            if g.empty != ""
+              text g.empty -exact-layout-transition=rowLayout(reduced) padding="6px 16px 6px 40px" color="ink.muted"
+            if g.closedLabel != ""
+              button -exact-layout-transition=rowLayout(reduced) press=onFold(g.id) appearance="none" background-color="transparent" border-width=0 padding="2px 4px" margin="4px 16px 0 36px" border-radius=5 text-align="left" min-height=(compact ? 24 : 36) aria-expanded=folds.includes(g.id) testId=`closed-fold-${g.id}`
+                :active
+                  background-color="surface.soft"
+                row gap=4 align-items="center"
+                  text g.closedLabel color="ink.muted"
+                  ActionIcon(name=(folds.includes(g.id) ? "chevron-down" : "chevron-right"), color="ink.muted", size=12)
+            if folds.includes(g.id)
+              for r in (earlier.includes(g.id) ? g.closedAll : g.closed) key=r.id
+                row gap=8 padding="6px 16px 6px 40px" align-items="start" -exact-layout-transition=rowLayout(reduced) -exact-exit-animation=rowExit(reduced) testId=`closed-${r.id}`
+                  column width=16 padding-top=6 align-items="center"
+                    MarkGlyph(mark=r.mark, color=r.color, running=false, reduced=reduced, size=8)
+                  column flex=1 min-width=0 gap=0
+                    column color="ink.primary"
+                      ClampedInlineText(parts=r.title, maxLines=1, bold=false)
+                    text (r.id == submittedRow and isSendingRow ? "Sending…" : r.outcome) color="ink.age" line-clamp=1 text-overflow="ellipsis"
+                    if r.actions.length > 0
+                      row gap=8 padding-top=2
+                        for a in r.actions key=a.key
+                          button press=onChoose(a.key, a.input, r.id, r.title.map(s => s.text).join("")) disabled=(a.disabled or disconnected or pending or (r.id == submittedRow and isSendingRow)) appearance="none" border-width=0 background-color="transparent" padding="2px 4px" margin-left=-4 border-radius=5 opacity=(a.disabled or disconnected or pending ? 0.4 : 1) testId=`action-${a.key}` min-height=(compact ? 24 : 32)
+                            :active
+                              background-color="surface.soft"
+                            text a.label color="ink.muted"
+                  if r.age != ""
+                    text r.age font-size=12 color="ink.faint" font-variant-numeric="tabular-nums" white-space="nowrap" padding-left=8
+              if not earlier.includes(g.id) and g.earlierLabel != ""
+                button press=onEarlier(g.id) appearance="none" border-width=0 background-color="transparent" padding="6px 16px 6px 64px" text-align="left" testId=`earlier-${g.id}`
+                  :active
+                    background-color="surface.soft"
+                  text g.earlierLabel color="ink.muted"

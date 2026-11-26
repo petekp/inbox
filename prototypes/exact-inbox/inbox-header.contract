@@ -1,4 +1,5 @@
 use HostBanner from "./model.contract"
+
 component InboxHeader
   props
     banners: HostBanner[]
@@ -12,29 +13,30 @@ component InboxHeader
     receiptError: string
     tab: string
   view
-    section
-      row
-        text name font="-exact-subheadline" color="-exact-secondary-label" flex=1
-        text connection
-          font="-exact-footnote" color="-exact-secondary-label" testId=`connection-${tab}`
-      if readOnly
-        row
-          text "Read-only" font="-exact-footnote" color="-exact-secondary-label"
+    column gap=8 padding="4px 16px 8px 16px"
+      row gap=8 align-items="center"
+        text name font-size=12 font-weight=600 color="ink.muted" flex=1 line-clamp=1 text-overflow="ellipsis"
+        if readOnly
+          text "Read-only" font-size=12 color="ink.faint" white-space="nowrap"
+        text connection font-size=12 color="ink.muted" white-space="nowrap" testId=`connection-${tab}`
       if readError != ""
-        row
-          text readError color="-exact-system-red" testId=`read-error-${tab}`
+        row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
+          text readError color="tone.error" testId=`read-error-${tab}`
       if mutationError != ""
-        row
-          text mutationError color="-exact-system-red" testId=`press-error-${tab}`
+        row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
+          text mutationError color="tone.error" testId=`press-error-${tab}`
       if receiptError != ""
-        row
-          text receiptError color="-exact-system-red"
+        row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
+          text receiptError color="tone.error"
 
       for banner in banners key=banner.id
-        column gap=6 padding=10 background-color="-exact-tertiary-fill" border-radius=8
-          text banner.title font-weight=600 color=(banner.tone == "error" ? "-exact-system-red" : "-exact-label")
-          if banner.body != ""
-            text banner.body color="-exact-secondary-label"
+        row gap=12 align-items="center" padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color=(banner.tone == "error" ? "banner.error.line" : banner.tone == "warning" ? "banner.warning.line" : "banner.notice.line") background-color=(banner.tone == "error" ? "banner.error.fill" : banner.tone == "warning" ? "banner.warning.fill" : "banner.notice.fill")
+          column flex=1 min-width=0 gap=2
+            text banner.title font-weight=600 color=(banner.tone == "error" ? "tone.error" : banner.tone == "warning" ? "tone.needsYou" : "tone.key")
+            if banner.body != ""
+              text banner.body color="ink.muted"
           if banner.key != ""
-            button press=onAction(banner.key, false, "session", banner.label) disabled=(banner.disabled or readOnly or busy)
+            button press=onAction(banner.key, false, "session", banner.label) disabled=(banner.disabled or readOnly or busy) appearance="none" border-width=1 border-style="solid" border-color="border.key" border-radius=14 background-color="surface.bg" color="ink.primary" padding="4px 12px" min-height=28 opacity=(banner.disabled or readOnly or busy ? 0.4 : 1)
+              :active
+                background-color="surface.soft"
               text banner.label

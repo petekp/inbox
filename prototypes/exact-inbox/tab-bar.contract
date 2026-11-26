@@ -9,8 +9,10 @@ component TabButton
     onPick: action
   view
     if wideWeb
-      button role="tab" aria-controls=`panel-${name}` aria-selected=selected press=onPick(name) testId=`tab-${name}` flex=1 display=(shown ? "flex" : "none") appearance="none" min-height=36 align-items="center" justify-content="center" border-width=0 background-color="transparent" color=(selected ? "-exact-system-blue" : "-exact-secondary-label")
-        text label
+      button role="tab" aria-controls=`panel-${name}` aria-selected=selected press=onPick(name) testId=`tab-${name}` display=(shown ? "flex" : "none") appearance="none" padding="6px 12px" border-radius=6 border-width=0 background-color=(selected ? "surface.raised" : "transparent") color=(selected ? "ink.primary" : "ink.muted") font-weight=(selected ? 600 : 400) white-space="nowrap"
+        :active
+          opacity=0.75
+        text label font-variant-numeric="tabular-nums"
     else
       button role="tab" aria-controls=`panel-${name}` aria-selected=selected press=onPick(name) testId=`tab-${name}` flex=1 display=(shown ? "flex" : "none") appearance="auto"
         image icon
@@ -27,7 +29,7 @@ component TabBar
     wideWeb: bool
     onPick: action
   view
-    row role="tablist" appearance=(wideWeb ? "none" : "auto") testId="tabs" margin-left=(wideWeb ? 260 : 0)
+    row role="tablist" appearance=(wideWeb ? "none" : "auto") testId="tabs" margin-left=(wideWeb ? 260 : 0) padding=(wideWeb ? "12px 12px 0 12px" : "0") gap=(wideWeb ? 4 : 0) align-items="center"
       TabButton(name="sessions", label="Sessions", icon="symbol:list", selected=tab == "sessions", wideWeb=wideWeb, shown=not wideWeb, onPick=onPick)
       TabButton(name="status", label="Status", icon="symbol:chart", selected=tab == "status", wideWeb=wideWeb, shown=true, onPick=onPick)
       TabButton(name="asks", label=(asksBadge == "" ? "Asks" : `Asks ${asksBadge}`), icon="symbol:messages", selected=tab == "asks", wideWeb=wideWeb, shown=true, onPick=onPick)
@@ -35,5 +37,7 @@ component TabBar
       TabButton(name="prs", label=(prsBadge == "" ? "PRs" : `PRs ${prsBadge}`), icon="symbol:repeat", selected=tab == "prs", wideWeb=wideWeb, shown=true, onPick=onPick)
 
       if wideWeb
-        button press=onHelp aria-label=(helpShown ? "Close help" : "Help") aria-pressed=helpShown appearance="none" min-width=44 min-height=36 testId="help-web"
+        button press=onHelp aria-label=(helpShown ? "Close help" : "Help") aria-pressed=helpShown appearance="none" padding="6px 10px" border-radius=6 border-width=0 background-color=(helpShown ? "surface.raised" : "transparent") color=(helpShown ? "ink.primary" : "ink.muted") font-weight=600 margin-left="auto" testId="help-web"
+          :active
+            opacity=0.75
           text "?"

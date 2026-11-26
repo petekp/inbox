@@ -1,55 +1,54 @@
 use Inbox from "./model.contract"
+use MarkGlyph from "./mark-glyph.contract"
+use ButtonLabel from "./action-button.contract"
+use StatusRowView from "./status-row.contract"
 
 component StatusPane
   props
     inbox: Inbox
     pending: bool
     prefix: string
+    reduced: bool
     onAction: action
+  derive readOnly = inbox.readOnly or not inbox.connected
   view
-    section
-      header
-        text inbox.statusLabel
-      if pending
-        row appearance="none" gap=6
-          progress aria-label="Saving goal"
-          text "Saving goal…"
-      if inbox.statusError != ""
-        text inbox.statusError color="-exact-system-red"
-      column gap=6 padding="8px 0"
-        text inbox.statusTitle font-weight=600
-        if inbox.statusWas != ""
-          text inbox.statusWas color="-exact-secondary-label"
-        if inbox.statusNow != ""
-          text inbox.statusNow
-        if inbox.statusDetail != ""
-          text inbox.statusDetail color="-exact-secondary-label"
-        if inbox.statusOffer != ""
-          text inbox.statusOffer
-        row gap=8 flex-wrap="wrap" appearance="none"
-          for a in inbox.statusActions key=a.action
-            button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and (inbox.readOnly or not inbox.connected)))
-              text a.label
-      for s in inbox.statusRows key=s.id
-        column id=`${prefix}-status-${s.id}` gap=4 padding="8px 0" padding-left=(s.depth * 16)
-          row gap=6 appearance="none" align-items="start"
-            if s.running
-              progress aria-label="Working" width=14 height=14
-            else if s.mark != ""
-              text s.mark color=s.color
-            column flex=1 min-width=0 gap=4
-              if s.title != ""
-                text s.title font-weight=(s.bold ? 600 : 400) color=(s.bold ? "-exact-label" : s.color)
-              if s.waitsOn != ""
-                text s.waitsOn color="-exact-system-orange"
-              if s.detail != ""
-                text s.detail color="-exact-secondary-label"
-              if s.was != ""
-                text s.was color="-exact-secondary-label"
-              if s.merged != ""
-                text s.merged color="-exact-secondary-label"
-              if s.actions.length > 0
-                row gap=8 flex-wrap="wrap" appearance="none"
-                  for a in s.actions key=a.action
-                    button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and (inbox.readOnly or not inbox.connected)))
-                      text a.label
+    column gap=0 padding-top=6
+      column padding="6px 16px 8px 16px" gap=6
+        row gap=8 align-items="center"
+          if inbox.statusMark != ""
+            column width=16 align-items="center"
+              MarkGlyph(mark=inbox.statusMark, color=inbox.statusMarkColor, running=false, reduced=reduced, size=10)
+          text inbox.statusLabel font-size=13 color=(inbox.statusIsMet ? inbox.statusMarkColor : "ink.muted")
+          box flex=1 height=1 background-color="surface.soft"
+          if inbox.statusHeadingActions.length > 0
+            row gap=8 align-items="center"
+              for a in inbox.statusHeadingActions key=a.action
+                button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=0 background-color="transparent" padding="2px 4px" border-radius=5 opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
+                  :active
+                    background-color="surface.soft"
+                  text a.label color="ink.muted" font-size=13
+        column padding-left=(inbox.statusMark != "" ? 24 : 0) gap=4
+          if pending
+            row gap=6 align-items="center"
+              MarkGlyph(mark="●", color="ink.muted", running=true, reduced=reduced, size=8)
+              text "Saving goal…" color="ink.muted"
+          if inbox.statusError != ""
+            text inbox.statusError color="tone.error"
+          text inbox.statusTitle font-size=15 line-height="24px" font-weight=(inbox.statusHasGoal ? 600 : 400) color=(inbox.statusHasGoal ? "ink.primary" : "ink.muted")
+          if inbox.statusWas != ""
+            text inbox.statusWas color="ink.faint"
+          if inbox.statusNow != ""
+            text inbox.statusNow color="ink.primary"
+          if inbox.statusDetail != ""
+            text inbox.statusDetail color="ink.muted"
+          if inbox.statusOffer != ""
+            row gap=8 flex-wrap="wrap" align-items="center" padding-top=4
+              text inbox.statusOffer font-size=15 font-weight=600 color="ink.primary"
+              for a in inbox.statusOfferActions key=a.action
+                button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=(a.emphasis == "quiet" ? 0 : 1) border-style="solid" border-color=(a.emphasis == "primary" ? "transparent" : "border.key") border-radius=14 background-color=(a.emphasis == "primary" ? "ink.primary" : "transparent") padding=(a.emphasis == "quiet" ? "4px 6px" : "4px 12px") min-height=28 opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
+                  :active
+                    opacity=0.8
+                  ButtonLabel(label=a.label, icon="", color=(a.emphasis == "primary" ? "ink.on-primary" : a.emphasis == "quiet" ? "ink.muted" : "ink.primary"))
+      column gap=0 padding-top=(inbox.statusHasGoal ? 6 : 2)
+        for s in inbox.statusRows key=s.id
+          StatusRowView(s=s, prefix=prefix, pending=pending, readOnly=readOnly, reduced=reduced, onAction=onAction)

@@ -234,10 +234,10 @@ component App
   members "./app-replies.contract"
 
   view
-    main key=keyPressed navigationKey=`${top(nav).id}` navigate=follow testId="app" width="100%" height="100%" font="-exact-body" font-size=(compact ? "13px" : "inherit") line-height=(compact ? "20px" : "normal")
+    main key=keyPressed navigationKey=`${top(nav).id}` navigate=follow testId="app" width="100%" height="100%" font="-exact-body" font-size=(compact ? "13px" : "inherit") line-height=(compact ? "20px" : "normal") background-color="surface.bg" color="ink.primary"
       display="flex" flex-direction="column"
-      column position="absolute" left=0 top=0 bottom=0 width=260 box-sizing="border-box" display=(wideWeb ? "flex" : "none") padding=16 gap=12 background-color="-exact-secondary-background" testId="session-rail"
-        text "Sessions" role="heading" aria-level=2 font-size=16 font-weight=600
+      column position="absolute" left=0 top=0 bottom=0 width=260 box-sizing="border-box" display=(wideWeb ? "flex" : "none") padding="12px 10px" gap=8 background-color="surface.rail" border-right="1px solid surface.soft" testId="session-rail"
+        text "Sessions" role="heading" aria-level=2 font-size=15 font-weight=600 padding="0 6px"
         SessionList(entries=matches, search=search, selected=selectedSession, error=(failed(directory) ? "Can’t read your sessions." : directory.error), loading=not current(directory), rail=true, restoreTop=listRestore, onScroll=listScrolled(true), onSearch=searchSessions, onSelect=selectSession)
       if wideWeb
         TabBar(helpShown=helpShown, onHelp=toggleHelp, asksBadge=(matchingInbox ? inbox.asksBadge : ""), findsBadge=(matchingInbox ? inbox.findsBadge : ""), prsBadge=(matchingInbox ? inbox.prsBadge : ""), tab=nav.tab, wideWeb=true, onPick=pick)

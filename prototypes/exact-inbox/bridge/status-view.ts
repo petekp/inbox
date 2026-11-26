@@ -3,6 +3,17 @@ import { createHash } from 'node:crypto'
 import type { ViewIdentity } from './row-view'
 import type { AllowedAction } from './row-view'
 import type { RowPress } from '../../../core/domain/presses'
+import { HEAD_GAP_PT, LIST_GAP_PT, SECTION_GAP_PT } from '../../../core/view/layout'
+import {
+  laterSpacePt,
+  milestoneGroupPadBelow,
+  milestonePadPt,
+  milestoneRowPads,
+  milestoneSpacePt,
+  statusRowPads,
+  underLaterPt,
+} from '../../../core/view/status-gaps'
+import { isSpacedAbove, LATER_TEXT, workJoints } from '../../../core/view/status-path'
 import { toneColors } from '../../../core/view/tones'
 import type { ToneName } from '../../../core/view/tones'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../../core/view/status-goal-page'
@@ -10,7 +21,7 @@ import { milestoneRows, unfoldedRows } from '../../../core/view/status-folds'
 import { goalKeyGroups, goalSubmitLabel, statusKeyRows, GOAL_FIELD } from '../../../core/view/status-keys'
 import type { StatusKey } from '../../../core/view/status-keys'
 import type { StatusPage, StatusRow } from '../../../core/view/status-page'
-import { mergedLine } from '../../../core/view/status-page-parts'
+import { mergedLine, textLevelOf } from '../../../core/view/status-page-parts'
 import { seenSubjectIds, WAS_PREFIX } from '../../../core/view/status-page'
 import type { Result } from '../app.contract'
 
@@ -25,7 +36,7 @@ const color = (tone?: ToneName | null) => {
   return `light-dark(${value.light}, ${value.dark})`
 }
 const action = (
-  { press, label }: StatusKey,
+  { press, label, emphasis }: StatusKey,
   offer: (id: string) => string = () => '',
 ): Inbox['statusActions'][number] => ({
   collapse: press.action === 'toggle-collapse' ? offer(press.id) : '',
@@ -34,6 +45,7 @@ const action = (
   target: 'askId' in press ? press.askId : 'foldId' in press ? press.foldId : 'id' in press ? press.id : '',
   text: 'text' in press ? press.text : '',
   label,
+  emphasis,
   disabled: !['show-ask', 'toggle-fold', 'toggle-collapse'].includes(press.action),
 })
 
@@ -67,10 +79,24 @@ export function projectStatus(
     waitsOn: '',
     was: '',
     merged: '',
+    stall: '',
+    level: 'muted',
+    isMutedName: false,
+    isPartTitle: false,
+    padTop: LIST_GAP_PT / 2,
+    padBottom: LIST_GAP_PT / 2,
+    spaceAbove: 0,
+    hasChildren: false,
+    branch: '',
+    pathLine: '',
+    jointArm: '',
+    jointBeside: '',
+    foldOpen: false,
+    foldCount: 0,
     actions: plans.get(id) ?? [],
     ...values,
   })
-  const row = (r: StatusRow): Line => {
+  const row = (r: StatusRow, extras: Partial<Line> = {}): Line => {
     if (r.kind === 'subject')
       return line(r.id, r.name, {
         kind: r.kind,
@@ -79,11 +105,17 @@ export function projectStatus(
         mark: r.mark,
         color: color(r.tone),
         bold: true,
-        detail: [r.text, r.stall?.text].filter(Boolean).join(' · '),
+        detail: r.text ?? '',
+        stall: r.stall?.text ?? '',
+        level: textLevelOf(r),
         running: r.isRunning,
         waitsOn: r.waitsOn ?? '',
         was: r.was ? WAS_PREFIX + r.was : '',
         merged: r.merged ? mergedLine(r.merged, () => true) : '',
+        hasChildren: r.hasChildren && !collapsed(r.id),
+        foldCount: r.foldCount,
+        foldOpen: r.foldCount > 0 && !collapsed(r.id),
+        ...extras,
       })
     if (r.kind === 'child')
       return line(r.id, r.name, {
@@ -92,40 +124,116 @@ export function projectStatus(
         depth: r.depth,
         mark: r.mark,
         color: color(r.tone),
+        detail: r.text ?? '',
+        level: textLevelOf(r),
         running: r.isRunning,
+        branch: r.branch ?? '',
+        ...extras,
       })
     if (r.kind === 'counts')
-      return line(r.id, r.counts.map(c => `${c.mark} ${c.text}`).join(' · '), { kind: r.kind, depth: r.depth })
+      return line(r.id, r.counts.map(c => `${c.mark} ${c.text}`).join(' · '), {
+        kind: r.kind,
+        depth: r.depth,
+        foldOpen: unfolded(r.id),
+        ...extras,
+      })
+    if (r.kind === 'done-fold')
+      return line(r.id, r.text, { kind: r.kind, depth: r.depth, foldOpen: unfolded(r.id), ...extras })
+    if (r.kind === 'more')
+      return line(r.id, r.text, { kind: r.kind, depth: r.depth, branch: r.branch ?? '', ...extras })
     return line(r.id, r.text ?? '', {
       kind: r.kind,
       seen: seenSubjectIds(r),
       depth: r.depth,
       mark: 'mark' in r ? r.mark : '',
       color: color('tone' in r ? r.tone : undefined),
-      bold: r.kind === 'part',
+      bold: r.kind === 'part' && r.isTitle,
+      isPartTitle: r.kind === 'part' && r.isTitle,
       detail: r.kind === 'part' ? (r.description ?? '') : '',
+      ...extras,
     })
   }
   const goal = page.goal
   const fold = goal?.milestonesFold
-  const rows: Line[] = fold ? [line(fold.id, fold.text, { kind: 'done-fold' })] : []
-  for (const m of shownMilestones(goal, unfolded)) {
-    if (m.startsLater) rows.push(line(`later-${m.id}`, 'Later', { kind: 'part' }))
+  const rows: Line[] = fold ? [line(fold.id, fold.text, { kind: 'done-fold', foldOpen: unfolded(fold.id) })] : []
+  const shown = shownMilestones(goal, unfolded)
+  let prevBelow = 0
+  for (const [mIndex, m] of shown.entries()) {
+    const mRows = milestoneRows(m, unfolded, collapsed)
+    const mPads = milestoneRowPads(m, mRows)
+    const joints = workJoints(mRows, m.line)
+    const mPad = milestonePadPt(m)
+    if (m.startsLater) {
+      rows.push(
+        line(`later-${m.id}`, LATER_TEXT, {
+          kind: 'part',
+          spaceAbove: mIndex > 0 ? laterSpacePt(prevBelow) : 0,
+          padTop: LIST_GAP_PT / 2,
+          padBottom: LIST_GAP_PT / 2 + underLaterPt(m),
+        }),
+      )
+    }
+    const spaceAbove =
+      mIndex > 0 && !m.startsLater && isSpacedAbove(shown, mIndex, unfolded, collapsed)
+        ? milestoneSpacePt(prevBelow, m)
+        : 0
+    const x = m.subject
     rows.push(
       line(m.id, m.name, {
         kind: 'milestone',
+        seen: x ? seenSubjectIds(x) : [],
         mark: m.mark,
         color: color(m.tone),
         bold: m.isBold,
+        isMutedName: m.isMuted,
+        level: textLevelOf(m),
         detail: m.text ?? '',
+        stall: x?.stall?.text ?? '',
+        waitsOn: x?.waitsOn ?? '',
+        merged: x?.merged ? mergedLine(x.merged, () => true) : '',
+        running: x?.isRunning ?? false,
         was: m.was ? WAS_PREFIX + m.was : '',
+        padTop: mPad,
+        padBottom: mPad,
+        spaceAbove,
+        pathLine: m.line ?? '',
+        hasChildren: mRows.length > 0 && m.line === null,
+        foldCount: m.foldId !== null ? 0 : m.foldCount,
+        foldOpen: m.foldId !== null ? unfolded(m.foldId) : m.foldCount > 0 && !collapsed(m.id),
       }),
     )
-    rows.push(...milestoneRows(m, unfolded, collapsed).map(row))
+    for (const [rIndex, r] of mRows.entries()) {
+      rows.push(
+        row(r, {
+          padTop: mPads[rIndex]!.above,
+          padBottom: mPads[rIndex]!.below,
+          jointArm: joints[rIndex]?.arm ?? '',
+          jointBeside: joints[rIndex]?.beside ?? '',
+        }),
+      )
+    }
+    prevBelow = milestoneGroupPadBelow(m, mRows)
   }
-  rows.push(...unfoldedRows(page.rows, unfolded, collapsed).map(row))
+  const list = unfoldedRows(page.rows, unfolded, collapsed)
+  const listPads = statusRowPads(list)
+  for (const [index, r] of list.entries()) {
+    if (r.kind === 'part') {
+      const aboveBelow = index === 0 ? prevBelow : listPads[index - 1]!.below
+      const nextAbove = listPads[index + 1]?.above ?? LIST_GAP_PT / 2
+      const needsSectionGap = index > 0 || shown.length > 0 || !!fold
+      rows.push(
+        row(r, {
+          padTop: 0,
+          padBottom: Math.max(0, HEAD_GAP_PT - nextAbove),
+          spaceAbove: needsSectionGap ? Math.max(0, SECTION_GAP_PT - aboveBelow) : 0,
+        }),
+      )
+    } else {
+      rows.push(row(r, { padTop: listPads[index]!.above, padBottom: listPads[index]!.below }))
+    }
+  }
   const keys = goalKeyGroups(page)
-  const actions = [...keys.heading, ...keys.offer].map(key => {
+  const mapGoalKey = (key: StatusKey) => {
     const result = action(key)
     const press: RowPress | null =
       key.press.action === 'type-goal'
@@ -140,18 +248,27 @@ export function projectStatus(
       .digest('hex')
     command.allowed.set(token, { press, disabled: !supported })
     return { ...result, key: token, disabled: !supported }
-  })
+  }
+  const statusHeadingActions = keys.heading.map(mapGoalKey)
+  const statusOfferActions = keys.offer.map(mapGoalKey)
   const projection = {
     statusGoalHint: GOAL_FIELD.placeholder,
-    statusGoalKey: actions.find(a => a.action === 'type-goal' && !a.disabled)?.key ?? '',
+    statusGoalKey:
+      [...statusHeadingActions, ...statusOfferActions].find(a => a.action === 'type-goal' && !a.disabled)?.key ?? '',
     statusSubmitLabel: goalSubmitLabel(page),
     statusLabel: goal?.label ?? GOAL_HEADING,
+    statusMark: goal?.mark?.mark ?? '',
+    statusMarkColor: goal?.mark ? color(goal.mark.tone) : color(),
+    statusHasGoal: goal !== null,
+    statusIsMet: goal?.isMet ?? false,
     statusTitle: goal?.text ?? NO_GOAL_TEXT,
     statusDetail: goal?.awaiting ?? '',
     statusWas: goal?.was ? WAS_PREFIX + goal.was : '',
     statusNow: goal?.now ?? '',
     statusOffer: page.suggestedGoal ? suggestedGoalOffer(page.suggestedGoal) : '',
-    statusActions: actions,
+    statusHeadingActions,
+    statusOfferActions,
+    statusActions: [...statusHeadingActions, ...statusOfferActions],
     statusRows: rows,
   }
   return { ...projection, statusVersion: renderVersion(projection) }

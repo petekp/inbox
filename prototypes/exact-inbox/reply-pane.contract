@@ -1,4 +1,6 @@
 use rowExit, rowLayout from "./motion.contract"
+use ButtonLabel from "./action-button.contract"
+
 component ReplyPane
   props
     hint: string
@@ -27,18 +29,18 @@ component ReplyPane
       preventDefault()
     stopPropagation()
   view
-    section -exact-exit-animation=rowExit(reduced) -exact-layout-transition=rowLayout(reduced)
+    column gap=8 -exact-exit-animation=rowExit(reduced) -exact-layout-transition=rowLayout(reduced)
       if title != ""
-        header
-          text title
-      row
-        textarea autofocus key=typedKey value=draft input=onEdit placeholder=hint aria-label=(goalReply ? "Goal" : hint)
-          rows=3 flex=1 min-width=0 testId=`reply-${tab}`
-      row
-        button press=onDiscard disabled=(not canDiscard) testId=`discard-${tab}`
-          text discardLabel
-        button press=onSend buttonStyle="filled" disabled=(not canSend)
-          testId=`send-${tab}`
-          text submitLabel
-      footer
-        text message
+        text title font-weight=600 color="ink.primary"
+      textarea autofocus key=typedKey value=draft input=onEdit placeholder=hint aria-label=(goalReply ? "Goal" : hint) rows=3 width="100%" box-sizing="border-box" border-width=1 border-style="solid" border-color="border.input" border-radius=10 background-color="transparent" color="ink.primary" padding="8px 12px" font-size=12 testId=`reply-${tab}`
+      row gap=8 align-items="center"
+        button press=onSend disabled=(not canSend) appearance="none" border-width=0 border-radius=14 background-color="ink.primary" padding="4px 14px" min-height=28 opacity=(not canSend ? 0.4 : 1) testId=`send-${tab}`
+          :active
+            opacity=0.8
+          ButtonLabel(label=submitLabel, icon="", color="ink.on-primary")
+        button press=onDiscard disabled=(not canDiscard) appearance="none" border-width=0 background-color="transparent" padding="4px 6px" opacity=(not canDiscard ? 0.4 : 1) testId=`discard-${tab}`
+          :active
+            background-color="surface.soft"
+          text discardLabel color="ink.muted"
+      if message != ""
+        text message color="ink.muted" font-size=12

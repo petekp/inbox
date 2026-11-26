@@ -7,7 +7,7 @@ members App
   action prAction(control: PrControl)
     if prFrameReady and not disconnected and (not inbox.readOnly or control.command == "local") and not control.disabled and not pending(sent) and not pending(forgotten) and (control.scope != "row" or not prGuarded)
       if control.command == "local"
-        startLocal(Button(key=control.key, label=control.label, primary=control.primary, disabled=control.disabled, input=false, reason="", command="local", icon=control.icon, hotkey=control.hotkey, pendingText=control.pendingText), selectedSession, control.row, control.version)
+        startLocal(Button(key=control.key, label=control.label, emphasis=control.emphasis, primary=control.primary, out=control.out, disabled=control.disabled, input=false, reason="", command="local", icon=control.icon, hotkey=control.hotkey, pendingText=control.pendingText), selectedSession, control.row, control.version)
       else
         choose(control.key, false, control.row, control.label)
   action prKey(k: string)

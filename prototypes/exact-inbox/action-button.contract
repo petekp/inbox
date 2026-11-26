@@ -1,0 +1,12 @@
+use ActionIcon from "./action-icon.contract"
+
+component ButtonLabel
+  props
+    label: string
+    icon: string
+    color: string
+  view
+    row gap=4 align-items="center"
+      if icon != ""
+        ActionIcon(name=icon, color=color, size=14)
+      text label font-weight=400 color=color white-space="normal" text-align="left"
