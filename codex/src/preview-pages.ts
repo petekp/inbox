@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import { previewPages } from '../../core/runtime/preview-pages'
@@ -6,7 +6,18 @@ import type { PreviewFiles, PreviewPages } from '../../core/runtime/preview-page
 import { missingAsNull } from '../../core/view/session-files'
 
 const files: PreviewFiles = {
-  list: folder => readdir(folder).catch(() => []),
+  list: async folder => {
+    const names = await readdir(folder).catch(() => [])
+    const found = await Promise.all(
+      names.map(name =>
+        stat(`${folder}/${name}`).then(
+          s => [{ name, mtimeMs: s.mtimeMs }],
+          () => [],
+        ),
+      ),
+    )
+    return found.flat()
+  },
   read: path => readFile(path, 'utf8').catch(missingAsNull),
   write: async (path, text) => {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })

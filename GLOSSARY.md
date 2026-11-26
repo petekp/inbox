@@ -59,8 +59,9 @@ each option when it records the question. Stored as `Item.optionPreviews`.
 **Previews page**:
 The page with every option's preview side by side, which a question's Open
 previews button opens. The host writes it from the comparison page template
-when the agent records the question, with no agent turn, and removes it once
-the question is no longer open at the session's next agent tool call.
+when the agent records the question, and rewrites it at each later inbox tool
+call: record, close or order_prs. A closed question's page stays 14 days, so
+Undo finds it, and a page unchanged for 14 days is removed.
 
 **Task**:
 Something only the person can do, such as signing in. When the agent needs

@@ -3,9 +3,10 @@ import { test } from './test-with-timeout'
 
 import { CLAUDE_CODE } from '../core/domain/model-text'
 import { EMPTY } from '../core/domain/ledger'
+import { closeItem } from '../core/domain/ledger-close'
 import { NO_SESSION_PRS } from '../core/domain/help-steps'
 import { TOOL_FIELDS } from '../core/domain/tool-schemas'
-import { previewPlace, withPreviewPages, writePreviewPages } from '../core/runtime/preview-pages'
+import { PREVIEW_PAGE_KEEP_MS, previewPlace, withPreviewPages, writePreviewPages } from '../core/runtime/preview-pages'
 import type { PreviewFiles } from '../core/runtime/preview-pages'
 import { recordItem } from '../core/runtime/tools'
 import { rowKeyPlan } from '../core/view/action-plan'
@@ -27,11 +28,19 @@ const glass = {
 
 const recorded = () => recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, glass, 1000, TOOL_FIELDS)
 
-function memoryFiles(start: Record<string, string>) {
+function memoryFiles(start: Record<string, string>, changedAt: Record<string, number> = {}, firstListAwaits = '') {
   const saved = new Map(Object.entries(start))
+  let isFirstList = firstListAwaits !== ''
   const files: PreviewFiles = {
-    list: async folder =>
-      [...saved.keys()].filter(p => p.startsWith(`${folder}/`)).map(p => p.slice(folder.length + 1)),
+    list: async folder => {
+      if (isFirstList) {
+        isFirstList = false
+        for (let turn = 0; turn < 100 && !saved.has(firstListAwaits); turn++) await Promise.resolve()
+      }
+      return [...saved.keys()]
+        .filter(p => p.startsWith(`${folder}/`))
+        .map(p => ({ name: p.slice(folder.length + 1), mtimeMs: changedAt[p] ?? 2000 }))
+    },
     read: async path => saved.get(path) ?? null,
     write: async (path, text) => void saved.set(path, text),
     remove: async path => void saved.delete(path),
@@ -72,7 +81,7 @@ test('the host writes a question’s previews page from the comparison template,
   const stale = '/state/inbox/previews/claude-code-abc-123-i9.html'
   const otherSession = '/state/inbox/previews/claude-code-other-i1.html'
   const { files, saved } = memoryFiles({ '/plugin/compare-page.html': '<template>', [stale]: 'x', [otherSession]: 'y' })
-  await writePreviewPages(files, place, s.ledger, '/plugin/compare-page.html')
+  await writePreviewPages(files, place, s.ledger, '/plugin/compare-page.html', 3000)
   const text = saved.get(page) ?? ''
   expect(text.startsWith('<template>')).toBe(true)
   expect(JSON.parse(text.slice('<template>'.length))).toEqual({
@@ -116,4 +125,50 @@ test('the host writes a question’s previews page from the comparison template,
   const unplaced = withPreviewPages(s, null)
   const plain = sessionView(unplaced, 2000, SETTLED_MS).needsYou.questions[0]
   expect(plain?.actions.some(a => a.press.action === 'previews')).toBe(false)
+})
+
+test('a closed question keeps its page for Undo until it ages out, a page no session changed in that time is removed, and overlapping writes keep each page', async () => {
+  const place = previewPlace({ XDG_STATE_HOME: '/state' }, 'codex', 's1')
+  if (!place) throw new Error('a state folder gives a place for previews pages')
+  const opened = withPreviewPages({ ...emptySession(), ledger: recorded().ledger }, place).ledger
+  const page = '/state/inbox/previews/codex-s1-i1.html'
+  const ended = '/state/inbox/previews/omp-old-i4.html'
+  const closed = closeItem(opened, 'i1', { outcome: 'Tinted', how: 'answered' }, 5000)
+  const template = '/plugin/compare-page.html'
+  const { files, saved } = memoryFiles({ [template]: '<template>', [page]: 'x', [ended]: 'y' }, { [ended]: 4000 })
+
+  await writePreviewPages(files, place, closed, template, 6000)
+  expect([saved.has(page), saved.has(ended)]).toEqual([true, true])
+  await writePreviewPages(files, place, closed, template, 5000 + PREVIEW_PAGE_KEEP_MS)
+  expect([saved.has(page), saved.has(ended)]).toEqual([false, false])
+
+  const second = recordItem(
+    CLAUDE_CODE,
+    opened,
+    { kind: 'question', ask: 'Which frame?', options: ['Frosted', 'Clear'], previews: ['/f.png', '/c.png'] },
+    1200,
+    TOOL_FIELDS,
+  )
+  const both = withPreviewPages({ ...emptySession(), ledger: second.ledger }, place).ledger
+  const secondPage = '/state/inbox/previews/codex-s1-i2.html'
+  const racing = memoryFiles({ [template]: '<template>' }, {}, secondPage)
+  await Promise.all([
+    writePreviewPages(racing.files, place, opened, template, 7000),
+    writePreviewPages(racing.files, place, both, template, 7000),
+  ])
+  expect([racing.saved.has(page), racing.saved.has(secondPage)]).toEqual([true, true])
+})
+
+test('an approval whose options have previews is not asked for a screenshot step', () => {
+  const approval = {
+    kind: 'question',
+    ask: 'Ship this header?',
+    options: ['Yes', 'No'],
+    previews: ['/work/header.png', ''],
+    steps: ['/work/header.png'],
+  }
+  const r = recordItem(CLAUDE_CODE, EMPTY, approval, 1000, TOOL_FIELDS)
+  expect(r.result).not.toContain("can't approve")
+  const again = recordItem(CLAUDE_CODE, r.ledger, approval, 1100, TOOL_FIELDS)
+  expect(again.result).not.toContain('added its new steps')
 })

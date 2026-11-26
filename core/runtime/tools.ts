@@ -190,8 +190,9 @@ export function recordItem(
     items: r.ledger.items.map(i => (i === before && after ? { ...after, ...rewordedAsk } : i)),
   }
   if (r.is === 'open') {
+    const previewSteps = before && after ? before.helps.length - after.helps.length : 0
     const changes = [
-      ...(r.addedSteps > 0 ? ['added its new steps'] : []),
+      ...(r.addedSteps - previewSteps > 0 ? ['added its new steps'] : []),
       ...(r.isNewOptions ? ['gave it your options'] : []),
       ...(r.isNewlyMarked ? ['marked it as a design choice'] : []),
       ...(r.newRec ? [`changed its recommendation to ${r.newRec}`] : []),

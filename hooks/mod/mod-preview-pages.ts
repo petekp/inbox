@@ -16,7 +16,7 @@ function previewFiles(m: PreviewCalls): PreviewFiles {
   }
 
   return {
-    list: async folder => (await m.history.fs.list(folder).catch(() => [])).map(entry => entry.name),
+    list: folder => m.history.fs.list(folder).catch(() => []),
     read: async path => ((await m.commands.exists(path)) ? m.history.fs.read(path) : null),
     write: async (path, text) => {
       const folder = path.slice(0, path.lastIndexOf('/'))
@@ -37,7 +37,7 @@ export async function modPreviewPlace(m: PreviewCalls, id: string): Promise<Prev
 
 /** Writes the previews pages `s` names and removes its others. A failure is logged. */
 export async function writeModPreviewPages(m: PreviewCalls, place: PreviewPlace, s: Session): Promise<void> {
-  await writePreviewPages(previewFiles(m), place, s.ledger, comparePagePath(m.pluginRoot)).catch((error: unknown) =>
-    m.herdr.log(previewFailure(error)),
+  await writePreviewPages(previewFiles(m), place, s.ledger, comparePagePath(m.pluginRoot), Date.now()).catch(
+    (error: unknown) => m.herdr.log(previewFailure(error)),
   )
 }

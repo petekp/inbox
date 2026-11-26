@@ -10,7 +10,7 @@ Part of [the look map](../looks.md#files).
 | `omp/src/host-presses.ts` | omp host. `ompPresses`: in a Herdr app terminal, watches the shown session's press folder and applies each press the Herdr look writes. |
 | `omp/src/herdr-log.ts` | omp host. `herdrLog`, the log of why a Herdr report, press or command log change failed. |
 | `omp/src/registry.ts` | omp host. `registryFiles`: Node's file calls for the session registry entry, which `omp/src/host-sessions.ts` writes on each change to the session omp shows and removes when omp shows another or shuts down. |
-| `omp/src/preview-pages.ts` | omp host. `ompPreviewPages`: the previews pages through `core/runtime/preview-pages.ts` with Node's file calls, which `omp/src/host-sessions.ts:changeByTool` writes after each agent tool call. |
+| `omp/src/preview-pages.ts` | omp host. `ompPreviewPages`: the previews pages through `core/runtime/preview-pages.ts` with Node's file calls, which `omp/src/host-sessions.ts:changeByTool` writes after each inbox tool call. |
 | `omp/src/clipboard.ts` | omp host. `copyToClipboard`: puts a copy press's text on the clipboard with the first command from `core/runtime/clipboard-commands.ts` that runs. |
 | `omp/src/pid.ts` | omp host. `isPidRunning`, which the command log and the session registry use to tell whether a process runs. |
 | `omp/src/command-log.ts` | omp host. `ompCommandStore`: a session's command log, in `<id>.commands.json` beside its state, with changes ordered in process. |

@@ -162,7 +162,9 @@ function previewsText(item: Item, canSend: (field: string) => boolean): string {
 }
 
 function approvalText(item: Item, canSend: (field: string) => boolean): string {
-  return isApproval(item) && item.helps.length === 0 && canSend('steps')
+  const hasPreviewPage = Object.keys(item.optionPreviews ?? {}).length > 0
+
+  return isApproval(item) && item.helps.length === 0 && !hasPreviewPage && canSend('steps')
     ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps."
     : ''
 }
