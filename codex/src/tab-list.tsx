@@ -31,7 +31,7 @@ import { tabBanners } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
 import { markClassOf, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 import { TitleTint } from './tab-title-tint'
-import { SettledTitlePart, TitlePart } from './tab-title-cut'
+import { SettledResultPart, SettledTitlePart, TitlePart } from './tab-title-cut'
 import { StatusLines } from './tab-status-part'
 import {
   drawnPresses,
@@ -385,10 +385,7 @@ function SettledView({ settled: r, wasOpen }: { settled: RowView; wasOpen: boole
         <div class="settled-head">
           <div class="settled-line parted">
             <SettledTitlePart title={r.title} tint={clock} tone={tone} />
-            <span class="part settled-result">
-              <Sep />
-              <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
-            </span>
+            <SettledResultPart text={settledLabel(state.label, state.delivery, state.reply)} />
             {error ? (
               <span class="part tone-error">
                 <Sep />

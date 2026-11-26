@@ -1,5 +1,5 @@
 import type { Earlier, Item } from '../../types'
-import { clipLabel } from './text'
+import { cutLine } from './text'
 
 /** An answer the person gave to an earlier question. `key` names the question across hosts and sessions. */
 export type AnswerDoc = { key: string; ask: string; answer: string; at: number; repo: string | null }
@@ -20,8 +20,10 @@ const B = 0.75
  * of question rows whether the history is weeks or days old.
  */
 const RELATIVE_FLOOR = 0.22
-/** The most characters an earlier ask or answer keeps on an item, since closed records copy the item. */
+/** The most characters of an earlier ask or answer a row draws before it cuts the text at a word. */
 const EARLIER_TEXT_CHARS = 200
+
+const shortText = (text: string) => cutLine(text, t => t.length <= EARLIER_TEXT_CHARS)
 
 const STOP_WORDS = new Set(
   `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
@@ -110,8 +112,8 @@ export function earlierOf(match: { doc: AnswerDoc; score: number }, isShown: boo
   const { doc } = match
 
   return {
-    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
-    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    ask: doc.ask,
+    answer: doc.answer,
     at: doc.at,
     repo: doc.repo,
     score: Math.round(match.score * 1000) / 1000,
@@ -143,8 +145,8 @@ export function earlierLineOf(earlier: Earlier | undefined, now: number): Earlie
 
   return {
     lead: 'You answered ',
-    answer: earlier.answer,
-    rest: ` ${agoText(now - earlier.at)}${where} to “${earlier.ask}”`,
+    answer: shortText(earlier.answer),
+    rest: ` ${agoText(now - earlier.at)}${where} to “${shortText(earlier.ask)}”`,
   }
 }
 

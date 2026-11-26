@@ -274,7 +274,7 @@ export function panePrBlocks({
 
     return section(
       <Box key={key} paddingLeft={1}>
-        {settledContent(what, state, undo, mark)}
+        {settledContent(what, state, undo, mark, listColumns - 2)}
       </Box>,
     )
   }

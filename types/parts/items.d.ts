@@ -50,7 +50,7 @@ export type Item = {
 }
 
 /**
- * An earlier question's answer that matched a new question. `ask` and `answer` are cut to 200 characters. `repo` is the
+ * An earlier question's answer that matched a new question. `ask` and `answer` are the earlier texts whole. `repo` is the
  * earlier session's repository name, null when its folder was not in a Git repository. `score` is the match's BM25 score
  * divided by the best score the new question could reach. `isShown` is false during the first week of the question
  * history, when the match is recorded and not drawn.
