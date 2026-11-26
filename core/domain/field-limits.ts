@@ -9,7 +9,6 @@ export const RECORD_LIMITS = {
   context: 200,
   options: 60,
   option_notes: 120,
-  rec: 60,
   why: 120,
   steps: 4000,
   title: 120,
@@ -31,7 +30,7 @@ export function recordFields(input: Record<string, unknown>): RecordField[] {
   if (input.kind === 'task') return ['ask', 'options', 'steps']
   const hasRec = typeof input.rec === 'string' && input.rec.trim() !== ''
 
-  return ['ask', 'context', 'options', 'option_notes', 'rec', ...(hasRec ? (['why'] as const) : []), 'steps']
+  return ['ask', 'context', 'options', 'option_notes', ...(hasRec ? (['why'] as const) : []), 'steps']
 }
 
 /**

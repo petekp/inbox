@@ -308,7 +308,7 @@ export function recordClose(
   const reason = trimmed(input.reason)
   if (id === '' || (answer === '' && reason === ''))
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.")
-  const tooLong = tooLongText(input, CLOSE_LIMITS)
+  const tooLong = tooLongText(input, CLOSE_LIMITS, [answer ? 'answer' : 'reason'])
   if (tooLong) return unchanged(ledger, `Not closed: ${tooLong}`)
   if (answer === '' && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, 'Not closed: your record updated this question, and it stays open for the user.')
