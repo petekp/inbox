@@ -309,13 +309,13 @@ export function paneFrame(
         flexGrow={1}
         columnGap={isInline ? inlineTabs.layout : look === 'desktop' ? 2 : framedTabs.layout.gap}
       >
-        {hasClient && tabProps ? (
-          <elements.Client key="tabs" module="./tabs-client.tsx" height={desktopTabLines ?? 0} props={tabProps} />
-        ) : null}
         {tabProps?.isOverCopy ? (
           <Box key="tabs-by-pane" position="absolute" top={0} left={0}>
             {tabsTree(tabProps, { Box, Text }, null)}
           </Box>
+        ) : null}
+        {hasClient && tabProps ? (
+          <elements.Client key="tabs" module="./tabs-client.tsx" height={desktopTabLines ?? 0} props={tabProps} />
         ) : null}
         {tabProps
           ? null
