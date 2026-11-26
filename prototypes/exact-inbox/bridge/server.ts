@@ -60,6 +60,14 @@ const server = Bun.serve({
   async fetch(request) {
     if (!authorize(request)) return json({ error: 'This device cannot access this Inbox.' }, 403)
     const url = new URL(request.url)
+    if (request.method === 'GET' && url.pathname === '/assets/runtime-origin.json') {
+      const isProxied =
+        request.headers.has('x-forwarded-for') ||
+        request.headers.has('x-forwarded-proto') ||
+        request.headers.has('tailscale-user-login')
+      const activeOrigin = localOrigins.has(url.origin) && !isProxied ? url.origin : origin
+      return json({ origin: activeOrigin })
+    }
     if (request.method === 'GET' && url.pathname.startsWith('/api/artifacts/'))
       return artifactResponse(url.pathname.slice('/api/artifacts/'.length))
     if (request.method === 'POST' && url.pathname === '/api/local') {

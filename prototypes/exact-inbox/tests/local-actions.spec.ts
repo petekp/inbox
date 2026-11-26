@@ -317,3 +317,13 @@ test('browser open feedback reports the request without claiming success or fail
   const native = formatLocal([1, 'session', 'i1', 'v', effects, ['', ''], true])
   expect(native.text).toContain('Opened guide')
 })
+
+test('runtime-origin discovery returns the local origin on loopback and refuses foreign origins', async () => {
+  const ok = await fetch(origin + '/assets/runtime-origin.json')
+  expect(ok.status).toBe(200)
+  expect(await ok.json()).toEqual({ origin })
+  const forbidden = await fetch(origin + '/assets/runtime-origin.json', {
+    headers: { origin: 'https://other.example' },
+  })
+  expect(forbidden.status).toBe(403)
+})

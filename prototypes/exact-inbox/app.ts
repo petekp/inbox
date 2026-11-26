@@ -16,14 +16,43 @@ import { record, strings, isReceipt } from './client-view'
 import type { Answer, Result, Sources } from './app.contract.d.ts'
 
 const CONFIGURED_API = import.meta.env.API_BASE_URL ?? 'http://127.0.0.1:8877'
-const LOCAL_ORIGINS = ['http://127.0.0.1:8877', 'http://localhost:8877']
-const pageOrigin = typeof globalThis.location?.origin === 'string' ? globalThis.location.origin : ''
-const API = LOCAL_ORIGINS.includes(pageOrigin) ? pageOrigin : CONFIGURED_API
+const ALLOWED_ORIGINS = [CONFIGURED_API, 'http://127.0.0.1:8877', 'http://localhost:8877']
+let resolvedApi: string | null = null
+let resolvingApi: Promise<string> | null = null
+
+function isPermanentDiscoveryRefusal(error: unknown): boolean {
+  if (error instanceof TypeError) return true
+  if (record(error) && error.kind === 'Refused') return true
+  const message = error instanceof Error ? error.message : String(error)
+  return /invalid url|outside the app's grants/i.test(message)
+}
+
+function resolveApi(): Promise<string> {
+  if (resolvedApi !== null) return Promise.resolve(resolvedApi)
+  return (resolvingApi ??= fetch('/assets/runtime-origin.json')
+    .then(async response => {
+      if (!response.ok) return CONFIGURED_API
+      const value: unknown = await response.json().catch(() => null)
+      if (record(value) && typeof value.origin === 'string' && ALLOWED_ORIGINS.includes(value.origin)) {
+        resolvedApi = value.origin
+        return resolvedApi
+      }
+      return CONFIGURED_API
+    })
+    .catch((error: unknown) => {
+      if (isPermanentDiscoveryRefusal(error)) resolvedApi = CONFIGURED_API
+      return CONFIGURED_API
+    })
+    .finally(() => {
+      resolvingApi = null
+    }))
+}
 export const grants = `net.fetch ${CONFIGURED_API}\nnet.fetch http://127.0.0.1:8877\nnet.fetch http://localhost:8877\nfs.read app:/data/drafts.json\nfs.write app:/data/drafts.json\nfs.read app:/data/navigation.json\nfs.read app:/data/navigation-v2.json\nfs.write app:/data/navigation-v2.json\nfs.read app:/data/pending\nfs.write app:/data/pending\nfs.read app:/data/views.json\nfs.write app:/data/views.json`
 const viewingTimes = new Map<string, number>()
 
 async function request(path: string, init: RequestInit = {}): Promise<unknown> {
-  const response = await fetch(`${API}${path}`, {
+  const api = await resolveApi()
+  const response = await fetch(`${api}${path}`, {
     ...init,
     exactTimeout: 10000,
     headers: { 'content-type': 'application/json', ...init.headers },
@@ -91,13 +120,14 @@ const sources: Sources = {
         })
       )
         throw new Error('The local action could not be read.')
+      const artifactApi = await resolveApi()
       return {
         ...value,
         effects: value.effects.map(effect => ({
           ...effect,
           value:
             effect.kind === 'open' && effect.value.startsWith('/api/artifacts/')
-              ? new URL(effect.value, API).href
+              ? new URL(effect.value, artifactApi).href
               : effect.value,
         })),
         sequence,
@@ -261,7 +291,9 @@ const sources: Sources = {
     return { ...value, keysHeading: guide.keysHeading, keys: guide.keys } as Result<'loadHelp'>
   },
   loadSessions: async ([session], _store, storage) =>
-    loadCachedDirectory(storage, API, () => request(`/api/sessions?session=${encodeURIComponent(session)}`)),
+    loadCachedDirectory(storage, await resolveApi(), () =>
+      request(`/api/sessions?session=${encodeURIComponent(session)}`),
+    ),
   loadNavigation: (_args, _store, storage) => loadSavedNavigation(storage),
   saveNavigation: async ([selected, search, places, tab, listTop], _store, storage) => {
     await storeNavigation(storage, { selected, search, places, tab, listTop })
@@ -278,7 +310,7 @@ const sources: Sources = {
   },
   loadInbox: async ([session, folds, collapsed, collapses], _store, storage) => {
     const shownSince = viewingTimes.get(session) ?? 0
-    const value = await loadCachedInbox(storage, API, session, () =>
+    const value = await loadCachedInbox(storage, await resolveApi(), session, () =>
       request('/api/view', {
         method: 'POST',
         body: JSON.stringify({
