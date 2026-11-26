@@ -84,8 +84,11 @@ function failedSibling(pr, c) {
   const run = c.bucket === "cancelled" ? runOf(c) : null;
   return run ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run, runOf(f))) ?? null : null;
 }
+function listedChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr)];
+}
 function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+  return listedChecks(pr).filter((c) => !failedSibling(pr, c));
 }
 
 // ../core/domain/text.ts
@@ -5412,12 +5415,13 @@ function prRowWaits(prs, lastActions, collapsed = []) {
       const id = prThreadId(pr, t);
       return { id, isWaiting: !isSent(pr, t), isCollapsed: isCollapsed(id) };
     }),
-    ...blockingChecks(pr).map((c) => {
+    ...listedChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const last = lastActions[id];
+      const isFixWaiting = !isFoldingPress(id, last) || last?.delivery?.state === "failed";
       return {
         id,
-        isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed",
+        isWaiting: failedSibling(pr, c) === null && isFixWaiting,
         isCollapsed: isCollapsed(id)
       };
     })
@@ -5964,7 +5968,7 @@ function newsByRow({ ledger, prViews, lastActions }) {
       const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
       return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)];
     })),
-    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
+    ...prs.flatMap((pr) => listedChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
       return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)];
@@ -6097,10 +6101,13 @@ function memoryViewerStores() {
 }
 
 // ../core/view/press-reducer.ts
+function isDoneNoticeDue(c, turn) {
+  return c.how === "done" && c.outcome === "done" && !c.isSentToAgent && !c.doneNotification && c.item?.turn === turn;
+}
 function doneWake(ledger, ctx) {
   if (ctx.isTurnRunning)
     return null;
-  const waited = ledger.closed.filter((c) => c.how === "done" && c.outcome === "done" && !c.isSentToAgent && !c.doneNotification && c.item?.turn === ledger.turn);
+  const waited = ledger.closed.filter((c) => isDoneNoticeDue(c, ledger.turn));
   if (waited.length === 0 || waited.some((c) => ctx.now - c.at < ctx.windowMs))
     return null;
   return { text: messages.done(waited.map((c) => c.ask)), ids: waited.map((c) => c.id) };
@@ -6215,6 +6222,10 @@ var withRecord = (log, id, record) => ({
   ...log,
   commands: { ...log.commands, [id]: record }
 });
+function awaitsDoneNotice(c, s) {
+  return c.doneNotification ? !c.doneNotification.error : isDoneNoticeDue(c, s.ledger.turn);
+}
+var isDoneAwaited = (s, row) => s.ledger.closed.some((c) => c.id === row && awaitsDoneNotice(c, s));
 function remoteCommandState(log, s) {
   let commands = log.commands;
   for (const [row, last] of Object.entries(s.lastActions)) {
@@ -6225,7 +6236,7 @@ function remoteCommandState(log, s) {
     const delivery = last.delivery;
     const deliveryId = delivery && "id" in delivery ? delivery.id ?? command.deliveryId : command.deliveryId;
     const delivered = command.delivered || delivery?.state === "arrived";
-    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery);
+    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery && isDoneAwaited(s, row));
     const error = delivery?.state === "failed" ? delivery.reason.slice(0, 256) : command.error;
     const state = delivery?.state === "failed" ? "failed" : command.state;
     if (deliveryId === command.deliveryId && delivered === command.delivered && pendingDelivery === command.pendingDelivery && error === command.error && state === command.state)
@@ -6238,7 +6249,7 @@ function remoteCommandState(log, s) {
     if (!id || !command || command.state === "cancelled" || command.state === "expired" || command.state === "refused")
       continue;
     const deliveryId = closed.doneNotification?.id ?? command.deliveryId;
-    const pendingDelivery = !command.delivered && !closed.doneNotification?.error;
+    const pendingDelivery = !command.delivered && awaitsDoneNotice(closed, s);
     if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
       commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
   }
@@ -6257,10 +6268,10 @@ function hasCommandRows(s) {
 function pendingCommandRows(s) {
   const rows = Object.entries(s.lastActions).flatMap(([row, last]) => {
     const delivery = last.delivery;
-    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === undefined || last.action === "done" && !delivery;
+    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === undefined || last.action === "done" && !delivery && isDoneAwaited(s, row);
     return last.commandId && isWaiting ? [row] : [];
   });
-  const closed = s.ledger.closed.flatMap((c) => c.commandId && !c.doneNotification ? [c.id] : []);
+  const closed = s.ledger.closed.flatMap((c) => c.commandId && isDoneNoticeDue(c, s.ledger.turn) ? [c.id] : []);
   return [...rows, ...closed];
 }
 async function confirmRemoteDelivery(host, state, deliveryId) {
@@ -8101,10 +8112,7 @@ function followTo(tabs, shown, isShownEmpty, rows) {
 function prRowIds(drawn) {
   return drawn.flatMap(({ pr, state }) => [
     prMarkId(pr.ref),
-    ...state.is === "settled" ? [] : [
-      ...waitingThreads(pr).map((t) => prThreadId(pr, t)),
-      ...[...failingChecks(pr), ...cancelledChecks(pr)].map((c) => prCheckId(pr, c))
-    ]
+    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...listedChecks(pr).map((c) => prCheckId(pr, c))]
   ]);
 }
 function isPrsTabEmpty(drawnCount, isFetching) {
@@ -8749,19 +8757,22 @@ function hash(text) {
   h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
-function rowVersion(s, id) {
+function rowFields(s, id) {
   const l = s.ledger;
   if (id === "goal") {
     const o = l.overview;
-    return hash(canonical([o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null]));
+    return [o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null];
   }
   const item = l.items.find((row) => row.id === id);
-  return hash(canonical([
+  return [
     item ? { ...item, dialog: undefined } : null,
     l.findings.find((row) => row.id === id) ?? null,
     l.closed.findLast((row) => row.id === id) ?? null,
     l.closedFindings.findLast((row) => row.id === id) ?? null
-  ]));
+  ];
+}
+function rowVersion(s, id) {
+  return hash(canonical(rowFields(s, id)));
 }
 function refusal(s, when, now) {
   for (const c of when ?? []) {
@@ -16604,26 +16615,6 @@ var LIFETIME_MS = PRESS_LIFETIME_MS;
 var MAX_COMMANDS = 128;
 var MAX_COMMAND_BYTES = 128000;
 var OUTCOME_RESERVE_BYTES = 4096;
-function remoteRowVersion(s, id) {
-  if (id === "goal") {
-    const overview = s.ledger.overview;
-    return JSON.stringify([
-      overview?.goal ?? null,
-      overview?.goalRemoved ?? null,
-      overview?.suggestedGoal ?? null,
-      s.lastActions[id] ?? null
-    ]);
-  }
-  const item = s.ledger.items.find((row) => row.id === id);
-  const normalized = item && Object.fromEntries(Object.entries(item).filter(([key]) => key !== "dialog"));
-  return JSON.stringify([
-    normalized ?? null,
-    s.ledger.findings.find((row) => row.id === id) ?? null,
-    s.ledger.closed.find((row) => row.id === id) ?? null,
-    s.ledger.closedFindings.find((row) => row.id === id) ?? null,
-    s.lastActions[id] ?? null
-  ]);
-}
 async function digestText(text) {
   const subtle = crypto.subtle;
   if (!("digest" in subtle) || typeof subtle.digest !== "function")
@@ -16634,12 +16625,10 @@ async function digestText(text) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 async function remoteRowDigest(s, id) {
-  const row = JSON.parse(remoteRowVersion(s, id));
-  const canonical = JSON.stringify(row, (_key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
-  return `row-sha256-v1:${await digestText(canonical)}`;
+  return `row-sha256-v2:${await digestText(canonical(rowFields(s, id)))}`;
 }
 async function matchesRow(s, command) {
-  return command.expected === remoteRowVersion(s, command.press.id) || command.expected === await remoteRowDigest(s, command.press.id);
+  return command.expected === rowVersion(s, command.press.id) || command.expected === await remoteRowDigest(s, command.press.id);
 }
 async function requireDurableWrite(host, seq, issuedAt) {
   if (!host.readDurable)

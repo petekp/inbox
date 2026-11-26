@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T22:43:36.354Z. 408850 characters follow.
+// Built at 2026-11-26T23:34:33.343Z. 408969 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -509,8 +509,11 @@ function failedSibling(pr, c) {
   const run = c.bucket === "cancelled" ? runOf(c) : null;
   return run ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run, runOf(f))) ?? null : null;
 }
+function listedChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr)];
+}
 function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+  return listedChecks(pr).filter((c) => !failedSibling(pr, c));
 }
 
 // ../core/domain/prs.ts
@@ -2453,12 +2456,13 @@ function prRowWaits(prs, lastActions, collapsed = []) {
       const id = prThreadId(pr, t);
       return { id, isWaiting: !isSent(pr, t), isCollapsed: isCollapsed(id) };
     }),
-    ...blockingChecks(pr).map((c) => {
+    ...listedChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const last = lastActions[id];
+      const isFixWaiting = !isFoldingPress(id, last) || last?.delivery?.state === "failed";
       return {
         id,
-        isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed",
+        isWaiting: failedSibling(pr, c) === null && isFixWaiting,
         isCollapsed: isCollapsed(id)
       };
     })
@@ -2749,10 +2753,7 @@ function followTo(tabs, shown, isShownEmpty, rows) {
 function prRowIds(drawn) {
   return drawn.flatMap(({ pr, state }) => [
     prMarkId(pr.ref),
-    ...state.is === "settled" ? [] : [
-      ...waitingThreads(pr).map((t) => prThreadId(pr, t)),
-      ...[...failingChecks(pr), ...cancelledChecks(pr)].map((c) => prCheckId(pr, c))
-    ]
+    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...listedChecks(pr).map((c) => prCheckId(pr, c))]
   ]);
 }
 function isPrsTabEmpty(drawnCount, isFetching) {
@@ -4034,19 +4035,22 @@ function hash(text) {
   h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
-function rowVersion(s, id) {
+function rowFields(s, id) {
   const l = s.ledger;
   if (id === "goal") {
     const o = l.overview;
-    return hash(canonical([o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null]));
+    return [o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null];
   }
   const item = l.items.find((row) => row.id === id);
-  return hash(canonical([
+  return [
     item ? { ...item, dialog: undefined } : null,
     l.findings.find((row) => row.id === id) ?? null,
     l.closed.findLast((row) => row.id === id) ?? null,
     l.closedFindings.findLast((row) => row.id === id) ?? null
-  ]));
+  ];
+}
+function rowVersion(s, id) {
+  return hash(canonical(rowFields(s, id)));
 }
 
 // ../core/view/press-preconditions.ts
@@ -4079,7 +4083,7 @@ function newsByRow({ ledger, prViews, lastActions }) {
       const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
       return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)];
     })),
-    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
+    ...prs.flatMap((pr) => listedChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
       return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)];
