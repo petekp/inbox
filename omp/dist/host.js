@@ -1741,7 +1741,7 @@ var OMP = {
     },
     "exchange-trigger": {
       kind: "different",
-      reason: "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else."
+      reason: "omp's `before_agent_start` event carries only the prompt text, and omp names no source for a turn a background job's result starts, so that turn reads as unknown."
     },
     "settle-window": { kind: "full" },
     "fold-on-typed-message": { kind: "full" },
@@ -13246,6 +13246,29 @@ The answer to a question is the user's to give. Close a question with their answ
 }
 
 // ../core/runtime/session-turns.ts
+function cleared(s) {
+  return {
+    ...s,
+    hostTasks: [],
+    ledger: EMPTY,
+    turn: NO_TURN,
+    told: { inbox: null, closed: [] },
+    pending: [],
+    presence: {
+      ...s.presence,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
+      turnsApplied: s.presence.turnsStarted,
+      isTurnRunning: false
+    },
+    lastActions: {},
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null
+  };
+}
 function notePrompt(host, s, text, isOpen) {
   const matched = matchSent(s, text);
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
@@ -14825,6 +14848,58 @@ function demoSource(deps) {
   };
 }
 
+// src/panel-view.ts
+var screenRows = (ui) => ("size" in ui) ? ui.size().rows : ui.terminal.rows;
+function panelView(tui, ui, panel) {
+  let isDisposed = false;
+  const dispose = () => {
+    if (isDisposed)
+      return;
+    isDisposed = true;
+    panel.dispose();
+  };
+  const paint = (width) => panel.render(width).map((line) => fit(line, width));
+  const { parseKey, extractPrintableText, jsx, signal } = tui;
+  if (parseKey && extractPrintableText) {
+    const handleInput = (raw) => panel.handleInput(parseKey(raw) ?? "", extractPrintableText(raw));
+    const view = { render: paint, handleInput, invalidate: () => {}, dispose };
+    return { view, requestRender: () => ui.requestRender(), dispose };
+  }
+  if (!jsx || !signal)
+    throw new Error("omp's pi-tui has neither parseKey nor jsx");
+  const drawn = signal(0);
+  const onKey = (key) => {
+    if (key.kind !== "release")
+      panel.handleInput(key.id, key.text);
+    return true;
+  };
+  const view = jsx("canvas", {
+    paint: (width) => {
+      drawn();
+      return paint(width);
+    },
+    onKey,
+    onPaste: (paste) => {
+      panel.handleInput("", paste.text);
+      return true;
+    }
+  });
+  return { view, requestRender: () => drawn.set(drawn.peek() + 1), dispose };
+}
+
+// src/inbox-model.ts
+function byNewestRevision(a, b) {
+  const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
+  const [x, y] = [parts(a), parts(b)];
+  const differing = x.findIndex((n, i) => n !== y[i]);
+  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
+}
+function inboxModel(models) {
+  const sonnets = models.list().filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
+  const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
+  return models.resolve("@inbox") ?? sonnet ?? models.resolve("@smol") ?? null;
+}
+
 // ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
 var DARK_TONES = {
@@ -14926,9 +15001,10 @@ function truecolorFill(hex, text) {
   return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`;
 }
 function styleOf(theme) {
-  const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
-  const mode = theme.isLight ? "light" : "dark";
-  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
+  const isLight = "isLight" in theme ? theme.isLight : !theme.dark;
+  const tones = isLight ? LIGHT_TONES : DARK_TONES;
+  const mode = isLight ? "light" : "dark";
+  const tints = isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
   return {
     bold: theme.bold.bind(theme),
     dim: (text) => `${ESC}2m${text}${ESC}22m`,
@@ -15638,6 +15714,7 @@ function isUnattended(ctx) {
   return agent?.kind === "sub" || !ctx.hasUI;
 }
 var sessionIdOf = (ctx) => ctx.sessionManager.getSessionId();
+var isRunContinuing = (event) => event.willContinue === true && event.awaitingAsyncWork !== true;
 
 // src/omp-messages.ts
 function textOfBlocks(content) {
@@ -15793,7 +15870,7 @@ function activityHandlers(context, sessions) {
     });
   };
   const onAgentEnd = (event, ctx) => {
-    if (isUnattended(ctx) || event.willContinue)
+    if (isUnattended(ctx) || isRunContinuing(event))
       return;
     const id = sessionIdOf(ctx);
     if (context.openAsks.delete(id))
@@ -17668,20 +17745,13 @@ function sessionCalls(context) {
 var MESSAGE_TYPE = "inbox";
 function turnHandlers(context, sessions) {
   const { deps, dir, openPanels, prepared, run, memory, dropTools, showBand, sendNotes } = context;
-  const {
-    change,
-    endedTurn,
-    hostFor,
-    updateHostFor,
-    reportCounts,
-    reportEnded,
-    prepare,
-    continueFork,
-    catchUpUnseen,
-    fetchPrsNow
-  } = sessions;
+  const { change, endedTurn, hostFor, updateHostFor, reportCounts, reportEnded, prepare, continueFork, catchUpUnseen } = sessions;
   let noted = null;
   let agentTexts = null;
+  let running = null;
+  let paused = null;
+  let prompted = null;
+  const clears = new Map;
   async function arrive(ctx, id, text, finishedReply) {
     const at = deps.now();
     const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch());
@@ -17716,6 +17786,15 @@ function turnHandlers(context, sessions) {
     memory.shownCwd = () => ctx.cwd;
     reportCounts(id, left === id ? undefined : left);
     context.presses.follow(ctx);
+    const abandoned = running !== id ? running : null;
+    if (abandoned !== null) {
+      running = null;
+      if (agentTexts?.id === abandoned)
+        agentTexts = null;
+      await change(abandoned, (s) => cutOffTurn(s, deps.now())).catch(() => {
+        return;
+      });
+    }
     const saved = await readState(dir, id).catch(() => null);
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some((c) => c.endedAt === null);
     if (isCutOff)
@@ -17748,6 +17827,10 @@ function turnHandlers(context, sessions) {
       noted = null;
     if (agentTexts?.id === id)
       agentTexts = null;
+    if (running === id)
+      running = null;
+    if (paused === id)
+      paused = null;
     if (id !== memory.shownId)
       return;
     memory.shownId = null;
@@ -17760,6 +17843,7 @@ function turnHandlers(context, sessions) {
       return;
     prepare(ctx);
     const id = sessionIdOf(ctx);
+    prompted = id;
     const guidance = guidanceText(OMP2);
     const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance];
     if (noted?.id !== id || noted.prompt !== event.prompt) {
@@ -17794,10 +17878,17 @@ function turnHandlers(context, sessions) {
     if (isUnattended(ctx))
       return;
     const id = sessionIdOf(ctx);
+    if (running === id)
+      return;
+    running = id;
+    if (paused === id)
+      paused = null;
     if (agentTexts?.id === id)
       agentTexts = null;
+    const isPrompted = prompted === id;
+    prompted = null;
     const startedAt = deps.now();
-    await change(id, (s) => turnStarted(s, startedAt)).catch(() => {
+    await change(id, (s) => turnStarted(isPrompted ? s : startTurn(s), startedAt)).catch(() => {
       return;
     });
   };
@@ -17845,42 +17936,81 @@ function turnHandlers(context, sessions) {
     }
   };
   const onAgentEnd = async (event, ctx) => {
-    if (isUnattended(ctx) || event.willContinue)
+    if (isUnattended(ctx) || isRunContinuing(event))
       return;
-    prepare(ctx);
     const id = sessionIdOf(ctx);
+    if (paused === id) {
+      paused = null;
+      return;
+    }
+    if (running === id)
+      running = null;
+    if (prompted === id)
+      prompted = null;
+    if (event.awaitingAsyncWork)
+      paused = id;
+    prepare(ctx);
     const texts = agentTexts?.id === id ? agentTexts.texts : [];
     if (agentTexts?.id === id)
       agentTexts = null;
+    const host = hostFor(ctx);
+    const updateHost = updateHostFor(ctx);
+    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
+    const clearsAtEnd = clears.get(id) ?? 0;
     const last = lastAssistant(event.messages);
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const reply = stop === null ? turnReply(texts, last ? textOfBlocks(last.content) : "") : "";
     const isDialogDismissed = event.messages.some(isDismissedAsk);
-    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const [inHerdr, git] = await Promise.all([
       readState(dir, id).catch(() => null).then((saved) => delegatesInHerdr(saved?.ledger.overview ?? null, run, deps.herdrTarget)),
       gitPlaceIn(run, ctx.cwd)
     ]);
     const endedAt = deps.now();
     let addsPr = false;
+    let isCleared = false;
     const written = await change(id, (s) => {
+      isCleared = (clears.get(id) ?? 0) !== clearsAtEnd;
+      if (isCleared)
+        return s;
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed });
       addsPr = addsTabPr(s, ended);
       const settled = inHerdr ? statusChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...placed(settled, ctx.cwd, git), stop };
     }).catch(() => null);
-    if (!written)
+    if (!written || isCleared)
       return;
-    const host = hostFor(ctx);
     if (addsPr)
-      fetchPrsNow(ctx);
+      host.fetchPrsInBackground();
     if (needsUpdate(written))
-      deps.background(runUpdates(updateHostFor(ctx)));
+      deps.background(runUpdates(updateHost));
     deps.background(wakeAfterSettle(host));
+  };
+  const onSessionClear = async (_event, ctx) => {
+    if (isUnattended(ctx))
+      return;
+    const id = sessionIdOf(ctx);
+    clears.set(id, (clears.get(id) ?? 0) + 1);
+    if (running === id)
+      running = null;
+    if (paused === id)
+      paused = null;
+    if (prompted === id)
+      prompted = null;
+    if (noted?.id === id)
+      noted = null;
+    if (agentTexts?.id === id)
+      agentTexts = null;
+    context.openAsks.delete(id);
+    context.uiStates.delete(id);
+    await change(id, (s) => ({ ...cleared(s), sent: [], heldRows: [], ui: null })).catch(() => {
+      return;
+    });
+    showBand(ctx);
   };
   return {
     start,
     onSessionShutdown,
+    onSessionClear,
     onBeforeAgentStart,
     onInput,
     onAgentStart,
@@ -17922,17 +18052,6 @@ var defaultDeps = {
   questionHistory: (dir) => questionHistoryPlace(process.env, dir),
   registryFolder: registryFolder(process.env)
 };
-function byNewestRevision(a, b) {
-  const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
-  const [x, y] = [parts(a), parts(b)];
-  const differing = x.findIndex((n, i) => n !== y[i]);
-  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
-}
-function inboxModel(ctx) {
-  const sonnets = ctx.models.list().filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
-  const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
-  return ctx.models.resolve("@inbox") ?? sonnet ?? ctx.models.resolve("@smol") ?? null;
-}
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
   useQuestionHistory(deps.questionHistory?.(dir) ?? null);
@@ -17948,7 +18067,7 @@ function createInbox(pi, deps = defaultDeps) {
   const { sendToAgent, onRunStart } = agentSender(pi);
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
-      const model = inboxModel(ctx);
+      const model = inboxModel(ctx.models);
       if (!model) {
         report?.({ model: "none", error: "omp offers no model for the inbox", cause: "error" });
         return null;
@@ -17994,7 +18113,7 @@ function createInbox(pi, deps = defaultDeps) {
       await pi.setActiveTools(kept);
   };
   const inboxModelOf = (ctx) => {
-    const model = inboxModel(ctx);
+    const model = inboxModel(ctx.models);
     const keys = ctx.modelRegistry.authStorage.keys;
     const hasSignIn = (provider) => keys.source(provider) !== undefined || keys.keyless(provider);
     return {
@@ -18060,6 +18179,7 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("session_switch", (event, ctx) => start(ctx, event.reason === "fork" ? event.previousSessionFile : undefined));
   pi.on("session_branch", (event, ctx) => start(ctx, event.previousSessionFile));
   pi.on("session_shutdown", turns.onSessionShutdown);
+  pi.on("session_clear", turns.onSessionClear);
   pi.on("before_agent_start", turns.onBeforeAgentStart);
   pi.on("input", turns.onInput);
   pi.on("agent_start", (event, ctx) => {
@@ -18158,7 +18278,7 @@ function createInbox(pi, deps = defaultDeps) {
   }
   async function openPanelUi(ctx, isDemo) {
     const openedAt = deps.now();
-    const { parseKey, extractPrintableText, truncateToWidth } = await import("@oh-my-pi/pi-tui");
+    const tui = await import("@oh-my-pi/pi-tui");
     const source = isDemo ? demoSource({
       now: deps.now,
       settleWindowMs: deps.settleWindowMs,
@@ -18170,34 +18290,30 @@ function createInbox(pi, deps = defaultDeps) {
     hideBand(ctx);
     if (!isDemo)
       await inbox.openPanel(ctx, openedAt);
+    let dispose = () => {};
     try {
-      await ctx.ui.custom((tui, theme, _keybindings, done) => {
+      await ctx.ui.custom((ui, theme, _keybindings, done) => {
         const panel = createPanel({
           source,
           style: styleOf(theme),
           now: deps.now,
           openedAt,
-          requestRender: () => tui.requestRender(),
+          requestRender: () => shown.requestRender(),
           close: () => done(null),
           timers: {
             every: (fn, ms) => ctx.setInterval(fn, ms),
             after: (fn, ms) => ctx.setTimeout(fn, ms),
             stop: (handle) => ctx.clearTimer(handle)
           },
-          height: () => Math.max(10, tui.terminal.rows - 4)
+          height: () => Math.max(10, screenRows(ui) - 4)
         });
+        const shown = panelView(tui, ui, panel);
+        dispose = shown.dispose;
         panel.start();
-        return {
-          render: (width) => panel.render(width).map((line) => truncateToWidth(line, width)),
-          handleInput: (raw) => {
-            const key = parseKey(raw) ?? "";
-            panel.handleInput(key, extractPrintableText(raw));
-          },
-          invalidate: () => {},
-          dispose: () => panel.dispose()
-        };
+        return shown.view;
       });
     } finally {
+      dispose();
       if (!isDemo)
         inbox.closePanel(ctx);
       showBand(ctx);
