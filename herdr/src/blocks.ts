@@ -153,6 +153,8 @@ export type RowBlock = {
   sideBySide?: { optionIds: string[]; recLine: string | null }
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
+  /** An open row's stopped warning, from `stoppedWarningOf`, drawn above its answers, else above its buttons. */
+  warning?: string
   /**
    * The line the row had above its buttons, kept while a press puts its status under them, and when its hold let go,
    * while it leaves. See `holdLinesAbove`.
@@ -237,6 +239,8 @@ export type PrBlock = {
   status: { text: string; tone: Tone } | null
   unlisted: string[]
   error: string | null
+  /** The stopped warning above its buttons, from `prStoppedWarningOf`, or null. */
+  warning: string | null
   buttons: Button[]
   feedback: { text: string; tone: Tone } | null
 }
@@ -264,10 +268,14 @@ export function emptyBlock(tab: ShownTab, empty: EmptyTab, parts: EmptyUnderPart
   }
 }
 
-/** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
+/**
+ * A line with a text and the buttons after it, as the PR order's changed line or the refresh line. `warning` is the
+ * stopped warning above it, from `prStoppedWarningOf`.
+ */
 export type LineBlock = {
   kind: 'line'
   id: string
+  warning?: string
   text: string | null
   under: string | null
   buttons: Button[]

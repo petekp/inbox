@@ -11,6 +11,7 @@ const FADE_PREFIXES = [
   'trunk ',
   'mark ',
   'spent ',
+  'warning ',
   'added ',
 ]
 export const fadesOn = (id: string | null | undefined): boolean => FADE_PREFIXES.some(prefix => id?.startsWith(prefix))

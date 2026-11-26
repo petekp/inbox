@@ -1,5 +1,13 @@
 import type { PrCheck, PrThread, PrView } from '../../types'
-import { feedbackOf, feedbackText, feedbackTone, hasAge, markedFeedbackText } from '../../core/view/feedback'
+import {
+  feedbackOf,
+  feedbackText,
+  feedbackTone,
+  hasAge,
+  markedFeedbackText,
+  prStoppedWarningOf,
+  stoppedWarningOf,
+} from '../../core/view/feedback'
 import type { PressState } from '../../core/view/feedback'
 import { prPressEffect } from '../../core/view/pr-press'
 import type { PrAction } from '../../core/view/pr-press'
@@ -79,7 +87,8 @@ const markOf = (m: PrRowMark): Mark => ({
   isRunning: m.isRunning,
 })
 
-type PrRow = Omit<RowBlock, 'isSelected' | 'body' | 'buttons'> & {
+type PrRow = Omit<RowBlock, 'isSelected' | 'body' | 'buttons' | 'warning'> & {
+  warning: string | null
   body: RowBlock['body']
   buttons: Button[]
 }
@@ -91,6 +100,7 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
   const plan = threadActions(pr, t, presses, true)
   const { keys, more } = splitFollowUps(plan.actions)
   const reply = t.reply ? `@${t.reply.author}: ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}` : null
+  const feedback = prFeedback(screen, id)
 
   return {
     kind: 'row',
@@ -99,8 +109,7 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
     mark: markOf(text.mark),
     title: text.title,
     age: t.at === null ? null : shortAgo(screen.now - t.at),
-    feedback:
-      prFeedback(screen, id) ?? (text.fold?.note ? { text: text.fold.note, tone: 'muted', source: null } : null),
+    feedback: feedback ?? (text.fold?.note ? { text: text.fold.note, tone: 'muted', source: null } : null),
     settled: null,
     isDim: text.mark.isDone,
     isSelectable: text.fold === null,
@@ -114,6 +123,7 @@ function threadRow(screen: LookScreen, pr: PrView, t: PrThread, presses: PressSt
       ...[...keys, ...more].map((a, n) => prButton(pr, a, `${id} ${n}`)),
     ],
     field: null,
+    warning: stoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null),
   }
 }
 
@@ -121,6 +131,7 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
   const id = prCheckId(pr, c)
   const text = checkRowText(pr, c)
   const plan = checkActions(pr, c, presses, true)
+  const feedback = prFeedback(screen, id)
 
   return {
     kind: 'row',
@@ -129,7 +140,7 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
     mark: markOf(text.mark),
     title: text.lead ? `${text.lead} / ${text.title}` : text.title,
     age: c.finishedAt === undefined ? null : shortAgo(screen.now - c.finishedAt),
-    feedback: prFeedback(screen, id) ?? (text.fold ? { text: text.fold.note, tone: 'muted', source: null } : null),
+    feedback: feedback ?? (text.fold ? { text: text.fold.note, tone: 'muted', source: null } : null),
     settled: null,
     isDim: false,
     isSelectable: text.fold === null,
@@ -139,6 +150,7 @@ function checkRow(screen: LookScreen, pr: PrView, c: PrCheck, presses: PressStat
       ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${checkKey(c)} ${n}`)),
     ],
     field: null,
+    warning: stoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null),
   }
 }
 
@@ -189,6 +201,8 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
   const tone = shown ? PR_TONES[shown.status] : null
   const isLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
   const plan = prBlockActions(pr, isSent, screen.view.prs.branchRef, presses, sync, true)
+  const feedback = isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null
+  const warning = prStoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null)
   const groups = prBlockRows(pr, false, {
     thread: t => threadRow(screen, pr, t, presses),
     check: c => checkRow(screen, pr, c, presses),
@@ -210,12 +224,14 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
             const isSelected = r.isSelectable && r.id === selected
             const isCollapsed = screen.view.collapsed.includes(r.id)
             const isOpen = isSelected && !isCollapsed
+            const { warning, ...row } = r
             return {
-              ...r,
+              ...row,
               isSelected,
               ...(isCollapsed && { isCollapsed }),
               body: isOpen ? r.body : [],
               buttons: isOpen ? r.buttons : [],
+              ...(isOpen && warning && { warning }),
             }
           }),
         ]
@@ -229,11 +245,12 @@ function prBlocks(screen: LookScreen, d: DrawnPr, presses: PressState, selected:
       status: shown && { text: shown.head, tone: tone ? PR_TONE[tone] : 'muted' },
       unlisted: shown?.unlisted ?? [],
       error: pr.error ? prRefreshFailedText(pr.error) : null,
+      warning,
       buttons: [
         ...sessionButtons(pr.ref, plan.sessionKey),
         ...plan.actions.map((a, n) => prButton(pr, a, `${pr.ref} ${n}`)),
       ],
-      feedback: isLastShown ? prFeedback(screen, prMarkId(pr.ref)) : null,
+      feedback,
     },
     ...rowsOf(PR_GROUP_TITLES.threads, groups.threads, 'threads'),
     ...rowsOf(PR_GROUP_TITLES.checks, groups.checks, 'checks'),
@@ -298,8 +315,10 @@ function orderLines(screen: LookScreen, presses: PressState): Block[] {
     ...plan.actions.map((a, n) => prButton(null, a, `order ${n}`)),
   ]
   const feedback = changed.showsPress ? prFeedback(screen, RANK_AGAIN_ID) : null
+  const warning = prStoppedWarningOf(screen.isSendHeld, plan.actions, feedback?.text ?? null)
+  const line: Block = { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }
 
-  return [...lines, { kind: 'line', id: RANK_AGAIN_ID, text: changed.text, under: null, buttons, feedback }]
+  return [...lines, warning ? { ...line, warning } : line]
 }
 
 /** Clear merged and closed, on its own line under the notice and Refresh PRs, with its button at the line's end. */

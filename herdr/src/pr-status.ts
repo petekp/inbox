@@ -81,11 +81,11 @@ export const prTailTimes = (t: PrTail | null): number[] =>
   t ? [...underTimes(t.error), ...underTimes(t.buttons), ...underTimes(t.result)] : []
 
 /**
- * The height a PR block's line box moves to, or undefined when it takes its content's height: in a draw that takes
+ * The height a line's box moves to, as a PR block's or a stopped warning's, or undefined when it takes its content's height: in a draw that takes
  * heights at once. A line that comes holds no space in its first draw, so its box and the PR's box spring open together
  * from the next draw.
  */
-function lineHeight(
+export function lineHeight(
   key: string,
   s: UnderMotion<unknown> | null,
   m: RowMotion | undefined,

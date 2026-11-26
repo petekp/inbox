@@ -8,7 +8,8 @@ import { type Box, layout, linesOf } from './layout'
 
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
-const { moveRows, NO_TRACKS } = await import('../src/motion')
+const { moveRows } = await import('../src/motion')
+const { NO_TRACKS } = await import('../src/tracks')
 const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')

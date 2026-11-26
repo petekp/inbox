@@ -27,7 +27,7 @@ import { localEffects } from '../../core/domain/help-steps'
 import { groupEmptyText, tabBarBanners } from '../../core/view/banners'
 import type { BannerView } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
-import { feedbackTone, rowFeedbackText } from '../../core/view/feedback'
+import { feedbackTone, rowFeedbackText, stoppedWarningOf } from '../../core/view/feedback'
 import { FINDING_GROUPS } from '../../core/view/help'
 import { earlierLineText } from '../../core/domain/earlier-answers'
 import type { SessionView } from '../../core/view/session-view'
@@ -73,6 +73,8 @@ export type LookScreen = {
   isGhMissing: boolean
   /** Whether the host has a PR fetch running, from the published file. */
   isFetchingPrs: boolean
+  /** Whether Claude Code holds the inbox's messages after the person stopped the session, from the published file. */
+  isSendHeld: boolean
 }
 
 const markOf = (m: ResultMark | null): Mark | null =>
@@ -163,6 +165,19 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
   }
 }
 
+/** The kinds of the row's planned buttons, which say whether a press sends a message. */
+function plannedKinds(row: RowView, isAllShown: boolean): { kind: PressKind }[] {
+  const { options, keys, more } = rowKeyPlan(row, isAllShown, true)
+
+  return [
+    ...options.map(o => ({ kind: o.action.kind })),
+    ...[...keys, ...more].flatMap(k =>
+      'action' in k ? [{ kind: k.action.kind }] : 'kind' in k ? [{ kind: k.kind }] : [],
+    ),
+  ]
+}
+
+/** The row's lines under its title. */
 function rowBody(row: RowView, isAllShown: boolean): BodyLine[] {
   const options = rowKeyPlan(row, isAllShown).options.map((o, n): BodyLine[] => [
     { part: 'answer', optionId: `${row.id} ${n}`, text: '', tone: 'muted' },
@@ -210,6 +225,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
   const isCollapsed = screen.view.collapsed.includes(row.id)
   const isOpen = isSelected && !isCollapsed
   const isTyping = ui.typing === row.id
+  const warning = isOpen ? stoppedWarningOf(screen.isSendHeld, plannedKinds(row, isAllShown), text) : null
 
   return {
     kind: 'row',
@@ -239,6 +255,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
         ? rowButtons(row, isAllShown, screen.agent).filter(b => !isTyping || b.isOption)
         : [],
     field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
+    ...(warning && { warning }),
   }
 }
 

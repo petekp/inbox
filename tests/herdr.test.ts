@@ -160,6 +160,14 @@ describe('herdrEnvelope', () => {
     expect('isFetchingPrs' in idle).toBe(false)
     expect(fetching.session).toEqual(idle.session)
   })
+
+  test('says Claude Code holds the inbox messages only while it does', () => {
+    const held = herdrEnvelope({ ...SOURCE, isSendHeld: true }, emptySession())
+    const free = herdrEnvelope({ ...SOURCE, isSendHeld: false }, emptySession())
+
+    expect(held.isSendHeld).toBe(true)
+    expect('isSendHeld' in free).toBe(false)
+  })
 })
 
 describe('pressFile', () => {
