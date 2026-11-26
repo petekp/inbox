@@ -37,12 +37,18 @@ export type CollapseFile = {
 /** A report, written while the Herdr look shows a session's PRs tab, that it shows it at `at`. */
 type PrsShownFile = { format: typeof HERDR_FORMAT; id: string; prsShown: { at: number } }
 
+/** A report, written while the Herdr look shows a session's Status, that it shows it at `at`. */
+type StatusShownFile = { format: typeof HERDR_FORMAT; id: string; statusShown: { at: number } }
+
 /** A file the Herdr look writes to a session's press folder. */
-export type HerdrFile = PressFile | LookFile | CollapseFile | PrsShownFile | RemoteCommand | RemoteViewerUpdate
+export type HerdrFile =
+  PressFile | LookFile | CollapseFile | PrsShownFile | StatusShownFile | RemoteCommand | RemoteViewerUpdate
 
 export const isLookFile = (file: HerdrFile): file is LookFile => 'look' in file
 
 export const isPrsShownFile = (file: HerdrFile): file is PrsShownFile => 'prsShown' in file
+
+export const isStatusShownFile = (file: HerdrFile): file is StatusShownFile => 'statusShown' in file
 
 export const isPressFile = (file: HerdrFile): file is PressFile => file.format === HERDR_FORMAT && 'press' in file
 
@@ -54,9 +60,11 @@ export const fileTime = (file: HerdrFile) =>
       ? file.look.endedAt
       : isPrsShownFile(file)
         ? file.prsShown.at
-        : isPressFile(file)
-          ? file.pressedAt
-          : file.collapse.at
+        : isStatusShownFile(file)
+          ? file.statusShown.at
+          : isPressFile(file)
+            ? file.pressedAt
+            : file.collapse.at
 
 /** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
 const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref' | null> = {
@@ -209,6 +217,11 @@ export function pressFile(text: string): { ok: true; file: HerdrFile } | { ok: f
     return isRecord(file.prsShown) && isTime(file.prsShown.at)
       ? { ok: true, file: file as PrsShownFile }
       : { ok: false, reason: 'prsShown without a time' }
+  }
+  if ('statusShown' in file) {
+    return isRecord(file.statusShown) && isTime(file.statusShown.at)
+      ? { ok: true, file: file as StatusShownFile }
+      : { ok: false, reason: 'statusShown without a time' }
   }
   if ('collapse' in file) {
     const c = file.collapse

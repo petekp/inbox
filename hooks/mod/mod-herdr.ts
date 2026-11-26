@@ -454,7 +454,7 @@ export async function delegatesAsked(calls: HerdrCalls, o: SessionStatus | null)
   return delegatesInHerdr(o, calls.run, (await currentTarget(calls)).target)
 }
 
-async function checkDelegates(calls: DelegateCalls, herdr: HerdrCalls) {
+export async function checkDelegates(calls: DelegateCalls, herdr: HerdrCalls) {
   if (!isHerdrCheckDue(calls.ownerId, await calls.now())) return
   const agents = await delegatesAsked(herdr, await calls.overview())
   if (agents) await calls.settle(agents, await calls.now())

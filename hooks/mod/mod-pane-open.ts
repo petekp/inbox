@@ -1,7 +1,8 @@
 import { delegatesSettled } from '../../core/domain/children'
 import { runOf } from './mod-commands'
 import { isPaneShown, readUi, redraw } from './mod-drawn'
-import { followDelegates as followHerdrDelegates, openInHerdr } from './mod-herdr'
+import { checkDelegates, followDelegates as followHerdrDelegates, openInHerdr } from './mod-herdr'
+import type { HerdrAgent } from '../../core/remote/herdr'
 import type { HerdrOpened } from '../../core/remote/herdr-open'
 import { scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
@@ -81,19 +82,27 @@ export async function syncLook(m: PaneOpenCalls, isOpen?: boolean) {
   followDelegates(m, isShown)
 }
 
+function delegateCallsOf(m: PaneOpenCalls) {
+  const owner = currentOwner()
+  return {
+    run: runOf(m.commands),
+    now: () => m.clock.now(),
+    ownerId: owner.id,
+    overview: async () => upgradeSession(await m.atoms.session.read()).ledger.overview,
+    isStatusShown: async () =>
+      (await readUi(m)).tab === 'overview' && (await isPaneShown(m)) && !(await m.atoms.demo.read()),
+    settle: (agents: ReadonlyMap<string, HerdrAgent>, at: number) =>
+      m.commit(owner, s => statusChanged(s, o => delegatesSettled(o, agents, at))),
+  }
+}
+
 function followDelegates(m: PaneOpenCalls, isShown: boolean) {
-  followHerdrDelegates(isShown, paneState, m.herdr, () => {
-    const owner = currentOwner()
-    return {
-      run: runOf(m.commands),
-      now: () => m.clock.now(),
-      ownerId: owner.id,
-      overview: async () => upgradeSession(await m.atoms.session.read()).ledger.overview,
-      isStatusShown: async () =>
-        (await readUi(m)).tab === 'overview' && (await isPaneShown(m)) && !(await m.atoms.demo.read()),
-      settle: (agents, at) => m.commit(owner, s => statusChanged(s, o => delegatesSettled(o, agents, at))),
-    }
-  })
+  followHerdrDelegates(isShown, paneState, m.herdr, () => delegateCallsOf(m))
+}
+
+/** Asks Herdr about the session's delegates if a check is due, as while the pane shows the Status. */
+export function checkDelegatesIfDue(m: PaneOpenCalls): Promise<void> {
+  return checkDelegates(delegateCallsOf(m), m.herdr)
 }
 
 /** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
