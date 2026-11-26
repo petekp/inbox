@@ -15,7 +15,7 @@ import { childEnded } from '../../core/domain/status-children'
 import { refreshStatus } from '../../core/runtime/status-records'
 import { activityOf, askOutcome, askQuestions } from './tool-calls'
 import type { SessionStatus } from '../../types'
-import { isUnattended, sessionIdOf } from './host-context'
+import { isRunContinuing, isUnattended, sessionIdOf } from './host-context'
 import type { HostContext, OmpContext } from './host-context'
 import type { SessionCalls } from './host-sessions'
 import { textOfBlocks } from './omp-messages'
@@ -109,8 +109,8 @@ export function activityHandlers(context: HostContext, sessions: SessionCalls) {
     await change(sessionIdOf(ctx), s => statusChanged(s, takenBack)).catch(() => undefined)
   }
 
-  const onAgentEnd = (event: { willContinue?: boolean }, ctx: OmpContext) => {
-    if (isUnattended(ctx) || event.willContinue) return
+  const onAgentEnd = (event: { willContinue?: boolean; awaitingAsyncWork?: boolean }, ctx: OmpContext) => {
+    if (isUnattended(ctx) || isRunContinuing(event)) return
     const id = sessionIdOf(ctx)
     if (context.openAsks.delete(id)) notifyChanged(id)
   }

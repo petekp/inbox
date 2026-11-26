@@ -2,7 +2,7 @@ import { isSameTaskList, ompTodoFromBranch } from '../../core/domain/host-tasks'
 import { guidanceText } from '../../core/domain/model-text'
 import { gitPlaceIn } from '../../core/domain/gh'
 import { delegatesInHerdr } from '../../core/remote/herdr'
-import { messageTyped, notePrompt, turnStarted, placed, cutOffTurn } from '../../core/runtime/session-turns'
+import { cleared, messageTyped, notePrompt, turnStarted, placed, cutOffTurn } from '../../core/runtime/session-turns'
 import { needsUpdate, statusChanged } from '../../core/runtime/session-status'
 import { childrenCutOff, delegatesSettled } from '../../core/domain/children'
 import { runUpdates } from '../../core/runtime/session-host'
@@ -14,7 +14,7 @@ import { ompCommandStore } from './command-log'
 import { markArrived } from '../../core/runtime/remote-command-state'
 import { OMP } from './texts'
 import { isDismissedAsk } from './tool-calls'
-import { isUnattended, sessionIdOf } from './host-context'
+import { isRunContinuing, isUnattended, sessionIdOf } from './host-context'
 import { keptUi } from './host-panel'
 import type { HostContext, OmpContext } from './host-context'
 import type { SessionCalls } from './host-sessions'
@@ -45,6 +45,15 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
    * a reply.
    */
   let agentTexts: { id: string; texts: string[]; isFinished: boolean } | null = null
+
+  /** The session whose run omp has open in this process. omp 19.2 drops an open run at `/new` or a switch with no `agent_end`. */
+  let running: string | null = null
+
+  /**
+   * The session whose run waits on outside work, after its turn ended. When that work ends the run with no loop after
+   * it, omp 19.2 sends a plain `agent_end` with the same messages, which ends no turn.
+   */
+  let paused: string | null = null
 
   /**
    * Counts a prompt that reached the agent: matches it to a press and returns the notes the agent is told.
@@ -93,6 +102,12 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     memory.shownCwd = () => ctx.cwd
     reportCounts(id, left === id ? undefined : left)
     context.presses.follow(ctx)
+    const abandoned = running !== id ? running : null
+    if (abandoned !== null) {
+      running = null
+      if (agentTexts?.id === abandoned) agentTexts = null
+      await change(abandoned, s => cutOffTurn(s, deps.now())).catch(() => undefined)
+    }
     // Subagents run in this process, so the ones a saved session lists running ended with the process that ran them.
     const saved = await readState(dir, id).catch(() => null)
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some(c => c.endedAt === null)
@@ -124,6 +139,8 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     prepared.delete(id)
     if (noted?.id === id) noted = null
     if (agentTexts?.id === id) agentTexts = null
+    if (running === id) running = null
+    if (paused === id) paused = null
     if (id !== memory.shownId) return
     memory.shownId = null
     memory.shownCwd = null
@@ -171,6 +188,10 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
   const onAgentStart = async (_event: unknown, ctx: OmpContext) => {
     if (isUnattended(ctx)) return
     const id = sessionIdOf(ctx)
+    // A loop that goes on with the run's turn keeps the texts the agent wrote before it.
+    if (running === id) return
+    running = id
+    if (paused === id) paused = null
     if (agentTexts?.id === id) agentTexts = null
     const startedAt = deps.now()
     await change(id, s => turnStarted(s, startedAt)).catch(() => undefined)
@@ -221,10 +242,19 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     }
   }
 
-  const onAgentEnd = async (event: { willContinue?: boolean; messages: readonly unknown[] }, ctx: OmpContext) => {
-    if (isUnattended(ctx) || event.willContinue) return
-    prepare(ctx)
+  const onAgentEnd = async (
+    event: { willContinue?: boolean; awaitingAsyncWork?: boolean; messages: readonly unknown[] },
+    ctx: OmpContext,
+  ) => {
+    if (isUnattended(ctx) || isRunContinuing(event)) return
     const id = sessionIdOf(ctx)
+    if (paused === id) {
+      paused = null
+      return
+    }
+    if (running === id) running = null
+    if (event.awaitingAsyncWork) paused = id
+    prepare(ctx)
     const texts = agentTexts?.id === id ? agentTexts.texts : []
     if (agentTexts?.id === id) agentTexts = null
     const last = lastAssistant(event.messages)
@@ -257,9 +287,27 @@ export function turnHandlers(context: HostContext, sessions: SessionCalls) {
     deps.background(wakeAfterSettle(host))
   }
 
+  /**
+   * omp 19.2's `/clear` starts a new conversation in the same session, so the rows and Status the cleared one made go,
+   * as at `/clear` in Claude Code and Codex. The question history keeps the answers.
+   */
+  const onSessionClear = async (_event: unknown, ctx: OmpContext) => {
+    if (isUnattended(ctx)) return
+    const id = sessionIdOf(ctx)
+    if (running === id) running = null
+    if (paused === id) paused = null
+    if (noted?.id === id) noted = null
+    if (agentTexts?.id === id) agentTexts = null
+    context.openAsks.delete(id)
+    context.uiStates.delete(id)
+    await change(id, s => ({ ...cleared(s), sent: [], heldRows: [], ui: null })).catch(() => undefined)
+    showBand(ctx)
+  }
+
   return {
     start,
     onSessionShutdown,
+    onSessionClear,
     onBeforeAgentStart,
     onInput,
     onAgentStart,

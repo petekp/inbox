@@ -105,3 +105,7 @@ Read on 2026-11-09 from the 18.18.5 `@oh-my-pi/pi-coding-agent` and `pi-tui` pac
 ## Live checks on omp 18.18.9
 
 See [omp-live-checks-18.18.md](omp-live-checks-18.18.md).
+
+## Checked against omp 19.2
+
+See [omp-19.md](omp-19.md).

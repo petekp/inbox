@@ -37,7 +37,7 @@ export const OMP: Client = {
     'exchange-trigger': {
       kind: 'different',
       reason:
-        "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else.",
+        "omp's `before_agent_start` event carries only the prompt text, and omp names no source for a turn a background job's result starts, so that turn reads as unknown.",
     },
     'settle-window': { kind: 'full' },
     'fold-on-typed-message': { kind: 'full' },

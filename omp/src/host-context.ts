@@ -78,3 +78,11 @@ export function isUnattended(ctx: OmpContext): boolean {
 }
 
 export const sessionIdOf = (ctx: OmpContext) => ctx.sessionManager.getSessionId()
+
+/**
+ * Whether an `agent_end` ends a loop that omp follows with another loop of the same run by itself, such as a retry.
+ * omp 19.2 also marks a loop `willContinue` when it waits on outside work, such as a background job, and then adds
+ * `awaitingAsyncWork`. The agent has answered by then, so that loop ends the turn, and the work's result starts the next.
+ */
+export const isRunContinuing = (event: { willContinue?: boolean; awaitingAsyncWork?: boolean }) =>
+  event.willContinue === true && event.awaitingAsyncWork !== true
