@@ -156,6 +156,7 @@ export async function swapPage(target: string) {
       })
     const candidate = await waitFor(candidateReady, PAGE_START_MS)
     if (!(await waitFor(candidate.initialize(), READ_TIMEOUT_MS))) throw new Error('The new page could not connect.')
+    if (candidate.prepare) await waitFor(candidate.prepare(keptOf(tabState.ui, tabState.isDemo)), READ_TIMEOUT_MS)
     const deadline = Date.now() + PRESS_TIMEOUT_MS
     while (tabState.activePresses > 0 && Date.now() < deadline) await new Promise<void>(resolve => later(resolve, 30))
     if (tabState.activePresses > 0) throw new Error('The current press is still running.')

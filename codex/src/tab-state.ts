@@ -116,8 +116,13 @@ export type Kept = {
   /** The shared controller's state, from `restoredUi`. Missing on a state an earlier page kept. */
   ui?: { version: 3; state: UiState }
 }
+/**
+ * A page a swap starts beside the one it replaces. `prepare` reads its first view with the state the old page keeps,
+ * before it shows, and resolves whether it has one. A page from before `prepare` reads its first view once it starts.
+ */
 export type CandidatePage = {
   initialize: () => Promise<boolean>
+  prepare?: (kept: Kept) => Promise<boolean>
   activate: (kept: Kept) => void
   start: () => void
   dispose: () => void

@@ -194,6 +194,11 @@ function saveCollapse(id: string, isCollapsed: boolean) {
     .catch(() => undefined)
 }
 
+/** Draws the view the page read last with the controller's state as it is now, as a swap restores that state. */
+export function redrawView() {
+  if (tabState.serverView) tabState.view = drawnView(tabState.serverView, tabState.ui)
+}
+
 /** Set on a page with nothing kept, so its first read opens the inbox with no tab the person chose. */
 let isFreshOpen = false
 
