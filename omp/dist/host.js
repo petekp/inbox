@@ -7452,14 +7452,12 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
 }
 
 // ../core/domain/question-checks.ts
-var MAX_CONTEXT = 200;
-var MAX_OPTION_NOTE = 120;
 function questionBody(input, options) {
-  const context = typeof input.context === "string" ? input.context.trim().slice(0, MAX_CONTEXT) : "";
+  const context = typeof input.context === "string" ? input.context.trim() : "";
   const notes = Array.isArray(input.option_notes) ? input.option_notes : [];
   const noted = options.flatMap((option, i) => {
     const note = notes[i];
-    const text = typeof note === "string" ? note.trim().slice(0, MAX_OPTION_NOTE) : "";
+    const text = typeof note === "string" ? note.trim() : "";
     return text === "" ? [] : [[option, text]];
   });
   const { previews } = previewsOf(input, options);
@@ -7543,6 +7541,43 @@ function previewsText(item, canSend) {
 function approvalText(item, canSend) {
   const hasPreviewPage = Object.keys(item.optionPreviews ?? {}).length > 0;
   return isApproval(item) && item.helps.length === 0 && !hasPreviewPage && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
+}
+
+// ../core/domain/field-limits.ts
+var RECORD_LIMITS = {
+  ask: 200,
+  context: 200,
+  options: 60,
+  option_notes: 120,
+  why: 120,
+  steps: 4000,
+  title: 120,
+  detail: 600,
+  path: 300
+};
+var CLOSE_LIMITS = { answer: 80, reason: 80 };
+var ORDER_LIMITS = { label: 40, why: 300 };
+function recordFields(input) {
+  if (input.kind === "finding")
+    return ["title", "detail", "path"];
+  if (input.kind === "task")
+    return ["ask", "options", "steps"];
+  const hasRec = typeof input.rec === "string" && input.rec.trim() !== "";
+  return ["ask", "context", "options", "option_notes", ...hasRec ? ["why"] : [], "steps"];
+}
+function tooLongText(input, limits, fields = Object.keys(limits)) {
+  for (const field of fields) {
+    const max = limits[field] ?? Infinity;
+    const value = input[field];
+    const values = Array.isArray(value) ? value : [value];
+    const lengths = values.map((v) => typeof v === "string" ? v.trim().length : 0);
+    const at = lengths.findIndex((n) => n > max);
+    if (at < 0)
+      continue;
+    const name = Array.isArray(value) ? `item ${at + 1} of ${field}` : field;
+    return `${name} has ${lengths[at]} characters, more than the ${max} the user's row shows. Shorten it and try again.`;
+  }
+  return "";
 }
 
 // ../core/domain/earlier-answers.ts
@@ -7802,16 +7837,13 @@ function toolAnswer(host, ledger, tool, input, now, presses, fields, delegate, e
       return orderPrs(host, ledger, input, now, presses.lastActions);
   }
 }
-function cut(value, max) {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
+function trimmed(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
-var MAX_ASK = 200;
-var MAX_OPTION = 60;
 var MAX_OPTIONS = 8;
 var MAX_STEPS = 3;
-var MAX_REASON = 120;
-function list(value, max, each) {
-  return Array.isArray(value) ? value.map((v) => cut(v, each)).filter(Boolean).slice(0, max) : [];
+function list(value, max) {
+  return Array.isArray(value) ? value.map(trimmed).filter(Boolean).slice(0, max) : [];
 }
 function unchanged(ledger, result) {
   return { ledger, result, personLine: null };
@@ -7821,18 +7853,21 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
     return recordFinding(host, ledger, input, now);
   if (input.kind !== "question" && input.kind !== "task")
     return unchanged(ledger, "Not recorded: kind must be question, task or finding.");
-  const ask = cut(input.ask, MAX_ASK);
+  const tooLong = tooLongText(input, RECORD_LIMITS, recordFields(input));
+  if (tooLong)
+    return unchanged(ledger, `Not recorded: ${tooLong}`);
+  const ask = trimmed(input.ask);
   if (ask === "")
     return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`);
-  const options = list(input.options, MAX_OPTIONS, MAX_OPTION);
+  const options = list(input.options, MAX_OPTIONS);
   if (input.kind === "question" && options.length === 0)
     return unchanged(ledger, "Not recorded: a question needs at least one option.");
-  const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
+  const recInput = input.kind === "question" ? trimmed(input.rec) : "";
   const rec = recInput === "" ? null : recommendedOption(options, recInput);
   if (recInput !== "" && rec === null)
     return unchanged(ledger, "Not recorded: rec must be one of the options.");
-  const recReason = rec ? cut(input.why, MAX_REASON).replace(/^because\s+/i, "") : "";
-  const steps = list(input.steps, MAX_STEPS + 3, 4000);
+  const recReason = rec ? trimmed(input.why).replace(/^because\s+/i, "") : "";
+  const steps = list(input.steps, MAX_STEPS + 3);
   const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
   const helps = steps.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
   const stepsLeftOut = helps.length < steps.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
@@ -7872,11 +7907,14 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
   };
 }
 function recordFinding(host, ledger, input, now) {
-  const title = cut(input.title, 120);
-  const detail = cut(input.detail, 600);
+  const tooLong = tooLongText(input, RECORD_LIMITS, recordFields(input));
+  if (tooLong)
+    return unchanged(ledger, `Not recorded: ${tooLong}`);
+  const title = trimmed(input.title);
+  const detail = trimmed(input.detail);
   if (title === "" || detail === "")
     return unchanged(ledger, "Not recorded: a finding needs a title and a detail.");
-  const path = cut(input.path, 300);
+  const path = trimmed(input.path);
   const kind = input.finding_kind === "opportunity" ? "opportunity" : "issue";
   const r = addFinding(ledger, { kind, title, detail, path: path || null, at: now });
   if (r.dismissed)
@@ -7925,11 +7963,14 @@ function recordAfterCompare(host, ledger, input, now, presses, fields) {
   return isUpdated ? r : null;
 }
 function recordClose(host, ledger, input, now, presses) {
-  const id = cut(input.id, 80).replace(/^\[|\]$/g, "");
-  const answer = cut(input.answer, 80);
-  const reason = cut(input.reason, 80);
+  const id = trimmed(input.id).replace(/^\[|\]$/g, "");
+  const answer = trimmed(input.answer);
+  const reason = trimmed(input.reason);
   if (id === "" || answer === "" && reason === "")
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.");
+  const tooLong = tooLongText(input, CLOSE_LIMITS, [answer ? "answer" : "reason"]);
+  if (tooLong)
+    return unchanged(ledger, `Not closed: ${tooLong}`);
   if (answer === "" && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, "Not closed: your record updated this question, and it stays open for the user.");
   const item = ledger.items.find((i) => i.id === id);
@@ -7954,8 +7995,6 @@ function recordClose(host, ledger, input, now, presses) {
   return unchanged(ledger, `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`);
 }
 var REPO = /^[\w.-]+\/[\w.-]+$/;
-var MAX_ORDER_LABEL = 40;
-var MAX_ORDER_WHY = 300;
 function prNumber(value) {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
   return Number.isInteger(n) && n > 0 ? n : null;
@@ -7975,18 +8014,21 @@ function orderPrs(host, ledger, input, now, lastActions) {
   const numbers = input.numbers.map(prNumber);
   if (numbers.includes(null))
     return unchanged(ledger, "Not set: numbers must be PR numbers, such as 3401.");
-  const repo = cut(input.repo, 200);
+  const repo = trimmed(input.repo);
   if (!REPO.test(repo))
     return unchanged(ledger, "Not set: give repo as owner/name.");
   const refs = [...new Set(numbers.map((n) => `${repo}#${n}`))];
   if (refs.length > MAX_ORDERED_PRS)
     return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`);
-  const label = cut(input.label, MAX_ORDER_LABEL);
+  const label = trimmed(input.label);
   if (!label)
     return unchanged(ledger, "Not set: give label, what the user does with the order.");
-  const why = cut(input.why, MAX_ORDER_WHY);
+  const why = trimmed(input.why);
   if (!why)
     return unchanged(ledger, "Not set: give why, the reason for this order.");
+  const tooLong = tooLongText(input, ORDER_LIMITS);
+  if (tooLong)
+    return unchanged(ledger, `Not set: ${tooLong}`);
   const dismissed = refs.filter((ref) => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref));
   const onTab = tabPrs(ledger);
   const added = refs.filter((ref) => !onTab.includes(ref));
