@@ -29,7 +29,7 @@ Results so far, on seeds 1 to 3 with 30 to 50 cases each. The fixed seeds for #8
 - #864: Copy's result on an open task wraps after the title and moves the buttons 20 px in one frame. Seed 2, case 28 finds it.
 - Not filed: once, a 12 px shrink and then a cut of "Reply" at 0.27 opacity, after ArrowUp, a 120 ms wait and a click on the open row. It came back in 1 of 3 replays.
 
-The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/seeds.ts`) and no seed fails differently from its issue. A seed whose issue is open but that now passes fails the run, and its line says to close the issue and mark the seed closed. A case whose tab page did not load, as can happen when the machine is under load, is judged neither passed nor failed. Its line says it could not run and why, and the run exits 2 when nothing failed. The seed for #836 fails in about 2 of 3 runs, so it can pass and fail the run. `check.sh` does not run this look, since it runs in real time.
+The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/known.ts`) and no seed fails differently from its issue. A seed whose issue is open but that now passes fails the run, and its line says to close the issue and mark the seed closed. A case whose tab page did not load, as can happen when the machine is under load, is judged neither passed nor failed. Its line says it could not run and why, and the run exits 2 when nothing failed. The seed for #836 fails in about 2 of 3 runs, so it can pass and fail the run. `check.sh` does not run this look, since it runs in real time.
 
 Every seed for #834 to #837, #959, #968, #982, #983 and #987 now passes. #772 and #783 (open or close just after Undo) have no seed yet.
 

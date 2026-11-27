@@ -5,7 +5,8 @@ import type { Failure } from './failure'
 import { caseOf } from './gen'
 import { rngOf } from './rng'
 import { shrink } from './shrink'
-import { SEEDS, apartFrom, knownIssueOf, ownFailures } from './seeds'
+import { apartFrom, knownIssueOf, ownFailures } from './known'
+import { SEEDS } from './seeds'
 
 const USAGE =
   'usage: fuzz.sh [--look omp|herdr|rows|codex|mod|all] [--seed N] [--runs N] [--case N] [--time S] [--shrinks N] [--known] [--replay <case.json>]'

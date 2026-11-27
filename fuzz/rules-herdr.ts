@@ -10,9 +10,9 @@ import type { Failure } from './failure'
 import type { HerdrDraw, HerdrRun } from './look-herdr'
 import { badText, glyphCut } from './rules-text'
 import { LINE_HEIGHT } from '../herdr/src/paint-theme'
+import { vanishFailures } from './rules-herdr-vanish'
 
 const LOOK = 'herdr'
-const FRAME_MS = 16
 const STILL_PX = 0.5
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
@@ -72,8 +72,6 @@ function restingFailures(d: HerdrDraw, input: string): Failure[] {
 
   return out
 }
-
-type ShownText = { block: string; text: string; opacity: number; share: number }
 
 type Frames = ReturnType<typeof framesOf>
 
@@ -188,36 +186,7 @@ function motionFailures(run: HerdrRun): Failure[] {
       seen: g,
     })
 
-  const frames = new Map<number, ShownText[]>()
-  for (const s of f.shown) frames.set(s.at, [...(frames.get(s.at) ?? []), s])
-  const times = [...frames.keys()].sort((a, b) => a - b)
-  const stepTimes = run.steps.map(s => s[0])
-  const isStep = (t: number) => stepTimes.some(s => s > t - FRAME_MS && s <= t)
-  const keyOf = (s: ShownText) => `${s.block}|${s.text}`
-  for (let i = 1; i < times.length; i++) {
-    const t = times[i] ?? 0
-    const before = frames.get(times[i - 1] ?? 0) ?? []
-    const now = new Map((frames.get(t) ?? []).filter(s => s.opacity > 0).map(s => [keyOf(s), s]))
-    const blocksNow = new Set([...now.values()].map(s => s.block))
-    const stem = (t: string) => t.replace(/…$/, '')
-    const goesOn = (s: ShownText) =>
-      [...now.values()].some(
-        n => n.block === s.block && (n.text.startsWith(stem(s.text)) || s.text.startsWith(stem(n.text))),
-      )
-    const shownIn = (list: Iterable<ShownText>, block: string) =>
-      [...list].filter(s => s.block === block && s.opacity * s.share >= CUT_OPACITY && s.text.trim() !== '').length
-    for (const s of before) {
-      const isShown = s.opacity * s.share >= CUT_OPACITY && s.text.trim() !== ''
-      if (!isShown || now.has(keyOf(s)) || !blocksNow.has(s.block) || isStep(t) || goesOn(s)) continue
-      if (shownIn(now.values(), s.block) >= shownIn(before, s.block)) continue
-      out.push({
-        ...at(t),
-        rule: 'vanish',
-        detail: `"${s.text}" in ${s.block} went from ${s.opacity.toFixed(2)} to gone in one frame, with no draw then`,
-        seen: s,
-      })
-    }
-  }
+  out.push(...vanishFailures(run, f.shown, at))
 
   return out
 }

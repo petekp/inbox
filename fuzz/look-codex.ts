@@ -4,7 +4,7 @@ import { $ } from 'bun'
 import { CUT_OPACITY } from '../core/view/row-motion'
 import { type CodexEv, type CodexSpec, type PageFailure, type PageRun, drive } from './codex-page'
 import { type Rng, rngOf } from './rng'
-import { apartFrom, knownIssueOf, ownFailures } from './seeds'
+import { apartFrom, knownIssueOf, ownFailures } from './known'
 import { CODEX_SEEDS } from './seeds-codex'
 import { without } from './shrink'
 

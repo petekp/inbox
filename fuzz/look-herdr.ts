@@ -79,6 +79,8 @@ export type HerdrRun = {
   steps: Step[]
   /** The times of the draws that showed a new page, a tab, Help or session, which the view draws at rest. */
   pageAt: number[]
+  /** The times of the draws that followed the person's key, click or typing. */
+  inputAt: number[]
   notes: string[]
   error: { at: number; after: number; message: string } | null
 }
@@ -132,6 +134,7 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
   const notes: string[] = []
   const steps: Step[] = []
   const pageAt: number[] = []
+  const inputAt: number[] = []
   let after = -1
   let wasMessage = false
   const draw = () => {
@@ -219,6 +222,7 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
       await settle()
       await reread()
       draw()
+      if (isPersonEv(e)) inputAt.push(clock - START)
     }
     after = c.events.length
     await wait(restMs)
@@ -228,12 +232,13 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
       draws,
       steps,
       pageAt,
+      inputAt,
       notes,
       error: { at: clock - START, after, message: err instanceof Error ? (err.stack ?? err.message) : String(err) },
     }
   }
 
-  return { draws, steps, pageAt, notes, error: null }
+  return { draws, steps, pageAt, inputAt, notes, error: null }
 
   async function apply(e: Ev): Promise<string | void> {
     if (e.is === 'wait') return wait(e.ms)
@@ -274,6 +279,8 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     return `clicked "${button.label}" on ${row?.id}`
   }
 }
+
+const isPersonEv = (e: Ev): boolean => e.is === 'key' || e.is === 'click' || e.is === 'type'
 
 function pickOf(targets: Painted[], e: { n: number; label?: string }): Painted | undefined {
   const { label } = e
