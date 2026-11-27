@@ -141,10 +141,6 @@
 .line .after.tone-done {
   color: var(--done);
 }
-.row.selected .line,
-.row.closing .line {
-  display: block;
-}
 .row.selected .line .text:not(.short) .title-part,
 .row.closing .line .text:not(.short) .title-part {
   display: block;
