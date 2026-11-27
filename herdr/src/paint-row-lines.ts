@@ -3,7 +3,7 @@ import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import type { BodyLine, RowBlock, Tone } from './blocks'
 import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
-import { bodyKey, isStatusUnder, runAt } from './held-line'
+import { addedAt, bodyKey, isStatusUnder } from './held-line'
 import { aboveId, aboveLineId, addedId, addedLinesId } from './heights'
 import { sizeEl, springBox } from './paint-space'
 import type { RowMotion } from './motion'
@@ -113,7 +113,7 @@ function comingEl(r: RowBlock, l: TitleLine, cameAt: number, el: Element, n: num
  */
 export function addedLinesEls(r: RowBlock, lines: BodyLine[], els: Element[][], p: Paint): Element[] {
   const added = r.addedLines
-  const from = added ? runAt(lines.map(bodyKey), added.keys) : -1
+  const from = added ? addedAt(lines.map(bodyKey), added) : -1
   if (!added || from < 0) return els.flat()
   const end = from + added.keys.length
   const height = p.heights.get(addedLinesId(r.id))

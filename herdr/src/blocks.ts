@@ -171,7 +171,7 @@ export type RowBlock = {
 }
 
 /** A run of body lines a row added, by `bodyKey` in `herdr/src/held-line.ts`, and when. */
-export type AddedLines = { keys: string[]; cameAt: number }
+export type AddedLines = { keys: string[]; at: number; cameAt: number }
 
 /** A status's words and the time its age counts from. */
 export type Aged = { lead: string; at: number }

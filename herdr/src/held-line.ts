@@ -89,12 +89,14 @@ const isComing = (l: LineAbove | undefined, now: number): l is LineAbove & { cam
 /** A body line as an open row's draws compare it: its part, and the option it draws or its words. */
 export const bodyKey = (l: BodyLine): string => `${l.part} ${l.optionId ?? l.text}`
 
-/** Where `run` starts in `keys`, as a run of lines in a row, or -1. */
-export function runAt(keys: string[], run: string[]): number {
-  if (run.length === 0) return -1
-  for (let n = 0; n + run.length <= keys.length; n++) if (run.every((k, i) => keys[n + i] === k)) return n
+/**
+ * Where the lines a row added start in `keys`: the place they were added at, or -1 once the lines there changed. An
+ * earlier line with the same key is not the added one.
+ */
+export function addedAt(keys: string[], added: AddedLines): number {
+  const isThere = added.keys.length > 0 && added.keys.every((k, i) => keys[added.at + i] === k)
 
-  return -1
+  return isThere ? added.at : -1
 }
 
 /**
@@ -110,14 +112,14 @@ function stepAdded(
   isAtOnce: boolean,
 ): AddedLines | null {
   if (isAtOnce) return null
-  if (was && now < was.cameAt + LINE_COMES_MS && runAt(keys, was.keys) >= 0) return was
+  if (was && now < was.cameAt + LINE_COMES_MS && addedAt(keys, was) >= 0) return was
   if (last === undefined || keys.length <= last.length) return null
   let head = 0
   while (head < last.length && keys[head] === last[head]) head++
   let tail = 0
   while (tail < last.length - head && keys[keys.length - 1 - tail] === last[last.length - 1 - tail]) tail++
 
-  return head + tail < last.length ? null : { keys: keys.slice(head, keys.length - tail), cameAt: now }
+  return head + tail < last.length ? null : { keys: keys.slice(head, keys.length - tail), at: head, cameAt: now }
 }
 
 /**
