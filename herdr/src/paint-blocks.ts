@@ -45,6 +45,7 @@ import { NO_BREAK_SPACE, feedbackEl, wordEls } from './paint-text'
 import { isSideBySide, trunkEl } from './paint-tree'
 import { bodyLineEl } from './paint-body-line'
 import { isWarningDrawn, rowWarningEl, warningBoxEl } from './paint-warning'
+import type { CountLeft } from './heading-count'
 
 function rowEl(r: RowBlock, p: Paint): Element {
   const { t } = p
@@ -339,6 +340,21 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
 }
 
 /** A group's heading. A marked one hangs its mark in the mark column, with its text where its rows' text starts. One with no mark starts at the edge, where its rows' marks do. A label heading starts at the edge and rules the goal's text to its buttons. */
+/**
+ * A heading's count after its text. A count that goes fades out over `LEAVE_FADE_MS` from the draw after it went, so
+ * it never drops in one frame.
+ */
+function countEls(b: Extract<Block, { kind: 'heading' }>, left: CountLeft | null, p: Paint): Element[] {
+  const count = b.count ?? left?.count ?? null
+  if (count === null) return []
+  const name = `count ${b.id}`
+  const isGoing = b.count === null && left !== null
+  const opacity = isGoing && p.now !== left.leftAt ? 0 : 1
+  const el = div().id(name).text_color(p.t.muted).child(`${SEP}${count}`)
+
+  return [fadeEl(el, name, opacity, { duration: isGoing ? LEAVE_FADE_MS : 0, delay: 0 }, p)]
+}
+
 function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const buttons = h_flex()
@@ -369,7 +385,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
     .items_center()
     .when(b.mark !== null, e => e.child(markEl(b.mark, t)))
     .child(div().min_w(0).whitespace_normal().font_semibold().child(b.text))
-    .when(b.count !== null, e => e.child(div().text_color(t.muted).child(`${SEP}${b.count}`)))
+    .children(countEls(b, p.motion.get(b.id)?.countLeft ?? null, p))
     .child(div().flex_1())
     .when(b.aside !== undefined, e =>
       e.child(

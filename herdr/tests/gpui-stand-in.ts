@@ -28,6 +28,7 @@ export type Painted = {
     isTruncated?: boolean
     isAbsolute?: boolean
     isClipped?: boolean
+    isFilled?: boolean
   }
   springs: Set<string>
   transitions: Map<string, number>
@@ -193,6 +194,7 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
           if (key === 'line_height') node.style.line = parseFloat(String(first))
           if (key === 'truncate') node.style.isTruncated = true
           if (key === 'absolute') node.style.isAbsolute = true
+          if (key === 'bg') node.style.isFilled = true
           if (key === 'spring') node.springs.add(String(first))
           if (key === 'transition') node.transitions.set(String(first), (second as { duration: number }).duration)
           if (key === 'transition') node.delays.set(String(first), (second as { delay?: number }).delay ?? 0)

@@ -33,7 +33,11 @@ import type { FieldOpening } from './field-wait'
 import { NO_TRACKS } from './tracks'
 import { blockSwapMotion, blockSwapTimes, stepBlockSwap, swapDrawn } from './block-swap'
 import type { BlockSwap, BlockSwapMotion } from './block-swap'
+import { countLeftTimes, stepCountLeft } from './heading-count'
+import type { CountLeft } from './heading-count'
 import type { Tracked, Tracks } from './tracks'
+
+const NO_IDS: ReadonlySet<string> = new Set()
 
 /**
  * How a block moves in this draw. `isStart` marks the draw a move began. A block that enters or leaves draws in a box
@@ -54,7 +58,7 @@ import type { Tracked, Tracks } from './tracks'
  * draws as it comes and goes, `status` and `prTail` how a PR block's lines do, and `warning` the stopped warning. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
  * is dismissed, so its box keeps that form's height until the new form measures, and `blockSwap` how its content fades from
  * the one form to the other, as a Status line's parts do as they change. `field` is how the buttons of a row's reply field draw
- * while the field comes, null at rest.
+ * while the field comes, null at rest, and `countLeft` a group heading's count that went.
  */
 export type RowMotion = {
   state: RowState
@@ -80,10 +84,17 @@ export type RowMotion = {
   blockSwap: BlockSwapMotion | null
   swap: SwapMotion | null
   field: FieldOpening | null
+  countLeft: CountLeft | null
 }
 
 const targetOf = (b: Block): RowTarget =>
   b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : isOpenRow(b) ? 'open' : 'closed'
+
+/** Whether a Status line's place in the tree changes: its depth, its connectors or its path. */
+const isReshaped = (was: Block, b: Block): boolean =>
+  was.kind === 'status' &&
+  b.kind === 'status' &&
+  (was.depth !== b.depth || JSON.stringify([was.tree, was.path]) !== JSON.stringify([b.tree, b.path]))
 
 const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
 
@@ -95,18 +106,19 @@ const isFolding = (state: RowState | undefined): boolean => state === 'opening' 
  * spring. While a block that leaves holds its space, nothing that moves in a draw that did not follow the person's
  * input grows: a block that enters waits to open, a row that would open keeps its last form, and a row whose close
  * starts with or after the leave keeps its height while its panel fades. So the closing and the opening row start
- * together, as the leaving block's space starts to close. A closing row whose panel shows keeps its height while the
- * panel fades, and until then a block that enters waits to open and a row that opens keeps its closed form, drawn
- * selected, the person's own moves included. That row opens a draw before the hold ends, since its first draw only
- * measures its open form, so the two rows start together. A row whose close is turned back drops its hold and opens at
- * once. The person's own moves do not wait for a leave. In a draw that follows their input (`isInput`), a row the
- * selection opens waits only for the panel of the row it closes to fade, and a field a press brings in shows at once.
- * The opened row's panel still fades in once its space is nearly open. When their input opens a row, a row whose close
- * a publish began lets go of its height, so both move together. A block that leaves in the draw a press's field enters,
- * or comes back as it leaves, is what the field replaces: it hides at once and shuts without holding anything.
- * `isFirst` forgets the tracks and draws every block at rest, as a newly shown tab does. `sizes` gives the sizes the
- * look measured, by key. `nextAt` is when a move ends, a box opens or shuts, or a box's glide
- * comes to rest, so the look draws again then.
+ * together, as the leaving block's space starts to close. A Status line whose place in the tree changes keeps its last
+ * form during the hold, so its connectors move once the leaving lines fade. A closing row whose panel shows keeps its
+ * height while the panel fades, and until then a block that enters waits to open and a row that opens keeps its closed
+ * form, drawn selected, the person's own moves included. That row opens a draw before the hold ends, since its first
+ * draw only measures its open form, so the two rows start together. A row whose close is turned back drops its hold and
+ * opens at once. The person's own moves do not wait for a leave. In a draw that follows their input (`isInput`), a
+ * block a read changed in the same frame (`fetched`) still moves as a publish does. A row the selection opens waits
+ * only for the panel of the row it closes to fade, and a field a press brings in shows at once. The opened row's panel
+ * still fades in once its space is nearly open. When their input opens a row, a row whose close a publish began lets go
+ * of its height, so both move together. A block that leaves in the draw a press's field enters, or comes back as it
+ * leaves, is what the field replaces: it hides at once and shuts without holding anything. `isFirst` forgets the tracks
+ * and draws every block at rest, as a newly shown tab does. `sizes` gives the sizes the look measured, by key. `nextAt`
+ * is when a move ends, a box opens or shuts, or a box's glide comes to rest, so the look draws again then.
  */
 export function moveRows(
   blocks: Block[],
@@ -115,8 +127,10 @@ export function moveRows(
   isFirst: boolean,
   isInput = false,
   sizes: Sizes = NO_SIZES,
+  fetched: ReadonlySet<string> = NO_IDS,
 ): { blocks: Block[]; tracks: Tracks; motion: ReadonlyMap<string, RowMotion>; nextAt: number | null } {
   const heightOf = (key: string) => sizes.get(key)
+  const isInputTo = (id: string) => isInput && !fetched.has(id)
   const was = isFirst ? NO_TRACKS : last
   const wasDrawn = new Set(was.order)
   const moved = movedOf(blocks, was)
@@ -192,11 +206,12 @@ export function moveRows(
       isFieldPressed,
       heightOf(block.id),
     )
-    const isReleased = isInput && opensRow && track.state === 'closing'
-    const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased
+    const isReleased = isInputTo(block.id) && opensRow && track.state === 'closing'
+    const isInputMove = isStart ? isInputTo(block.id) : (last?.isInputMove ?? false) || isReleased
     const status = stepPrStatus(last?.status ?? null, block, now, isFirst)
-    const prTail = block.kind === 'pr' ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInput) : null
-    const warning = stepWarning(last?.warning ?? null, last?.block, block, now, isFirst, isInput)
+    const prTail =
+      block.kind === 'pr' ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInputTo(block.id)) : null
+    const warning = stepWarning(last?.warning ?? null, last?.block, block, now, isFirst, isInputTo(block.id))
     const isTurnedBack = isStart && track.state === 'opening' && last?.track.state === 'closing' && last.opened !== null
     const panelHeight = heightOf(panelId(block.id))
     const lastSteps = last?.panelSteps ?? null
@@ -233,7 +248,7 @@ export function moveRows(
     const leftOut = isPanelLeftOut ? (panelHeight ?? 0) : 0
     const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now)
     const under = pushUnder(
-      stepUnder(last?.under ?? null, block, now, isInput, heightOf(underId(block.id))),
+      stepUnder(last?.under ?? null, block, now, isInputTo(block.id), heightOf(underId(block.id))),
       underPushMs(last, block, restSpace),
       now,
     )
@@ -255,6 +270,7 @@ export function moveRows(
             Math.max(0, heldUntil - now),
           )
         : null
+    const countLeft = stepCountLeft(last?.countLeft ?? null, last?.block, block, now)
     rows.set(block.id, {
       track,
       block,
@@ -274,6 +290,7 @@ export function moveRows(
       restSpace,
       fieldWait,
       blockSwap: blockSwaps.get(block.id) ?? null,
+      countLeft,
     })
     motion.set(block.id, {
       state: track.state,
@@ -299,6 +316,7 @@ export function moveRows(
       blockSwap: blockSwapMotion(blockSwaps.get(block.id) ?? null, now, heightOf(block.id)),
       swap: swapMotion(waited, now),
       field: fieldOpening(fieldWait, now),
+      countLeft,
     })
   }
   for (const b of blocks) {
@@ -309,19 +327,21 @@ export function moveRows(
     const isBoxAtRest = old !== undefined && (old.glide === null || now >= old.glide.endsAt)
     const blockSwap = isFirst
       ? null
-      : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, isInput, heightOf(b.id))
+      : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, isInputTo(b.id), heightOf(b.id))
     if (blockSwap) blockSwaps.set(b.id, blockSwap)
     const given = swapDrawn(blockSwap, b)
     const opens = old !== undefined && targetOf(b) === 'open' && targetOf(old.block) !== 'open'
-    const waitsForLeave = opens && !isInput && isHolding
+    const waitsForLeave = opens && !isInputTo(b.id) && isHolding
     const isTurningBack = old?.track.state === 'closing' && old.swap?.inAt !== null
     const waitsForClose = opens && old.block.kind === 'row' && opensAfterClose > now && !isTurningBack
-    const drawn = waitsForLeave
-      ? old.block
-      : waitsForClose
-        ? { ...old.block, isSelected: true, isCollapsed: true as const }
-        : given
-    if (waitsForLeave || waitsForClose || given !== b) waiting.set(b.id, drawn)
+    const waitsToReshape = old !== undefined && isHolding && isReshaped(old.block, b)
+    const drawn =
+      waitsForLeave || waitsToReshape
+        ? old.block
+        : waitsForClose
+          ? { ...old.block, isSelected: true, isCollapsed: true as const }
+          : given
+    if (waitsForLeave || waitsToReshape || waitsForClose || given !== b) waiting.set(b.id, drawn)
     const track = stepRow(old?.track, targetOf(drawn), now, isMoved || (!isFirst && !wasDrawn.has(b.id)))
     if (track) add(drawn, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : (old?.springId ?? null))
   }
@@ -358,6 +378,7 @@ export function moveRows(
       ...swapTimes(t.swap),
       ...fieldTimes(t.fieldWait),
       ...blockSwapTimes(t.blockSwap),
+      ...countLeftTimes(t.countLeft),
       holdsUntil,
       closeHoldsUntil,
       opensAfterClose,

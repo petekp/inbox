@@ -24,7 +24,6 @@ import { publishedSessionPath } from '../../core/remote/herdr'
 import type { SessionView } from '../../core/view/session-view'
 import type { ShownTab } from '../../core/view/tabs'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
-import { collapsedOf } from '../../core/view/ui-controller-selection'
 import { closed, newRowsOf, opened } from '../../core/view/ui-controller-tabs'
 import { freshUi } from '../../core/view/ui-controller-types'
 import type { UiCommand, UiEvent, UiState } from '../../core/view/ui-controller-types'
@@ -41,7 +40,6 @@ import {
   isAnswerDraw,
   isLookMove,
   keptLeft,
-  lookUiOf,
   pressSending,
   titleClickEvents,
 } from './controller'
@@ -74,7 +72,7 @@ import type { Paint, Theme } from './paint-theme'
 import { PressQueue } from './press-queue'
 import { herdrIo } from './io'
 import { runHere } from './run-here'
-import { screenOf } from './screen'
+import { FetchedReads, screenAt } from './fetched'
 import { ViewCache } from './view-cache'
 import { LookReports } from './look-reports'
 import { LIST_INPUT_STEP_MS, isPaneShown, ownPaneId } from './status-look'
@@ -128,6 +126,7 @@ export default class Inbox extends View {
   focus: FocusHandle | null = null
   /** When the person last pressed a key or clicked in the look, which lets the rows it moves grow at once. */
   movedAt = 0
+  fetched = new FetchedReads()
   /** The next read for the presses still out, the next draw for a move, and the controller's next wake. */
   outTimer: Timer | null = null
   drawTimer: Timer | null = null
@@ -157,9 +156,10 @@ export default class Inbox extends View {
     const now = Date.now()
     const view = this.viewAt(now)
     if (view === null) return
+    const isMove = events.some(isLookMove)
+    if (isMove && this.movedAt <= this.tracks.drawnAt) this.fetched.note(this, this.readSession, this.ui, now)
     const applied = applyEvents(this.ui, view, events, now)
     this.ui = applied.ui
-    const isMove = events.some(isLookMove)
     if (isMove) this.movedAt = now
     this.syncInput(isMove)
     for (const c of applied.commands) this.run(c, from, cx)
@@ -237,6 +237,7 @@ export default class Inbox extends View {
       const read = await readSessionFile(readTextFile, publishedSessionPath(appHome(), sessionId), ms => cx.sleep(ms))
       if (this.sessionId !== sessionId) return
       this.read = read
+      if (this.movedAt > this.tracks.drawnAt) this.fetched.note(this, this.readSession, this.ui, Date.now())
       if (read.is !== 'read') return void cx.notify()
       if (!this.isOpened) this.ui = opened(this.ui, this.shownAt)
       this.isOpened = true
@@ -353,15 +354,7 @@ export default class Inbox extends View {
     const now = Date.now()
     const ui = this.ui
     const raw = this.viewAt(now)
-    const presses = {
-      now,
-      view: raw,
-      shownSince: ui.shownSince,
-      collapsed: (view: SessionView) => collapsedOf(ui, view),
-      queue: this.queue,
-    }
-    const lookUi = lookUiOf(ui, raw && { ...raw, collapsed: collapsedOf(ui, raw) })
-    const screen = screenOf(this.followed, this.read, lookUi, presses)
+    const screen = screenAt(this, this.read, ui, raw, now)
     this.drawTimer?.cancel()
     this.drawTimer = null
     const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`
@@ -420,7 +413,8 @@ export default class Inbox extends View {
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt
     const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove
     const held = holdLinesAbove(shown, lastAbove, now, isForming, isInput)
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
+    const fetched = this.fetched.drew(this.readSession, isAnswer, now)
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights, fetched)
     this.linesAbove = heldAsDrawn(held, lastAbove, moved)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf

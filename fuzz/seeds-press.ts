@@ -54,7 +54,7 @@ export const PRESS_SEEDS: {
     rule: 'connector-gap',
     detail: 'in fit m2',
     issue: 1007,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([]), [
         { is: 'click', on: 'tab', n: 4, label: 'overview' },
@@ -134,7 +134,7 @@ export const PRESS_SEEDS: {
     rule: 'cut',
     detail: '"Undo" shows',
     issue: 1010,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([], ['acme/visor#31', 'acme/visor#29']), [
         { is: 'click', on: 'tab', n: 3, label: 'prs' },
@@ -150,7 +150,7 @@ export const PRESS_SEEDS: {
     rule: 'vanish',
     detail: '" · 1" in group question',
     issue: 1017,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(emptySession(), [
         { is: 'record', args: { kind: 'question', ask: 'Ship the beta?', options: ['Ship it', 'No'] } },
@@ -203,6 +203,46 @@ export const PRESS_SEEDS: {
         { is: 'click', on: 'button', n: 2, label: 'Reply' },
         { is: 'key', key: 'b' },
         { is: 'click', on: 'button', n: 6, label: 'Send' },
+      ]),
+      takeAfterMs: 2000,
+    },
+  },
+  {
+    name: 'Dismiss on a PR, as the host answers the press',
+    rule: 'cut',
+    detail: '"Undo" shows',
+    issue: 1022,
+    isOpen: true,
+    case: herdr(demo, [
+      { is: 'click', on: 'tab', n: 3, label: 'prs' },
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'button', n: 0, label: 'Dismiss' },
+      { is: 'wait', ms: 1500 },
+    ]),
+  },
+  {
+    name: 'Remove on the Status goal, as its lines change place',
+    rule: 'connector-gap',
+    detail: '~to ',
+    issue: 1007,
+    isOpen: true,
+    case: herdr(demo, [
+      { is: 'key', key: 'left' },
+      { is: 'click', on: 'button', n: 7, label: 'Remove' },
+    ]),
+  },
+  {
+    name: 'Escape on an open Reply field',
+    rule: 'jump',
+    detail: 'the highlight of row ',
+    issue: 1024,
+    isOpen: true,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'finding', finding_kind: '', title: 'R', detail: 'D' } },
+        { is: 'click', on: 'button', n: 2, label: 'Reply' },
+        { is: 'wait', ms: 600 },
+        { is: 'key', key: 'escape' },
       ]),
       takeAfterMs: 2000,
     },

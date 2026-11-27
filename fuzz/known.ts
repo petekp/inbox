@@ -36,10 +36,10 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
     issue: 1007,
     look: 'herdr',
     rule: 'connector-gap',
-    details: ['in fit m', 'in space m', 'in space s', 'in space c'],
+    details: ['~to ', 'in space s', 'in fit m', 'in space m', 'in fit c', 'in space c'],
   },
-  { issue: 1010, look: 'herdr', rule: 'cut', details: [['"Undo"', 'in its box panel pr:']] },
-  { issue: 1017, look: 'herdr', rule: 'vanish', details: [['the line " · ', 'in group ']] },
+  { issue: 1022, look: 'herdr', rule: 'cut', details: [['"Undo"', 'in its box panel pr:']] },
+  { issue: 1024, look: 'herdr', rule: 'jump', details: ['the highlight of row '] },
   { issue: 1018, look: 'herdr', rule: 'press-shows', details: [['in its own draw', '"✓ Opened ']] },
   {
     issue: 1019,
