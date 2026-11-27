@@ -17,6 +17,12 @@ import { fade, fadeShown, glide, glides, isFadingOut, isRunning, springOf, stopF
  */
 export const LINE = '.line'
 
+/**
+ * A row's own line, and not the lines of the rows inside it, as in a PR block, nor the line of the form a row leaves,
+ * drawn over the form it takes.
+ */
+const OWN_LINE = ':scope > .row > .content > .line'
+
 const fullOf = (line: HTMLElement) => line.querySelector<HTMLElement>(':scope > .text:not(.short)')
 
 /**
@@ -55,7 +61,7 @@ function swapTitle(
  * `held`. A line already at the open title's height shows the open form at once.
  */
 export function openTitle(el: HTMLElement, delay: number, held: SpringState | null) {
-  const line = el.querySelector<HTMLElement>(LINE)
+  const line = el.querySelector<HTMLElement>(OWN_LINE)
   const title = line && titleOf(line)
   if (!line || !title) return
   glides.get(line)?.anim.cancel()
@@ -145,7 +151,7 @@ export function showGrownAfters(line: HTMLElement, growths: Growth[]) {
  * opens, it returns where the line was, so `openTitle` moves on from there. Null when the row holds no line, or the line was at rest.
  */
 export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | null {
-  const line = el.querySelector<HTMLElement>(LINE)
+  const line = el.querySelector<HTMLElement>(OWN_LINE)
   const full = line && fullOf(line)
   if (full && !isOpening) for (const el of [full, ...aftersOf(line)]) stopFadeOut(el)
   const was = line && glides.get(line)
@@ -155,9 +161,6 @@ export function releaseLine(el: HTMLElement, isOpening: boolean): SpringState | 
 
   return isOpening ? held : null
 }
-
-/** A row's own line, and not the lines of the rows inside it, as in a PR block. */
-const OWN_LINE = ':scope > .row > .content > .line'
 
 /**
  * The status a row's line shows after its title: of those it draws for its open and closed forms, the one shown, and
