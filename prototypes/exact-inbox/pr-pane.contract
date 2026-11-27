@@ -36,6 +36,8 @@ component PrPane
             box height=1 margin="6px 0 12px 0" background-color="surface.soft"
           if isPrRow(v.row)
             button press=onFold(v.row.id, v.row.collapse) appearance="none" background-color="transparent" border-width=0 display="flex" width="100%" min-height=(compact ? 24 : 36) padding=0 text-align="left" align-items="start" aria-expanded=(selected == v.row.id) testId=`pr-select-${v.row.id}`
+              :hover
+                background-color="transparent"
               row gap=8 align-items="start" width="100%"
                 column width=16 padding-top=6 align-items="center"
                   if v.row.mark != "" or v.row.running

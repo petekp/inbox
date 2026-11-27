@@ -27,6 +27,8 @@ component StatusPane
                 if ai > 0
                   text "·" font-size=(compact ? 13 : 14) color="ink.faint"
                 button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=0 background-color="transparent" padding="2px 4px" border-radius=5 box-sizing="border-box" opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
+                  :hover
+                    background-color="transparent"
                   :active
                     background-color="surface.soft"
                   text a.label color="ink.muted" font-size=(compact ? 13 : 14)

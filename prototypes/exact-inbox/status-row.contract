@@ -45,6 +45,8 @@ component StatusRowView
           match first(foldActions)
             case some(fa)
               button press=onAction(fa) disabled=(fa.disabled or pending) appearance="none" border-width=0 background-color="transparent" padding="0 4px" margin-left=-4 border-radius=5
+                :hover
+                  background-color="transparent"
                 :active
                   background-color="surface.soft"
                 row gap=4 align-items="center"
@@ -81,6 +83,8 @@ component StatusRowView
               match first(foldActions)
                 case some(fa)
                   button press=onAction(fa) disabled=(fa.disabled or pending) appearance="none" border-width=0 background-color="transparent" padding="0 4px" margin-left=-4 border-radius=5 text-align="left"
+                    :hover
+                      background-color="transparent"
                     :active
                       background-color="surface.soft"
                     row gap=4 align-items="center" flex-wrap="wrap"

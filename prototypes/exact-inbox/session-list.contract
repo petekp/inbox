@@ -28,6 +28,8 @@ component SessionList
           ErrorBanner(text=error, testId="")
         for s in entries key=s.id
           button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` appearance="none" width="100%" box-sizing="border-box" border-width=0 border-radius=8 padding=(rail ? "8px 10px" : "10px 12px") text-align="left" background-color=(selected == s.id ? "surface.selected" : "transparent")
+            :hover
+              opacity=1
             :active
               background-color="surface.soft"
             row align-items="center" gap=8 width="100%"

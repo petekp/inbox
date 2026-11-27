@@ -85,6 +85,8 @@ component InboxRows
             for r in g.rows key=r.id
               column id=`${prefix}-row-${r.id}` gap=0 padding=(r.target == "gone" ? "0px" : "6px 16px") background-color=(r.target == "open" or r.phase == "closing" ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(r.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(r.target == "gone") aria-hidden=(r.target == "gone") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "gone" ? 0 : 1) translate=rowSlide(r.target == "gone") animation=rowEntry(reduced, r.arriving) testId=`row-${r.row.id}`
                 button press=onToggle(r.row.id, r.row.collapse) appearance="none" background-color="transparent" border-width=0 padding=0 width="100%" text-align="left" aria-expanded=(selected == r.row.id) color="ink.primary" testId=`select-${r.row.id}` min-height=(compact ? 24 : 36)
+                  :hover
+                    background-color="transparent"
                   row gap=8 align-items="start" width="100%"
                     column width=16 padding-top=6 align-items="center"
                       if r.row.mark != "" or r.row.running
@@ -131,6 +133,8 @@ component InboxRows
               text g.empty -exact-layout-transition=rowLayout(reduced) padding="6px 16px 6px 40px" color="ink.muted"
             if g.closedLabel != ""
               button -exact-layout-transition=rowLayout(reduced) press=onFold(g.id) appearance="none" background-color="transparent" border-width=0 padding="2px 4px" margin="4px 16px 0 36px" border-radius=5 text-align="left" min-height=(compact ? 24 : 36) aria-expanded=folds.includes(g.id) testId=`closed-fold-${g.id}`
+                :hover
+                  background-color="transparent"
                 :active
                   background-color="surface.soft"
                 row gap=4 align-items="center"
@@ -150,6 +154,8 @@ component InboxRows
                       row gap=8 padding-top=2
                         for a in r.actions key=a.key
                           button press=onChoose(a.key, a.input, r.id, r.title.map(s => s.text).join("")) disabled=(a.disabled or disconnected or pending or (r.id == submittedRow and isSendingRow)) appearance="none" border-width=0 background-color="transparent" padding="2px 5px" margin-left=-5 border-radius=5 opacity=(a.disabled or disconnected or pending ? 0.4 : 1) testId=`action-${a.key}` min-height=(compact ? 24 : 32) box-sizing="border-box"
+                            :hover
+                              background-color="transparent"
                             :active
                               background-color="surface.soft"
                             text a.label color="ink.muted"
@@ -157,6 +163,8 @@ component InboxRows
                     text r.age font-size=12 color="ink.faint" font-variant-numeric="tabular-nums" white-space="nowrap" padding-left=8
               if not earlier.includes(g.id) and g.earlierLabel != ""
                 button press=onEarlier(g.id) appearance="none" border-width=0 background-color="transparent" padding="6px 16px 6px 64px" text-align="left" testId=`earlier-${g.id}`
+                  :hover
+                    background-color="transparent"
                   :active
                     background-color="surface.soft"
                   text g.earlierLabel color="ink.muted"
