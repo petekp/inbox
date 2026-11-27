@@ -52,7 +52,7 @@ export function openRowIds(v: InboxView): Record<ListedTab, string[]> {
   return { needsYou: open([...v.needsYou.questions, ...v.needsYou.tasks]), findings: open(v.findings.rows) }
 }
 
-/** The tab's Closed folds, for `isTabEmpty`. */
+/** The tab's Closed folds, for `isEmptyForFollowing`. */
 export function closedGroups(
   v: InboxView,
   tab: ListedTab,
@@ -78,7 +78,12 @@ export function isRowTabRunning(v: InboxView, tab: ListedTab, isUnfolded: (kind:
   return rows.some(r => rowResultMark(r)?.isRunning) || closed.some(d => d.mark.isRunning)
 }
 
-export function isTabEmpty({
+/**
+ * Whether a row tab counts as empty for following: it has no blocker, no row that is not settled or still draws
+ * settled in place, and no Closed line shown in an unfolded fold. A tab whose only content is a shut Closed fold
+ * counts as empty, so a look follows the person to another tab that has rows, though it still draws the fold.
+ */
+export function isEmptyForFollowing({
   rows,
   settled,
   closed,

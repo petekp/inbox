@@ -3,7 +3,6 @@ import type { FoldKind, PressKind } from '../../types'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import type { PrAction } from '../../core/view/pr-press'
 import {
-  closedLinePlan,
   closedTitleTone,
   settledTone,
   closedShown,
@@ -29,7 +28,8 @@ import { groupEmptyText } from '../../core/view/banners'
 import { rowKeyPlan } from '../../core/view/action-plan'
 import type { AnswerRow } from '../../core/view/action-plan'
 import type { BannerView } from '../../core/view/banners'
-import type { ClosedDelivery, RowView, ResultMark } from '../../core/view/rows'
+import type { RowView, ResultMark } from '../../core/view/rows'
+import type { ClosedLineView } from '../../core/view/closed-line'
 import type { Feedback } from '../../core/view/feedback'
 import type { StatusKeyTarget } from '../../core/view/status-keys'
 import type { StatusRow } from '../../core/view/status-page'
@@ -278,17 +278,6 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
   }
 }
 
-type ClosedLine = {
-  id: string
-  how: Parameters<typeof closedLinePlan>[0]['how']
-  canRestore?: boolean
-  title: string
-  at: number
-  outcomeLabel: string
-  delivery: ClosedDelivery
-  mark: ResultMark
-}
-
 /** `isRowLed`: the group's rows draw a lead before their titles, as asks do and findings do not. */
 export type Group = {
   kind: FoldKind
@@ -296,7 +285,7 @@ export type Group = {
   mark?: Lead
   isRowLed: boolean
   rows: RowView[]
-  closed: ClosedLine[]
+  closed: ClosedLineView[]
 }
 
 const settledIn = (g: Group) => new Set(g.rows.filter(r => r.state.is === 'settled').map(r => r.id))
@@ -305,8 +294,8 @@ export const isGroupEmpty = (g: Group) => g.rows.length === 0 && closedTotal(g.c
 const closedId = (id: string) => `closed ${id}`
 const foldId = (kind: FoldKind) => `fold ${kind}`
 
-function closedLines(d: ClosedLine): Line {
-  const action = closedLinePlan(d).action
+function closedLines(d: ClosedLineView): Line {
+  const { action } = d
   const buttons: Button[] = action
     ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }]
     : []
@@ -319,7 +308,7 @@ function closedLines(d: ClosedLine): Line {
     title: d.title,
     isDim: true,
     age: d.at,
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null, source: null },
+    feedback: { text: d.outcome, tone: null, source: null },
     buttons,
     isStatic: buttons.length === 0,
     isWaiting: false,

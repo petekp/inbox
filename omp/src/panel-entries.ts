@@ -43,6 +43,7 @@ import { PAGE_TEXT_AT } from './panel-page'
 import { collapsedIn } from './panel-text'
 import { unfoldedRows } from '../../core/view/status-folds'
 import type { ShownTab } from '../../core/view/tabs'
+import { closedLineView } from '../../core/view/closed-line'
 import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../core/remote/herdr-ask'
 import {
   AGENT,
@@ -147,7 +148,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
           mark: { text: g.mark.mark, tone: g.mark.tone },
           isRowLed: true,
           rows: view.needsYou[g.list].filter(r => isDrawnInPlace(r, ui.shownSince)),
-          closed: view.needsYou.closed[g.list].map(d => ({ ...d, title: d.ask })),
+          closed: view.needsYou.closed[g.list].map(d => closedLineView(d)),
         }))
       : (Object.keys(FINDING_GROUPS) as (keyof typeof FINDING_GROUPS)[]).map(kind => ({
           kind,
@@ -155,7 +156,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
           mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
           isRowLed: false,
           rows: view.findings.rows.filter(r => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
-          closed: view.findings.closed.filter(f => f.kind === kind).map(f => ({ ...f, at: f.closedAt })),
+          closed: view.findings.closed.filter(f => f.kind === kind).map(f => closedLineView(f)),
         }))
   const stops = tab === 'needsYou' ? [...herdrAskEntries(screen), ...stopEntries(screen, ui)] : []
   const empty = emptyTab(view, {

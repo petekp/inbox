@@ -14,7 +14,6 @@ import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../core/view/help'
 import { LEGACY_REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import {
   ROW_COPY,
-  closedLinePlan,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -30,6 +29,7 @@ import {
   waitingCount,
 } from '../../core/view/rows'
 import type { RowView } from '../../core/view/rows'
+import { closedLineView } from '../../core/view/closed-line'
 import type { SessionView } from '../../core/view/session-view'
 import type { Effect } from '../../core/view/press-reducer'
 import { stepEffects } from '../../core/domain/help-steps'
@@ -291,9 +291,7 @@ export function projectRowGroups(
     const drawn = new Set(rows.filter(row => row.state.is === 'settled').map(row => row.id))
     const total = closedTotal(closed, drawn)
     const closedRows = closedShown(closed, drawn, true).map(d => {
-      const action = closedLinePlan(d).action
-      const title = 'ask' in d ? d.ask : d.title
-      const at = 'closedAt' in d ? d.closedAt : d.at
+      const { action, title, at, outcome, mark } = closedLineView(d)
       const actions: Button[] = []
       if (action) {
         const target: Target = {
@@ -326,10 +324,10 @@ export function projectRowGroups(
         id: d.id,
         version: versions.get(d.id) ?? '',
         title: inlineParts(title),
-        outcome: settledLabel(d.outcomeLabel, d.delivery),
-        mark: d.mark.text,
-        tone: d.mark.tone ?? '',
-        color: toneColor(d.mark.tone),
+        outcome,
+        mark: mark.text,
+        tone: mark.tone ?? '',
+        color: toneColor(mark.tone),
         age: shortAgo(now - at),
         actions,
       }

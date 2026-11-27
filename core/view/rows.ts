@@ -128,24 +128,6 @@ export function resumeLabel(isSending: boolean): string {
   return isSending ? 'Resuming…' : 'Resume'
 }
 
-/**
- * A Closed line's buttons. Its press is Undo after its notification was refused, else Reopen on a row the person
- * dismissed, which stays reachable for the rest of the session. Reopening loses nothing, since a dismissal sent nothing.
- * A look that passes `canShowSession` draws `sessionKey` before the press, as `sessionKeyOf` gives it.
- */
-export function closedLinePlan(
-  d: { id: string; how: Closed['how']; canRestore?: boolean; delivery: ClosedDelivery },
-  canShowSession = false,
-): { action: { label: string; press: RowPress } | null; sessionKey: SessionKey | null } {
-  const sessionKey = sessionKeyOf(refusalOf(d.delivery), canShowSession)
-  if (d.canRestore === false) return { action: null, sessionKey }
-  if (canUndoRefused(d.delivery))
-    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: 'undo' } }, sessionKey }
-  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: 'undo' as const } }
-
-  return { action: d.how === 'dismissed' ? reopen : null, sessionKey }
-}
-
 export type ActionView = {
   press: RowPress
   label: string
