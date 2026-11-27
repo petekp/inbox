@@ -19,7 +19,8 @@ import {
   window as herdrWindow,
   writeTextFile,
 } from 'herdr'
-import { publishedSessionPath, publishedSessionsFolder } from '../../core/remote/herdr'
+import * as herdr from 'herdr'
+import { publishedSessionPath } from '../../core/remote/herdr'
 import type { SessionView } from '../../core/view/session-view'
 import type { ShownTab } from '../../core/view/tabs'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
@@ -44,7 +45,7 @@ import {
 } from './controller'
 import type { LastDraw, LeftSession } from './controller'
 import type { TabCell } from './draw'
-import { isSessionChange, readSessionFile } from './files'
+import { readSessionFile } from './files'
 import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
@@ -73,10 +74,17 @@ import { runHere } from './run-here'
 import { screenOf } from './screen'
 import { ViewCache } from './view-cache'
 import { LookReports } from './look-reports'
-import { AGE_TICK_MS, LIST_INPUT_STEP_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, ownPaneId } from './status-look'
+import { LIST_INPUT_STEP_MS, isPaneShown, ownPaneId } from './status-look'
+import { startBackground } from './background'
 import { statusDrawn } from './status-look'
 
 const { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home })
+
+/**
+ * Whether `herdr-app check` is loading the mod. Herdr apps before `checking()` have no such export, and a mod that
+ * names a missing export in an import fails to load, so this reads it from the module.
+ */
+const isChecking = (): boolean => (herdr as { checking?: () => boolean }).checking?.() ?? false
 
 type Timer = { cancel(): void }
 
@@ -126,19 +134,7 @@ export default class Inbox extends View {
 
   init(_props: unknown, cx: Context): void {
     this.focus = cx.focus_handle()
-    cx.spawn(async cx => {
-      for (;;) {
-        const changed = await watchFolder(publishedSessionsFolder(appHome())).catch(() => null)
-        if (changed === null) await cx.sleep(REREAD_MS)
-        else if (this.sessionId && isSessionChange(changed, appHome(), this.sessionId)) this.load(this.sessionId, cx)
-      }
-    })
-    cx.timer.every(REREAD_MS, cx => this.sessionId && this.load(this.sessionId, cx))
-    cx.timer.every(AGE_TICK_MS, cx => {
-      this.viewCache.prepare(cx, true)
-      cx.notify()
-    })
-    cx.timer.every(LOOK_TICK_MS, cx => cx.spawn(() => this.checkLook()))
+    startBackground(this, { isChecking, appHome, watchFolder }, cx)
   }
 
   get readSession(): Read | null {
