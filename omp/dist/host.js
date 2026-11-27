@@ -6915,6 +6915,10 @@ function readFirstEffect(pr) {
   return { kind: "refresh-prs", name: `PR #${pr.number}` };
 }
 function prPressEffect(pr, p) {
+  if (p.action === "pr-refresh")
+    return PR_REFRESH;
+  if (!pr)
+    return null;
   if (isPrReadFirstPress(p))
     return readFirstEffect(pr);
   switch (p.action) {
@@ -10487,6 +10491,7 @@ var isUiWorthKeeping = (ui) => Object.values(ui.drafts).some((d) => d.text.trim(
 
 // ../core/view/unshown-press.ts
 var SENDING = "Sending\u2026";
+var sendingFeedback = (at) => ({ is: "sending", label: SENDING, at, sentAt: at });
 function unshownPressOut(pressesOut, view, id) {
   const out = Object.values(pressesOut).filter((p) => p.rowId === id && !p.isReply).pop();
   if (!out || lastActionKey(view, id) !== out.lastBefore)
@@ -10498,7 +10503,7 @@ function unshownPressFeedback(kind, effects, at) {
     return null;
   if (effects.some((e) => e.kind !== "send"))
     return { is: "local", result: pendingResult([...effects], at) };
-  return { is: "sending", label: SENDING, at, sentAt: at };
+  return sendingFeedback(at);
 }
 
 // ../core/view/layout.ts
@@ -10885,10 +10890,8 @@ var isSentPress = (p) => p.action !== "resume" && p.action !== "herdr-ask" && p.
 function pressEffects(screen, line, press, kind) {
   if (!isPrPress(press))
     return kind === "local" && line.row ? localEffects(line.row, press) : [];
-  if (press.action === "pr-refresh")
-    return [PR_REFRESH];
   const pr = "ref" in press ? screen.view.prs.drawn.find((d) => d.pr.ref === press.ref)?.pr : undefined;
-  const effect = pr ? prPressEffect(pr, press) : null;
+  const effect = prPressEffect(pr ?? null, press);
   return effect ? [effect] : [];
 }
 function withUnshownPress(line, screen, ui) {
