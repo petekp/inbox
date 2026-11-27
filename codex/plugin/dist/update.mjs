@@ -830,7 +830,9 @@ function isGoalMet(o) {
 }
 function goalLeftFor(o, now) {
   const g = o.goal;
-  if (g === null || isGoalMet(o) || g.source !== "inferred" || heldSubjects(o).some(isOpen)) return null;
+  const isUnreadNewGoal = g !== null && g.isAwaitingMilestones && (o.lastCallReadAt ?? -Infinity) < g.setAt;
+  if (g === null || isUnreadNewGoal || isGoalMet(o) || g.source !== "inferred" || heldSubjects(o).some(isOpen))
+    return null;
   const left = now - lastProgressAt(o, g);
   return left >= GOAL_LEFT_MS ? left : null;
 }
