@@ -19,7 +19,7 @@ import type { RowTarget, RowTrack } from '../../core/view/row-motion'
 import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
 import type { Key, Row, Entry, Lists } from './tab-state'
 import { reducedMotion } from './tab-motion'
-import { dispatch, drawnTab, errorOf, isGuarded, openRowId, pressRow } from './tab-ui'
+import { dispatch, drawnTab, errorOf, isGuarded, isRowGuarded, openRowId, pressRow } from './tab-ui'
 import { isUndoing, outOn } from './tab-press'
 import { listsOf, pressTitle, shownSettled } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
@@ -308,7 +308,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const actionsPart = isTyping ? 'field' : 'buttons'
 
   return (
-    <div class={isClosing ? 'panel closing' : 'panel'} inert={isClosing}>
+    <div class={`panel${isClosing ? ' closing' : ''}${isRowGuarded(row.id) ? ' guarded' : ''}`} inert={isClosing}>
       {row.body ? (
         <div class="body" {...(row.bodyEnd ? {} : partAttrs('title', 'detail'))}>
           {row.body()}
