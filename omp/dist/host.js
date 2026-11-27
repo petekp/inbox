@@ -7647,8 +7647,8 @@ function tooLongText(input, limits, fields = Object.keys(limits)) {
 var K1 = 1.2;
 var B = 0.75;
 var RELATIVE_FLOOR = 0.22;
-var EARLIER_TEXT_CHARS = 200;
-var shortText = (text) => cutLine(text, (t) => t.length <= EARLIER_TEXT_CHARS);
+var EARLIER_TEXT_CHARS = RECORD_LIMITS.ask;
+var shortText = (text) => cutLine(text.trim(), (t) => t.length <= EARLIER_TEXT_CHARS);
 var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
 shall may might must not no yes now still also just again already instead yet any all some each per via up out over
@@ -7708,8 +7708,8 @@ function bestEarlier(index, question, skip) {
 function earlierOf(match, isShown) {
   const { doc } = match;
   return {
-    ask: doc.ask,
-    answer: doc.answer,
+    ask: shortText(doc.ask),
+    answer: shortText(doc.answer),
     at: doc.at,
     repo: doc.repo,
     score: Math.round(match.score * 1000) / 1000,
@@ -9375,7 +9375,7 @@ function questionHistory(previous, s, place, now) {
     how: c.how,
     isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
     earlier: c.item?.earlier ?? null,
-    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(shortText(c.outcome), shortText(c.item.earlier.answer)) : false
   }));
   const open = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
   const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));

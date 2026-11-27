@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T13:04:40.831Z. 424736 characters follow.
+// Built at 2026-11-27T13:52:05.870Z. 424949 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -3693,9 +3693,22 @@ function answersFitLine(widths, gap, room) {
   return widths.reduce((sum, w) => sum + w, 0) + gap * Math.max(0, widths.length - 1) <= room;
 }
 
+// ../core/domain/field-limits.ts
+var RECORD_LIMITS = {
+  ask: 200,
+  context: 200,
+  options: 60,
+  option_notes: 120,
+  why: 120,
+  steps: 4000,
+  title: 120,
+  detail: 600,
+  path: 300
+};
+
 // ../core/domain/earlier-answers.ts
-var EARLIER_TEXT_CHARS = 200;
-var shortText = (text) => cutLine(text, (t) => t.length <= EARLIER_TEXT_CHARS);
+var EARLIER_TEXT_CHARS = RECORD_LIMITS.ask;
+var shortText = (text) => cutLine(text.trim(), (t) => t.length <= EARLIER_TEXT_CHARS);
 var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
 shall may might must not no yes now still also just again already instead yet any all some each per via up out over
