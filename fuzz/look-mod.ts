@@ -4,7 +4,8 @@ import { $ } from 'bun'
 import type { ModCase } from './mod-case'
 import { recordArgs } from './gen'
 import { type Rng, rngOf } from './rng'
-import { MOD_SEEDS, knownIssueOf } from './seeds'
+import { knownIssueOf } from './known'
+import { MOD_SEEDS } from './seeds'
 import { without } from './shrink'
 
 type ModFailure = { rule: string; detail: string }

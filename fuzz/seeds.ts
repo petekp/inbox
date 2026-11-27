@@ -1,7 +1,6 @@
 import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
 import type { Case, Ev } from './case'
-import { CODEX_SEEDS } from './seeds-codex'
 import type { ModCase } from './mod-case'
 import { openIds } from './agent'
 import { START } from './gen'
@@ -21,6 +20,15 @@ const herdr = (session: Case['session'], events: Ev[]): Case => ({
 const omp = (events: Ev[]): Case => ({ ...herdr(emptySession(), events), look: 'omp' })
 
 const demo = demoSession(START, 'Claude')
+/** The demo session with only the items `ids` and the PRs `prs`, and no findings or closed items. */
+const only = (ids: string[], prs: string[] = []): Case['session'] => ({
+  ...demo,
+  ledger: { ...demo.ledger, items: demo.ledger.items.filter(i => ids.includes(i.id)), findings: [], closed: [] },
+  prViews: {
+    ...demo.prViews,
+    views: Object.fromEntries(Object.entries(demo.prViews.views).filter(([k]) => prs.includes(k))),
+  },
+})
 const ESC = String.fromCodePoint(0x1b)
 const BEL = String.fromCodePoint(7)
 const LONG_URL = `https://example.com/${'path/'.repeat(30)}`
@@ -526,6 +534,75 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       takeAfterMs: 200,
     },
   },
+  {
+    name: 'Explain on a task whose press the host queues',
+    rule: 'vanish',
+    detail: '"Explaining…" in d17',
+    issue: 995,
+    isOpen: false,
+    case: {
+      ...herdr({ ...demo, ledger: { ...demo.ledger, items: demo.ledger.items.filter(i => i.id === 'd17') } }, [
+        { is: 'wait', ms: 3751 },
+        { is: 'key', key: 'e' },
+      ]),
+      takeAfterMs: 200,
+    },
+  },
+  {
+    name: 'a status after the title whose press the host queues',
+    rule: 'vanish',
+    detail: 'the status "Explaining…" in d14',
+    issue: 997,
+    isOpen: true,
+    case: herdr(demo, [
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'row', n: 0, label: 'd14' },
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'button', n: 0, label: 'Explain' },
+      { is: 'wait', ms: 16 },
+      { is: 'key', key: 'z' },
+    ]),
+  },
+  {
+    name: 'a row the agent settles drops its age',
+    rule: 'vanish',
+    detail: 'the age "12m" in d13',
+    issue: 998,
+    isOpen: true,
+    case: herdr(demo, [
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'row', n: 0, label: 'd13' },
+      { is: 'wait', ms: 60 },
+      { is: 'close', n: openIds(demo).indexOf('d13'), answer: 'Yes' },
+    ]),
+  },
+  {
+    name: 'a fetch that finds a PR closed',
+    rule: 'vanish',
+    detail: 'the line "Open PR" in pr:acme/visor#33',
+    issue: 999,
+    isOpen: true,
+    case: herdr(only([], ['acme/visor#33']), [
+      { is: 'click', on: 'tab', n: 3, label: 'prs' },
+      { is: 'wait', ms: 25 },
+      { is: 'prs', n: 2, change: 'closed' },
+    ]),
+  },
+  {
+    name: 'a question answered while the Status tab shows',
+    rule: 'vanish',
+    detail: 'the button "View question" in s3',
+    issue: 1000,
+    isOpen: true,
+    case: {
+      ...herdr(only(['d11']), [
+        { is: 'click', on: 'button', n: 1, label: 'Flick' },
+        { is: 'click', on: 'tab', n: 0, label: 'overview' },
+        { is: 'wait', ms: 1500 },
+      ]),
+      takeAfterMs: 600,
+    },
+  },
 ]
 
 /** Fixed cases for the mod's terminal and desktop looks, run before each mod pass. */
@@ -549,71 +626,3 @@ export const MOD_SEEDS: { name: string; issue: number; isOpen: boolean; rule: st
     },
   },
 ]
-
-/**
- * Failures of generated cases that an open issue already describes, by look, rule and what the failure's detail holds:
- * one of `details`, where a list stands for a detail that holds every text in it, as a cut's text and its box. A run
- * that finds only these passes, so a fixed-seed run fails only on something new.
- */
-const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string; details: (string | string[])[] }[] = [
-  { issue: 811, look: 'herdr', rule: 'cut', details: ['"✓ Copied'] },
-  {
-    issue: 827,
-    look: 'herdr',
-    rule: 'cut',
-    details: [
-      ['"Send"', 'in its box panel '],
-      ['"Cancel"', 'in its box panel '],
-      ['"Discard"', 'in its box panel '],
-      ['"Sending…"', 'in its box status '],
-    ],
-  },
-  {
-    issue: 927,
-    look: 'herdr',
-    rule: 'cut',
-    details: [
-      ['"Reply"', 'in its box panel '],
-      ['"Explain"', 'in its box panel '],
-    ],
-  },
-  { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
-  { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
-]
-
-/** The open issue a failure is already filed as, or null when it is new. */
-export function knownIssueOf(f: { look: string; rule: string; detail: string }): number | null {
-  const open = new Set([...SEEDS, ...CODEX_SEEDS, ...MOD_SEEDS].filter(s => s.isOpen).map(s => s.issue))
-  const k = KNOWN.find(
-    k =>
-      open.has(k.issue) &&
-      k.look === f.look &&
-      k.rule === f.rule &&
-      k.details.some(d => (typeof d === 'string' ? [d] : d).every(part => f.detail.includes(part))),
-  )
-  return k?.issue ?? null
-}
-
-/**
- * A seed's failures, less those that an open issue other than the seed's own already describes, as when a seed's moves
- * also show a cut another issue tracks, and those issues.
- */
-export function ownFailures<F extends { rule: string; detail: string }>(
-  look: string,
-  issue: number,
-  failures: F[],
-): { own: F[]; others: number[] } {
-  const others = new Set<number>()
-  const own = failures.filter(f => {
-    const known = knownIssueOf({ look, rule: f.rule, detail: f.detail })
-    if (known === null || known === issue) return true
-    others.add(known)
-    return false
-  })
-
-  return { own, others: [...others] }
-}
-
-/** How a seed's verdict names the open issues its other failures belong to. */
-export const apartFrom = (others: number[]): string =>
-  others.length === 0 ? '' : `, apart from ${others.map(n => `#${n}`).join(', ')}`
