@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, readFile, unlink, realpath } from 'node:fs/promise
 import { join } from 'node:path'
 import { isSessionFile } from '../../core/view/session-files'
 import { pressFile } from '../../core/remote/herdr-press-file'
-import type { CompanionHandler, CompanionRequest, CompanionSession } from './companion-protocol'
+import type { CompanionHandler, CompanionRequest, CompanionSession } from '../../core/remote/companion-protocol'
 
 async function scope(dir: string): Promise<CompanionSession[]> {
   const path = join(dir, 'companion.json')

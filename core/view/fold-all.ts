@@ -58,7 +58,7 @@ const statusFoldsOf = (view: SessionView): Pick<TabFolds, 'statusFolds' | 'paren
 }
 
 /** The folds `tab` draws in `view`. A row that has settled draws no collapse, so it is left out. */
-function tabFolds(view: SessionView, tab: ShownTab): TabFolds {
+export function tabFolds(view: SessionView, tab: ShownTab): TabFolds {
   const none: TabFolds = { closed: [], statusFolds: [], parents: [], rows: [] }
   if (tab === 'overview') return { ...none, ...statusFoldsOf(view) }
   if (tab === 'prs') return { ...none, rows: prRowWaits(openPrViews(view.prs.drawn), view.lastActions).map(r => r.id) }
@@ -95,16 +95,17 @@ function isAnyFoldOpen(folds: TabFolds, state: FoldState): boolean {
  * What it takes to open every fold of the tab, or fold every one. The lists keep the folds of other tabs as they were,
  * and `collapses` holds only the rows and parents whose state changes.
  */
-function foldAll(folds: TabFolds, state: FoldState, isOpening: boolean): FoldAllChange {
+export function foldAll(folds: TabFolds, state: FoldState, isOpening: boolean | null): FoldAllChange {
+  const opening = isOpening ?? !isAnyFoldOpen(folds, state)
   const set = <T>(list: readonly T[], these: readonly T[]) =>
-    isOpening ? [...list, ...these.filter(t => !list.includes(t))] : list.filter(t => !these.includes(t))
+    opening ? [...list, ...these.filter(t => !list.includes(t))] : list.filter(t => !these.includes(t))
   const collapsible = [...folds.parents, ...folds.rows]
 
   return {
     unfolded: set(state.unfolded, folds.closed),
     statusUnfolded: set(state.statusUnfolded, folds.statusFolds),
     collapses: collapsible.flatMap(id =>
-      state.collapsed.includes(id) === isOpening ? [{ id, isCollapsed: !isOpening }] : [],
+      state.collapsed.includes(id) === opening ? [{ id, isCollapsed: !opening }] : [],
     ),
   }
 }
@@ -117,5 +118,5 @@ export function foldAllOn(view: SessionView, tab: ShownTab, open: OpenFolds, isO
   const folds = tabFolds(view, tab)
   const state = { ...open, collapsed: view.collapsed }
 
-  return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state))
+  return foldAll(folds, state, isOpening)
 }

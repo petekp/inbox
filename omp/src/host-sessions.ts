@@ -301,6 +301,7 @@ export function sessionCalls(context: HostContext) {
       newId: deps.newId,
       comparePage: deps.comparePage,
       compareInBackground: isCompareInBackground('omp'),
+      supportsResume: true,
     }
   }
 

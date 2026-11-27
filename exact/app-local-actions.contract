@@ -1,0 +1,101 @@
+use ClipboardItem from "@exact/clipboard"
+use Button, LocalEffect, LocalWork, LocalCopy, LocalFeedback from "./model.contract"
+
+members App
+  state localSequence = 0
+  state localSession = ""
+  state localRow = ""
+  state localVersion = ""
+  state localActive = false
+  state localReady = false
+  state localIndex = 0
+  state localEffects: LocalEffect[] = []
+  state localErrors: string[] = []
+  state localFeedbacks: LocalFeedback[] = []
+  mutation localWork as shape LocalWork queue then localPrepared
+  mutation localCopy as shape LocalCopy queue then localCopied
+  mutation localFormatted as shape LocalFeedback queue then localFinished
+  task localEffect when localActive and localReady key=`${localSequence}:${localIndex}`
+    after(1, runLocalEffect)
+  task localTimeout when localActive key=localSequence
+    after(15000, localTimedOut)
+
+  action startLocal(item: Button, session: string, row: string, version: string)
+    if not localActive
+      foldError = ""
+      let sequence = localSequence + 1
+      localSequence = sequence
+      localSession = session
+      localRow = row
+      localVersion = version
+      localIndex = 0
+      localEffects = []
+      localErrors = []
+      localActive = true
+      localReady = false
+      localFeedbacks = localFeedbacks.filter(f => f.session != session or f.row != row).concat([LocalFeedback(sequence=sequence, session=session, row=row, version=version, text=item.pendingText, pending=true, failed=false)])
+      send localWork = prepareLocal(sequence, session, item.key, row, version)
+  action localPrepared
+    match localWork
+      case some(work)
+        if localActive and work.sequence == localSequence
+          if work.ok
+            localEffects = work.effects
+            localReady = true
+          else
+            failLocal(work.error)
+      case none
+        if localActive
+          failLocal("Couldn’t prepare this action. Try again.")
+  action runLocalEffect
+    if localActive
+      localReady = false
+      if localIndex >= localEffects.length
+        send localFormatted = formatLocal(localSequence, localSession, localRow, localVersion, localEffects, localErrors, page.navigationType == "")
+      else
+        match localEffects.at(localIndex)
+          case some(effect)
+            if effect.kind == "copy"
+              send localCopy = copyLocal(localSequence, localIndex, effect.value)
+            else
+              openURL(effect.value, `local-open-${localSequence}-${localIndex}`)
+          case none
+            failLocal("This action is no longer available.")
+  action localCopied
+    match localCopy
+      case some(result)
+        if localActive and result.sequence == localSequence and result.index == localIndex
+          finishLocalPart(result.error)
+      case none
+        if localActive
+          finishLocalPart("Copy was not confirmed on this device.")
+  action localOpened(sequence: number, index: number, status: string)
+    if localActive and sequence == localSequence and index == localIndex
+      finishLocalPart(status != "opened" ? "The device could not open it." : "")
+  action finishLocalPart(error: string)
+    localErrors = localErrors.concat([error])
+    localIndex = localIndex + 1
+    localReady = true
+  action localFinished
+    match localFormatted
+      case some(result)
+        if localActive and result.sequence == localSequence
+          localFeedbacks = localFeedbacks.filter(f => f.session != result.session or f.row != result.row).concat([result])
+          localActive = false
+      case none
+        if localActive
+          failLocal("The action’s result could not be read.")
+  action failLocal(error: string)
+    localFeedbacks = localFeedbacks.filter(f => f.session != localSession or f.row != localRow).concat([LocalFeedback(sequence=localSequence, session=localSession, row=localRow, version=localVersion, text=error, pending=false, failed=true)])
+    localActive = false
+  action localTimedOut
+    if localActive
+      failLocal("The action was not confirmed. Try again.")
+
+component LocalOpenTarget
+  props
+    sequence: number
+    index: number
+    onOpened: action
+  view
+    text "" id=`local-open-${sequence}-${index}` change=onOpened(sequence, index) width=0 height=0 aria-hidden=true

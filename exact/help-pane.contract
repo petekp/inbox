@@ -1,0 +1,33 @@
+use HelpInfo from "./model.contract"
+use MarkGlyph from "./mark-glyph.contract"
+
+component HelpPane
+  props
+    info: HelpInfo
+    loading: bool
+    failed: bool
+    reduced: bool
+  view
+    column gap=0 padding="8px 16px 24px 16px"
+      if failed
+        text "Couldn’t load Help. Close it and try again." color="tone.error" padding="8px 0"
+      else if loading
+        row gap=8 align-items="center" padding="8px 0"
+          MarkGlyph(mark="●", color="ink.muted", running=true, reduced=reduced, size=8)
+          text "Loading Help…" color="ink.muted"
+      else
+        row gap=12 padding="4px 0 8px 24px" justify-content="space-between" align-items="baseline"
+          text info.keysHeading font-weight=600 color="ink.primary"
+          if info.version != ""
+            text info.version color="ink.muted" font-size=12 font-family="monospace"
+        for item in info.keys key=item.keys
+          row gap=12 padding="6px 0 6px 24px" align-items="start"
+            text item.keys font-weight=600 min-width=68 color="ink.primary"
+            text item.does flex=1 color="ink.muted"
+        box height=1 margin="12px 0 12px 24px" background-color="surface.soft"
+        text info.heading font-weight=600 color="ink.primary" padding="0 0 8px 24px"
+        for line in info.rows key=line.id
+          row appearance="none" gap=8 padding="6px 0" align-items="start"
+            column width=16 padding-top=(line.mark == "?" ? 2 : 5) align-items="center"
+              MarkGlyph(mark=line.mark, color=line.color, running=line.running, reduced=reduced, size=10)
+            text line.words flex=1 color="ink.primary"

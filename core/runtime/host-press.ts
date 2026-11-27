@@ -193,6 +193,7 @@ export type PressHost<S extends Session> = Pick<
   | 'comparePage'
   | 'compareInBackground'
   | 'settleWindowMs'
+  | 'supportsResume'
 >
 
 /** A read-first press's check of the PR: the row's last press before it, and when its "Refreshing" result began. */

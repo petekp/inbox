@@ -5,7 +5,7 @@ import { API, isFunction, nameOf, propertyOf, ts } from './ts.mjs'
 
 const OWNER = 'core/view/empty-tab.ts'
 const TITLES_HOME = 'core/view/banners.ts'
-const LOOK_DIRS = ['core', 'hooks', 'codex/src', 'omp/src', 'herdr/src']
+const LOOK_DIRS = ['core', 'hooks', 'codex/src', 'omp/src', 'herdr/src', 'exact/bridge']
 /** The empty texts, each with the source files besides the owner that may import it. Tests sit outside these folders. */
 const OWNED_TEXTS = { EMPTY_TITLES: [], EMPTY_STATUS_TEXT: [], prsEmptyHint: [] }
 const SHARED_TEXTS = {

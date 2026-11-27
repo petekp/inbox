@@ -1,0 +1,138 @@
+import type { LookTable } from './client-features'
+
+export const EXACT_IOS: LookTable = {
+  support: {
+    'codex-desktop-companion': { kind: 'full' },
+    'remote-typed-reply-admission': { kind: 'full' },
+    'remote-draft-retention': { kind: 'full' },
+    'catch-up': { kind: 'host' },
+    'failed-update-recovery': { kind: 'host' },
+    'ledger-behind-state': { kind: 'host' },
+    'dialog-outcome': { kind: 'host' },
+    'dialog-answer': { kind: 'host' },
+    'dialog-answer-closes-copy': { kind: 'host' },
+    'dialog-descriptions': { kind: 'host' },
+    'open-dialog-asks': {
+      kind: 'different',
+      reason:
+        'Shows a waiting notice when Asks is empty instead of projecting a live dialog row or remote approval button.',
+    },
+    'tool-output-urls': { kind: 'host' },
+    'pr-link-from-output': { kind: 'host' },
+    'pr-arrivals': { kind: 'full' },
+    'prs-empty-hint': { kind: 'full' },
+    'gh-signed-out-notice': { kind: 'full' },
+    'link-open-rule': {
+      kind: 'different',
+      reason:
+        'Opens only HTTPS URLs and bounded helper-served file/comparison snapshots via native openURL with delivery status.',
+    },
+    'fork-ledger': { kind: 'host' },
+    'band-and-stop-rows': {
+      kind: 'different',
+      reason:
+        'Draws no terminal prompt band since Exact iOS runs outside the session, and renders shared stop banners with Resume when advertised.',
+    },
+    'exchange-trigger': { kind: 'host' },
+    'settle-window': { kind: 'full' },
+    'fold-on-typed-message': { kind: 'full' },
+    'fold-waits-for-list-use': { kind: 'full' },
+    'version-label': { kind: 'full' },
+    'status-tab': { kind: 'full' },
+    'turn-working': { kind: 'host' },
+    'host-task-list': { kind: 'host' },
+    'hooks-need-trust': {
+      kind: 'unsupported',
+      reason:
+        'Published Herdr sessions carry no Codex hook-trust state; desktop companion hook warnings surface through the view error banner.',
+    },
+    'compare-in-background': { kind: 'host' },
+    'compare-page': { kind: 'host' },
+    'running-marks': { kind: 'full' },
+    'title-tint': {
+      kind: 'unsupported',
+      reason:
+        'Does not animate a timed new-row or settled-row title tint; new rows use an entry fade-and-slide and settled rows show their result mark and feedback.',
+    },
+    'pending-answer-mark': { kind: 'full' },
+    'tab-symbols': {
+      kind: 'different',
+      reason: 'Draws native tab bar icons alongside short tab labels instead of emoji symbols.',
+    },
+    'dim-pressed-button': { kind: 'full' },
+    'herdr-sidebar': { kind: 'host' },
+    'herdr-look': { kind: 'host' },
+    'herdr-open': { kind: 'host' },
+    'herdr-install': { kind: 'host' },
+    'status-children': { kind: 'host' },
+    'child-names': { kind: 'host' },
+    'status-failed-warning': { kind: 'full' },
+    'status-stale-line': { kind: 'full' },
+    'asks-holds-up-line': { kind: 'full' },
+    'asks-tree': { kind: 'full' },
+    'answers-side-by-side': {
+      kind: 'different',
+      reason:
+        'Stacks each answer option as its own branch under the question tree rather than placing short answers side by side.',
+    },
+    'asks-context-line': { kind: 'full' },
+    'earlier-answers': { kind: 'full' },
+    'status-mid-turn-refresh': { kind: 'host' },
+    'ran-call-activity': { kind: 'host' },
+    'ran-call-delegates': { kind: 'host' },
+    'tool-result-line': { kind: 'host' },
+    'status-call-records': { kind: 'host' },
+    'pr-order': { kind: 'full' },
+    'pr-rank-again': { kind: 'full' },
+    'clear-merged-and-closed-prs': { kind: 'full' },
+    'pr-check-rerun': { kind: 'full' },
+    'pr-fetch-notice': { kind: 'full' },
+    'help-page': {
+      kind: 'different',
+      reason: 'Help opens from the header button without keyboard shortcuts since iOS is touch-first.',
+    },
+    'status-view-ask': {
+      kind: 'different',
+      reason: 'View takes taps only, with no key, since Status is touch-driven on iOS.',
+    },
+    'status-goal': {
+      kind: 'different',
+      reason: "The goal's buttons take taps only, since Status is touch-driven on iOS.",
+    },
+    'status-done-fold': {
+      kind: 'different',
+      reason: 'A done fold takes taps only, since Status is touch-driven on iOS.',
+    },
+    'status-named-fold': { kind: 'full' },
+    'status-faint-text': { kind: 'full' },
+    'supporting-text': { kind: 'full' },
+    'status-parent-fold': {
+      kind: 'different',
+      reason: 'A parent fold toggles on tap across its header, with no key on Status.',
+    },
+    'seen-on-screen': { kind: 'full' },
+    'status-idle-age': { kind: 'full' },
+    'question-back-stays-open': { kind: 'host' },
+    'collapse-rows': { kind: 'full' },
+    'fold-all': { kind: 'full' },
+    'suggested-goal': { kind: 'full' },
+    'show-explanation': {
+      kind: 'unsupported',
+      reason: 'Runs on iOS apart from the Claude Code terminal, so it cannot scroll that conversation.',
+    },
+    'done-press-age': { kind: 'full' },
+    'delegate-asks': { kind: 'host' },
+    'record-earlier-answers': { kind: 'host' },
+    'named-pr-link': { kind: 'full' },
+    'session-registry': { kind: 'host' },
+    'press-preconditions': { kind: 'full' },
+    'task-results': { kind: 'full' },
+    'stopped-session-send': {
+      kind: 'different',
+      reason:
+        'Runs on iOS apart from the terminal, so it shows the stopped-session notice and Resume when advertised without a Go to session button.',
+    },
+    'option-previews': { kind: 'full' },
+    'remote-resume': { kind: 'full' },
+  },
+}

@@ -1,0 +1,31 @@
+use ActionIcon from "./action-icon.contract"
+
+component ButtonLabel
+  props
+    label: string
+    icon: string
+    color: string
+  view
+    row gap=4 align-items="center"
+      if icon != ""
+        ActionIcon(name=icon, color=color, size=14)
+      text label font-weight=400 color=color white-space="normal" text-align="left"
+
+component ActionPill
+  props
+    label: string
+    icon: string
+    emphasis: string
+    compact: bool
+    disabled: bool
+    dimmed: bool
+    testId: string
+    onPress: action
+  derive isPrimary = emphasis == "primary"
+  derive isQuiet = emphasis == "quiet"
+  derive fgColor = isPrimary ? "ink.on-primary" : isQuiet ? "ink.muted" : "ink.primary"
+  view
+    button press=onPress disabled=disabled testId=testId appearance="none" border-width=(isQuiet or isPrimary ? 0 : 1) border-style="solid" border-color=(isPrimary or isQuiet ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color=(isPrimary ? "ink.primary" : "transparent") padding=(isQuiet ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(dimmed or disabled ? 0.4 : 1)
+      :active
+        opacity=0.8
+      ButtonLabel(label=label, icon=icon, color=fgColor)

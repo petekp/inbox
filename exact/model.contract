@@ -1,0 +1,519 @@
+shape Button
+  key: string
+  label: string
+  emphasis: string
+  primary: bool
+  out: bool
+  disabled: bool
+  input: bool
+  reason: string
+  command: string
+  icon: string
+  hotkey: string
+  pendingText: string
+
+shape InlineSpan
+  id: string
+  text: string
+  bold: bool
+  italic: bool
+  code: bool
+  strike: bool
+  href: string
+
+shape OptionLine
+  button: Button
+  id: string
+  label: string
+  body: InlineSpan[]
+  reason: InlineSpan[]
+
+shape Row
+  latestUndo: bool
+  next: string
+  previous: string
+  collapse: string
+  id: string
+  version: string
+  kind: string
+  title: string
+  detail: string
+  context: string
+  recommendation: string
+  feedback: string
+  state: string
+  mark: string
+  actions: Button[]
+  shownActions: Button[]
+  allActions: Button[]
+  titleParts: InlineSpan[]
+  detailParts: InlineSpan[]
+  contextParts: InlineSpan[]
+  holdsUpParts: InlineSpan[]
+  earlierParts: InlineSpan[]
+  options: OptionLine[]
+  allOptions: OptionLine[]
+  replyHint: string
+  fileLabel: string
+  fileName: string
+  age: string
+  markTone: string
+  markColor: string
+  feedbackTone: string
+  hasTree: bool
+  waiting: bool
+  running: bool
+
+shape ClosedRow
+  id: string
+  version: string
+  title: InlineSpan[]
+  outcome: string
+  mark: string
+  tone: string
+  color: string
+  age: string
+  actions: Button[]
+
+shape RowGroup
+  id: string
+  title: string
+  mark: string
+  tone: string
+  color: string
+  count: number
+  empty: string
+  rows: Row[]
+  closed: ClosedRow[]
+  closedAll: ClosedRow[]
+  closedLabel: string
+  earlierLabel: string
+
+shape StatusAction
+  collapse: string
+  key: string
+  action: string
+  target: string
+  label: string
+  text: string
+  emphasis: string
+  disabled: bool
+
+shape StatusLine
+  seen: string[]
+  kind: string
+  color: string
+  bold: bool
+  running: bool
+  waitsOn: string
+  waitsOnColor: string
+  was: string
+  merged: string
+  stall: string
+  level: string
+  isMutedName: bool
+  isPartTitle: bool
+  padTop: number
+  padBottom: number
+  spaceAbove: number
+  hasChildren: bool
+  branch: string
+  pathLine: string
+  jointArm: string
+  jointBeside: string
+  foldOpen: bool
+  foldCount: number
+  actions: StatusAction[]
+  id: string
+  title: string
+  detail: string
+  depth: number
+  mark: string
+
+shape PrControl
+  version: string
+  scope: string
+  hotkey: string
+  icon: string
+  pendingText: string
+  command: string
+  key: string
+  row: string
+  emphasis: string
+  out: bool
+  disabled: bool
+  primary: bool
+  label: string
+  href: string
+
+shape PrLine
+  version: string
+  waiting: bool
+  next: string
+  previous: string
+  openDetail: string
+  latestUndo: bool
+  collapse: string
+  id: string
+  kind: string
+  number: string
+  isFirstBlock: bool
+  title: string
+  detail: string
+  quote: InlineSpan[]
+  reply: InlineSpan[]
+  mark: string
+  color: string
+  running: bool
+  folded: bool
+  href: string
+  feedback: string
+  failed: bool
+  controls: PrControl[]
+
+shape HostBanner
+  id: string
+  title: string
+  body: string
+  tone: string
+  key: string
+  label: string
+  disabled: bool
+
+shape Inbox
+  banners: HostBanner[]
+  prVersion: string
+  foldVersion: string
+  foldPlans: FoldPlan[]
+  collapseInput: CollapseContext
+  collapsed: string[]
+  collapses: CollapseEntry[]
+  rowVersion: string
+  connectionState: string
+  key: string
+  readOnly: bool
+  session: string
+  name: string
+  connected: bool
+  updatedAt: number
+  serverNow: number
+  running: bool
+  failure: string
+  fresh: bool
+  statusError: string
+  asks: Row[]
+  findings: Row[]
+  askGroups: RowGroup[]
+  findingGroups: RowGroup[]
+  asksEmptyTitle: string
+  asksEmptyHint: string
+  findsEmptyTitle: string
+  findsEmptyHint: string
+  prLines: PrLine[]
+  prNotice: string
+  prEmptyTitle: string
+  prEmptyHint: string
+  asksBadge: string
+  findsBadge: string
+  prsBadge: string
+  statusVersion: string
+  sendLabel: string
+  discardLabel: string
+  statusGoalHint: string
+  statusGoalKey: string
+  statusSubmitLabel: string
+  statusLabel: string
+  statusMark: string
+  statusMarkColor: string
+  statusHasGoal: bool
+  statusIsMet: bool
+  statusWas: string
+  statusNow: string
+  statusOffer: string
+  statusHeadingActions: StatusAction[]
+  statusOfferActions: StatusAction[]
+  statusActions: StatusAction[]
+  statusTitle: string
+  statusDetail: string
+  statusRows: StatusLine[]
+  questionCount: number
+  taskCount: number
+
+shape Receipt
+  ok: bool
+  id: string
+  state: string
+  error: string
+
+shape Draft
+  id: string
+  row: string
+  session: string
+  title: string
+  key: string
+  text: string
+
+fn firstId(rows: Row[]): string = match first(rows) { case some(r) => r.id, case none => "" }
+fn draftFor(drafts: Draft[], id: string): Draft = match first(drafts.filter(d => d.id == id)) { case some(d) => d, case none => Draft(id="", row="", session="", title="", key="", text="") }
+fn replyAction(rows: Row[], id: string): string = match first(rows.filter(r => r.id == id)) { case some(r) => match first(r.actions.filter(a => a.input)) { case some(a) => a.key, case none => "" }, case none => "" }
+
+shape SessionEntry
+  duplicate: bool
+  id: string
+  session: string
+  name: string
+  project: string
+  location: string
+  host: string
+  agent: string
+  state: string
+  reason: string
+  asks: number
+  attention: string
+  fresh: bool
+  readOnly: bool
+
+shape Directory
+  entries: SessionEntry[]
+  defaultId: string
+  error: string
+
+shape Place
+  id: string
+  name: string
+  tab: string
+  asksExpanded: string
+  findsExpanded: string
+  prsExpanded: string
+  asksTop: number
+  findsTop: number
+  statusTop: number
+  prsTop: number
+  reply: string
+  options: string[]
+  folds: string[]
+  earlier: string[]
+  collapsed: string[]
+  collapses: CollapseEntry[]
+
+shape Navigation
+  listTop: number
+  tab: string
+  selected: string
+  search: string
+  places: Place[]
+
+shape Viewport
+  width: number
+  prefersReducedMotion: bool
+
+shape Page
+  navigationType: string
+  visibilityState: string
+  onLine: bool
+
+fn placeFor(places: Place[], id: string): Place = match first(places.filter(p => p.id == id)) { case some(p) => p, case none => Place(id=id, name="Agent session", tab="asks", asksExpanded="", findsExpanded="", prsExpanded="", asksTop=0, findsTop=0, statusTop=0, prsTop=0, reply="", options=[], folds=[], earlier=[], collapsed=[], collapses=[]) }
+fn sessionName(rows: SessionEntry[], id: string): string = match first(rows.filter(r => r.id == id)) { case some(r) => r.name, case none => "Agent session" }
+fn sessionLabel(s: SessionEntry): string = (s.state == "active" or s.state == "working" or s.state == "waiting") ? (not s.fresh ? "May be out of date" : s.attention != "" ? `${s.attention}${s.state == "working" ? " · Working…" : ""}` : s.state == "working" ? "Working…" : s.state == "waiting" ? "Waiting for input" : "Nothing needed") : s.state == "ended" ? "Ended" : s.state == "disconnected" ? "Disconnected" : s.state == "unsupported" ? "Unsupported" : "Unavailable"
+
+
+
+fn connectionText(inbox: Inbox, disconnected: bool): string = disconnected ? (inbox.connectionState == "ended" ? "Ended" : inbox.connectionState == "unsupported" ? "Unsupported" : inbox.connectionState == "unavailable" ? "Unavailable" : "Disconnected") : inbox.connectionState == "waiting" ? "Waiting for input" : inbox.running ? "Working…" : "Connected"
+
+fn containsAction(inbox: Inbox, row: string, key: string): bool = (row == "session" and inbox.banners.map(b => b.key).includes(key)) or (row == "goal" and inbox.statusActions.map(a => a.key).includes(key)) or inbox.asks.concat(inbox.findings).filter(r => r.id == row).map(r => r.actions.concat(r.shownActions).map(a => a.key).includes(key)).includes(true) or inbox.prLines.map(r => r.controls.filter(c => c.row == row).map(c => c.key).includes(key)).includes(true)
+
+fn matchingSessions(entries: SessionEntry[], selected: string, drafts: string[], query: string): SessionEntry[] = entries.filter(s => (s.state != "ended" or s.id == selected or drafts.includes(s.id)) and `${s.name} ${s.project} ${s.host}`.toLowerCase().includes(query.toLowerCase()))
+
+fn urlTab(url: string): string = url.startsWith("/status") ? "status" : url.startsWith("/findings") ? "findings" : url.startsWith("/prs") ? "prs" : "asks"
+
+fn readProblem(draftFailed: bool, inboxFailed: bool, failure: string): string = draftFailed ? "Can’t read your saved replies. Try refreshing." : inboxFailed ? "Can’t reach your agent. Check the connection and try again." : failure
+
+shape Recovery
+  id: string
+  session: string
+  key: string
+  row: string
+  draft: string
+  text: string
+
+shape Clock
+  epochAtZero: number
+
+shape ViewerAck
+  enabled: bool
+  generation: number
+  sequence: number
+  expiresAt: number
+  hostNow: number
+  released: bool
+
+fn sessionPath(tab: string, id: string): string = (tab == "status" ? "/status" : tab == "findings" ? "/findings" : tab == "prs" ? "/prs" : "/") + "?session=" + encodeURIComponent(id)
+fn sessionTab(tab: string): string = tab == "sessions" or tab == "" ? "asks" : tab
+
+fn visible(row: Geometry, clip: Geometry): bool = not row.unavailable and not row.provisional and not clip.unavailable and not clip.provisional and row.height > 0 and row.y < clip.y + clip.height and row.y + row.height > clip.y
+
+fn statusSampleVersion(inbox: Inbox, session: string, route: number): string = `${session}:${route}:${inbox.statusVersion}`
+
+fn terminalReceipt(state: string): bool = state == "stale" or state == "failed" or state == "refused" or state == "cancelled" or state == "expired"
+
+shape LocalEffect
+  kind: string
+  value: string
+  name: string
+  isCommand: bool
+
+shape LocalWork
+  ok: bool
+  error: string
+  id: string
+  sequence: number
+  session: string
+  row: string
+  version: string
+  effects: LocalEffect[]
+
+shape LocalCopy
+  sequence: number
+  index: number
+  error: string
+
+shape LocalFeedback
+  sequence: number
+  session: string
+  row: string
+  version: string
+  text: string
+  pending: bool
+  failed: bool
+
+shape RowSelection
+  prs: string
+  prIds: string[]
+  prIndex: number
+  session: string
+  signature: string
+  asks: string
+  finds: string
+  askIds: string[]
+  findIds: string[]
+  askIndex: number
+  findIndex: number
+
+fn selectionFor(rows: RowSelection[], session: string): RowSelection = match first(rows.filter(r => r.session == session)) { case some(r) => r, case none => RowSelection(session=session, signature="", asks="", finds="", prs="", prIds=[], prIndex=0, askIds=[], findIds=[], askIndex=0, findIndex=0) }
+
+shape VisualRow
+  guarded: bool
+  id: string
+  row: Row
+  panel: Row
+  phase: string
+  since: number
+  hasPanel: bool
+  target: string
+  arriving: bool
+  localText: string
+  localFailed: bool
+
+shape VisualGroup
+  id: string
+  title: string
+  mark: string
+  tone: string
+  color: string
+  count: number
+  empty: string
+  rows: VisualRow[]
+  closed: ClosedRow[]
+  closedAll: ClosedRow[]
+  closedLabel: string
+  earlierLabel: string
+
+shape VisualPr
+  guarded: bool
+  id: string
+  row: PrLine
+  panel: PrLine
+  phase: string
+  since: number
+  hasPanel: bool
+  target: string
+  arriving: bool
+  localText: string
+  localFailed: bool
+
+shape VisualFrame
+  session: string
+  signature: string
+  asks: VisualGroup[]
+  finds: VisualGroup[]
+  prs: VisualPr[]
+  deadline: number
+
+fn expandedRow(rows: Row[], picked: string, collapsed: string[]): string = collapsed.includes(picked) ? "" : picked != "" ? picked : firstId(rows.filter(r => r.waiting and not collapsed.includes(r.id)))
+fn hasOpenRow(inbox: Inbox, id: string): bool = inbox.asks.concat(inbox.findings).filter(r => r.id == id and r.state != "settled").length > 0
+
+shape LegendLine
+  id: string
+  mark: string
+  words: string
+  color: string
+  running: bool
+
+shape HelpKeyLine
+  keys: string
+  does: string
+
+shape HelpInfo
+  keysHeading: string
+  keys: HelpKeyLine[]
+  heading: string
+  version: string
+  rows: LegendLine[]
+
+shape CollapseEntry
+  id: string
+  value: string
+
+shape CollapseContext
+  ids: string[]
+  entries: CollapseEntry[]
+
+fn idsKey(ids: string[]): string = ids.map(id => `${id.length}:${id}`).join("")
+fn collapseEntriesKey(entries: CollapseEntry[]): string = entries.map(e => `${e.id.length}:${e.id}${e.value.length}:${e.value}`).join("")
+fn sameCollapses(context: CollapseContext, ids: string[], entries: CollapseEntry[]): bool = idsKey(context.ids) == idsKey(ids) and collapseEntriesKey(context.entries) == collapseEntriesKey(entries)
+
+shape TabKey
+  key: string
+  tab: string
+
+shape KeyMap
+  sendLabel: string
+  discardLabel: string
+  foldAll: string
+  undo: string
+  tabs: TabKey[]
+  collapse: string
+
+fn isUndoAction(inbox: Inbox, key: string): bool = inbox.asks.concat(inbox.findings).map(r => r.allActions.concat(r.shownActions).filter(a => a.command == "undo").map(a => a.key).includes(key)).includes(true) or inbox.prLines.map(r => r.controls.filter(c => c.command == "undo").map(c => c.key).includes(key)).includes(true)
+
+
+shape FoldPlan
+  tab: string
+  closed: string[]
+  statusFolds: string[]
+  parents: string[]
+  rows: string[]
+  records: CollapseEntry[]
+
+shape FoldChange
+  error: string
+  signature: string
+  session: string
+  folds: string[]
+  collapsed: string[]
+  collapses: CollapseEntry[]
+
+
+fn isPrRow(row: PrLine): bool = row.kind == "thread" or row.kind == "check"
+fn firstPrId(rows: PrLine[]): string = match first(rows) { case some(row) => row.id, case none => "" }
+fn selectedPrId(rows: PrLine[], picked: string, collapsed: string[]): string = collapsed.includes(picked) ? "" : picked != "" ? picked : firstPrId(rows.filter(row => isPrRow(row) and row.waiting and not collapsed.includes(row.id)))

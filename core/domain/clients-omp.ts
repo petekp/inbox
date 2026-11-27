@@ -137,5 +137,6 @@ export const OMP: Client = {
       reason: 'The host holds no message after the person stops a turn, so it never refuses one for that.',
     },
     'option-previews': { kind: 'full' },
+    'remote-resume': { kind: 'full' },
   },
 }

@@ -3,10 +3,12 @@
 Part of [the glossary](GLOSSARY.md).
 
 **Look**:
-One of the five ways the inbox is drawn: `terminal` in the Claude Code
+One of the five public ways the inbox is drawn: `terminal` in the Claude Code
 terminal, `desktop` in the pane of the Claude desktop app's Code sessions,
 `codex` in the Codex tab, `omp` in omp's panel, and `herdr` in a pane of the
-Herdr app. `core/view/rows.ts:Look`.
+Herdr app (`core/view/rows.ts:Look`). The private, unannounced Exact Web
+(`exact-web`) and Exact iOS (`exact-ios`) looks in `exact/` also draw published
+sessions and opted-in Codex companion sessions through `PUBLISHED_LOOKS`.
 _Avoid_: client, surface
 
 **Host**:

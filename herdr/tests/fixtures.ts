@@ -9,7 +9,7 @@ import { applyPrPress } from '../../core/view/pr-tab'
 import { tabBlocks } from '../src/draw'
 import type { LookScreen, LookUi } from '../src/draw'
 import type { Block } from '../src/blocks'
-import type { ReadSession } from '../src/files'
+import type { ReadSession } from '../../core/remote/herdr-read'
 import { readView } from '../src/screen'
 
 export const NOW = Date.UTC(2026, 10, 10, 12)

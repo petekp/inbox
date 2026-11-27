@@ -3,7 +3,7 @@ import { notesOf } from '../../core/view/ui-controller'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
 import { holdsOf } from '../../core/view/ui-controller-reply'
 import type { UiState } from '../../core/view/ui-controller-types'
-import type { ReadSession } from './files'
+import type { ReadSession } from '../../core/remote/herdr-read'
 import { readView } from './screen'
 
 type Read = Extract<ReadSession, { is: 'read' }>

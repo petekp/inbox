@@ -1,0 +1,30 @@
+component ActionIcon
+  props
+    name: string
+    color: string
+    size: number
+  view
+    if name == "done"
+      svg width=size height=size viewBox="0 0 24 24"
+        path d="M20 6 9 17l-5-5" fill="none" stroke=color stroke-width=2 stroke-linecap="round" stroke-linejoin="round"
+    else if name == "run"
+      svg width=size height=size viewBox="0 0 24 24"
+        path d="M7 4.5v15l12-7.5z" fill=color
+    else if name == "copy"
+      svg width=size height=size viewBox="0 0 24 24"
+        path d="M9 9h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V10a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" fill="none" stroke=color stroke-width=2 stroke-linecap="round" stroke-linejoin="round"
+    else if name == "open"
+      svg width=size height=size viewBox="0 0 24 24"
+        path d="M7 17 17 7M8 7h9v9" fill="none" stroke=color stroke-width=2 stroke-linecap="round" stroke-linejoin="round"
+    else if name == "retry"
+      svg width=size height=size viewBox="0 0 24 24"
+        path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5" fill="none" stroke=color stroke-width=2 stroke-linecap="round" stroke-linejoin="round"
+    else if name == "undo"
+      svg width=size height=size viewBox="0 0 24 24"
+        path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" fill="none" stroke=color stroke-width=2 stroke-linecap="round" stroke-linejoin="round"
+    else if name == "chevron-right"
+      svg width=size height=size viewBox="0 0 24 24"
+        path d="m9 18 6-6-6-6" fill="none" stroke=color stroke-width=2 stroke-linecap="round" stroke-linejoin="round"
+    else if name == "chevron-down"
+      svg width=size height=size viewBox="0 0 24 24"
+        path d="m6 9 6 6 6-6" fill="none" stroke=color stroke-width=2 stroke-linecap="round" stroke-linejoin="round"

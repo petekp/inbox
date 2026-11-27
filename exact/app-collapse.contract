@@ -1,0 +1,65 @@
+use FoldChange, CollapseEntry, Place, sameCollapses, idsKey, collapseEntriesKey from "./model.contract"
+
+members App
+  state foldError = ""
+  state foldErrorSession = ""
+  derive collapseAnswerMatches = matchingInbox and sameCollapses(inbox.collapseInput, activePlace.collapsed, activePlace.collapses)
+  derive effectiveCollapsed = collapseAnswerMatches ? inbox.collapsed : activePlace.collapsed
+  derive collapseCleanupNeeded = idsKey(inbox.collapsed) != idsKey(activePlace.collapsed) or collapseEntriesKey(inbox.collapses) != collapseEntriesKey(activePlace.collapses)
+  task settleCollapses when collapseAnswerMatches and collapseCleanupNeeded key=`${selectedSession}:${inbox.rowVersion}:${collapseEntriesKey(inbox.collapses)}`
+    after(1, settleCollapses)
+  action settleCollapses
+    if collapseAnswerMatches and collapseCleanupNeeded
+      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, collapsed=inbox.collapsed, collapses=inbox.collapses)])
+      navigationRevision = navigationRevision + 1
+  action togglePrFold(id: string, captured: string)
+    foldError = ""
+    interaction = interaction + 1
+    let closing = selectedPr == id
+    let keep = closing and captured != ""
+    let records = activePlace.collapses.filter(entry => entry.id != id)
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, prsExpanded=closing and not keep ? "closed" : id, collapsed=keep ? effectiveCollapsed.filter(x => x != id).concat([id]) : effectiveCollapsed.filter(x => x != id), collapses=keep ? records.concat([CollapseEntry(id=id, value=captured)]) : records)])
+    navigationRevision = navigationRevision + 1
+  derive foldSignature = `${navigationRevision}:${selectedSession}:${nav.tab}:${inbox.foldVersion}:${idsKey(activePlace.folds)}:${idsKey(effectiveCollapsed)}:${collapseEntriesKey(activePlace.collapses)}:${activePlace.asksExpanded}:${activePlace.findsExpanded}:${activePlace.prsExpanded}:${replyId}`
+  mutation changedFolds as shape FoldChange queue then applyFolds
+  action foldAll(mode: string)
+    foldError = ""
+    foldErrorSession = selectedSession
+    let nextInteraction = interaction + 1
+    interaction = nextInteraction
+    if matchingInbox and not pending(changedFolds)
+      match first(inbox.foldPlans.filter(plan => plan.tab == nav.tab))
+        case some(plan)
+          send changedFolds = changeFolds(foldSignature, selectedSession, plan, Place(activePlace, collapsed=effectiveCollapsed), mode)
+        case none
+          foldError = ""
+  action applyFolds
+    match changedFolds
+      case some(change)
+        if change.session == selectedSession and change.signature == foldSignature
+          foldError = change.error
+          foldErrorSession = change.session
+          if change.error == ""
+            let closedReply = change.collapsed.includes(activeDraft.row)
+            let nextReply = closedReply ? "" : replyId
+            replyId = nextReply
+            let keptEarlier = activePlace.earlier.filter(id => activePlace.folds.includes(id) == change.folds.includes(id))
+            places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, folds=change.folds, collapsed=change.collapsed, collapses=change.collapses, reply=nextReply, earlier=keptEarlier)])
+            navigationRevision = navigationRevision + 1
+      case none
+        interaction = interaction
+  action clickFold(id: string, event: MouseEvent)
+    if event.altKey
+      foldAll(activePlace.folds.includes(id) ? "close" : "open")
+    else
+      toggleFold(id)
+  action clickRow(id: string, captured: string, event: MouseEvent)
+    if event.altKey
+      foldAll(selected == id ? "close" : "open")
+    else
+      toggle(id, captured)
+  action clickPrFold(id: string, captured: string, event: MouseEvent)
+    if event.altKey
+      foldAll(selectedPr == id ? "close" : "open")
+    else
+      togglePrFold(id, captured)

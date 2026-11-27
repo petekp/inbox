@@ -4,7 +4,7 @@ import { join, relative } from 'node:path'
 import { importTarget } from './imports.mjs'
 import { API, ts } from './ts.mjs'
 
-const DIRS = ['core', 'hooks', 'codex/src', 'omp/src', 'herdr/src']
+const DIRS = ['core', 'hooks', 'codex/src', 'omp/src', 'herdr/src', 'exact/bridge']
 
 function sourceFiles(root, dir) {
   return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(entry => {
@@ -12,6 +12,13 @@ function sourceFiles(root, dir) {
     if (entry.isDirectory()) return sourceFiles(root, path)
     return /\.(?:[cm]?ts|tsx|[cm]?js|jsx)$/.test(entry.name) && !entry.name.endsWith('.d.ts') ? [path] : []
   })
+}
+
+function exactTopFiles(root) {
+  if (!existsSync(join(root, 'exact'))) return []
+  return readdirSync(join(root, 'exact'), { withFileTypes: true }).flatMap(entry =>
+    entry.isFile() && /\.tsx?$/.test(entry.name) && !entry.name.endsWith('.d.ts') ? [`exact/${entry.name}`] : [],
+  )
 }
 
 const isTypeOnlyImport = clause =>
@@ -114,7 +121,10 @@ function loopThrough(graph, component) {
 
 export function checkCycles(root, errors) {
   const rootDir = realpathSync(root)
-  const files = DIRS.filter(dir => existsSync(join(rootDir, dir))).flatMap(dir => sourceFiles(rootDir, dir))
+  const files = [
+    ...DIRS.filter(dir => existsSync(join(rootDir, dir))).flatMap(dir => sourceFiles(rootDir, dir)),
+    ...exactTopFiles(rootDir),
+  ]
   const graph = new Map(files.map(path => [path, new Set()]))
   const api = new API({ cwd: rootDir })
   try {

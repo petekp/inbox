@@ -1,0 +1,16 @@
+use rowLayout from "./motion.contract"
+use Draft from "./model.contract"
+
+component SavedReplies
+  props
+    reduced: bool
+    drafts: Draft[]
+    onOpen: action
+  view
+    if drafts.length > 0
+      section -exact-layout-transition=rowLayout(reduced)
+        header
+          text "Saved replies"
+        for d in drafts key=d.id
+          button press=onOpen(d.id) testId=`draft-${d.id}`
+            text d.title

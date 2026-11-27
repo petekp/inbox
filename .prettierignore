@@ -27,6 +27,8 @@ evals/baselines.json
 # Prettier would close it, and the appended data would land after </html>.
 hooks/compare-page.html
 
-prototypes/exact-inbox/.exact/
-prototypes/exact-inbox/.vscode/
-prototypes/exact-inbox/app.contract.d.ts
+exact/.exact/
+exact/.vscode/
+exact/app.contract.d.ts
+exact/bun.lock
+exact/client-shared.js

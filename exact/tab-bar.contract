@@ -1,0 +1,53 @@
+component TabButton
+  props
+    name: string
+    label: string
+    badge: string
+    icon: string
+    selected: bool
+    wideWeb: bool
+    onPick: action
+  view
+    if wideWeb
+      button role="tab" aria-controls=`panel-${name}` aria-selected=selected press=onPick(name) testId=`tab-${name}` appearance="none" padding="6px 12px" border-radius=6 border-width=0 background-color=(selected ? "surface.raised" : "transparent") color=(selected ? "ink.primary" : "ink.muted") font-weight=(selected ? 600 : 400) white-space="nowrap" box-sizing="border-box"
+        :active
+          opacity=0.75
+        row gap=4 align-items="baseline"
+          text label
+          if badge != ""
+            text badge font-weight=600 font-variant-numeric="tabular-nums"
+    else
+      button role="tab" aria-controls=`panel-${name}` aria-selected=selected press=onPick(name) testId=`tab-${name}` flex=1 appearance="auto"
+        image icon
+        text (badge == "" ? label : `${label} ${badge}`)
+
+component TabBar
+  props
+    hidden: bool
+    helpShown: bool
+    onHelp: action
+    asksBadge: string
+    findsBadge: string
+    prsBadge: string
+    tab: string
+    connection: string
+    readOnly: bool
+    wideWeb: bool
+    onPick: action
+  view
+    row role="tablist" appearance=(wideWeb ? "none" : "auto") testId="tabs" display=(hidden ? "none" : "flex") margin-left=(wideWeb ? 260 : 0) padding=(wideWeb ? "12px 16px 6px 12px" : "0") gap=(wideWeb ? 4 : 0) align-items="center" background-color=(wideWeb ? "surface.bg" : "transparent")
+      TabButton(name="status", label="Status", badge="", icon="symbol:chart", selected=tab == "status", wideWeb=wideWeb, onPick=onPick)
+      TabButton(name="asks", label="Asks", badge=asksBadge, icon="symbol:messages", selected=tab == "asks", wideWeb=wideWeb, onPick=onPick)
+      TabButton(name="findings", label="Finds", badge=findsBadge, icon="symbol:info", selected=tab == "findings", wideWeb=wideWeb, onPick=onPick)
+      TabButton(name="prs", label="PRs", badge=prsBadge, icon="symbol:repeat", selected=tab == "prs", wideWeb=wideWeb, onPick=onPick)
+
+      if wideWeb
+        row margin-left="auto" gap=10 align-items="center"
+          if readOnly
+            text "Read-only" font-size=12 color="ink.faint" white-space="nowrap"
+          if connection != ""
+            text connection font-size=12 color="ink.muted" white-space="nowrap" testId=`connection-${tab}`
+          button press=onHelp aria-label=(helpShown ? "Close help" : "Help") aria-pressed=helpShown appearance="none" padding="4px 9px" min-height=26 box-sizing="border-box" border-radius=6 border-width=0 background-color=(helpShown ? "surface.raised" : "transparent") color=(helpShown ? "ink.primary" : "ink.muted") font-weight=600 testId="help-web"
+            :active
+              opacity=0.75
+            text "?"

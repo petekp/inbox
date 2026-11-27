@@ -1,0 +1,51 @@
+use HostBanner from "./model.contract"
+
+component ErrorBanner
+  props
+    text: string
+    testId: string
+  view
+    row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
+      text text color="tone.error" testId=testId
+
+component InboxHeader
+  props
+    banners: HostBanner[]
+    busy: bool
+    onAction: action
+    connection: string
+    readOnly: bool
+    wideWeb: bool
+    readError: string
+    mutationError: string
+    receiptError: string
+    tab: string
+  derive showStatusStrip = not wideWeb and (readOnly or (connection != "" and connection != "Connected"))
+  derive hasContent = showStatusStrip or readError != "" or mutationError != "" or receiptError != "" or banners.length > 0
+  view
+    if hasContent
+      column gap=8 padding="4px 16px 6px 16px"
+        if showStatusStrip
+          row gap=8 align-items="center"
+            if readOnly
+              text "Read-only" font-size=12 color="ink.faint" white-space="nowrap"
+            if connection != ""
+              text connection font-size=12 color="ink.muted" white-space="nowrap" testId=`connection-${tab}`
+        if readError != ""
+          ErrorBanner(text=readError, testId=`read-error-${tab}`)
+        if mutationError != ""
+          ErrorBanner(text=mutationError, testId=`press-error-${tab}`)
+        if receiptError != ""
+          ErrorBanner(text=receiptError, testId="")
+
+        for banner in banners key=banner.id
+          row gap=12 align-items="center" padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color=(banner.tone == "error" ? "banner.error.line" : banner.tone == "warning" ? "banner.warning.line" : "banner.notice.line") background-color=(banner.tone == "error" ? "banner.error.fill" : banner.tone == "warning" ? "banner.warning.fill" : "banner.notice.fill")
+            column flex=1 min-width=0 gap=2
+              text banner.title font-weight=600 color=(banner.tone == "error" ? "tone.error" : banner.tone == "warning" ? "tone.needsYou" : "tone.key")
+              if banner.body != ""
+                text banner.body color="ink.muted"
+            if banner.key != ""
+              button press=onAction(banner.key, false, "session", banner.label) disabled=(banner.disabled or readOnly or busy) appearance="none" border-width=1 border-style="solid" border-color="border.key" border-radius=14 background-color="surface.bg" color="ink.primary" padding="3px 12px" min-height=28 box-sizing="border-box" opacity=(banner.disabled or readOnly or busy ? 0.4 : 1)
+                :active
+                  background-color="surface.soft"
+                text banner.label

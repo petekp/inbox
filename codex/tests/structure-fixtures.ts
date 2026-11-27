@@ -56,6 +56,13 @@ export function fixture(t: TestContext) {
   write('hooks/pane/row-client.tsx', 'export const value = 1\n')
   write('types/index.d.ts', 'export interface Value {}\n')
   write('codex/src/host.ts', 'export const value = 1\n')
+  write('omp/src/host.ts', 'export const value = 1\n')
+  write('omp/src/texts.ts', 'export const emptyEntries = () => null\n')
+  write('omp/tests/.keep', '')
+  write('herdr/src/main.ts', 'export const value = 1\n')
+  write('herdr/src/blocks.ts', "export const emptyBlock = () => ({ kind: 'empty' })\n")
+  write('herdr/tests/.keep', '')
+  write('exact/bridge/view.ts', 'export const value = 1\n')
   write('codex/tests/.keep', '')
   write('codex/package.json', '{"type":"module"}\n')
   symlinkSync(join(ROOT, 'codex/node_modules'), join(root, 'codex/node_modules'), 'dir')
@@ -79,9 +86,15 @@ export function fixture(t: TestContext) {
   )
 
   const withFileRows = (unmapped: string[]) => {
-    const files = ['core', 'hooks', 'codex/src', 'omp/src']
+    const files = ['core', 'hooks', 'codex/src', 'omp/src', 'herdr/src', 'exact', 'exact/bridge']
       .filter(dir => existsSync(join(root, dir)))
-      .flatMap(dir => sourcesIn(root, dir))
+      .flatMap(dir =>
+        dir === 'exact'
+          ? readdirSync(join(root, dir), { withFileTypes: true })
+              .filter(e => e.isFile())
+              .map(e => `exact/${e.name}`)
+          : sourcesIn(root, dir),
+      )
       .filter(path => /\.(?:ts|tsx|html)$/.test(path) && !path.endsWith('.d.ts') && !unmapped.includes(path))
     write(
       'docs/looks/files-all.md',

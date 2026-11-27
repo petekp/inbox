@@ -13,7 +13,7 @@ import type { LookUi } from '../src/draw'
 import type { Followed } from '../src/follow'
 
 const { layoutAtRest } = await import('./frames')
-const { readSession } = await import('../src/files')
+const { readSession } = await import('../../core/remote/herdr-read')
 const { screenOf } = await import('../src/screen')
 const { bannerEl } = await import('../src/paint-chrome')
 

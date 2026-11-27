@@ -1,0 +1,42 @@
+use firstPrId, selectedPrId, isPrRow, Button, Place, PrControl from "./model.contract"
+
+members App
+  derive selectedPr = selectedPrId(inbox.prLines, activePlace.prsExpanded, effectiveCollapsed)
+  derive prFrameReady = visualFrame.session == selectedSession and visualFrame.signature == motionKey
+  derive prGuarded = not prFrameReady or visualFrame.prs.filter(row => row.id == selectedPr and row.guarded).length > 0
+  action prAction(control: PrControl)
+    if prFrameReady and not disconnected and (not inbox.readOnly or control.command == "local") and not control.disabled and not pending(sent) and not pending(forgotten) and (control.scope != "row" or not prGuarded)
+      if control.command == "local"
+        startLocal(Button(key=control.key, label=control.label, emphasis=control.emphasis, primary=control.primary, out=control.out, disabled=control.disabled, input=false, reason="", command="local", icon=control.icon, hotkey=control.hotkey, pendingText=control.pendingText), selectedSession, control.row, control.version)
+      else
+        choose(control.key, false, control.row, control.label)
+  action prKey(k: string)
+    match first(inbox.prLines.map(row => row.controls).flat().filter(control => control.scope == "tab" and control.hotkey == k and not control.disabled))
+      case some(control)
+        prAction(control)
+        preventDefault()
+      case none
+        let rows = inbox.prLines.filter(row => isPrRow(row))
+        let direction = k == "j" or k == "ArrowDown" ? 1 : k == "k" or k == "ArrowUp" ? -1 : 0
+        if direction != 0 and rows.length > 0
+          let chosen = first(rows.filter(row => row.id == activePlace.prsExpanded))
+          let target = match chosen { case some(row) => direction > 0 ? row.next : row.previous, case none => direction > 0 ? firstPrId(rows) : firstPrId(rows.slice(rows.length - 1)) }
+          places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, prsExpanded=target, collapsed=effectiveCollapsed.filter(id => id != target))])
+          navigationRevision = navigationRevision + 1
+          scrollIntoView(`content-${top(nav).id}-pr-${target}`, block="nearest")
+          preventDefault()
+        else
+          match first(rows.filter(row => row.id == activePlace.prsExpanded))
+            case some(row)
+              if k == keyMap.collapse
+                togglePrFold(row.id, row.collapse)
+                preventDefault()
+              else if selectedPr == row.id and not prGuarded
+                match first(row.controls.filter(control => control.hotkey == k and not control.disabled))
+                  case some(control)
+                    prAction(control)
+                    preventDefault()
+                  case none
+                    interaction = interaction
+            case none
+              interaction = interaction

@@ -1,0 +1,18 @@
+{
+  "name": "exact-inbox",
+  "private": true,
+  "scripts": {
+    "setup": "bun tools/setup.ts",
+    "build:web": "bun tools/exact.ts web-build --render none --out ../.derived-data/inbox-exact-dist --json",
+    "build:ios": "bun tools/exact.ts ios --no-install --json",
+    "agent:start": "bun tools/session.ts start",
+    "agent:status": "bun tools/session.ts status",
+    "agent:stop": "bun tools/session.ts stop",
+    "start": "bun bridge/server.ts",
+    "fixture": "bun tools/fixture.ts",
+    "test": "bun test tests"
+  },
+  "dependencies": {
+    "@exact/clipboard": "file:../.derived-data/exact-framework/packages/clipboard"
+  }
+}

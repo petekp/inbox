@@ -1,0 +1,87 @@
+use HelpPane from "./help-pane.contract"
+use PrPane from "./pr-pane.contract"
+use HelpInfo, hasOpenRow, VisualFrame, Inbox, Draft from "./model.contract"
+use InboxHeader from "./inbox-header.contract"
+use StatusPane from "./status-pane.contract"
+use InboxRows from "./inbox-rows.contract"
+use SavedReplies from "./saved-replies.contract"
+use ReplyPane from "./reply-pane.contract"
+
+component InboxBody
+  props
+    wideWeb: bool
+    prFrameReady: bool
+    sendLabel: string
+    discardLabel: string
+    selectedPr: string
+    prGuarded: bool
+    onPrAction: action
+    helpShown: bool
+    helpInfo: HelpInfo
+    helpLoading: bool
+    helpFailed: bool
+    visual: VisualFrame
+    reduced: bool
+    inbox: Inbox
+    compact: bool
+    localActive: bool
+    onLocal: action
+    onStatus: action
+    tab: string
+    contentId: string
+    top: number
+    matching: bool
+    draftsLoaded: bool
+    connection: string
+    readError: string
+    actionError: string
+    receiptError: string
+    selected: string
+    optionsShown: string[]
+    folds: string[]
+    collapsed: string[]
+    onPrFold: action
+    earlier: string[]
+    submittedRow: string
+    submittedKey: string
+    isSendingRow: bool
+    disconnected: bool
+    busy: bool
+    saved: Draft[]
+    replyOpen: bool
+    goalReply: bool
+    replyRow: string
+    replyTitle: string
+    replyText: string
+    canSend: bool
+    replyMessage: string
+    onScroll: action
+    onToggle: action
+    onFold: action
+    onEarlier: action
+    onChoose: action
+    onOpen: action
+    onEdit: action
+    onDiscard: action
+    onCancel: action
+    onSend: action
+  view
+    list id=contentId appearance="none" flex=1 padding="4px 0 24px 0" box-sizing="border-box" min-height=0 scroll=onScroll scrollTop=top
+      InboxHeader(banners=(matching ? inbox.banners : []), busy=busy or disconnected, onAction=onChoose, connection=connection, readOnly=matching and inbox.readOnly, wideWeb=wideWeb, readError=readError, mutationError=actionError, receiptError=receiptError, tab=tab)
+      if helpShown
+        HelpPane(info=helpInfo, loading=helpLoading, failed=helpFailed, reduced=reduced)
+      else if not matching or not draftsLoaded
+        section padding="16px"
+          row gap=8 align-items="center"
+            progress aria-label="Loading Inbox"
+            text "Reading your Inbox…" color="ink.muted"
+      else if tab == "prs"
+        PrPane(visual=visual.prs, reduced=reduced, selected=selectedPr, guarded=prGuarded, onAction=onPrAction, localActive=localActive, prefix=contentId, compact=compact, busy=busy or disconnected or not prFrameReady, sending=isSendingRow, submittedKey=submittedKey, inbox=inbox, onFold=onPrFold)
+      else if tab == "status"
+        StatusPane(inbox=inbox, prefix=contentId, compact=compact, pending=busy or (submittedRow == "goal" and isSendingRow), reduced=reduced, onAction=onStatus)
+      else
+        InboxRows(sendLabel=sendLabel, discardLabel=discardLabel, replyRow=replyRow, replyOpen=replyOpen, replyTitle=replyTitle, replyText=replyText, canSend=canSend, replyMessage=replyMessage, onEdit=onEdit, onDiscard=onDiscard, onCancel=onCancel, onSend=onSend, prefix=contentId, compact=compact, localActive=localActive, session=inbox.key, onLocal=onLocal, groups=(tab == "findings" ? visual.finds : visual.asks), reduced=reduced, optionsShown=optionsShown, folds=folds, earlier=earlier, emptyTitle=(tab == "findings" ? inbox.findsEmptyTitle : inbox.asksEmptyTitle), emptyHint=(tab == "findings" ? inbox.findsEmptyHint : inbox.asksEmptyHint), findings=tab == "findings", waiting=inbox.connectionState == "waiting", selected=selected, submittedRow=submittedRow, submittedKey=submittedKey, isSendingRow=isSendingRow, disconnected=disconnected, pending=busy, onToggle=onToggle, onFold=onFold, onEarlier=onEarlier, onChoose=onChoose)
+      if not helpShown
+        SavedReplies(reduced=reduced, drafts=saved, onOpen=onOpen)
+      if not helpShown and replyOpen and (not matching or goalReply or not hasOpenRow(inbox, replyRow))
+        ReplyPane(discardLabel=discardLabel, hint=(goalReply and inbox.statusGoalHint != "" ? inbox.statusGoalHint : "Your reply"), reduced=reduced, goalReply=goalReply, submitLabel=(goalReply and inbox.statusSubmitLabel != "" ? inbox.statusSubmitLabel : sendLabel), title=replyTitle, draft=replyText, canSend=canSend, canDiscard=not busy, message=replyMessage, tab=tab, onEdit=onEdit, onDiscard=onDiscard, onCancel=onCancel, onSend=onSend)

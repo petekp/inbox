@@ -1,8 +1,4 @@
-import { HERDR_FORMAT, pressFolder } from '../../core/remote/herdr'
-import type { PrPress } from '../../core/view/pr-press'
-import type { RowPress } from '../../core/domain/presses'
-import type { Holds } from '../../core/view/timing'
-import type { Precondition } from '../../core/domain/preconditions'
+import { pressFolder } from '../../core/remote/herdr'
 
 /** Where the look writes a press for the host that publishes the session. A host reads only names ending in `.json`. */
 export const pressPath = (appHome: string, sessionId: string, pressId: string) =>
@@ -11,31 +7,3 @@ export const pressPath = (appHome: string, sessionId: string, pressId: string) =
 /** A press id that sorts by time and stays unique between looks pressing in the same millisecond. */
 export const newPressId = (now: number, random: number) =>
   `${now.toString(36)}-${Math.floor(random * 36 ** 6).toString(36)}`
-
-/**
- * What the look did for a press it ran itself, an open or a copy: `error` is null when it worked, else why it could
- * not. The host records it and does not open or copy again. A press without one, the host performs.
- */
-type LocalOutcome = { error: string | null }
-
-/** The text of a press file, in the format `core/remote/herdr-press-file.ts:pressFile` reads. */
-export function pressFileText(
-  id: string,
-  pressedAt: number,
-  press: RowPress | PrPress,
-  holds: Holds,
-  result: LocalOutcome | null = null,
-  when: readonly Precondition[] = [],
-): string {
-  const { replies, discarded, shownSince, listInput } = holds
-
-  return JSON.stringify({
-    format: HERDR_FORMAT,
-    id,
-    pressedAt,
-    press,
-    holds: { replies, discarded, shownSince, listInput },
-    ...(result ? { result } : {}),
-    ...(when.length > 0 ? { when } : {}),
-  })
-}

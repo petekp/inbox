@@ -1,0 +1,7 @@
+use HelpInfo from "./model.contract"
+
+members App
+  state helpShown = false
+  resource helpInfo = loadHelp(selectedSession) when helpShown as shape HelpInfo else empty()
+  action toggleHelp
+    helpShown = not helpShown

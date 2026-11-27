@@ -1,0 +1,48 @@
+use CollapseEntry, StatusAction, Place, Draft, draftFor, sessionPath from "./model.contract"
+
+members App
+  state revealAsk = ""
+  state revealSession = ""
+  task revealAsk when revealAsk != "" and selectedSession == revealSession and nav.tab == "asks" and matchingInbox
+    every(50, revealStatusAsk)
+  task abandonReveal when revealAsk != "" and (selectedSession != revealSession or nav.tab != "asks" or (matchingInbox and not inbox.asks.map(r => r.id).includes(revealAsk)))
+    after(1, abandonReveal)
+  action abandonReveal
+    revealAsk = ""
+  action revealStatusAsk
+    let target = `content-${top(nav).id}-row-${revealAsk}`
+    if scrollOwner == `${selectedSession}:asks:${top(nav).id}` and not frame(target).unavailable and not frame(target).provisional
+      scrollIntoView(target, block="nearest")
+      revealAsk = ""
+  action statusAction(item: StatusAction)
+    if item.action == "type-goal" and not item.disabled
+      let id = `${inbox.key}:goal`
+      let kept = draftFor(drafts, id)
+      let nextDrafts = drafts.filter(d => d.id != id).concat([Draft(id=id, row="goal", session=inbox.key, title="Goal", key=item.key, text=kept.id == "" ? item.text : kept.text)])
+      drafts = nextDrafts
+      send stored = saveDrafts(nextDrafts)
+      replyId = id
+      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply=id)])
+      navigationRevision = navigationRevision + 1
+    else if not disconnected and not inbox.readOnly and not item.disabled and item.key != ""
+      choose(item.key, false, "goal", "Goal")
+    else if item.action == "toggle-fold"
+      toggleFold(item.target)
+    else if item.action == "toggle-collapse"
+      let isClosing = not effectiveCollapsed.includes(item.target) and item.collapse != ""
+      let ids = effectiveCollapsed.filter(id => id != item.target)
+      let records = activePlace.collapses.filter(entry => entry.id != item.target)
+      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, collapsed=isClosing ? ids.concat([item.target]) : ids, collapses=isClosing ? records.concat([CollapseEntry(id=item.target, value=item.collapse)]) : records)])
+      navigationRevision = navigationRevision + 1
+    else if item.action == "show-ask"
+      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, tab="asks", asksExpanded=item.target, collapsed=activePlace.collapsed.filter(id => id != item.target))])
+      revealAsk = item.target
+      revealSession = selectedSession
+      nav = open(nav, sessionPath("asks", selectedSession))
+      navigationRevision = navigationRevision + 1
+  action statusPressed(item: StatusAction, event: MouseEvent)
+    if event.altKey and (item.action == "toggle-fold" or item.action == "toggle-collapse")
+      let open = item.action == "toggle-fold" ? activePlace.folds.includes(item.target) : not effectiveCollapsed.includes(item.target)
+      foldAll(open ? "close" : "open")
+    else
+      statusAction(item)

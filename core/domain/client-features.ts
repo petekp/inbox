@@ -85,6 +85,7 @@ export type FeatureId =
   | 'task-results'
   | 'stopped-session-send'
   | 'option-previews'
+  | 'remote-resume'
 
 /** A host. Terminal and desktop share `claude-code`, since both run the mod. */
 export type ClientId = 'claude-code' | 'codex' | 'omp'
@@ -105,10 +106,10 @@ export type Client = { support: Record<FeatureId, Support> }
 
 /**
  * A look with no host of its own: it draws the session a host publishes, so a host's id never names it. Exact's web and
- * iOS clients join this list as `exact-web` and `exact-ios` once they ship, each with its own table and Differences on
- * purpose parts named `differences-<id>`.
+ * iOS clients join this list as `exact-web` and `exact-ios` (private / not yet publicly announced), each with its own
+ * table and Differences on purpose parts named `differences-<id>`.
  */
-export type PublishedLookId = 'herdr'
+export type PublishedLookId = 'herdr' | 'exact-web' | 'exact-ios'
 
 /**
  * How a published look supports a feature. `host` means the publishing host does all of it and the look has no part,

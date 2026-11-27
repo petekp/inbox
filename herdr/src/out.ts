@@ -11,7 +11,7 @@ import { GOAL_KEYS_ID } from '../../core/view/status-keys'
 import type { SettledOutcome } from '../../core/view/ui-controller-types'
 import type { LocalResult, PressKind } from '../../types'
 import type { Block, Button } from './blocks'
-import type { LastPress } from './files'
+import type { LastPress } from '../../core/remote/herdr-read'
 
 /** A press with no reread of the session file yet reads the file again then, in case a file watch was missed. */
 const REREAD_AFTER_MS = 5_000

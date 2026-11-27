@@ -1,0 +1,62 @@
+use InlineText from "./inline-text.contract"
+use ActionPill from "./action-button.contract"
+use Button, Row from "./model.contract"
+
+component RowActions
+  props
+    item: Row
+    optionsShown: bool
+    compact: bool
+    session: string
+    disconnected: bool
+    pending: bool
+    localActive: bool
+    submittedKey: string
+    isSendingRow: bool
+    onChoose: action
+    onLocal: action
+  derive buttons = optionsShown ? item.allActions : item.shownActions
+  derive answers = optionsShown ? item.allOptions : item.options
+  derive answerKeys = answers.map(option => option.button.key)
+  derive followUps = buttons.filter(button => not answerKeys.includes(button.key))
+  derive firstFollowUpQuiet = match first(followUps) { case some(b) => b.emphasis == "quiet", case none => false }
+  derive armY = compact ? 14 : 18
+  view
+    column gap=0
+      for option, oi in answers key=option.id
+        column position="relative" gap=4 align-items="start" padding-bottom=12
+          if item.hasTree
+            box position="absolute" left=-17 top=0 height=(oi == answers.length - 1 ? armY : "100%") border-left="1.5px solid tree.row"
+            box position="absolute" left=-17 top=armY width=11 border-top="1.5px solid tree.row"
+          RowActionButton(a=option.button, item=item, compact=compact, session=session, disconnected=disconnected, pending=pending, localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+          if option.body.length > 0 or option.reason.length > 0
+            column color="ink.supporting" padding-left=13 gap=2
+              if option.body.length > 0
+                InlineText(parts=option.body)
+              if option.reason.length > 0
+                InlineText(parts=option.reason)
+      if followUps.length > 0
+        row appearance="none" flex-wrap="wrap" align-items="center" gap=8 margin-left=(firstFollowUpQuiet ? -5 : answers.length > 0 ? -13 : 0)
+          for a in followUps key=a.key
+            RowActionButton(a=a, item=item, compact=compact, session=session, disconnected=disconnected, pending=pending, localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+
+component RowActionButton
+  props
+    a: Button
+    item: Row
+    compact: bool
+    session: string
+    disconnected: bool
+    pending: bool
+    localActive: bool
+    submittedKey: string
+    isSendingRow: bool
+    onChoose: action
+    onLocal: action
+  derive isOutState = a.out or (a.key == submittedKey and isSendingRow)
+  derive isDisabled = a.command == "local" ? (a.disabled or disconnected or pending or localActive) : (a.disabled or disconnected or (pending and a.command != "options") or (a.key == submittedKey and isSendingRow))
+  view
+    if a.command == "local"
+      ActionPill(label=a.label, icon=a.icon, emphasis=a.emphasis, compact=compact, disabled=isDisabled, dimmed=isOutState, testId=`action-${a.key}`, onPress=onLocal(a, session, item.id, item.version))
+    else
+      ActionPill(label=a.label, icon=a.icon, emphasis=a.emphasis, compact=compact, disabled=isDisabled, dimmed=isOutState, testId=`action-${a.key}`, onPress=onChoose(a.key, a.input, item.id, item.title))

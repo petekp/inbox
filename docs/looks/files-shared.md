@@ -57,12 +57,6 @@ Part of [the look map](../looks.md#files).
 | `core/runtime/session-presses.ts` | Shared module. `pressOn` applies a press to a session, and `completedAttempt` records the outcome of sending a press's message. `recorded` applies the agent's `record` and `close` calls. Also the rows a look holds in place, `pruned`, which cuts closed records before each save, and `withFetchedPrs`, which merges fetched PRs into the session. |
 | `core/view/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including the PRs tab. `showsRunningMark` says whether a text look draws a running mark. |
 | `core/domain/conversation.ts` | Shared module. `flattenConversation` turns a conversation's `Turn`s into the text a catch-up reads, and clips it. Each host maps its own conversation to turns. |
-| `core/domain/clients.ts` | Shared module. The parity record: `CLIENTS`, built from one support table per host, and `PUBLISHED_LOOKS`, one table per look that draws a published session. |
-| `core/domain/clients-claude-code.ts` | Shared module. How the Claude Code mod host supports each feature, and why where it does not. |
-| `core/domain/clients-codex.ts` | Shared module. How the Codex host supports each feature, and why where it does not. |
-| `core/domain/clients-omp.ts` | Shared module. How the omp host supports each feature, and why where it does not. |
-| `core/domain/clients-herdr.ts` | Shared module. How the Herdr look supports each feature, which features its publishing host does for it, and why where it differs. |
-| `core/domain/client-features.ts` | Shared module. `FeatureId`, every feature the parity record in `core/domain/clients.ts` covers, and the record's `ClientId`, `Client`, `PublishedLookId` and `LookTable` types. |
 | `core/runtime/session-host.ts` | Shared module. The `SessionHost` and `UpdateHost` types a host supplies, and the update flows that run on a host's store: `runUpdates`, `askOverConversation` and `reconcileUpdateStatus`. It also holds `exclusiveKeys` and `orderedKeys`, which keep runs of one key apart in a process. |
 | `core/runtime/clipboard-commands.ts` | Shared module. The commands that put text on the clipboard on each platform, and the words for when none starts. The Codex server and omp run them. |
 | `core/runtime/host-press.ts` | Shared module. `press` and `startPress`, which run a press on a host's store, and `wakeAfterSettle`, which sends what waited for the settle window: held answers and Fixes, then the Done message. |
@@ -83,6 +77,7 @@ Part of [the look map](../looks.md#files).
 | `core/runtime/tools.ts` | Shared module. The record and close tools, and `agentTools`, the one list of their names, descriptions and schemas that every host and eval probe registers. Each call's answer holds the text the agent reads and the line the person sees under the call. |
 | `core/domain/tool-schemas.ts` | Shared module. The input schemas of the record, close and order_prs tools, with the description of each argument the agent reads. Their tool fields: this build's in `TOOL_FIELDS`, 0.3.0's in `V0_3_TOOL_FIELDS`, and a session's in `sessionToolFields`. |
 | `core/view/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |
+| `core/view/demo-prs.ts` | Shared module. Sample PR views for the shared demo session. |
 | `core/domain/demo-delegates.ts` | Shared module. Builds the finished delegates the demo session holds. |
 | `core/domain/dialogs.ts` | Shared module. Notes the questions of a Codex dialog, or of a dialog the person answered or dismissed, and links each to the inbox question that copies it: a Codex dialog's link, the dialog's option descriptions, and the close of an answered dialog's copy with the person's answer. |
 | `core/view/layout.ts` | Shared module. Sizes the desktop look and the Codex tab share. |
