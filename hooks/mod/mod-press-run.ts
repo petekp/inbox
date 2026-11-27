@@ -33,7 +33,7 @@ type PressRunCalls = Pick<
 
 /** Runs the press the controller sent as `pressId`, then tells it how the press ended. */
 export async function runPress(
-  m: PressRunCalls,
+  m: PressRunCalls & Pick<Mod, 'focusPaneKey'>,
   pressId: number,
   p: RowPress | PrPress,
   holds: Holds,
@@ -52,8 +52,11 @@ export async function runPress(
   if (effects) {
     if (mayStayOnRow && effects.some(effect => effect.kind === 'send')) cancelUndoScroll()
     const undoKey = await undoKeyAfterPress(m, p, surface)
-    if (undoKey !== null && undoRevision === paneState.undoScrollRevision)
-      await keepUndoVisible(m, undoKey, pressRowId(p), now, undoRevision)
+    const isUndoCurrent = () => undoRevision === paneState.undoScrollRevision
+    if (undoKey !== null && isUndoCurrent()) {
+      if (paneState.isInlineTerminalPane) await keepUndoVisible(m, undoKey, pressRowId(p), now, undoRevision)
+      void m.focusPaneKey(undoKey, isUndoCurrent).catch(() => undefined)
+    }
   }
   const outcome = started ? await started.finish() : null
   if (outcome?.wakesAfterSettle) later(m, SETTLED_MS, () => wakeAfterSettle(m))
@@ -74,7 +77,7 @@ async function undoKeyAfterPress(
   p: RowPress | PrPress,
   surface?: UiPressArgument['surface'],
 ): Promise<string | null> {
-  if (surface !== 'terminal' || !paneState.isInlineTerminalPane) return null
+  if (surface !== 'terminal') return null
   const { view } = await drawnState(m)
   if (isPrPress(p)) {
     const block = prUndoBlockAfter(view.prs.drawn, p)
