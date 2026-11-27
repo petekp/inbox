@@ -172,8 +172,6 @@ export type Mod = {
   publishStatus: (isEnding?: boolean, isExit?: boolean) => Promise<boolean>
   /** Starts or ends the Status look, as `syncLook` in `hooks/mod/mod-pane-open.ts` does. */
   syncLook: (isOpen?: boolean) => Promise<void>
-  /** Gives the shown pane the keys and focuses `key`, as `focusPaneKey` in `hooks/mod/mod-pane-open.ts` does. */
-  focusPaneKey: (key: string, stillCurrent: () => boolean) => Promise<void>
   /** The SessionHost for `owner`, as `hostOf` in `hooks/mod/mod-host.ts` builds it. */
   hostOf: (owner: Owner, surface?: UiPressArgument['surface']) => SessionHost<Session>
   /** Queues a PR fetch, as `fetchPrs` in `hooks/mod/mod-prs.ts` does. */
