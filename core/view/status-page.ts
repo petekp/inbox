@@ -164,6 +164,7 @@ export function statusPage(
   },
   now: number,
   turn: TurnSync = { is: 'fresh' },
+  collapsed: readonly string[] = [],
 ): StatusPage {
   const o = s.ledger.overview
   const sync = statusSync(s)
@@ -416,6 +417,7 @@ export function statusPage(
       syncText: statusSyncText(sync, now),
     },
     o,
+    id => collapsed.includes(id),
   )
 }
 

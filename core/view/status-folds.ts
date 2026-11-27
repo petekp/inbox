@@ -132,11 +132,16 @@ const listRows = (milestones: MilestoneRow[], rows: StatusRow[]) => [
 
 /**
  * Every row of the Status's list in the order the looks draw them: each milestone's rows, after the subject drawn in
- * its place, then the list after the goal. A milestone folded to its name holds none. The rows of milestones behind a met goal's shut fold, and of parents the
- * person folded, are included, which `drawnStatusRows` leaves out.
+ * its place, then the list after the goal. A milestone folded to its name holds none. The rows of milestones behind a
+ * met goal's shut fold are included, which `drawnStatusRows` leaves out. So are the rows of parents the person folded,
+ * unless `isCollapsed` names them.
  */
-export function statusListRows(page: StatusPage): StatusRow[] {
-  return listRows(page.goal?.milestones ?? [], page.rows)
+export function statusListRows(page: StatusPage, isCollapsed: IsCollapsed = NONE_COLLAPSED): StatusRow[] {
+  const milestones = (page.goal?.milestones ?? []).map(m =>
+    isParentCollapsed(m, isCollapsed) ? { ...m, rows: askRowsOf(m.rows) } : m,
+  )
+
+  return withoutCollapsed(listRows(milestones, page.rows), isCollapsed)
 }
 
 /**
