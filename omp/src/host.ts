@@ -35,7 +35,7 @@ import { demoSource } from './demo'
 import { bandLines, withScreenReadFailed } from './panel'
 import type { InboxModel, PanelScreen } from './panel'
 import { wrapText } from './panel-text'
-import { panelView, screenRows } from './panel-view'
+import { countCellsAsOmp, panelView, screenRows } from './panel-view'
 import { inboxModel } from './inbox-model'
 import { styleOf } from './theme'
 import type { OmpState } from './state'
@@ -474,5 +474,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 }
 
 export default function (pi: ExtensionAPI): void {
+  void import('@oh-my-pi/pi-tui').then(countCellsAsOmp)
   createInbox(pi)
 }

@@ -79,7 +79,7 @@ Each rule has an id that names it in reports.
 ### Resting
 
 - `plan-order`: the selected open row's buttons are its plan's, in order (AGENTS.md "Drawing in each look"). omp reads them from its lines after the cursor, as `omp/tests/panel.spec.ts` does, at 80 columns or more. Herdr reads each open row block's `buttons`, as `herdr/tests/draw.spec.ts` does. Both skip a row whose text field is open, and omp skips a row that is collapsed, has a press out or a reply sending, or was handed off and not opened again.
-- `width`: no omp line is wider than the panel, measured with `visibleWidth` from omp's TUI (`pi-tui`), which cuts a line that is too wide. The panel measures with `cellWidth` in `core/domain/text.ts`, so this checks that the two agree.
+- `width`: no omp line is wider than the panel, measured with `visibleWidth` from omp's TUI (`pi-tui`), which cuts a line that is too wide. The panel's `cellWidth` (`core/domain/text.ts`) counts with it once `countCellsAsOmp` hands it over.
 - `raw-escape`: with every omp style drawn as plain text, no line holds an escape other than the reset the panel puts after an ellipsis.
 - `glyph-cut`: no drawn text holds half a surrogate pair, ends inside a ZWJ sequence, or starts with a combining mark or variation selector. It runs on omp lines and on Herdr's painted text.
 - `counts`: the shared view's Asks and Finds counts equal the waiting rows `listWaits` gives, and omp's tab line draws the same counts. Herdr's drawn tab counts are not read yet.

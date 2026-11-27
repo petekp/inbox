@@ -4,6 +4,7 @@ import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import { NEXT_FRAME_MS } from './block-glide'
 import { isStatusUnder, statusKindOf } from './held-line'
+import { isGrowingFrom } from './panel-steps'
 import type { PanelSpace } from './panel-steps'
 
 type Line = NonNullable<RowBlock['feedback']>
@@ -133,7 +134,7 @@ export function underPushMs(
   space: PanelSpace,
 ): number | null {
   if (!last || b.kind !== 'row' || last.block.kind !== 'row') return null
-  if (last.restSpace && space.to > last.restSpace.to) return enterDelayMs(space.to, space.box)
+  if (isGrowingFrom(last.restSpace, space)) return enterDelayMs(space.to, space.box)
 
   return b.field !== null && last.block.field === null ? HEIGHT_SETTLE_MS - ENTER_FADE_MS : null
 }
