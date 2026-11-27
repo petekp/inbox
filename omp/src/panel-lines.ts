@@ -17,7 +17,7 @@ import {
   openMark,
   settledLabel,
 } from '../../core/view/rows'
-import { feedbackOf, feedbackTone, markedFeedbackText, rowFeedbackText } from '../../core/view/feedback'
+import { feedbackOf, feedbackTone, markedFeedbackText, rowAgeAt, rowFeedbackText } from '../../core/view/feedback'
 import { groupEmptyText } from '../../core/view/banners'
 import { rowKeyPlan } from '../../core/view/action-plan'
 import type { AnswerRow } from '../../core/view/action-plan'
@@ -247,8 +247,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === 'settled',
-    // As in the terminal, a row a press finished reads the press's age.
-    age: f?.is === 'done' ? f.at : row.at,
+    age: rowAgeAt(f, row.at),
     detail: row.detail,
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackToneOf(f), source: f } : null,

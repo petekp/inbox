@@ -233,6 +233,14 @@ export function hasAge(
   )
 }
 
+/**
+ * When a row's age counts from: its last press, once that press has an age, else `arrivedAt`, when the row arrived.
+ * A press out leaves the age as it was until the press is saved, so every look shows the same age while it waits.
+ */
+export function rowAgeAt<T>(last: Feedback | null, arrivedAt: T): number | T {
+  return last && hasAge(last) ? last.at : arrivedAt
+}
+
 function isPressOut(f: Feedback | null): boolean {
   return (
     f?.is === 'working' ||
