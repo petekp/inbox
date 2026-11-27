@@ -55,6 +55,7 @@ import {
   isGroupEmpty,
   prButtons,
   pressFeedback,
+  withUnshownPress,
 } from './panel-lines'
 import type { Button, Entry, Group, Lead, Line } from './panel-lines'
 import { rowErrorOf } from '../../core/view/ui-controller'
@@ -412,8 +413,9 @@ export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: 
   const collapsed = new Set(screen.view.collapsed)
   const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab, now)
   // A refused press's text shows on its row in place of the row's status, as long as the controller keeps it.
-  const shown = (line: Line): Line => {
-    const error = rowErrorOf(ui, line.id, now)
+  const shown = (drawn: Line): Line => {
+    const error = rowErrorOf(ui, drawn.id, now)
+    const line = error === null ? withUnshownPress(drawn, screen, ui) : drawn
     const feedback = error === null ? line.feedback : { text: error, tone: 'error' as const, source: null }
 
     return { ...line, feedback, ...(collapsed.has(line.id) ? { isCollapsed: true } : {}) }

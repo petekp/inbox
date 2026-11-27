@@ -252,7 +252,7 @@ export const PRESS_SEEDS: {
     rule: 'press-shows',
     detail: 'the key "x"',
     issue: 1011,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...omp([
         { is: 'record', args: { kind: 'task', ask: 'S', steps: [] } },

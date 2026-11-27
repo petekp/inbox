@@ -29,7 +29,7 @@ import { isUndoing, outOn } from './tab-press'
 import type { Key, Row } from './tab-state'
 import { pendingLocal, pressesOf, prKey, pressTitle } from './tab-rows'
 import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner, EmptyState } from './tab-parts'
-import { PR_REFRESH } from '../../core/view/pr-press'
+import { prPressEffect } from '../../core/view/pr-press'
 import type { PrRefreshView } from '../../core/view/pr-refresh'
 import { ListRow } from './tab-list'
 import { pressLine } from './tab-pr-lines'
@@ -123,7 +123,11 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
 function refreshKeys(refresh: PrRefreshView): Key[] {
   return refresh.actions.map(a => ({
     ...tabKey(PR_REFRESH_ID, a),
-    run: by => pressRow(a.press, by, { pending: pendingLocal(PR_REFRESH), kind: null }),
+    run: by => {
+      const effect = prPressEffect(null, a.press)
+
+      return pressRow(a.press, by, { pending: effect && pendingLocal(effect), kind: null })
+    },
   }))
 }
 

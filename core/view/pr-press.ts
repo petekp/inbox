@@ -118,10 +118,13 @@ export function readFirstEffect(pr: PrView): Effect {
 }
 
 /**
- * The open or refresh a PR press runs first: a Local press's open or refresh, or `readFirstEffect` for a press that
- * reads the PR first. Null for a press that only sends or marks, or whose row is gone.
+ * The open or refresh a PR press runs first: Refresh PRs' `PR_REFRESH`, a Local press's open, or `readFirstEffect`
+ * for a press that reads the PR first. Null for a press that only sends or marks, or whose row is gone. `pr` is null
+ * for a press of the tab's own lines, which belongs to no PR.
  */
-export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
+export function prPressEffect(pr: PrView | null, p: PrPress): Effect | null {
+  if (p.action === 'pr-refresh') return PR_REFRESH
+  if (!pr) return null
   if (isPrReadFirstPress(p)) return readFirstEffect(pr)
   switch (p.action) {
     case 'thread-open': {

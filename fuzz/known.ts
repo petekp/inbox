@@ -50,14 +50,6 @@ const KNOWN: {
       ["in the draw after the host's answer", '"Sending reply: '],
     ],
   },
-  {
-    issue: 1011,
-    look: 'omp',
-    rule: 'press-shows',
-    details: ['x', 'u', 'e', 'i', 'a', 'b', 'c', 'd', 'enter'].map(key => `the key "${key}" changed nothing`),
-  },
-  { issue: 1012, look: 'codex', rule: 'press-shows', details: ['"✓ Opened the comment"'] },
-  { issue: 1014, look: 'codex', rule: 'press-shows', details: ['"✓ Opened previews"'] },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */

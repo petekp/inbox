@@ -1,5 +1,6 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
+import { SENDING } from '../../core/view/unshown-press'
 import type { Block } from '../src/blocks'
 import type { PressKind } from '../../types'
 
@@ -110,7 +111,7 @@ test('a press’s status under a row’s buttons shows faint in the press’s ow
     400,
   )
   const pressDrawAt = Math.min(...shown.filter(s => s.at >= 0).map(s => s.at))
-  const pressDraw = shown.filter(s => s.at === pressDrawAt && s.text === 'Sending…')
+  const pressDraw = shown.filter(s => s.at === pressDrawAt && s.text === SENDING)
   expect({
     isShownAtOnce: pressDraw.some(s => s.opacity > 0 && s.share > 0),
     cuts: cuts.filter(c => c.at >= 0),

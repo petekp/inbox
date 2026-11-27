@@ -2000,6 +2000,14 @@ function helpEffect(item, help) {
 function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
 }
+function localEffects(row, press) {
+  if (!row.item)
+    return [];
+  if (press.action === "previews")
+    return previewEffects(row.item);
+  const step = press.action === "step" && press.step !== undefined ? row.steps[press.step] : undefined;
+  return step ? stepEffects(row.item, step) : [];
+}
 
 // ../core/domain/ledger-close.ts
 var MAX_CLOSED = 12;
@@ -6810,6 +6818,7 @@ function isStatusUnderActions(f, isOpen) {
   const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
   return isOpen && (isPressOut(f) || f?.is === "local" || isDoneStillWaiting);
 }
+var holdsStatusWhileOut = (kind) => kind === "mark";
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
@@ -6904,6 +6913,28 @@ function isPrReadFirstPress(p) {
 }
 function readFirstEffect(pr) {
   return { kind: "refresh-prs", name: `PR #${pr.number}` };
+}
+function prPressEffect(pr, p) {
+  if (p.action === "pr-refresh")
+    return PR_REFRESH;
+  if (!pr)
+    return null;
+  if (isPrReadFirstPress(p))
+    return readFirstEffect(pr);
+  switch (p.action) {
+    case "thread-open": {
+      const t = pr.threads.find((x) => x.id === p.thread);
+      return t ? commentEffect(pr, t) : null;
+    }
+    case "pr-open":
+      return prPageEffect(pr);
+    case "log": {
+      const check = pr.checks.find((c) => checkKey(c) === p.check);
+      return check ? logEffect(pr, check) : null;
+    }
+    default:
+      return null;
+  }
 }
 function prRowId(p) {
   if (p.action === "pr-rank-again")
@@ -9173,6 +9204,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
     pressOutSince
   };
 }
+var lastActionKey = (view, id) => JSON.stringify(view?.lastActions[id] ?? null);
 
 // ../core/runtime/session-presses.ts
 function isRepeatWhileOut(s, p, at, drawn) {
@@ -9946,7 +9978,9 @@ function press(ui, view, p, by, now) {
     return withCommands(ui);
   const holds = holdsOf(ui, now);
   const pressId = ui.nextPressId;
-  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, by };
+  const atBefore = view.lastActions[rowId]?.at ?? null;
+  const lastBefore = lastActionKey(view, rowId);
+  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, lastBefore, by };
   const { [rowId]: _error, ...errors } = ui.errors;
   const { [rowId]: _note, ...notes } = ui.notes;
   let next = {
@@ -9959,7 +9993,7 @@ function press(ui, view, p, by, now) {
   };
   if (isReply) {
     const text = p.text.trim();
-    const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false };
+    const sent = { pressId, text, atBefore, isConfirmed: false };
     next = {
       ...next,
       typing: next.typing === rowId ? null : next.typing,
@@ -10455,6 +10489,23 @@ function noticeOf(ui, now) {
 }
 var isUiWorthKeeping = (ui) => Object.values(ui.drafts).some((d) => d.text.trim() !== "") || Object.keys(ui.sentReplies).length > 0;
 
+// ../core/view/unshown-press.ts
+var SENDING = "Sending\u2026";
+var sendingFeedback = (at) => ({ is: "sending", label: SENDING, at, sentAt: at });
+function unshownPressOut(pressesOut, view, id) {
+  const out = Object.values(pressesOut).filter((p) => p.rowId === id && !p.isReply).pop();
+  if (!out || lastActionKey(view, id) !== out.lastBefore)
+    return null;
+  return out;
+}
+function unshownPressFeedback(kind, effects, at) {
+  if (holdsStatusWhileOut(kind))
+    return null;
+  if (effects.some((e) => e.kind !== "send"))
+    return { is: "local", result: pendingResult([...effects], at) };
+  return sendingFeedback(at);
+}
+
 // ../core/view/layout.ts
 var SPACE_UNIT = 4;
 var LINE_PT = 5 * SPACE_UNIT;
@@ -10835,6 +10886,37 @@ function focusOf2(line, ui) {
   return kept >= 0 ? kept : defaultFocus(line);
 }
 var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
+var isSentPress = (p) => p.action !== "resume" && p.action !== "herdr-ask" && p.action !== "all-options";
+function pressEffects(screen, line, press, kind) {
+  if (!isPrPress(press))
+    return kind === "local" && line.row ? localEffects(line.row, press) : [];
+  const pr = "ref" in press ? screen.view.prs.drawn.find((d) => d.pr.ref === press.ref)?.pr : undefined;
+  const effect = prPressEffect(pr ?? null, press);
+  return effect ? [effect] : [];
+}
+function withUnshownPress(line, screen, ui) {
+  const outOf = (p) => {
+    if (!p || !isSentPress(p))
+      return null;
+    const out = unshownPressOut(ui.pressesOut, screen.view, pressRowId(p));
+    return out && actionId(p) === out.action ? out : null;
+  };
+  if (line.settled)
+    return outOf(line.settled.undo) ? { ...line, isSending: true } : line;
+  const pressed = line.buttons.find((b) => outOf(b.press));
+  const out = outOf(pressed?.press);
+  if (!pressed || !out || !isSentPress(pressed.press))
+    return line;
+  const kind = pressed.kind ?? null;
+  const effects = pressEffects(screen, line, pressed.press, kind);
+  const f = pressed.kind === undefined ? null : unshownPressFeedback(kind, effects, out.at);
+  return {
+    ...line,
+    buttons: line.buttons.map((b) => outOf(b.press) ? { ...b, isOut: true } : b),
+    isSending: !line.isTabButtons,
+    ...f ? { feedback: { text: markedFeedbackText(f, false, AGENT), tone: feedbackToneOf(f), source: f } } : {}
+  };
+}
 
 // src/panel-draw.ts
 function boxed(inner, tone, width, s) {
@@ -10962,7 +11044,7 @@ function drawLine(line, isSelected, d) {
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const lead = leadText(line.lead, s, tint);
   const head = isOnTree ? `${cursor}${s.dim(line.tree === "mid" ? "\u251C\u2500" : "\u2514\u2500")} ${lead}` : `${line.tree === "off" ? " " : ""} ${" ".repeat(pad)}${cursor} ${lead}`;
-  const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
+  const age = line.isSending ? s.dim(SENDING) : line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
   const settledLabel = line.settled ? cutSettledLabel(line.settled.label, besideAge - visibleLength(head) - visibleLength(`  ${mark}`) - (line.settled.undo ? visibleLength(`  ${UNDO_KEY} Undo`) : 0)) : "";
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", settledLabel) : s.dim(settledLabel)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
@@ -11932,8 +12014,9 @@ function entriesOf(screen, ui, tab, now) {
     return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id), now);
   const collapsed = new Set(screen.view.collapsed);
   const entries = tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab, now);
-  const shown = (line) => {
-    const error = rowErrorOf(ui, line.id, now);
+  const shown = (drawn) => {
+    const error = rowErrorOf(ui, drawn.id, now);
+    const line = error === null ? withUnshownPress(drawn, screen, ui) : drawn;
     const feedback = error === null ? line.feedback : { text: error, tone: "error", source: null };
     return { ...line, feedback, ...collapsed.has(line.id) ? { isCollapsed: true } : {} };
   };

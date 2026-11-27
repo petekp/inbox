@@ -8,6 +8,7 @@ import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import type { LookUi } from '../src/draw'
 import { NO_LINES_ABOVE, holdLinesAbove } from '../src/held-line'
+import { SENDING, sendingFeedback } from '../../core/view/unshown-press'
 import type { LinesAbove } from '../src/held-line'
 import { AGENT, NOW, demoScreen, dismissedSession, uiOn } from './fixtures'
 
@@ -168,7 +169,7 @@ test('a held line that ends with its age keeps counting it', () => {
   }
   const sending: RowBlock = {
     ...row,
-    feedback: { text: 'Sending…', tone: 'muted', source: { is: 'sending', label: 'Sending…', at: NOW, sentAt: NOW } },
+    feedback: { text: SENDING, tone: 'muted', source: sendingFeedback(NOW) },
   }
   const first = holdLinesAbove([done], NO_LINES_ABOVE, NOW)
   const later = holdLinesAbove([sending], first.held, NOW + 60_000)

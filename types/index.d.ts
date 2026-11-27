@@ -949,6 +949,8 @@ export type PressOut = {
   action: string
   isReply: boolean
   at: number
+  /** The row's last action when it was pressed, as `lastActionKey` gives it, so a look can tell when a view shows the press. */
+  lastBefore: string
   /** The input that pressed. A click that closes its row guards the row the cursor moves to. */
   by: InputKind
 }

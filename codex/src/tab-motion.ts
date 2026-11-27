@@ -2,6 +2,7 @@ import {
   ENTER_FADE_MS,
   enterDelayMs,
   FADE_MS,
+  FAINT_OPACITY,
   isMoving,
   LEAVE_FADE_MS,
   SLIDE_PX,
@@ -118,9 +119,10 @@ function isSpaceShort(el: HTMLElement): boolean {
 /**
  * Grows an element in from `from` after `delay` ms, holding it there until then, then fades its content in once its
  * space is nearly open. Its fade slides the element with its content, so the space must first pass the content's last
- * line. Content still partly shown, as in a leave turned back, fades back in at once.
+ * line. Content still partly shown, as in a leave turned back, fades back in at once. Content that `isFaint` shows at
+ * `FAINT_OPACITY` from the start and fades to full through `turnBackFades`.
  */
-function growIn(el: HTMLElement, from: SpringState, opacity: number, delay: number) {
+function growIn(el: HTMLElement, from: SpringState, opacity: number, delay: number, isFaint = false) {
   const to = naturalHeight(el)
   const slack = Math.min(
     SLIDE_PX / 2,
@@ -128,6 +130,7 @@ function growIn(el: HTMLElement, from: SpringState, opacity: number, delay: numb
   )
   const start = delay > 0 ? { x: from.x, v: 0 } : from
   glide(el, 'height', start, to, false, true, delay)
+  if (isFaint) return fadeThrough(el, FAINT_OPACITY, turnBackFades(to, start), delay)
   const waits = opacity > 0.01 ? 0 : enterDelayMs(to, start, slack)
   fade(el, opacity, 1, ENTER_FADE_MS, false, true, delay + waits)
 }
@@ -282,7 +285,8 @@ function moveRow(
   for (const a of el.getAnimations()) if (a.playState === 'finished') a.cancel()
   if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
     glide(el, 'height', from, target, false, scalesEdges, delay)
-  if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
+  const isGrowingIn = state === 'entering'
+  if (opacity < 0.99 && !isFadingIn(el) && !isGrowingIn) fade(el, opacity, 1, FADE_MS)
   const leftShown = was?.openPart !== part && was?.openPart?.closest(FORM_LEFT) ? was.openShown : 0
   if (part && state === 'opening' && changed.has(key))
     openPanel(part, was?.openPart === part, delay, target, from, leftShown)
@@ -357,7 +361,8 @@ function startState(
     case 'entering': {
       const isTurn = !isFresh && el.getAnimations().length > 0
       const delay = isTurn && !isSpaceShort(el) ? 0 : Math.max(heightWaitMs, closeWaitMs)
-      growIn(el, isTurn ? from : { x: restOf(el), v: 0 }, isTurn ? opacityOf(el) : 0, delay)
+      const isFaint = !isTurn && track.entersFaint === true
+      growIn(el, isTurn ? from : { x: restOf(el), v: 0 }, isTurn ? opacityOf(el) : 0, delay, isFaint)
       return true
     }
     case 'closing':

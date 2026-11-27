@@ -62,7 +62,7 @@ const PR_TONE: Record<Exclude<(typeof PR_TONES)[keyof typeof PR_TONES], null>, T
 
 /** A PR plan's button, which runs its open or refresh first. */
 function prButton(pr: PrView | null, a: PrAction, id: string): Button {
-  const effect = pr ? prPressEffect(pr, a.press) : null
+  const effect = prPressEffect(pr, a.press)
   const does: Does = { is: 'press', press: a.press, effects: effect ? [effect] : [], kind: a.kind }
   const b = button(id, a.label, a.emphasis, does, a.hotkey)
 

@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T12:16:17.706Z. 424395 characters follow.
+// Built at 2026-11-27T13:04:40.831Z. 424736 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -3096,6 +3096,7 @@ function feedbackText(f, look) {
 }
 
 // ../core/view/pr-press.ts
+var PR_REFRESH = { kind: "refresh-prs", name: "PRs" };
 function isPrPress(p) {
   return "ref" in p || p.action === "pr-rank-again" || p.action === "pr-refresh" || p.action === "pr-clear-finished";
 }
@@ -3137,6 +3138,10 @@ function readFirstEffect(pr) {
   return { kind: "refresh-prs", name: `PR #${pr.number}` };
 }
 function prPressEffect(pr, p) {
+  if (p.action === "pr-refresh")
+    return PR_REFRESH;
+  if (!pr)
+    return null;
   if (isPrReadFirstPress(p))
     return readFirstEffect(pr);
   switch (p.action) {
@@ -4434,6 +4439,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
     pressOutSince
   };
 }
+var lastActionKey = (view, id) => JSON.stringify(view?.lastActions[id] ?? null);
 
 // ../core/view/fold-all.ts
 var statusFoldsOf = (view) => {
@@ -4772,7 +4778,9 @@ function press(ui, view, p, by, now) {
     return withCommands(ui);
   const holds = holdsOf(ui, now);
   const pressId = ui.nextPressId;
-  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, by };
+  const atBefore = view.lastActions[rowId]?.at ?? null;
+  const lastBefore = lastActionKey(view, rowId);
+  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, lastBefore, by };
   const { [rowId]: _error, ...errors } = ui.errors;
   const { [rowId]: _note, ...notes } = ui.notes;
   let next = {
@@ -4785,7 +4793,7 @@ function press(ui, view, p, by, now) {
   };
   if (isReply) {
     const text = p.text.trim();
-    const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false };
+    const sent = { pressId, text, atBefore, isConfirmed: false };
     next = {
       ...next,
       typing: next.typing === rowId ? null : next.typing,
@@ -5267,8 +5275,11 @@ function keptUiStates(states, shownId) {
   return Object.fromEntries([...shown, ...others]);
 }
 
-// src/out.ts
+// ../core/view/unshown-press.ts
 var SENDING = "Sending…";
+var sendingFeedback = (at) => ({ is: "sending", label: SENDING, at, sentAt: at });
+
+// src/out.ts
 var REREAD_AFTER_MS = 5000;
 var GIVE_UP_MS = 15000;
 var outAction2 = (p) => ("id" in p) ? actionId(p) : p.action;
@@ -5357,10 +5368,10 @@ function drawOuts(blocks, outs, lines, now) {
     const refused = lines[id];
     if (!out || holdsStatusWhileOut(out.kind) || refused)
       return refused ?? null;
-    const source = out.pending ?? { is: "sending", label: SENDING, at: now, sentAt: now };
+    const source = out.pending ?? sendingFeedback(now);
     if (out.result)
       return { ...resultLine(out.result), source };
-    return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted", source };
+    return { text: feedbackText(source, "herdr"), tone: "muted", source };
   };
   return blocks.map((b) => {
     if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
@@ -8680,7 +8691,7 @@ var PR_TONE = {
   error: "error"
 };
 function prButton(pr, a, id) {
-  const effect = pr ? prPressEffect(pr, a.press) : null;
+  const effect = prPressEffect(pr, a.press);
   const does = { is: "press", press: a.press, effects: effect ? [effect] : [], kind: a.kind };
   const b = button(id, a.label, a.emphasis, does, a.hotkey);
   return { ...b, isOut: a.isOut };
