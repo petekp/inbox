@@ -7,26 +7,29 @@ component StatusPane
   props
     inbox: Inbox
     pending: bool
+    compact: bool
     prefix: string
     reduced: bool
     onAction: action
   derive readOnly = inbox.readOnly or not inbox.connected
   view
-    column gap=0 padding-top=6
-      column padding="6px 16px 8px 16px" gap=6
+    column gap=0 padding-top=2
+      column padding="4px 16px 6px 16px" gap=6
         row gap=8 align-items="center"
           if inbox.statusMark != ""
             column width=16 align-items="center"
               MarkGlyph(mark=inbox.statusMark, color=inbox.statusMarkColor, running=false, reduced=reduced, size=10)
-          text inbox.statusLabel font-size=13 color=(inbox.statusIsMet ? inbox.statusMarkColor : "ink.muted")
+          text inbox.statusLabel font-size=(compact ? 13 : 14) color=(inbox.statusIsMet ? inbox.statusMarkColor : "ink.muted")
           box flex=1 height=1 background-color="surface.soft"
           if inbox.statusHeadingActions.length > 0
-            row gap=8 align-items="center"
-              for a in inbox.statusHeadingActions key=a.action
-                button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=0 background-color="transparent" padding="2px 4px" border-radius=5 opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
+            row gap=6 align-items="center"
+              for a, ai in inbox.statusHeadingActions key=a.action
+                if ai > 0
+                  text "·" font-size=(compact ? 13 : 14) color="ink.faint"
+                button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=0 background-color="transparent" padding="2px 4px" border-radius=5 box-sizing="border-box" opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
                   :active
                     background-color="surface.soft"
-                  text a.label color="ink.muted" font-size=13
+                  text a.label color="ink.muted" font-size=(compact ? 13 : 14)
         column padding-left=(inbox.statusMark != "" ? 24 : 0) gap=4
           if pending
             row gap=6 align-items="center"
@@ -45,10 +48,10 @@ component StatusPane
             row gap=8 flex-wrap="wrap" align-items="center" padding-top=4
               text inbox.statusOffer font-size=15 font-weight=600 color="ink.primary"
               for a in inbox.statusOfferActions key=a.action
-                button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=(a.emphasis == "quiet" ? 0 : 1) border-style="solid" border-color=(a.emphasis == "primary" ? "transparent" : "border.key") border-radius=14 background-color=(a.emphasis == "primary" ? "ink.primary" : "transparent") padding=(a.emphasis == "quiet" ? "4px 6px" : "4px 12px") min-height=28 opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
+                button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=(a.emphasis == "quiet" ? 0 : 1) border-style="solid" border-color=(a.emphasis == "primary" ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color=(a.emphasis == "primary" ? "ink.primary" : "transparent") padding=(a.emphasis == "quiet" ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
                   :active
                     opacity=0.8
                   ButtonLabel(label=a.label, icon="", color=(a.emphasis == "primary" ? "ink.on-primary" : a.emphasis == "quiet" ? "ink.muted" : "ink.primary"))
       column gap=0 padding-top=(inbox.statusHasGoal ? 6 : 2)
         for s in inbox.statusRows key=s.id
-          StatusRowView(s=s, prefix=prefix, pending=pending, readOnly=readOnly, reduced=reduced, onAction=onAction)
+          StatusRowView(s=s, prefix=prefix, compact=compact, pending=pending, readOnly=readOnly, reduced=reduced, onAction=onAction)

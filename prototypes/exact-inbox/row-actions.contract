@@ -18,13 +18,16 @@ component RowActions
   derive buttons = optionsShown ? item.allActions : item.shownActions
   derive answers = optionsShown ? item.allOptions : item.options
   derive answerKeys = answers.map(option => option.button.key)
+  derive followUps = buttons.filter(button => not answerKeys.includes(button.key))
+  derive firstFollowUpQuiet = match first(followUps) { case some(b) => b.emphasis == "quiet", case none => false }
+  derive armY = compact ? 14 : 18
   view
     column gap=0
       for option, oi in answers key=option.id
-        column position="relative" gap=4 align-items="start" padding-bottom=8
+        column position="relative" gap=4 align-items="start" padding-bottom=12
           if item.hasTree
-            box position="absolute" left=-17 top=0 height=(oi == answers.length - 1 ? 14 : "100%") border-left="1.5px solid tree.row"
-            box position="absolute" left=-17 top=14 width=11 border-top="1.5px solid tree.row"
+            box position="absolute" left=-17 top=0 height=(oi == answers.length - 1 ? armY : "100%") border-left="1.5px solid tree.row"
+            box position="absolute" left=-17 top=armY width=11 border-top="1.5px solid tree.row"
           RowActionButton(a=option.button, item=item, compact=compact, session=session, disconnected=disconnected, pending=pending, localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
           if option.body.length > 0 or option.reason.length > 0
             column color="ink.muted" padding-left=13 gap=2
@@ -32,9 +35,10 @@ component RowActions
                 InlineText(parts=option.body)
               if option.reason.length > 0
                 InlineText(parts=option.reason)
-      row appearance="none" flex-wrap="wrap" align-items="center" gap=8
-        for a in buttons.filter(button => not answerKeys.includes(button.key)) key=a.key
-          RowActionButton(a=a, item=item, compact=compact, session=session, disconnected=disconnected, pending=pending, localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
+      if followUps.length > 0
+        row appearance="none" flex-wrap="wrap" align-items="center" gap=8 margin-left=(firstFollowUpQuiet ? -5 : answers.length > 0 ? -13 : 0)
+          for a in followUps key=a.key
+            RowActionButton(a=a, item=item, compact=compact, session=session, disconnected=disconnected, pending=pending, localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
 
 component RowActionButton
   props
@@ -55,12 +59,12 @@ component RowActionButton
   derive fgColor = a.primary ? "ink.on-primary" : isQuiet ? "ink.muted" : "ink.primary"
   view
     if a.command == "local"
-      button press=onLocal(a, session, item.id, item.version) disabled=isDisabled testId=`action-${a.key}` appearance="none" border-width=(isQuiet ? 0 : 1) border-style="solid" border-color=(isQuiet ? "transparent" : "border.key") border-radius=14 background-color="transparent" padding=(isQuiet ? "4px 6px" : "4px 12px") min-height=(compact ? 28 : 36) opacity=(isOutState or isDisabled ? 0.4 : 1)
+      button press=onLocal(a, session, item.id, item.version) disabled=isDisabled testId=`action-${a.key}` appearance="none" border-width=(isQuiet ? 0 : 1) border-style="solid" border-color=(isQuiet ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color="transparent" padding=(isQuiet ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(isOutState or isDisabled ? 0.4 : 1)
         :active
           background-color="surface.soft"
         ButtonLabel(label=a.label, icon=a.icon, color=fgColor)
     else
-      button press=onChoose(a.key, a.input, item.id, item.title) disabled=isDisabled testId=`action-${a.key}` appearance="none" border-width=(isQuiet or a.primary ? 0 : 1) border-style="solid" border-color=(a.primary or isQuiet ? "transparent" : "border.key") border-radius=14 background-color=(a.primary ? "ink.primary" : "transparent") padding=(isQuiet ? "4px 6px" : "4px 12px") min-height=(compact ? 28 : 36) opacity=(isOutState or isDisabled ? 0.4 : 1)
+      button press=onChoose(a.key, a.input, item.id, item.title) disabled=isDisabled testId=`action-${a.key}` appearance="none" border-width=(isQuiet or a.primary ? 0 : 1) border-style="solid" border-color=(a.primary or isQuiet ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color=(a.primary ? "ink.primary" : "transparent") padding=(isQuiet ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(isOutState or isDisabled ? 0.4 : 1)
         :active
           opacity=0.8
         ButtonLabel(label=a.label, icon=a.icon, color=fgColor)

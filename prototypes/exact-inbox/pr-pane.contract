@@ -30,9 +30,9 @@ component PrPane
           if inbox.prEmptyHint != ""
             text inbox.prEmptyHint color="ink.muted" text-align="center" max-width=360
       for v in visual key=v.id
-        column id=`${prefix}-pr-${v.row.id}` gap=4 padding=(v.target == "gone" ? "0px" : v.row.kind == "block" or v.row.kind == "group" ? "6px 16px 6px 40px" : "6px 16px") background-color=(isPrRow(v.row) and (v.target == "open" or v.phase == "closing") ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(v.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(v.target == "gone") aria-hidden=(v.target == "gone") -exact-layout-transition=rowLayout(reduced) animation=rowEntry(reduced, v.arriving)
+        column id=`${prefix}-pr-${v.row.id}` gap=4 padding=(v.target == "gone" ? "0px" : v.row.kind == "group" ? "12px 16px 4px 40px" : "6px 16px 6px 40px") background-color=(isPrRow(v.row) and (v.target == "open" or v.phase == "closing") ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(v.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(v.target == "gone") aria-hidden=(v.target == "gone") -exact-layout-transition=rowLayout(reduced) animation=rowEntry(reduced, v.arriving)
           if v.row.kind == "block" and not v.row.isFirstBlock
-            box height=1 margin="6px 0 10px 0" background-color="surface.soft"
+            box height=1 margin="6px 0 12px 0" background-color="surface.soft"
           if isPrRow(v.row)
             button press=onFold(v.row.id, v.row.collapse) appearance="none" background-color="transparent" border-width=0 display="flex" width="100%" min-height=(compact ? 24 : 36) padding=0 text-align="left" align-items="start" aria-expanded=(selected == v.row.id) testId=`pr-select-${v.row.id}`
               row gap=8 align-items="start" width="100%"
@@ -63,7 +63,7 @@ component PrPane
             if v.panel.controls.length > 0
               row appearance="none" gap=8 flex-wrap="wrap" align-items="center" padding-top=2
                 for control in v.panel.controls key=control.key
-                  button press=onAction(control) disabled=(control.disabled or busy or (control.scope == "row" and (guarded or v.guarded or v.target != "open")) or (control.command == "local" and localActive) or (sending and submittedKey == control.key)) appearance="none" border-width=(control.emphasis == "quiet" or control.primary ? 0 : 1) border-style="solid" border-color=(control.emphasis == "quiet" or control.primary ? "transparent" : "border.key") border-radius=14 background-color=(control.primary ? "ink.primary" : "transparent") padding=(control.emphasis == "quiet" ? "4px 6px" : "4px 12px") min-height=(compact ? 28 : 36) opacity=(control.out or control.disabled or busy or (sending and submittedKey == control.key) ? 0.4 : 1) testId=`pr-action-${control.key}`
+                  button press=onAction(control) disabled=(control.disabled or busy or (control.scope == "row" and (guarded or v.guarded or v.target != "open")) or (control.command == "local" and localActive) or (sending and submittedKey == control.key)) appearance="none" border-width=(control.emphasis == "quiet" or control.primary ? 0 : 1) border-style="solid" border-color=(control.emphasis == "quiet" or control.primary ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color=(control.primary ? "ink.primary" : "transparent") padding=(control.emphasis == "quiet" ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(control.out or control.disabled or busy or (sending and submittedKey == control.key) ? 0.4 : 1) testId=`pr-action-${control.key}`
                     :active
                       opacity=0.8
                     ButtonLabel(label=control.label, icon=control.icon, color=(control.primary ? "ink.on-primary" : control.emphasis == "quiet" ? "ink.muted" : "ink.primary"))

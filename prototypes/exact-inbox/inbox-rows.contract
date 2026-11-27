@@ -56,15 +56,16 @@ component InboxRows
     else
       column gap=0
         for g, gi in groups key=g.id
-          column testId=`group-${g.id}` padding="8px 0" -exact-layout-transition=rowLayout(reduced)
+          column testId=`group-${g.id}` padding-top=(gi > 0 ? 0 : 8) padding-bottom=12 -exact-layout-transition=rowLayout(reduced)
             if gi > 0
               box height=1 margin="0 0 12px 40px" background-color="surface.soft"
             row gap=8 padding="0 16px 4px 16px" align-items="center"
               column width=16 align-items="center"
                 MarkGlyph(mark=g.mark, color=g.color, running=false, reduced=reduced, size=13)
-              text g.title role="heading" aria-level=2 font-weight=600 color="ink.primary"
-              if g.count > 0
-                text `${g.count}` color="ink.muted" font-variant-numeric="tabular-nums"
+              row gap=6 align-items="baseline"
+                text g.title role="heading" aria-level=2 font-size=(compact ? 13 : 14) font-weight=600 color="ink.primary"
+                if g.count > 0
+                  text `${g.count}` font-size=(compact ? 13 : 14) color="ink.muted" font-variant-numeric="tabular-nums"
             for r in g.rows key=r.id
               column id=`${prefix}-row-${r.id}` gap=0 padding=(r.target == "gone" ? "0px" : "6px 16px") background-color=(r.target == "open" or r.phase == "closing" ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(r.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(r.target == "gone") aria-hidden=(r.target == "gone") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "gone" ? 0 : 1) translate=rowSlide(r.target == "gone") animation=rowEntry(reduced, r.arriving) testId=`row-${r.row.id}`
                 button press=onToggle(r.row.id, r.row.collapse) appearance="none" background-color="transparent" border-width=0 padding=0 width="100%" text-align="left" aria-expanded=(selected == r.row.id) color="ink.primary" testId=`select-${r.row.id}` min-height=(compact ? 24 : 36)
@@ -132,6 +133,7 @@ component InboxRows
                   text g.closedLabel color="ink.muted"
                   ActionIcon(name=(folds.includes(g.id) ? "chevron-down" : "chevron-right"), color="ink.muted", size=12)
             if folds.includes(g.id)
+              box height=4
               for r in (earlier.includes(g.id) ? g.closedAll : g.closed) key=r.id
                 row gap=8 padding="6px 16px 6px 40px" align-items="start" -exact-layout-transition=rowLayout(reduced) -exact-exit-animation=rowExit(reduced) testId=`closed-${r.id}`
                   column width=16 padding-top=6 align-items="center"
@@ -143,7 +145,7 @@ component InboxRows
                     if r.actions.length > 0
                       row gap=8 padding-top=2
                         for a in r.actions key=a.key
-                          button press=onChoose(a.key, a.input, r.id, r.title.map(s => s.text).join("")) disabled=(a.disabled or disconnected or pending or (r.id == submittedRow and isSendingRow)) appearance="none" border-width=0 background-color="transparent" padding="2px 4px" margin-left=-4 border-radius=5 opacity=(a.disabled or disconnected or pending ? 0.4 : 1) testId=`action-${a.key}` min-height=(compact ? 24 : 32)
+                          button press=onChoose(a.key, a.input, r.id, r.title.map(s => s.text).join("")) disabled=(a.disabled or disconnected or pending or (r.id == submittedRow and isSendingRow)) appearance="none" border-width=0 background-color="transparent" padding="2px 5px" margin-left=-5 border-radius=5 opacity=(a.disabled or disconnected or pending ? 0.4 : 1) testId=`action-${a.key}` min-height=(compact ? 24 : 32) box-sizing="border-box"
                             :active
                               background-color="surface.soft"
                             text a.label color="ink.muted"

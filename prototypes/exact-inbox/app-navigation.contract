@@ -1,4 +1,4 @@
-use Place, placeFor, sessionName, sessionPath, draftFor from "./model.contract"
+use Place, placeFor, sessionName, sessionPath, draftFor, CollapseEntry from "./model.contract"
 
 members App
   action restoreListLayout
@@ -14,20 +14,38 @@ members App
     listTop = savedNavigation.listTop
     let rememberedReply = placeFor(savedNavigation.places, nextSession).reply
     replyId = savedNavigation.places.map(p => p.id).includes(nextSession) ? rememberedReply : replyId
-    if searchParam(top(nav), "session") == "" and nextSession != "" and (nav.tab == "asks" or (page.navigationType == "" and nav.tab == "sessions" and savedNavigation.tab != "sessions"))
-      let kept = placeFor(savedNavigation.places, nextSession)
-      nav = replace(select(nav, kept.tab), sessionPath(kept.tab, nextSession))
+    if searchParam(top(nav), "session") == ""
+      if not wideWeb and (savedNavigation.tab == "sessions" or nextSession == "" or top(nav).name == "sessions")
+        pickingSession = true
+        if top(nav).name == "sessions"
+          nav = back(nav)
+      else if nextSession != "" and nav.tab == "asks"
+        let kept = placeFor(savedNavigation.places, nextSession)
+        let targetTab = kept.tab == "sessions" or kept.tab == "" ? "asks" : kept.tab
+        pickingSession = false
+        nav = replace(select(nav, targetTab), sessionPath(targetTab, nextSession))
+    else
+      pickingSession = false
     navigationLoaded = true
   action saveNavigation
-    send navigationSaved = saveNavigation(selectedSession, search, places, nav.tab, listTop)
+    send navigationSaved = saveNavigation(selectedSession, search, places, inSessions ? "sessions" : nav.tab, listTop)
   action selectDefault
     selectedSession = directory.defaultId
-    if wideWeb and nav.tab == "sessions"
-      nav = open(nav, sessionPath("asks", directory.defaultId))
     places = places.concat([Place(placeFor(places, directory.defaultId), name=sessionName(directory.entries, directory.defaultId))])
+    if wideWeb
+      pickingSession = false
+      nav = replace(select(nav, "asks"), sessionPath("asks", directory.defaultId))
+    else if searchParam(top(nav), "session") == ""
+      pickingSession = true
+    navigationRevision = navigationRevision + 1
+  action enterSessions
+    pickingSession = not wideWeb
+    if top(nav).name == "sessions"
+      nav = back(nav)
     navigationRevision = navigationRevision + 1
   action restoreRoute
     helpShown = false
+    pickingSession = false
     let id = searchParam(top(nav), "session")
     let kept = placeFor(places, id)
     selectedSession = id
@@ -37,7 +55,7 @@ members App
     restoreRevision = restoreRevision + 1
     navigationRevision = navigationRevision + 1
   action listScrolled(rail: bool, x: number, y: number)
-    if listReady and navigationLoaded and current(directory) and rail == wideWeb and (rail or nav.tab == "sessions")
+    if listReady and navigationLoaded and current(directory) and rail == wideWeb and (rail or inSessions)
       listTop = max(0, y)
       navigationRevision = navigationRevision + 1
   action searchSessions(value: string)
@@ -45,23 +63,70 @@ members App
     listTop = 0
     listRestore = 0
     navigationRevision = navigationRevision + 1
+  action openSessions
+    helpShown = false
+    revealAsk = ""
+    listRestore = listTop
+    scrollOwner = ""
+    restoreRevision = restoreRevision + 1
+    pickingSession = true
+    navigationRevision = navigationRevision + 1
+  action pick(tab: string)
+    helpShown = false
+    revealAsk = ""
+    listRestore = listTop
+    scrollOwner = ""
+    restoreRevision = restoreRevision + 1
+    if tab == "sessions" or selectedSession == ""
+      pickingSession = true
+    else
+      pickingSession = false
+      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, tab=tab)])
+      nav = replace(select(nav, tab), sessionPath(tab, selectedSession))
+    navigationRevision = navigationRevision + 1
+  action toggle(id: string, captured: string)
+    foldError = ""
+    interaction = interaction + 1
+    let isClosing = selected == id
+    let canKeep = isClosing and captured != ""
+    let value = isClosing and not canKeep ? "closed" : id
+    let collapsed = canKeep ? effectiveCollapsed.filter(x => x != id).concat([id]) : effectiveCollapsed.filter(x => x != id)
+    let records = activePlace.collapses.filter(entry => entry.id != id)
+    let kept = canKeep ? records.concat([CollapseEntry(id=id, value=captured)]) : records
+    let nextReply = isClosing and activeDraft.row == id ? "" : replyId
+    replyId = nextReply
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply=nextReply, collapsed=collapsed, collapses=kept, asksExpanded=nav.tab == "asks" ? value : activePlace.asksExpanded, findsExpanded=nav.tab == "findings" ? value : activePlace.findsExpanded)])
+    navigationRevision = navigationRevision + 1
+  action toggleFold(id: string)
+    foldError = ""
+    interaction = interaction + 1
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, folds=activePlace.folds.includes(id) ? activePlace.folds.filter(x => x != id) : activePlace.folds.concat([id]), earlier=activePlace.earlier.filter(x => x != id))])
+    navigationRevision = navigationRevision + 1
+  action showEarlier(id: string)
+    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, earlier=activePlace.earlier.filter(x => x != id).concat([id]))])
+    navigationRevision = navigationRevision + 1
   action selectSession(id: string)
     helpShown = false
     revealAsk = ""
+    pickingSession = false
     let kept = placeFor(places, id)
-    places = places.filter(p => p.id != id).concat([Place(kept, name=sessionName(directory.entries, id))])
+    let nextTab = kept.tab == "sessions" or kept.tab == "" ? "asks" : kept.tab
+    places = places.filter(p => p.id != id).concat([Place(kept, tab=nextTab, name=sessionName(directory.entries, id))])
     selectedSession = id
     scrollOwner = ""
     restoreRevision = restoreRevision + 1
     replyId = kept.reply
-    nav = open(nav, sessionPath(kept.tab, id))
+    nav = replace(select(nav, nextTab), sessionPath(nextTab, id))
     navigationRevision = navigationRevision + 1
   action showRailSelection
-    nav = replace(select(nav, activePlace.tab), sessionPath(activePlace.tab, selectedSession))
+    pickingSession = false
+    let nextTab = activePlace.tab == "sessions" or activePlace.tab == "" ? "asks" : activePlace.tab
+    nav = replace(select(nav, nextTab), sessionPath(nextTab, selectedSession))
     scrollOwner = ""
     restoreRevision = restoreRevision + 1
     navigationRevision = navigationRevision + 1
   action openSavedReply(id: string)
+    pickingSession = false
     let saved = draftFor(drafts, id)
     let tab = saved.row == "goal" ? "status" : inbox.findings.map(r => r.id).includes(saved.row) ? "findings" : "asks"
     replyId = id

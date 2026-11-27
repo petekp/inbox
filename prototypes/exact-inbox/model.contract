@@ -323,7 +323,7 @@ fn containsAction(inbox: Inbox, row: string, key: string): bool = (row == "sessi
 
 fn matchingSessions(entries: SessionEntry[], selected: string, drafts: string[], query: string): SessionEntry[] = entries.filter(s => (s.state != "ended" or s.id == selected or drafts.includes(s.id)) and `${s.name} ${s.project} ${s.host}`.toLowerCase().includes(query.toLowerCase()))
 
-fn urlTab(url: string): string = url.startsWith("/sessions") ? "sessions" : url.startsWith("/status") ? "status" : url.startsWith("/findings") ? "findings" : url.startsWith("/prs") ? "prs" : "asks"
+fn urlTab(url: string): string = url.startsWith("/status") ? "status" : url.startsWith("/findings") ? "findings" : url.startsWith("/prs") ? "prs" : "asks"
 
 fn readProblem(draftFailed: bool, inboxFailed: bool, failure: string): string = draftFailed ? "Can’t read your saved replies. Try refreshing." : inboxFailed ? "Can’t reach your agent. Check the connection and try again." : failure
 

@@ -5,8 +5,8 @@ use SessionList from "./session-list.contract"
 use CollapseEntry, expandedRow, hasOpenRow, LocalFeedback, terminalReceipt, statusSampleVersion, visible, Clock, ViewerAck, sessionPath, Recovery, Inbox, Receipt, Draft, Directory, Place, Navigation, Viewport, Page, firstId, draftFor, replyAction, placeFor, sessionName, containsAction, matchingSessions, urlTab, readProblem from "./model.contract"
 
 routes nav
-  tab sessions "/sessions"
   tab asks "/"
+    sessions "/sessions"
   tab status "/status"
   tab findings "/findings"
   tab prs "/prs"
@@ -14,6 +14,7 @@ routes nav
 
 component App
   state selectedSession = ""
+  state pickingSession = false
   state search = ""
   state listTop = 0
   state listRestore = 0
@@ -52,6 +53,7 @@ component App
   mutation navigationSaved as shape Receipt queue refreshes savedNavigation
   derive compact = page.navigationType != "" and viewport.width >= 600
   derive wideWeb = page.navigationType != "" and viewport.width >= 960
+  derive inSessions = not wideWeb and (pickingSession or selectedSession == "" or top(nav).name == "sessions")
   derive activePlace = placeFor(places, selectedSession)
   derive expanded = nav.tab == "findings" ? activePlace.findsExpanded : activePlace.asksExpanded
   derive heldReplies = drafts.filter(d => d.session == selectedSession and (d.text.trim() != "" or d.id == replyId)).map(d => d.row)
@@ -101,13 +103,15 @@ component App
     after(250, saveNavigation)
   task restoreListLayout when navigationLoaded and current(directory) key=`${wideWeb}:${top(nav).id}`
     after(1, restoreListLayout)
-  task alignRouteTab when top(nav).name != nav.tab and (top(nav).name == "sessions" or top(nav).name == "asks" or top(nav).name == "status" or top(nav).name == "findings" or top(nav).name == "prs") key=top(nav).id
+  task alignRouteTab when top(nav).name != nav.tab and (top(nav).name == "asks" or top(nav).name == "status" or top(nav).name == "findings" or top(nav).name == "prs") key=top(nav).id
     after(1, alignRouteTab)
+  task normalizeSessionsRoute when top(nav).name == "sessions" key=top(nav).id
+    after(1, enterSessions)
   task routeChanged when navigationLoaded and searchParam(top(nav), "session") != "" and (searchParam(top(nav), "session") != selectedSession or nav.tab != activePlace.tab) key=top(nav).id
     after(1, restoreRoute)
-  task showRailSelection when wideWeb and navigationLoaded and selectedSession != "" and nav.tab == "sessions" key=selectedSession
+  task showRailSelection when wideWeb and navigationLoaded and selectedSession != "" and (top(nav).name == "sessions" or pickingSession) key=selectedSession
     after(1, showRailSelection)
-  task restoreScroll when matchingInbox and nav.tab != "sessions" key=`${selectedSession}:${nav.tab}:${restoreRevision}:${top(nav).id}`
+  task restoreScroll when matchingInbox and not inSessions key=`${selectedSession}:${nav.tab}:${restoreRevision}:${top(nav).id}`
     after(1, restoreScroll)
   task restore when current(savedDrafts) and not pending(savedDrafts) and not failed(savedDrafts) and not draftsLoaded
     after(1, restoreDrafts)
@@ -151,7 +155,7 @@ component App
       heartbeatQueued = true
     else
       heartbeatQueued = false
-      send viewerAck = heartbeat(selectedSession, page.visibilityState == "visible" and page.onLine and nav.tab != "sessions" and not helpShown, nav.tab, heldReplies, (nav.tab == "status" and matchingInbox and statusSample == statusSampleKey ? visibleStatus : []), inbox.updatedAt, time.epochAtZero + performanceNow(), listActive)
+      send viewerAck = heartbeat(selectedSession, page.visibilityState == "visible" and page.onLine and not inSessions and not helpShown, nav.tab, heldReplies, (nav.tab == "status" and matchingInbox and statusSample == statusSampleKey ? visibleStatus : []), inbox.updatedAt, time.epochAtZero + performanceNow(), listActive)
   action sampleStatus
     statusSample = statusSampleKey
     let bounds = frame(`content-${top(nav).id}`)
@@ -191,36 +195,6 @@ component App
     helpShown = false
     nav = go(select(nav, urlTab(url)), url)
     navigationRevision = navigationRevision + 1
-  action pick(tab: string)
-    helpShown = false
-    revealAsk = ""
-    listRestore = listTop
-    scrollOwner = ""
-    restoreRevision = restoreRevision + 1
-    if tab == "sessions" or selectedSession == ""
-      nav = select(nav, "sessions")
-    else
-      places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, tab=tab)])
-      nav = open(nav, sessionPath(tab, selectedSession))
-    navigationRevision = navigationRevision + 1
-  action toggle(id: string, captured: string)
-    foldError = ""
-    interaction = interaction + 1
-    let isClosing = selected == id
-    let canKeep = isClosing and captured != ""
-    let value = isClosing and not canKeep ? "closed" : id
-    let collapsed = canKeep ? effectiveCollapsed.filter(x => x != id).concat([id]) : effectiveCollapsed.filter(x => x != id)
-    let records = activePlace.collapses.filter(entry => entry.id != id)
-    let kept = canKeep ? records.concat([CollapseEntry(id=id, value=captured)]) : records
-    let nextReply = isClosing and activeDraft.row == id ? "" : replyId
-    replyId = nextReply
-    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, reply=nextReply, collapsed=collapsed, collapses=kept, asksExpanded=nav.tab == "asks" ? value : activePlace.asksExpanded, findsExpanded=nav.tab == "findings" ? value : activePlace.findsExpanded)])
-    navigationRevision = navigationRevision + 1
-  action toggleFold(id: string)
-    foldError = ""
-    interaction = interaction + 1
-    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, folds=activePlace.folds.includes(id) ? activePlace.folds.filter(x => x != id) : activePlace.folds.concat([id]), earlier=activePlace.earlier.filter(x => x != id))])
-    navigationRevision = navigationRevision + 1
   members "./app-status.contract"
   members "./app-selection.contract"
   members "./app-motion.contract"
@@ -228,39 +202,45 @@ component App
   members "./app-keyboard.contract"
   members "./app-pr-controls.contract"
   members "./app-collapse.contract"
-  action showEarlier(id: string)
-    places = places.filter(p => p.id != selectedSession).concat([Place(activePlace, earlier=activePlace.earlier.filter(x => x != id).concat([id]))])
-    navigationRevision = navigationRevision + 1
   members "./app-replies.contract"
 
   view
-    main key=keyPressed navigationKey=`${top(nav).id}` navigate=follow testId="app" width="100%" height="100%" font="-exact-body" font-size=(compact ? "13px" : "inherit") line-height=(compact ? "20px" : "normal") background-color="surface.bg" color="ink.primary"
+    main key=keyPressed navigationKey=`${top(nav).id}` navigate=follow testId="app" width="100%" height="100%" font="-exact-body" font-size=(compact ? "13px" : page.navigationType != "" ? "14px" : "inherit") line-height=(compact ? "20px" : page.navigationType != "" ? "20px" : "normal") background-color="surface.bg" color="ink.primary"
       display="flex" flex-direction="column"
       column position="absolute" left=0 top=0 bottom=0 width=260 box-sizing="border-box" display=(wideWeb ? "flex" : "none") padding="12px 10px" gap=8 background-color="surface.rail" border-right="1px solid surface.soft" testId="session-rail"
-        text "Sessions" role="heading" aria-level=2 font-size=15 font-weight=600 padding="0 6px"
+        text "Sessions" role="heading" aria-level=2 font-size=15 line-height="24px" font-weight=600 padding="0 6px"
         SessionList(entries=matches, search=search, selected=selectedSession, error=(failed(directory) ? "Can’t read your sessions." : directory.error), loading=not current(directory), rail=true, restoreTop=listRestore, onScroll=listScrolled(true), onSearch=searchSessions, onSelect=selectSession)
       if wideWeb
-        TabBar(helpShown=helpShown, onHelp=toggleHelp, asksBadge=(matchingInbox ? inbox.asksBadge : ""), findsBadge=(matchingInbox ? inbox.findsBadge : ""), prsBadge=(matchingInbox ? inbox.prsBadge : ""), tab=nav.tab, wideWeb=true, onPick=pick)
+        TabBar(hidden=false, helpShown=helpShown, onHelp=toggleHelp, asksBadge=(matchingInbox ? inbox.asksBadge : ""), findsBadge=(matchingInbox ? inbox.findsBadge : ""), prsBadge=(matchingInbox ? inbox.prsBadge : ""), tab=nav.tab, connection=connectionLabel, readOnly=(matchingInbox and inbox.readOnly), wideWeb=true, onPick=pick)
       column flex=1 min-height=0 position="relative" margin-left=(wideWeb ? 260 : 0)
         for t in nav.tabs key=t.name
           column role="tabpanel" id=`panel-${t.name}` position="absolute" inset=0
             for e in t.stack key=e.id
               column navigationKey=`${e.id}` navigationScroll=`content-${e.id}` navigationSplit="none" position="absolute" inset=0
                 display="flex" flex-direction="column"
-                header display=(wideWeb ? "none" : "flex") align-items="center" gap=12 padding="8px 16px"
-                  text (t.name == "sessions" ? "Sessions" : shownName) role="heading" aria-level=1 flex=1
-                  button press=toggleHelp aria-label=(helpShown ? "Close help" : "Help") testId=`help-${t.name}`
-                    text (helpShown ? "Done" : "?")
-                  button press=manualRefresh aria-label="Refresh Inbox" testId=`refresh-${t.name}`
-                    text "Refresh"
+                if inSessions
+                  header display=(wideWeb ? "none" : "flex") align-items="center" gap=12 padding="8px 16px" background-color="surface.bg"
+                    text "Sessions" role="heading" aria-level=1 flex=1
+                    button press=manualRefresh aria-label="Refresh Inbox" testId="refresh-sessions"
+                      text "Refresh"
+                else
+                  header display=(wideWeb ? "none" : "flex") align-items="center" gap=8 padding="8px 12px" background-color="surface.bg" border-bottom="1px solid surface.soft"
+                    button press=openSessions aria-label="Sessions" testId=`back-sessions-${t.name}` flex-direction="row" align-items="center" gap=4
+                      image "symbol:back"
+                      text "Sessions"
+                    text shownName role="heading" aria-level=2 flex=1 line-clamp=1 text-overflow="ellipsis" font-size=15 font-weight=600
+                    button press=toggleHelp aria-label=(helpShown ? "Close help" : "Help") testId=`help-${t.name}`
+                      text (helpShown ? "Done" : "?")
+                    button press=manualRefresh aria-label="Refresh Inbox" testId=`refresh-${t.name}`
+                      text "Refresh"
                 if failed(savedNavigation) or failed(navigationSaved)
                   text (failed(savedNavigation) ? "Can’t read your saved navigation. Refresh to try again." : "Couldn’t save your place. Keep Inbox open.") color="-exact-system-red"
-                if t.name == "sessions" and wideWeb
+                if e.name == "sessions" and wideWeb
                   text "Choose a session from the list." padding=24 color="-exact-secondary-label"
-                else if t.name == "sessions"
+                else if inSessions
                   SessionList(entries=matches, search=search, selected=selectedSession, error=(failed(directory) ? "Can’t read your sessions." : directory.error), loading=not current(directory), rail=false, restoreTop=listRestore, onScroll=listScrolled(false), onSearch=searchSessions, onSelect=selectSession)
                 else
-                  InboxBody(prFrameReady=prFrameReady, sendLabel=keyMap.sendLabel, discardLabel=keyMap.discardLabel, selectedPr=selectedPr, prGuarded=prGuarded, onPrAction=prAction, collapsed=effectiveCollapsed, onPrFold=clickPrFold, helpShown=helpShown, helpInfo=helpInfo, helpLoading=not current(helpInfo), helpFailed=failed(helpInfo), visual=visualFrame, reduced=viewport.prefersReducedMotion, inbox=inbox, compact=compact, localActive=localActive, onLocal=startLocal, onStatus=statusPressed, tab=t.name, contentId=`content-${e.id}`, top=restoredTop, matching=matchingInbox and visualFrame.session == selectedSession, draftsLoaded=draftsLoaded, name=shownName, connection=connectionLabel, readError=readError, actionError=(foldErrorSession == selectedSession and foldError != "" ? foldError : mutationError), receiptError=(submittedSession == selectedSession and receiptId != "" ? receiptError : ""), selected=selected, optionsShown=activePlace.options, folds=activePlace.folds, earlier=activePlace.earlier, submittedRow=submittedRow, submittedKey=submittedKey, isSendingRow=isSendingRow, disconnected=disconnected, busy=(pending(sent) or pending(forgotten)), saved=drafts.filter(d => d.session == selectedSession and d.text.trim() != "" and (d.id != replyId or not replyVisible)), replyOpen=replyVisible, replyTitle=replyTitle, replyRow=activeDraft.row, goalReply=activeDraft.row == "goal", replyText=draft, canSend=canSendReply, replyMessage=(draftError != "" ? draftError : replyWaiting ? (activeDraft.row == "goal" ? "Saving goal…" : "Waiting for the agent…") : disconnected ? "Reconnect to send. Your reply is kept." : not replyAvailable ? "This item changed. Your draft is kept." : ""), onScroll=scrolled(e.id, t.name), onToggle=clickRow, onFold=clickFold, onEarlier=showEarlier, onChoose=choose, onOpen=openSavedReply, onEdit=edit, onDiscard=discard, onCancel=cancelReply, onSend=sendReply)
+                  InboxBody(wideWeb=wideWeb, prFrameReady=prFrameReady, sendLabel=keyMap.sendLabel, discardLabel=keyMap.discardLabel, selectedPr=selectedPr, prGuarded=prGuarded, onPrAction=prAction, collapsed=effectiveCollapsed, onPrFold=clickPrFold, helpShown=helpShown, helpInfo=helpInfo, helpLoading=not current(helpInfo), helpFailed=failed(helpInfo), visual=visualFrame, reduced=viewport.prefersReducedMotion, inbox=inbox, compact=compact, localActive=localActive, onLocal=startLocal, onStatus=statusPressed, tab=t.name, contentId=`content-${e.id}`, top=restoredTop, matching=matchingInbox and visualFrame.session == selectedSession, draftsLoaded=draftsLoaded, name=shownName, connection=connectionLabel, readError=readError, actionError=(foldErrorSession == selectedSession and foldError != "" ? foldError : mutationError), receiptError=(submittedSession == selectedSession and receiptId != "" ? receiptError : ""), selected=selected, optionsShown=activePlace.options, folds=activePlace.folds, earlier=activePlace.earlier, submittedRow=submittedRow, submittedKey=submittedKey, isSendingRow=isSendingRow, disconnected=disconnected, busy=(pending(sent) or pending(forgotten)), saved=drafts.filter(d => d.session == selectedSession and d.text.trim() != "" and (d.id != replyId or not replyVisible)), replyOpen=replyVisible, replyTitle=replyTitle, replyRow=activeDraft.row, goalReply=activeDraft.row == "goal", replyText=draft, canSend=canSendReply, replyMessage=(draftError != "" ? draftError : replyWaiting ? (activeDraft.row == "goal" ? "Saving goal…" : "Waiting for the agent…") : disconnected ? "Reconnect to send. Your reply is kept." : not replyAvailable ? "This item changed. Your draft is kept." : ""), onScroll=scrolled(e.id, t.name), onToggle=clickRow, onFold=clickFold, onEarlier=showEarlier, onChoose=choose, onOpen=openSavedReply, onEdit=edit, onDiscard=discard, onCancel=cancelReply, onSend=sendReply)
       LocalOpenTarget(sequence=localSequence, index=localIndex, onOpened=localOpened)
       if not wideWeb
-        TabBar(helpShown=helpShown, onHelp=toggleHelp, asksBadge=(matchingInbox ? inbox.asksBadge : ""), findsBadge=(matchingInbox ? inbox.findsBadge : ""), prsBadge=(matchingInbox ? inbox.prsBadge : ""), tab=nav.tab, wideWeb=false, onPick=pick)
+        TabBar(hidden=inSessions, helpShown=helpShown, onHelp=toggleHelp, asksBadge=(matchingInbox ? inbox.asksBadge : ""), findsBadge=(matchingInbox ? inbox.findsBadge : ""), prsBadge=(matchingInbox ? inbox.prsBadge : ""), tab=nav.tab, connection=connectionLabel, readOnly=(matchingInbox and inbox.readOnly), wideWeb=false, onPick=pick)

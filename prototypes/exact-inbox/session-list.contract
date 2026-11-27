@@ -1,4 +1,5 @@
 use SessionEntry, sessionLabel from "./model.contract"
+use ActionIcon from "./action-icon.contract"
 
 component SessionList
   props
@@ -21,19 +22,22 @@ component SessionList
     list scroll=onScroll scrollTop=restoreTop appearance="none" flex=1 min-height=0 testId=(rail ? "rail-list" : "sessions-list")
       column padding=(rail ? "0" : "8px 16px") gap=4
         row padding-bottom=4
-          input key=searchKey value=search input=onSearch placeholder="Find a session" aria-label="Find a session" flex=1 min-width=0 min-height=30 padding="4px 10px" border-width=1 border-style="solid" border-color="border.input" border-radius=10 background-color="surface.bg" color="ink.primary"
+          input key=searchKey value=search input=onSearch placeholder="Find a session" aria-label="Find a session" flex=1 min-width=0 min-height=30 box-sizing="border-box" padding="4px 10px" border-width=1 border-style="solid" border-color="border.input" border-radius=10 background-color="surface.bg" color="ink.primary" font-size=(rail ? 13 : 14)
         if error != ""
           row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
             text error color="tone.error"
         for s in entries key=s.id
-          button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` appearance="none" width="100%" box-sizing="border-box" border-width=0 border-radius=8 padding="8px 10px" text-align="left" background-color=(selected == s.id ? "surface.selected" : "transparent")
+          button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` appearance="none" width="100%" box-sizing="border-box" border-width=0 border-radius=8 padding=(rail ? "8px 10px" : "10px 12px") text-align="left" background-color=(selected == s.id ? "surface.selected" : "transparent")
             :active
               background-color="surface.soft"
-            column flex=1 min-width=0 gap=2
-              text s.name font-weight=600 color="ink.primary" line-clamp=1 text-overflow="ellipsis"
-              text (s.project != "" ? `${s.project} · ${s.agent}` : s.agent) font-size=12 color="ink.muted" line-clamp=1 text-overflow="ellipsis"
-              if s.duplicate
-                text s.location font-size=11 color="ink.faint" line-clamp=1 text-overflow="ellipsis"
-              text sessionLabel(s) font-size=12 color=(s.attention != "" and s.fresh ? "tone.needsYou" : "ink.muted") line-clamp=1 text-overflow="ellipsis"
+            row align-items="center" gap=8 width="100%"
+              column flex=1 min-width=0 gap=2
+                text s.name font-weight=600 color="ink.primary" line-clamp=1 text-overflow="ellipsis"
+                text (s.project != "" ? `${s.project} · ${s.agent}` : s.agent) font-size=12 color="ink.muted" line-clamp=1 text-overflow="ellipsis"
+                if s.duplicate
+                  text s.location font-size=11 color="ink.faint" line-clamp=1 text-overflow="ellipsis"
+                text sessionLabel(s) font-size=12 color=(s.attention != "" and s.fresh ? "tone.needsYou" : "ink.muted") line-clamp=1 text-overflow="ellipsis"
+              if not rail
+                ActionIcon(name="chevron-right", color="ink.faint", size=14)
         if entries.length == 0
           text (loading ? "Reading your sessions…" : error != "" ? error : "No matching sessions.") padding="12px 10px" color="ink.muted"

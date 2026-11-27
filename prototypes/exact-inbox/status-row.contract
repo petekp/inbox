@@ -7,6 +7,7 @@ component StatusRowView
   props
     s: StatusLine
     prefix: string
+    compact: bool
     pending: bool
     readOnly: bool
     reduced: bool
@@ -43,25 +44,25 @@ component StatusRowView
       else
         row position="relative" padding-top=s.padTop padding-bottom=s.padBottom
           if s.hasChildren or s.pathLine == "continues"
-            box position="absolute" left=(indent + 5) top=(s.padTop + 18) bottom=0 border-left="1px solid tree.status"
+            box position="absolute" left=(indent + 7) top=(s.padTop + 17) bottom=0 border-left="1px solid tree.status"
           else if s.pathLine == "to-next"
-            box position="absolute" left=(indent + 5) top=(s.padTop + 18) bottom=0 border-left="1px dashed tree.status"
+            box position="absolute" left=(indent + 7) top=(s.padTop + 17) bottom=0 border-left="1px dashed tree.status"
           if s.branch == "mid"
-            box position="absolute" left=((s.depth - 1) * 24 + 5) top=0 bottom=0 border-left="1px solid tree.status"
-            box position="absolute" left=((s.depth - 1) * 24 + 5) top=(s.padTop + 10) width=16 border-top="1px solid tree.status"
+            box position="absolute" left=((s.depth - 1) * 24 + 7) top=0 bottom=0 border-left="1px solid tree.status"
+            box position="absolute" left=((s.depth - 1) * 24 + 7) top=(s.padTop + 10) width=17 border-top="1px solid tree.status"
           else if s.branch == "last"
-            box position="absolute" left=((s.depth - 1) * 24 + 5) top=0 height=(s.padTop + 10) border-left="1px solid tree.status"
-            box position="absolute" left=((s.depth - 1) * 24 + 5) top=(s.padTop + 10) width=16 border-top="1px solid tree.status"
+            box position="absolute" left=((s.depth - 1) * 24 + 7) top=0 height=(s.padTop + 10) border-left="1px solid tree.status"
+            box position="absolute" left=((s.depth - 1) * 24 + 7) top=(s.padTop + 10) width=17 border-top="1px solid tree.status"
           if s.jointBeside == "continues"
-            box position="absolute" left=5 top=0 bottom=0 border-left="1px solid tree.status"
+            box position="absolute" left=7 top=0 bottom=0 border-left="1px solid tree.status"
           else if s.jointBeside == "to-next"
-            box position="absolute" left=5 top=0 bottom=0 border-left="1px dashed tree.status"
+            box position="absolute" left=7 top=0 bottom=0 border-left="1px dashed tree.status"
           else if s.jointBeside == "connector"
-            box position="absolute" left=5 top=0 bottom=0 border-left="1px solid tree.status"
+            box position="absolute" left=7 top=0 bottom=0 border-left="1px solid tree.status"
           else if s.jointArm == "elbow"
-            box position="absolute" left=5 top=0 height=(s.padTop + 10) border-left="1px solid tree.status"
+            box position="absolute" left=7 top=0 height=(s.padTop + 10) border-left="1px solid tree.status"
           if s.jointArm != ""
-            box position="absolute" left=5 top=(s.padTop + 10) width=16 border-top="1px solid tree.status"
+            box position="absolute" left=7 top=(s.padTop + 10) width=17 border-top="1px solid tree.status"
 
           row margin-left=indent gap=8 align-items="start" flex=1 min-width=0
             column width=16 padding-top=6 align-items="center"
@@ -98,9 +99,9 @@ component StatusRowView
               if s.was != ""
                 text s.was color="ink.faint"
               if keyActions.length > 0
-                row gap=8 flex-wrap="wrap" padding-top=6
+                row gap=8 flex-wrap="wrap" padding-top=8
                   for a in keyActions key=a.action
-                    button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=1 border-style="solid" border-color="border.key" border-radius=14 background-color="transparent" padding="3px 10px" min-height=26 opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
+                    button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=1 border-style="solid" border-color="border.key" border-radius=(compact ? 14 : 18) background-color="transparent" padding="3px 12px" min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
                       :active
                         background-color="surface.soft"
                       ButtonLabel(label=a.label, icon="", color="ink.primary")
