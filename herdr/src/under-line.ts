@@ -1,5 +1,5 @@
 import { FAINT_OPACITY, ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS, enterDelayMs } from '../../core/view/row-motion'
-import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
+import { HEIGHT_SETTLE_MS, HEIGHT_SPRING } from '../../core/view/springs'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import { NEXT_FRAME_MS } from './block-glide'
@@ -125,7 +125,8 @@ export function underMotion<L>(u: UnderLine<L> | null, now: number, height: numb
 /**
  * How long the status under a row's buttons waits, from this draw, when the row's box starts to grow above it, or null
  * when it does not: until the box's spring toward its new height is nearly open, or, in the draw a press opens the
- * reply field, whose height the next draw measures, as long as any box takes to be nearly open.
+ * reply field, whose height the next draw measures, as long as any box takes to be nearly open. A growth within the
+ * spring's rest distance, as a measure that differs from the last in its last digits, moves nothing.
  */
 export function underPushMs(
   last: { block: Block; restSpace: PanelSpace | null } | undefined,
@@ -133,7 +134,7 @@ export function underPushMs(
   space: PanelSpace,
 ): number | null {
   if (!last || b.kind !== 'row' || last.block.kind !== 'row') return null
-  if (last.restSpace && space.to > last.restSpace.to) return enterDelayMs(space.to, space.box)
+  if (last.restSpace && space.to > last.restSpace.to + HEIGHT_SPRING.epsilon) return enterDelayMs(space.to, space.box)
 
   return b.field !== null && last.block.field === null ? HEIGHT_SETTLE_MS - ENTER_FADE_MS : null
 }
