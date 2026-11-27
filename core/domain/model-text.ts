@@ -8,7 +8,7 @@ Before you hand the user a step, take it yourself when your tools reach it, such
 
 When you ask the user to do something, such as review a page, sign in or run a command, give them what they need in the same reply: the link, file path or command, what to do there, and how the result gets back to you. If the result would stay where you cannot read it, such as in their browser, give them a way to send it to you.
 
-Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way. Record a step only the user can take as a task, with steps and result options. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
+Ask in your reply as a direct question, and record the same ask in that turn with ${host.recordTool}, so it stays in the inbox after the conversation moves on. Record a decision, an approval or information you need as a question, with its options and the one you recommend. Record an act you hold until the user says so the same way.${host.heldActRule === null ? '' : ` ${host.heldActRule}`} Record a step only the user can take as a task, with steps and result options. Do not record rhetorical questions, offers to continue when continuing is the default, FYIs, or invitations to look at finished work.
 
 A finding is something you noticed that deserves the user's attention but is outside the current task: a bug, a risk, missing tests, tech debt, or a chance to improve something. Record it with ${host.recordTool} as a finding, then go on with the task; fixing it waits until the user asks. Record one too when you work around a problem instead of fixing it, such as copying files by hand because a tool does not reach them, and when part of your change cannot be checked from where you are. State those in your reply as well. Mention any other finding only when it bears on what the user asked.
 
@@ -48,6 +48,11 @@ export type Host = {
   /** The first paragraph of `guidanceText`: what the inbox shows the person, and where. */
   intro: string
   /**
+   * Sentences the guidance adds after its held-act line, or null. See "Held-act sentences in the guidance" in
+   * docs/looks/differences-omp-host.md.
+   */
+  heldActRule: string | null
+  /**
    * Whether the Status call is told to give each part of the plan the person would name its own subject, and that a
    * session's own subagents keep a subject working. See "Differences on purpose" in docs/looks.md.
    */
@@ -63,6 +68,7 @@ export const CLAUDE_CODE: Host = {
   recordTool: 'mcp__inbox__record',
   closeTool: 'mcp__inbox__close',
   splitsPlanIntoSubjects: false,
+  heldActRule: null,
   intro:
     "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox pane, and your findings, in the pane's Finds tab. A band above their prompt shows only counts: one for your questions and their tasks together, one for your findings, and one for their PRs that wait on them.",
 }

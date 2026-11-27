@@ -47,7 +47,7 @@ The host's state type extends `Session` from `types/index.d.ts`. It adds its own
 
 ## The Host names
 
-`Host` in `core/domain/model-text.ts` names the agent, the surface the person sees, the band if there is one, where findings show, and the tools the agent calls, `recordTool` and `closeTool`. Its `intro` is the first paragraph of `guidanceText`. omp's is `omp/src/texts.ts:OMP`, and its tools are `record` and `close`. The Claude Code mod's are `mcp__inbox__record` and `mcp__inbox__close`, since an MCP server's name prefixes its tools.
+`Host` in `core/domain/model-text.ts` names the agent, the surface the person sees, the band if there is one, where findings show, and the tools the agent calls, `recordTool` and `closeTool`. Its `intro` is the first paragraph of `guidanceText`. omp's is `omp/src/texts.ts:OMP`, and its tools are `record` and `close`. The Claude Code mod's are `mcp__inbox__record` and `mcp__inbox__close`, since an MCP server's name prefixes its tools. Its `heldActRule` holds sentences the guidance adds after its held-act line, for an agent whose own system prompt leaves it asking about a commit nobody asked for. Set it to null when the agent passes `uncommitted-change-not-asked` and `no-task-for-own-step` without it.
 
 ## Files to add
 

@@ -10,6 +10,8 @@ export const OMP: Host = {
   recordTool: 'record',
   closeTool: 'close',
   splitsPlanIntoSubjects: false,
+  heldActRule:
+    'Marking a PR ready is such an act, since reviewers see it. Leave out a step outside the task, such as a commit nobody asked for, and say in your reply that you have not taken it.',
   intro:
     "The inbox extension shows the user what waits on them: your open questions and the tasks only they can do, in the /inbox panel, and your findings, in the panel's Finds tab. A band above their prompt shows only counts: one for your questions and their tasks together, one for your findings, and one for their PRs that wait on them.",
 }
