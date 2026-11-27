@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T21:04:50.090Z. 433447 characters follow.
+// Built at 2026-11-27T21:11:17.964Z. 437131 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -6831,18 +6831,18 @@ function stepSwap(last, was, b, now, panelShown = 1) {
     return {
       ...live,
       isSettled,
-      isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text,
+      isMarkFaded: live.isMarkFaded || live.from.mark === null !== (b.mark === null),
       isAgeSwapped: live.isAgeSwapped || live.from.age !== b.age
     };
   }
-  const isMarkSwapped = was.mark?.text !== b.mark?.text;
+  const isMarkFaded = was.mark === null !== (b.mark === null);
   const isAgeSwapped = was.age !== b.age;
   const fromShown = live === null ? 1 : linesShownOf(live, now);
   const showsAt = now + NEXT_FRAME_MS + (fromShown > 0 ? LEAVE_FADE_MS : 0);
   const swap = {
     from: was,
     isSettled,
-    isMarkSwapped,
+    isMarkFaded,
     isAgeSwapped,
     since: now,
     showsAt,
@@ -6869,12 +6869,12 @@ var swapWaitsUntil = (s) => s?.inAt === null ? s.showsAt + NEXT_FRAME_MS : 0;
 function swapMotion(s, now) {
   if (s === null)
     return null;
-  const { from, isMarkSwapped, isAgeSwapped } = s;
+  const { from, isMarkFaded, isAgeSwapped } = s;
   if (s.inAt === null) {
     const panel = s.panelShown < 1 ? s.panelShown : null;
     return {
       from,
-      isMarkSwapped,
+      isMarkFaded,
       isAgeSwapped,
       opacity: now === s.since ? s.fromShown : 0,
       fadeMs: LEAVE_FADE_MS,
@@ -6882,7 +6882,7 @@ function swapMotion(s, now) {
     };
   }
   const opacity = s.inWait !== null && now >= s.inWait.from + s.inWait.ms ? 1 : 0;
-  return { from: null, isMarkSwapped, isAgeSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null };
+  return { from: null, isMarkFaded, isAgeSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null };
 }
 var swapTimes = (s) => s === null ? [] : [
   s.since + NEXT_FRAME_MS,
@@ -6896,7 +6896,7 @@ function heldForm(b, was, motion) {
   const last = was.rows.get(b.id)?.block;
   const m = motion.get(b.id);
   const isSwappedIn = (m?.blockSwap?.formKey ?? null) !== null;
-  const isHeld = last !== undefined && b.kind !== "row" && b.kind !== "empty" && m !== undefined && !isMoving(m.state) && !isSwappedIn;
+  const isHeld = last !== undefined && b.kind !== "row" && b.kind !== "empty" && m !== undefined && !isMoving(m.state) && !isSwappedIn && !isReshaped(last, b);
   return isHeld && JSON.stringify(last) !== JSON.stringify(b) ? last : b;
 }
 function heldTabs(tabs, last, motion) {
@@ -7203,10 +7203,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES,
     });
   };
   for (const b of blocks) {
-    const prior = was.rows.get(b.id);
-    const isMovedOn = prior?.track.state === "entering" && prior.springId?.includes(MOVED_TO) === true;
-    const isMoved = moved.has(b.id) && !isMovedOn;
-    const old = isMoved ? undefined : prior;
+    const isMoved = moved.has(b.id);
+    const old = isMoved ? undefined : was.rows.get(b.id);
     const isBoxAtRest = old !== undefined && (old.glide === null || now >= old.glide.endsAt);
     const blockSwap = isFirst ? null : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, isInputTo(b.id), heightOf(b.id));
     if (blockSwap)
@@ -7266,6 +7264,53 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES,
     nextAt: ends.length ? Math.min(...ends) : null
   };
 }
+
+// src/tab-counts.ts
+class TabCounts {
+  last = [];
+  changes = new Map;
+  nextAt = null;
+  draw(tabs, motion, now, isFirst) {
+    const shown = heldTabs(tabs, this.last, motion);
+    if (isFirst)
+      this.changes.clear();
+    for (const t of shown) {
+      const was = isFirst ? undefined : this.last.find((l) => l.id === t.id);
+      if (was?.badge && t.badge === null)
+        this.changes.set(t.id, { is: "leaving", since: now, badge: was.badge });
+      if (was && was.badge === null && t.badge !== null) {
+        const change = this.changes.get(t.id);
+        const isFadingOut = change !== undefined && formAt(change, now)?.count === "fading";
+        if (isFadingOut)
+          this.changes.delete(t.id);
+        else
+          this.changes.set(t.id, { is: "opening", since: now, badge: t.badge });
+      }
+    }
+    this.last = shown;
+    const ends = [];
+    const drawn = shown.map((t) => {
+      const change = this.changes.get(t.id);
+      const form = change ? formAt(change, now) : null;
+      if (!change || !form) {
+        this.changes.delete(t.id);
+        return { ...t, count: "rest" };
+      }
+      ends.push(change.since + form.untilMs);
+      return { ...t, badge: t.badge ?? change.badge, count: form.count };
+    });
+    this.nextAt = ends.length === 0 ? null : Math.min(...ends);
+    return drawn;
+  }
+}
+var FORMS = {
+  opening: [{ count: "opening", untilMs: HEIGHT_SETTLE_MS }],
+  leaving: [
+    { count: "fading", untilMs: LEAVE_FADE_MS },
+    { count: "closing", untilMs: LEAVE_FADE_MS + HEIGHT_SETTLE_MS }
+  ]
+};
+var formAt = (change, now) => FORMS[change.is].find((f) => now - change.since < f.untilMs) ?? null;
 
 // src/time-left.ts
 function timeLeftShare(runsOutAt, now) {
@@ -7657,7 +7702,30 @@ function passingOf(blocks, isShut) {
   }
   return out;
 }
+function joinedWaits(blocks, passing, waits) {
+  const depths = (cs, i) => new Set([...cs, ...passing[i] ?? []].map((c) => c.depth));
+  const isJoined = (i) => {
+    const above = blocks[i - 1];
+    const b = blocks[i];
+    if (!above || !b || waits[i - 1] == null || waits[i] == null)
+      return false;
+    const ons = depths(runsOn(above), i - 1);
+    return [...depths(runsIn(b), i)].some((d) => ons.has(d));
+  };
+  const out = [];
+  let start = 0;
+  for (let i = 0;i <= blocks.length; i++) {
+    if (i < blocks.length && i > 0 && isJoined(i))
+      continue;
+    const run = waits.slice(start, i).map((w) => w ?? 0);
+    const longest = Math.max(0, ...run);
+    out.push(...waits.slice(start, i).map((w) => w === null ? 0 : longest));
+    start = i;
+  }
+  return out;
+}
 var NO_FADE = (el) => el;
+var HIDDEN = (el) => el.opacity(0);
 function strokeFadesOf(blocks, passing, moves, fades) {
   const depths = (cs, i) => new Set([...cs, ...passing[i] ?? []].map((c) => c.depth));
   const ins = blocks.map((b, i) => depths(runsIn(b), i));
@@ -7688,7 +7756,8 @@ function strokeFadesOf(blocks, passing, moves, fades) {
     const own = fades[i] ?? NO_FADE;
     if (moves[i]?.isMoving) {
       const isThrough = (depth) => ins[i]?.has(depth) === true && ons[i]?.has(depth) === true && reach(i, depth, -1).stays && reach(i, depth, 1).stays;
-      const side = (depth) => isThrough(depth) ? NO_FADE : own;
+      const off = moves[i]?.isGone ? HIDDEN : own;
+      const side = (depth) => isThrough(depth) ? NO_FADE : off;
       return { own, above: side, below: side };
     }
     const endOf = (depth, by) => {
@@ -7861,7 +7930,7 @@ function spacesOf(blocks, isShut, formOf = (b) => b) {
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
 var springBox = (id, height) => springHeight(v_flex2().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
-var sizeEl = (key, p, el) => div6().id(`size ${key}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
+var sizeEl = (key, p, el, name = key) => div6().id(`size ${name}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
 function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
@@ -7925,7 +7994,7 @@ function contentEl(b, m, p, el, strokes) {
   const atRest = isAtOnce || b.kind === "empty" ? undefined : measured;
   const open = isAtOnce ? undefined : measured ?? 0;
   const height = m?.box === "shut" ? 0 : m?.box === "open" ? open : atRest;
-  return springBox(`fit ${m?.springId ?? id}`, height).when(isHighlightOnBox(b, m), (e) => e.bg(p.t.selected).when(isRowHoverable(b, m), (h) => h.hover((s) => s.bg(p.t.hover)))).when(strokes.length > 0, (e) => e.relative()).child(isRow ? el : sizeEl(id, p, formKey !== null ? sizeEl(formKey, p, el) : el)).children(strokes);
+  return springBox(`fit ${m?.springId ?? id}`, height).when(isHighlightOnBox(b, m), (e) => e.bg(p.t.selected).when(isRowHoverable(b, m), (h) => h.hover((s) => s.bg(p.t.hover)))).when(strokes.length > 0, (e) => e.relative()).child(isRow ? el : sizeEl(id, p, formKey !== null ? sizeEl(formKey, p, el) : el, m?.springId ?? id)).children(strokes);
 }
 function spaceEl(s, p, columns) {
   const id = `space ${p.motion.get(s.block.id)?.springId ?? s.block.id}`;
@@ -7944,12 +8013,17 @@ function spacedEls(blocks, p, el) {
   const spaces = spacesOf(blocks, isShut, heldForm);
   const drawn = spaces.map((s) => s.block);
   const passing = passingOf(drawn, isShut);
-  const looks = drawn.map((b) => {
+  const heights = drawn.map((b) => fitHeight(b, p.motion.get(b.id), p));
+  const waits = drawn.map((b, i) => {
     const m = p.motion.get(b.id);
-    const height = fitHeight(b, m, p);
-    const isShown = m?.box === "open" && m.isShown && height !== undefined;
-    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0;
-    const glide = { duration: m?.fadeMs ?? 0, delay, easing: "ease-out" };
+    const height = heights[i];
+    return m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : null;
+  });
+  const delays = joinedWaits(drawn, passing, waits);
+  const looks = drawn.map((b, i) => {
+    const m = p.motion.get(b.id);
+    const isShown = m?.box === "open" && m.isShown && heights[i] !== undefined;
+    const glide = { duration: m?.fadeMs ?? 0, delay: delays[i] ?? 0, easing: "ease-out" };
     const fade = (e) => m?.box ? fadeEl(e, `box ${m.springId ?? b.id}`, isShown ? 1 : 0, glide, p) : e;
     const isMoving = m?.box != null;
     const move = { isMoving, isGone: isMoving && m?.state === "leaving" && m.box === "shut" };
@@ -8054,7 +8128,8 @@ function statusEl(s, p, isInert) {
   const areButtonsLeaving = swap?.isOut === true && swap.parts?.includes("buttons") === true;
   const partEl = (part, el) => {
     const name = `status ${part} ${s.id}`;
-    const fade = swap?.parts?.includes(part) ? swapPartFade(swap, swap.inDelayMs) : SHOWN_PART;
+    const isMarkKept = part === "mark" && swap?.from.kind === "status" && swap.from.mark !== null && s.mark !== null;
+    const fade = swap?.parts?.includes(part) && !isMarkKept ? swapPartFade(swap, swap.inDelayMs) : SHOWN_PART;
     return fadeEl(el.id(name), name, fade.opacity, fade, p);
   };
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.nameLevel !== "plain", (e) => e.text_color(s.nameLevel === "faint" ? faintOf(t) : t.muted)).when(s.nameTone !== undefined, (e) => e.text_color(colorOf(t, s.nameTone ?? "needsYou")));
@@ -8118,8 +8193,19 @@ function tabsEl(tabs, isHelpShown, p) {
   const { t } = p;
   return h_flex5().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(SMALL_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => {
     const isTabSelected = tab.isSelected && !isHelpShown;
-    return h_flex5().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(div11().ml(SMALL_GAP).font_normal().text_color(colorOf(t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? "")));
+    const isCountGone = tab.count === "fading" || tab.count === "closing";
+    return h_flex5().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge && !isCountGone ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(countEl(tab, p)));
   })).child(div11().flex_1()).child(h_flex5().id("help").h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(helpButton.label).when(isHelpShown, (e) => e.bg(t.raised).text_color(t.foreground)).when(!isHelpShown, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.press(helpButton, cx)).child(helpIconEl(t, isHelpShown)));
+}
+function countEl(tab, p) {
+  const key = `count ${tab.id}`;
+  const width = p.heights.widthOf(key);
+  const boxWidth = { rest: undefined, opening: width ?? 0, fading: width ?? 0, closing: 0 }[tab.count];
+  const isShown = tab.count === "rest" || tab.count === "opening" && width !== undefined;
+  const delay = tab.count === "opening" ? enterDelayMs(width ?? 0) : 0;
+  const glide = { duration: isShown ? ENTER_FADE_MS : LEAVE_FADE_MS, delay };
+  const text = div11().id(key).font_normal().text_color(colorOf(p.t, tab.id === "overview" ? null : tab.id)).child(tab.badge ?? "");
+  return h_flex5().id(`count box ${tab.id}`).flex_none().overflow_hidden().spring("width", HEIGHT_SPRING).when(boxWidth !== undefined, (e) => e.w(boxWidth ?? 0)).child(div11().flex_none().pl(SMALL_GAP).on_size_change((size, cx) => p.measure(key, size, cx, true)).child(fadeEl(text, key, isShown ? 1 : 0, glide, p)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
 function bannerEl(b, t, buttons = [], under = null) {
@@ -8383,7 +8469,7 @@ function rowEl(r, p) {
   const hasTree = (m?.closing ?? shown).body.some((l) => l.tree !== undefined);
   const mark = markEl(shown.mark, t, markTintOf(shown, p)).id(`mark ${r.id}`);
   const trunk = trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`);
-  const line = h_flex11().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(shown.age !== null, (e) => {
+  const line = h_flex11().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkFaded ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(shown.age !== null, (e) => {
     const age = div19().id(`age ${r.id}`).flex_none().ml(INSET).text_color(faintOf(t, r.isSelected ? t.selected : t.background)).child(shown.age ?? "");
     return e.child(swap?.isAgeSwapped ? swapFadeEl(swap, age) : age);
   });
@@ -10012,7 +10098,7 @@ class Inbox extends View {
   input = null;
   queue = new PressQueue(queueIo);
   tracks = NO_TRACKS;
-  drawnTabs = [];
+  tabCounts = new TabCounts;
   heights = new Heights;
   viewCache = new ViewCache(() => {
     const read = this.readSession;
@@ -10289,7 +10375,7 @@ class Inbox extends View {
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
-    this.drawnTabs = heldTabs(screen.tabs, this.drawnTabs, moved.motion);
+    const tabs = this.tabCounts.draw(screen.tabs, moved.motion, now, isFirst);
     const read = this.readSession && ui.tab === "overview" && !ui.isHelpShown ? this.readSession : null;
     const room = moved.nextAt === null ? paint.listRoom : null;
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now);
@@ -10301,14 +10387,14 @@ class Inbox extends View {
       if (isNew)
         this.apply([{ type: "list-input" }], cx);
     };
-    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex8().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div20().flex_1().min_h(0).relative().child(v_flex8().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
+    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(tabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex8().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div20().flex_1().min_h(0).relative().child(v_flex8().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();
       else
         this.focus?.focus();
     }).children(spacedEls(moved.blocks, paint, (b) => blockEl(b, paint)))).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
-    const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt]);
+    const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt, this.tabCounts.nextAt]);
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
     return drawn;
