@@ -247,6 +247,10 @@ function moveRow(
   const track = drawnRows.get(key)?.track
   const state = track?.state
   const isFresh = !was || was.el !== el
+  if (isInClosingPanel(el)) {
+    if (isFresh) fade(el, 0, 0, 0, true)
+    return
+  }
   const part = drawnRows.has(key) ? el.querySelector<HTMLElement>(OPEN_PART) : null
   if (part && !part.classList.contains('closing')) part.style.marginTop = ''
   const from = springOf(el, isFresh ? el.getBoundingClientRect().height : was.height)
@@ -283,6 +287,12 @@ function moveRow(
   if (part && state === 'opening' && changed.has(key))
     openPanel(part, was?.openPart === part, delay, target, from, leftShown)
 }
+
+/**
+ * Whether an element is a line in a closing row's panel, such as a press's status. It leaves with the panel, whose
+ * close fades it (`collapse`), so it starts no move of its own, and one drawn new during the close shows nothing.
+ */
+const isInClosingPanel = (el: HTMLElement): boolean => (el.parentElement?.closest('.closing[inert]') ?? null) !== null
 
 /** The form a row leaves, drawn over the form it takes. */
 const FORM_LEFT = '.form-left'
