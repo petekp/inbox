@@ -10,9 +10,9 @@
 # scripts/build-types.mjs, that the inbox tools' input types match their
 # schemas, with scripts/build-tool-inputs.mjs, its types with tsc, and its tests with
 # `claude plugin test`. Then the Codex plugin in codex/, the omp extension in
-# omp/ and the Herdr look in herdr/, each built into the working tree, and,
-# when the Herdr app is installed, a load of the built Herdr mod in the app's
-# own runtime with `herdr-app check`. Then a short fixed-seed fuzz run of the Herdr
+# omp/, the Herdr look in herdr/ (each built into the working tree), the Exact
+# client tests in exact/tests, and, when the Herdr app is installed, a load of
+# the built Herdr mod in the app's own runtime with `herdr-app check`. Then a short fixed-seed fuzz run of the Herdr
 # look, the omp panel and the shared row stepper, with scripts/fuzz.sh. Last, on a branch other than next or
 # main, that the branch's commits change no built bundle, with
 # scripts/bundles.sh. Exits 1 on any failure, and when a check cannot run.
@@ -144,6 +144,14 @@ else
     check "herdr build" npm --prefix "$DIR/herdr" run --silent build
     check "herdr types" npm --prefix "$DIR/herdr" run --silent types
     check "herdr tests" bun test --cwd "$DIR/herdr" tests
+fi
+
+# The Exact Web and iOS clients in exact/: unit tests for bridge projection, recovery, motion and local actions.
+if ! command -v bun >/dev/null 2>&1; then
+    echo "  x exact: not checked. Install Bun: https://bun.sh"
+    status=1
+elif [ -d "$DIR/exact/tests" ]; then
+    check "exact tests" bun test --cwd "$DIR/exact" tests
 fi
 
 # The Herdr app's own check loads the built mod once in the app's runtime, which lacks globals Bun has, such as Intl.

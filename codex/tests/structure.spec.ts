@@ -125,6 +125,26 @@ const forbidden = [
     text: "import { value } from '../../hooks/mod/claude'",
     target: '../../hooks/mod/claude',
   },
+  {
+    path: 'exact/bridge/consumer.ts',
+    text: "import { value } from '../../hooks/mod/claude'",
+    target: '../../hooks/mod/claude',
+  },
+  {
+    path: 'exact/bridge/consumer.ts',
+    text: "import { value } from '../../codex/src/host'",
+    target: '../../codex/src/host',
+  },
+  {
+    path: 'exact/bridge/consumer.ts',
+    text: "import { value } from '../../herdr/src/main'",
+    target: '../../herdr/src/main',
+  },
+  {
+    path: 'exact/bridge/consumer.ts',
+    text: "import { value } from '../../omp/src/host'",
+    target: '../../omp/src/host',
+  },
 ]
 
 for (const { path, text, target } of forbidden)
@@ -245,6 +265,14 @@ test('the structure gate rejects a source file that has no Files row in docs/loo
   const result = f.check({ unmapped: ['codex/src/consumer.ts'] })
   assert.equal(result.status, 1, result.stdout + result.stderr)
   assert.ok(result.stdout.includes('no Files row for codex/src/consumer.ts'), result.stdout + result.stderr)
+})
+
+test('the structure gate rejects an unmapped exact/bridge/ file in docs/looks/', t => {
+  const f = fixture(t)
+  f.write('exact/bridge/consumer.ts', 'export const value = 1\n')
+  const result = f.check({ unmapped: ['exact/bridge/consumer.ts'] })
+  assert.equal(result.status, 1, result.stdout + result.stderr)
+  assert.ok(result.stdout.includes('no Files row for exact/bridge/consumer.ts'), result.stdout + result.stderr)
 })
 
 test('the structure gate accepts a feature that is not full when each table that covers the host names it', t => {

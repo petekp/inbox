@@ -17,7 +17,7 @@ import type { SessionState } from './state'
 import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import type { ServerDeps } from './server'
 import type { HooksTrust } from './hook-trust'
-import type { CompanionHandler, CompanionView } from './companion-protocol'
+import type { CompanionHandler, CompanionView } from '../../core/remote/companion-protocol'
 
 export function makeCompanion(
   deps: ServerDeps,

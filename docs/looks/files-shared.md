@@ -57,12 +57,6 @@ Part of [the look map](../looks.md#files).
 | `core/runtime/session-presses.ts` | Shared module. `pressOn` applies a press to a session, and `completedAttempt` records the outcome of sending a press's message. `recorded` applies the agent's `record` and `close` calls. Also the rows a look holds in place, `pruned`, which cuts closed records before each save, and `withFetchedPrs`, which merges fetched PRs into the session. |
 | `core/view/session-view.ts` | Shared module. `sessionView` builds the view each look draws, including the PRs tab. `showsRunningMark` says whether a text look draws a running mark. |
 | `core/domain/conversation.ts` | Shared module. `flattenConversation` turns a conversation's `Turn`s into the text a catch-up reads, and clips it. Each host maps its own conversation to turns. |
-| `core/domain/clients.ts` | Shared module. The parity record: `CLIENTS`, built from one support table per host, and `PUBLISHED_LOOKS`, one table per look that draws a published session. |
-| `core/domain/clients-claude-code.ts` | Shared module. How the Claude Code mod host supports each feature, and why where it does not. |
-| `core/domain/clients-codex.ts` | Shared module. How the Codex host supports each feature, and why where it does not. |
-| `core/domain/clients-omp.ts` | Shared module. How the omp host supports each feature, and why where it does not. |
-| `core/domain/clients-herdr.ts` | Shared module. How the Herdr look supports each feature, which features its publishing host does for it, and why where it differs. |
-| `core/domain/client-features.ts` | Shared module. `FeatureId`, every feature the parity record in `core/domain/clients.ts` covers, and the record's `ClientId`, `Client`, `PublishedLookId` and `LookTable` types. |
 | `core/runtime/session-host.ts` | Shared module. The `SessionHost` and `UpdateHost` types a host supplies, and the update flows that run on a host's store: `runUpdates`, `askOverConversation` and `reconcileUpdateStatus`. It also holds `exclusiveKeys` and `orderedKeys`, which keep runs of one key apart in a process. |
 | `core/runtime/clipboard-commands.ts` | Shared module. The commands that put text on the clipboard on each platform, and the words for when none starts. The Codex server and omp run them. |
 | `core/runtime/host-press.ts` | Shared module. `press` and `startPress`, which run a press on a host's store, and `wakeAfterSettle`, which sends what waited for the settle window: held answers and Fixes, then the Done message. |

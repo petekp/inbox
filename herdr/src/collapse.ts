@@ -1,6 +1,6 @@
 import { HERDR_FORMAT } from '../../core/remote/herdr'
 import type { CollapseFile } from '../../core/remote/herdr-press-file'
-import type { ReadSession } from './files'
+import type { ReadSession } from '../../core/remote/herdr-read'
 import { newPressId, pressPath } from './press-file'
 import type { QueueIo } from './press-queue'
 

@@ -15,19 +15,21 @@ Shared modules are in `core/`. Every host consumes them, directly or through a b
 
 A type-only import may name a type from any layer, since it loads no code. Code in `core/` imports only `core/` and `types/`, type imports included. The Claude Code mod is in `hooks/`: `hooks/register.tsx` wires the engine's events, `hooks/mod/` holds the mod's runtime, and `hooks/pane/` draws the terminal and desktop looks. Codex, omp and the Herdr look never import `hooks/`, and the mod never imports their code. `scripts/structure/imports.mjs` checks these rules. Codex and omp type checking need no generated Claude engine types.
 
-Every source file in `core/`, `hooks/`, `codex/src`, `omp/src` and `herdr/src` needs a row in one of the parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
+Every source file in `core/`, `hooks/`, `codex/src`, `omp/src`, `herdr/src`, `exact/` and `exact/bridge` needs a row in one of the parts below. Put a file split out of another next to that file's row. The structure check reads the rows in every `docs/looks/files-*.md`.
 
 - [Shared modules](looks/files-shared.md)
 - [Shared modules for the Status](looks/files-shared-status.md)
 - [Shared modules for Herdr](looks/files-shared-herdr.md)
 - [Shared modules for a question's body and previews](looks/files-shared-questions.md)
 - [Shared modules for the band, sync state and press checks](looks/files-shared-sync.md)
+- [Shared parity record](looks/files-shared-clients.md)
 - [The shared UI controller](looks/files-shared-controller.md)
 - [The mod](looks/files-mod.md)
 - [The mod's saves, logs and sessions](looks/files-mod-storage.md)
 - [Codex](looks/files-codex.md)
 - [omp](looks/files-omp.md)
 - [The Herdr look](looks/files-herdr.md)
+- [Exact Web and iOS (private)](looks/files-exact.md)
 
 ## Who owns each rule
 
@@ -50,9 +52,9 @@ Change a rule in its owner. Do not change it in a reader.
 
 A difference is on purpose when a look cannot do something or the product decided it. Anything not listed here is drift.
 
-A row that covers a host difference names its feature id in backticks in the first column. `core/domain/clients.ts` is the parity record. `CLIENTS` classifies every feature as `full`, `different` or `unsupported` for each host (`claude-code` for the terminal and desktop looks, `codex`, `omp`). `PUBLISHED_LOOKS` does the same for each look that draws a session a host publishes, today only `herdr`. A published look's entry can also be `host`: the publishing host does all of the feature, so the host's own entry says what the person gets. `scripts/check-structure.mjs` fails when a feature that is not `full` or `host` has no row in the table that covers its host or look, and when a row names an id the record lacks. The main table covers `claude-code` and `codex`. The omp table covers `omp`. Each published look has its own table, in the parts named `differences-<look id>`.
+A row that covers a host difference names its feature id in backticks in the first column. `core/domain/clients.ts` is the parity record. `CLIENTS` classifies every feature as `full`, `different` or `unsupported` for each host (`claude-code` for the terminal and desktop looks, `codex`, `omp`). `PUBLISHED_LOOKS` does the same for each look that draws a session a host publishes (`herdr`, plus the private unannounced `exact-web` and `exact-ios` looks). A published look's entry can also be `host`: the publishing host does all of the feature, so the host's own entry says what the person gets. `scripts/check-structure.mjs` fails when a feature that is not `full` or `host` has no row in the table that covers its host or look, and when a row names an id the record lacks. The main table covers `claude-code` and `codex`. The omp table covers `omp`. Each published look has its own table, in the parts named `differences-<look id>`.
 
-A published look gets its own list, apart from `CLIENTS`, because a `ClientId` names the host that publishes a session: the Herdr publish code, the Status call's hosts and the press messages all read it that way. Exact's web and iOS clients will join `PUBLISHED_LOOKS` as `exact-web` and `exact-ios`, each with its own `core/domain/clients-<id>.ts` and `differences-<id>` parts.
+A published look gets its own list, apart from `CLIENTS`, because a `ClientId` names the host that publishes a session: the Herdr publish code, the Status call's hosts and the press messages all read it that way. Exact's web and iOS clients sit in `PUBLISHED_LOOKS` as `exact-web` and `exact-ios` (private / not yet publicly announced), each with its own `core/domain/clients-<id>.ts` and `differences-<id>` parts.
 
 Each look's contract test also fails when the look leaves out a field of the shared row or Status page. `tests/view-contract.ts` gives every field's rule, and a new `RowView` or `StatusPage` field fails the type check until it has one. A field a look leaves out on purpose goes in `LOOK_GAPS` in `tests/view-contract.ts`, with a feature that is not `full` or `host` for that look.
 
@@ -85,6 +87,13 @@ The Herdr look is a Herdr app mod that draws the session a host publishes. This 
 - [The Herdr look's questions](looks/differences-herdr-questions.md)
 - [The Herdr look's row buttons](looks/differences-herdr-buttons.md)
 - [The Herdr look's open gaps](looks/differences-herdr-gaps.md)
+
+### Exact Web and iOS (private)
+
+The Exact Web and iOS looks (`exact-web` and `exact-ios`) are private, unannounced clients built under `exact/` that read published Herdr sessions and opted-in Codex companion sessions through the helper in `exact/bridge/server.ts`. Their tables compare them with the Codex tab, and the structure check reads `differences-exact-web*.md` and `differences-exact-ios*.md`.
+
+- [Exact Web (private)](looks/differences-exact-web.md)
+- [Exact iOS (private)](looks/differences-exact-ios.md)
 
 ## Adding a host
 

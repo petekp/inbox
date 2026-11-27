@@ -1,5 +1,5 @@
 import { makeCompanion } from './server-companion'
-import type { CompanionHandler } from './companion-protocol'
+import type { CompanionHandler } from '../../core/remote/companion-protocol'
 import type { RunWithInput } from './run'
 import type { DelegateSession } from '../../core/remote/hc-terminals'
 import type { PrPress } from '../../core/view/pr-press'

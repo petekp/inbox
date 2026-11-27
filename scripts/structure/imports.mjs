@@ -136,13 +136,32 @@ export function checkImports(root, errors) {
   const codex = `${realpathSync(join(root, 'codex'))}${sep}`
   const omp = `${rootDir}omp${sep}`
   const herdr = `${rootDir}herdr${sep}`
+  const exact = `${rootDir}exact${sep}`
   const sharedTests = `${rootDir}tests${sep}`
-  const ompFiles = existsSync(join(root, 'omp'))
-    ? [...sourceFiles(root, 'omp/src'), ...sourceFiles(root, 'omp/tests')]
+  const ompFiles = [
+    ...(existsSync(join(root, 'omp/src')) ? sourceFiles(root, 'omp/src') : []),
+    ...(existsSync(join(root, 'omp/tests')) ? sourceFiles(root, 'omp/tests') : []),
+  ]
+  const herdrFiles = [
+    ...(existsSync(join(root, 'herdr/src')) ? sourceFiles(root, 'herdr/src') : []),
+    ...(existsSync(join(root, 'herdr/tests')) ? sourceFiles(root, 'herdr/tests') : []),
+  ]
+  const exactTop = existsSync(join(root, 'exact'))
+    ? readdirSync(join(root, 'exact'), { withFileTypes: true })
+        .filter(entry => entry.isFile() && /\.tsx?$/.test(entry.name) && !entry.name.endsWith('.d.ts'))
+        .map(entry => `exact/${entry.name}`)
     : []
-  const herdrFiles = existsSync(join(root, 'herdr'))
-    ? [...sourceFiles(root, 'herdr/src'), ...sourceFiles(root, 'herdr/tests')]
+  const exactToolRules = existsSync(join(root, 'exact/tools'))
+    ? readdirSync(join(root, 'exact/tools'), { withFileTypes: true })
+        .filter(entry => entry.isFile() && (entry.name === 'prepare-client.ts' || entry.name.endsWith('-rules.ts')))
+        .map(entry => `exact/tools/${entry.name}`)
     : []
+  const exactFiles = [
+    ...exactTop,
+    ...(existsSync(join(root, 'exact/bridge')) ? sourceFiles(root, 'exact/bridge') : []),
+    ...(existsSync(join(root, 'exact/tests')) ? sourceFiles(root, 'exact/tests') : []),
+    ...exactToolRules,
+  ]
   const files = [
     ...coreFiles,
     ...modFiles,
@@ -150,6 +169,7 @@ export function checkImports(root, errors) {
     ...sourceFiles(root, 'codex/tests'),
     ...ompFiles,
     ...herdrFiles,
+    ...exactFiles,
   ]
   const api = new API({ cwd: root })
   try {
@@ -171,7 +191,9 @@ export function checkImports(root, errors) {
             ? 'omp'
             : herdrFiles.includes(path)
               ? 'herdr'
-              : 'codex'
+              : exactFiles.includes(path)
+                ? 'exact'
+                : 'codex'
     const queue = files.map(path => ({ path, mode: modeOf(path), layer: layerOf(path) }))
     const visited = new Set()
     while (queue.length) {
@@ -205,14 +227,20 @@ export function checkImports(root, errors) {
               `${relative}${loadedFor} loads '${from}' from ${CORE_LAYERS[toLayer]}. A core file loads code only from its own layer and the layers before it: ${LAYER_ORDER}.`,
             )
         } else if (mode === 'mod') {
-          if (target?.startsWith(codex) || target?.startsWith(omp) || target?.startsWith(herdr))
+          if (
+            target?.startsWith(codex) ||
+            target?.startsWith(omp) ||
+            target?.startsWith(herdr) ||
+            target?.startsWith(exact)
+          )
             errors.push(
               `${relative} imports '${from}'. The mod imports only core/, hooks/ and types/ of the inbox's code.`,
             )
         } else if (mode === 'omp') {
           if (target?.startsWith(hooks))
             errors.push(`${relative} imports '${from}', which is the mod's own code. omp can only use core/.`)
-          if (target?.startsWith(codex)) errors.push(`${relative} imports '${from}'. omp does not import from codex/.`)
+          if (target?.startsWith(codex) || target?.startsWith(herdr) || target?.startsWith(exact))
+            errors.push(`${relative} imports '${from}'. omp does not import from codex/, herdr/ or exact/.`)
           if (target?.startsWith(sharedTests) && !relative.startsWith('omp/tests/'))
             errors.push(`${relative} imports '${from}'. Only omp's tests import the shared session test.`)
           if (from.startsWith('@oh-my-pi/') && relative !== 'omp/src/host.ts')
@@ -222,8 +250,8 @@ export function checkImports(root, errors) {
             errors.push(
               `${relative} imports '${from}', which is the mod's own code. The Herdr look can only use core/.`,
             )
-          if (target?.startsWith(codex) || target?.startsWith(omp))
-            errors.push(`${relative} imports '${from}'. The Herdr look does not import from codex/ or omp/.`)
+          if (target?.startsWith(codex) || target?.startsWith(omp) || target?.startsWith(exact))
+            errors.push(`${relative} imports '${from}'. The Herdr look does not import from codex/, omp/ or exact/.`)
           if (from === 'herdr' && relative !== 'herdr/src/main.ts')
             errors.push(
               `${relative} imports 'herdr'. Only herdr/src/main.ts imports the Herdr app's state and effects.`,
@@ -232,8 +260,17 @@ export function checkImports(root, errors) {
             errors.push(
               `${relative} imports '${from}'. Only herdr/src/main.ts and herdr/src/paint-*.ts draw with the Herdr app's modules.`,
             )
+        } else if (mode === 'exact') {
+          if (target?.startsWith(hooks))
+            errors.push(`${relative} imports '${from}', which is the mod's own code. Exact can only use core/.`)
+          if (target?.startsWith(codex) || target?.startsWith(omp) || target?.startsWith(herdr))
+            errors.push(`${relative} imports '${from}'. Exact does not import from codex/, omp/ or herdr/.`)
+          if (target?.startsWith(sharedTests) && !relative.startsWith('exact/tests/'))
+            errors.push(`${relative} imports '${from}'. Only exact's tests import shared tests.`)
         } else if (target?.startsWith(hooks)) {
           errors.push(`${relative} imports '${from}', which is the mod's own code. Codex can only bundle core/.`)
+        } else if (target?.startsWith(exact)) {
+          errors.push(`${relative} imports '${from}'. Codex does not import from exact/.`)
         }
 
         const isHerdrAppModule = mode === 'herdr' && HERDR_APP_MODULES.includes(from)

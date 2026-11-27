@@ -65,8 +65,8 @@ The adapter uses a private Unix socket, an explicit chat allowlist and the exist
 Resolve data-root/thread mapping, CLI capability, hook state and compatibility read-only without private notes. Build around existing host ops, verify isolated Codex first, and preserve identities, decisions, history and drafts alongside the current Inbox.
 
 [clients]: ../../core/domain/clients.ts
-[binding]: ../../prototypes/exact-inbox/bridge/binding.ts
-[core-reader]: ../../prototypes/exact-inbox/bridge/core.ts
+[binding]: ../../exact/bridge/binding.ts
+[core-reader]: ../../exact/bridge/core.ts
 [following]: ../../herdr/src/follow.ts
 [tabs]: ../../core/view/tabs.ts
 [empty]: ../../core/view/empty-tab.ts

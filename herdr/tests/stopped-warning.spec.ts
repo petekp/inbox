@@ -11,7 +11,7 @@ import { SETTLED_MS } from '../../core/view/timing'
 import type { Session } from '../../types'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
-import { readSession } from '../src/files'
+import { readSession } from '../../core/remote/herdr-read'
 import { AGENT, NOW, demoEnvelopeText, demoScreen, uiOn } from './fixtures'
 import type { LookUi } from '../src/draw'
 

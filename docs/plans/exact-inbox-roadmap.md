@@ -26,7 +26,7 @@ The candidate adds shared row controls, private file snapshots, Status and PR ac
 
 Milestone 3 passed the repository gate before installation. The parity branch needs its own gate and review before activation. Older installed clients retain their original response shape; new clients request the newer view schema explicitly.
 
-The reference is the current Codex implementation and shared rules, not a screenshot alone. Start from [the look map](../looks.md), [Codex's file map](../looks/files-codex.md), [the feature record](../../core/domain/clients.ts), and [the prototype](../../prototypes/exact-inbox/README.md). Milestone 3 was integrated in `5285cb125e792f3ae03f34456d331a1831b06c9e`. Check subsequent shared changes when updating the parity branch.
+The reference is the current Codex implementation and shared rules, not a screenshot alone. Start from [the look map](../looks.md), [Codex's file map](../looks/files-codex.md), [the feature record](../../core/domain/clients.ts), and [Exact Inbox](../../exact/README.md). Milestone 3 was integrated in `5285cb125e792f3ae03f34456d331a1831b06c9e`. Check subsequent shared changes when updating the parity branch.
 
 Private installation remains a product constraint. Authoritative agent state, model credentials and GitHub credentials stay on the owning computer. Clients keep projected snapshots, drafts and requested files. Tailscale supplies private connectivity. The helper exposes Inbox operations, not Core's unrestricted terminal API.
 
