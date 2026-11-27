@@ -88,14 +88,14 @@ const isKeptChanged = (before: UiState, ui: UiState) =>
   ui.discarded !== before.discarded ||
   ui.sentReplies !== before.sentReplies
 
+/** How long a failed read waits before the panel reads again. */
+const READ_RETRY_MS = 1000
+
 /**
  * The open panel: the cached screen and the person's ui state, which the shared controller runs. One timer wakes the
  * panel when the controller says something changes on the clock: it reads the session again only when the view
  * changes, and otherwise redraws a running mark's frame or a title's tint step.
  */
-/** How long a failed read waits before the panel reads again. */
-const READ_RETRY_MS = 1000
-
 export function createPanel(deps: PanelDeps): Panel {
   const { source, style, timers } = deps
   let ui: PanelUi = { ...INITIAL_UI, shownSince: deps.openedAt }

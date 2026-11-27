@@ -1,4 +1,4 @@
-import { CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS } from '../../core/view/help'
+import { CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS, TASK_MARK } from '../../core/view/help'
 import { RUNNING_PULSE_MS } from '../../core/view/timing'
 import { markShape, mutedMarkShape } from '../../core/view/marks'
 import { DARK_TONES, LIGHT_TONES, toneColors, type ToneName } from '../../core/view/tones'
@@ -39,7 +39,7 @@ export function toneSvg(tone: ToneName, mark: string, tint?: string): { source: 
     : tone === 'error'
       ? [LIGHT_TONES.errorMark, DARK_TONES.errorMark]
       : [light, dark]
-  const cells = mark === HELD_MARK.mark ? HELD_MARK_CELLS : 1
+  const cells = mark === HELD_MARK.mark || mark === TASK_MARK.mark ? HELD_MARK_CELLS : 1
 
   return { source: markSvg(mark, desktopMarkShape(mark), lightMark, darkMark, cells), cells }
 }
@@ -68,14 +68,19 @@ function heldMarkShape(midY: number): string {
  */
 const CHECKBOX_SCALE = 1.25
 const CHECKBOX_SHIFT_PT = 0.35
-/** A toned mark's shape on desktop, or null for one the Svg draws as text. */
+/**
+ * A toned mark's shape on desktop, or null for one the Svg draws as text. An open task's □ is the checked box's box at
+ * the same scale, centred on the trunk as ◆ is, since a tree hangs from either.
+ */
 export function desktopMarkShape(mark: string): string | null {
   if (mark === HELD_MARK.mark) return heldMarkShape(DESKTOP_LINE_PT / 2)
   const shape = markShape(mark, DESKTOP_LINE_PT / 2)
-  if (shape === null || mark !== NEEDS_YOU_MARKS.task.mark) return shape
+  const isBox = mark === NEEDS_YOU_MARKS.task.mark || mark === TASK_MARK.mark
+  if (shape === null || !isBox) return shape
   const mid = DESKTOP_LINE_PT / 2
+  const boxMidPt = mark === TASK_MARK.mark ? TRUNK_MID_PT : 4 + CHECKBOX_SHIFT_PT
 
-  return `<g transform="translate(${CHECKBOX_SHIFT_PT + 4 * (1 - CHECKBOX_SCALE)} ${mid * (1 - CHECKBOX_SCALE)}) scale(${CHECKBOX_SCALE})">${shape}</g>`
+  return `<g transform="translate(${boxMidPt - 4 * CHECKBOX_SCALE} ${mid * (1 - CHECKBOX_SCALE)}) scale(${CHECKBOX_SCALE})">${shape}</g>`
 }
 /** A muted mark's color in an Svg, in the light and dark appearances. */
 export const MUTED_MARK = { light: '#595959', dark: '#a8a8a8' }

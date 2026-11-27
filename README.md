@@ -30,6 +30,10 @@ Answer `y` to add the marketplace, then choose a scope. It starts working in
 that session. A user-scope install also covers Code sessions in the Claude
 desktop app on this machine.
 
+A desktop Code session over SSH ignores project and local scope plugins on
+your computer, so install the inbox on the remote host too. Whether it draws
+over SSH is not checked.
+
 To install from the Claude desktop app instead, open a Code session:
 
 1. Click **+** beside the prompt, then **Plugins**, then **Manage plugins**.
@@ -51,6 +55,10 @@ conversation's list at your first message. A permission prompt reaches the
 inbox about a second and a half after it appears. To get everything, ask
 an admin to list the inbox in your organization's managed settings.
 
+If your organization turns on `allowManagedModsOnly`, the inbox never
+appears, and nothing says why. Listing it in managed settings does not help.
+Ask an admin to ship it as one of your organization's mods.
+
 To update, run these, then `/reload-plugins` in any session that's already
 open:
 
@@ -59,8 +67,12 @@ claude plugin marketplace update inbox
 claude plugin update inbox
 ```
 
+Auto-update is off for this marketplace by default. Turn it on in the
+**Marketplaces** tab of `/plugin`, and the desktop app also updates the
+inbox in local Code sessions.
+
 - It makes two Sonnet calls after each of Claude's replies, one for the rows and one for the Status tab. See [Cost](#cost).
-- It was built and tested with Claude Code 2.1.300.
+- It needs Claude Code 2.1.292 or later, and was built and tested with 2.1.300. `plugin.json` declares it, and Claude Code 2.1.332 refuses to install the inbox below it.
 
 ### Codex
 
@@ -76,9 +88,9 @@ ChatGPT app in place of `codex` in both commands:
 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex
 ```
 
-Then, in the ChatGPT desktop app, trust the plugin's hooks: click the hook icon
-beside the prompt's approval setting, then Allow all. If the icon isn't there,
-open Settings, then Hooks, then Inbox, then Trust all. Codex runs a plugin's
+Then, in the ChatGPT desktop app, trust the plugin's hooks: open Settings,
+then Hooks, then Inbox, then Trust all. A hook icon beside the prompt's approval
+setting may also offer Allow all. Codex runs a plugin's
 hooks only after you trust them. On Codex 0.164.0 and later, an update stops
 the hooks, so trust them again after each update. To open the inbox, open the
 side panel. On its New tab page, click the Inbox tile, or if there is none,
@@ -94,6 +106,10 @@ command from inside the app.
 omp plugin marketplace add petekp/inbox
 omp plugin install inbox@inbox-omp
 ```
+
+The inbox works with omp 18.12.3 through 19.2. `/clear` resets the inbox from
+omp 18.20.1. Older omp sends no event at `/clear`, so the cleared
+conversation's rows stay.
 
 The inbox starts working in the next omp session. `omp plugin list` shows it
 as `inbox@inbox-omp`. It reads `.omp-plugin/marketplace.json`, which omp looks

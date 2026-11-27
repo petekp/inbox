@@ -93,6 +93,11 @@ export const CLAUDE_CODE: Client = {
       reason:
         "Desktop draws faint text in one translucent color for both of the app's themes, at 3:1 on each. The ANSI themes, and a theme the mod does not know, draw it in the muted theme key.",
     },
+    'supporting-text': {
+      kind: 'different',
+      reason:
+        "Desktop and the ANSI themes draw supporting text in the muted theme key. A theme key cannot be mixed, and no one color sits between the desktop app's muted and text colors in both its themes.",
+    },
     'status-parent-fold': { kind: 'full' },
     'seen-on-screen': { kind: 'full' },
     'status-idle-age': { kind: 'full' },
@@ -118,6 +123,11 @@ export const CLAUDE_CODE: Client = {
     'session-registry': { kind: 'full' },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'stopped-session-send': {
+      kind: 'different',
+      reason:
+        'The open row warns before a press, and a refused row says the person stopped the session. Neither offers Go to session, since the person is already in it.',
+    },
     'option-previews': { kind: 'full' },
     'remote-resume': { kind: 'full' },
   },

@@ -232,10 +232,19 @@ export function applyOps(
     if (m) named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity))
   }
   const servesLines = ops.flatMap(op => (op.kind === 'serves' ? [op] : []))
+  /** The name of each milestone an applied GOAL line replaced, by the id the call read, so a later SERVES, NEXT, LINK or WAS line that names the kept milestone by id still finds it. */
+  const replacedMilestones = new Map<string, string>()
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt)
     .map((op, n) => ({ op, n }))
     .sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n)
-  for (const { op, n } of ordered) {
+  const keptRef = (ref: string) => replacedMilestones.get(ref) ?? ref
+  for (const { op: written, n } of ordered) {
+    const op =
+      written.kind === 'next' || written.kind === 'was'
+        ? { ...written, ref: keptRef(written.ref) }
+        : written.kind === 'link'
+          ? { ...written, subject: keptRef(written.subject) }
+          : written
     if (op.kind === 'none' || op.kind === 'suggest') continue
     if (op.kind === 'next') {
       markNamed(findMilestone(o, op.ref), n)
@@ -243,9 +252,12 @@ export function applyOps(
       continue
     }
     if (op.kind === 'goal' || op.kind === 'retire' || op.kind === 'milestone' || op.kind === 'serves') {
-      o = applyGoalOp(o, op, now, find, last ?? o, servesLines)
+      const earlier = o.milestones
+      const line = op.kind === 'serves' && op.milestone !== null ? { ...op, milestone: keptRef(op.milestone) } : op
+      o = applyGoalOp(o, line, now, find, askIds, last ?? o, servesLines)
+      if (op.kind === 'goal' && o.milestones !== earlier) for (const m of earlier) replacedMilestones.set(m.id, m.name)
       if (op.kind === 'milestone') markNamed(findMilestone(o, op.name), n)
-      if (op.kind === 'serves' && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n)
+      if (line.kind === 'serves' && line.milestone !== null) markNamed(findMilestone(o, line.milestone), n)
     } else if (op.kind === 'head') {
       if (!isNumberOnly(op.title)) o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now))
     } else if (op.kind === 'link') {
@@ -320,7 +332,7 @@ export function applyOps(
   if (o.head && isDescriptionStale(o.head, isTitleKept, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: '' } }
 
-  const settled = settleGoal(o, now, readSetAt, named)
+  const settled = settleGoal(o, now, readSetAt, named, askIds, last ?? o)
 
   return withSuggestion(nextRef === null ? settled : withNextMilestone(settled, nextRef, now), ops)
 }
@@ -346,7 +358,7 @@ export function applyStatus(
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last
   const o = changes ? applyOps(last, changes, now, askIds, readSetAt) : read
   if (o === null) return null
-  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map())
+  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map(), askIds, o)
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt
 
   const kept = settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null }

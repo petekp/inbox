@@ -9,7 +9,7 @@ import { sessionView } from '../core/view/session-view'
 import { applyPrPress, checkActions } from '../core/view/pr-tab'
 import { footerError, inboxView, perTurnStatus } from '../core/view/view'
 import { NO_SESSION_PRS } from '../core/domain/help-steps'
-import { deliveryLabel, settledLabel } from '../core/view/rows'
+import { deliveryLabel, outcomeLabel, rowMark, settledLabel } from '../core/view/rows'
 import { allRows } from '../core/view/rows'
 import type { RowView } from '../core/view/rows'
 import { cellWidth } from '../core/domain/text'
@@ -47,6 +47,18 @@ test('the shared view draws an ask, an answer and a PR title without their escap
   expect(tainted).toEqual(stored)
 })
 
+test('a closed row shows a long outcome cut at a word with an ellipsis, and a short one whole', () => {
+  const typed =
+    'Use the staging box for the first week, then move the whole queue over once the backfill has caught up and the alerts stay quiet for two days'
+  const label = outcomeLabel({ outcome: typed })
+
+  expect(label.endsWith('…')).toBe(true)
+  expect(label.length).toBeLessThanOrEqual(120)
+  expect(typed.startsWith(label.slice(0, -1))).toBe(true)
+  expect(typed.charAt(label.length - 1)).toBe(' ')
+  expect(outcomeLabel({ outcome: 'only the old entries' })).toBe('Only the old entries')
+})
+
 test('a failing check whose name holds escapes draws without them, and the Fix press a look builds from it reaches the saved check', () => {
   const s = demoSession(AT, 'Claude')
   const ref = 'acme/visor#31'
@@ -59,7 +71,7 @@ test('a failing check whose name holds escapes draws without them, and the Fix p
   const check = drawn?.checks.find(c => c.name === 'unit tests')
   if (!drawn || !check) throw new Error('the view draws no check named unit tests')
   const presses = { lastActions: tainted.lastActions, turns: view.turns, now: AT }
-  const fix = checkActions(drawn, check, presses).find(a => a.press.action === 'check-fix')
+  const fix = checkActions(drawn, check, presses).actions.find(a => a.press.action === 'check-fix')
   if (!fix) throw new Error('the check has no Fix press')
   const result = applyPrPress(tainted.ledger, tainted.prViews, tainted.lastActions, fix.press, {
     now: AT,
@@ -329,7 +341,7 @@ const ask = (id: string, turn: number, kind: Item['kind'] = 'question'): Item =>
   from: 'record',
 })
 
-test('the inbox view lists questions and tasks newest reply first, and counts each open one as waiting', () => {
+test('the inbox view lists questions and tasks newest reply first, counts each open one as waiting, and marks an open question ◆ and an open task □', () => {
   const s = emptySession()
   const v = inboxView({
     ledger: { ...s.ledger, items: [ask('q1', 1), ask('t1', 2, 'task'), ask('q2', 3)] },
@@ -350,6 +362,11 @@ test('the inbox view lists questions and tasks newest reply first, and counts ea
   expect(v.needsYou.tasks.map(r => r.id)).toEqual(['t1'])
   expect(v.needsYou.count).toBe(3)
   expect(v.findings.count).toBe(0)
+  expect([...v.needsYou.questions, ...v.needsYou.tasks].map(r => rowMark(r))).toEqual([
+    { text: '◆', isRunning: false, tone: 'needsYou' },
+    { text: '◆', isRunning: false, tone: 'needsYou' },
+    { text: '□', isRunning: false, tone: 'tasks' },
+  ])
 })
 
 test('the footer shows a failed update on every tab but PRs, and on Status puts the page’s failure first, then the update’s, then its quiet note', () => {

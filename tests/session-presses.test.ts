@@ -289,7 +289,7 @@ test('Re-run asks gh to re-run the run, and the PR block says it started once th
     const s = await t.host.read()
     const pr = s.prViews.views[FIX_REF]!
     const presses = { lastActions: s.lastActions, turns: s.presence, now: await t.host.now() }
-    sibling.isOut = checkActions(pr, pr.checks[1]!, presses).find(a => a.label === 'Re-run')?.isOut
+    sibling.isOut = checkActions(pr, pr.checks[1]!, presses).actions.find(a => a.label === 'Re-run')?.isOut
     sibling.note = (await t.rerun('e2e-mac')).note
     sibling.block = await t.blockShows()
     isStarted = true

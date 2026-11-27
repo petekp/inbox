@@ -37,7 +37,7 @@ export const OMP: Client = {
     'exchange-trigger': {
       kind: 'different',
       reason:
-        "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else.",
+        "omp's `before_agent_start` event carries only the prompt text, and omp names no source for a turn a background job's result starts, so that turn reads as unknown.",
     },
     'settle-window': { kind: 'full' },
     'fold-on-typed-message': { kind: 'full' },
@@ -104,6 +104,11 @@ export const OMP: Client = {
       reason:
         "omp draws muted text with the terminal's dim attribute, which terminals draw at about half strength, near the faint level's 3:1. So faint text there is dim too.",
     },
+    'supporting-text': {
+      kind: 'different',
+      reason:
+        "omp draws muted text with the terminal's dim attribute, and a terminal has no attribute between dim and plain. So supporting text there is dim, as muted text is.",
+    },
     'status-parent-fold': { kind: 'full' },
     'seen-on-screen': { kind: 'full' },
     'status-idle-age': { kind: 'full' },
@@ -127,6 +132,10 @@ export const OMP: Client = {
     'session-registry': { kind: 'full' },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'stopped-session-send': {
+      kind: 'different',
+      reason: 'The host holds no message after the person stops a turn, so it never refuses one for that.',
+    },
     'option-previews': { kind: 'full' },
     'remote-resume': { kind: 'full' },
   },

@@ -1,5 +1,6 @@
 import { settledMark, settledLabel } from '../../core/view/rows'
 import { Sep } from './tab-parted'
+import { SettledResultPart } from './tab-title-cut'
 import { bannerOf } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
 import type { SettledState } from '../../core/view/rows'
@@ -28,7 +29,7 @@ import { isUndoing, outOn } from './tab-press'
 import type { Key, Row } from './tab-state'
 import { pendingLocal, pressesOf, prKey, pressTitle } from './tab-rows'
 import { KeyButton, ResultMarkView, GroupTitle, UndoPlace, Banner, EmptyState } from './tab-parts'
-import { PR_REFRESH } from '../../core/view/pr-press'
+import { prPressEffect } from '../../core/view/pr-press'
 import type { PrRefreshView } from '../../core/view/pr-refresh'
 import { ListRow } from './tab-list'
 import { pressLine } from './tab-pr-lines'
@@ -71,10 +72,7 @@ function SettledPr({ pr, state }: { pr: PrView; state: SettledState }) {
             <span class="part what">
               <span class="tone-prs">#{pr.number}</span> {pr.title}
             </span>
-            <span class="part settled-result">
-              <Sep />
-              <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
-            </span>
+            <SettledResultPart text={settledLabel(state.label, state.delivery, state.reply)} />
             {error ? (
               <span class="part tone-error">
                 <Sep />
@@ -125,7 +123,11 @@ function PrOrderLines({ v, order }: { v: View; order: PrOrderView }) {
 function refreshKeys(refresh: PrRefreshView): Key[] {
   return refresh.actions.map(a => ({
     ...tabKey(PR_REFRESH_ID, a),
-    run: by => pressRow(a.press, by, { pending: pendingLocal(PR_REFRESH), kind: null }),
+    run: by => {
+      const effect = prPressEffect(null, a.press)
+
+      return pressRow(a.press, by, { pending: effect && pendingLocal(effect), kind: null })
+    },
   }))
 }
 
@@ -227,7 +229,7 @@ function PrBody({
 }: DrawnPrBlock & { v: View; prs: DrawnPrs; now: number; tracks?: Map<string, RowTrack> }) {
   const isSent = threadSentIn(v.lastActions)
   const id = prMarkId(pr.ref)
-  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v), prSyncOf(v.sync, pr.ref)).map(a =>
+  const keys = prBlockActions(pr, isSent, v.prs.branchRef, pressesOf(v), prSyncOf(v.sync, pr.ref)).actions.map(a =>
     prKey(id, pr, a),
   )
 

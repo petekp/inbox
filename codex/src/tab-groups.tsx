@@ -1,6 +1,6 @@
 import { Icon, inputOf } from './row-actions'
 import {
-  closedLineAction,
+  closedLinePlan,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -85,7 +85,7 @@ function groupEmpty(title: string, rest: Entry[]): GroupEmpty | null {
 
 type ClosedLine = {
   id: string
-  how: Parameters<typeof closedLineAction>[0]['how']
+  how: Parameters<typeof closedLinePlan>[0]['how']
   canRestore?: boolean
   ask: string
   outcomeLabel: string
@@ -136,7 +136,7 @@ function GroupEnd({
       {isListed ? (
         <div class="list closed-list" data-motion={`closed-${group}`}>
           {closed.map(d => {
-            const action = closedLineAction(d)
+            const action = closedLinePlan(d).action
             return (
               <div class="entry" key={`closed-${d.id}`}>
                 <div class="row">

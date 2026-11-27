@@ -3,13 +3,15 @@ import type { Replay } from '../status-replay'
 import { goal, milestone, NO_FACTS, overview, piece, question, subject } from './builders'
 
 /**
- * The person answers the question a "decided" milestone is for, and the agent asks before it applies the answer. In
- * a real omp session the Status call kept the milestone working, in words about the edit, for two calls.
+ * The person answers the question a "decided" milestone is for, and the agent asks before it applies the answer. The
+ * edit question holds up the greeting subject, which serves the milestone, so the milestone stays open while it is open.
+ * Then the person says yes, and the agent makes the edit but cannot run the file. In the omp session the milestone
+ * stayed working, with the text "\"!\" added, not run", until a later turn ran the file.
  */
 export const milestoneDecided: Replay = {
   name: 'milestone-decided',
   about:
-    'A typed goal to settle a small app\'s release questions, with the milestones "Greeting ending decided", "Range bug fixed" and "PR #2 decided". The person answers the greeting question with "!". The agent asks whether to edit the file, since the person had said no edits.',
+    'A typed goal to settle a small app\'s release questions, with the milestones "Greeting ending decided", "Range bug fixed" and "PR #2 decided". Step 1: the person answers the greeting question with "!", and the agent asks whether to edit the file, since the person had said no edits. Step 2: the person says yes, and the agent adds the "!" but cannot run the file.',
   hasLedgerCalls: false,
   isShort: true,
   start: {
@@ -95,7 +97,7 @@ export const milestoneDecided: Replay = {
         ].join('\n'),
       },
       facts: {
-        milestones: [{ id: 'ms-ending', state: 'done' }],
+        milestones: [{ id: 'ms-ending', state: 'working' }],
         pieces: [
           {
             id: 'ending',
@@ -105,6 +107,34 @@ export const milestoneDecided: Replay = {
           },
         ],
         asks: [{ match: 'edit greet', text: 'Should I edit greet.js to add the "!"?', holdsUp: ['ending'] }],
+      },
+      targets: ['milestones-true', 'asks-linked'],
+    },
+    {
+      label: 'The person says yes, and the agent adds the "!" but cannot run greet.js',
+      at: 4,
+      events: [{ askCloses: 'i2' }],
+      call: {
+        kind: 'reply',
+        person: 'Re "Should I edit greet.js to add the "!"?": Yes, edit it',
+        activity: [
+          'Edited greet.js',
+          'Ran: node greet.js world',
+          'inbox record: finding "greet.js was not run: node is not installed here"',
+        ],
+        reply: [
+          'Done. Line 23 of greet.js now ends the greeting with "!", so the output would be Hola, world!.',
+          '',
+          "I couldn't run greet.js to see it, because node isn't installed here. I recorded that as a finding in your inbox.",
+        ].join('\n'),
+      },
+      facts: {
+        milestones: [
+          { id: 'ms-ending', state: 'done' },
+          { id: 'ms-range', alsoRight: ['working'] },
+        ],
+        pieces: [{ id: 'ending', state: 'done', stands: '"!" added, not run', alsoRight: ['working'] }],
+        asks: [],
       },
       targets: ['milestones-true'],
     },

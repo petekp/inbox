@@ -4,7 +4,8 @@ import type { Session } from '../types'
 import type { Case, Ev, Look } from './case'
 import { outcomesOf } from './host'
 import type { Rng } from './rng'
-import { text } from './texts'
+import { CLOSE_LIMITS, ORDER_LIMITS, RECORD_LIMITS } from '../core/domain/field-limits'
+import { fitting, text } from './texts'
 
 export const START = Date.UTC(2026, 10, 10, 12)
 
@@ -13,8 +14,8 @@ const LETTERS = [...'abcdefghilmnorsxy123']
 const NAMES = ['Sync retries', 'Settings page', 'Release notes', 'Flaky test']
 const OPEN = ['working', 'queued', 'waits-on-other']
 
-function words(rng: Rng, n: number): string[] {
-  return Array.from({ length: n }, () => text(rng))
+function words(rng: Rng, n: number, max: number): string[] {
+  return Array.from({ length: n }, () => fitting(rng, max))
 }
 
 /** Replaces the texts a row shows with texts from the corpus, leaving the fields other fields point at. */
@@ -58,8 +59,8 @@ export function recordArgs(rng: Rng): Record<string, unknown> {
     return {
       kind,
       finding_kind: rng.pick(['issue', 'opportunity']),
-      title: text(rng),
-      detail: text(rng),
+      title: fitting(rng, RECORD_LIMITS.title),
+      detail: fitting(rng, RECORD_LIMITS.detail),
       ...(rng.chance(0.3) ? { path: '/repo/src/a.ts' } : {}),
     }
   const steps = rng.chance(0.4)
@@ -69,17 +70,17 @@ export function recordArgs(rng: Rng): Record<string, unknown> {
         ['/repo/x', 'git push', 'https://example.com'],
       ])
     : []
-  if (kind === 'task') return { kind, ask: text(rng), ...(steps.length ? { steps } : {}) }
-  const options = words(rng, rng.pick([0, 1, 2, 3, 5, 12]))
+  if (kind === 'task') return { kind, ask: fitting(rng, RECORD_LIMITS.ask), ...(steps.length ? { steps } : {}) }
+  const options = words(rng, rng.pick([0, 1, 2, 3, 5, 12]), RECORD_LIMITS.options)
   const rec = options.length > 0 && rng.chance(0.6) ? rng.pick(options) : undefined
 
   return {
     kind,
-    ask: text(rng),
+    ask: fitting(rng, RECORD_LIMITS.ask),
     options,
-    ...(rec === undefined ? {} : { rec, why: text(rng) }),
-    ...(rng.chance(0.5) ? { context: text(rng) } : {}),
-    ...(rng.chance(0.3) ? { option_notes: options.map(() => text(rng)) } : {}),
+    ...(rec === undefined ? {} : { rec, why: fitting(rng, RECORD_LIMITS.why) }),
+    ...(rng.chance(0.5) ? { context: fitting(rng, RECORD_LIMITS.context) } : {}),
+    ...(rng.chance(0.3) ? { option_notes: options.map(() => fitting(rng, RECORD_LIMITS.option_notes)) } : {}),
     ...(steps.length ? { steps } : {}),
     ...(rng.chance(0.15) ? { design_choice: true } : {}),
   }
@@ -119,8 +120,8 @@ function eventOf(rng: Rng, look: Look): Ev {
   if (r < 0.8) return { is: 'record', args: recordArgs(rng) }
   if (r < 0.85)
     return rng.chance(0.5)
-      ? { is: 'close', n: rng.int(0, 9), answer: text(rng) }
-      : { is: 'close', n: rng.int(0, 9), reason: text(rng) }
+      ? { is: 'close', n: rng.int(0, 9), answer: fitting(rng, CLOSE_LIMITS.answer) }
+      : { is: 'close', n: rng.int(0, 9), reason: fitting(rng, CLOSE_LIMITS.reason) }
   if (r < 0.89) return { is: 'status', lines: statusLines(rng) }
   if (r < 0.93) return { is: 'turn', to: rng.pick(['start', 'end'] as const) }
   if (r < 0.96)
@@ -133,8 +134,8 @@ function eventOf(rng: Rng, look: Look): Ev {
     return {
       is: 'order',
       picks: Array.from({ length: rng.int(0, 4) }, () => rng.int(0, 5)),
-      label: text(rng),
-      why: text(rng),
+      label: fitting(rng, ORDER_LIMITS.label),
+      why: fitting(rng, ORDER_LIMITS.why),
     }
   if (r < 0.99 && look === 'herdr') return { is: 'end' }
 

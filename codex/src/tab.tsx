@@ -14,7 +14,7 @@ import { measure, animateDraw } from './tab-motion'
 import { wakeForMoves } from './tab-wake'
 import { applyPageVariables } from './tab-page-variables'
 import './list-input'
-import { afterDraw, dispatch, drawnTab, openFresh, poll, read, selectedId } from './tab-ui'
+import { afterDraw, dispatch, drawnTab, openFresh, poll, read, redrawView, selectedId } from './tab-ui'
 import { restoreState } from './tab-swap'
 import { foldAllHere } from './tab-fold-all'
 import { pressCollapseKey, tabRows } from './tab-rows'
@@ -107,10 +107,10 @@ function draw() {
   tabState.lastPrs = step?.prs ?? null
   tabState.lastStatus = step?.status ?? null
   tabState.lastBanners = step?.banners ?? null
-  wakeForMoves()
   const app = () => <App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />
   render(app(), root)
   if (settleAnswers(root)) render(app(), root)
+  wakeForMoves()
   watchAnswers()
   animateDraw(before, step?.changed ?? new Set(), step?.drawnAt ?? Date.now())
   if (isPageSwitch) endPageSwitch()
@@ -296,15 +296,31 @@ function startPage() {
   }, LOADING_DELAY_MS)
 }
 
+/** Reads the page's first view before it replaces the page that swaps to it, so its first draw has the rows. */
+async function preparePage(kept: Kept): Promise<boolean> {
+  if (tabState.isDisposed || !handoff || handoff.aborted) return false
+  restoreState(kept)
+  await read()
+
+  return tabState.serverView !== null
+}
+
+/**
+ * Shows the page in place of the one that swapped to it, with the state that page kept. It draws as a page after a
+ * switch does, at once, since the page it replaces already showed.
+ */
 function activatePage(kept: Kept) {
   if (tabState.isDisposed || !handoff || handoff.aborted) throw new Error('The new page stopped.')
   restoreState(kept)
+  redrawView()
   tabState.isActive = true
   applyPageVariables()
+  document.documentElement.classList.add('page-switched', 'page-switching')
   draw()
+  endPageSwitch()
 }
 
-if (handoff) handoff.ready({ initialize, activate: activatePage, start: startPage, dispose })
+if (handoff) handoff.ready({ initialize, prepare: preparePage, activate: activatePage, start: startPage, dispose })
 else {
   applyPageVariables()
   if (!restoreState()) openFresh()

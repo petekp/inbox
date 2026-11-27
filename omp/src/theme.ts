@@ -9,9 +9,8 @@ import {
 } from '../../core/view/tones'
 import type { Style, Tone } from './panel'
 
-/** The slice of omp's theme the panel's style uses. */
-type OmpTheme = {
-  isLight: boolean
+/** The slice of omp's theme the panel's style uses. omp 18 says `isLight`, and omp 19.2 says `dark` instead. */
+type OmpTheme = ({ isLight: boolean } | { dark: boolean }) & {
   bold(text: string): string
   inverse(text: string): string
   underline(text: string): string
@@ -34,9 +33,10 @@ function truecolorFill(hex: string, text: string): string {
 
 /** Maps the panel's styles onto omp's theme. The separator and the accent follow the theme; the tones follow `core/view/tones.ts`. */
 export function styleOf(theme: OmpTheme): Style {
-  const tones = theme.isLight ? LIGHT_TONES : DARK_TONES
-  const mode = theme.isLight ? 'light' : 'dark'
-  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS
+  const isLight = 'isLight' in theme ? theme.isLight : !theme.dark
+  const tones = isLight ? LIGHT_TONES : DARK_TONES
+  const mode = isLight ? 'light' : 'dark'
+  const tints = isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS
 
   return {
     bold: theme.bold.bind(theme),

@@ -2,8 +2,10 @@ import {
   ENTER_FADE_MS,
   enterDelayMs,
   FADE_MS,
+  FAINT_OPACITY,
   isMoving,
   LEAVE_FADE_MS,
+  SLIDE_PX,
   turnBackFades,
 } from '../../core/view/row-motion'
 import type { RowTrack } from '../../core/view/row-motion'
@@ -12,7 +14,7 @@ import type { SpringState } from '../../core/view/springs'
 import { tabState, entering, closingFolds, drawnRows, root } from './tab-state'
 import { later } from './tab-host'
 import { fadeForms, swapsForm } from './tab-form-swap'
-import { atEndGlides, closeTitle, drawnLine, glideLine, openTitle, releaseLine, LINE } from './tab-title-motion'
+import { atEndGlides, drawnLine, glideLine, openTitle, releaseLine, showClosedLine } from './tab-title-motion'
 import type { DrawnLine } from './tab-title-motion'
 import {
   fade,
@@ -24,19 +26,13 @@ import {
   isScalingEdges,
   isUnderWay,
   opacityOf,
+  spaceUnder,
   springOf,
   stopFadeOut,
   waitLeftMs,
 } from './tab-glide'
-import {
-  closeHoldsUp,
-  fadeFaintPanel,
-  fadeThrough,
-  fadingParts,
-  openHoldsUp,
-  shownPanel,
-  trunkBeside,
-} from './tab-panel-fade'
+import { fadeThrough, fadingParts, openHoldsUp, shownPanel, trunkBeside } from './tab-panel-fade'
+import { collapse, naturalHeight, retargetClose, topIn } from './tab-collapse'
 import { showConnectors } from './tab-connectors'
 import { drawnKeys, showNewKeys } from './tab-new-keys'
 
@@ -53,6 +49,7 @@ type Drawn = {
   openTop: number | null
   openPart: Element | null
   openShown: number
+  opacity: number
 }
 type TabWidth = { el: HTMLElement; width: number; isShown: boolean }
 type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; keys: Set<Element> }
@@ -61,8 +58,6 @@ type Drawing = { heights: Map<string, Drawn>; tabWidths: Map<string, TabWidth>; 
 const OPEN_PART = '.panel, .pr-body'
 
 const isShownTab = (el: HTMLElement) => el.classList.contains('shown')
-
-const topIn = (el: HTMLElement, part: Element) => part.getBoundingClientRect().top - el.getBoundingClientRect().top
 
 export function measure(): Drawing {
   const heights = new Map<string, Drawn>()
@@ -75,6 +70,7 @@ export function measure(): Drawing {
       openTop: part ? topIn(el, part) : null,
       openPart: part,
       openShown: part instanceof HTMLElement ? opacityOf(part) : 1,
+      opacity: opacityOf(el),
     })
   }
   const tabWidths = new Map<string, TabWidth>()
@@ -111,13 +107,6 @@ let closeWaitMs = 0
  */
 let drawnAt = 0
 
-/** The height an element takes with no glide: its own glide stops, so the next one starts from `springOf`. */
-function naturalHeight(el: HTMLElement): number {
-  glides.get(el)?.anim.cancel()
-
-  return atEndGlides(el, () => el.getBoundingClientRect().height)
-}
-
 /** Whether a leaving element no longer holds its space: its space has begun to shrink, or it left before its space opened. */
 function isSpaceShort(el: HTMLElement): boolean {
   const g = glides.get(el)
@@ -129,13 +118,20 @@ function isSpaceShort(el: HTMLElement): boolean {
 
 /**
  * Grows an element in from `from` after `delay` ms, holding it there until then, then fades its content in once its
- * space is nearly open. Content still partly shown, as in a leave turned back, fades back in at once.
+ * space is nearly open. Its fade slides the element with its content, so the space must first pass the content's last
+ * line. Content still partly shown, as in a leave turned back, fades back in at once. Content that `isFaint` shows at
+ * `FAINT_OPACITY` from the start and fades to full through `turnBackFades`.
  */
-function growIn(el: HTMLElement, from: SpringState, opacity: number, delay: number) {
+function growIn(el: HTMLElement, from: SpringState, opacity: number, delay: number, isFaint = false) {
   const to = naturalHeight(el)
+  const slack = Math.min(
+    SLIDE_PX / 2,
+    atEndGlides(el, () => spaceUnder(el)),
+  )
   const start = delay > 0 ? { x: from.x, v: 0 } : from
   glide(el, 'height', start, to, false, true, delay)
-  const waits = opacity > 0.01 ? 0 : enterDelayMs(to, start)
+  if (isFaint) return fadeThrough(el, FAINT_OPACITY, turnBackFades(to, start), delay)
+  const waits = opacity > 0.01 ? 0 : enterDelayMs(to, start, slack)
   fade(el, opacity, 1, ENTER_FADE_MS, false, true, delay + waits)
 }
 
@@ -150,7 +146,8 @@ function fadeAway(el: HTMLElement, from: SpringState, slide: boolean, to = 0) {
 
 /**
  * Starts each element's move after a draw. Children go first: an element with a gliding element inside it follows
- * that glide at its own height, unless it moves itself, so the two never pull against each other.
+ * that glide at its own height, unless it moves itself or its own content changed height, so the two never pull against
+ * each other.
  */
 export function animateDraw(before: Drawing, changed: ReadonlySet<string>, stepAt: number) {
   drawnAt = stepAt
@@ -236,6 +233,7 @@ function moveOne(el: HTMLElement, was: Drawn | undefined, changed: ReadonlySet<s
   const closeWait = state === 'opening' && changed.has(key) ? closeWaitMs : 0
   const held = state === 'closing' ? null : releaseLine(el, state === 'opening')
   moveRow(el, was, changed, carried, closeWait)
+  if (state === 'closed' && was?.line?.isClosing) showClosedLine(el, was.line)
   const wait = Math.max(tabState.isReadDraw && !isRowMoving ? heightWaitMs : 0, closeWait)
   if (state === 'opening' && (held || changed.has(key))) openTitle(el, wait, held)
   if (changed.has(key) && swapsForm(el)) fadeForms(el, was?.openShown ?? 1)
@@ -252,6 +250,10 @@ function moveRow(
   const track = drawnRows.get(key)?.track
   const state = track?.state
   const isFresh = !was || was.el !== el
+  if (isInClosingPanel(el) && state !== 'leaving') {
+    if (isFresh) fade(el, 0, 0, 0, true)
+    return
+  }
   const part = drawnRows.has(key) ? el.querySelector<HTMLElement>(OPEN_PART) : null
   if (part && !part.classList.contains('closing')) part.style.marginTop = ''
   const from = springOf(el, isFresh ? el.getBoundingClientRect().height : was.height)
@@ -260,32 +262,76 @@ function moveRow(
   const scalesEdges = isScalingEdges(el)
   const waitsForLeave = state === 'opening' || waitLeft > 0 || el.querySelector(NEW_NOTE) !== null
   const delay = Math.max(isOwnMove ? 0 : Math.max(waitsForLeave ? heightWaitMs : 0, waitLeft), closeWait)
-  if (track && changed.has(key) && startState(el, track, from, isFresh, was?.openTop ?? null)) return
+  if (track && changed.has(key) && startState(el, track, from, isFresh, was?.openTop ?? null, was?.line ?? null)) return
+  if (state === 'closing' && !isFresh) retargetClose(el)
+  if (state === 'leaving' && track && was && isFresh) return goOnLeaving(el, was, track)
   if (state === 'closing' || state === 'settling' || state === 'leaving') return
   if (isFresh) {
     if (!state && entering.delete(key)) growIn(el, { x: 0, v: 0 }, 0, Math.max(heightWaitMs, closeWaitMs))
+    else if (state === 'entering' && was) {
+      const hasStarted = was.height >= 0.5 || was.opacity > 0
+      growIn(el, { x: was.height, v: 0 }, was.opacity, hasStarted ? 0 : Math.max(heightWaitMs, closeWaitMs))
+    }
     return
   }
   if (state && !isMoving(state) && !changed.has(key)) glideLine(el, was.line, naturalHeight(el) - from.x)
   if (carried.has(el) && !(state && isMoving(state))) {
     glides.get(el)?.anim.cancel()
-    return
+    const isOwnChange = Math.abs(el.getBoundingClientRect().height - from.x) >= 0.5
+    if (!isOwnChange) return
   }
   const opacity = opacityOf(el)
   const target = naturalHeight(el)
   for (const a of el.getAnimations()) if (a.playState === 'finished') a.cancel()
   if (Math.abs(from.x - target) >= 0.5 || Math.abs(from.v) * FRAME_MS >= 0.5)
     glide(el, 'height', from, target, false, scalesEdges, delay)
-  if (opacity < 0.99 && !isFadingIn(el)) fade(el, opacity, 1, FADE_MS)
-  if (part && state === 'opening' && changed.has(key)) openPanel(part, was?.openPart === part, delay, target, from)
+  const isGrowingIn = state === 'entering'
+  if (opacity < 0.99 && !isFadingIn(el) && !isGrowingIn) fade(el, opacity, 1, FADE_MS)
+  const leftShown = was?.openPart !== part && was?.openPart?.closest(FORM_LEFT) ? was.openShown : 0
+  if (part && state === 'opening' && changed.has(key))
+    openPanel(part, was?.openPart === part, delay, target, from, leftShown)
+}
+
+/**
+ * Whether an element is drawn in a panel that is closing or leaving, such as a press's status in a closing row's panel
+ * or a row in a closing PR block's body. It goes with the panel, which fades as it closes, so it starts no move of its
+ * own, and one drawn new during the close shows nothing. A line that was shown and starts to leave still fades out.
+ */
+const isInClosingPanel = (el: HTMLElement): boolean => (el.parentElement?.closest('.closing[inert]') ?? null) !== null
+
+/** The form a row leaves, drawn over the form it takes. */
+const FORM_LEFT = '.form-left'
+
+/**
+ * Goes on with a leave whose element a draw replaced, as a status line above a row's buttons when Undo draws the row's
+ * panel again: from the height and opacity its last element showed, on the leave's own clock, so it ends with its track.
+ */
+function goOnLeaving(el: HTMLElement, was: Drawn, track: RowTrack) {
+  const fadeLeft = was.opacity > 0.01 ? Math.max(0, track.since + LEAVE_FADE_MS - drawnAt) : 0
+  fade(el, was.opacity, 0, fadeLeft, true, !isInsideLeaving(el))
+  glide(el, 'height', springOf(was.el, was.height), restOf(el), true, true, fadeLeft)
 }
 
 /**
  * Fades an opening row's panel in once its space is nearly open, counted from where the space is. A panel the row
  * still drew as it closed turns back at once, from the opacity it shows, in the steps of `turnBackFades`, and one
- * that still shows whole stops its fade out.
+ * that still shows whole stops its fade out. A panel the form the row leaves still showed, at `leftShown`, as when
+ * Undo brings a row back while its open form fades out, turns back the same way from that opacity.
  */
-function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: number, from: SpringState) {
+function openPanel(
+  part: HTMLElement,
+  wasDrawn: boolean,
+  delay: number,
+  target: number,
+  from: SpringState,
+  leftShown: number,
+) {
+  if (!wasDrawn && leftShown > 0.01) {
+    const steps = turnBackFades(target, from)
+    for (const el of [part, ...trunkBeside(part)]) fadeThrough(el, leftShown, steps, delay)
+    openHoldsUp(part, delay + steps.slice(0, -1).reduce((ms, step) => ms + step.ms, 0))
+    return
+  }
   if (!wasDrawn) {
     const shows = delay + enterDelayMs(target, from)
     for (const el of [part, ...trunkBeside(part)]) fade(el, 0, 1, ENTER_FADE_MS, false, false, shows)
@@ -302,13 +348,21 @@ function openPanel(part: HTMLElement, wasDrawn: boolean, delay: number, target: 
 }
 
 /** Starts a row's or a PR block's move into `state`. False leaves the element to glide to its new height. */
-function startState(el: HTMLElement, track: RowTrack, from: SpringState, isFresh: boolean, openTop: number | null) {
+function startState(
+  el: HTMLElement,
+  track: RowTrack,
+  from: SpringState,
+  isFresh: boolean,
+  openTop: number | null,
+  line: DrawnLine | null,
+) {
   const { state } = track
   switch (state) {
     case 'entering': {
       const isTurn = !isFresh && el.getAnimations().length > 0
       const delay = isTurn && !isSpaceShort(el) ? 0 : Math.max(heightWaitMs, closeWaitMs)
-      growIn(el, isTurn ? from : { x: restOf(el), v: 0 }, isTurn ? opacityOf(el) : 0, delay)
+      const isFaint = !isTurn && track.entersFaint === true
+      growIn(el, isTurn ? from : { x: restOf(el), v: 0 }, isTurn ? opacityOf(el) : 0, delay, isFaint)
       return true
     }
     case 'closing':
@@ -319,6 +373,7 @@ function startState(el: HTMLElement, track: RowTrack, from: SpringState, isFresh
         state,
         openTop,
         Math.max(tabState.isReadDraw ? heightWaitMs : 0, swapsForm(el) ? track.since + LEAVE_FADE_MS - drawnAt : 0),
+        line,
       )
       return true
     case 'leaving':
@@ -334,56 +389,6 @@ function isInsideLeaving(el: HTMLElement): boolean {
   const outer = el.parentElement?.closest<HTMLElement>('[data-motion]')
 
   return outer !== null && outer !== undefined && drawnRows.get(outer.dataset.motion!)?.track.state === 'leaving'
-}
-
-/**
- * Shrinks an entry to the height it comes to rest at, over what it drew open and still draws, inert: a closing row's
- * panel or a PR block's body. A closing row's panel fades out first, while the entry holds its height, so the shrinking
- * height never cuts a line of it that shows. A panel that shows nothing yet, as one still waiting to fade in, hides at
- * once and holds nothing. A turned-back panel that shows faint while its space is still short of open holds nothing
- * either, and fades out in the steps of `faintCloseFades` while the height shrinks. A settling PR
- * block's dismissed head replaces the line above its body, so the body keeps the top it had at `openTop` while the
- * height shrinks over it. A settling row draws its settled line, under the form it leaves while that form fades
- * (`fadeForms`).
- */
-function collapse(
-  el: HTMLElement,
-  from: SpringState,
-  state: 'closing' | 'settling',
-  openTop: number | null,
-  delay: number,
-) {
-  const isShort = state === 'closing' && isOpeningShort(el, from)
-  const part = el.querySelector<HTMLElement>('.closing[inert]')
-  // A closing row keeps its open line until the panel goes, so its end height is measured as it will draw then.
-  const row = el.querySelector<HTMLElement>('.row.closing')
-  const line = row?.querySelector<HTMLElement>(LINE) ?? null
-  const lineFrom = line ? springOf(line, line.getBoundingClientRect().height) : null
-  if (line) glides.get(line)?.anim.cancel()
-  row?.classList.remove('closing')
-  if (part) part.style.display = 'none'
-  const target = naturalHeight(el)
-  const title = line?.querySelector<HTMLElement>(':scope > .text:not(.short)')
-  const lineTo = title ? title.getBoundingClientRect().height : null
-  if (part) part.style.display = ''
-  row?.classList.add('closing')
-  if (part && state === 'settling' && openTop !== null) keepTop(el, part, openTop)
-  const shown = state === 'closing' ? shownPanel(el) : null
-  if (shown && isShort) fadeFaintPanel(shown)
-  else if (shown)
-    for (const p of [...fadingParts(shown), ...trunkBeside(shown, true)]) fade(p, opacityOf(p), 0, LEAVE_FADE_MS, true)
-  else if (part && state === 'closing') for (const p of [part, ...trunkBeside(part, true)]) fade(p, 0, 0, 0, true)
-  if (part && state === 'closing') closeHoldsUp(part, shown !== null)
-  const opacity = opacityOf(el)
-  const shrinksAfter = Math.max(delay, shown && !isShort ? LEAVE_FADE_MS : 0)
-  glide(el, 'height', from, target, true, false, shrinksAfter)
-  if (line && lineFrom && lineTo !== null) closeTitle(line, lineFrom, lineTo, shrinksAfter)
-  if (opacity < 0.99) fade(el, opacity, 1, FADE_MS)
-}
-
-function keepTop(el: HTMLElement, part: HTMLElement, top: number) {
-  const margin = parseFloat(getComputedStyle(part).marginTop) || 0
-  part.style.marginTop = `${margin + top - topIn(el, part)}px`
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { RowCollapse, Session } from '../../types'
-import { blockingChecks } from '../domain/pr-checks'
+import { listedChecks } from '../domain/pr-checks'
 import { prCheckId, prThreadId } from './pr-rows'
 import { waitingThreads } from '../domain/prs'
 import { waitingUnderParents } from './status-folds'
@@ -37,7 +37,7 @@ function newsByRow({ ledger, prViews, lastActions }: CollapseSource): Map<string
       }),
     ),
     ...prs.flatMap(pr =>
-      blockingChecks(pr).map(c => {
+      listedChecks(pr).map(c => {
         const id = prCheckId(pr, c)
         const untimedUrl = c.finishedAt === undefined ? (c.url ?? '') : null
         return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)] as const

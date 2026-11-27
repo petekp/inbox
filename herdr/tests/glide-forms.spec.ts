@@ -1,5 +1,6 @@
 import './gpui-stand-in'
 import { expect, test } from 'bun:test'
+import { SENDING } from '../../core/view/unshown-press'
 import type { Block } from '../src/blocks'
 import type { PressKind } from '../../types'
 
@@ -33,12 +34,9 @@ test('opening the goal field shows its buttons only once its box is nearly open 
   })
 })
 
-test.failing(
-  'D1, the person’s own press cutting the panel it opens: opening the goal field cuts no text as its box grows',
-  () => {
-    expect(goalFieldOpening().cuts.filter(c => c.at >= 0)).toEqual([])
-  },
-)
+test('D1, the person’s own press cutting the panel it opens: opening the goal field cuts no text as its box grows', () => {
+  expect(goalFieldOpening().cuts.filter(c => c.at >= 0)).toEqual([])
+})
 
 function emptyStatus(typing: 'goal' | null): Block[] {
   const screen = demoScreen()
@@ -113,7 +111,7 @@ test('a press’s status under a row’s buttons shows faint in the press’s ow
     400,
   )
   const pressDrawAt = Math.min(...shown.filter(s => s.at >= 0).map(s => s.at))
-  const pressDraw = shown.filter(s => s.at === pressDrawAt && s.text === 'Sending…')
+  const pressDraw = shown.filter(s => s.at === pressDrawAt && s.text === SENDING)
   expect({
     isShownAtOnce: pressDraw.some(s => s.opacity > 0 && s.share > 0),
     cuts: cuts.filter(c => c.at >= 0),
@@ -231,20 +229,17 @@ test('a dismissed PR’s block glides between its open and dismissed forms in bo
   }
 })
 
-test.failing(
-  'D2, a press that grows the block it changes: a dismissed PR whose status line is hidden cuts no text as its block grows',
-  () => {
-    const unread = demoSession(NOW, AGENT)
-    const frames = framesOf(
-      [
-        [0, tabBlocks(demoScreen(unread), uiOn('prs'))],
-        [0, dismissedPr('acme/visor#29', NOW - 500, [], unread).blocks],
-      ],
-      900,
-    )
-    expect(frames.cuts.filter(c => c.at >= 0)).toEqual([])
-  },
-)
+test('D2, a press that grows the block it changes: a dismissed PR whose status line is hidden cuts no text as its block grows', () => {
+  const unread = demoSession(NOW, AGENT)
+  const frames = framesOf(
+    [
+      [0, tabBlocks(demoScreen(unread), uiOn('prs'))],
+      [0, dismissedPr('acme/visor#29', NOW - 500, [], unread).blocks],
+    ],
+    900,
+  )
+  expect(frames.cuts.filter(c => c.at >= 0)).toEqual([])
+})
 
 test('a Dismiss whose reply lands 16, 100 or 300 ms after its press moves the list only toward its new height, on an open row and on a PR’s block', () => {
   const ref = 'acme/visor#29'

@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test'
 
 import { rowKeyPlan } from '../../core/view/action-plan'
-import { CLEAR_FINISHED_ID } from '../../core/view/pr-rows'
-import { actionLabel } from '../../core/view/rows'
+import { CLEAR_FINISHED_ID, prMarkId, prThreadId, RANK_AGAIN_ID } from '../../core/view/pr-rows'
+import { rankAgainPlan } from '../../core/view/pr-order'
+import { actionLabel, STOPPED_REASON } from '../../core/view/rows'
 import type { RowView } from '../../core/view/rows'
 import { demoSession } from '../../core/view/demo'
+import { closeItem } from '../../core/domain/ledger-close'
+import type { Closed } from '../../types'
 import { sessionView } from '../../core/view/session-view'
 import { goalKeyPlan, statusKeyPlan } from '../../core/view/status-keys'
 import { shownTabs } from '../../core/view/tabs'
@@ -21,9 +24,10 @@ import { HERDR_LOOK, lookUiOf } from '../src/controller'
 import { AGENT, NOW, demoEnvelopeText, demoScreen, finishedScreen, lookPresses, uiOn } from './fixtures'
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
-  const { options, keys, more } = rowKeyPlan(row, isAllShown)
+  const { options, keys, more, sessionKey } = rowKeyPlan(row, isAllShown, true)
   return [
     ...options.map(o => actionLabel(o.action)),
+    ...(sessionKey ? [sessionKey.label] : []),
     ...[...keys, ...more].map(k => (k.slot === 'allOptions' || k.slot === 'retry' ? k.label : actionLabel(k.action))),
   ]
 }
@@ -46,6 +50,97 @@ test('a selected row draws its buttons in the shared key plan order', () => {
       const drawn = rowsOf(tabBlocks(screen, ui)).find(b => b.id === row.id)!
       expect(drawn.buttons.map(b => b.label)).toEqual(plannedLabels(row, isAllShown))
     }
+})
+
+test('a row whose message was not sent because the person stopped the session offers Go to session, which focuses its terminal', () => {
+  const s = demoSession(NOW, AGENT)
+  const question = demoScreen().view.needsYou.questions.find(r => r.state.is === 'open')
+  if (!question) throw new Error('the demo has no open question')
+  const refused = (reason: string) => {
+    const last = { kind: 'talk' as const, action: 'discuss', text: 'Discuss', at: NOW - 1000 }
+    const delivery = { state: 'failed' as const, reason }
+    const session = { ...s, lastActions: { ...s.lastActions, [question.id]: { ...last, delivery } } }
+    const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
+    const screen = { ...demoScreen(), view: sessionView(session, NOW, SETTLED_MS, holds) }
+    const drawn = rowsOf(tabBlocks(screen, uiOn('needsYou', { selected: question.id }))).find(b => b.id === question.id)
+    if (!drawn) throw new Error('the question was not drawn')
+    return drawn
+  }
+
+  const stopped = refused(STOPPED_REASON)
+  expect(stopped.feedback?.text).toBe(
+    'Not sent: you stopped this session. It takes inbox messages again after you write to it.',
+  )
+  expect(stopped.buttons.find(b => b.label === 'Go to session')?.does).toEqual({ is: 'focusTerminal' })
+  expect(refused('a hook refused it').buttons.map(b => b.label)).not.toContain('Go to session')
+})
+
+test('a PR block, its thread row, Rank again and a Done row or Closed line whose message was not sent because the person stopped the session offer Go to session first', () => {
+  const s = demoSession(NOW, AGENT)
+  const pr = demoScreen()
+    .view.prs.drawn.map(d => d.pr)
+    .find(p => p.threads.some(t => t.isWaiting))
+  const thread = pr?.threads.find(t => t.isWaiting)
+  const done = s.ledger.closed.find(d => d.how === 'done')
+  if (!pr || !thread || !done) throw new Error('the demo has no waiting thread or Done')
+  const refused = (action: string, text: string) => ({
+    kind: 'handoff' as const,
+    action,
+    text,
+    at: NOW - 1000,
+    delivery: { state: 'failed' as const, reason: STOPPED_REASON },
+  })
+  const lastActions = {
+    ...s.lastActions,
+    [prMarkId(pr.ref)]: refused('pr-address-all', 'Address all'),
+    [prThreadId(pr, thread)]: refused('thread-address', 'Address'),
+  }
+  const refusedDone = { ...done, doneNotification: { id: 'n1', error: STOPPED_REASON } }
+  const closed = s.ledger.closed.map(d => (d === done ? refusedDone : d))
+  const session = { ...s, lastActions, ledger: { ...s.ledger, closed } }
+  const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
+  const screen = { ...demoScreen(), view: sessionView(session, NOW, SETTLED_MS, holds) }
+  const firstLabels = (b: Block | undefined) =>
+    (b?.kind === 'pr' || b?.kind === 'row' ? b.buttons : []).map(x => x.label)
+
+  const prs = tabBlocks(screen, uiOn('prs', { selected: prThreadId(pr, thread) }))
+  expect(firstLabels(prs.find(b => b.kind === 'pr' && b.id === prMarkId(pr.ref))).slice(0, 2)).toEqual([
+    'Go to session',
+    'Try again',
+  ])
+  expect(firstLabels(prs.find(b => b.id === prThreadId(pr, thread))).slice(0, 2)).toEqual([
+    'Go to session',
+    'Try again',
+  ])
+
+  const folds = tabBlocks(screen, uiOn('needsYou')).flatMap(b =>
+    b.kind === 'fold' && 'closedFold' in b.change ? [b.change.closedFold] : [],
+  )
+  const asks = tabBlocks(screen, uiOn('needsYou', { unfolded: folds, closedAll: folds }))
+  const line = asks.find(b => b.id === `closed ${done.id}`)
+  expect(line?.kind === 'row' && line.buttons.map(b => [b.label, b.does])).toEqual([
+    ['Go to session', { is: 'focusTerminal' }],
+    ['Undo', { is: 'press', press: { id: done.id, action: 'undo' }, effects: [], kind: null }],
+  ])
+
+  const task = s.ledger.items.find(i => i.kind === 'task')
+  if (!task) throw new Error('the demo has no open task')
+  const closing = closeItem(s.ledger, task.id, { how: 'done', outcome: 'done' }, NOW - 1000)
+  const refusedTask = (d: Closed) =>
+    d.id === task.id ? { ...d, doneNotification: { id: 'n2', error: STOPPED_REASON } } : d
+  const inPlace = { ...s, ledger: { ...closing, closed: closing.closed.map(refusedTask) } }
+  const placeHolds = { ...holds, shownSince: NOW - 5000 }
+  const placeScreen = {
+    ...demoScreen(),
+    view: sessionView(inPlace, NOW, SETTLED_MS, placeHolds),
+    shownSince: NOW - 5000,
+  }
+  const settled = tabBlocks(placeScreen, uiOn('needsYou')).find(b => b.id === task.id)
+  expect(firstLabels(settled)).toEqual(['Go to session', 'Undo'])
+
+  const rankAgain = { [RANK_AGAIN_ID]: refused('pr-rank-again', 'Rank again') }
+  const plan = rankAgainPlan([], { lastActions: rankAgain, turns: screen.view.turns, now: NOW }, true)
+  expect(plan.sessionKey?.label).toBe('Go to session')
 })
 
 test('only the selected row shows buttons, and with no row picked the first waiting row opens', () => {
@@ -276,7 +371,7 @@ test('a subject an open ask holds up draws what it waits on in its own line, and
 
   expect(held.length).toBeGreaterThan(0)
   for (const b of held) {
-    expect(b.waitsOn).toMatch(/^\S/)
+    expect(b.waitsOn?.text).toMatch(/^\S/)
     expect(b.stall).toBeNull()
     expect(b.buttons.length).toBeGreaterThan(0)
   }

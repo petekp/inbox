@@ -6,7 +6,7 @@ import { statusSync } from './sync-state'
 import type { StatusSync, TurnSync } from './sync-state'
 import { SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
-import { goalPage, metMilestonesFold, oldestAsk } from './status-goal-page'
+import { askSettingMark, asksLinkedTo, goalPage, metMilestonesFold } from './status-goal-page'
 import type { GoalParts, MilestoneRow } from './status-goal-page'
 import {
   childRow,
@@ -18,7 +18,7 @@ import {
   textBeyondName,
   unplacedChildren,
 } from './status-page-parts'
-import type { ListContext, PartSplit } from './status-page-parts'
+import type { ListContext, PartSplit, StatusWaitsOn } from './status-page-parts'
 import { headPart, milestoneAsSubject, subjectInPlaceOf, withoutRepeatedNow } from './status-repeats'
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
@@ -30,7 +30,7 @@ export type StatusStall = { text: string; tone: 'muted' }
 /**
  * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
  * draws its name with its stall word after it, past `STALL_GAP`. A subject an open ask holds up draws the ask's words in
- * the needs-you tone under its name, and where it stands on the line after.
+ * the tone of the ask's kind under its name, and where it stands on the line after.
  */
 export type StatusRow = {
   /** How many steps in from the list's edge it draws: a subject under a milestone at 1, a child under that subject at 2. */ depth: number
@@ -47,8 +47,8 @@ export type StatusRow = {
       text: string | null
       /** "idle 2d" once it has gone without a change. Null while `waitsOn` is set. */
       stall: StatusStall | null
-      /** The oldest open ask that holds it up. */
-      waitsOn: string | null
+      /** The words of the open ask that sets its mark. */
+      waitsOn: StatusWaitsOn | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
@@ -57,7 +57,7 @@ export type StatusRow = {
       hasChildren: boolean
       /** Its children, which a fold on its name hides. 0 while it draws none, and its name then takes no press. */
       foldCount: number
-      /** The oldest open ask that holds it up, which its View button opens. Null while no open ask holds it up. */
+      /** The open ask that sets its mark, a question before a task, which its View button opens. Null while no open ask holds it up. */
       ask: { id: string; kind: Item['kind'] } | null
     }
   | {
@@ -173,8 +173,9 @@ export function statusPage(
   const isNew = (x: Subject) => o === null || !isSubjectSeen(o, x)
   const heldIds = new Set(s.ledger.items.flatMap(i => o?.askSubjects[i.id] ?? []))
   const isHeld = (x: Subject) => isOpen(x) && heldIds.has(x.id)
-  const oldestAskOf = (x: Subject): { id: string; kind: Item['kind'] } | null =>
-    isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null
+  const holdKindsOf = (x: Subject) => s.ledger.items.filter(i => o?.askSubjects[i.id]?.includes(x.id)).map(i => i.kind)
+  const askSettingMarkOf = (x: Subject): { id: string; kind: Item['kind'] } | null =>
+    isHeld(x) ? askSettingMark(asksLinkedTo(s.ledger.items, o?.askSubjects ?? {}, x.id)) : null
   const placeOf = (x: Subject): StatusPlace =>
     isHeld(x) ? 'held' : x.status === 'done' || x.status === 'dropped' ? 'closed' : x.status
   const pageOrder = (x: Subject, y: Subject) =>
@@ -242,7 +243,8 @@ export function statusPage(
   const ctx: ListContext = {
     isNew,
     isHeld,
-    oldestAskOf,
+    holdKindsOf,
+    askSettingMarkOf,
     items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning && turn.is === 'fresh',

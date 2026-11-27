@@ -9,9 +9,12 @@ import type { RowBlock } from '../herdr/src/blocks'
 import type { Failure } from './failure'
 import type { HerdrDraw, HerdrRun } from './look-herdr'
 import { badText, glyphCut } from './rules-text'
+import { LINE_HEIGHT } from '../herdr/src/paint-theme'
+import { vanishFailures } from './rules-herdr-vanish'
+import { pressShowsFailures } from './rules-herdr-press'
 
 const LOOK = 'herdr'
-const FRAME_MS = 16
+const STILL_PX = 0.5
 
 const plannedLabels = (row: RowView, isAllShown: boolean) => {
   const { options, keys, more } = rowKeyPlan(row, isAllShown)
@@ -71,33 +74,69 @@ function restingFailures(d: HerdrDraw, input: string): Failure[] {
   return out
 }
 
-type ShownText = { block: string; text: string; opacity: number; share: number }
-
 type Frames = ReturnType<typeof framesOf>
 
 /**
- * The frames of a run, one page at a time. The view draws a new page, a tab, Help or session, at rest, and `framesOf`
- * moves rows from the draw before, so each page replays from its first draw.
+ * The frames of a run. The view draws a new page, a tab, Help or session, at rest, as a first draw that keeps the
+ * heights it measured, as the panel does, so each page starts at its first draw. The frames before the run starts only
+ * settle the first page's measures.
  */
 function pagedFrames(run: HerdrRun, end: number): Frames {
-  const starts = [...new Set([0, ...run.pageAt.filter(t => t > 0)])].sort((a, b) => a - b)
-  const merged: Frames = { jumps: [], titles: [], gaps: [], heights: [], slides: [], cuts: [], fading: [], shown: [] }
-  for (const [i, from] of starts.entries()) {
-    const to = starts[i + 1] ?? end
-    const page = run.steps.filter(s => s[0] >= from && s[0] < to)
+  const starts = new Set(run.pageAt.filter(t => t > 0))
+  const atStarts = [...starts].flatMap(from => {
     const before = run.steps.findLast(s => s[0] < from)
-    const first = page[0]?.[0] === from || !before ? page : [[from, before[1]] as Step, ...page]
-    const shifted = first.map(s => [s[0] - from, ...s.slice(1)] as Step)
-    const f = framesOf(shifted, to - from)
-    const moved = <T extends { at: number }>(list: T[]) => list.map(x => ({ ...x, at: x.at + from }))
-    merged.jumps.push(...moved(f.jumps))
-    merged.titles.push(...moved(f.titles))
-    merged.gaps.push(...moved(f.gaps))
-    merged.cuts.push(...moved(f.cuts))
-    merged.fading.push(...moved(f.fading).filter(x => x.at >= from))
-    merged.shown.push(...moved(f.shown).filter(x => x.at >= from))
+    return run.steps.some(s => s[0] === from) || !before ? [] : [[from, before[1]] as Step]
+  })
+  const steps = [...run.steps, ...atStarts]
+    .sort((a, b) => a[0] - b[0])
+    .map(s => (starts.has(s[0]) ? ([s[0], s[1], 'page'] as Step) : s))
+  const f = framesOf(steps, end, 0, run.fetchedAt)
+  const shown = <T extends { at: number }>(list: T[]) => list.filter(x => x.at >= 0)
+
+  return {
+    jumps: shown(f.jumps),
+    shrinks: shown(f.shrinks),
+    titles: shown(f.titles),
+    gaps: shown(f.gaps),
+    heights: [],
+    slides: [],
+    cuts: shown(f.cuts),
+    fading: shown(f.fading),
+    shown: shown(f.shown),
+    rest: f.rest,
   }
-  return merged
+}
+
+/**
+ * The rest-space rule, on the frame 1.5 s after the case's last event, when every move has come to rest: no box is
+ * taller than its content, and no blank line's worth of space sits between two lines a block draws.
+ */
+function restFailures(rest: Frames['rest'], at: Pick<Failure, 'look' | 'at' | 'after'>): Failure[] {
+  const out: Failure[] = []
+  for (const fit of rest.fits.filter(x => x.height - x.content > STILL_PX))
+    out.push({
+      ...at,
+      rule: 'rest-space',
+      detail: `${fit.id ?? 'a box'} rests ${(fit.height - fit.content).toFixed(1)} px taller than its content`,
+      seen: fit,
+    })
+  const drawn = rest.lines.filter(l => l.opacity >= CUT_OPACITY && l.text.trim() !== '' && l.block !== '')
+  for (const block of new Set(drawn.map(l => l.block))) {
+    const lines = drawn.filter(l => l.block === block).sort((a, b) => a.top - b.top)
+    let bottom = lines[0] ? lines[0].top + lines[0].height : 0
+    for (const l of lines.slice(1)) {
+      if (l.top - bottom >= LINE_HEIGHT - STILL_PX)
+        out.push({
+          ...at,
+          rule: 'rest-space',
+          detail: `${block} rests with ${(l.top - bottom).toFixed(1)} px of blank space above "${l.text.slice(0, 40)}"`,
+          seen: l,
+        })
+      bottom = Math.max(bottom, l.top + l.height)
+    }
+  }
+
+  return out
 }
 
 /** The rules on every 16 ms frame the Herdr stand-in lays out between and after the case's draws. */
@@ -120,8 +159,8 @@ function motionFailures(run: HerdrRun): Failure[] {
       },
     ]
   }
-  const out: Failure[] = []
   const at = (t: number) => ({ look: LOOK, at: t, after: afterAt(t) })
+  const out: Failure[] = restFailures(f.rest, at(end))
   for (const c of f.cuts)
     out.push({
       ...at(c.at),
@@ -141,6 +180,13 @@ function motionFailures(run: HerdrRun): Failure[] {
       detail: `${j.id} moved ${j.by.toFixed(1)} px in one frame, off its spring`,
       seen: j,
     })
+  for (const s of f.shrinks)
+    out.push({
+      ...at(s.at),
+      rule: 'jump',
+      detail: `the highlight of ${s.id} shrank ${s.by.toFixed(1)} px in one frame, ahead of its box`,
+      seen: s,
+    })
   for (const g of f.gaps)
     out.push({
       ...at(g.at),
@@ -149,36 +195,8 @@ function motionFailures(run: HerdrRun): Failure[] {
       seen: g,
     })
 
-  const frames = new Map<number, ShownText[]>()
-  for (const s of f.shown) frames.set(s.at, [...(frames.get(s.at) ?? []), s])
-  const times = [...frames.keys()].sort((a, b) => a - b)
-  const stepTimes = run.steps.map(s => s[0])
-  const isStep = (t: number) => stepTimes.some(s => s > t - FRAME_MS && s <= t)
-  const keyOf = (s: ShownText) => `${s.block}|${s.text}`
-  for (let i = 1; i < times.length; i++) {
-    const t = times[i] ?? 0
-    const before = frames.get(times[i - 1] ?? 0) ?? []
-    const now = new Map((frames.get(t) ?? []).map(s => [keyOf(s), s]))
-    const blocksNow = new Set([...now.values()].map(s => s.block))
-    const stem = (t: string) => t.replace(/…$/, '')
-    const goesOn = (s: ShownText) =>
-      [...now.values()].some(
-        n => n.block === s.block && (n.text.startsWith(stem(s.text)) || s.text.startsWith(stem(n.text))),
-      )
-    const shownIn = (list: Iterable<ShownText>, block: string) =>
-      [...list].filter(s => s.block === block && s.opacity * s.share >= CUT_OPACITY && s.text.trim() !== '').length
-    for (const s of before) {
-      const isShown = s.opacity * s.share >= CUT_OPACITY && s.text.trim() !== ''
-      if (!isShown || now.has(keyOf(s)) || !blocksNow.has(s.block) || isStep(t) || goesOn(s)) continue
-      if (shownIn(now.values(), s.block) >= shownIn(before, s.block)) continue
-      out.push({
-        ...at(t),
-        rule: 'vanish',
-        detail: `"${s.text}" in ${s.block} went from ${s.opacity.toFixed(2)} to gone in one frame, with no draw then`,
-        seen: s,
-      })
-    }
-  }
+  out.push(...vanishFailures(run, f.shown, at))
+  out.push(...pressShowsFailures(run, f.shown, at))
 
   return out
 }

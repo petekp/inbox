@@ -103,7 +103,7 @@ settled PR takes no tint.
 
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what
-kind it is, such as ◆, waits on you. Each glyph means one thing wherever a look
+kind it is, such as ◆, waits on your answer, or □, waits on a step only you can do. Each glyph means one thing wherever a look
 draws it. `core/view/help.ts:MARK_LEGEND` lists them all.
 Help calls them Indicators.
 
@@ -154,10 +154,10 @@ it last changed. Its status (a subject's status, not the Status tab) is one of
 working, queued, waits on others, done and dropped. The inbox model adds and changes subjects by id, and code keeps their
 times. The inbox model also links an open question or task to the subject it
 holds up. While that item is open, the subject's mark reads ◆ in place of its
-status's mark, and the item's Asks row reads "Holds up" and the subject's name.
+status's mark, or □ in the tasks tone when only open tasks hold it up, and the item's Asks row reads "Holds up" and the subject's name.
 Its row then has a View question or View task button, which opens Asks with
-the oldest of those items selected, and a line under its name, in the needs-you
-tone, with that item's own words.
+the item that sets the mark selected (the oldest question while one is open, else
+the oldest task), and a line under its name with that item's own words.
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Goal**:
@@ -198,7 +198,8 @@ only when finishing the subject is part of the milestone's outcome. A subject
 the goal does not need sits under Other work, and so does one not linked to a
 milestone yet, while the goal shows milestones. Code closes a milestone
 once all its linked subjects are closed and one is done, and the model opens it
-again when work is left. Past 6 subjects, open or done, the model splits it by theme.
+again when work is left. Code opens it again while an open ask holds it up,
+itself or through a subject that serves it. Past 6 subjects, open or done, the model splits it by theme.
 A milestone with one subject, named like it, and no ask of its own draws that
 subject in its place, except once the milestone is done while that subject is
 still open.
@@ -221,7 +222,8 @@ subject with no change for a day or more, and no child of it running, reads
 how long it has been idle, as "idle 2d", muted. Other rows show no word. A
 row that waits on the person, such as a subject held by an open question or
 task, a milestone it holds up, or a delegate at a question or an approval,
-shows the ◆ mark in the needs-you tone, not a word; a held subject also
+shows the ◆ mark in the needs-you tone, or □ in the tasks tone when only open
+tasks hold it up, not a word; a held subject also
 draws the item's own words on a line under its name. The code calls the
 words `stall`.
 _Avoid_: age

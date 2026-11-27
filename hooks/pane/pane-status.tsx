@@ -34,7 +34,7 @@ import { mergedLine, nameLevelOf, textLevelOf, WAS_LEVEL } from '../../core/view
 import { countsText, countsUnits, isParentCollapsed, unfoldedRows } from '../../core/view/status-folds'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import { statusRowPads } from '../../core/view/status-gaps'
-import { levelSpan, SELECTION_BAR } from './terminal-text'
+import { levelSpan, SELECTION_BAR, waitsOnSpan } from './terminal-text'
 
 export function paneStatus(
   {
@@ -347,9 +347,7 @@ export function paneStatus(
         r.foldCount > 0
           ? parentName(r, name, r.stall, r.depth, isFolded)
           : statusNameLine(`status-${r.id}-name`, name, r.stall, r.depth),
-        ...(r.waitsOn
-          ? [statusPageText(`status-${r.id}-waits-on`, [{ text: r.waitsOn, isNeedsYou: true }], r.depth)]
-          : []),
+        ...(r.waitsOn ? [statusPageText(`status-${r.id}-waits-on`, [waitsOnSpan(r.waitsOn)], r.depth)] : []),
         ...(r.text
           ? [statusPageText(`status-${r.id}-text`, [levelSpan(r.text, textLevelOf(r), isRowSelected)], r.depth)]
           : []),

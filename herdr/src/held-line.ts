@@ -1,22 +1,78 @@
-import { isFailure, isStatusUnderActions, pressUnderWaySince } from '../../core/view/feedback'
-import type { Feedback } from '../../core/view/feedback'
-import { agedText } from './blocks'
-import type { Aged, Block, RowBlock, Tone } from './blocks'
+import { isFailure, isStatusUnderActions } from '../../core/view/feedback'
+import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
+import { heldLineEndsAt, isPressUnderWay, stepHeldLine } from '../../core/view/held-line'
+import type { HeldLine } from '../../core/view/held-line'
+import { agedText, isOpenRow } from './blocks'
+import type { AddedLines, Aged, Block, BodyLine, RowBlock, Tone } from './blocks'
+import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
+import { aboveId, aboveLineId, addedId, addedLinesId } from './heights'
+import type { Sizes } from './heights'
 
 /**
- * A row's status line that the panel draws on its own line between the row's title and its buttons. `isHidden` keeps
- * a failure's space without its words, since the press under way retries what it says failed. `aged` keeps a status's
- * age counting while the line is held.
+ * A row's status line that the panel draws on its own line between the row's title and its buttons. `aged` keeps a
+ * status's age counting while the line is held. `kind` is what the status says, as `statusKindOf` reads it. `isAgain`
+ * marks a line that came in place of a line of another kind, and `isSwapped` one that came in the space of a line that
+ * faded out, so it starts hidden.
  */
-type LineAbove = { text: string; tone: Tone; isHidden: boolean; aged?: Aged }
+type LineAbove = {
+  text: string
+  tone: Tone
+  kind: string | undefined
+  aged?: Aged
+  cameAt?: number
+  isAgain?: true
+  isSwapped?: true
+}
+
+type Status = NonNullable<RowBlock['feedback']>
+
+/** What a status says, as a press under way or its outcome: an open or refresh that runs, and how it ended, differ. */
+export const statusKindOf = (l: Status): string | undefined =>
+  l.source?.is === 'local' ? `local ${l.source.result.state}` : l.source?.is
 
 /**
- * What each row holds above its buttons, by row id: the line it last drew there, or null for a row that drew none
- * there when its press went out, so its status stays under its buttons.
+ * When a status came after the title of a row with no buttons, whether it came in place of one of another kind, and
+ * whether it came in the space of a line that faded out.
  */
-export type LinesAbove = ReadonlyMap<string, LineAbove | null>
+type Coming = { at: number; isAgain: boolean; isSwapped: boolean }
 
-export const NO_LINES_ABOVE: LinesAbove = new Map()
+/**
+ * What each row holds above its buttons, by row id: the line it last drew there, or the line after its title that lets
+ * go, or null for a row that drew none there when its press went out, so its status stays under its buttons.
+ * `lineless` names the rows that last drew their buttons with no line above them, and `bare` the rows that last drew no
+ * buttons and no line after their title. `comes` gives when the status after the title of a row with no buttons came,
+ * while its box opens, `afterTitle` the status each such row drew there, and `goes` the line after its title that
+ * lets go. `bodies` gives the keys of each open
+ * row's body lines as last drawn, and `added` the lines a row added while their box opens.
+ */
+
+export type LinesAbove = {
+  held: ReadonlyMap<string, HeldLine<LineAbove> | null>
+  lineless: ReadonlySet<string>
+  bare: ReadonlySet<string>
+  comes: ReadonlyMap<string, Coming>
+  afterTitle: ReadonlyMap<string, LineAbove>
+  goes: ReadonlyMap<string, HeldLine<LineAbove>>
+  bodies: ReadonlyMap<string, string[]>
+  added: ReadonlyMap<string, AddedLines>
+}
+
+export const NO_LINES_ABOVE: LinesAbove = {
+  held: new Map(),
+  lineless: new Set(),
+  bare: new Set(),
+  comes: new Map(),
+  afterTitle: new Map(),
+  goes: new Map(),
+  bodies: new Map(),
+  added: new Map(),
+}
+
+/** How long a line whose hold let go stays drawn: its fade, then its space closing. */
+const HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS
+
+/** How long a status that comes above a row's buttons takes to come: its box opening, then the line fading in. */
+const LINE_COMES_MS = NEXT_FRAME_MS + HEIGHT_SETTLE_MS
 
 /** Undo takes the place of a settled row's buttons, so a settled row holds nothing from its open form. */
 const heldKey = (r: RowBlock): string => (r.settled ? `settled ${r.id}` : r.id)
@@ -27,64 +83,287 @@ const hasActions = (r: RowBlock): boolean => r.buttons.length > 0 || r.field !==
 export const isStatusUnder = (r: RowBlock): boolean =>
   r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)))
 
-/** A press still under way, or its message waiting in the queue to enter. */
-const isUnderWay = (f: Feedback | null): boolean => f?.is === 'queued' || pressUnderWaySince(f) !== null
-
-const lineOf = (f: NonNullable<RowBlock['feedback']>): LineAbove => ({
+const lineOf = (f: Status, cameAt: number | undefined, isAgain: boolean, isSwapped = false): LineAbove => ({
   text: f.text,
   tone: f.tone,
-  isHidden: isFailure(f.source),
+  kind: statusKindOf(f),
   ...(f.aged ? { aged: f.aged } : {}),
+  ...(cameAt === undefined ? {} : { cameAt }),
+  ...(isAgain ? { isAgain: true as const } : {}),
+  ...(isSwapped ? { isSwapped: true as const } : {}),
 })
 
-const drawn = (l: LineAbove, now: number): NonNullable<RowBlock['heldLine']> => ({
-  text: l.aged ? agedText(l.aged, now) : l.text,
-  tone: l.tone,
-  isHidden: l.isHidden,
+/** The block of a row whose status is still coming above its buttons, as `comingEl` draws it. */
+const comingRow = (b: RowBlock, l: { cameAt: number; isAgain?: boolean; isSwapped?: boolean }): RowBlock => ({
+  ...b,
+  lineCameAt: l.cameAt,
+  ...(l.isAgain ? { isLineAgain: true as const } : {}),
+  ...(l.isSwapped ? { isLineSwapped: true as const } : {}),
 })
+
+/** Whether `f` is another line than `l`: another kind of status, in other words. */
+const isOtherLine = (l: LineAbove, f: Status): boolean => l.kind !== statusKindOf(f) && l.text !== f.text
+
+/** A line that lets go at `now`: it fades out while its space holds, then its space closes. */
+const lettingGo = (line: LineAbove, now: number): HeldLine<LineAbove> => ({
+  line,
+  isFailure: false,
+  isHidden: false,
+  leftAt: now,
+})
+
+/** Whether a held line that let go still shows its words as it fades, so a status that comes waits for its space. */
+const isFadingOut = (k: HeldLine<LineAbove> | null | undefined, now: number): k is HeldLine<LineAbove> =>
+  k?.leftAt != null && !k.isHidden && now < k.leftAt + HOLD_MS
+
+/** Whether a held line that let go is still drawn, as it fades or its space closes. */
+const isLetGo = (k: HeldLine<LineAbove> | null | undefined, now: number): k is HeldLine<LineAbove> =>
+  k?.leftAt != null && now < k.leftAt + HELD_LEAVE_MS
+
+/** A row's held line as the panel draws it, its age counting. */
+const heldLineOf = (d: { line: LineAbove; isHidden: boolean; leftAt: number | null }, now: number) => ({
+  text: d.line.aged ? agedText(d.line.aged, now) : d.line.text,
+  tone: d.line.tone,
+  isHidden: d.isHidden,
+  ...(d.leftAt === null ? {} : { leftAt: d.leftAt }),
+})
+
+const isComing = (l: LineAbove | undefined, now: number): l is LineAbove & { cameAt: number } =>
+  l?.cameAt !== undefined && now < l.cameAt + LINE_COMES_MS
+
+/** A body line as an open row's draws compare it: its part, and the option it draws or its words. */
+export const bodyKey = (l: BodyLine): string => `${l.part} ${l.optionId ?? l.text}`
 
 /**
- * The blocks with each row's held line, and the lines to hold at the next draw. The panel draws a status that follows
- * the title on its own line above the buttons, where the other looks put it in the title's text. So a row keeps its
- * shape while it shows its buttons, and they hold their place:
- * - A row with a line above its buttons keeps that line's place. While its status goes under the buttons, during a
- *   press and after it, as with "Not confirmed", the line keeps its words. A status that belongs above takes its
- *   place. With no status, the place stays empty.
- * - A row whose press went out with no line above keeps its status under its buttons, where the press under way read,
- *   as with "✓ Explained".
- *
- * A row drawn without buttons during its press, such as one deselected, keeps what it holds for when it shows them
- * again. A row that settles or comes back from settled starts holding afresh.
+ * Where the lines a row added start in `keys`: the place they were added at, or -1 once the lines there changed. An
+ * earlier line with the same key is not the added one.
  */
-export function holdLinesAbove(blocks: Block[], held: LinesAbove, now: number): { blocks: Block[]; held: LinesAbove } {
-  const next = new Map<string, LineAbove | null>()
+export function addedAt(keys: string[], added: AddedLines): number {
+  const isThere = added.keys.length > 0 && added.keys.every((k, i) => keys[added.at + i] === k)
+
+  return isThere ? added.at : -1
+}
+
+/**
+ * The lines an open row added to its body at `now`, after `was`, given the keys of the body lines it drew last, `last`,
+ * and now, `keys`: one run of new lines between the lines it kept, as the options "All N options" adds or the context
+ * a question asked again adds, while their box opens. A draw that takes heights at once draws them at rest.
+ */
+function stepAdded(
+  was: AddedLines | undefined,
+  last: string[] | undefined,
+  keys: string[],
+  now: number,
+  isAtOnce: boolean,
+): AddedLines | null {
+  if (isAtOnce) return null
+  if (was && now < was.cameAt + LINE_COMES_MS && addedAt(keys, was) >= 0) return was
+  if (last === undefined || keys.length <= last.length) return null
+  let head = 0
+  while (head < last.length && keys[head] === last[head]) head++
+  let tail = 0
+  while (tail < last.length - head && keys[keys.length - 1 - tail] === last[last.length - 1 - tail]) tail++
+
+  return head + tail < last.length ? null : { keys: keys.slice(head, keys.length - tail), at: head, cameAt: now }
+}
+
+/**
+ * The blocks with the lines each open row added, as `stepAdded` gives them. They open a box of their own, so the
+ * buttons under them glide down as the row's box grows.
+ */
+function addLines(blocks: Block[], last: LinesAbove, now: number, isAtOnce: boolean) {
+  const bodies = new Map<string, string[]>()
+  const added = new Map<string, AddedLines>()
+  const shown = blocks.map((b): Block => {
+    if (b.kind !== 'row' || !isOpenRow(b) || !hasActions(b)) return b
+    const keys = b.body.map(bodyKey)
+    bodies.set(b.id, keys)
+    const a = stepAdded(last.added.get(b.id), last.bodies.get(b.id), keys, now, isAtOnce)
+    if (a) added.set(b.id, a)
+    return a ? { ...b, addedLines: a } : b
+  })
+  const ends = [...added.values()].flatMap(a => [a.cameAt + NEXT_FRAME_MS, a.cameAt + LINE_COMES_MS])
+
+  return { blocks: shown, bodies, added, ends: ends.filter(at => at > now) }
+}
+
+/**
+ * The blocks with each row's held line, the lines to hold at the next draw, and when a held line next changes how it
+ * draws. The panel draws a status that follows the title on its own line above the buttons, where the other looks put
+ * it in the title's text. The line keeps its place while a press puts the row's status under the buttons, so they hold
+ * their place, and lets go as `stepHeldLine` says. A line that lets go fades out while its space holds, then its space
+ * closes.
+ *
+ * A row whose press went out with no line above keeps its status under its buttons, where the press under way read, as
+ * with "✓ Explained". A row drawn without buttons during its press, such as one deselected, keeps what it holds for
+ * when it shows them again. A row that settles or comes back from settled starts holding afresh.
+ *
+ * A status that comes above the buttons of a row that last drew them with no line above opens a box for itself, so the
+ * buttons glide down (`lineCameAt`). So does a status that comes after the title of a row that last drew no buttons and
+ * no line there, such as a folded row whose press is not applied, so the row's box grows with it. A row that shows its
+ * buttons again, such as one selected, draws its line at rest, as does a draw that takes heights at once, `isAtOnce`.
+ *
+ * A status that turns into one of another kind, above the buttons or after the title, lets go of its line, which fades
+ * out while its space holds. The new status waits, then comes in that space, hidden for a draw while its height is
+ * measured, its box moving from the old line's height (`isLineAgain`, `isLineSwapped`). A status after the title
+ * that goes, or that a row which shows its buttons puts under them, lets go the same way, then its space closes. In a
+ * draw that follows the person's input, `isInput`, a status of another kind comes again from that draw instead, so a
+ * press shows at once.
+ */
+export function holdLinesAbove(
+  blocks: Block[],
+  last: LinesAbove,
+  now: number,
+  isAtOnce = false,
+  isInput = false,
+): { blocks: Block[]; held: LinesAbove; nextAt: number | null } {
+  const next = new Map<string, HeldLine<LineAbove> | null>()
+  const lineless = new Set<string>()
+  const bare = new Set<string>()
+  const comes = new Map<string, Coming>()
+  const afterTitle = new Map<string, LineAbove>()
+  const goes = new Map<string, HeldLine<LineAbove>>()
+  const isEased = !isAtOnce && !isInput
+  const waiting = (b: RowBlock, k: HeldLine<LineAbove>): Block => ({
+    ...b,
+    heldLine: heldLineOf(k, now),
+    isLineWaiting: true,
+  })
+  const bareRow = (b: RowBlock, key: string): Block => {
+    const own = b.feedback !== null && !isStatusUnder(b) ? b.feedback : null
+    const was = last.afterTitle.get(key)
+    const isGone = isEased && was !== undefined && (own === null || isOtherLine(was, own))
+    const going = isGone ? lettingGo(was, now) : last.goes.get(key)
+    const letGo = isLetGo(going, now) ? going : undefined
+    if (letGo && (own === null || isFadingOut(letGo, now))) {
+      goes.set(key, letGo)
+      return own === null ? { ...b, heldLine: heldLineOf(letGo, now) } : waiting(b, letGo)
+    }
+    if (own === null) return (bare.add(key), b)
+    const prior = last.comes.get(key)
+    const isNewKind = !isAtOnce && was !== undefined && isOtherLine(was, own)
+    const come: Coming | undefined = letGo
+      ? { at: now, isAgain: true, isSwapped: true }
+      : isNewKind
+        ? { at: now, isAgain: true, isSwapped: false }
+        : prior !== undefined && now < prior.at + LINE_COMES_MS
+          ? prior
+          : !isAtOnce && last.bare.has(key)
+            ? { at: now, isAgain: false, isSwapped: false }
+            : undefined
+    afterTitle.set(key, lineOf(own, come?.at, come?.isAgain === true))
+    if (come === undefined) return b
+    comes.set(key, come)
+    return comingRow(b, { cameAt: come.at, isAgain: come.isAgain, isSwapped: come.isSwapped })
+  }
   const shown = blocks.map((b): Block => {
     if (b.kind !== 'row') return b
     const key = heldKey(b)
-    const kept = held.get(key)
     const f = b.feedback
+    const source = f?.source ?? null
+    const isUnderWay = isPressUnderWay(source)
     if (!hasActions(b)) {
-      if (kept !== undefined && isUnderWay(f?.source ?? null)) next.set(key, kept)
-      return b
+      const held = last.held.get(key)
+      if (held !== undefined && isUnderWay) next.set(key, held)
+      return bareRow(b, key)
     }
-    if (f === null) {
-      if (kept === undefined) return b
-      const empty = kept && { ...kept, isHidden: true }
-      next.set(key, empty)
-      return empty ? { ...b, heldLine: drawn(empty, now) } : b
+    const isUnder = isStatusUnder(b)
+    const ownStatus = f !== null && !isUnder ? f : null
+    const wasAfter = last.afterTitle.get(key)
+    const goingAfter = last.goes.get(key)
+    const held = last.held.get(key)
+    const kept =
+      held !== undefined
+        ? held
+        : !isAtOnce && wasAfter !== undefined && ownStatus === null
+          ? lettingGo(wasAfter, now)
+          : isLetGo(goingAfter, now)
+            ? goingAfter
+            : undefined
+    const isStarting = kept === undefined && f !== null && isUnder && (isUnderWay || source?.is === 'queued')
+    if (kept === null || isStarting) {
+      next.set(key, null)
+      lineless.add(key)
+      return kept === null && f !== null && !isUnder ? { ...b, isStatusHeldUnder: true } : b
     }
-    if (!isStatusUnder(b)) {
-      next.set(key, kept === null ? null : lineOf(f))
-      return kept === null ? { ...b, isStatusHeldUnder: true } : b
+    const isOtherKind = ownStatus !== null && kept?.leftAt === null && isOtherLine(kept.line, ownStatus)
+    const letGo = isEased && isOtherKind && !kept.isHidden ? lettingGo(kept.line, now) : kept
+    if (ownStatus !== null && isEased && isFadingOut(letGo, now)) {
+      next.set(key, letGo)
+      return waiting(b, letGo)
     }
-    if (kept === undefined) {
-      if (isUnderWay(f.source)) next.set(key, null)
-      return b
-    }
-    next.set(key, kept)
+    const isAfterLeave = ownStatus !== null && isEased && isLetGo(kept, now)
+    const isNewLine = kept === undefined && !isAtOnce && last.lineless.has(key)
+    const isDrawn = kept?.leftAt === null
+    const isNewKind = !isAtOnce && isDrawn && isOtherKind
+    const isComeAgain = isNewKind || isAfterLeave
+    const isKeptComing = isDrawn && !isNewLine && !isComeAgain
+    const cameAt = isNewLine || isComeAgain ? now : isDrawn ? kept.line.cameAt : undefined
+    const isAgain = isComeAgain || (isKeptComing && kept.line.isAgain === true)
+    const isSwapped = isAfterLeave || (isKeptComing && kept.line.isSwapped === true)
+    const own = ownStatus !== null ? lineOf(ownStatus, cameAt, isAgain, isSwapped) : null
+    const isOwnFailure = f !== null && isFailure(f.source)
+    const step = stepHeldLine(
+      kept,
+      { own, isOwnFailure, isUnder: f !== null && isUnder, isPressUnderWay: isUnderWay },
+      now,
+      HELD_LEAVE_MS,
+    )
+    if (step.kept) next.set(key, step.kept)
+    const d = step.drawn
+    if (!d && !own) lineless.add(key)
+    if (!d) return own && isComing(own, now) ? comingRow(b, own) : b
 
-    return kept ? { ...b, heldLine: drawn(kept, now) } : b
+    return { ...b, heldLine: heldLineOf(d, now) }
   })
+  const withAdded = addLines(shown, last, now, isAtOnce)
+  const ends = [...next.values()].flatMap(k =>
+    isComing(k?.line, now)
+      ? [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter(at => at > now)
+      : leaveEnds(k, now),
+  )
 
-  return { blocks: shown, held: next }
+  for (const { at } of comes.values()) ends.push(...[at + NEXT_FRAME_MS, at + LINE_COMES_MS].filter(t => t > now))
+  for (const k of goes.values()) ends.push(...leaveEnds(k, now))
+  ends.push(...withAdded.ends)
+  const held = { held: next, lineless, bare, comes, afterTitle, goes, bodies: withAdded.bodies, added: withAdded.added }
+
+  return { blocks: withAdded.blocks, held, nextAt: ends.length === 0 ? null : Math.min(...ends) }
 }
+
+/** When a held line that let go next changes how it draws: as its fade starts, as its space starts to close, and as it ends. */
+function leaveEnds(k: HeldLine<LineAbove> | null | undefined, now: number): number[] {
+  const end = heldLineEndsAt(k, HELD_LEAVE_MS)
+  return end === null || k?.leftAt == null
+    ? []
+    : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter(at => at > now)
+}
+
+/** Whether a row's held line that let go has faded, so its box shuts. */
+const isHeldLineShutting = (r: RowBlock, now: number): boolean =>
+  r.heldLine?.leftAt !== undefined && now >= r.heldLine.leftAt + HOLD_MS
+
+/**
+ * How far a row's measured rest is over the height it moves to while its held line's box shuts: the box's height as
+ * last measured. The row's box then springs with the line's box, as one move.
+ */
+export const heldLineDrop = (r: RowBlock, now: number, heights: Sizes): number =>
+  isHeldLineShutting(r, now) ? (heights.get(aboveId(r.id)) ?? 0) : 0
+
+/**
+ * How far a row's measured rest is under the height it moves to while the box of a status that came above its buttons
+ * opens: the line's height less its box's, from the draw after it came. The row's box then springs with the line's box.
+ * A line that came in place of a taller one shuts its box toward its own height, so the rise is then below none.
+ */
+export function lineRise(r: RowBlock, now: number, heights: Sizes): number {
+  if (r.lineCameAt === undefined || now === r.lineCameAt) return 0
+  const rise = (heights.get(aboveLineId(r.id)) ?? 0) - (heights.get(aboveId(r.id)) ?? 0)
+
+  return r.isLineAgain ? rise : Math.max(0, rise)
+}
+
+/** As `lineRise`, for the box of the lines an open row added. */
+export const addedRise = (r: RowBlock, now: number, heights: Sizes): number =>
+  r.addedLines === undefined || now === r.addedLines.cameAt
+    ? 0
+    : Math.max(0, (heights.get(addedLinesId(r.id)) ?? 0) - (heights.get(addedId(r.id)) ?? 0))

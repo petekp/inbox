@@ -8,7 +8,7 @@ import { drawnPreconditions } from './press-preconditions'
 import type { RowPress } from '../domain/presses'
 import { allRows } from './rows'
 import type { SessionView } from './session-view'
-import { PRESS_TIMEOUT_MS } from './session-view'
+import { lastActionKey, PRESS_TIMEOUT_MS } from './session-view'
 import { isRowTab } from './tabs'
 import { heldReplies, keptDiscards, SETTLED_MS, type Holds } from './timing'
 import { isGuardedPress, selectedOf, selectRestored, tabWaits, withCursor } from './ui-controller-selection'
@@ -88,7 +88,9 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
   if (isRepeat || isBlank || isGuardedPress(ui, ui.tab, rowId, by, now)) return withCommands(ui)
   const holds = holdsOf(ui, now)
   const pressId = ui.nextPressId
-  const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now, by }
+  const atBefore = view.lastActions[rowId]?.at ?? null
+  const lastBefore = lastActionKey(view, rowId)
+  const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now, lastBefore, by }
   const { [rowId]: _error, ...errors } = ui.errors
   const { [rowId]: _note, ...notes } = ui.notes
   let next: UiState = {
@@ -97,10 +99,11 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
     pressesOut: { ...ui.pressesOut, [pressId]: out },
     errors,
     notes,
+    ...(p.action === 'undo' ? { restoring: { id: rowId, at: now, by } } : {}),
   }
   if (isReply) {
     const text = p.text.trim()
-    const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false }
+    const sent = { pressId, text, atBefore, isConfirmed: false }
     next = {
       ...next,
       typing: next.typing === rowId ? null : next.typing,
@@ -195,7 +198,8 @@ export function pressSettled(
     const { [row]: _sent, ...rest } = next.sentReplies
     next = { ...next, sentReplies: isRefused ? rest : { ...rest, [row]: { ...sent, isConfirmed } } }
   }
-  if (out.action === 'undo' && isConfirmed) next = { ...next, restoring: { id: row, at: now, by: out.by } }
+  if (out.action === 'undo' && next.restoring?.id === row)
+    next = { ...next, restoring: isConfirmed ? { ...next.restoring, at: now } : null }
   const restored = selectRestored(next, view, now)
   next = restored.ui
   if (outcome.isDemoSent)

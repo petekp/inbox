@@ -84,8 +84,11 @@ function failedSibling(pr, c) {
   const run = c.bucket === "cancelled" ? runOf(c) : null;
   return run ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run, runOf(f))) ?? null : null;
 }
+function listedChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr)];
+}
 function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+  return listedChecks(pr).filter((c) => !failedSibling(pr, c));
 }
 
 // ../core/domain/text.ts
@@ -196,17 +199,25 @@ function graphemesOf(text) {
 var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
 var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
 var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
+var cellsOf = graphemeCells;
+function countCellsWith(measure) {
+  const was = cellsOf;
+  cellsOf = measure;
+  return () => {
+    cellsOf = was;
+  };
+}
 function cellWidth(text) {
   let cells = 0;
   for (const segment of graphemesOf(text))
-    cells += graphemeCells(segment);
+    cells += cellsOf(segment);
   return cells;
 }
 function cutToCells(text, cells) {
   let out = "";
   let used = 0;
   for (const segment of graphemesOf(text)) {
-    used += graphemeCells(segment);
+    used += cellsOf(segment);
     if (used > cells)
       break;
     out += segment;
@@ -1491,6 +1502,10 @@ var CLAUDE_CODE = {
       kind: "different",
       reason: "Desktop draws faint text in one translucent color for both of the app's themes, at 3:1 on each. The ANSI themes, and a theme the mod does not know, draw it in the muted theme key."
     },
+    "supporting-text": {
+      kind: "different",
+      reason: "Desktop and the ANSI themes draw supporting text in the muted theme key. A theme key cannot be mixed, and no one color sits between the desktop app's muted and text colors in both its themes."
+    },
     "status-parent-fold": { kind: "full" },
     "seen-on-screen": { kind: "full" },
     "status-idle-age": { kind: "full" },
@@ -1514,6 +1529,10 @@ var CLAUDE_CODE = {
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The open row warns before a press, and a refused row says the person stopped the session. Neither offers Go to session, since the person is already in it."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -1658,6 +1677,7 @@ var CODEX = {
     },
     "status-named-fold": { kind: "full" },
     "status-faint-text": { kind: "full" },
+    "supporting-text": { kind: "full" },
     "status-parent-fold": {
       kind: "different",
       reason: "A parent's fold takes a click, or Enter or Space on focus, with no hotkey: the Codex Status has no row selection."
@@ -1690,6 +1710,10 @@ var CODEX = {
     },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The host holds no message after the person stops a turn, so it never refuses one for that."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -1728,7 +1752,7 @@ var OMP = {
     },
     "exchange-trigger": {
       kind: "different",
-      reason: "omp's `before_agent_start` event carries only the prompt text, so every turn has words and none reads as started by something else."
+      reason: "omp's `before_agent_start` event carries only the prompt text, and omp names no source for a turn a background job's result starts, so that turn reads as unknown."
     },
     "settle-window": { kind: "full" },
     "fold-on-typed-message": { kind: "full" },
@@ -1792,6 +1816,10 @@ var OMP = {
       kind: "different",
       reason: "omp draws muted text with the terminal's dim attribute, which terminals draw at about half strength, near the faint level's 3:1. So faint text there is dim too."
     },
+    "supporting-text": {
+      kind: "different",
+      reason: "omp draws muted text with the terminal's dim attribute, and a terminal has no attribute between dim and plain. So supporting text there is dim, as muted text is."
+    },
     "status-parent-fold": { kind: "full" },
     "seen-on-screen": { kind: "full" },
     "status-idle-age": { kind: "full" },
@@ -1815,6 +1843,10 @@ var OMP = {
     "session-registry": { kind: "full" },
     "press-preconditions": { kind: "full" },
     "task-results": { kind: "full" },
+    "stopped-session-send": {
+      kind: "different",
+      reason: "The host holds no message after the person stops a turn, so it never refuses one for that."
+    },
     "option-previews": { kind: "full" }
   }
 };
@@ -1967,6 +1999,14 @@ function helpEffect(item, help) {
 }
 function stepEffects(item, step) {
   return step.step.map((h) => helpEffect(item, h));
+}
+function localEffects(row, press) {
+  if (!row.item)
+    return [];
+  if (press.action === "previews")
+    return previewEffects(row.item);
+  const step = press.action === "step" && press.step !== undefined ? row.steps[press.step] : undefined;
+  return step ? stepEffects(row.item, step) : [];
 }
 
 // ../core/domain/ledger-close.ts
@@ -2199,6 +2239,23 @@ function withWorkDoneMilestones(o, now) {
   });
   return isChanged ? { ...o, milestones } : o;
 }
+function withHeldMilestonesOpen(o, now, askIds, earlier) {
+  const isHeld = (m) => {
+    const ids = new Set([m.id, ...o.subjects.filter((s) => o.serves[s.id] === m.id).map((s) => s.id)]);
+    return Object.entries(o.askSubjects).some(([ask, to]) => askIds.has(ask) && to.some((id) => ids.has(id)));
+  };
+  const reopened = (m) => {
+    const open = earlier.flatMap((e) => e.milestones.filter((x) => x.id === m.id && isOpen(x)))[0];
+    if (open)
+      return { ...open };
+    const work = o.subjects.filter((s) => isOpen(s) && o.serves[s.id] === m.id);
+    const status = work.length === 0 || work.some((s) => s.status === "working") ? "working" : work.some((s) => s.status === "waits-on-other") ? "waits-on-other" : "queued";
+    return { ...m, status, text: "", was: null, changedAt: now, closedAt: null };
+  };
+  if (!o.milestones.some((m) => m.status === "done" && isHeld(m)))
+    return o;
+  return { ...o, milestones: o.milestones.map((m) => m.status === "done" && isHeld(m) ? reopened(m) : m) };
+}
 function withWorkStartedMilestones(o, now) {
   const startedAs = (m) => {
     if (m.status !== "queued")
@@ -2397,13 +2454,14 @@ function goalLineRefusal(o, op, revisedFrom) {
     return "restates";
   return revisedFrom !== null || hasWorkForGoal(o) ? null : "no-work";
 }
-function applyGoalOp(o, op, now, findSubject, start = o, servesLines = []) {
+function applyGoalOp(o, op, now, findSubject, askIds, start = o, servesLines = []) {
   if (op.kind === "goal" || op.kind === "retire") {
-    const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now);
+    const settled = o.goal?.isAwaitingMilestones ? o : withHeldMilestonesOpen(withWorkDoneMilestones(o, now), now, askIds, [o, start]);
     const milestones = op.kind === "goal" ? op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status, text: clipWords(m.text, TEXT_KEPT) })) : [];
     const placed = new Map(servesLines.flatMap((l) => {
       const s = findSubject(l.subject);
-      return s ? [[s.id, l.milestone]] : [];
+      const target = l.milestone === null ? null : findMilestone(settled, l.milestone)?.name ?? l.milestone;
+      return s ? [[s.id, target]] : [];
     }));
     const unplaced = op.kind === "goal" ? goalRevision(settled, start, milestones, placed) : null;
     const why = op.kind === "goal" && goalLineRefusal(settled, op, unplaced === null ? null : start) || (unplaced === null ? goalRefusal(settled, start, op.kind, now) : unplaced.length > 0 ? "work-open" : null);
@@ -2425,13 +2483,15 @@ function applyGoalOp(o, op, now, findSubject, start = o, servesLines = []) {
   const isOtherVersion = milestone !== null && namesOtherVersion(subject.name, milestone.name);
   return { ...o, serves: { ...o.serves, [subject.id]: milestone === null || isOtherVersion ? "none" : milestone.id } };
 }
-function settleGoal(saved, now, readSetAt, named) {
+function settleGoal(saved, now, readSetAt, named, askIds, before) {
   const g = saved.goal;
   if (g === null)
     return saved;
-  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
-  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
+  const worked = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
+  const isCarrying = g.isAwaitingMilestones && !isAnswerForNewGoal;
+  const o = isCarrying ? worked : withHeldMilestonesOpen(worked, now, askIds, [saved, before]);
+  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").sort((x, y) => named.get(x.id) - named.get(y.id)).slice(0, MILESTONES_MAX) : o.milestones;
   const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
   const kept = milestones.filter((m) => m.status !== "dropped");
@@ -2582,10 +2642,12 @@ var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
+  done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var TASK_MARK = { mark: "\u25A1", tone: "tasks" };
+var heldMarkOf = (kinds) => kinds.some((k) => k === "question") ? HELD_MARK : TASK_MARK;
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: "working" };
@@ -2616,7 +2678,8 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
+  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
     tone: NEEDS_YOU_MARKS.question.tone,
@@ -2785,7 +2848,7 @@ function isChildWorking(c) {
   return c.endedAt === null && c.delegateState !== "blocked";
 }
 var comparableName = (name) => name.toLowerCase().replace(/[\s\-_]+/g, "").replace(/[.!?:;,\u2026]+$/, "");
-var isSettled = (row) => row.tone === "done";
+var isSettled = (row) => row.mark === SUBJECT_MARKS.done.mark;
 var nameLevelOf = (row, otherwise) => isSettled(row) ? "faint" : otherwise;
 var textBeyondName = (name, text) => text && comparableName(text) !== comparableName(name) ? text : null;
 function isNamedLikeSubject(x, under) {
@@ -2837,6 +2900,7 @@ function askWords(items, ask) {
   const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
   return words || null;
 }
+var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -2851,13 +2915,15 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ask = c.askSettingMarkOf(x);
+    const words = askWords(c.items, ask);
+    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
-      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning,
       ...carried,
       name: x.name,
@@ -2868,7 +2934,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
       foldCount: lone === null ? under.length : 0,
-      ask: c.oldestAskOf(x)
+      ask: c.askSettingMarkOf(x)
     });
     if (lone === null)
       rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1)));
@@ -2999,10 +3065,12 @@ function metMilestonesFold(g, milestones, isWorkClosed) {
   const isFolded = g.metAt !== null && milestones.length > 0 && milestones.every((m) => m.place === "done" && isWorkClosed(m));
   return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map((m) => m.name)) } : null;
 }
-function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+function askSettingMark(holds) {
+  const oldestFirst = [...holds].sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity));
+  const setter = oldestFirst.find((i) => i.kind === "question") ?? oldestFirst[0];
+  return setter ? { id: setter.id, kind: setter.kind } : null;
 }
+var asksLinkedTo = (items, links, id) => items.filter((i) => links[i.id]?.includes(id));
 function workCountText(m, o) {
   const work = o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === m.id);
   const done = work.filter((s) => s.status === "done").length;
@@ -3020,11 +3088,9 @@ function milestoneRow(step, o, items) {
   const isHeld = isOpen2 && holds.length > 0;
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
     id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
     line: step.line,
@@ -3035,7 +3101,7 @@ function milestoneRow(step, o, items) {
     foldCount: 0,
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
+    ask: isHeld ? askSettingMark(holds) : null,
     rows: [],
     subject: null
   };
@@ -3499,7 +3565,7 @@ function isSendOnItsWay(delivery) {
 function isSettledInPlace(state, { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, pressOutSince }, id) {
   const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs);
   const isUndoShown = id !== undefined && (undoShown ?? []).includes(id);
-  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(listInput, dueAt, now);
+  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) && (state.sentAt ?? state.at) <= dueAt || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(listInput, dueAt, now);
   return isShownSince(state.at, shownSince) && isWaiting;
 }
 function nextFoldAt(settled, {
@@ -3902,6 +3968,7 @@ function childAgents(stdout, parent) {
 
 // ../core/remote/herdr-labels.ts
 var SESSION_LABEL = "inbox.session";
+var PANEL_LABEL = "inbox.panel";
 
 // ../core/domain/ask-subject.ts
 var NAMED_THING = /#\d+|\b\d{2,}\b|\b[A-Z][A-Z0-9]+-\d+\b|https?:\/\/|[\w~.-]*\/[\w.-]+|\b[\w-]+\.[a-z]{1,5}\b|`[^`]+`|"[^"]+"|\u201C[^\u201D]+\u201D/;
@@ -4064,12 +4131,11 @@ function parseReply(text, source = null) {
       if (isDesignField)
         rest.pop();
       const rec = rest.length > 1 ? rest.pop() : null;
-      const isAskTheChoices = readKind(kind) === "question" && readsAsChoices(ask ?? "");
-      if (!ask || isAskTheChoices) {
+      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
+      if (!ask || readKind(kind) === "question" && isOnlyItsAnswers(ask, options)) {
         newLines.push(undefined);
         continue;
       }
-      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
@@ -4118,7 +4184,11 @@ function parseReply(text, source = null) {
 function readsAsChoices(field) {
   const text = field.trim();
   const choices = text.split(/\s+\/\s+/);
-  return choices.length > 1 && !text.endsWith("?") && choices.every((c) => c !== "" && words2(c).length <= 5);
+  return choices.length > 1 && !/[?\uFF1F]$/.test(text) && choices.every((c) => c !== "" && words2(c).length <= 5);
+}
+function isOnlyItsAnswers(ask, options) {
+  const parts = new Set(ask.split(/\s+\/\s+/).map((part) => part.trim().toLowerCase()));
+  return readsAsChoices(ask) && options.every((option) => parts.has(option.trim().toLowerCase()));
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -5054,6 +5124,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnsw
 var isTerminalLike = (look) => look === "terminal" || look === "omp";
 var ROW_COPY = {
   retry: "Try again",
+  goToSession: "Go to session",
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
@@ -5063,13 +5134,19 @@ var ROW_COPY = {
   undo: "Undo",
   reopen: "Reopen"
 };
+var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
+function sessionKeyOf(reason, canShowSession) {
+  return canShowSession && reason === STOPPED_REASON ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+}
 function resumeLabel(isSending) {
   return isSending ? "Resuming\u2026" : "Resume";
 }
-function closedLineAction(d) {
+function closedLinePlan(d, canShowSession = false) {
+  const sessionKey = sessionKeyOf(refusalOf2(d.delivery), canShowSession);
   if (canUndoRefused(d.delivery))
-    return { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } };
-  return d.how === "dismissed" ? { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } } : null;
+    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
+  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
+  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
 }
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
@@ -5142,7 +5219,11 @@ function rowResultMark(row) {
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
-var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
+function openMark(row) {
+  return row.type === "finding" ? null : row.type === "task" ? TASK_ROW_MARK : QUESTION_MARK;
+}
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
 }
@@ -5213,6 +5294,7 @@ function closedTitleTone(state) {
     return "error";
   return state.closedAs === "handled" ? "done" : "muted";
 }
+var refusalOf2 = (delivery) => isSendRefused(delivery) ? delivery.error : null;
 function isSendRefused(delivery) {
   return delivery !== null && typeof delivery === "object";
 }
@@ -5221,8 +5303,12 @@ function settledLabel(label, delivery, reply) {
     return `${label} \xB7 Not sent: ${delivery.error}`;
   return deliveryLabel(sendStepOf(delivery), label, reply);
 }
+var MAX_OUTCOME_CHARS = 120;
+function shortOutcome(outcome) {
+  return cutLine(outcome, (t) => t.length <= MAX_OUTCOME_CHARS);
+}
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(shortOutcome(c.outcome));
 }
 
 // ../core/view/pr-rows.ts
@@ -5345,12 +5431,13 @@ function prRowWaits(prs, lastActions, collapsed = []) {
       const id = prThreadId(pr, t);
       return { id, isWaiting: !isSent(pr, t), isCollapsed: isCollapsed(id) };
     }),
-    ...blockingChecks(pr).map((c) => {
+    ...listedChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const last = lastActions[id];
+      const isFixWaiting = !isFoldingPress(id, last) || last?.delivery?.state === "failed";
       return {
         id,
-        isWaiting: !isFoldingPress(id, last) || last?.delivery?.state === "failed",
+        isWaiting: failedSibling(pr, c) === null && isFixWaiting,
         isCollapsed: isCollapsed(id)
       };
     })
@@ -5773,7 +5860,6 @@ function pressFolder(appHome, sessionId) {
 
 // ../core/remote/herdr-open.ts
 var HERDR_APP_TIMEOUT_MS = 5000;
-var PANEL_LABEL = "inbox.panel";
 var NO_SUCH_PANE = "no such pane";
 function paneOf(ls, terminal) {
   const list = (value) => Array.isArray(value) ? value : [];
@@ -5898,7 +5984,7 @@ function newsByRow({ ledger, prViews, lastActions }) {
       const untimedUrl = t.reply && t.reply.at === null ? t.reply.url : null;
       return [id, timed(latest(t.reply?.at, pressed(id)), untimedUrl)];
     })),
-    ...prs.flatMap((pr) => blockingChecks(pr).map((c) => {
+    ...prs.flatMap((pr) => listedChecks(pr).map((c) => {
       const id = prCheckId(pr, c);
       const untimedUrl = c.finishedAt === undefined ? c.url ?? "" : null;
       return [id, timed(latest(c.finishedAt, pressed(id)), untimedUrl)];
@@ -6031,10 +6117,13 @@ function memoryViewerStores() {
 }
 
 // ../core/view/press-reducer.ts
+function isDoneNoticeDue(c, turn) {
+  return c.how === "done" && c.outcome === "done" && !c.isSentToAgent && !c.doneNotification && c.item?.turn === turn;
+}
 function doneWake(ledger, ctx) {
   if (ctx.isTurnRunning)
     return null;
-  const waited = ledger.closed.filter((c) => c.how === "done" && c.outcome === "done" && !c.isSentToAgent && !c.doneNotification && c.item?.turn === ledger.turn);
+  const waited = ledger.closed.filter((c) => isDoneNoticeDue(c, ledger.turn));
   if (waited.length === 0 || waited.some((c) => ctx.now - c.at < ctx.windowMs))
     return null;
   return { text: messages.done(waited.map((c) => c.ask)), ids: waited.map((c) => c.id) };
@@ -6149,6 +6238,10 @@ var withRecord = (log, id, record) => ({
   ...log,
   commands: { ...log.commands, [id]: record }
 });
+function awaitsDoneNotice(c, s) {
+  return c.doneNotification ? !c.doneNotification.error : isDoneNoticeDue(c, s.ledger.turn);
+}
+var isDoneAwaited = (s, row) => s.ledger.closed.some((c) => c.id === row && awaitsDoneNotice(c, s));
 function remoteCommandState(log, s) {
   let commands = log.commands;
   for (const [row, last] of Object.entries(s.lastActions)) {
@@ -6159,7 +6252,7 @@ function remoteCommandState(log, s) {
     const delivery = last.delivery;
     const deliveryId = delivery && "id" in delivery ? delivery.id ?? command.deliveryId : command.deliveryId;
     const delivered = command.delivered || delivery?.state === "arrived";
-    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery);
+    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery && isDoneAwaited(s, row));
     const error = delivery?.state === "failed" ? delivery.reason.slice(0, 256) : command.error;
     const state = delivery?.state === "failed" ? "failed" : command.state;
     if (deliveryId === command.deliveryId && delivered === command.delivered && pendingDelivery === command.pendingDelivery && error === command.error && state === command.state)
@@ -6172,7 +6265,7 @@ function remoteCommandState(log, s) {
     if (!id || !command || command.state === "cancelled" || command.state === "expired" || command.state === "refused")
       continue;
     const deliveryId = closed.doneNotification?.id ?? command.deliveryId;
-    const pendingDelivery = !command.delivered && !closed.doneNotification?.error;
+    const pendingDelivery = !command.delivered && awaitsDoneNotice(closed, s);
     if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
       commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
   }
@@ -6191,10 +6284,10 @@ function hasCommandRows(s) {
 function pendingCommandRows(s) {
   const rows = Object.entries(s.lastActions).flatMap(([row, last]) => {
     const delivery = last.delivery;
-    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === undefined || last.action === "done" && !delivery;
+    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === undefined || last.action === "done" && !delivery && isDoneAwaited(s, row);
     return last.commandId && isWaiting ? [row] : [];
   });
-  const closed = s.ledger.closed.flatMap((c) => c.commandId && !c.doneNotification ? [c.id] : []);
+  const closed = s.ledger.closed.flatMap((c) => c.commandId && isDoneNoticeDue(c, s.ledger.turn) ? [c.id] : []);
   return [...rows, ...closed];
 }
 async function confirmRemoteDelivery(host, state, deliveryId) {
@@ -6401,9 +6494,9 @@ function dialogActivity(questions, outcome) {
   const head = `asked the user in a dialog${asked}`;
   switch (outcome.kind) {
     case "answered":
-      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+      return `${head}; answer: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`;
     case "timed-out":
-      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`;
     case "dismissed":
       return `${head}; the user dismissed it without answering`;
     case "open":
@@ -6474,7 +6567,6 @@ function linkDialogs(s, now = Date.now()) {
   const ledger = questions.reduce((l, q) => q.answer !== undefined && q.itemId !== null && l.items.some((i) => i.id === q.itemId) ? closeItem(l, q.itemId, { how: "answered", outcome: q.answer }, now) : l, { ...s.ledger, items });
   return { ...s, ledger, dialogQuestions: kept };
 }
-var MAX_DIALOG_ANSWER = 80;
 var PAIR_FORMS = [
   { head: /^Your questions have been answered: /, tail: /\. You can now continue with these answers in mind\.$/ },
   { head: /^The user answered: /, tail: /\. Read the answers carefully[\s\S]*$/ },
@@ -6541,7 +6633,7 @@ function structuredAnswers(questions, answers) {
 }
 function chosenOf(q, answer) {
   const chosen = q.options.find((o) => optionKey(o) === answer.trim().toLowerCase());
-  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim().slice(0, MAX_DIALOG_ANSWER);
+  return (chosen ?? answer).replace(RECOMMENDED_SUFFIX, "").trim();
 }
 function noteAnsweredDialog(s, questions, outcome, now) {
   const answers = outcome.answers ? structuredAnswers(questions, outcome.answers) : answersOf(questions, outcome.answer);
@@ -6582,7 +6674,9 @@ function rowFeedbackText(row, look) {
   return f.is === "done" ? f.label : f.is === "local" ? localText(f.result, look) : feedbackText(f, look);
 }
 function pressUnderWaySince(f) {
-  if (f?.is === "working" || f?.is === "sending")
+  if (f?.is === "sending")
+    return f.sentAt;
+  if (f?.is === "working")
     return f.at;
   if (f?.is !== "local")
     return null;
@@ -6598,7 +6692,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
     const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
-    const talkOutSince = isTalkOut ? under.at : undefined;
+    const talkOutSince = isTalkOut ? under.is === "sending" ? under.sentAt : under.at : undefined;
     return { is: "local", result, ...talkOutSince === undefined ? {} : { talkOutSince } };
   }
   if (!last || last.kind === "local")
@@ -6623,7 +6717,12 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
       ...last.kind === "handoff" ? { isHandoff: true } : {}
     };
   if (pending === "sending")
-    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
+    return {
+      is: "sending",
+      label: deliveryLabel("sending", last.text, last.reply),
+      at: last.at,
+      sentAt: queuedSentAt(last)
+    };
   if (isUnreported)
     return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last))
@@ -6692,6 +6791,12 @@ function feedbackTone(f) {
     return "error";
   return f?.is === "done" || f?.is === "local" && f.result.state === "done" ? "done" : "muted";
 }
+function hasAge(f) {
+  return f.is === "done" || f.is === "working" || f.is === "stillOpen" || f.is === "noComparison" || f.is === "sending" || f.is === "queued" || f.is === "unconfirmed" || f.is === "closed";
+}
+function rowAgeAt(last, arrivedAt) {
+  return last && hasAge(last) ? last.at : arrivedAt;
+}
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
@@ -6713,6 +6818,7 @@ function isStatusUnderActions(f, isOpen) {
   const isDoneStillWaiting = f?.is === "done" && f.isStillWaiting === true;
   return isOpen && (isPressOut(f) || f?.is === "local" || isDoneStillWaiting);
 }
+var holdsStatusWhileOut = (kind) => kind === "mark";
 var runIt = (look) => isTerminalLike(look) ? "Run it in a terminal, or type ! and paste." : "Run it in Terminal.";
 var VERBS = {
   open: { pending: "Opening", done: "Opened", failed: "open" },
@@ -6808,6 +6914,28 @@ function isPrReadFirstPress(p) {
 function readFirstEffect(pr) {
   return { kind: "refresh-prs", name: `PR #${pr.number}` };
 }
+function prPressEffect(pr, p) {
+  if (p.action === "pr-refresh")
+    return PR_REFRESH;
+  if (!pr)
+    return null;
+  if (isPrReadFirstPress(p))
+    return readFirstEffect(pr);
+  switch (p.action) {
+    case "thread-open": {
+      const t = pr.threads.find((x) => x.id === p.thread);
+      return t ? commentEffect(pr, t) : null;
+    }
+    case "pr-open":
+      return prPageEffect(pr);
+    case "log": {
+      const check = pr.checks.find((c) => checkKey(c) === p.check);
+      return check ? logEffect(pr, check) : null;
+    }
+    default:
+      return null;
+  }
+}
 function prRowId(p) {
   if (p.action === "pr-rank-again")
     return RANK_AGAIN_ID;
@@ -6855,6 +6983,10 @@ function again(row, action, label) {
 }
 function withOut(row, actions) {
   return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+function prPlan(row, actions, canShowSession) {
+  const delivery = row.last?.delivery;
+  return { actions, sessionKey: sessionKeyOf(delivery?.state === "failed" ? delivery.reason : null, canShowSession) };
 }
 function retryAction(retry) {
   return retry ? [{ press: retry.press, label: "Try again", kind: retry.kind, emphasis: "normal", icon: "retry", isRetry: true }] : [];
@@ -7040,10 +7172,10 @@ function prOrderActions(row) {
 }
 
 // ../core/view/pr-tab.ts
-function threadActions(pr, t, presses) {
+function threadActions(pr, t, presses, canShowSession = false) {
   const row = lastPressOf(presses, threadRowId(pr.ref, t.id), pr.fetchedAt);
   const on = { ref: pr.ref, thread: t.id };
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, t.id)),
     {
       press: { action: "thread-address", ...on },
@@ -7076,8 +7208,9 @@ function threadActions(pr, t, presses) {
       isFollowUp: true
     }
   ]);
+  return prPlan(row, actions, canShowSession);
 }
-function checkActions(pr, c, presses) {
+function checkActions(pr, c, presses, canShowSession = false) {
   const row = lastPressOf(presses, prCheckId(pr, c), pr.fetchedAt);
   const on = { ref: pr.ref, check: checkKey(c) };
   const isCancelled = c.bucket === "cancelled";
@@ -7111,9 +7244,10 @@ function checkActions(pr, c, presses) {
       hotkey: "o"
     }
   ]);
-  return isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
+  const shown = isRunRerunOut ? actions.map((a) => a.press.action === "check-rerun" ? { ...a, isOut: true } : a) : actions;
+  return prPlan(row, shown, canShowSession);
 }
-function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
+function prBlockActions(pr, isThreadSent, branchRef, presses, sync, canShowSession = false) {
   const row = lastPressOf(presses, prMarkId(pr.ref), pr.fetchedAt);
   const isReadyShown = shownReadiness(pr, sync, isThreadSent, "Claude")?.status === "ready";
   const waitingOn = threadsOnYou(pr, isThreadSent).length;
@@ -7140,7 +7274,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
       }
     ] : []
   ];
-  return withOut(row, [
+  const actions = withOut(row, [
     ...retryAction(prRetryOf(row.last, pr.ref, null)),
     ...moves.map((m, n) => ({ ...m, emphasis: n === 0 ? "primary" : "normal" })),
     { press: { action: "pr-open", ref: pr.ref }, label: "Open PR", kind: "local", emphasis: "normal", icon: "open" },
@@ -7153,6 +7287,7 @@ function prBlockActions(pr, isThreadSent, branchRef, presses, sync) {
       }
     ]
   ]);
+  return prPlan(row, actions, canShowSession);
 }
 function withDismissed(ledger, refs) {
   const order = ledger.prOrder;
@@ -7380,14 +7515,12 @@ function applyPrPress(ledger, prState, lastActions, p, ctx) {
 }
 
 // ../core/domain/question-checks.ts
-var MAX_CONTEXT = 200;
-var MAX_OPTION_NOTE = 120;
 function questionBody(input, options) {
-  const context = typeof input.context === "string" ? input.context.trim().slice(0, MAX_CONTEXT) : "";
+  const context = typeof input.context === "string" ? input.context.trim() : "";
   const notes = Array.isArray(input.option_notes) ? input.option_notes : [];
   const noted = options.flatMap((option, i) => {
     const note = notes[i];
-    const text = typeof note === "string" ? note.trim().slice(0, MAX_OPTION_NOTE) : "";
+    const text = typeof note === "string" ? note.trim() : "";
     return text === "" ? [] : [[option, text]];
   });
   const { previews } = previewsOf(input, options);
@@ -7438,7 +7571,7 @@ function taskStepsText(item, canSend) {
 var REPORT_VERB = String.raw`\b(?:report|tell (?:me|us)|let (?:me|us) know)\b`;
 var CONDITIONAL_VERB = String.raw`\b(?:confirm|answer|say|reply|tell \w+)\b`;
 var SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`;
-var NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}${SAME_CLAUSE}\bif\b${SAME_CLAUSE}\bor\b`, "i");
+var NAMED_RESULTS_ASK = new RegExp(String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}\s+if\b${SAME_CLAUSE}\bor\b`, "i");
 function taskResultsText(item, canSend) {
   const ask = item.ask.trim();
   const asksForResult = ask.endsWith("?") || NAMED_RESULTS_ASK.test(ask);
@@ -7473,11 +7606,49 @@ function approvalText(item, canSend) {
   return isApproval(item) && item.helps.length === 0 && !hasPreviewPage && canSend("steps") ? " The user can't approve what they can't see: when there is something to look at, record it again with a screenshot, page or file in steps." : "";
 }
 
+// ../core/domain/field-limits.ts
+var RECORD_LIMITS = {
+  ask: 200,
+  context: 200,
+  options: 60,
+  option_notes: 120,
+  why: 120,
+  steps: 4000,
+  title: 120,
+  detail: 600,
+  path: 300
+};
+var CLOSE_LIMITS = { answer: 80, reason: 80 };
+var ORDER_LIMITS = { label: 40, why: 300 };
+function recordFields(input) {
+  if (input.kind === "finding")
+    return ["title", "detail", "path"];
+  if (input.kind === "task")
+    return ["ask", "options", "steps"];
+  const hasRec = typeof input.rec === "string" && input.rec.trim() !== "";
+  return ["ask", "context", "options", "option_notes", ...hasRec ? ["why"] : [], "steps"];
+}
+function tooLongText(input, limits, fields = Object.keys(limits)) {
+  for (const field of fields) {
+    const max = limits[field] ?? Infinity;
+    const value = input[field];
+    const values = Array.isArray(value) ? value : [value];
+    const lengths = values.map((v) => typeof v === "string" ? v.trim().length : 0);
+    const at = lengths.findIndex((n) => n > max);
+    if (at < 0)
+      continue;
+    const name = Array.isArray(value) ? `item ${at + 1} of ${field}` : field;
+    return `${name} has ${lengths[at]} characters, more than the ${max} the user's row shows. Shorten it and try again.`;
+  }
+  return "";
+}
+
 // ../core/domain/earlier-answers.ts
 var K1 = 1.2;
 var B = 0.75;
 var RELATIVE_FLOOR = 0.22;
-var EARLIER_TEXT_CHARS = 200;
+var EARLIER_TEXT_CHARS = RECORD_LIMITS.ask;
+var shortText = (text) => cutLine(text.trim(), (t) => t.length <= EARLIER_TEXT_CHARS);
 var STOP_WORDS2 = new Set(`a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
 shall may might must not no yes now still also just again already instead yet any all some each per via up out over
@@ -7537,8 +7708,8 @@ function bestEarlier(index, question, skip) {
 function earlierOf(match, isShown) {
   const { doc } = match;
   return {
-    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
-    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    ask: shortText(doc.ask),
+    answer: shortText(doc.answer),
     at: doc.at,
     repo: doc.repo,
     score: Math.round(match.score * 1000) / 1000,
@@ -7562,8 +7733,8 @@ function earlierLineOf(earlier, now) {
   const where = earlier.repo ? `, in ${earlier.repo},` : "";
   return {
     lead: "You answered ",
-    answer: earlier.answer,
-    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
+    answer: shortText(earlier.answer),
+    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${shortText(earlier.ask)}\u201D`
   };
 }
 function earlierLineText(line) {
@@ -7572,12 +7743,13 @@ function earlierLineText(line) {
 
 // ../core/domain/record-matches.ts
 var MATCH_TEXT_CHARS = 200;
+var shortText2 = (text) => cutLine(text, (t) => t.length <= MATCH_TEXT_CHARS);
 function earlierAnswersText(id, earlier, now) {
   if (earlier.length === 0)
     return "";
   const lines = earlier.map((doc) => {
     const where = doc.repo ? `, in ${doc.repo}` : "";
-    return `- ${agoText(now - doc.at)}${where}: "${clipLabel(doc.ask, MATCH_TEXT_CHARS)}" They answered "${clipLabel(doc.answer, MATCH_TEXT_CHARS)}".`;
+    return `- ${agoText(now - doc.at)}${where}: "${shortText2(doc.ask)}" They answered "${shortText2(doc.answer)}".`;
   });
   return [
     "",
@@ -7730,16 +7902,13 @@ function toolAnswer(host, ledger, tool, input, now, presses, fields, delegate, e
       return orderPrs(host, ledger, input, now, presses.lastActions);
   }
 }
-function cut(value, max) {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
+function trimmed(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
-var MAX_ASK = 200;
-var MAX_OPTION = 60;
 var MAX_OPTIONS = 8;
 var MAX_STEPS = 3;
-var MAX_REASON = 120;
-function list(value, max, each) {
-  return Array.isArray(value) ? value.map((v) => cut(v, each)).filter(Boolean).slice(0, max) : [];
+function list(value, max) {
+  return Array.isArray(value) ? value.map(trimmed).filter(Boolean).slice(0, max) : [];
 }
 function unchanged(ledger, result) {
   return { ledger, result, personLine: null };
@@ -7749,18 +7918,21 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
     return recordFinding(host, ledger, input, now);
   if (input.kind !== "question" && input.kind !== "task")
     return unchanged(ledger, "Not recorded: kind must be question, task or finding.");
-  const ask = cut(input.ask, MAX_ASK);
+  const tooLong = tooLongText(input, RECORD_LIMITS, recordFields(input));
+  if (tooLong)
+    return unchanged(ledger, `Not recorded: ${tooLong}`);
+  const ask = trimmed(input.ask);
   if (ask === "")
     return unchanged(ledger, `Not recorded: a ${input.kind} needs an ask.`);
-  const options = list(input.options, MAX_OPTIONS, MAX_OPTION);
+  const options = list(input.options, MAX_OPTIONS);
   if (input.kind === "question" && options.length === 0)
     return unchanged(ledger, "Not recorded: a question needs at least one option.");
-  const recInput = input.kind === "question" ? cut(input.rec, MAX_OPTION) : "";
+  const recInput = input.kind === "question" ? trimmed(input.rec) : "";
   const rec = recInput === "" ? null : recommendedOption(options, recInput);
   if (recInput !== "" && rec === null)
     return unchanged(ledger, "Not recorded: rec must be one of the options.");
-  const recReason = rec ? cut(input.why, MAX_REASON).replace(/^because\s+/i, "") : "";
-  const steps = list(input.steps, MAX_STEPS + 3, 4000);
+  const recReason = rec ? trimmed(input.why).replace(/^because\s+/i, "") : "";
+  const steps = list(input.steps, MAX_STEPS + 3);
   const isUsable = (h) => input.kind === "task" || h.kind === "open" || h.kind === "link";
   const helps = steps.flatMap((step) => stepHelp(step) ?? []).filter(isUsable).slice(0, MAX_STEPS);
   const stepsLeftOut = helps.length < steps.length ? input.kind === "task" ? " Some steps were not a command, a file path or a link, so they are left out." : " Some steps were not an absolute file path or a link, so they are left out." : "";
@@ -7800,11 +7972,14 @@ function recordItem(host, ledger, input, now, fields, earlier = []) {
   };
 }
 function recordFinding(host, ledger, input, now) {
-  const title = cut(input.title, 120);
-  const detail = cut(input.detail, 600);
+  const tooLong = tooLongText(input, RECORD_LIMITS, recordFields(input));
+  if (tooLong)
+    return unchanged(ledger, `Not recorded: ${tooLong}`);
+  const title = trimmed(input.title);
+  const detail = trimmed(input.detail);
   if (title === "" || detail === "")
     return unchanged(ledger, "Not recorded: a finding needs a title and a detail.");
-  const path = cut(input.path, 300);
+  const path = trimmed(input.path);
   const kind = input.finding_kind === "opportunity" ? "opportunity" : "issue";
   const r = addFinding(ledger, { kind, title, detail, path: path || null, at: now });
   if (r.dismissed)
@@ -7853,11 +8028,14 @@ function recordAfterCompare(host, ledger, input, now, presses, fields) {
   return isUpdated ? r : null;
 }
 function recordClose(host, ledger, input, now, presses) {
-  const id = cut(input.id, 80).replace(/^\[|\]$/g, "");
-  const answer = cut(input.answer, 80);
-  const reason = cut(input.reason, 80);
+  const id = trimmed(input.id).replace(/^\[|\]$/g, "");
+  const answer = trimmed(input.answer);
+  const reason = trimmed(input.reason);
   if (id === "" || answer === "" && reason === "")
     return unchanged(ledger, "Not closed: give the id, and the user's answer or a reason.");
+  const tooLong = tooLongText(input, CLOSE_LIMITS, [answer ? "answer" : "reason"]);
+  if (tooLong)
+    return unchanged(ledger, `Not closed: ${tooLong}`);
   if (answer === "" && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, "Not closed: your record updated this question, and it stays open for the user.");
   const item = ledger.items.find((i) => i.id === id);
@@ -7882,8 +8060,6 @@ function recordClose(host, ledger, input, now, presses) {
   return unchanged(ledger, `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`);
 }
 var REPO = /^[\w.-]+\/[\w.-]+$/;
-var MAX_ORDER_LABEL = 40;
-var MAX_ORDER_WHY = 300;
 function prNumber(value) {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
   return Number.isInteger(n) && n > 0 ? n : null;
@@ -7903,18 +8079,21 @@ function orderPrs(host, ledger, input, now, lastActions) {
   const numbers = input.numbers.map(prNumber);
   if (numbers.includes(null))
     return unchanged(ledger, "Not set: numbers must be PR numbers, such as 3401.");
-  const repo = cut(input.repo, 200);
+  const repo = trimmed(input.repo);
   if (!REPO.test(repo))
     return unchanged(ledger, "Not set: give repo as owner/name.");
   const refs = [...new Set(numbers.map((n) => `${repo}#${n}`))];
   if (refs.length > MAX_ORDERED_PRS)
     return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`);
-  const label = cut(input.label, MAX_ORDER_LABEL);
+  const label = trimmed(input.label);
   if (!label)
     return unchanged(ledger, "Not set: give label, what the user does with the order.");
-  const why = cut(input.why, MAX_ORDER_WHY);
+  const why = trimmed(input.why);
   if (!why)
     return unchanged(ledger, "Not set: give why, the reason for this order.");
+  const tooLong = tooLongText(input, ORDER_LIMITS);
+  if (tooLong)
+    return unchanged(ledger, `Not set: ${tooLong}`);
   const dismissed = refs.filter((ref) => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref));
   const onTab = tabPrs(ledger);
   const added = refs.filter((ref) => !onTab.includes(ref));
@@ -7979,10 +8158,7 @@ function followTo(tabs, shown, isShownEmpty, rows) {
 function prRowIds(drawn) {
   return drawn.flatMap(({ pr, state }) => [
     prMarkId(pr.ref),
-    ...state.is === "settled" ? [] : [
-      ...waitingThreads(pr).map((t) => prThreadId(pr, t)),
-      ...[...failingChecks(pr), ...cancelledChecks(pr)].map((c) => prCheckId(pr, c))
-    ]
+    ...state.is === "settled" ? [] : [...waitingThreads(pr).map((t) => prThreadId(pr, t)), ...listedChecks(pr).map((c) => prCheckId(pr, c))]
   ]);
 }
 function isPrsTabEmpty(drawnCount, isFetching) {
@@ -8228,7 +8404,7 @@ function keptOpen(rows, added) {
 function rowsIn(entries) {
   return entries.flatMap((x) => ("row" in x) ? [x.row] : []);
 }
-function rowKeyPlan(r, isAllShown) {
+function rowKeyPlan(r, isAllShown, canShowSession = false) {
   const shown = r.actions.filter((a) => isAllShown || !a.isFolded);
   const folded = r.actions.length - shown.length;
   const lastOption = shown.map((a) => a.press.action).lastIndexOf("answer");
@@ -8264,7 +8440,10 @@ function rowKeyPlan(r, isAllShown) {
         hotkey: a.hotkey
       });
   }
-  return { options, keys, more, answerRow: answerRowOf(r, options) };
+  const notSent = r.feedback?.is === "notSent" ? r.feedback.reason : null;
+  const refusal = r.state.is === "settled" ? refusalOf2(r.state.delivery) : notSent;
+  const sessionKey = sessionKeyOf(refusal, canShowSession);
+  return { options, keys, more, answerRow: answerRowOf(r, options), sessionKey };
 }
 function answerRowOf(r, options) {
   const described = options.map((o) => r.optionDescriptions.find((d) => d.option === o.action.press.option));
@@ -8349,10 +8528,14 @@ function inboxView({
     needsYou: placingOn(pressOutSinceWhere(isItemId)),
     findings: placingOn(pressOutSinceWhere(isFindingId))
   };
-  const isInPlace = (id, at, canUndo, last) => isSettledInPlace({ at, canUndo, delivery: pendingDeliveryAt(last, now) }, isFindingId(id) ? placingFor.findings : placingFor.needsYou, id);
+  const isInPlace = (id, at, canUndo, last, sentAt) => isSettledInPlace({ at, canUndo, delivery: pendingDeliveryAt(last, now), ...sentAt !== undefined && { sentAt } }, isFindingId(id) ? placingFor.findings : placingFor.needsYou, id);
   const pressedSend = (c) => {
     const last = lastActions[c.id];
     return (c.how === "answered" || c.how === "done") && last?.kind === "mark" && last.at === closedAt(c) ? last : undefined;
+  };
+  const doneSentAt = (c) => {
+    const delivery = c.how === "done" ? pressedSend(c)?.delivery : undefined;
+    return delivery && "sentAt" in delivery ? delivery.sentAt : undefined;
   };
   const isOpen = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
@@ -8369,7 +8552,7 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c), doneSentAt(c)));
   };
   const placedItems = new Map(ledger.closed.filter((d) => d.item && !isOpen(d.id) && isPlaced(d)).map((d) => [d.id, d]));
   const isFixSettled = (id) => {
@@ -8506,8 +8689,8 @@ function inboxView({
 }
 function heldLabel(c) {
   if (c.how === "answered")
-    return `Answered: ${c.outcome}`;
-  return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
+    return `Answered: ${shortOutcome(c.outcome)}`;
+  return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
 }
 function footerError(tab, status, page) {
   if (tab === "prs")
@@ -8620,21 +8803,24 @@ function hash(text) {
   h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
-function rowVersion(s, id) {
+function rowFields(s, id) {
   const l = s.ledger;
   if (id === "goal") {
     const o = l.overview;
-    return hash(canonical([o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null]));
+    return [o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null];
   }
   const item = l.items.find((row) => row.id === id);
-  return hash(canonical([
+  return [
     item ? { ...item, dialog: undefined } : null,
     l.findings.find((row) => row.id === id) ?? null,
     l.closed.findLast((row) => row.id === id) ?? null,
     l.closedFindings.findLast((row) => row.id === id) ?? null
-  ]));
+  ];
 }
-function refusal(s, when, now, treeHash) {
+function rowVersion(s, id) {
+  return hash(canonical(rowFields(s, id)));
+}
+function refusal(s, when, now) {
   for (const c of when ?? []) {
     if (c.kind === "row-version" && rowVersion(s, c.row) !== c.version)
       return "This changed before your press. Nothing was sent.";
@@ -8645,8 +8831,6 @@ function refusal(s, when, now, treeHash) {
     }
     if (c.kind === "expires-at" && now >= c.at)
       return "This press is too old to run. Nothing was sent.";
-    if (c.kind === "git-tree-hash" && (treeHash?.(c.cwd) ?? null) !== c.hash)
-      return "Files changed since you pressed. Nothing was run.";
   }
   return null;
 }
@@ -8659,8 +8843,6 @@ function isPrecondition(x) {
       return isText(x.row) && isText(x.version);
     case "pr-head-sha":
       return isText(x.ref) && isText(x.sha);
-    case "git-tree-hash":
-      return isText(x.cwd) && isText(x.hash);
     case "expires-at":
       return typeof x.at === "number" && Number.isFinite(x.at);
     default:
@@ -8769,7 +8951,8 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const isNew = (x) => o === null || !isSubjectSeen(o, x);
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const holdKindsOf = (x) => s.ledger.items.filter((i) => o?.askSubjects[i.id]?.includes(x.id)).map((i) => i.kind);
+  const askSettingMarkOf = (x) => isHeld(x) ? askSettingMark(asksLinkedTo(s.ledger.items, o?.askSubjects ?? {}, x.id)) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const goalParts = goalPage(o, s.ledger.items);
@@ -8817,7 +9000,8 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const ctx = {
     isNew,
     isHeld,
-    oldestAskOf,
+    holdKindsOf,
+    askSettingMarkOf,
     items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning && turn.is === "fresh",
@@ -9020,6 +9204,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
     pressOutSince
   };
 }
+var lastActionKey = (view, id) => JSON.stringify(view?.lastActions[id] ?? null);
 
 // ../core/runtime/session-presses.ts
 function isRepeatWhileOut(s, p, at, drawn) {
@@ -9190,7 +9375,7 @@ function questionHistory(previous, s, place, now) {
     how: c.how,
     isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
     earlier: c.item?.earlier ?? null,
-    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(shortText(c.outcome), shortText(c.item.earlier.answer)) : false
   }));
   const open = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
   const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));
@@ -9587,11 +9772,14 @@ function selectedOf(ui, view, tab) {
   const cursor = ui.selection[tab];
   return cursor.id ?? tabWaits(ui, view, tab).find(opensFor2)?.id ?? null;
 }
-function isGuardedPress(ui, tab, id, by, now) {
+function isGuardedRow(ui, tab, id, now) {
   if (!isRowTab(tab))
     return false;
   const { id: cursorId, guard } = ui.selection[tab];
-  return cursorId === id && guard !== null && guard.by === by && now < guard.at + PRESS_GUARD_MS;
+  return cursorId === id && guard !== null && now < guard.at + PRESS_GUARD_MS;
+}
+function isGuardedPress(ui, tab, id, by, now) {
+  return isRowTab(tab) && isGuardedRow(ui, tab, id, now) && ui.selection[tab].guard?.by === by;
 }
 var withCursor = (ui, tab, cursor) => ({
   ...ui,
@@ -9790,7 +9978,9 @@ function press(ui, view, p, by, now) {
     return withCommands(ui);
   const holds = holdsOf(ui, now);
   const pressId = ui.nextPressId;
-  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, by };
+  const atBefore = view.lastActions[rowId]?.at ?? null;
+  const lastBefore = lastActionKey(view, rowId);
+  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, lastBefore, by };
   const { [rowId]: _error, ...errors } = ui.errors;
   const { [rowId]: _note, ...notes } = ui.notes;
   let next = {
@@ -9798,11 +9988,12 @@ function press(ui, view, p, by, now) {
     nextPressId: pressId + 1,
     pressesOut: { ...ui.pressesOut, [pressId]: out },
     errors,
-    notes
+    notes,
+    ...p.action === "undo" ? { restoring: { id: rowId, at: now, by } } : {}
   };
   if (isReply) {
     const text = p.text.trim();
-    const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false };
+    const sent = { pressId, text, atBefore, isConfirmed: false };
     next = {
       ...next,
       typing: next.typing === rowId ? null : next.typing,
@@ -9865,8 +10056,8 @@ function pressSettled(ui, view, pressId, outcome, now) {
     const { [row]: _sent, ...rest } = next.sentReplies;
     next = { ...next, sentReplies: isRefused ? rest : { ...rest, [row]: { ...sent, isConfirmed } } };
   }
-  if (out.action === "undo" && isConfirmed)
-    next = { ...next, restoring: { id: row, at: now, by: out.by } };
+  if (out.action === "undo" && next.restoring?.id === row)
+    next = { ...next, restoring: isConfirmed ? { ...next.restoring, at: now } : null };
   const restored = selectRestored(next, view, now);
   next = restored.ui;
   if (outcome.isDemoSent)
@@ -10298,6 +10489,23 @@ function noticeOf(ui, now) {
 }
 var isUiWorthKeeping = (ui) => Object.values(ui.drafts).some((d) => d.text.trim() !== "") || Object.keys(ui.sentReplies).length > 0;
 
+// ../core/view/unshown-press.ts
+var SENDING = "Sending\u2026";
+var sendingFeedback = (at) => ({ is: "sending", label: SENDING, at, sentAt: at });
+function unshownPressOut(pressesOut, view, id) {
+  const out = Object.values(pressesOut).filter((p) => p.rowId === id && !p.isReply).pop();
+  if (!out || lastActionKey(view, id) !== out.lastBefore)
+    return null;
+  return out;
+}
+function unshownPressFeedback(kind, effects, at) {
+  if (holdsStatusWhileOut(kind))
+    return null;
+  if (effects.some((e) => e.kind !== "send"))
+    return { is: "local", result: pendingResult([...effects], at) };
+  return sendingFeedback(at);
+}
+
 // ../core/view/layout.ts
 var SPACE_UNIT = 4;
 var LINE_PT = 5 * SPACE_UNIT;
@@ -10347,9 +10555,14 @@ function fit(s, width) {
   return out;
 }
 var MARKED_TITLE_CELLS = 12;
+var MARKED_LABEL_CELLS = 12;
 function cutTitle(title, room) {
   const cells = Math.max(MARKED_TITLE_CELLS, room);
   return cellWidth(title) <= cells ? title : `${cutToCells(title, cells - 1)}\u2026`;
+}
+function cutSettledLabel(label, room) {
+  const cells = Math.max(MARKED_LABEL_CELLS, room - MARKED_TITLE_CELLS);
+  return cutLine(label, (text) => cellWidth(text) <= cells);
 }
 function cutSettledTitle(title, room) {
   const cells = Math.max(MARKED_TITLE_CELLS, room);
@@ -10557,13 +10770,14 @@ function lineOfRow(row, isAllShown) {
   const f = row.feedback;
   const state = row.state;
   const undo = row.actions.find((a) => a.press.action === "undo");
+  const waitsMark = state.is === "open" ? openMark(row) : null;
   return {
     ...blankLine(row.id),
-    lead: row.type === "finding" ? null : row.state.is === "open" ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null } : { text: "", tone: null },
+    lead: row.type === "finding" ? null : { text: waitsMark?.text ?? "", tone: waitsMark?.tone ?? null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
-    age: f?.is === "done" ? f.at : row.at,
+    age: rowAgeAt(f, row.at),
     detail: row.detail,
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackToneOf(f), source: f } : null,
@@ -10586,7 +10800,7 @@ var isGroupEmpty = (g) => g.rows.length === 0 && closedTotal(g.closed, settledIn
 var closedId = (id) => `closed ${id}`;
 var foldId = (kind) => `fold ${kind}`;
 function closedLines(d) {
-  const action = closedLineAction(d);
+  const action = closedLinePlan(d).action;
   const buttons = action ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }] : [];
   return {
     ...blankLine(closedId(d.id)),
@@ -10672,6 +10886,37 @@ function focusOf2(line, ui) {
   return kept >= 0 ? kept : defaultFocus(line);
 }
 var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
+var isSentPress = (p) => p.action !== "resume" && p.action !== "herdr-ask" && p.action !== "all-options";
+function pressEffects(screen, line, press, kind) {
+  if (!isPrPress(press))
+    return kind === "local" && line.row ? localEffects(line.row, press) : [];
+  const pr = "ref" in press ? screen.view.prs.drawn.find((d) => d.pr.ref === press.ref)?.pr : undefined;
+  const effect = prPressEffect(pr ?? null, press);
+  return effect ? [effect] : [];
+}
+function withUnshownPress(line, screen, ui) {
+  const outOf = (p) => {
+    if (!p || !isSentPress(p))
+      return null;
+    const out = unshownPressOut(ui.pressesOut, screen.view, pressRowId(p));
+    return out && actionId(p) === out.action ? out : null;
+  };
+  if (line.settled)
+    return outOf(line.settled.undo) ? { ...line, isSending: true } : line;
+  const pressed = line.buttons.find((b) => outOf(b.press));
+  const out = outOf(pressed?.press);
+  if (!pressed || !out || !isSentPress(pressed.press))
+    return line;
+  const kind = pressed.kind ?? null;
+  const effects = pressEffects(screen, line, pressed.press, kind);
+  const f = pressed.kind === undefined ? null : unshownPressFeedback(kind, effects, out.at);
+  return {
+    ...line,
+    buttons: line.buttons.map((b) => outOf(b.press) ? { ...b, isOut: true } : b),
+    isSending: !line.isTabButtons,
+    ...f ? { feedback: { text: markedFeedbackText(f, false, AGENT), tone: feedbackToneOf(f), source: f } } : {}
+  };
+}
 
 // src/panel-draw.ts
 function boxed(inner, tone, width, s) {
@@ -10796,12 +11041,13 @@ function drawLine(line, isSelected, d) {
   const tintShare = steppedTitleTint(clock, now);
   const tint = tintTone && tintShare > 0 ? { tone: tintTone, share: tintShare } : undefined;
   const mark = markText(line.mark, now, s, line.settled ? tint : undefined);
-  const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", line.settled.label) : s.dim(line.settled.label)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const cursor = isSelected ? s.tone("accent", "\u276F") : " ";
   const lead = leadText(line.lead, s, tint);
   const head = isOnTree ? `${cursor}${s.dim(line.tree === "mid" ? "\u251C\u2500" : "\u2514\u2500")} ${lead}` : `${line.tree === "off" ? " " : ""} ${" ".repeat(pad)}${cursor} ${lead}`;
-  const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
+  const age = line.isSending ? s.dim(SENDING) : line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : "";
   const besideAge = age ? width - visibleLength(`  ${age} `) : width;
+  const settledLabel = line.settled ? cutSettledLabel(line.settled.label, besideAge - visibleLength(head) - visibleLength(`  ${mark}`) - (line.settled.undo ? visibleLength(`  ${UNDO_KEY} Undo`) : 0)) : "";
+  const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", settledLabel) : s.dim(settledLabel)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const paintTitle = (text) => {
     const own = line.isDim ? s.dim(text) : line.titleTone ? s.tone(line.titleTone, s.bold(text)) : isOpen ? s.bold(text) : text;
     return tint ? s.tint(tint.tone, tint.share, own) : own;
@@ -10937,7 +11183,7 @@ function pageLine(d, indent, mark, name, namePaint, {
   const full = pageRoom(indent, width);
   const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full;
   const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const waits = waitsOn ? pageText(waitsOn, room, STATUS_TEXT_LINES, (t) => s.tone("needsYou", t)) : [];
+  const waits = waitsOn ? pageText(waitsOn.text, room, STATUS_TEXT_LINES, (t) => s.tone(waitsOn.tone, t)) : [];
   if (chevron)
     names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ""} ${chevron.paint(chevron.text)}`;
   const seconds = [...waits, ...text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []];
@@ -11624,7 +11870,7 @@ function prEntries(screen, ui, now) {
         age: doneAt(f),
         feedback: f,
         detail: pr.error ? prRefreshFailedText(pr.error) : null,
-        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync)),
+        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync).actions),
         isWaiting: false
       }
     });
@@ -11644,7 +11890,7 @@ function prEntries(screen, ui, now) {
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 ") || null,
           age: doneAt(feedback) ?? t.at,
           feedback,
-          buttons: prButtons(threadActions(pr, t, presses)),
+          buttons: prButtons(threadActions(pr, t, presses).actions),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null
         }
@@ -11666,7 +11912,7 @@ function prEntries(screen, ui, now) {
           detail: [text.meta, text.fold?.note].filter(Boolean).join(" \xB7 "),
           age: doneAt(feedback) ?? c.finishedAt ?? null,
           feedback,
-          buttons: prButtons(checkActions(pr, c, presses)),
+          buttons: prButtons(checkActions(pr, c, presses).actions),
           isWaiting: isWaiting(id)
         }
       };
@@ -11768,8 +12014,9 @@ function entriesOf(screen, ui, tab, now) {
     return pageEntries(screen.view, ui.typing, (id) => ui.statusUnfolded.includes(id), now);
   const collapsed = new Set(screen.view.collapsed);
   const entries = tab === "prs" ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab, now);
-  const shown = (line) => {
-    const error = rowErrorOf(ui, line.id, now);
+  const shown = (drawn) => {
+    const error = rowErrorOf(ui, drawn.id, now);
+    const line = error === null ? withUnshownPress(drawn, screen, ui) : drawn;
     const feedback = error === null ? line.feedback : { text: error, tone: "error", source: null };
     return { ...line, feedback, ...collapsed.has(line.id) ? { isCollapsed: true } : {} };
   };
@@ -13208,6 +13455,29 @@ The answer to a question is the user's to give. Close a question with their answ
 }
 
 // ../core/runtime/session-turns.ts
+function cleared(s) {
+  return {
+    ...s,
+    hostTasks: [],
+    ledger: EMPTY,
+    turn: NO_TURN,
+    told: { inbox: null, closed: [] },
+    pending: [],
+    presence: {
+      ...s.presence,
+      ledgerState: "current",
+      hasDroppedReply: false,
+      failedAttempts: 0,
+      isConversationUnreadable: false,
+      turnsApplied: s.presence.turnsStarted,
+      isTurnRunning: false
+    },
+    lastActions: {},
+    stop: null,
+    overviewFailure: null,
+    lastOverviewCallAt: null
+  };
+}
 function notePrompt(host, s, text, isOpen) {
   const matched = matchSent(s, text);
   return { ...recordPrompt(host, startTurn(matched.state), text, isOpen, matched.sentBy), sentBy: matched.sentBy };
@@ -13488,8 +13758,11 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity));
   };
   const servesLines = ops.flatMap((op) => op.kind === "serves" ? [op] : []);
+  const replacedMilestones = new Map;
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op, n } of ordered) {
+  const keptRef = (ref) => replacedMilestones.get(ref) ?? ref;
+  for (const { op: written, n } of ordered) {
+    const op = written.kind === "next" || written.kind === "was" ? { ...written, ref: keptRef(written.ref) } : written.kind === "link" ? { ...written, subject: keptRef(written.subject) } : written;
     if (op.kind === "none" || op.kind === "suggest")
       continue;
     if (op.kind === "next") {
@@ -13498,11 +13771,16 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       continue;
     }
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find, last ?? o, servesLines);
+      const earlier = o.milestones;
+      const line = op.kind === "serves" && op.milestone !== null ? { ...op, milestone: keptRef(op.milestone) } : op;
+      o = applyGoalOp(o, line, now, find, askIds, last ?? o, servesLines);
+      if (op.kind === "goal" && o.milestones !== earlier)
+        for (const m of earlier)
+          replacedMilestones.set(m.id, m.name);
       if (op.kind === "milestone")
         markNamed(findMilestone(o, op.name), n);
-      if (op.kind === "serves" && op.milestone !== null)
-        markNamed(findMilestone(o, op.milestone), n);
+      if (line.kind === "serves" && line.milestone !== null)
+        markNamed(findMilestone(o, line.milestone), n);
     } else if (op.kind === "head") {
       if (!isNumberOnly(op.title))
         o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
@@ -13586,7 +13864,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   const isTitleKept = !!o.head && !!last?.head && o.head.title === last.head.title;
   if (o.head && isDescriptionStale(o.head, isTitleKept, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: "" } };
-  const settled = settleGoal(o, now, readSetAt, named);
+  const settled = settleGoal(o, now, readSetAt, named, askIds, last ?? o);
   return withSuggestion(nextRef === null ? settled : withNextMilestone(settled, nextRef, now), ops);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
@@ -13596,7 +13874,7 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
   const o = changes ? applyOps(last, changes, now, askIds, readSetAt) : read;
   if (o === null)
     return null;
-  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map);
+  const settled = changes ? o : settleGoal(o, now, readSetAt, new Map, askIds, o);
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
   const kept = settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
   return withNoGoalNoted(kept, answer, askIds);
@@ -13828,7 +14106,7 @@ var GOAL_PARTS = {
   "goal-when-clear": `Write GOAL when no goal is set, or <goal> says met, once the work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan lead to it, as when the agent says what outcome the person set or an ask's reason names the outcome its work serves. Check this on every exchange against <subjects> and <asks>, so an exchange that is only chat does not hide a goal the open work shows. Never write GOAL from a summary of finished work.`,
   "goal-finish-line": `A goal has a finish line someone could check, such as "2.5 in the store" or "the import ready to demo". A direction, such as "make search faster" or "keep the list tidy", gets no GOAL.`,
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show one. A met goal stays until the next is set.`,
-  "goal-suggest": `While no goal runs, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal, which the person sets with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. After a met goal, it is the next outcome the finished work leads to, such as shipping what the goal built. Check it on every exchange, as for GOAL. Write SUGGEST when <suggested> no longer fits and an outcome does, SUGGEST: - when it no longer fits and none does, and nothing while it fits. When <next-goal> is there, answer it as it asks, even after NO CHANGE. Never make a suggestion up from chat, and never let one hold back GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
+  "goal-suggest": `While no goal runs, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal, which the person sets with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. After a met goal, it is the next outcome the finished work leads to, such as shipping what the goal built. Check it on every exchange, as for GOAL. A suggestion no longer fits once the exchange points to another next outcome, as when the reply recommends the next piece of work or an item in <asks> offers to start it: SUGGEST that outcome. Write SUGGEST when <suggested> no longer fits and an outcome does, SUGGEST: - when it no longer fits and none does, and nothing while it fits. When <next-goal> is there, answer it as it asks, even after NO CHANGE. Never make a suggestion up from chat, and never let one hold back GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in any words. A removed goal stays removed until the person types it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's: never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when its release shipped or its feature merged, write DONE for each open milestone, so the goal is met, and GOAL when the next goal is clear. Never RETIRE a goal whose outcome happened.`,
@@ -13839,7 +14117,7 @@ var GOAL_PARTS = {
   "milestone-no-work": `For a milestone marked ${NO_WORK_LINKED}, write SERVES for an open subject whose work is part of it, DONE when the exchange shows it done, or DROP when the goal no longer needs it. Never link other work just to fill it.`,
   "milestones-for-new-goal": `When <goal> says just set, the milestones shown belong to the goal before it, and each one your answer does not name goes. Write MILESTONE, with its status, name and where it stands, for each one the new goal keeps and each outcome it needs, so it has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
   "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and each NEW subject, even when nothing else changed: the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject. Change a link only when what the work is for changed, or a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself.`,
-  "serves-in-outcome": `A subject serves a milestone only when finishing it is part of that milestone's named outcome, as a crash fix is part of "Launch crash fixed". Work that only happens while a milestone is open is not, and a broad name such as "Fixes landed" is no home for whatever comes later: write - for it, even when nothing else serves the goal.`
+  "serves-in-outcome": `A subject serves a milestone only when finishing it is part of that milestone's named outcome, as a crash fix is part of "Launch crash fixed". Work that only happens while a milestone is open is not, and a broad name such as "Fixes landed" is no home for whatever comes later: write - for it, even when nothing else serves the goal. Work the goal cannot be met without, as when the person says it has to be done first, is part of the goal even when no milestone names it: write MILESTONE for its outcome and SERVES to it. - is only for work the goal does not need.`
 };
 function goalRules(without = []) {
   return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL5);
@@ -13980,7 +14258,7 @@ Rules:
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
-- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for an item in <running>: code draws it under its subject, with its label. That label says what the item is doing, so the subject's text never says it again in other words. It says what the label does not, such as what works or what is left: "CSV works, PDF left", not "building the PDF export" under "Adding PDF export". When a subject's text in <subjects> says only what one of its running items is doing, write SET with what it leaves out. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When an item finished, as <running> or the exchange shows, and no other item in <running> still works for its subject, a subject that stays working says in where it stands what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate laying out the PDF" or "delegate finished". When neither the exchange nor where it stands says what came of the finished item, say its work is not checked yet: "PDF done, not checked". Keep where it stands when it already says what came of the item or what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other. Once all of its own work has merged, it is DONE, even when another subject's work follows. A release still waits until it is published.
+- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for an item in <running>: code draws it under its subject, with its label. That label says what the item is doing, so the subject's text never says it again in other words. It says what the label does not, such as what works or what is left: "CSV works, PDF left", not "building the PDF export" under "Adding PDF export". Check each subject that has a running item on every exchange, even one about something else, such as a question or the goal's milestones: when its text in <subjects> says only what that item is doing, in any words, write SET with what the label leaves out, such as what works, what is left or whether its PR merged. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When an item finished, as <running> or the exchange shows, and no other item in <running> still works for its subject, a subject that stays working says in where it stands what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate laying out the PDF" or "delegate finished". When neither the exchange nor where it stands says what came of the finished item, say its work is not checked yet: "PDF done, not checked". Keep where it stands when it already says what came of the item or what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other. Once all of its own work has merged, it is DONE, even when another subject's work follows. A release still waits until it is published.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty, when it has no description while a subject is working or waits on something, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work. Write HEAD too when its description says the session is doing work that <finished> shows done, or work it is no longer doing: when the title still names the focus, keep it word for word and write a new description.
 - The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head's title while a working subject is part of what it names. When the work it names finished and no subject is working, keep the title: queued work is not the focus until it starts. Never reword a head whose title and description both still hold, and never add progress, the next step or queued work to it.
 
@@ -14787,6 +15065,61 @@ function demoSource(deps) {
   };
 }
 
+// src/panel-view.ts
+function countCellsAsOmp(tui) {
+  return tui.visibleWidth ? countCellsWith(tui.visibleWidth) : () => {};
+}
+var screenRows = (ui) => ("size" in ui) ? ui.size().rows : ui.terminal.rows;
+function panelView(tui, ui, panel) {
+  let isDisposed = false;
+  const dispose = () => {
+    if (isDisposed)
+      return;
+    isDisposed = true;
+    panel.dispose();
+  };
+  const paint = (width) => panel.render(width).map((line) => fit(line, width));
+  const { parseKey, extractPrintableText, jsx, signal } = tui;
+  if (parseKey && extractPrintableText) {
+    const handleInput = (raw) => panel.handleInput(parseKey(raw) ?? "", extractPrintableText(raw));
+    const view = { render: paint, handleInput, invalidate: () => {}, dispose };
+    return { view, requestRender: () => ui.requestRender(), dispose };
+  }
+  if (!jsx || !signal)
+    throw new Error("omp's pi-tui has neither parseKey nor jsx");
+  const drawn = signal(0);
+  const onKey = (key) => {
+    if (key.kind !== "release")
+      panel.handleInput(key.id, key.text);
+    return true;
+  };
+  const view = jsx("canvas", {
+    paint: (width) => {
+      drawn();
+      return paint(width);
+    },
+    onKey,
+    onPaste: (paste) => {
+      panel.handleInput("", paste.text);
+      return true;
+    }
+  });
+  return { view, requestRender: () => drawn.set(drawn.peek() + 1), dispose };
+}
+
+// src/inbox-model.ts
+function byNewestRevision(a, b) {
+  const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
+  const [x, y] = [parts(a), parts(b)];
+  const differing = x.findIndex((n, i) => n !== y[i]);
+  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
+}
+function inboxModel(models) {
+  const sonnets = models.list().filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
+  const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
+  return models.resolve("@inbox") ?? sonnet ?? models.resolve("@smol") ?? null;
+}
+
 // ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
 var DARK_TONES = {
@@ -14865,6 +15198,12 @@ function fadedOver(hex, under, share) {
   const mixed = [0, 1, 2].map((i) => Math.round(channel(hex, i) * share + channel(under, i) * (1 - share)));
   return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
+var SUPPORTING_TEXT_SHARE = 0.45;
+var supportingOver = (muted, text) => fadedOver(text, muted, SUPPORTING_TEXT_SHARE);
+var SUPPORTING_TEXT = {
+  dark: supportingOver(MUTED_TEXT.dark, THEME_TEXT.dark),
+  light: supportingOver(MUTED_TEXT.light, THEME_TEXT.light)
+};
 var FAINT_TEXT = {
   dark: faintOver(MUTED_TEXT.dark, THEME_BACKGROUND.dark),
   light: faintOver(MUTED_TEXT.light, THEME_BACKGROUND.light)
@@ -14882,9 +15221,10 @@ function truecolorFill(hex, text) {
   return `${ESC}48;2;${rgbOf(hex)}m${text}${ESC}49m`;
 }
 function styleOf(theme) {
-  const tones = theme.isLight ? LIGHT_TONES : DARK_TONES;
-  const mode = theme.isLight ? "light" : "dark";
-  const tints = theme.isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
+  const isLight = "isLight" in theme ? theme.isLight : !theme.dark;
+  const tones = isLight ? LIGHT_TONES : DARK_TONES;
+  const mode = isLight ? "light" : "dark";
+  const tints = isLight ? LIGHT_BANNER_TINTS : DARK_BANNER_TINTS;
   return {
     bold: theme.bold.bind(theme),
     dim: (text) => `${ESC}2m${text}${ESC}22m`,
@@ -15594,6 +15934,7 @@ function isUnattended(ctx) {
   return agent?.kind === "sub" || !ctx.hasUI;
 }
 var sessionIdOf = (ctx) => ctx.sessionManager.getSessionId();
+var isRunContinuing = (event) => event.willContinue === true && event.awaitingAsyncWork !== true;
 
 // src/omp-messages.ts
 function textOfBlocks(content) {
@@ -15749,7 +16090,7 @@ function activityHandlers(context, sessions) {
     });
   };
   const onAgentEnd = (event, ctx) => {
-    if (isUnattended(ctx) || event.willContinue)
+    if (isUnattended(ctx) || isRunContinuing(event))
       return;
     const id = sessionIdOf(ctx);
     if (context.openAsks.delete(id))
@@ -15815,7 +16156,7 @@ function presentedSession(session) {
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = presentedSession(session);
   const { lastHerdrPress } = session;
-  const { projectFolder, isFetchingPrs, isReadFailed, isNextBuild, ...rest } = source;
+  const { projectFolder, isFetchingPrs, isReadFailed, isSendHeld, isNextBuild, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
@@ -15823,6 +16164,7 @@ function herdrEnvelope(source, session, isTrimmed = false) {
     ...isTrimmed && { trimmed: true },
     ...isFetchingPrs && { isFetchingPrs: true },
     ...isReadFailed && { isReadFailed: true },
+    ...isSendHeld && { isSendHeld: true },
     ...isNextBuild && { isNextBuild: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
@@ -15832,8 +16174,9 @@ function herdrEnvelope(source, session, isTrimmed = false) {
 // ../core/remote/herdr-press-file.ts
 var isLookFile = (file) => ("look" in file);
 var isPrsShownFile = (file) => ("prsShown" in file);
+var isStatusShownFile = (file) => ("statusShown" in file);
 var isPressFile = (file) => file.format === HERDR_FORMAT && ("press" in file);
-var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPrsShownFile(file) ? file.prsShown.at : isPressFile(file) ? file.pressedAt : file.collapse.at;
+var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPrsShownFile(file) ? file.prsShown.at : isStatusShownFile(file) ? file.statusShown.at : isPressFile(file) ? file.pressedAt : file.collapse.at;
 var PRESS_TARGETS = {
   answer: "id",
   type: "id",
@@ -15931,6 +16274,9 @@ function pressFile(text) {
   }
   if ("prsShown" in file) {
     return isRecord2(file.prsShown) && isTime(file.prsShown.at) ? { ok: true, file } : { ok: false, reason: "prsShown without a time" };
+  }
+  if ("statusShown" in file) {
+    return isRecord2(file.statusShown) && isTime(file.statusShown.at) ? { ok: true, file } : { ok: false, reason: "statusShown without a time" };
   }
   if ("collapse" in file) {
     const c = file.collapse;
@@ -16374,26 +16720,6 @@ var LIFETIME_MS = PRESS_LIFETIME_MS;
 var MAX_COMMANDS = 128;
 var MAX_COMMAND_BYTES = 128000;
 var OUTCOME_RESERVE_BYTES = 4096;
-function remoteRowVersion(s, id) {
-  if (id === "goal") {
-    const overview = s.ledger.overview;
-    return JSON.stringify([
-      overview?.goal ?? null,
-      overview?.goalRemoved ?? null,
-      overview?.suggestedGoal ?? null,
-      s.lastActions[id] ?? null
-    ]);
-  }
-  const item = s.ledger.items.find((row) => row.id === id);
-  const normalized = item && Object.fromEntries(Object.entries(item).filter(([key]) => key !== "dialog"));
-  return JSON.stringify([
-    normalized ?? null,
-    s.ledger.findings.find((row) => row.id === id) ?? null,
-    s.ledger.closed.find((row) => row.id === id) ?? null,
-    s.ledger.closedFindings.find((row) => row.id === id) ?? null,
-    s.lastActions[id] ?? null
-  ]);
-}
 async function digestText(text) {
   const subtle = crypto.subtle;
   if (!("digest" in subtle) || typeof subtle.digest !== "function")
@@ -16404,12 +16730,10 @@ async function digestText(text) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 async function remoteRowDigest(s, id) {
-  const row = JSON.parse(remoteRowVersion(s, id));
-  const canonical = JSON.stringify(row, (_key, value) => value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
-  return `row-sha256-v1:${await digestText(canonical)}`;
+  return `row-sha256-v2:${await digestText(canonical(rowFields(s, id)))}`;
 }
 async function matchesRow(s, command) {
-  return command.expected === remoteRowVersion(s, command.press.id) || command.expected === await remoteRowDigest(s, command.press.id);
+  return command.expected === rowVersion(s, command.press.id) || command.expected === await remoteRowDigest(s, command.press.id);
 }
 async function requireDurableWrite(host, seq, issuedAt) {
   if (!host.readDurable)
@@ -16816,6 +17140,8 @@ async function applyViewerUpdate(host, file) {
   await host.viewers.update((current) => updateRemoteViewer(current, file, now));
   if (!viewer.released && viewer.tab === "prs")
     await host.refreshPrsIfDue?.();
+  if (!viewer.released && viewer.tab === "overview")
+    await host.checkDelegatesIfDue?.();
 }
 async function startHerdrFile(host, file, sessionId = "") {
   if (file.format === 2) {
@@ -16832,6 +17158,10 @@ async function startHerdrFile(host, file, sessionId = "") {
   }
   if (isPrsShownFile(file)) {
     await host.refreshPrsIfDue?.();
+    return finished(LOOK_OUTCOME);
+  }
+  if (isStatusShownFile(file)) {
+    await host.checkDelegatesIfDue?.();
     return finished(LOOK_OUTCOME);
   }
   if (!isPressFile(file)) {
@@ -17494,6 +17824,7 @@ function sessionCalls(context) {
       },
       perform: async (_s, effect) => effect.kind === "scroll" ? NO_CONVERSATION_SCROLL : effect.kind === "copy" ? deps.copy(effect.text) : openTarget2(run, effect.target, ctx.cwd, deps.home),
       refreshPrsIfDue: async () => fetchPrsWhenDue(ctx, true),
+      checkDelegatesIfDue: async () => checkDelegatesWhenDue(ctx),
       refreshPrs: () => prFetches.fetchNow(id, () => fetchPrs(hostFor(ctx), true, true), true),
       fetchPrsInBackground: () => fetchPrsNow(ctx),
       gh: {
@@ -17624,20 +17955,13 @@ function sessionCalls(context) {
 var MESSAGE_TYPE = "inbox";
 function turnHandlers(context, sessions) {
   const { deps, dir, openPanels, prepared, run, memory, dropTools, showBand, sendNotes } = context;
-  const {
-    change,
-    endedTurn,
-    hostFor,
-    updateHostFor,
-    reportCounts,
-    reportEnded,
-    prepare,
-    continueFork,
-    catchUpUnseen,
-    fetchPrsNow
-  } = sessions;
+  const { change, endedTurn, hostFor, updateHostFor, reportCounts, reportEnded, prepare, continueFork, catchUpUnseen } = sessions;
   let noted = null;
   let agentTexts = null;
+  let running = null;
+  let paused = null;
+  let prompted = null;
+  const clears = new Map;
   async function arrive(ctx, id, text, finishedReply) {
     const at = deps.now();
     const hostTasks = finishedReply === null ? [] : ompTodoFromBranch(ctx.sessionManager.getBranch());
@@ -17672,6 +17996,15 @@ function turnHandlers(context, sessions) {
     memory.shownCwd = () => ctx.cwd;
     reportCounts(id, left === id ? undefined : left);
     context.presses.follow(ctx);
+    const abandoned = running !== id ? running : null;
+    if (abandoned !== null) {
+      running = null;
+      if (agentTexts?.id === abandoned)
+        agentTexts = null;
+      await change(abandoned, (s) => cutOffTurn(s, deps.now())).catch(() => {
+        return;
+      });
+    }
     const saved = await readState(dir, id).catch(() => null);
     const isCutOff = saved?.presence.isTurnRunning || saved?.ledger.overview?.children.some((c) => c.endedAt === null);
     if (isCutOff)
@@ -17704,6 +18037,10 @@ function turnHandlers(context, sessions) {
       noted = null;
     if (agentTexts?.id === id)
       agentTexts = null;
+    if (running === id)
+      running = null;
+    if (paused === id)
+      paused = null;
     if (id !== memory.shownId)
       return;
     memory.shownId = null;
@@ -17716,6 +18053,7 @@ function turnHandlers(context, sessions) {
       return;
     prepare(ctx);
     const id = sessionIdOf(ctx);
+    prompted = id;
     const guidance = guidanceText(OMP2);
     const systemPrompt = event.systemPrompt.includes(guidance) ? event.systemPrompt : [...event.systemPrompt, guidance];
     if (noted?.id !== id || noted.prompt !== event.prompt) {
@@ -17750,10 +18088,17 @@ function turnHandlers(context, sessions) {
     if (isUnattended(ctx))
       return;
     const id = sessionIdOf(ctx);
+    if (running === id)
+      return;
+    running = id;
+    if (paused === id)
+      paused = null;
     if (agentTexts?.id === id)
       agentTexts = null;
+    const isPrompted = prompted === id;
+    prompted = null;
     const startedAt = deps.now();
-    await change(id, (s) => turnStarted(s, startedAt)).catch(() => {
+    await change(id, (s) => turnStarted(isPrompted ? s : startTurn(s), startedAt)).catch(() => {
       return;
     });
   };
@@ -17801,42 +18146,81 @@ function turnHandlers(context, sessions) {
     }
   };
   const onAgentEnd = async (event, ctx) => {
-    if (isUnattended(ctx) || event.willContinue)
+    if (isUnattended(ctx) || isRunContinuing(event))
       return;
-    prepare(ctx);
     const id = sessionIdOf(ctx);
+    if (paused === id) {
+      paused = null;
+      return;
+    }
+    if (running === id)
+      running = null;
+    if (prompted === id)
+      prompted = null;
+    if (event.awaitingAsyncWork)
+      paused = id;
+    prepare(ctx);
     const texts = agentTexts?.id === id ? agentTexts.texts : [];
     if (agentTexts?.id === id)
       agentTexts = null;
+    const host = hostFor(ctx);
+    const updateHost = updateHostFor(ctx);
+    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
+    const clearsAtEnd = clears.get(id) ?? 0;
     const last = lastAssistant(event.messages);
     const stop = await stopOf(last, deps.isUsageLimit, deps.now());
     const reply = stop === null ? turnReply(texts, last ? textOfBlocks(last.content) : "") : "";
     const isDialogDismissed = event.messages.some(isDismissedAsk);
-    const hostTasks = ompTodoFromBranch(ctx.sessionManager.getBranch());
     const [inHerdr, git] = await Promise.all([
       readState(dir, id).catch(() => null).then((saved) => delegatesInHerdr(saved?.ledger.overview ?? null, run, deps.herdrTarget)),
       gitPlaceIn(run, ctx.cwd)
     ]);
     const endedAt = deps.now();
     let addsPr = false;
+    let isCleared = false;
     const written = await change(id, (s) => {
+      isCleared = (clears.get(id) ?? 0) !== clearsAtEnd;
+      if (isCleared)
+        return s;
       const ended = endedTurn(id, s, reply, endedAt, { hostTasks, queuesEmptyReply: isDialogDismissed });
       addsPr = addsTabPr(s, ended);
       const settled = inHerdr ? statusChanged(ended, (o) => delegatesSettled(o, inHerdr, endedAt)) : ended;
       return { ...placed(settled, ctx.cwd, git), stop };
     }).catch(() => null);
-    if (!written)
+    if (!written || isCleared)
       return;
-    const host = hostFor(ctx);
     if (addsPr)
-      fetchPrsNow(ctx);
+      host.fetchPrsInBackground();
     if (needsUpdate(written))
-      deps.background(runUpdates(updateHostFor(ctx)));
+      deps.background(runUpdates(updateHost));
     deps.background(wakeAfterSettle(host));
+  };
+  const onSessionClear = async (_event, ctx) => {
+    if (isUnattended(ctx))
+      return;
+    const id = sessionIdOf(ctx);
+    clears.set(id, (clears.get(id) ?? 0) + 1);
+    if (running === id)
+      running = null;
+    if (paused === id)
+      paused = null;
+    if (prompted === id)
+      prompted = null;
+    if (noted?.id === id)
+      noted = null;
+    if (agentTexts?.id === id)
+      agentTexts = null;
+    context.openAsks.delete(id);
+    context.uiStates.delete(id);
+    await change(id, (s) => ({ ...cleared(s), sent: [], heldRows: [], ui: null })).catch(() => {
+      return;
+    });
+    showBand(ctx);
   };
   return {
     start,
     onSessionShutdown,
+    onSessionClear,
     onBeforeAgentStart,
     onInput,
     onAgentStart,
@@ -17878,17 +18262,6 @@ var defaultDeps = {
   questionHistory: (dir) => questionHistoryPlace(process.env, dir),
   registryFolder: registryFolder(process.env)
 };
-function byNewestRevision(a, b) {
-  const parts = (m) => (m.identity.revision ?? "0.0.0").split(".").map(Number);
-  const [x, y] = [parts(a), parts(b)];
-  const differing = x.findIndex((n, i) => n !== y[i]);
-  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0);
-}
-function inboxModel(ctx) {
-  const sonnets = ctx.models.list().filter((m) => m.identity.family === "sonnet").toSorted(byNewestRevision);
-  const sonnet = sonnets.find((m) => m.provider === "anthropic") ?? sonnets[0];
-  return ctx.models.resolve("@inbox") ?? sonnet ?? ctx.models.resolve("@smol") ?? null;
-}
 function createInbox(pi, deps = defaultDeps) {
   const dir = deps.stateDir(pi);
   useQuestionHistory(deps.questionHistory?.(dir) ?? null);
@@ -17904,7 +18277,7 @@ function createInbox(pi, deps = defaultDeps) {
   const { sendToAgent, onRunStart } = agentSender(pi);
   function askFor(ctx, id) {
     return async (prompt, system, _kind, report) => {
-      const model = inboxModel(ctx);
+      const model = inboxModel(ctx.models);
       if (!model) {
         report?.({ model: "none", error: "omp offers no model for the inbox", cause: "error" });
         return null;
@@ -17950,7 +18323,7 @@ function createInbox(pi, deps = defaultDeps) {
       await pi.setActiveTools(kept);
   };
   const inboxModelOf = (ctx) => {
-    const model = inboxModel(ctx);
+    const model = inboxModel(ctx.models);
     const keys = ctx.modelRegistry.authStorage.keys;
     const hasSignIn = (provider) => keys.source(provider) !== undefined || keys.keyless(provider);
     return {
@@ -18016,6 +18389,7 @@ function createInbox(pi, deps = defaultDeps) {
   pi.on("session_switch", (event, ctx) => start(ctx, event.reason === "fork" ? event.previousSessionFile : undefined));
   pi.on("session_branch", (event, ctx) => start(ctx, event.previousSessionFile));
   pi.on("session_shutdown", turns.onSessionShutdown);
+  pi.on("session_clear", turns.onSessionClear);
   pi.on("before_agent_start", turns.onBeforeAgentStart);
   pi.on("input", turns.onInput);
   pi.on("agent_start", (event, ctx) => {
@@ -18114,7 +18488,7 @@ function createInbox(pi, deps = defaultDeps) {
   }
   async function openPanelUi(ctx, isDemo) {
     const openedAt = deps.now();
-    const { parseKey, extractPrintableText, truncateToWidth } = await import("@oh-my-pi/pi-tui");
+    const tui = await import("@oh-my-pi/pi-tui");
     const source = isDemo ? demoSource({
       now: deps.now,
       settleWindowMs: deps.settleWindowMs,
@@ -18126,34 +18500,30 @@ function createInbox(pi, deps = defaultDeps) {
     hideBand(ctx);
     if (!isDemo)
       await inbox.openPanel(ctx, openedAt);
+    let dispose = () => {};
     try {
-      await ctx.ui.custom((tui, theme, _keybindings, done) => {
+      await ctx.ui.custom((ui, theme, _keybindings, done) => {
         const panel = createPanel({
           source,
           style: styleOf(theme),
           now: deps.now,
           openedAt,
-          requestRender: () => tui.requestRender(),
+          requestRender: () => shown.requestRender(),
           close: () => done(null),
           timers: {
             every: (fn, ms) => ctx.setInterval(fn, ms),
             after: (fn, ms) => ctx.setTimeout(fn, ms),
             stop: (handle) => ctx.clearTimer(handle)
           },
-          height: () => Math.max(10, tui.terminal.rows - 4)
+          height: () => Math.max(10, screenRows(ui) - 4)
         });
+        const shown = panelView(tui, ui, panel);
+        dispose = shown.dispose;
         panel.start();
-        return {
-          render: (width) => panel.render(width).map((line) => truncateToWidth(line, width)),
-          handleInput: (raw) => {
-            const key = parseKey(raw) ?? "";
-            panel.handleInput(key, extractPrintableText(raw));
-          },
-          invalidate: () => {},
-          dispose: () => panel.dispose()
-        };
+        return shown.view;
       });
     } finally {
+      dispose();
       if (!isDemo)
         inbox.closePanel(ctx);
       showBand(ctx);
@@ -18195,6 +18565,7 @@ function createInbox(pi, deps = defaultDeps) {
   return inbox;
 }
 function host_default(pi) {
+  import("@oh-my-pi/pi-tui").then(countCellsAsOmp);
   createInbox(pi);
 }
 export {

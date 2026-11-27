@@ -55,6 +55,7 @@ import {
   isGroupEmpty,
   prButtons,
   pressFeedback,
+  withUnshownPress,
 } from './panel-lines'
 import type { Button, Entry, Group, Lead, Line } from './panel-lines'
 import { rowErrorOf } from '../../core/view/ui-controller'
@@ -255,7 +256,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
         age: doneAt(f),
         feedback: f,
         detail: pr.error ? prRefreshFailedText(pr.error) : null,
-        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync)),
+        buttons: prButtons(prBlockActions(pr, isSent, prs.branchRef, presses, sync).actions),
         isWaiting: false,
       },
     })
@@ -275,7 +276,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · ') || null,
           age: doneAt(feedback) ?? t.at,
           feedback,
-          buttons: prButtons(threadActions(pr, t, presses)),
+          buttons: prButtons(threadActions(pr, t, presses).actions),
           isWaiting: isWaiting(id),
           isFolded: text.fold !== null,
         },
@@ -297,7 +298,7 @@ function prEntries(screen: PanelScreen, ui: PanelUi, now: number): Entry[] {
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · '),
           age: doneAt(feedback) ?? c.finishedAt ?? null,
           feedback,
-          buttons: prButtons(checkActions(pr, c, presses)),
+          buttons: prButtons(checkActions(pr, c, presses).actions),
           isWaiting: isWaiting(id),
         },
       }
@@ -412,8 +413,9 @@ export function entriesOf(screen: PanelScreen, ui: PanelUi, tab: ShownTab, now: 
   const collapsed = new Set(screen.view.collapsed)
   const entries = tab === 'prs' ? prEntries(screen, ui, now) : rowEntries(screen, ui, tab, now)
   // A refused press's text shows on its row in place of the row's status, as long as the controller keeps it.
-  const shown = (line: Line): Line => {
-    const error = rowErrorOf(ui, line.id, now)
+  const shown = (drawn: Line): Line => {
+    const error = rowErrorOf(ui, drawn.id, now)
+    const line = error === null ? withUnshownPress(drawn, screen, ui) : drawn
     const feedback = error === null ? line.feedback : { text: error, tone: 'error' as const, source: null }
 
     return { ...line, feedback, ...(collapsed.has(line.id) ? { isCollapsed: true } : {}) }

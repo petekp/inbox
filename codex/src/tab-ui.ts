@@ -9,7 +9,13 @@ import type { ShownTab } from '../../core/view/tabs'
 import { reduceUi, rowErrorOf } from '../../core/view/ui-controller'
 import { holdsOf } from '../../core/view/ui-controller-reply'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
-import { collapsedOf, isGuardedPress, openRowOf, selectedOf } from '../../core/view/ui-controller-selection'
+import {
+  collapsedOf,
+  isGuardedPress,
+  isGuardedRow,
+  openRowOf,
+  selectedOf,
+} from '../../core/view/ui-controller-selection'
 import type {
   HostFacts,
   InputKind,
@@ -27,7 +33,6 @@ import { callTool, cancelTimer, later, READ_TIMEOUT_MS } from './tab-host'
 import { revealSelected } from './tab-wake'
 import { PAGE, swapPage } from './tab-swap'
 import { takeShownRows } from './tab-shown'
-import { lastPressKey } from './tab-press'
 
 const hostFacts = (v: View): HostFacts => ({
   isFetchingPrs: v.isFetchingPrs,
@@ -77,13 +82,16 @@ export const errorOf = (id: string): string | null => rowErrorOf(tabState.ui, id
 export const isGuarded = (id: string, by: InputKind): boolean =>
   isGuardedPress(tabState.ui, tabState.ui.tab, id, by, Date.now())
 
+/** Whether row `id` is inside the guard of the click or key that opened it, so its buttons draw dim. */
+export const isRowGuarded = (id: string): boolean => isGuardedRow(tabState.ui, tabState.ui.tab, id, Date.now())
+
 /** One timer: it reads the view again when the view changes on the clock, and otherwise ticks the controller. */
 let wake: { at: number; isRead: boolean; timer: number } | null = null
 const WAKE_SLACK_MS = 20
 
 function schedule(at: number | null) {
   const v = tabState.serverView
-  if (tabState.isDisposed || !v) return
+  if (tabState.isDisposed || !v || !tabState.isActive) return
   const readAt = at === null ? null : readWakeAt(tabState.ui, v, Date.now())
   const isRead = readAt !== null && at !== null && readAt <= at
   if (wake && wake.at === at && wake.isRead === isRead) return
@@ -151,7 +159,7 @@ async function runPress(c: Extract<UiCommand, { kind: 'press' }>) {
   const generation = tabState.viewGeneration
   const v = tabState.serverView
   const rowId = pressRowId(c.press)
-  localOuts.set(c.pressId, { rowId, ...pressing, lastBefore: lastPressKey(v, rowId) })
+  localOuts.set(c.pressId, { rowId, ...pressing })
   copies.delete(rowId)
   tabState.activePresses++
   let outcome: SettledOutcome
@@ -194,6 +202,11 @@ function saveCollapse(id: string, isCollapsed: boolean) {
     .catch(() => undefined)
 }
 
+/** Draws the view the page read last with the controller's state as it is now, as a swap restores that state. */
+export function redrawView() {
+  if (tabState.serverView) tabState.view = drawnView(tabState.serverView, tabState.ui)
+}
+
 /** Set on a page with nothing kept, so its first read opens the inbox with no tab the person chose. */
 let isFreshOpen = false
 
@@ -227,13 +240,16 @@ function applyView(next: View, seq: number, answers: UiEvent[] = []) {
   ]
   isFreshOpen = false
   const before = tabState.ui.rowsSeen
+  const answered = answers.flatMap(a => (a.type === 'press-settled' ? [tabState.ui.pressesOut[a.pressId]?.rowId] : []))
   dispatch(events, { isDrawn: false })
   markEntering(before, tabState.ui.rowsSeen)
   tabState.isReadDraw = true
+  tabState.answeredRows = new Set(answered.filter(id => id !== undefined))
   try {
     tabState.draw()
   } finally {
     tabState.isReadDraw = false
+    tabState.answeredRows = new Set()
   }
 }
 
@@ -250,7 +266,7 @@ export async function read() {
     tabState.requestedPage = next.devPage
     if (tabState.updateError?.page !== tabState.requestedPage) tabState.updateError = null
     const isPageOld = tabState.requestedPage !== PAGE
-    if (isPageOld && !tabState.updateError) void swapPage(tabState.requestedPage)
+    if (isPageOld && !tabState.updateError && tabState.isActive) void swapPage(tabState.requestedPage)
     tabState.serverNote = next.isPluginFolderGone
       ? {
           text: 'Quit and reopen Codex to load the installed inbox. Its files were moved or removed, so it still runs the version Codex started with.',

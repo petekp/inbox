@@ -1,32 +1,16 @@
-import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
-import type { Case, Ev } from './case'
-import type { CodexCase } from './look-codex'
-import type { ModCase } from './mod-case'
+import type { Case } from './case'
 import { openIds } from './agent'
-import { START } from './gen'
-import type { HostOutcomes } from './host'
+import { UNCONFIRMED, demo, herdr, omp, only } from './seed-cases'
+import { PRESS_SEEDS } from './seeds-press'
 
-const ACCEPTED: HostOutcomes = { deliver: ['accepted'], isHeldUntilRun: false, performFails: [false] }
+export const ESC = String.fromCodePoint(0x1b)
+export const BEL = String.fromCodePoint(7)
+const LONG_URL = `https://example.com/${'path/'.repeat(30)}`
 
-const herdr = (session: Case['session'], events: Ev[]): Case => ({
-  look: 'herdr',
-  session,
-  outcomes: ACCEPTED,
-  takeAfterMs: 80,
-  width: 80,
-  events,
-})
-
-const omp = (events: Ev[]): Case => ({ ...herdr(emptySession(), events), look: 'omp' })
-
-const demo = demoSession(START, 'Claude')
-const ESC = String.fromCodePoint(0x1b)
-const BEL = String.fromCodePoint(7)
-
-/** Fixed cases from bugs the looks had, which every run includes. A seed whose issue is open is expected to fail. */
 /**
- * A seed for an open issue is expected to fail with `rule`, on a failure whose detail holds `detail` when it is given.
+ * Fixed cases from bugs the looks had, which every run includes. A seed for an open issue is expected to fail with
+ * `rule`, on a failure whose detail holds `detail` when it is given.
  */
 export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string; detail?: string; case: Case }[] = [
   {
@@ -76,12 +60,27 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: '"Send"',
     issue: 827,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd13' },
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'button', n: 0, label: 'Reply' },
+    ]),
+  },
+  {
+    name: 'selecting another row just after Reply',
+    rule: 'cut',
+    detail: '"Send"',
+    issue: 827,
+    isOpen: false,
+    case: herdr(demo, [
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'row', n: 0, label: 'd13' },
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'button', n: 0, label: 'Reply' },
+      { is: 'wait', ms: 60 },
+      { is: 'click', on: 'row', n: 0, label: 'd14' },
     ]),
   },
   {
@@ -102,7 +101,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     name: 'the agent closing a row whose Reply field is open',
     rule: 'jump',
     issue: 828,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd14' },
@@ -134,8 +133,19 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     name: 'a task in Devanagari',
     rule: 'width',
     issue: 831,
-    isOpen: true,
+    isOpen: false,
     case: omp([{ is: 'record', args: { kind: 'task', ask: 'नमस्ते क्षत्रिय' } }]),
+  },
+  {
+    name: 'a combining mark typed just after the key that opened the reply field',
+    rule: 'glyph-cut',
+    issue: 841,
+    isOpen: false,
+    case: omp([
+      { is: 'record', args: { kind: 'task', ask: 'Log in to the registry' } },
+      { is: 'key', key: '2' },
+      { is: 'type', text: `t${String.fromCodePoint(0x303)} abc` },
+    ]),
   },
   {
     name: 'pressing Explain on a task',
@@ -169,7 +179,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box panel i1',
     issue: 898,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       { is: 'record', args: { kind: 'question', ask: 'Show glances while you walk?', options: ['Yes', 'No'] } },
       { is: 'wait', ms: 672 },
@@ -178,10 +188,241 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     ]),
   },
   {
+    name: 'a question that arrives on another tab, first drawn on Asks',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 898,
+    isOpen: false,
+    case: herdr(emptySession(), [
+      { is: 'click', on: 'tab', n: 0, label: 'overview' },
+      { is: 'wait', ms: 800 },
+      { is: 'record', args: { kind: 'question', ask: 'Show glances while you walk?', options: ['Yes', 'No'] } },
+      { is: 'wait', ms: 900 },
+      { is: 'click', on: 'tab', n: 0, label: 'needsYou' },
+    ]),
+  },
+  {
+    name: 'a settled row folding while its answer shows above its Undo',
+    rule: 'cut',
+    detail: 'in its box status above d10',
+    issue: 925,
+    isOpen: false,
+    case: herdr(demo, [
+      { is: 'click', on: 'button', n: 7, label: 'Pinch (recommended)' },
+      { is: 'wait', ms: 4287 },
+    ]),
+  },
+  {
+    name: 'the agent ordering PRs again while a PR block moves',
+    rule: 'motion-id',
+    issue: 926,
+    isOpen: false,
+    case: herdr(demo, [
+      { is: 'click', on: 'tab', n: 7, label: 'prs' },
+      { is: 'order', picks: [4, 4, 3, 2], label: 'Ship it', why: 'Fix the flaky test' },
+      { is: 'click', on: 'button', n: 7, label: 'Discuss' },
+      { is: 'order', picks: [], label: 'Yes', why: 'Retry?' },
+    ]),
+  },
+  {
+    name: 'a task that comes back after Done',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 927,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
+        { is: 'click', on: 'button', n: 0, label: 'Done' },
+        { is: 'wait', ms: 12352 },
+      ]),
+      takeAfterMs: null,
+    },
+  },
+  {
+    name: 'a Reply sent while a settled row folds',
+    rule: 'cut',
+    detail: '"Not sent',
+    issue: 928,
+    isOpen: false,
+    case: {
+      ...herdr(demo, [
+        { is: 'click', on: 'button', n: 7, label: 'Pinch (recommended)' },
+        { is: 'wait', ms: 5387 },
+        { is: 'click', on: 'button', n: 7, label: 'Reply' },
+        { is: 'key', key: 'a' },
+        { is: 'key', key: 'enter' },
+      ]),
+      outcomes: { deliver: ['accepted', 'rejected'], isHeldUntilRun: false, performFails: [false] },
+    },
+  },
+  {
+    name: 'a task with steps that folds after Done',
+    rule: 'cut',
+    detail: 'in its box status above i1',
+    issue: 931,
+    isOpen: false,
+    case: herdr(emptySession(), [
+      { is: 'record', args: { kind: 'task', ask: '同', steps: ['/repo/x', 'git push', 'https://example.com'] } },
+      { is: 'click', on: 'button', n: 0, label: 'Done' },
+      { is: 'wait', ms: 5600 },
+    ]),
+  },
+  {
+    name: 'a press that waits 15 s, then fails under its buttons',
+    rule: 'cut',
+    detail: '"Not applied',
+    issue: 932,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
+        { is: 'click', on: 'button', n: 2, label: 'Explain' },
+        { is: 'wait', ms: 15200 },
+      ]),
+      takeAfterMs: null,
+    },
+  },
+  {
+    name: 'All 6 options on a question with long options',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 933,
+    isOpen: false,
+    case: herdr(emptySession(), [
+      {
+        is: 'record',
+        args: {
+          kind: 'question',
+          ask: 'Z',
+          options: [
+            `https://example.com/${'path/'.repeat(8)}`,
+            'هل نعيد المحاولة؟',
+            'Fix the flaky test',
+            'zero\u200bwidth\u200bspaces',
+            '✓ Done · Undo … ↵ ❯',
+            '設定画面の名前を変更しますか',
+          ],
+          context: '',
+        },
+      },
+      { is: 'click', on: 'button', n: 4, label: 'All 6 options' },
+    ]),
+  },
+  {
+    name: 'Reply just after Explain',
+    rule: 'cut',
+    detail: '"Explaining…"',
+    issue: 934,
+    isOpen: false,
+    case: herdr(emptySession(), [
+      { is: 'record', args: { kind: 'task', ask: 'Calibrate eye tracking for the new lenses' } },
+      { is: 'click', on: 'button', n: 2, label: 'Explain' },
+      { is: 'wait', ms: 200 },
+      { is: 'click', on: 'button', n: 1, label: 'Reply' },
+    ]),
+  },
+  {
+    name: 'a press that is not applied after its buttons went',
+    rule: 'cut',
+    detail: '"Not applied',
+    issue: 950,
+    isOpen: false,
+    case: {
+      ...herdr(demo, [
+        { is: 'key', key: 'x' },
+        { is: 'key', key: 'w' },
+        { is: 'wait', ms: 12010 },
+      ]),
+      takeAfterMs: null,
+    },
+  },
+  {
+    name: 'Fix on a PR check whose refresh fails',
+    rule: 'cut',
+    detail: '"Could not refresh',
+    issue: 957,
+    isOpen: false,
+    case: {
+      ...herdr(demo, [
+        { is: 'click', on: 'tab', n: 7, label: 'prs' },
+        { is: 'key', key: 'j' },
+        { is: 'click', on: 'button', n: 6, label: 'Fix' },
+      ]),
+      outcomes: { deliver: ['accepted'], isHeldUntilRun: false, performFails: [true] },
+      takeAfterMs: 2000,
+    },
+  },
+  {
+    name: 'a row that opens as the terminal goes back to its shell',
+    rule: 'cut',
+    detail: 'in its box panel d18',
+    issue: 971,
+    isOpen: false,
+    case: herdr(demo, [{ is: 'click', on: 'row', n: 7, label: 'd18' }, { is: 'wait', ms: 187 }, { is: 'end' }]),
+  },
+  {
+    name: 'the same long question recorded again with a trailing space',
+    rule: 'cut',
+    detail: 'in its box panel i1',
+    issue: 972,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        {
+          is: 'record',
+          args: { kind: 'question', ask: LONG_URL, options: ['Leave it gone', 'Bring it back'], rec: 'Leave it gone' },
+        },
+        { is: 'wait', ms: 1000 },
+        { is: 'record', args: { kind: 'question', ask: `${LONG_URL} `, options: ['Ship it'], context: 'Y' } },
+      ]),
+      takeAfterMs: 20,
+    },
+  },
+  {
+    name: 'Reply pressed just after an option',
+    rule: 'cut',
+    detail: '"Send"',
+    issue: 956,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        {
+          is: 'record',
+          args: {
+            kind: 'question',
+            ask: 'Show glances while you are walking or driving?',
+            options: ['Yes', 'No'],
+            rec: 'No',
+          },
+        },
+        { is: 'wait', ms: 400 },
+        { is: 'click', on: 'button', n: 0, label: 'No (recommended)' },
+        { is: 'click', on: 'button', n: 6, label: 'Reply' },
+      ]),
+      outcomes: { deliver: ['rejected'], isHeldUntilRun: false, performFails: [false] },
+    },
+  },
+  {
+    name: 'a press nobody takes, under a status above the buttons',
+    rule: 'cut',
+    detail: 'in its box panel d18',
+    issue: 967,
+    isOpen: false,
+    case: {
+      ...herdr(demo, [
+        { is: 'click', on: 'row', n: 7, label: 'd18' },
+        { is: 'key', key: 'x' },
+        { is: 'wait', ms: 12010 },
+      ]),
+      takeAfterMs: null,
+    },
+  },
+  {
     name: 'folding every fold on the Status tab',
     rule: 'connector-gap',
     issue: 833,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'tab', n: 0, label: 'overview' },
@@ -189,201 +430,200 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       { is: 'key', key: 'w' },
     ]),
   },
-]
-
-/** Fixed Codex tab cases, run before each Codex pass. A seed whose issue is open is expected to fail with `rule`. */
-export const CODEX_SEEDS: {
-  name: string
-  issue: number
-  isOpen: boolean
-  rule: string
-  detail?: string
-  case: CodexCase
-}[] = [
   {
-    name: 'opening a PR comment from its thread',
-    rule: 'cut',
-    detail: '"Open comment"',
-    issue: 834,
+    name: 'a Status milestone that finishes while the Status page draws',
+    rule: 'motion-id',
+    detail: 'stroke m1 path bottom became stroke m1 path top',
+    issue: 980,
     isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'tab', n: 3 },
-        { is: 'click', on: 'button', n: 4 },
-      ],
-    },
+    case: herdr(emptySession(), [
+      { is: 'key', key: 'left' },
+      { is: 'key', key: 'left' },
+      {
+        is: 'status',
+        lines: [
+          'NEW: working | Rename the settings page | x',
+          'GOAL: Rename the settings page | working Release notes: ; queued Sync retries',
+        ],
+      },
+      { is: 'key', key: 'right' },
+      { is: 'status', lines: ['MILESTONE: done | Sync retries | x'] },
+    ]),
   },
   {
-    name: 'Explain on a row that is still opening',
-    rule: 'jump',
-    detail: ' grew ',
-    issue: 835,
+    name: 'clicking a task whose title is one long word',
+    rule: 'vanish',
+    detail: 'in d18 went from 1.00 to gone',
+    issue: 981,
     isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'dark',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 2 },
-        { is: 'key', key: 'e' },
-      ],
-    },
-  },
-  {
-    name: 'a row glide that starts again mid-move',
-    rule: 'jump',
-    detail: 'height stood still',
-    issue: 836,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'dark',
-      width: 520,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 5 },
-        { is: 'click', on: 'row', n: 1 },
-        { is: 'wait', ms: 350 },
-        { is: 'click', on: 'row', n: 2 },
-      ],
-    },
-  },
-  {
-    name: 'Explain on a row that is still opening, then opening another row',
-    rule: 'cut',
-    issue: 834,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 520,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 7 },
-        { is: 'click', on: 'button', n: 3 },
-        { is: 'click', on: 'row', n: 1 },
-      ],
-    },
-  },
-  {
-    name: 'opening a row again just as its close ends',
-    rule: 'cut',
-    issue: 863,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 520,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 1 },
-        { is: 'wait', ms: 300 },
-        { is: 'key', key: 'ArrowUp' },
-      ],
-    },
-  },
-  {
-    name: 'Copy on an open task, whose result shows under its buttons',
-    rule: 'jump',
-    detail: 'press-',
-    issue: 864,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 520,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 5 },
-        { is: 'click', on: 'button', n: 0 },
-      ],
-    },
-  },
-  {
-    name: 'Cancel on the Reply field',
-    rule: 'cut',
-    detail: '"Reply" shows at 1.00',
-    issue: 837,
-    isOpen: false,
-    case: {
-      look: 'codex',
-      theme: 'light',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'row', n: 7 },
-        { is: 'click', on: 'button', n: 2 },
-        { is: 'wait', ms: 800 },
-        { is: 'click', on: 'button', n: 7 },
-      ],
-    },
-  },
-  {
-    name: 'Compare, then opening another row',
-    rule: 'cut',
-    detail: '"Holds up Flick option" shows at 1.00',
-    issue: 896,
-    isOpen: true,
-    case: {
-      look: 'codex',
-      theme: 'dark',
-      width: 360,
-      isReduced: false,
-      events: [
-        { is: 'click', on: 'button', n: 4 },
-        { is: 'click', on: 'row', n: 8 },
-      ],
-    },
-  },
-]
-
-/** Fixed cases for the mod's terminal and desktop looks, run before each mod pass. */
-export const MOD_SEEDS: { name: string; issue: number; isOpen: boolean; rule: string; case: ModCase }[] = [
-  {
-    name: 'a finding whose title holds escapes, in the terminal',
-    rule: 'drawn',
-    issue: 830,
-    isOpen: false,
-    case: {
-      look: 'terminal',
-      columns: 80,
-      records: [
-        {
-          kind: 'finding',
-          finding_kind: 'issue',
-          title: `Red ${ESC}[31mtext${ESC}[0m and ${ESC}]52;c;aGk=${BEL}clipboard`,
-          detail: 'd',
+    case: herdr(
+      {
+        ...demo,
+        ledger: {
+          ...demo.ledger,
+          items: demo.ledger.items
+            .filter(i => i.id === 'd16' || i.id === 'd18')
+            .map(i => (i.id === 'd18' ? { ...i, ask: `${ESC}[31mred${ESC}[0m text ${'a'.repeat(240)}` } : i)),
         },
-      ],
+      },
+      [{ is: 'click', on: 'row', n: 7, label: 'd18' }],
+    ),
+  },
+  {
+    name: 'the right arrow on the Inbox tab, with two findings and no tasks',
+    rule: 'jump',
+    detail: 'd20 moved',
+    issue: 988,
+    isOpen: false,
+    case: herdr(
+      {
+        ...demo,
+        ledger: {
+          ...demo.ledger,
+          items: [],
+          closed: demo.ledger.closed.filter(c => c.id === 'd10'),
+          findings: demo.ledger.findings.flatMap(f =>
+            f.id === 'd20'
+              ? [{ ...f, title: LONG_URL, detail: 'Rename the settings page' }]
+              : f.id === 'd21'
+                ? [{ ...f, title: '◆ ◇ ● ○', detail: 'No' }]
+                : [],
+          ),
+        },
+        prViews: { ...demo.prViews, views: {} },
+      },
+      [{ is: 'key', key: 'right' }],
+    ),
+  },
+  {
+    name: 'Explain on a task while the host takes presses after 200 ms',
+    rule: 'vanish',
+    detail: '"Queued: Explain" in d17',
+    issue: 991,
+    isOpen: false,
+    case: {
+      ...herdr({ ...demo, ledger: { ...demo.ledger, items: demo.ledger.items.filter(i => i.id === 'd17') } }, [
+        { is: 'wait', ms: 3751 },
+        { is: 'key', key: 'e' },
+      ]),
+      takeAfterMs: 200,
     },
   },
+  {
+    name: 'Explain on a task whose press the host queues',
+    rule: 'vanish',
+    detail: '"Explaining…" in d17',
+    issue: 995,
+    isOpen: false,
+    case: {
+      ...herdr({ ...demo, ledger: { ...demo.ledger, items: demo.ledger.items.filter(i => i.id === 'd17') } }, [
+        { is: 'wait', ms: 3751 },
+        { is: 'key', key: 'e' },
+      ]),
+      takeAfterMs: 200,
+    },
+  },
+  {
+    name: 'a status after the title whose press the host queues',
+    rule: 'vanish',
+    detail: 'the status "Explaining…" in d14',
+    issue: 997,
+    isOpen: false,
+    case: herdr(demo, [
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'row', n: 0, label: 'd14' },
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'button', n: 0, label: 'Explain' },
+      { is: 'wait', ms: 16 },
+      { is: 'key', key: 'z' },
+    ]),
+  },
+  {
+    name: 'a row the agent settles drops its age',
+    rule: 'vanish',
+    detail: 'the age "12m" in d13',
+    issue: 998,
+    isOpen: false,
+    case: herdr(demo, [
+      { is: 'wait', ms: 400 },
+      { is: 'click', on: 'row', n: 0, label: 'd13' },
+      { is: 'wait', ms: 60 },
+      { is: 'close', n: openIds(demo).indexOf('d13'), answer: 'Yes' },
+    ]),
+  },
+  {
+    name: 'a fetch that finds a PR closed',
+    rule: 'vanish',
+    detail: 'the line "Open PR" in pr:acme/visor#33',
+    issue: 999,
+    isOpen: false,
+    case: herdr(only([], ['acme/visor#33']), [
+      { is: 'click', on: 'tab', n: 3, label: 'prs' },
+      { is: 'wait', ms: 25 },
+      { is: 'prs', n: 2, change: 'closed' },
+    ]),
+  },
+  {
+    name: 'a question answered while the Status tab shows',
+    rule: 'vanish',
+    detail: 'the button "View question" in s3',
+    issue: 1000,
+    isOpen: false,
+    case: {
+      ...herdr(only(['d11']), [
+        { is: 'click', on: 'button', n: 1, label: 'Flick' },
+        { is: 'click', on: 'tab', n: 0, label: 'overview' },
+        { is: 'wait', ms: 1500 },
+      ]),
+      takeAfterMs: 600,
+    },
+  },
+  {
+    name: 'a status that comes while its row closes',
+    rule: 'cut',
+    detail: '"This changed before your press. Nothing was sent."',
+    issue: 1001,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'question', ask: 'Yes', options: ['No'] } },
+        { is: 'click', on: 'button', n: 4, label: 'No' },
+        { is: 'key', key: 'w' },
+        { is: 'record', args: { kind: 'question', ask: 'Yes', options: ['Rename the settings page'] } },
+      ]),
+      outcomes: UNCONFIRMED,
+      takeAfterMs: 600,
+      width: 40,
+    },
+  },
+  {
+    name: 'a hidden status between a title and its panel',
+    rule: 'connector-gap',
+    issue: 1002,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'question', ask: 'Yes', options: ['No'] } },
+        { is: 'click', on: 'button', n: 4, label: 'No' },
+        { is: 'key', key: 'w' },
+        {
+          is: 'record',
+          args: {
+            kind: 'question',
+            ask: 'Yes',
+            options: ['trailing\n', 'Fix the flaky test', 'Rename the settings page'],
+            context: '✓ Done · Undo … ↵ ❯',
+            steps: ['/repo/x', 'git push', 'https://example.com'],
+          },
+        },
+        { is: 'wait', ms: 937 },
+        { is: 'key', key: 'w' },
+        { is: 'click', on: 'button', n: 5, label: 'Dismiss' },
+      ]),
+      outcomes: UNCONFIRMED,
+      takeAfterMs: 600,
+      width: 40,
+    },
+  },
+  ...PRESS_SEEDS,
 ]
-
-/**
- * Failures of generated cases that an open issue already describes, by look, rule and a text in the failure's detail.
- * A run that finds only these passes, so a fixed-seed run fails only on something new.
- */
-const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string; details: string[] }[] = [
-  { issue: 811, look: 'herdr', rule: 'cut', details: ['"✓ Copied'] },
-  { issue: 827, look: 'herdr', rule: 'cut', details: ['"Send"', '"Cancel"', '"Discard"', 'in its box status '] },
-  { issue: 828, look: 'herdr', rule: 'jump', details: ['panel d', ' thread '] },
-  { issue: 832, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
-  { issue: 898, look: 'herdr', rule: 'cut', details: ['in its box panel '] },
-  { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
-  { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
-  { issue: 896, look: 'codex', rule: 'cut', details: ['"Holds up ', '"Comparing…"'] },
-]
-
-/** The open issue a failure is already filed as, or null when it is new. */
-export function knownIssueOf(f: { look: string; rule: string; detail: string }): number | null {
-  const open = new Set([...SEEDS, ...CODEX_SEEDS, ...MOD_SEEDS].filter(s => s.isOpen).map(s => s.issue))
-  const k = KNOWN.find(
-    k => open.has(k.issue) && k.look === f.look && k.rule === f.rule && k.details.some(d => f.detail.includes(d)),
-  )
-  return k?.issue ?? null
-}

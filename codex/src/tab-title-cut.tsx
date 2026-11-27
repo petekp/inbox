@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'preact/hooks'
 import { cutForEllipsis, cutLine } from '../../core/domain/text'
 import type { NewRow } from '../../core/view/arrivals'
 import { COLLAPSED_TITLE_LINES } from '../../core/view/row-parts'
+import { Sep } from './tab-parted'
 import { TitleTint } from './tab-title-tint'
 
 /**
@@ -53,6 +54,59 @@ function oneLineCutOf(el: HTMLElement, title: string, width: number): string | n
   copy.remove()
 
   return cut === title ? null : cut
+}
+
+/**
+ * A settled row's result label cut at a word to one line (`cutLine`), or null when it fits whole. The room is the
+ * line's width less the part's separator slot, since the label starts at the text edge on a line of its own. It tries
+ * each cut in a hidden copy of `label` beside it, which takes the same font, and drops the copy after.
+ */
+function labelCutOf(label: HTMLElement, text: string, width: number): string | null {
+  const copy = label.cloneNode(true) as HTMLElement
+  copy.style.cssText = `position: absolute; visibility: hidden; white-space: nowrap; overflow: hidden; text-indent: 0; margin: 0; padding: 0; max-width: none; width: ${width}px`
+  label.after(copy)
+  const cut = cutLine(text, shown => {
+    copy.textContent = shown
+
+    return copy.scrollWidth <= copy.clientWidth + 0.5
+  })
+  copy.remove()
+
+  return cut === text ? null : cut
+}
+
+/**
+ * A settled row's result part: its separator and its label, cut at a word to one line as every look cuts it, and cut
+ * again when the line's width changes. Until the first measure, CSS truncates the label.
+ */
+export function SettledResultPart({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [cut, setCut] = useState<string | null>(null)
+  useLayoutEffect(() => {
+    const part = ref.current
+    const line = part?.parentElement
+    const label = part?.querySelector<HTMLElement>('.outcome-label')
+    if (!part || !line || !label) return
+    let width = -1
+    const fit = () => {
+      const now = line.getBoundingClientRect().width - parseFloat(getComputedStyle(part).paddingLeft)
+      if (Math.abs(now - width) < 0.5) return
+      width = now
+      setCut(labelCutOf(label, text, now))
+    }
+    fit()
+    const watch = new ResizeObserver(fit)
+    watch.observe(line)
+
+    return () => watch.disconnect()
+  }, [text])
+
+  return (
+    <span ref={ref} class="part settled-result">
+      <Sep />
+      <span class="outcome-label">{cut ?? text}</span>
+    </span>
+  )
 }
 
 /**

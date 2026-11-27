@@ -33,7 +33,7 @@ test('a sole child named like its subject draws no row, and its state shows on t
   expect(blocked).toMatchObject([{ kind: 'subject', mark: '◆', tone: 'needsYou', isRunning: false, stall: null }])
 
   const finished = page(withSoleChild(sameNamedDelegate('help-icon', 'finished', 25 * MIN)), now).rows
-  expect(finished).toMatchObject([{ kind: 'subject', mark: '✓', tone: 'done', isRunning: false, hasChildren: false }])
+  expect(finished).toMatchObject([{ kind: 'subject', mark: '✓', tone: null, isRunning: false, hasChildren: false }])
 
   const held = page(
     after(
@@ -46,7 +46,19 @@ test('a sole child named like its subject draws no row, and its state shows on t
     {},
     [askItem('i1')],
   ).rows
-  expect(held).toMatchObject([{ kind: 'subject', mark: '◆', stall: null, waitsOn: 'Ask i1?', hasChildren: false }])
+  expect(held).toMatchObject([
+    { kind: 'subject', mark: '◆', stall: null, waitsOn: { text: 'Ask i1?', tone: 'needsYou' }, hasChildren: false },
+  ])
+
+  const taskHeld = (state: Child['delegateState']) =>
+    page(
+      after(withSoleChild(sameNamedDelegate('help icon', state, null)), 'LINK: i1 | s1', 28 * MIN, new Set(['i1'])),
+      now,
+      {},
+      [{ ...askItem('i1'), kind: 'task' as const }],
+    ).rows
+  expect(taskHeld(null)).toMatchObject([{ kind: 'subject', mark: '□', tone: 'tasks', isRunning: false }])
+  expect(taskHeld('blocked')).toMatchObject([{ kind: 'subject', mark: '◆', tone: 'needsYou', isRunning: false }])
 })
 
 test('a child with another name, or one of several children, keeps its row', () => {
@@ -68,10 +80,14 @@ test('a subject an open ask holds up says what it waits on, in the ask own words
     new Set(['i1', 'i2']),
   )
   const items = [
-    { ...askItem('i2'), ask: 'later one', at: 300 },
-    { ...askItem('i1'), kind: 'task' as const, ask: 'Approve\n  the   store listing', at: 200 },
+    { ...askItem('i2'), kind: 'task' as const, ask: 'Approve\n  the   store listing', at: 300 },
+    { ...askItem('i1'), ask: 'Which\n  version?', at: 200 },
   ]
   const [row] = page(o, 20 * MIN, {}, items).rows
 
-  expect(row).toMatchObject({ waitsOn: 'Approve the store listing', stall: null, ask: { id: 'i1', kind: 'task' } })
+  expect(row).toMatchObject({
+    waitsOn: { text: 'Which version?', tone: 'needsYou' },
+    stall: null,
+    ask: { id: 'i1', kind: 'question' },
+  })
 })

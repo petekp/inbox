@@ -10,6 +10,7 @@ Part of [the look map](../looks.md#files).
 | `core/view/row-motion.ts` | Shared module. The motion state machine for rows, how long each moving state lasts, each state's fade length, and the fade steps of a row's panel turned back from a close and of its close while still faint. |
 | `core/view/springs.ts` | Shared module. The spring every box's height moves on, its frames for a look that plays them, and how long a height move can take to come to rest. |
 | `core/view/feedback.ts` | Shared module. A press's feedback on its row: `feedbackOf`, its text in each look, the working and done labels, and whether the press is still out. |
+| `core/view/held-line.ts` | Shared module. `stepHeldLine`: the status line a row with buttons keeps in its place while a press puts its status under them, and when that hold lets go, so the look fades the line out and closes its space. |
 | `core/view/banners.ts` | Shared module. The banners under the tab bar, the stop texts and Continue, the sample and reading notices, the next build's version label, and the text an empty Asks tab shares with the band. |
 | `core/view/empty-tab.ts` | Shared module. `emptyTab` decides when each tab is empty and returns its title, hint and what goes under them. The empty tabs' texts. |
 | `core/view/dialog-row.ts` | Shared module. `withDialogRow` adds the agent's own open dialog to the view as the first Asks row, and `dialogTitle` is the one line that says what the dialog asks, which the Herdr sidebar line reads too. |

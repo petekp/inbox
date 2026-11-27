@@ -1,6 +1,6 @@
 import type { Item, Milestone, SessionStatus, StatusGoal } from '../../types'
 import { isOpen as isOpenStatus } from '../domain/status-limits'
-import { HELD_MARK, SUBJECT_MARKS } from './help'
+import { heldMarkOf, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
 import { namedList, textBeyondName } from './status-page-parts'
@@ -34,7 +34,7 @@ export type MilestoneRow = {
   text: string | null
   /** The plan a change replaced, while the person has not seen it. */
   was: string | null
-  /** The oldest open ask that holds it up, which its View button opens. */
+  /** The open ask that sets its mark, a question before a task, which its View button opens. */
   ask: { id: string; kind: Item['kind'] } | null
   /** The work that serves it, drawn under it one step in. `statusPage` fills it. */
   rows: StatusRow[]
@@ -116,18 +116,23 @@ export function metMilestonesFold(
     : null
 }
 
-/** The oldest open ask linked to `id`, a subject or a milestone. */
-export function oldestAsk(
+/**
+ * The open ask whose kind sets the mark of work that `holds` hold up: the oldest question while one is open, else the
+ * oldest task. It is the ask the row's View button opens, so the button matches the row's mark.
+ */
+export function askSettingMark(holds: readonly Item[]): { id: string; kind: Item['kind'] } | null {
+  const oldestFirst = [...holds].sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))
+  const setter = oldestFirst.find(i => i.kind === 'question') ?? oldestFirst[0]
+
+  return setter ? { id: setter.id, kind: setter.kind } : null
+}
+
+/** The open asks linked to `id`, a subject or a milestone. */
+export const asksLinkedTo = (
   items: readonly Item[],
   links: Readonly<Record<string, readonly string[]>>,
   id: string,
-): { id: string; kind: Item['kind'] } | null {
-  const oldest = items
-    .filter(i => links[i.id]?.includes(id))
-    .sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
-
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null
-}
+): Item[] => items.filter(i => links[i.id]?.includes(id))
 
 /**
  * Where an open milestone stands when the Status call has not said, while open work serves it: how many of the subjects
@@ -152,12 +157,10 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
   const isHeld = isOpen && holds.length > 0
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity)
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0)
-  const direct = oldestAsk(items, o.askSubjects, m.id)
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0]
 
   return {
     id: m.id,
-    ...(isHeld ? HELD_MARK : SUBJECT_MARKS[m.status]),
+    ...(isHeld ? heldMarkOf(holds.map(i => i.kind)) : SUBJECT_MARKS[m.status]),
     name: m.name,
     place: step.place,
     line: step.line,
@@ -168,7 +171,7 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     foldCount: 0,
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
-    ask: !isHeld ? null : (direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null)),
+    ask: isHeld ? askSettingMark(holds) : null,
     rows: [],
     subject: null,
   }

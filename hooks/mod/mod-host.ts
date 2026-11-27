@@ -12,6 +12,7 @@ import { prSharedStore } from './mod-pr-shared'
 import { readDurableSession, readSettledSession } from './mod-saves'
 import { changeSession } from './mod-session-write'
 import { isCurrent, type Owner, updating } from './mod-sessions'
+import { sessionState } from './mod-state'
 import { openTarget } from '../../core/domain/open-targets'
 import { COPY_FAILURES } from '../pane/pane-keys'
 import { isCompareInBackground } from '../../core/domain/press-messages'
@@ -21,6 +22,7 @@ import type { Ask, SessionHost } from '../../core/runtime/session-host'
 import type { SendOutcome } from '../../core/runtime/session-presses'
 import { markArrived } from '../../core/runtime/remote-command-state'
 import { SETTLED_MS } from '../../core/view/timing'
+import { STOPPED_REASON } from '../../core/view/rows'
 
 type HostCalls = Pick<
   Mod,
@@ -84,6 +86,12 @@ async function perform(
   }
 }
 
+/** Claude Code's reason for a message it holds after the person stopped the session. */
+const CLAUDE_STOPPED_REASON = 'the session was stopped and nobody has sent input since'
+
+/** Why Claude Code did not take a message, in the inbox's words when it is a refusal the inbox knows. */
+const refusalReason = (reason: string): string => (reason.includes(CLAUDE_STOPPED_REASON) ? STOPPED_REASON : reason)
+
 /**
  * Sends a message as the person's own prompt. Claude Code may store its row before `$.prompt.submit` returns, as
  * the mod's `session.append` handler sees, and another plugin may rewrite it.
@@ -99,7 +107,12 @@ export async function deliver(m: HostWriteCalls, owner: Owner, text: string, del
         ? { entered: text }
         : { notSent: (err instanceof Error ? err.message : String(err)) || 'the session refused it' },
   )
-  if ('notSent' in sent) return { state: 'rejected', reason: sent.notSent }
+  if ('notSent' in sent) {
+    const reason = refusalReason(sent.notSent)
+    if (reason === STOPPED_REASON) sessionState.isSendHeld = true
+    return { state: 'rejected', reason }
+  }
+  sessionState.isSendHeld = false
   const entered = sent.entered
   if (entered === text) return { state: 'accepted', queuedId: null }
   let outcome: SendOutcome = { state: 'accepted', queuedId: null, entered }

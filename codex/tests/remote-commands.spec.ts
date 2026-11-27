@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { test } from 'node:test'
-import { remoteRowVersion, startRemoteCommand } from '../../core/remote/remote-commands'
+import { remoteRowDigest, startRemoteCommand } from '../../core/remote/remote-commands'
+import { rowVersion } from '../../core/domain/preconditions'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
 import { EMPTY_LOG, withLegacy, withRecord } from '../../core/runtime/remote-command-state'
 import type { CommandLog } from '../../core/runtime/remote-command-state'
@@ -33,6 +34,33 @@ function arrived(log: CommandLog, id: string): CommandLog {
   return withRecord(log, id, { ...c, delivered: true, pendingDelivery: false })
 }
 
+test("a companion's second press on a row acts with the version it read before its first", async () => {
+  for (const versionOf of [rowVersion, remoteRowDigest]) {
+    const f = fixture()
+    const expected = await versionOf(f.state(), 'i1')
+    const explain = await f.run({ ...f.command(), expected, press: { action: 'explain', id: 'i1' } })
+    const compare = await f.run({ ...f.command(), expected, press: { action: 'compare', id: 'i1' } })
+    assert.deepEqual([explain.error, explain.note, compare.error, compare.note], [null, null, null, null])
+    assert.equal(f.delivered.length, 2)
+  }
+})
+
+test('a companion Done on a task from an earlier turn applies with no message pending, and one from this turn waits for its message', async () => {
+  const receipts = []
+  for (const turnsLater of [1, 0]) {
+    const f = fixture()
+    f.setState({ ...f.state(), ledger: { ...f.state().ledger, turn: f.state().ledger.turn + turnsLater } })
+    const done = { ...f.command(), press: { action: 'done' as const, id: 'i1' } }
+    await f.run(done)
+    const { state, pendingDelivery, delivered } = (await f.receipt(done.id)) ?? {}
+    receipts.push({ state, pendingDelivery, delivered })
+  }
+  assert.deepEqual(receipts, [
+    { state: 'applied', pendingDelivery: false, delivered: false },
+    { state: 'applied', pendingDelivery: true, delivered: false },
+  ])
+})
+
 test('compacted history rejects an old command even when its row returns to its original state', async () => {
   const f = fixture()
   const first = f.command()
@@ -43,7 +71,7 @@ test('compacted history rejects an old command even when its row returns to its 
   const log = await f.commands.read()
   assert.equal(log.commands[first.id], undefined)
   assert.ok(log.floor >= first.issuedAt)
-  assert.equal(remoteRowVersion(f.state(), 'i1'), first.expected)
+  assert.equal(rowVersion(f.state(), 'i1'), first.expected)
   f.restart()
   await f.run(first)
   assert.equal(f.delivered.length, 1)

@@ -1,6 +1,6 @@
 import type { Failure } from './failure'
 import type { OmpRun } from './look-omp'
-import { badText, glyphCut, hasRawEscape } from './rules-text'
+import { STARTS_WITH_MARK, badText, glyphCut, hasRawEscape } from './rules-text'
 import type { OmpDraw } from './look-omp'
 import { rowKeyPlan } from '../core/view/action-plan'
 import type { RowView } from '../core/view/rows'
@@ -28,6 +28,17 @@ function widthCause(line: string, panel: number): string {
   const counted = cellWidth(line.replace(SGR, ''))
   return counted <= panel ? `, where cellWidth counts ${counted}` : ''
 }
+
+/**
+ * The combining marks the open reply field's draft holds with no letter before them, at its start or after a space, as
+ * when the key that opened the field took the letter they followed. The field draws them as typed, as omp's own editor
+ * does, so a line of the draft that starts with one cut nothing.
+ */
+function loneMarks(d: OmpDraw): string[] {
+  return [...draftOf(d).matchAll(/(?:^|\s)(\p{M}+)/gu)].flatMap(m => (m[1] ? [m[1]] : []))
+}
+
+const draftOf = (d: OmpDraw): string => (d.ui?.typing ? (d.ui.drafts[d.ui.typing]?.text ?? '') : '')
 
 /** omp's TUI module that measures a line before it cuts one. Its source fails this project's strict type check, so tsc does not follow it. */
 const PI_TUI_UTILS: string = '../omp/node_modules/@oh-my-pi/pi-tui/src/utils'
@@ -78,6 +89,30 @@ function countBreak(d: OmpDraw): string | null {
 
 const LOOK = 'omp'
 
+/**
+ * The `press-shows` rule: a key shows what it did in its own draw. When the draw after the work it started settled
+ * differs from the draw before it, its own draw must differ too.
+ */
+function pressShowsFailures(run: OmpRun): Failure[] {
+  return run.keys.flatMap(k => {
+    const [before, own, settled] = [run.draws[k.before], run.draws[k.own], run.draws[k.settled]]
+    if (!before || !own || !settled) return []
+    const isSame = (a: OmpDraw, b: OmpDraw) => a.styled.join('\n') === b.styled.join('\n')
+    if (isSame(before, settled) || !isSame(before, own)) return []
+    const line = settled.styled.findIndex((l, i) => l !== before.styled[i])
+    return [
+      {
+        look: LOOK,
+        rule: 'press-shows',
+        at: own.at,
+        after: own.after,
+        detail: `the key "${k.key}" changed nothing in its own draw, and the draw after its work settled changed line ${line}`,
+        seen: settled.lines.join('\n'),
+      },
+    ]
+  })
+}
+
 /** Every resting rule the omp panel broke in a run. Width is measured as omp's TUI measures a line before it cuts one. */
 export function ompFailures(run: OmpRun, input: string): Failure[] {
   if (run.error)
@@ -91,7 +126,7 @@ export function ompFailures(run: OmpRun, input: string): Failure[] {
         seen: run.error.message,
       },
     ]
-  const out: Failure[] = []
+  const out: Failure[] = pressShowsFailures(run)
   for (const d of run.draws) {
     const at = { look: LOOK, at: d.at, after: d.after }
     for (const [i, line] of d.lines.entries()) {
@@ -111,7 +146,12 @@ export function ompFailures(run: OmpRun, input: string): Failure[] {
           seen: JSON.stringify(line),
         })
       const cut = glyphCut(line.trim())
-      if (cut) out.push({ ...at, rule: 'glyph-cut', detail: `line ${i}: ${cut}`, seen: JSON.stringify(line) })
+      const isTyped =
+        cut === STARTS_WITH_MARK &&
+        draftOf(d).includes(line.trim()) &&
+        loneMarks(d).some(m => line.trim().startsWith(m))
+      if (cut && !isTyped)
+        out.push({ ...at, rule: 'glyph-cut', detail: `line ${i}: ${cut}`, seen: JSON.stringify(line) })
       const bad = badText(line, input)
       if (bad) out.push({ ...at, rule: 'bad-text', detail: `line ${i} draws "${bad}"`, seen: line })
     }

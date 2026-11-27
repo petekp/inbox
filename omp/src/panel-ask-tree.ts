@@ -4,17 +4,17 @@ import type { Button, Line } from './panel-lines'
 import { visibleLength, wrapText } from './panel-text'
 import type { Style } from './panel'
 
-/** The three cells before a tree line's text: its trunk or arm under the ◆, then the gap to the title's column. */
+/** The three cells before a tree line's text: its trunk or arm under the ◆ or □, then the gap to the title's column. */
 const TRUNK = '│  '
 const TEE = '├─ '
 const LAST = '└─ '
 const NONE = '   '
 
 /**
- * An open ask's Holds up line, context, earlier answer and answers' lines, in that order, as a tree that hangs from the ◆
- * before its title. The arms start under the ◆ and the text starts in the title's column. With no answer line or Holds
+ * An open ask's Holds up line, context, earlier answer and answers' lines, in that order, as a tree that hangs from the ◆ or □
+ * before its title. The arms start under the mark and the text starts in the title's column. With no answer line or Holds
  * up, the context draws alone with no tree. Answers the line's `answerRow` lets sit side by side, and that fit the
- * room, share one arm, with the recommendation's reason under them. `at` is the ◆'s column.
+ * room, share one arm, with the recommendation's reason under them. `at` is the mark's column.
  */
 export function askTreeLines(
   line: Line,

@@ -1,6 +1,7 @@
 import { expect, mock } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 import { PRESS_GUARD_MS, QUEUED_AFTER_MS, SETTLED_MS } from '../core/view/timing'
+import { STOPPED_WARNING } from '../core/view/feedback'
 import { RUNNING_FRAMES } from '../core/view/help'
 import { w, arrive, arriveFirst, world } from './hooks-world'
 import { BAND, PANE, selectRow, replyField, replyKey } from './hooks-helpers'
@@ -32,6 +33,66 @@ test('a press whose submit stays pending through a turn reads Queued instead of 
   await clock.settle()
   expect(await pane.find({ text: /Queued/ })).toBeUndefined()
   expect(await pane.find({ text: /Not\s+confirmed/ })).toBeUndefined()
+})
+
+test("Claude Code's hold on messages after the person stopped the session reads why and what to do, and the open row warns of it until the person types", async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  on('ui.focus', () => ({}))
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount(PANE)
+
+  w.submitAnswer = { drop: 'the session was stopped and nobody has sent input since' }
+  await pane.press({ key: 'answer-i1-0' })
+  await clock.advance(SETTLED_MS)
+  expect(w.sent.at(-1)).toBe('Re "Use Node or Python?": Node')
+  expect(
+    await pane.find({
+      text: 'Not sent: you stopped this session. It takes inbox messages again after you write to it.',
+    }),
+  ).toBeDefined()
+  expect(await pane.find({ text: STOPPED_WARNING })).toBeDefined()
+  await $.prompt.submit({ text: 'Re "Call it greet?": Yes', wait: false, origin: { kind: 'plugin', name: 'inbox' } })
+  await clock.settle()
+  expect(await pane.find({ text: STOPPED_WARNING })).toBeDefined()
+
+  await $.prompt.submit({ text: 'carry on', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  expect(await pane.find({ text: STOPPED_WARNING })).toBeUndefined()
+
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't2', reason: 'aborted' })
+  await clock.settle()
+  expect(await pane.find({ text: STOPPED_WARNING })).toBeDefined()
+})
+
+test('the session file the mod publishes for Herdr says Claude Code holds the inbox messages from a stop until the person types', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [], { HC_TERMINAL_ID: 't1', HERDR_APP_HOME: '/app', HOME: '/home/person' })
+  const isHeldInFile = () => {
+    const path = Object.keys(w.written).find(p => p.startsWith('/app/inbox/sessions/'))
+    if (!path) throw new Error('the mod published no session file')
+    return (JSON.parse(w.written[path] ?? '{}') as { isSendHeld?: boolean }).isSendHeld === true
+  }
+
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({ answer: '', durationMs: 5, isAborted: true, turnId: 't1', reason: 'aborted' })
+  await clock.settle()
+  expect(isHeldInFile()).toBe(true)
+
+  await $.prompt.submit({ text: 'carry on', wait: false, origin: { kind: 'composer' } })
+  await clock.settle()
+  expect(isHeldInFile()).toBe(false)
 })
 
 test('a press during a turn reads Queued until its prompt enters, a refused reply reopens its field with its words, and a press that will not enter is undone with Not sent and [Try again]', async ($, on) => {

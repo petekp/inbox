@@ -3,7 +3,7 @@ import type { FoldKind, PressKind } from '../../types'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import type { PrAction } from '../../core/view/pr-press'
 import {
-  closedLineAction,
+  closedLinePlan,
   closedTitleTone,
   settledTone,
   closedShown,
@@ -14,10 +14,17 @@ import {
   waitingCount,
   rowTitle,
   rowResultMark,
-  ASK_MARK,
+  openMark,
   settledLabel,
 } from '../../core/view/rows'
-import { feedbackOf, feedbackTone, markedFeedbackText, rowFeedbackText } from '../../core/view/feedback'
+import { feedbackOf, feedbackTone, markedFeedbackText, rowAgeAt, rowFeedbackText } from '../../core/view/feedback'
+import { actionId } from '../../core/domain/press-labels'
+import { localEffects } from '../../core/domain/help-steps'
+import type { RowPress } from '../../core/domain/presses'
+import { isPrPress, prPressEffect, pressRowId } from '../../core/view/pr-press'
+import type { PrPress } from '../../core/view/pr-press'
+import type { Effect } from '../../core/view/press-reducer'
+import { unshownPressFeedback, unshownPressOut } from '../../core/view/unshown-press'
 import { groupEmptyText } from '../../core/view/banners'
 import { rowKeyPlan } from '../../core/view/action-plan'
 import type { AnswerRow } from '../../core/view/action-plan'
@@ -69,7 +76,7 @@ export type Line = {
   /** Extra indent, for the rows under a PR. A row on a tree takes none: its arm shows where it hangs. */
   depth: number
   tree?: TreePlace
-  /** The mark before the title: ◆ on an open question or task. A Finds row has none, so its title starts in the mark's place. */
+  /** The mark before the title: ◆ on an open question, □ on an open task. A Finds row has none, so its title starts in the mark's place. */
   lead: Lead | null
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
   mark: ResultMark | null
@@ -119,6 +126,8 @@ export type Line = {
    * or under them when it does not fit. Their keys work from any row of the tab.
    */
   isTabButtons: boolean
+  /** A press on the line is out and the view does not show it yet, so its age reads `SENDING`, as Codex's side column does. */
+  isSending?: boolean
 }
 
 export type Entry =
@@ -239,20 +248,15 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
   const f = row.feedback
   const state = row.state
   const undo = row.actions.find(a => a.press.action === 'undo')
+  const waitsMark = state.is === 'open' ? openMark(row) : null
 
   return {
     ...blankLine(row.id),
-    lead:
-      row.type === 'finding'
-        ? null
-        : row.state.is === 'open'
-          ? { text: ASK_MARK.text, tone: ASK_MARK.tone ?? null }
-          : { text: '', tone: null },
+    lead: row.type === 'finding' ? null : { text: waitsMark?.text ?? '', tone: waitsMark?.tone ?? null },
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === 'settled',
-    // As in the terminal, a row a press finished reads the press's age.
-    age: f?.is === 'done' ? f.at : row.at,
+    age: rowAgeAt(f, row.at),
     detail: row.detail,
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackToneOf(f), source: f } : null,
@@ -276,7 +280,7 @@ function lineOfRow(row: RowView, isAllShown: boolean): Line {
 
 type ClosedLine = {
   id: string
-  how: Parameters<typeof closedLineAction>[0]['how']
+  how: Parameters<typeof closedLinePlan>[0]['how']
   canRestore?: boolean
   title: string
   at: number
@@ -302,7 +306,7 @@ const closedId = (id: string) => `closed ${id}`
 const foldId = (kind: FoldKind) => `fold ${kind}`
 
 function closedLines(d: ClosedLine): Line {
-  const action = closedLineAction(d)
+  const action = closedLinePlan(d).action
   const buttons: Button[] = action
     ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }]
     : []
@@ -412,3 +416,43 @@ export function focusOf(line: Line, ui: PanelUi): number {
 
 export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>
   ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0
+
+const isSentPress = (p: PanelPress): p is RowPress | PrPress =>
+  p.action !== 'resume' && p.action !== 'herdr-ask' && p.action !== 'all-options'
+
+/** The opens, copies and reads a press on `line` runs first, which its row reads while they are under way. */
+function pressEffects(screen: PanelScreen, line: Line, press: RowPress | PrPress, kind: PressKind | null): Effect[] {
+  if (!isPrPress(press)) return kind === 'local' && line.row ? localEffects(line.row, press) : []
+  const pr = 'ref' in press ? screen.view.prs.drawn.find(d => d.pr.ref === press.ref)?.pr : undefined
+  const effect = prPressEffect(pr ?? null, press)
+
+  return effect ? [effect] : []
+}
+
+/**
+ * `line` while a press on it is out that the view does not show yet, so the key shows its press in its own draw: the
+ * buttons of the press's action draw out, the age reads `SENDING`, and the status reads what `unshownPressFeedback`
+ * gives. A line of the PRs tab's own buttons has no age. A settled line's Undo reads `SENDING` in its age's place, and
+ * a button with no plan kind, as a Closed line's Undo, keeps the line's status.
+ */
+export function withUnshownPress(line: Line, screen: PanelScreen, ui: PanelUi): Line {
+  const outOf = (p: PanelPress | null | undefined) => {
+    if (!p || !isSentPress(p)) return null
+    const out = unshownPressOut(ui.pressesOut, screen.view, pressRowId(p))
+    return out && actionId(p) === out.action ? out : null
+  }
+  if (line.settled) return outOf(line.settled.undo) ? { ...line, isSending: true } : line
+  const pressed = line.buttons.find(b => outOf(b.press))
+  const out = outOf(pressed?.press)
+  if (!pressed || !out || !isSentPress(pressed.press)) return line
+  const kind = pressed.kind ?? null
+  const effects = pressEffects(screen, line, pressed.press, kind)
+  const f = pressed.kind === undefined ? null : unshownPressFeedback(kind, effects, out.at)
+
+  return {
+    ...line,
+    buttons: line.buttons.map(b => (outOf(b.press) ? { ...b, isOut: true } : b)),
+    isSending: !line.isTabButtons,
+    ...(f ? { feedback: { text: markedFeedbackText(f, false, AGENT), tone: feedbackToneOf(f), source: f } } : {}),
+  }
+}

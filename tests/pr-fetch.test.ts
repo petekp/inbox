@@ -240,7 +240,7 @@ test('a limit error stops every session’s polling until GitHub’s reset time,
   const presses = { lastActions: {}, turns: { turnsStarted: 0, turnsApplied: 0 }, now: clock }
   const sync = prSyncOf(sessionView(state(), clock, 1000, NO_HOLDS).sync, 'acme/app#1')
   expect(
-    prBlockActions(state().prViews.views['acme/app#1']!, () => false, null, presses, sync).map(a => a.label),
+    prBlockActions(state().prViews.views['acme/app#1']!, () => false, null, presses, sync).actions.map(a => a.label),
   ).toEqual(['Open PR', 'Dismiss'])
 
   clock += 5 * 60_000

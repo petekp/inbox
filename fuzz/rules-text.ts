@@ -3,6 +3,8 @@ const ZWJ = ch(0x200d)
 const VS16 = ch(0xfe0f)
 const ESC = ch(0x1b)
 
+export const STARTS_WITH_MARK = 'starts with a combining mark'
+
 /** Why a drawn text was cut inside a character or a sequence, or null. */
 export function glyphCut(t: string): string | null {
   for (let i = 0; i < t.length; i++) {
@@ -15,7 +17,7 @@ export function glyphCut(t: string): string | null {
     else if (isLow) return `half a surrogate pair at ${i}`
   }
   if (t.endsWith(ZWJ) || t.includes(`${ZWJ}…`)) return 'cut after a zero-width joiner'
-  if (/^\p{M}/u.test(t)) return 'starts with a combining mark'
+  if (/^\p{M}/u.test(t)) return STARTS_WITH_MARK
   if (t.startsWith(VS16)) return 'starts with a variation selector'
 
   return null

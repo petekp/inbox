@@ -456,8 +456,11 @@ function failedSibling(pr, c) {
   const run2 = c.bucket === "cancelled" ? runOf(c) : null;
   return run2 ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run2, runOf(f))) ?? null : null;
 }
+function listedChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr)];
+}
 function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+  return listedChecks(pr).filter((c) => !failedSibling(pr, c));
 }
 
 // ../core/domain/text.ts
@@ -513,6 +516,25 @@ function clip(text2, max) {
 function clipLabel(text2, max) {
   return text2.length > max ? `${text2.slice(0, max - 1)}\u2026` : text2;
 }
+function cutForEllipsis(line, fits) {
+  const parts = graphemesOf(line);
+  while (parts.length > 0 && !fits(`${parts.join("")}\u2026`)) parts.pop();
+  return parts.join("").replace(/[\s.,;:]+$/, "");
+}
+function wordCuts(line) {
+  const words3 = line.split(" ");
+  const cuts = words3.map(
+    (_, n) => words3.slice(0, words3.length - n).join(" ").replace(/[\s.,;:]+$/, "")
+  );
+  return [...new Set(cuts.filter(Boolean).map((head) => `${head}\u2026`))];
+}
+function cutAtWord(line, fits) {
+  return wordCuts(line).find(fits)?.slice(0, -1) ?? null;
+}
+function cutLine(line, fits) {
+  if (fits(line)) return line;
+  return `${cutAtWord(line, fits) ?? cutForEllipsis(line, fits)}\u2026`;
+}
 function clipMiddle(text2, max, head) {
   if (text2.length <= max) return text2;
   return `${text2.slice(0, head)}${NL2}\u2026[cut]${NL2}${text2.slice(text2.length - (max - head))}`;
@@ -530,6 +552,9 @@ var GRAPHEME = new RegExp(
   String.raw`[${EXTEND}\u200D]+|(?:${FLAG}|${HANGUL}|[^${EXTEND}\u200D])(?:[${EXTEND}]|\u200D[^${EXTEND}\u200D]?)*`,
   "gu"
 );
+function graphemesOf(text2) {
+  return segmenter ? Array.from(segmenter.segment(text2), (s) => s.segment) : text2.match(GRAPHEME) ?? [];
+}
 var EMOJI = new RegExp("\\p{Emoji_Presentation}|\\uFE0F", "u");
 function duration(ms) {
   const min = Math.max(1, Math.round(ms / 6e4));
@@ -864,6 +889,21 @@ function withWorkDoneMilestones(o, now) {
   });
   return isChanged ? { ...o, milestones } : o;
 }
+function withHeldMilestonesOpen(o, now, askIds, earlier) {
+  const isHeld = (m) => {
+    const ids = /* @__PURE__ */ new Set([m.id, ...o.subjects.filter((s) => o.serves[s.id] === m.id).map((s) => s.id)]);
+    return Object.entries(o.askSubjects).some(([ask, to]) => askIds.has(ask) && to.some((id) => ids.has(id)));
+  };
+  const reopened = (m) => {
+    const open2 = earlier.flatMap((e) => e.milestones.filter((x) => x.id === m.id && isOpen(x)))[0];
+    if (open2) return { ...open2 };
+    const work = o.subjects.filter((s) => isOpen(s) && o.serves[s.id] === m.id);
+    const status = work.length === 0 || work.some((s) => s.status === "working") ? "working" : work.some((s) => s.status === "waits-on-other") ? "waits-on-other" : "queued";
+    return { ...m, status, text: "", was: null, changedAt: now, closedAt: null };
+  };
+  if (!o.milestones.some((m) => m.status === "done" && isHeld(m))) return o;
+  return { ...o, milestones: o.milestones.map((m) => m.status === "done" && isHeld(m) ? reopened(m) : m) };
+}
 function withWorkStartedMilestones(o, now) {
   const startedAs = (m) => {
     if (m.status !== "queued") return null;
@@ -1051,14 +1091,15 @@ function goalLineRefusal(o, op, revisedFrom) {
   if (isCurrent || isPrevious || isRemoved) return "restates";
   return revisedFrom !== null || hasWorkForGoal(o) ? null : "no-work";
 }
-function applyGoalOp(o, op, now, findSubject2, start = o, servesLines = []) {
+function applyGoalOp(o, op, now, findSubject2, askIds, start = o, servesLines = []) {
   if (op.kind === "goal" || op.kind === "retire") {
-    const settled = o.goal?.isAwaitingMilestones ? o : withWorkDoneMilestones(o, now);
+    const settled = o.goal?.isAwaitingMilestones ? o : withHeldMilestonesOpen(withWorkDoneMilestones(o, now), now, askIds, [o, start]);
     const milestones = op.kind === "goal" ? op.milestones.slice(0, MILESTONES_MAX).map((m) => ({ name: clipWords(m.name, NAME_KEPT), status: m.status, text: clipWords(m.text, TEXT_KEPT) })) : [];
     const placed = new Map(
       servesLines.flatMap((l) => {
         const s = findSubject2(l.subject);
-        return s ? [[s.id, l.milestone]] : [];
+        const target = l.milestone === null ? null : findMilestone(settled, l.milestone)?.name ?? l.milestone;
+        return s ? [[s.id, target]] : [];
       })
     );
     const unplaced = op.kind === "goal" ? goalRevision(settled, start, milestones, placed) : null;
@@ -1076,12 +1117,14 @@ function applyGoalOp(o, op, now, findSubject2, start = o, servesLines = []) {
   const isOtherVersion = milestone !== null && namesOtherVersion(subject.name, milestone.name);
   return { ...o, serves: { ...o.serves, [subject.id]: milestone === null || isOtherVersion ? "none" : milestone.id } };
 }
-function settleGoal(saved, now, readSetAt, named) {
+function settleGoal(saved, now, readSetAt, named, askIds, before) {
   const g = saved.goal;
   if (g === null) return saved;
-  const o = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
-  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const isAnswerForNewGoal = g.isAwaitingMilestones && readSetAt === g.setAt;
+  const worked = g.isAwaitingMilestones ? saved : withWorkStartedMilestones(withWorkDoneMilestones(saved, now), now);
+  const isCarrying = g.isAwaitingMilestones && !isAnswerForNewGoal;
+  const o = isCarrying ? worked : withHeldMilestonesOpen(worked, now, askIds, [saved, before]);
+  const isSeen = o.lastLookAt !== null && g.setAt <= o.lastLookAt;
   const milestones = isAnswerForNewGoal ? o.milestones.filter((m) => named.has(m.id) && m.status !== "dropped").sort((x, y) => named.get(x.id) - named.get(y.id)).slice(0, MILESTONES_MAX) : o.milestones;
   const isAwaiting = g.isAwaitingMilestones && (!isAnswerForNewGoal || milestones.length === 0);
   const kept = milestones.filter((m) => m.status !== "dropped");
@@ -1172,10 +1215,12 @@ var SUBJECT_MARKS = {
   working: { mark: "\u25CF", tone: "working" },
   queued: { mark: "\u25CB", tone: null },
   "waits-on-other": { mark: "\u25CC", tone: null },
-  done: { mark: "\u2713", tone: "done" },
+  done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
 var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var TASK_MARK = { mark: "\u25A1", tone: "tasks" };
+var heldMarkOf = (kinds) => kinds.some((k) => k === "question") ? HELD_MARK : TASK_MARK;
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: "working" };
@@ -1206,7 +1251,8 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on you" },
+  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
+  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
     mark: NEEDS_YOU_MARKS.question.mark,
     tone: NEEDS_YOU_MARKS.question.tone,
@@ -1334,6 +1380,7 @@ function askWords(items, ask) {
   const words3 = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
   return words3 || null;
 }
+var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -1347,13 +1394,15 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning2 || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const waitsOn = askWords(c.items, c.oldestAskOf(x));
+    const ask = c.askSettingMarkOf(x);
+    const words3 = askWords(c.items, ask);
+    const waitsOn = words3 === null ? null : { text: words3, tone: askTone(ask) };
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
-      ...c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
       isRunning: isRunning2,
       ...carried,
       name: x.name,
@@ -1364,7 +1413,7 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
       foldCount: lone === null ? under.length : 0,
-      ask: c.oldestAskOf(x)
+      ask: c.askSettingMarkOf(x)
     });
     if (lone === null)
       rows.push(
@@ -1450,10 +1499,12 @@ function metMilestonesFold(g, milestones, isWorkClosed) {
   const isFolded = g.metAt !== null && milestones.length > 0 && milestones.every((m) => m.place === "done" && isWorkClosed(m));
   return isFolded ? { id: `${MILESTONES_FOLD_PREFIX}-${g.setAt}-${g.metAt}`, text: namedList(milestones.map((m) => m.name)) } : null;
 }
-function oldestAsk(items, links, id) {
-  const oldest = items.filter((i) => links[i.id]?.includes(id)).sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
-  return oldest ? { id: oldest.id, kind: oldest.kind } : null;
+function askSettingMark(holds) {
+  const oldestFirst = [...holds].sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity));
+  const setter = oldestFirst.find((i) => i.kind === "question") ?? oldestFirst[0];
+  return setter ? { id: setter.id, kind: setter.kind } : null;
 }
+var asksLinkedTo = (items, links, id) => items.filter((i) => links[i.id]?.includes(id));
 function workCountText(m, o) {
   const work = o.subjects.filter((s) => s.status !== "dropped" && o.serves[s.id] === m.id);
   const done = work.filter((s) => s.status === "done").length;
@@ -1471,11 +1522,9 @@ function milestoneRow(step, o, items) {
   const isHeld = isOpen2 && holds.length > 0;
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
-  const direct = oldestAsk(items, o.askSubjects, m.id);
-  const viaSubject = holds.sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))[0];
   return {
     id: m.id,
-    ...isHeld ? HELD_MARK : SUBJECT_MARKS[m.status],
+    ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
     name: m.name,
     place: step.place,
     line: step.line,
@@ -1486,7 +1535,7 @@ function milestoneRow(step, o, items) {
     foldCount: 0,
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
-    ask: !isHeld ? null : direct ?? (viaSubject ? { id: viaSubject.id, kind: viaSubject.kind } : null),
+    ask: isHeld ? askSettingMark(holds) : null,
     rows: [],
     subject: null
   };
@@ -1558,6 +1607,11 @@ function isHeldSend(last) {
   return last?.delivery?.state === "held";
 }
 
+// ../core/view/press-reducer.ts
+function isDoneNoticeDue(c, turn) {
+  return c.how === "done" && c.outcome === "done" && !c.isSentToAgent && !c.doneNotification && c.item?.turn === turn;
+}
+
 // ../core/runtime/remote-command-state.ts
 var EMPTY_LOG = { version: 1, writtenAt: 0, floor: 0, commands: {} };
 function withLegacy(log, s) {
@@ -1576,6 +1630,10 @@ function withoutLegacy(s) {
   const { remoteCommands: _moved, ...rest } = s;
   return rest;
 }
+function awaitsDoneNotice(c, s) {
+  return c.doneNotification ? !c.doneNotification.error : isDoneNoticeDue(c, s.ledger.turn);
+}
+var isDoneAwaited = (s, row) => s.ledger.closed.some((c) => c.id === row && awaitsDoneNotice(c, s));
 function remoteCommandState(log, s) {
   let commands = log.commands;
   for (const [row, last] of Object.entries(s.lastActions)) {
@@ -1585,7 +1643,7 @@ function remoteCommandState(log, s) {
     const delivery = last.delivery;
     const deliveryId = delivery && "id" in delivery ? delivery.id ?? command.deliveryId : command.deliveryId;
     const delivered = command.delivered || delivery?.state === "arrived";
-    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery);
+    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery && isDoneAwaited(s, row));
     const error = delivery?.state === "failed" ? delivery.reason.slice(0, 256) : command.error;
     const state = delivery?.state === "failed" ? "failed" : command.state;
     if (deliveryId === command.deliveryId && delivered === command.delivered && pendingDelivery === command.pendingDelivery && error === command.error && state === command.state)
@@ -1598,7 +1656,7 @@ function remoteCommandState(log, s) {
     if (!id || !command || command.state === "cancelled" || command.state === "expired" || command.state === "refused")
       continue;
     const deliveryId = closed.doneNotification?.id ?? command.deliveryId;
-    const pendingDelivery = !command.delivered && !closed.doneNotification?.error;
+    const pendingDelivery = !command.delivered && awaitsDoneNotice(closed, s);
     if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
       commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
   }
@@ -1613,10 +1671,10 @@ function hasCommandRows(s) {
 function pendingCommandRows(s) {
   const rows = Object.entries(s.lastActions).flatMap(([row, last]) => {
     const delivery = last.delivery;
-    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === void 0 || last.action === "done" && !delivery;
+    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === void 0 || last.action === "done" && !delivery && isDoneAwaited(s, row);
     return last.commandId && isWaiting ? [row] : [];
   });
-  const closed = s.ledger.closed.flatMap((c) => c.commandId && !c.doneNotification ? [c.id] : []);
+  const closed = s.ledger.closed.flatMap((c) => c.commandId && isDoneNoticeDue(c, s.ledger.turn) ? [c.id] : []);
   return [...rows, ...closed];
 }
 function remoteReceipts(log) {
@@ -1745,7 +1803,7 @@ function isSendOnItsWay(delivery) {
 function isSettledInPlace(state, { shownSince, lastTypedMessageAt, listInput, now, settleWindowMs, undoShown, pressOutSince }, id) {
   const dueAt = foldDueAt(state, lastTypedMessageAt, settleWindowMs);
   const isUndoShown = id !== void 0 && (undoShown ?? []).includes(id);
-  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(listInput, dueAt, now);
+  const isWaiting = now < dueAt || isUndoShown || isSendOnItsWay(state.delivery) && (state.sentAt ?? state.at) <= dueAt || isPressOutSince(pressOutSince, dueAt) || isListInUseSince(listInput, dueAt, now);
   return isShownSince(state.at, shownSince) && isWaiting;
 }
 function isUndoLeft(at, now, settleWindowMs) {
@@ -1778,6 +1836,7 @@ function closedRowState(closed, at, now, settleWindowMs, delivery, isPressedAnsw
 }
 var ROW_COPY = {
   retry: "Try again",
+  goToSession: "Go to session",
   send: "Send",
   cancel: "Cancel",
   discard: "Discard",
@@ -1808,7 +1867,8 @@ function isWaitingRow(row) {
   return row.state.is === "open";
 }
 var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
-var ASK_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
+var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
 }
@@ -1844,13 +1904,18 @@ function closedMark(state, delivery) {
   if (delivery === "queued") return QUEUED_RESULT;
   return { text: delivery === null ? CLOSED_MARKS[state] : "", isRunning: false };
 }
+var MAX_OUTCOME_CHARS = 120;
+function shortOutcome(outcome) {
+  return cutLine(outcome, (t) => t.length <= MAX_OUTCOME_CHARS);
+}
 function outcomeLabel(c) {
-  return c.askedAs ? "Now a question in Asks" : capitalized(c.outcome);
+  return c.askedAs ? "Now a question in Asks" : capitalized(shortOutcome(c.outcome));
 }
 
 // ../core/view/feedback.ts
 function pressUnderWaySince(f) {
-  if (f?.is === "working" || f?.is === "sending") return f.at;
+  if (f?.is === "sending") return f.sentAt;
+  if (f?.is === "working") return f.at;
   if (f?.is !== "local") return null;
   return f.talkOutSince ?? (f.result.state === "pending" ? f.result.at : null);
 }
@@ -1864,7 +1929,7 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
   if (result && (result.state !== "done" || now - result.at < SETTLED_MS)) {
     const under = last.kind === "talk" ? feedbackOf(id, { ...last, result: void 0 }, void 0, turns, now, reportedAt) : null;
     const isTalkOut = under?.is === "working" || under?.is === "sending" || under?.is === "queued";
-    const talkOutSince = isTalkOut ? under.at : void 0;
+    const talkOutSince = isTalkOut ? under.is === "sending" ? under.sentAt : under.at : void 0;
     return { is: "local", result, ...talkOutSince === void 0 ? {} : { talkOutSince } };
   }
   if (!last || last.kind === "local") return null;
@@ -1887,7 +1952,12 @@ function feedbackOf(id, last, note, turns, now, reportedAt) {
       ...last.kind === "handoff" ? { isHandoff: true } : {}
     };
   if (pending === "sending")
-    return { is: "sending", label: deliveryLabel("sending", last.text, last.reply), at: last.at };
+    return {
+      is: "sending",
+      label: deliveryLabel("sending", last.text, last.reply),
+      at: last.at,
+      sentAt: queuedSentAt(last)
+    };
   if (isUnreported) return { is: "noComparison", at: last.at };
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: "stillOpen", at: last.at };
   const isHandedStep = last.kind === "handoff" && last.action.startsWith("step-");
@@ -2091,7 +2161,7 @@ function newsByRow({ ledger, prViews, lastActions }) {
       })
     ),
     ...prs.flatMap(
-      (pr) => blockingChecks(pr).map((c) => {
+      (pr) => listedChecks(pr).map((c) => {
         const id = prCheckId(pr, c);
         const untimedUrl = c.finishedAt === void 0 ? c.url ?? "" : null;
         return [id, timed(latest(c.finishedAt, pressed2(id)), untimedUrl)];
@@ -2313,9 +2383,9 @@ function dialogActivity(questions, outcome) {
   const head = `asked the user in a dialog${asked}`;
   switch (outcome.kind) {
     case "answered":
-      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+      return `${head}; answer: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`;
     case "timed-out":
-      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`;
     case "dismissed":
       return `${head}; the user dismissed it without answering`;
     case "open":
@@ -2707,12 +2777,11 @@ function parseReply(text2, source = null) {
       const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ""));
       if (isDesignField) rest.pop();
       const rec = rest.length > 1 ? rest.pop() : null;
-      const isAskTheChoices = readKind(kind) === "question" && readsAsChoices(ask ?? "");
-      if (!ask || isAskTheChoices) {
+      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
+      if (!ask || readKind(kind) === "question" && isOnlyItsAnswers(ask, options)) {
         newLines.push(void 0);
         continue;
       }
-      const options = readKind(kind) === "question" ? rest.flatMap((o) => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : [];
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === "question";
       const item = {
         kind: readKind(kind),
@@ -2757,7 +2826,11 @@ function parseReply(text2, source = null) {
 function readsAsChoices(field) {
   const text2 = field.trim();
   const choices = text2.split(/\s+\/\s+/);
-  return choices.length > 1 && !text2.endsWith("?") && choices.every((c) => c !== "" && words2(c).length <= 5);
+  return choices.length > 1 && !/[?？]$/.test(text2) && choices.every((c) => c !== "" && words2(c).length <= 5);
+}
+function isOnlyItsAnswers(ask, options) {
+  const parts = new Set(ask.split(/\s+\/\s+/).map((part) => part.trim().toLowerCase()));
+  return readsAsChoices(ask) && options.every((option) => parts.has(option.trim().toLowerCase()));
 }
 function isTakenUp(work, reply) {
   const key = [...keyWords(work)];
@@ -2913,15 +2986,29 @@ var REPORT_VERB = String.raw`\b(?:report|tell (?:me|us)|let (?:me|us) know)\b`;
 var CONDITIONAL_VERB = String.raw`\b(?:confirm|answer|say|reply|tell \w+)\b`;
 var SAME_CLAUSE = String.raw`(?:(?!\b(?:when|once|after)\b)(?:[^.;?!]|\.(?=\S)))*`;
 var NAMED_RESULTS_ASK = new RegExp(
-  String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}${SAME_CLAUSE}\bif\b${SAME_CLAUSE}\bor\b`,
+  String.raw`\bwhether\b|${REPORT_VERB}${SAME_CLAUSE}\bor\b|${CONDITIONAL_VERB}\s+if\b${SAME_CLAUSE}\bor\b`,
   "i"
 );
+
+// ../core/domain/field-limits.ts
+var RECORD_LIMITS = {
+  ask: 200,
+  context: 200,
+  options: 60,
+  option_notes: 120,
+  why: 120,
+  steps: 4e3,
+  title: 120,
+  detail: 600,
+  path: 300
+};
 
 // ../core/domain/earlier-answers.ts
 var K1 = 1.2;
 var B = 0.75;
 var RELATIVE_FLOOR = 0.22;
-var EARLIER_TEXT_CHARS = 200;
+var EARLIER_TEXT_CHARS = RECORD_LIMITS.ask;
+var shortText = (text2) => cutLine(text2.trim(), (t) => t.length <= EARLIER_TEXT_CHARS);
 var STOP_WORDS2 = new Set(
   `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
@@ -2979,8 +3066,8 @@ function bestEarlier(index, question, skip) {
 function earlierOf(match, isShown) {
   const { doc } = match;
   return {
-    ask: clipLabel(doc.ask, EARLIER_TEXT_CHARS),
-    answer: clipLabel(doc.answer, EARLIER_TEXT_CHARS),
+    ask: shortText(doc.ask),
+    answer: shortText(doc.answer),
     at: doc.at,
     repo: doc.repo,
     score: Math.round(match.score * 1e3) / 1e3,
@@ -3001,8 +3088,8 @@ function earlierLineOf(earlier, now) {
   const where = earlier.repo ? `, in ${earlier.repo},` : "";
   return {
     lead: "You answered ",
-    answer: earlier.answer,
-    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${earlier.ask}\u201D`
+    answer: shortText(earlier.answer),
+    rest: ` ${agoText(now - earlier.at)}${where} to \u201C${shortText(earlier.ask)}\u201D`
   };
 }
 
@@ -3303,14 +3390,18 @@ function inboxView({
     needsYou: placingOn(pressOutSinceWhere(isItemId)),
     findings: placingOn(pressOutSinceWhere(isFindingId))
   };
-  const isInPlace = (id, at, canUndo, last) => isSettledInPlace(
-    { at, canUndo, delivery: pendingDeliveryAt(last, now) },
+  const isInPlace = (id, at, canUndo, last, sentAt) => isSettledInPlace(
+    { at, canUndo, delivery: pendingDeliveryAt(last, now), ...sentAt !== void 0 && { sentAt } },
     isFindingId(id) ? placingFor.findings : placingFor.needsYou,
     id
   );
   const pressedSend = (c) => {
     const last = lastActions[c.id];
     return (c.how === "answered" || c.how === "done") && last?.kind === "mark" && last.at === closedAt(c) ? last : void 0;
+  };
+  const doneSentAt = (c) => {
+    const delivery = c.how === "done" ? pressedSend(c)?.delivery : void 0;
+    return delivery && "sentAt" in delivery ? delivery.sentAt : void 0;
   };
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
   const replyAfter = (c) => {
@@ -3327,7 +3418,13 @@ function inboxView({
   const isDiscarded = (c) => (discarded[c.id] ?? -Infinity) >= closedAt(c);
   const isPlaced = (c) => {
     const at = closedAt(c);
-    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(c.id, at, isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs), pressedSend(c)));
+    return replyAfter(c) !== null || !isDiscarded(c) && (isHeld(c) || isInPlace(
+      c.id,
+      at,
+      isAnswerHeld(c) || canUndoClose(c, at, now, settleWindowMs),
+      pressedSend(c),
+      doneSentAt(c)
+    ));
   };
   const placedItems = new Map(
     ledger.closed.filter((d) => d.item && !isOpen2(d.id) && isPlaced(d)).map((d) => [d.id, d])
@@ -3482,8 +3579,8 @@ function inboxView({
   };
 }
 function heldLabel(c) {
-  if (c.how === "answered") return `Answered: ${c.outcome}`;
-  return c.how === "claude" ? capitalized(c.outcome) : `Closed: ${c.outcome}`;
+  if (c.how === "answered") return `Answered: ${shortOutcome(c.outcome)}`;
+  return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
 }
 var NEXT_TRY = " It tries again after the next reply.";
 var FAILED_UPDATE_TEXT = {
@@ -3577,21 +3674,22 @@ function hash(text2) {
   h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
-function rowVersion(s, id) {
+function rowFields(s, id) {
   const l = s.ledger;
   if (id === "goal") {
     const o = l.overview;
-    return hash(canonical([o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null]));
+    return [o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null];
   }
   const item = l.items.find((row) => row.id === id);
-  return hash(
-    canonical([
-      item ? { ...item, dialog: void 0 } : null,
-      l.findings.find((row) => row.id === id) ?? null,
-      l.closed.findLast((row) => row.id === id) ?? null,
-      l.closedFindings.findLast((row) => row.id === id) ?? null
-    ])
-  );
+  return [
+    item ? { ...item, dialog: void 0 } : null,
+    l.findings.find((row) => row.id === id) ?? null,
+    l.closed.findLast((row) => row.id === id) ?? null,
+    l.closedFindings.findLast((row) => row.id === id) ?? null
+  ];
+}
+function rowVersion(s, id) {
+  return hash(canonical(rowFields(s, id)));
 }
 
 // ../core/view/press-preconditions.ts
@@ -3736,7 +3834,8 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const isNew = (x) => o === null || !isSubjectSeen(o, x);
   const heldIds = new Set(s.ledger.items.flatMap((i) => o?.askSubjects[i.id] ?? []));
   const isHeld = (x) => isOpen(x) && heldIds.has(x.id);
-  const oldestAskOf = (x) => isHeld(x) ? oldestAsk(s.ledger.items, o?.askSubjects ?? {}, x.id) : null;
+  const holdKindsOf = (x) => s.ledger.items.filter((i) => o?.askSubjects[i.id]?.includes(x.id)).map((i) => i.kind);
+  const askSettingMarkOf = (x) => isHeld(x) ? askSettingMark(asksLinkedTo(s.ledger.items, o?.askSubjects ?? {}, x.id)) : null;
   const placeOf = (x) => isHeld(x) ? "held" : x.status === "done" || x.status === "dropped" ? "closed" : x.status;
   const pageOrder = (x, y) => STATUS_PLACES.indexOf(placeOf(x)) - STATUS_PLACES.indexOf(placeOf(y)) || y.changedAt - x.changedAt;
   const goalParts = goalPage(o, s.ledger.items);
@@ -3789,7 +3888,8 @@ function statusPage(s, now, turn = { is: "fresh" }) {
   const ctx = {
     isNew,
     isHeld,
-    oldestAskOf,
+    holdKindsOf,
+    askSettingMarkOf,
     items: s.ledger.items,
     running,
     isTurnRunning: s.presence.isTurnRunning && turn.is === "fresh",
@@ -4940,7 +5040,7 @@ function questionHistory(previous, s, place, now) {
     how: c.how,
     isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
     earlier: c.item?.earlier ?? null,
-    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(shortText(c.outcome), shortText(c.item.earlier.answer)) : false
   }));
   const open2 = new Set(s.ledger.items.map((i) => keyOf2({ id: i.id, askedAt: i.at })));
   const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf2(q), q]));
@@ -5429,8 +5529,11 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
     if (m) named.set(m.id, Math.min(line, named.get(m.id) ?? Infinity));
   };
   const servesLines = ops.flatMap((op) => op.kind === "serves" ? [op] : []);
+  const replacedMilestones = /* @__PURE__ */ new Map();
   const ordered = withRestatedGoalAsMilestones(last, ops, readSetAt).map((op, n) => ({ op, n })).sort((x, y) => OP_ORDER[x.op.kind] - OP_ORDER[y.op.kind] || x.n - y.n);
-  for (const { op, n } of ordered) {
+  const keptRef = (ref) => replacedMilestones.get(ref) ?? ref;
+  for (const { op: written, n } of ordered) {
+    const op = written.kind === "next" || written.kind === "was" ? { ...written, ref: keptRef(written.ref) } : written.kind === "link" ? { ...written, subject: keptRef(written.subject) } : written;
     if (op.kind === "none" || op.kind === "suggest") continue;
     if (op.kind === "next") {
       markNamed(findMilestone(o, op.ref), n);
@@ -5438,9 +5541,12 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
       continue;
     }
     if (op.kind === "goal" || op.kind === "retire" || op.kind === "milestone" || op.kind === "serves") {
-      o = applyGoalOp(o, op, now, find, last ?? o, servesLines);
+      const earlier = o.milestones;
+      const line = op.kind === "serves" && op.milestone !== null ? { ...op, milestone: keptRef(op.milestone) } : op;
+      o = applyGoalOp(o, line, now, find, askIds, last ?? o, servesLines);
+      if (op.kind === "goal" && o.milestones !== earlier) for (const m of earlier) replacedMilestones.set(m.id, m.name);
       if (op.kind === "milestone") markNamed(findMilestone(o, op.name), n);
-      if (op.kind === "serves" && op.milestone !== null) markNamed(findMilestone(o, op.milestone), n);
+      if (line.kind === "serves" && line.milestone !== null) markNamed(findMilestone(o, line.milestone), n);
     } else if (op.kind === "head") {
       if (!isNumberOnly(op.title)) o.head = headAfter(o.head, op, answerWork(last?.subjects ?? [], o, now));
     } else if (op.kind === "link") {
@@ -5514,7 +5620,7 @@ function applyOps(last, ops, now, askIds, readSetAt = last?.goal?.setAt ?? null)
   const isTitleKept = !!o.head && !!last?.head && o.head.title === last.head.title;
   if (o.head && isDescriptionStale(o.head, isTitleKept, answerWork(last?.subjects ?? [], o, now)))
     o = { ...o, head: { ...o.head, description: "" } };
-  const settled = settleGoal(o, now, readSetAt, named);
+  const settled = settleGoal(o, now, readSetAt, named, askIds, last ?? o);
   return withSuggestion(nextRef === null ? settled : withNextMilestone(settled, nextRef, now), ops);
 }
 function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ?? null) {
@@ -5523,7 +5629,7 @@ function applyStatus(last, answer, now, askIds, readSetAt = last?.goal?.setAt ??
   const read = last?.goalRefused ? { ...last, goalRefused: null } : last;
   const o = changes ? applyOps(last, changes, now, askIds, readSetAt) : read;
   if (o === null) return null;
-  const settled = changes ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Map());
+  const settled = changes ? o : settleGoal(o, now, readSetAt, /* @__PURE__ */ new Map(), askIds, o);
   const isRemovedRead = settled.goalRemoved !== null && settled.goalRemoved.goal.setAt === readSetAt;
   const kept = settled.goalRemoved === null || isRemovedRead ? settled : { ...settled, goalRemoved: null };
   return withNoGoalNoted(kept, answer, askIds);
@@ -5867,7 +5973,7 @@ function presentedSession(session) {
 function herdrEnvelope(source, session, isTrimmed = false) {
   const shared = presentedSession(session);
   const { lastHerdrPress } = session;
-  const { projectFolder, isFetchingPrs, isReadFailed, isNextBuild, ...rest } = source;
+  const { projectFolder, isFetchingPrs, isReadFailed, isSendHeld, isNextBuild, ...rest } = source;
   return {
     format: HERDR_FORMAT,
     ...rest,
@@ -5875,6 +5981,7 @@ function herdrEnvelope(source, session, isTrimmed = false) {
     ...isTrimmed && { trimmed: true },
     ...isFetchingPrs && { isFetchingPrs: true },
     ...isReadFailed && { isReadFailed: true },
+    ...isSendHeld && { isSendHeld: true },
     ...isNextBuild && { isNextBuild: true },
     ...lastHerdrPress && { lastPress: lastHerdrPress },
     session: shared
@@ -6379,7 +6486,7 @@ var GOAL_PARTS = {
   "goal-when-clear": `Write GOAL when no goal is set, or <goal> says met, once the work shows the one outcome it is for. The person may name it, or the open subjects and the agent's plan lead to it, as when the agent says what outcome the person set or an ask's reason names the outcome its work serves. Check this on every exchange against <subjects> and <asks>, so an exchange that is only chat does not hide a goal the open work shows. Never write GOAL from a summary of finished work.`,
   "goal-finish-line": `A goal has a finish line someone could check, such as "2.5 in the store" or "the import ready to demo". A direction, such as "make search faster" or "keep the list tidy", gets no GOAL.`,
   "goal-wait": `When the next goal is not clear, write no GOAL and wait. Chat, one small fix, a few unrelated small asks, or wrapping up the met goal do not show one. A met goal stays until the next is set.`,
-  "goal-suggest": `While no goal runs, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal, which the person sets with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. After a met goal, it is the next outcome the finished work leads to, such as shipping what the goal built. Check it on every exchange, as for GOAL. Write SUGGEST when <suggested> no longer fits and an outcome does, SUGGEST: - when it no longer fits and none does, and nothing while it fits. When <next-goal> is there, answer it as it asks, even after NO CHANGE. Never make a suggestion up from chat, and never let one hold back GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
+  "goal-suggest": `While no goal runs, or <goal> says met, and the next goal is not clear enough for GOAL, keep one suggested goal, which the person sets with one press. It is the outcome the open work most likely leads to, with a finish line, written as GOAL writes a goal, with no milestones. After a met goal, it is the next outcome the finished work leads to, such as shipping what the goal built. Check it on every exchange, as for GOAL. A suggestion no longer fits once the exchange points to another next outcome, as when the reply recommends the next piece of work or an item in <asks> offers to start it: SUGGEST that outcome. Write SUGGEST when <suggested> no longer fits and an outcome does, SUGGEST: - when it no longer fits and none does, and nothing while it fits. When <next-goal> is there, answer it as it asks, even after NO CHANGE. Never make a suggestion up from chat, and never let one hold back GOAL. Never suggest the goal in <goal> or a goal in <removed>.`,
   "goal-not-again": `Never write the goal in <goal> or a goal in <removed> again, in any words. A removed goal stays removed until the person types it.`,
   "goal-typed-kept": `A goal marked (typed) is the person's: never reword, replace or retire it before it is met. Never write the goal into the head, a subject or a milestone.`,
   "goal-outcome-happened": `When the exchange shows the goal's outcome happened, as when its release shipped or its feature merged, write DONE for each open milestone, so the goal is met, and GOAL when the next goal is clear. Never RETIRE a goal whose outcome happened.`,
@@ -6390,7 +6497,7 @@ var GOAL_PARTS = {
   "milestone-no-work": `For a milestone marked ${NO_WORK_LINKED}, write SERVES for an open subject whose work is part of it, DONE when the exchange shows it done, or DROP when the goal no longer needs it. Never link other work just to fill it.`,
   "milestones-for-new-goal": `When <goal> says just set, the milestones shown belong to the goal before it, and each one your answer does not name goes. Write MILESTONE, with its status, name and where it stands, for each one the new goal keeps and each outcome it needs, so it has ${MILESTONES_MIN} to ${MILESTONES_MAX}.`,
   "serves-every-subject": `While a goal is set, write SERVES for each subject marked ? in <subjects> and each NEW subject, even when nothing else changed: the milestone its work is part of, or - when the goal does not need it. With GOAL, write SERVES for every open subject. Change a link only when what the work is for changed, or a subject under - turns out to be part of a milestone. Write LINK with a milestone id for an ask that holds up the milestone itself.`,
-  "serves-in-outcome": `A subject serves a milestone only when finishing it is part of that milestone's named outcome, as a crash fix is part of "Launch crash fixed". Work that only happens while a milestone is open is not, and a broad name such as "Fixes landed" is no home for whatever comes later: write - for it, even when nothing else serves the goal.`
+  "serves-in-outcome": `A subject serves a milestone only when finishing it is part of that milestone's named outcome, as a crash fix is part of "Launch crash fixed". Work that only happens while a milestone is open is not, and a broad name such as "Fixes landed" is no home for whatever comes later: write - for it, even when nothing else serves the goal. Work the goal cannot be met without, as when the person says it has to be done first, is part of the goal even when no milestone names it: write MILESTONE for its outcome and SERVES to it. - is only for work the goal does not need.`
 };
 function goalRules(without = []) {
   return Object.keys(GOAL_PARTS).filter((id) => !without.includes(id)).map((id) => `- ${GOAL_PARTS[id]}`).join(NL3);
@@ -6529,7 +6636,7 @@ Rules:
 - When the person files a piece for later, out of this session's plan, as into an issue or a backlog, write DONE with "filed for later". A piece the person sets aside to come back to in this session stays queued.
 - When the plan for a subject reverses, or another subject takes its work, write WAS with the plan it replaces. Use DROP with INTO when the work moved into another subject.
 - Write LINK for each item in <asks> that has no subject yet, or when another subject's work also waits on it, one line for each subject whose work waits on it. An ask that holds up no subject gets no LINK. Never write an open ask or its options into a subject: code marks the subject while the ask is open, and the inbox shows the ask.
-- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for an item in <running>: code draws it under its subject, with its label. That label says what the item is doing, so the subject's text never says it again in other words. It says what the label does not, such as what works or what is left: "CSV works, PDF left", not "building the PDF export" under "Adding PDF export". When a subject's text in <subjects> says only what one of its running items is doing, write SET with what it leaves out. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When an item finished, as <running> or the exchange shows, and no other item in <running> still works for its subject, a subject that stays working says in where it stands what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate laying out the PDF" or "delegate finished". When neither the exchange nor where it stands says what came of the finished item, say its work is not checked yet: "PDF done, not checked". Keep where it stands when it already says what came of the item or what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other. Once all of its own work has merged, it is DONE, even when another subject's work follows. A release still waits until it is published.
+- Write LINK for each item in <running> that has no subject yet, naming the subject whose work it does. Never write NEW for an item in <running>: code draws it under its subject, with its label. That label says what the item is doing, so the subject's text never says it again in other words. It says what the label does not, such as what works or what is left: "CSV works, PDF left", not "building the PDF export" under "Adding PDF export". Check each subject that has a running item on every exchange, even one about something else, such as a question or the goal's milestones: when its text in <subjects> says only what that item is doing, in any words, write SET with what the label leaves out, such as what works, what is left or whether its PR merged. When its result comes back in the exchange, change its subject with SET or DONE if the result changed where the subject stands. When an item finished, as <running> or the exchange shows, and no other item in <running> still works for its subject, a subject that stays working says in where it stands what works and what is left, so the person sees why it still works: "PDF works, merge left", not "delegate laying out the PDF" or "delegate finished". When neither the exchange nor where it stands says what came of the finished item, say its work is not checked yet: "PDF done, not checked". Keep where it stands when it already says what came of the item or what is left. When what is left is another subject's work, the subject waits on it: write waits-on-other. Once all of its own work has merged, it is DONE, even when another subject's work follows. A release still waits until it is published.
 - Check the head on every exchange against <subjects> and <finished>, not only against this exchange: work often moves on over many small exchanges with no one saying so. Write HEAD when <head> is empty, when it has no description while a subject is working or waits on something, when the person asks for work that is not part of what the head names, or when a subject is working that is not part of what the head names, as when the work the head names finished and the session started on other work. Write HEAD too when its description says the session is doing work that <finished> shows done, or work it is no longer doing: when the title still names the focus, keep it word for word and write a new description.
 - The head names the whole focus, which often spans several subjects. One of them finishing, the next one starting, or the person asking for the next one does not change the focus, so never retitle the head to the piece being worked on. Keep the head's title while a working subject is part of what it names. When the work it names finished and no subject is working, keep the title: queued work is not the focus until it starts. Never reword a head whose title and description both still hold, and never add progress, the next step or queued work to it.
 

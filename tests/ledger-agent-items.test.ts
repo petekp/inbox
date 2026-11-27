@@ -117,6 +117,28 @@ describe('items the agent recorded', () => {
     expect(choice.result).not.toContain("can't approve")
   })
 
+  test('a record with text longer than its row shows is refused and names the field, and text that fits is kept whole', () => {
+    const input = { kind: 'question', ask: ask.ask, options: ask.options }
+    const fits = 'The app quit and reopened 32 s later, with no crash report, so '.padEnd(200, 'x')
+    const kept = recordItem(CLAUDE_CODE, { ...EMPTY, turn: 1 }, { ...input, context: fits }, 1000, TOOL_FIELDS)
+    expect(kept.ledger.items[0]?.context).toBe(fits)
+
+    const long = recordItem(CLAUDE_CODE, kept.ledger, { ...input, context: `${fits}y` }, 1100, TOOL_FIELDS)
+    expect(long.result).toBe(
+      "Not recorded: context has 201 characters, more than the 200 the user's row shows. Shorten it and try again.",
+    )
+    expect(long.ledger).toBe(kept.ledger)
+    const note = recordItem(
+      CLAUDE_CODE,
+      EMPTY,
+      { ...input, option_notes: ['Adds a server', 'x'.repeat(121)] },
+      1000,
+      TOOL_FIELDS,
+    )
+    expect(note.result).toStartWith('Not recorded: item 2 of option_notes has 121 characters')
+    expect(note.ledger).toBe(EMPTY)
+  })
+
   test('a record again in the turn that rewords the ask and adds context replaces the row, while another question stays its own', () => {
     const options = ['Redis', 'Memory cache']
     const bare = recordItem(
@@ -231,8 +253,14 @@ describe('items the agent recorded', () => {
         'Tell the bot your org name or ID in the sign-in page',
         'Reply to the reviewer on GitHub or in Slack',
         'Let Sam know about the outage on Slack or by email',
+        'Confirm the 2FA prompt on your phone if GitHub sends one, or use a backup code',
+        'Answer the security questions if prompted, or use a recovery code',
+        'Sign in to npm and confirm the code if your phone or authenticator asks for one',
+        'Reply to the reviewer if they ask again, on GitHub or in Slack',
+        'Say yes if npm login asks to open the browser, or press Enter',
+        'Tell the bot your org name if it asks, or your org ID',
       ].map(resultsNote),
-    ).toEqual([false, false, false, false, false, false, false, false, false, false, false])
+    ).toEqual(Array(17).fill(false))
   })
 
   test("one stays open after 12 prompts, when the update's items expire", () => {

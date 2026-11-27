@@ -1,4 +1,4 @@
-import type { Closed, Delivery, LastAction, Ledger, Press, RowNote } from '../../types'
+import type { Delivery, LastAction, Ledger, Press, RowNote } from '../../types'
 import { reopenItem } from '../domain/ledger-close'
 import { messages } from '../domain/press-messages'
 import { pressed } from './pressed'
@@ -21,14 +21,9 @@ export type Effect =
 export type PressResult =
   { ledger: Ledger; last: LastAction | null; effects: Effect[]; reopenedId?: string; dropLast?: true } | { stale: true }
 
-export function needsDoneNotification(closed: Closed, turn: number): boolean {
-  return (
-    closed.how === 'done' &&
-    closed.outcome === 'done' &&
-    !closed.isSentToAgent &&
-    !closed.doneNotification &&
-    closed.item?.turn === turn
-  )
+/** Whether a row closed with Done still waits for the message that tells the agent, which only the current turn's tasks get. */
+export function isDoneNoticeDue(c: Ledger['closed'][number], turn: Ledger['turn']): boolean {
+  return c.how === 'done' && c.outcome === 'done' && !c.isSentToAgent && !c.doneNotification && c.item?.turn === turn
 }
 
 export function doneWake(
@@ -36,7 +31,7 @@ export function doneWake(
   ctx: { now: number; windowMs: number; isTurnRunning: boolean },
 ): { text: string; ids: string[] } | null {
   if (ctx.isTurnRunning) return null
-  const waited = ledger.closed.filter(c => needsDoneNotification(c, ledger.turn))
+  const waited = ledger.closed.filter(c => isDoneNoticeDue(c, ledger.turn))
   if (waited.length === 0 || waited.some(c => ctx.now - c.at < ctx.windowMs)) return null
 
   return { text: messages.done(waited.map(c => c.ask)), ids: waited.map(c => c.id) }

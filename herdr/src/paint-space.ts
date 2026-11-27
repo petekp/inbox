@@ -5,6 +5,8 @@ import { ROW_PAD_PT } from '../../core/view/layout'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import type { RowMotion } from './motion'
+import { swapPartFade } from './block-swap'
+import type { BlockSwapMotion } from './block-swap'
 import {
   CHILD_GAP,
   CONTROL_GAP,
@@ -16,8 +18,10 @@ import {
   SECTION_GAP,
 } from './paint-theme'
 import type { Paint } from './paint-theme'
-import { panelId, prHeadId, prTailId, restId, titleId } from './heights'
-import { prStatusHeight } from './pr-status'
+import { panelId, prHeadId, restId, titleId } from './heights'
+import { PR_TAIL_PARTS, prStatusHeight, prTailHeight, prTailId } from './pr-status'
+import { addedRise, heldLineDrop, lineRise } from './held-line'
+import { warningBoxId, warningRise } from './warning-line'
 import { underId } from './under-line'
 import { shortTitleOf } from './title-cut'
 import { shutTo } from './block-glide'
@@ -187,11 +191,14 @@ const titleHeightOf = (r: RowBlock, p: Paint): number | undefined => {
 /**
  * A row's title in a box whose height springs to `titleHeightOf`. The box clips. An opening title fades to its wrapped
  * form once its box comes to rest, and a closing title fades to its closed form while its box holds, before the box shrinks
- * (`stepTitle`). An open row's title box takes its content's height in a draw that takes heights at once.
+ * (`stepTitle`). In a draw that takes heights at once, the title box takes its content's height, as the row's box
+ * does, unless the title of a row that is not open is moving between its forms, whose box holds the move's height.
  */
 export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
   const key = titleId(r.id)
-  const height = isOpenRow(r) && p.isAtOnce(key) ? undefined : titleHeightOf(r, p)
+  const isTitleMoving = (p.motion.get(r.id)?.title ?? null) !== null
+  const isTakenAtOnce = p.isAtOnce(key) && (isOpenRow(r) || !isTitleMoving)
+  const height = isTakenAtOnce ? undefined : titleHeightOf(r, p)
 
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el))
 }
@@ -208,21 +215,49 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
   const panel = m?.isPanelLeftOut ? (p.heights.get(panelId(id)) ?? 0) : 0
   const former = () => (m?.former ? fitHeight(m.former, undefined, p) : undefined)
   if (b.kind === 'pr') {
-    const parts = [prHeadId(id), underId(id), prTailId(id)].map(key => p.heights.get(key))
-    const [head, status, tail] = parts
-    if (head === undefined || status === undefined || tail === undefined) return former()
+    const head = p.heights.get(prHeadId(id))
+    const status = p.heights.get(underId(id))
+    const tail = PR_TAIL_PARTS.map(part => prTailHeight(b, part, m, p) ?? p.heights.get(prTailId(part, id)))
+    const warning = p.heights.get(warningBoxId(id))
+    if (head === undefined || status === undefined || warning === undefined || tail.some(h => h === undefined))
+      return former()
+    const lines = tail.reduce((sum: number, h) => sum + (h ?? 0), warning + warningRise(b, m, p))
 
-    return head + (prStatusHeight(b, m, p) ?? status) + tail
+    return head + (prStatusHeight(b, m, p) ?? status) + lines
   }
   if (b.kind !== 'row') {
-    const measured = p.heights.get(id)
+    const formKey = m?.blockSwap?.formKey ?? null
+    const measured = p.heights.get(formKey ?? id) ?? (formKey !== null ? m?.blockSwap?.fromHeight : undefined)
 
-    return measured === undefined ? former() : measured - panel
+    return measured === undefined ? former() : measured - panel + warningRise(b, m, p)
   }
   const title = titleHeightOf(b, p)
   const rest = p.heights.get(restId(id))
 
-  return title === undefined || rest === undefined ? former() : 2 * padOf(b) + title + rest - panel
+  if (title === undefined || rest === undefined) return former()
+
+  const rise = lineRise(b, p.now, p.heights) + addedRise(b, p.now, p.heights) + warningRise(b, m, p)
+
+  return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + rise
+}
+
+/**
+ * A block that changes whole, `el`, fading from its former form to its new one: the former form fades out, and the new
+ * one shows nothing, or shows faint when the person's input brought it, until it measures, then fades in once its box
+ * is nearly at the new height. A block that keeps its kind measures its new form under the swap's `formKey` and glides
+ * from the height the swap kept, since its own key still holds its former form's height.
+ */
+function kindFadeEl(el: Element, b: Block, m: RowMotion, s: BlockSwapMotion, key: string, p: Paint): Element {
+  const height = s.isOut
+    ? undefined
+    : s.formKey !== null
+      ? p.heights.get(s.formKey)
+      : fitHeight(b, { ...m, former: null }, p)
+  const from = (s.formKey !== null ? s.fromHeight : fitHeight(s.from, undefined, p)) ?? height
+  const delay = height === undefined ? null : enterDelayMs(height, { x: from ?? height, v: 0 })
+  const fade = swapPartFade(s, delay)
+
+  return fadeEl(el, `kind ${key}`, fade.opacity, fade, p)
 }
 
 /**
@@ -236,13 +271,14 @@ function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element, st
   const isRow = b.kind === 'row'
   const isAtOnce = isRow ? p.isAtOnce(titleId(id)) || p.isAtOnce(restId(id)) : p.isAtOnce(id)
   const measured = fitHeight(b, m, p)
+  const formKey = m?.blockSwap?.formKey ?? null
   const atRest = isAtOnce || b.kind === 'empty' ? undefined : measured
   const open = isAtOnce ? undefined : (measured ?? 0)
   const height = m?.box === 'shut' ? 0 : m?.box === 'open' ? open : atRest
 
   return springBox(`fit ${m?.springId ?? id}`, height)
     .when(strokes.length > 0, e => e.relative())
-    .child(isRow ? el : sizeEl(id, p, el))
+    .child(isRow ? el : sizeEl(id, p, formKey !== null ? sizeEl(formKey, p, el) : el))
     .children(strokes)
 }
 
@@ -315,7 +351,9 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     if (!look || !f) throw new Error(`no look for block ${b.id}`)
     const { m, isShown, glide, fade } = look
     const key = m?.springId ?? b.id
-    const drawing = v_flex().id(`drawing ${key}`).child(el(b))
+    const drawn = v_flex().id(`drawing ${key}`).child(el(b))
+    const drawing =
+      m?.blockSwap && m.blockSwap.parts === null && !m.box ? kindFadeEl(drawn, b, m, m.blockSwap, key, p) : drawn
     const slide = (e: Element): Element =>
       m?.box
         ? e

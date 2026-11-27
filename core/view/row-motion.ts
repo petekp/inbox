@@ -21,13 +21,14 @@ export const SLIDE_PX = 8
 
 /**
  * How long the content of a space that opens to `height` px, from none at rest or from `from`, waits before it fades
- * in, in ms: until the space stays within half of `SLIDE_PX` of open, so the edge of a space still opening never cuts
- * the letters of content that slides down into it. A space that was shutting keeps shutting for a moment before it
- * turns, so the wait follows its speed as well as its height. A tall space comes the last few px slowly, so the wait is
- * at most what lets the fade end as the height spring comes to rest.
+ * in, in ms: until the space stays within `slackPx` of open, half of `SLIDE_PX` by default, so the edge of a space
+ * still opening never cuts the letters of content that slides down into it. A space that slides with its content gains
+ * nothing from the slide, so its slack is the space under its content. A space that was shutting keeps shutting for a
+ * moment before it turns, so the wait follows its speed as well as its height. A tall space comes the last few px
+ * slowly, so the wait is at most what lets the fade end as the height spring comes to rest.
  */
-export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 }): number {
-  const at = springFrames(from, height).findLastIndex(x => height - x > SLIDE_PX / 2) + 1
+export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 }, slackPx = SLIDE_PX / 2): number {
+  const at = springFrames(from, height).findLastIndex(x => height - x > slackPx) + 1
 
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
 }
@@ -116,7 +117,8 @@ export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
  * row, one opening or growing in open, and a row closing, settling or leaving from the open form. `entersSettled` marks
  * a row growing in settled, and `leavesSettled` a row opening or closing from its settled form, as after Undo. A row
  * Undo brought back that opens or closes while its settled form still fades out keeps that fade: it moves as if Undo
- * had moved it there, from when Undo did (`isSettledFormFading`).
+ * had moved it there, from when Undo did (`isSettledFormFading`). `entersFaint` marks a line growing in that a
+ * press or its answer brought (`enteredByPress`).
  */
 export type RowTrack = {
   state: RowState
@@ -124,6 +126,7 @@ export type RowTrack = {
   hasOpenForm: boolean
   entersSettled?: true
   leavesSettled?: true
+  entersFaint?: true
 }
 
 /**
@@ -203,6 +206,14 @@ export function stepRow(
 
   return rest(next, form, target, now)
 }
+
+/**
+ * `track` as `stepRow` gave it for a line of a row whose press is out or just answered. A line that starts to
+ * grow in there shows at `FAINT_OPACITY` in that draw, so the press shows at once, faint enough that the edge of its
+ * growing space may cut it. It fades to full once its space is nearly open, through `turnBackFades`.
+ */
+export const enteredByPress = (track: RowTrack | null, now: number): RowTrack | null =>
+  track?.state === 'entering' && track.since === now ? { ...track, entersFaint: true } : track
 
 function entering(form: Exclude<Form, 'gone'>, now: number): RowTrack {
   const track: RowTrack = { state: 'entering', since: now, hasOpenForm: form === 'open' }

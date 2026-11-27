@@ -3,7 +3,6 @@ import type { FoldKind } from '../../types'
 import { groupEmptyText } from '../../core/view/banners'
 import { RESULT_MARK_CELLS, toneSvg, undoSvg } from './desktop-svg'
 import { closedTitleTint } from './pane-title-tint'
-import { desktopTextPt } from './desktop-metrics'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import type { CountsUnits } from '../../core/view/status-folds'
 import type { FoldProps } from './fold-client'
@@ -19,11 +18,11 @@ import { childPos, type PaneRowLines } from './pane-row-lines'
 import { type ClosedLine, settledScrollKey } from './pane-selection'
 import {
   DESKTOP_CELL_PT,
-  DESKTOP_SIDE_CELLS,
   DESKTOP_HAIR_LINES,
   DESKTOP_LINE_PT,
   DESKTOP_ROW_PT,
   DESKTOP_MARK_CELLS,
+  UNDO_CELLS,
   DESKTOP_LIST_MARGIN,
   DESKTOP_ROW_PAD,
   DESKTOP_SECTION_SPACE,
@@ -32,7 +31,6 @@ import {
   ROW_COLUMNS,
   TERMINAL_SIDE_CELLS,
   TREE_LINE_AT,
-  UNDO_CELLS,
   UNDO_HEIGHT_PT,
 } from './pane-sizes'
 import { exactly, type Lines } from './pane-status-tops'
@@ -41,7 +39,7 @@ import type { RowPress } from '../../core/domain/presses'
 import { foldGapRows } from '../../core/view/row-parts'
 import {
   canUndoRefused,
-  closedLineAction,
+  closedLinePlan,
   DOT,
   ROW_COPY,
   earlierLabel,
@@ -55,7 +53,15 @@ import {
   settledTone,
   shortAgo,
 } from '../../core/view/rows'
-import { settledTitleLine, terminalSettledTitle, type TreePos } from './terminal-text'
+import {
+  SETTLED_LINE_GAP,
+  TERMINAL_UNDO_LABEL,
+  desktopSettledLine,
+  terminalSettledCells,
+  terminalSettledLabel,
+  terminalSettledTitle,
+  type TreePos,
+} from './terminal-text'
 import { SETTLED_MS } from '../../core/view/timing'
 import type { PressAreaProps } from './press-client'
 
@@ -232,7 +238,7 @@ export function paneRowParts(
     )
   /** A Closed line's press: the Undo of a refused notification, or Reopen on a row the person dismissed. */
   const lineAction = (d: ClosedLine) => {
-    const action = closedLineAction(d)
+    const action = closedLinePlan(d).action
     if (!action) return null
     if (canUndoRefused(d.delivery)) return undoButton(action.press, null)
     return (
@@ -414,7 +420,7 @@ export function paneRowParts(
   const svgClientElements = hasClient && 'Svg' in elements ? elements : null
   const undoButton = (undo: RowPress | PrPress, at: number | null) => {
     const key = `undo-${pressRowId(undo)}`
-    const label = ` ↺ ${UNDO_KEY}: ${ROW_COPY.undo} `
+    const label = TERMINAL_UNDO_LABEL
     const onPress = (press: UiPressArgument) => runPress(undo, press)
     if (svgClientElements) {
       followUpPresses.set(key, onPress)
@@ -472,13 +478,14 @@ export function paneRowParts(
     { label, at, delivery, closedAs, reply }: SettledState,
     undo: RowPress | PrPress | null,
     mark: ResultMark | null,
+    textCells: number,
     titleColor?: string,
   ) => (
     <Box flexDirection="column">
       <Text wrap="truncate-end" color={titleColor ?? pal.muted}>
         {what}
       </Text>
-      <Box position="relative" flexDirection="row" columnGap={2}>
+      <Box position="relative" flexDirection="row" columnGap={SETTLED_LINE_GAP}>
         {undo ? (
           <Box
             key={settledScrollKey(`undo-${pressRowId(undo)}`, settledLayout)}
@@ -494,21 +501,13 @@ export function paneRowParts(
           `settled-${what}`,
           titleColor ?? pal.muted,
           <Text wrap="truncate-end" color={settledTone({ delivery, closedAs }) === 'done' ? pal.tone.done : pal.muted}>
-            {settledLabel(label, delivery, reply)}
+            {terminalSettledLabel(settledLabel(label, delivery, reply), textCells, mark !== null, undo !== null)}
           </Text>,
         )}
         {undo ? undoButton(undo, at) : null}
       </Box>
     </Box>
   )
-  /** A desktop settled row's title and label, measured against its text column, whose side keeps Undo's place. */
-  const desktopSettledLine = (title: string, state: SettledState) => {
-    const sideCells = 1 + (state.offersUndo ? UNDO_CELLS : DESKTOP_SIDE_CELLS)
-    const linePt = (listColumns - DESKTOP_MARK_CELLS - sideCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
-    const label = settledLabel(state.label, state.delivery, state.reply)
-
-    return settledTitleLine(title, label, text => desktopTextPt(text) <= linePt)
-  }
   const closedTitleColor = closedTitleTint({ look, pal, now, ui })
   const settledRow = ({ settled: r, state }: Extract<Entry, { settled: RowView }>, pos: TreePos) => {
     const undo = r.actions.find(a => a.press.action === 'undo')?.press ?? null
@@ -530,6 +529,7 @@ export function paneRowParts(
             state,
             undo,
             mark,
+            terminalSettledCells(listColumns, r.type !== 'finding'),
             closedTitleColor(r.id, state),
           ),
         )}
@@ -543,7 +543,7 @@ export function paneRowParts(
     mark: ResultMark,
     titleColor?: string,
   ) => {
-    const { title, after } = desktopSettledLine(r.title, state)
+    const { title, after } = desktopSettledLine(r.title, state, listColumns)
     const label = <Text color={pal.muted}>{after.text}</Text>
 
     return desktopFrame({

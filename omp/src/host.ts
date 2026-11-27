@@ -35,6 +35,8 @@ import { demoSource } from './demo'
 import { bandLines, withScreenReadFailed } from './panel'
 import type { InboxModel, PanelScreen } from './panel'
 import { wrapText } from './panel-text'
+import { countCellsAsOmp, panelView, screenRows } from './panel-view'
+import { inboxModel } from './inbox-model'
 import { styleOf } from './theme'
 import type { OmpState } from './state'
 import { recordMatchesNow, useQuestionHistory } from './state'
@@ -133,33 +135,6 @@ const defaultDeps: HostDeps = {
   registryFolder: registryFolder(process.env),
 }
 
-/** Orders models newest first by the `major.minor.patch` revision omp classifies from each id. */
-function byNewestRevision(a: Model, b: Model): number {
-  const parts = (m: Model) => (m.identity.revision ?? '0.0.0').split('.').map(Number)
-  const [x, y] = [parts(a), parts(b)]
-  const differing = x.findIndex((n, i) => n !== y[i])
-
-  return differing === -1 ? 0 : (y[differing] ?? 0) - (x[differing] ?? 0)
-}
-
-/**
- * The inbox model: the person's `@inbox` role when it names a model omp can use. omp's `resolve` returns nothing for
- * an unset role, an unknown model or one with no sign-in, and the inbox then falls through. A model that resolves
- * but fails when called fails that update like any other.
- * Next the newest Sonnet model the person's providers offer, since the inbox model evals pass on Sonnet.
- * omp's model lists also hold retired Sonnets, which no longer answer. The `anthropic` provider is preferred.
- * Otherwise omp's `@smol` role.
- */
-function inboxModel(ctx: ExtensionContext): Model | null {
-  const sonnets = ctx.models
-    .list()
-    .filter(m => m.identity.family === 'sonnet')
-    .toSorted(byNewestRevision)
-  const sonnet = sonnets.find(m => m.provider === 'anthropic') ?? sonnets[0]
-
-  return ctx.models.resolve('@inbox') ?? sonnet ?? ctx.models.resolve('@smol') ?? null
-}
-
 export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inbox {
   const dir = deps.stateDir(pi)
   useQuestionHistory(deps.questionHistory?.(dir) ?? null)
@@ -179,7 +154,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
   function askFor(ctx: ExtensionContext, id: string): SessionHost<OmpState>['ask'] {
     return async (prompt, system, _kind, report) => {
-      const model = inboxModel(ctx)
+      const model = inboxModel(ctx.models)
       if (!model) {
         report?.({ model: 'none', error: 'omp offers no model for the inbox', cause: 'error' })
         return null
@@ -233,7 +208,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   }
 
   const inboxModelOf = (ctx: ExtensionContext): InboxModel => {
-    const model = inboxModel(ctx)
+    const model = inboxModel(ctx.models)
 
     const keys = ctx.modelRegistry.authStorage.keys
     const hasSignIn = (provider: string) => keys.source(provider) !== undefined || keys.keyless(provider)
@@ -305,6 +280,8 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
   // `previousSessionFile`. A `/branch` in the same file keeps the id, and the fork step then finds nothing to copy.
   pi.on('session_branch', (event, ctx) => start(ctx, event.previousSessionFile))
   pi.on('session_shutdown', turns.onSessionShutdown)
+  // omp sends session_clear at `/clear` from 18.20.1. Older omp never sends it, and the pinned types do not list it.
+  ;(pi.on as (event: string, handler: typeof turns.onSessionClear) => void)('session_clear', turns.onSessionClear)
   pi.on('before_agent_start', turns.onBeforeAgentStart)
   pi.on('input', turns.onInput)
   pi.on('agent_start', (event, ctx) => {
@@ -416,7 +393,7 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 
   async function openPanelUi(ctx: ExtensionContext, isDemo: boolean): Promise<void> {
     const openedAt = deps.now()
-    const { parseKey, extractPrintableText, truncateToWidth } = await import('@oh-my-pi/pi-tui')
+    const tui = await import('@oh-my-pi/pi-tui')
     const source = isDemo
       ? demoSource({
           now: deps.now,
@@ -429,35 +406,32 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
       : liveSource(ctx)
     hideBand(ctx)
     if (!isDemo) await inbox.openPanel(ctx, openedAt)
+    // omp 19.2 calls no dispose on a node view, so the panel is disposed once the view closes.
+    let dispose = () => {}
     try {
-      await ctx.ui.custom<null>((tui, theme, _keybindings, done) => {
+      await ctx.ui.custom<null>((ui, theme, _keybindings, done) => {
         const panel = createPanel({
           source,
           style: styleOf(theme),
           now: deps.now,
           openedAt,
-          requestRender: () => tui.requestRender(),
+          requestRender: () => shown.requestRender(),
           close: () => done(null),
           timers: {
             every: (fn, ms) => ctx.setInterval(fn, ms),
             after: (fn, ms) => ctx.setTimeout(fn, ms),
             stop: handle => ctx.clearTimer(handle as never),
           },
-          height: () => Math.max(10, tui.terminal.rows - 4),
+          height: () => Math.max(10, screenRows(ui) - 4),
         })
+        const shown = panelView(tui, ui, panel)
+        dispose = shown.dispose
         void panel.start()
 
-        return {
-          render: width => panel.render(width).map(line => truncateToWidth(line, width)),
-          handleInput: raw => {
-            const key = parseKey(raw) ?? ''
-            panel.handleInput(key, extractPrintableText(raw))
-          },
-          invalidate: () => {},
-          dispose: () => panel.dispose(),
-        }
+        return shown.view as never
       })
     } finally {
+      dispose()
       if (!isDemo) inbox.closePanel(ctx)
       showBand(ctx)
     }
@@ -500,5 +474,6 @@ export function createInbox(pi: ExtensionAPI, deps: HostDeps = defaultDeps): Inb
 }
 
 export default function (pi: ExtensionAPI): void {
+  void import('@oh-my-pi/pi-tui').then(countCellsAsOmp)
   createInbox(pi)
 }

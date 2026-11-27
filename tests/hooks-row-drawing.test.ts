@@ -158,6 +158,32 @@ test('in a theme without tone colors, a replied question’s ✓ and its label t
   expect(await doneMark()).toBe('suggestion')
 })
 
+test('in the terminal, a settled row’s long result label is cut at a word with an ellipsis, not in the middle of one', async ($, on) => {
+  const clock = mock.clock(on, { now: 1_000_000 })
+  world($, on, [])
+  w.paneState = { isShown: true, isFocused: true }
+  await $.session.start({ cwd: '/tmp/project', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'add a greeting cli', wait: false, origin: { kind: 'composer' } })
+  await $.turn.complete({
+    answer: 'Plan ready. 1. Node or Python? 2. Call it greet?',
+    durationMs: 5,
+    isAborted: false,
+    turnId: 't1',
+    reason: 'answer',
+  })
+  await clock.settle()
+  const pane = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 50 } })
+  const reason = 'Deno, and then call the binary greet so the whole team can find it later'
+  await $.tool.call({ tool: 'mcp__inbox__close', id: 'i1', reason } as never)
+  await clock.settle()
+  const shown = /Closed by Claude: (.*…)/.exec((await pane.find({ key: 'settled-i1' }))?.text ?? '')?.[1] ?? ''
+  const kept = shown.slice(0, -1)
+
+  expect(shown).not.toBe('')
+  expect(reason.startsWith(kept)).toBe(true)
+  expect(reason.charAt(kept.length)).toBe(' ')
+})
+
 for (const surface of ['terminal', 'desktop'] as const)
   test(`in the ${surface} look, a handed-off task’s result label takes the done color of its ✓`, async ($, on) => {
     mock.clock(on, { now: 1_000_000 })

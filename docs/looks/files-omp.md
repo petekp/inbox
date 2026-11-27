@@ -28,9 +28,11 @@ Part of [the look map](../looks.md#files).
 | `omp/src/question-history.ts` | omp host. The question history's file calls through `node:fs`, and the sessions omp keeps, which seed its first history files. `createInbox` turns the history on from `HostDeps.questionHistory`. |
 | `omp/src/commands.ts` | omp host. Opens links and paths for omp's `SessionHost`. |
 | `omp/src/theme.ts` | omp host. Maps the panel's styles onto omp's theme. |
+| `omp/src/panel-view.ts` | omp host. Hands omp the panel as a pi-tui `canvas` node on omp 19.2 and as a rows object on omp 18, as the installed pi-tui's exports show. |
+| `omp/src/inbox-model.ts` | omp host. Picks the model for the inbox's calls from the person's providers. |
 | `omp/src/texts.ts` | omp host. The `OMP` host names the shared guidance uses. |
 | `omp/src/panel.ts` | omp adapter. The panel's ui state, which is the shared controller's `UiState` plus the panel's focus, scroll and open row, its `LookConfig`, the screen it draws, and `drawPanel` and the band. It and the `panel-*.ts` files import no omp package. |
-| `omp/src/panel-lines.ts` | omp adapter. The `Line` and `Entry` types, the lines for rows, buttons and Closed groups, and which button of a line or a Status target has focus. |
+| `omp/src/panel-lines.ts` | omp adapter. The `Line` and `Entry` types, the lines for rows, buttons and Closed groups, and which button of a line or a Status target has focus. `withUnshownPress` draws a press from its key until the view shows it. |
 | `omp/src/panel-entries.ts` | omp adapter. Each tab's entries: the Asks and Finds groups, the stop line, the PRs tab, the Status page and Help. |
 | `omp/src/panel-keys.ts` | omp adapter. `handleKey`, which maps each key to controller events and the panel's own focus and scroll, `applyEvents`, which runs them through `reduceUi`, and `selectedLine`, the line the cursor draws on. |
 | `omp/src/panel-text.ts` | omp adapter. Measures, cuts and wraps text that holds ANSI styles. |

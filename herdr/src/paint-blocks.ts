@@ -1,19 +1,19 @@
 import { div } from 'gpui-kit'
-import type { Color, Element } from 'gpui-kit'
+import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import { partPt } from '../../core/view/row-parts'
 import type { RowPart } from '../../core/view/row-parts'
 import { LEAVE_FADE_MS, ROW_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import { isOpenRow } from './blocks'
-import type { Aged, Block, BodyLine, Button, LineBlock, PrBlock, RowBlock, Tone } from './blocks'
+import type { Block, BodyLine, Button, LineBlock, PrBlock, RowBlock } from './blocks'
 import {
-  BUTTON_LABEL_X,
   CONTROL_GAP,
   EDGE,
   END_SPACE,
   INSET,
   INSIDE_GAP,
   LINE_HEIGHT,
+  LIST_GAP,
   MARK_W,
   NEST,
   SEP,
@@ -31,111 +31,28 @@ import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
 import type { SwapMotion } from './form-swap'
 import { padOf, sizeEl, titleEl } from './paint-space'
-import { PATH_X, lineColor } from './paint-strokes'
-import { panelId, prHeadId, prTailId, restId } from './heights'
-import { prStatusEl } from './paint-pr-status'
+import { panelId, prHeadId, restId } from './heights'
+import { prStatusEl, prTailEls } from './paint-pr-status'
 import type { PrLine } from './pr-status'
 import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { titleTextEl } from './paint-title-text'
-import { titleLineEls } from './paint-row-lines'
+import { addedLinesEls, titleLineEls } from './paint-row-lines'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
-import { DOT } from '../../core/view/rows'
-import { ARM_END, answersEl, armEl, isSideBySide, trunkEl } from './paint-tree'
-
-const NO_BREAK_SPACE = '\u00a0'
-
-/**
- * A paragraph of two colors. gpui-kit has no inline span, so each word is an item of a wrapping row, followed by a
- * no-break space. That space is as wide as the font's own at any text size, and a line end does not trim it. A word
- * wider than the line wraps inside its item. The paragraph flows as one text, and its wrapped lines start back at the
- * row's left edge.
- */
-const wordEls = (text: string, color: Color): Element[] =>
-  text
-    .split(' ')
-    .filter(word => word)
-    .map(word => statusPartEl(`${word}${NO_BREAK_SPACE}`).text_color(color))
-
-/**
- * A line of text `indent` in from its row's edge. A line of DOT-joined parts, such as a fold's note or a thread's place
- * and author, breaks between its parts, so no line starts or ends with a dot.
- */
-const partedTextEl = (text: string, color: Color, indent: number, t: Theme): Element =>
-  text.includes(DOT)
-    ? div()
-        .pl(indent)
-        .pt(INSIDE_GAP)
-        .child(
-          partedEl(
-            text.split(DOT).map(part => statusPartEl(part).text_color(color)),
-            t.muted,
-          ),
-        )
-    : lineEl(text, color, indent)
-
-/** A press's result under its buttons. An aged result's age draws faint whatever the result's color. */
-function feedbackEl(f: { text: string; tone: Tone; aged?: Aged }, t: Theme): Element {
-  const cut = f.aged?.lead.length ?? f.text.length
-  if (f.tone === 'muted' || cut >= f.text.length) return partedTextEl(f.text, colorOf(t, f.tone), 0, t).pt(CONTROL_GAP)
-
-  return h_flex()
-    .flex_wrap()
-    .pt(CONTROL_GAP)
-    .children([...wordEls(f.text.slice(0, cut), colorOf(t, f.tone)), ...wordEls(f.text.slice(cut), faintOf(t))])
-}
-
-/** A line under a row's title, `above` under the part above it, with its part of the tree that hangs from the row's mark. */
-const bodyLineEl = (
-  l: Omit<BodyLine, 'part'>,
-  above: number,
-  t: Theme,
-  isSelected: boolean,
-  answers: Button[] = [],
-  p: Paint | null = null,
-  isInert = false,
-): Element => {
-  const color = lineColor(t, isSelected ? t.selected : t.background)
-  if (answers.length > 0 && p) {
-    const trunk =
-      l.tree === 'tee' ? [trunkEl(0, null, t, isSelected)] : l.tree === 'last' ? [trunkEl(0, above, t, isSelected)] : []
-
-    return h_flex()
-      .relative()
-      .min_w(0)
-      .pt(above)
-      .child(answersEl(answers, p, isInert, l.tree === 'last', t, isSelected))
-      .children(trunk)
-  }
-  const armAt = above + LINE_HEIGHT / 2
-  const arm = armEl(PATH_X - EDGE + 1, ARM_END, armAt, color)
-  const strokes =
-    l.tree === 'trunk'
-      ? [trunkEl(0, null, t, isSelected)]
-      : l.tree === 'tee'
-        ? [trunkEl(0, null, t, isSelected), arm]
-        : l.tree === 'last'
-          ? [trunkEl(0, armAt + 1, t, isSelected), arm]
-          : []
-  const line = l.lead
-    ? h_flex()
-        .flex_wrap()
-        .pl(MARK_W)
-        .pt(above)
-        .children([...wordEls(l.lead, t.foreground), ...wordEls(l.text, colorOf(t, l.tone))])
-    : partedTextEl(l.text, colorOf(t, l.tone), l.isOptionNote ? MARK_W + BUTTON_LABEL_X : MARK_W, t).pt(above)
-
-  return line.relative().children(strokes)
-}
+import { NO_BREAK_SPACE, feedbackEl, wordEls } from './paint-text'
+import { isSideBySide, trunkEl } from './paint-tree'
+import { bodyLineEl } from './paint-body-line'
+import { isWarningDrawn, rowWarningEl, warningBoxEl } from './paint-warning'
+import type { CountLeft } from './heading-count'
 
 function rowEl(r: RowBlock, p: Paint): Element {
   const { t } = p
   const m = p.motion.get(r.id)
-  const isLeaving = m?.state === 'leaving'
+  const isInert = m?.state === 'leaving' || m?.blockSwap?.isOut === true
   const isOpen = isOpenRow(r)
-  const isPressable = r.isSelectable && !isLeaving
+  const isPressable = r.isSelectable && !isInert
   const swap = m?.swap ?? null
   const shown = swap?.from ?? r
   const hasTree = (m?.closing ?? shown).body.some(l => l.tree !== undefined)
@@ -148,26 +65,25 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .when(hasTree, e => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk)))
     .child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark)
     .child(titleTextEl(r, p, titleColorOf(r, p)))
-    .when(r.age !== null, e =>
-      e.child(
-        div()
-          .flex_none()
-          .ml(INSET)
-          .text_color(faintOf(t, r.isSelected ? t.selected : t.background))
-          .child(r.age ?? ''),
-      ),
-    )
+    .when(shown.age !== null, e => {
+      const age = div()
+        .id(`age ${r.id}`)
+        .flex_none()
+        .ml(INSET)
+        .text_color(faintOf(t, r.isSelected ? t.selected : t.background))
+        .child(shown.age ?? '')
+      return e.child(swap?.isAgeSwapped ? swapFadeEl(swap, age) : age)
+    })
   const lines = titleLineEls(
     r,
     shown,
     m,
     p,
     (l, n) => {
-      const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
-      const el = bodyLineEl(hasTree ? { ...l, tree: 'trunk' } : l, above, t, r.isSelected)
-
+      const el = bodyLineEl(l, partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus'), t, r.isSelected)
       return l.isHidden ? el.opacity(0) : el
     },
+    n => (hasTree ? panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`)) : null),
     el => panelFadeEl(r, m, p, el),
   )
   const titleEnd: RowPart = lines.length > 0 ? 'titleStatus' : 'title'
@@ -192,7 +108,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .id(`form ${r.id}`)
           .when(swap !== null, e => swapFadeEl(swap, e))
           .children(lines)
-          .children(panelEl(r, shown, m, p, isLeaving, titleEnd)),
+          .children(panelEl(r, shown, m, p, isInert, titleEnd)),
       ),
     )
 }
@@ -200,7 +116,8 @@ function rowEl(r: RowBlock, p: Paint): Element {
 /**
  * A row's body lines, each `partGap` under the part above, from `titleEnd`, the title's last part. Answers that
  * `isSideBySide` lets share the first answer's line, as the last branch, with the recommendation's reason on one line
- * under them in place of each answer's note. Returns the lines and the last part they draw.
+ * under them in place of each answer's note. The stopped warning's box, from `warn`, goes above the answers. Returns the
+ * lines, the last part they draw and whether they hold the warning's box.
  */
 function bodyEls(
   from: RowBlock,
@@ -208,7 +125,8 @@ function bodyEls(
   p: Paint,
   isInert: boolean,
   titleEnd: RowPart,
-): { els: Element[]; end: RowPart } {
+  warn: (gap: number, gapBelow: number, isOnTree: boolean) => Element | null,
+): { els: Element[]; end: RowPart; isWarned: boolean } {
   const buttonOf = (id: string | undefined) => from.buttons.filter(b => b.id === id)
   const sideBySide = isSideBySide(from, p) ? from.sideBySide : null
   const answers = sideBySide ? from.buttons.filter(b => sideBySide.optionIds.includes(b.id)) : []
@@ -234,15 +152,19 @@ function bodyEls(
       })
     : from.body
   let end = titleEnd
-  const els = shown.map(({ part, ...l }) => {
-    const above = partPt(end, part)
-    end = part
-    const buttons = part === 'answers' ? answers : buttonOf(l.optionId)
+  let isWarned = false
+  const els = shown.map(l => {
+    const isFirstAnswer = !isWarned && (l.optionId !== undefined || l.part === 'answers')
+    const warning = isFirstAnswer ? warn(partPt(end, l.part), partPt('status', l.part), l.tree !== undefined) : null
+    const above = warning ? 0 : partPt(end, l.part)
+    isWarned ||= isFirstAnswer
+    end = l.part
+    const buttons = l.part === 'answers' ? answers : buttonOf(l.optionId)
 
-    return bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)
+    return [...(warning ? [warning] : []), bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)]
   })
 
-  return { els, end }
+  return { els: addedLinesEls(from, shown, els, p), end, isWarned }
 }
 
 /**
@@ -271,14 +193,24 @@ function panelEl(
   const actions = from.buttons.filter(b => !b.isOption)
   const hasAnswers = from.buttons.some(b => b.isOption)
   const followsAnswers = hasAnswers && actions[0]?.emphasis !== 'quiet'
-  const body = bodyEls(from, r.isSelected, p, isInert, titleEnd)
+  const warn = (gap: number, gapBelow: number, isOnTree: boolean) => {
+    if (!isWarningDrawn(from, m, p)) return null
+    const line = (text: string) =>
+      bodyLineEl({ part: 'status', text, tone: 'error' }, 0, p.t, r.isSelected).pb(gapBelow)
+    const box = warningBoxEl(r.id, from.warning ?? null, p, line, from !== r)
+    return rowWarningEl(box, gap, isOnTree ? trunkEl(0, null, p.t, r.isSelected) : null)
+  }
+  const body = bodyEls(from, r.isSelected, p, isInert, titleEnd, warn)
   const end: RowPart = from.field ? 'field' : actions.length > 0 ? 'buttons' : body.end
+  const next = from.field ? 'field' : 'buttons'
+  const warning =
+    !body.isWarned && end !== body.end ? warn(partPt(body.end, next), partPt('status', next), false) : null
+  const gapOf = (part: typeof next) => (warning ? 0 : partPt(body.end, part))
   const parts = [
     ...body.els,
-    ...(actions.length > 0
-      ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, partPt(body.end, 'buttons'))]
-      : []),
-    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert).pt(partPt(body.end, 'field'))] : []),
+    ...(warning ? [warning] : []),
+    ...(actions.length > 0 ? [buttonsEl(actions, p, MARK_W, isInert, followsAnswers, gapOf('buttons'))] : []),
+    ...(from.field ? [fieldEl(from.field, p, MARK_W, isInert, m?.field).pt(gapOf('field'))] : []),
     ...underEls(r, m?.closing ?? shown, m, p, partPt(end, 'result')),
   ]
   if (parts.length === 0) return []
@@ -300,15 +232,18 @@ function panelEl(
 /**
  * `el` fading as the row's panel fades while the row opens or closes. The trunk beside a wrapped title fades with the
  * panel, so the tree comes and goes whole with the lines it joins. The panel of a form a row leaves keeps what it
- * showed while it fades out with that form's lines.
+ * showed while it fades out with that form's lines. A panel that waits for its space shows nothing from its first draw,
+ * so a panel the row's former form drew does not fade out under the new form as it fades in.
  */
 function panelFadeEl(r: RowBlock, m: RowMotion | undefined, p: Paint, el: Element): Element {
   const opacity = m?.swap?.panel ?? m?.panel ?? null
   if (opacity === null) return el
   const height = p.heights.get(panelId(r.id)) ?? 0
   const turnBackFadeMs = m?.panelFadeMs ?? null
-  const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0
-  const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? 'open']
+  const isWaiting = m?.isPanelWaiting === true && turnBackFadeMs === null
+  const isHidden = isWaiting && opacity === 0
+  const delay = isWaiting && !isHidden ? enterDelayMs(height) : 0
+  const duration = isHidden ? 0 : (turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? 'open'])
 
   return fadeEl(el, panelId(r.id), opacity, { duration, delay }, p)
 }
@@ -351,10 +286,12 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
     ...(l.status ? [statusPartEl(l.status.text).text_color(colorOf(t, l.status.tone))] : []),
     ...l.unlisted.map(u => statusPartEl(u).text_color(t.muted)),
   ]
-  const tail = v_flex()
-    .when(b.error !== null, e => e.child(lineEl(b.error ?? '', t.ansi1, 0)))
-    .when(b.buttons.length > 0, e => e.child(buttonsEl(b.buttons, p, 0, isInert)))
-    .when(b.feedback !== null, e => (b.feedback ? e.child(feedbackEl(b.feedback, t)) : e))
+  const tail = prTailEls(b, p, {
+    error: text => lineEl(text, t.ansi1, 0),
+    buttons: (buttons, isGoing) => buttonsEl(buttons, p, 0, isInert || isGoing, false, CONTROL_GAP),
+    result: f => feedbackEl(f, t),
+  })
+  const warning = warningBoxEl(b.id, b.warning, p, text => lineEl(text, colorOf(t, 'error'), 0).pt(CONTROL_GAP))
 
   return v_flex()
     .pl(EDGE)
@@ -367,15 +304,17 @@ function prEl(b: PrBlock, p: Paint, isInert: boolean): Element {
           .child(partedEl(statusParts(l), t.muted)),
       ),
     )
-    .child(sizeEl(prTailId(b.id), p, tail))
+    .children([...tail.slice(0, 1), warning, ...tail.slice(1)])
 }
 
+/** A line of text with its buttons after it, under the stopped warning when it has one. */
 function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
   const { t } = p
 
   return v_flex()
     .pl(EDGE)
     .pr(EDGE)
+    .child(warningBoxEl(b.id, b.warning ?? null, p, text => lineEl(text, colorOf(t, 'error'), 0).pb(LIST_GAP)))
     .child(
       h_flex()
         .gap(CONTROL_GAP)
@@ -398,6 +337,21 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
     )
     .when(b.under !== null, e => e.child(lineEl(b.under ?? '', t.muted, 0)))
     .when(b.feedback !== null, e => e.child(feedbackEl(b.feedback!, t)))
+}
+
+/**
+ * A heading's count after its text. A count that goes fades out over `LEAVE_FADE_MS` from the draw after it went, so
+ * it never drops in one frame.
+ */
+function countEls(b: Extract<Block, { kind: 'heading' }>, left: CountLeft | null, p: Paint): Element[] {
+  const count = b.count ?? left?.count ?? null
+  if (count === null) return []
+  const name = `count ${b.id}`
+  const isGoing = b.count === null && left !== null
+  const opacity = isGoing && p.now !== left.leftAt ? 0 : 1
+  const el = div().id(name).text_color(p.t.muted).child(`${SEP}${count}`)
+
+  return [fadeEl(el, name, opacity, { duration: isGoing ? LEAVE_FADE_MS : 0, delay: 0 }, p)]
 }
 
 /** A group's heading. A marked one hangs its mark in the mark column, with its text where its rows' text starts. One with no mark starts at the edge, where its rows' marks do. A label heading starts at the edge and rules the goal's text to its buttons. */
@@ -431,7 +385,7 @@ function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: bo
     .items_center()
     .when(b.mark !== null, e => e.child(markEl(b.mark, t)))
     .child(div().min_w(0).whitespace_normal().font_semibold().child(b.text))
-    .when(b.count !== null, e => e.child(div().text_color(t.muted).child(`${SEP}${b.count}`)))
+    .children(countEls(b, p.motion.get(b.id)?.countLeft ?? null, p))
     .child(div().flex_1())
     .when(b.aside !== undefined, e =>
       e.child(
@@ -500,20 +454,23 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
  */
 export function blockEl(b: Block, p: Paint): Element {
   const { t } = p
-  const isLeaving = p.motion.get(b.id)?.state === 'leaving'
+  const m = p.motion.get(b.id)
+  const isLeaving = m?.state === 'leaving'
+  const isInert = isLeaving || (m?.blockSwap?.isOut === true && m.blockSwap.parts === null)
   if (b.kind === 'row') return rowEl(b, p)
   if (b.kind === 'status') return statusEl(b, p, isLeaving)
-  if (b.kind === 'pr') return prEl(b, p, isLeaving)
-  if (b.kind === 'line') return textLineEl(b, p, isLeaving)
-  if (b.kind === 'heading') return headingEl(b, p, isLeaving)
-  if (b.kind === 'empty') return emptyEl(b, p, isLeaving)
-  if (b.kind === 'fold' || b.kind === 'more') return foldEl(b, p, isLeaving)
+  if (b.kind === 'pr') return prEl(b, p, isInert)
+  if (b.kind === 'line') return textLineEl(b, p, isInert)
+  if (b.kind === 'heading') return headingEl(b, p, isInert)
+  if (b.kind === 'empty') return emptyEl(b, p, isInert)
+  if (b.kind === 'fold' || b.kind === 'more') return foldEl(b, p, isInert)
   if (b.kind === 'rule') return ruleEl(b, t)
   if (b.kind === 'field') {
-    const m = p.motion.get(b.id)
     const isShownAsOpening = m?.state === 'entering' && m.box !== null && m.fadeMs === 0
-    const keepsButtonsFade = isLeaving ? { isOpen: true, height: 0 } : null
-    const opening = isShownAsOpening ? { isOpen: m.box === 'open', height: p.heights.get(b.id) ?? 0 } : keepsButtonsFade
+    const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null
+    const height = p.heights.get(b.id)
+    const delayMs = enterDelayMs(height ?? 0)
+    const opening = isShownAsOpening ? { isOpen: m.box === 'open' && height !== undefined, delayMs } : keepsButtonsFade
 
     return div()
       .pl(b.isAtEdge ? EDGE : TEXT_X)

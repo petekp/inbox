@@ -4,7 +4,8 @@ import { $ } from 'bun'
 import { CUT_OPACITY } from '../core/view/row-motion'
 import { type CodexEv, type CodexSpec, type PageFailure, type PageRun, drive } from './codex-page'
 import { type Rng, rngOf } from './rng'
-import { CODEX_SEEDS, knownIssueOf } from './seeds'
+import { apartFrom, knownIssueOf, ownFailures } from './known'
+import { CODEX_SEEDS } from './seeds-codex'
 import { without } from './shrink'
 
 /** A Codex tab case: the page's theme, width and reduced motion, and what the person does. */
@@ -60,15 +61,27 @@ const browse = (...args: string[]) => $`agent-browser --session ${SESSION} ${arg
 let thread = 0
 let server: ReturnType<typeof Bun.spawn> | null = null
 
-/** Starts the tab page on its own port, with demo data, and the browser session that draws it. */
+const answers = async () => (await fetch(`http://127.0.0.1:${PORT}/`).catch(() => null))?.ok === true
+
+/**
+ * Builds the Codex bundle from the working tree, then starts the tab page on its own port, with demo data, and the
+ * browser session that draws it. Refuses when a server already answers the port, since that server would serve its
+ * own, older bundle.
+ */
 async function open(): Promise<void> {
+  if (await answers())
+    throw new Error(
+      `a server already answers port ${PORT}, so this run would test its bundle. Stop it first: lsof -nP -iTCP:${PORT} -sTCP:LISTEN`,
+    )
+  const build = await $`npm --prefix ${join(import.meta.dir, '..', 'codex')} run --silent build`.nothrow().quiet()
+  if (build.exitCode !== 0)
+    throw new Error(`the Codex bundle did not build: ${build.stderr.toString().trim().split('\n')[0] ?? ''}`)
   server = Bun.spawn(['sh', join(import.meta.dir, '..', 'codex', 'scripts', 'tab-page.sh'), String(PORT)], {
     stdout: 'ignore',
     stderr: 'ignore',
   })
   for (let i = 0; i < 50; i++) {
-    const r = await fetch(`http://127.0.0.1:${PORT}/`).catch(() => null)
-    if (r?.ok) return
+    if (await answers()) return
     await Bun.sleep(100)
   }
   throw new Error(`the tab page did not start on port ${PORT}`)
@@ -191,7 +204,7 @@ export async function runCodex(
         notRunLines.push(`codex seed #${s.issue}, ${s.name}: could not run: ${seedRun.notRun}`)
         continue
       }
-      const { failures } = seedRun
+      const { own: failures, others } = ownFailures('codex', s.issue, seedRun.failures)
       const isAsIssueSays = failures.some(
         f => f.rule === s.rule && (s.detail === undefined || f.detail.includes(s.detail)),
       )
@@ -199,14 +212,14 @@ export async function runCodex(
       const verdict =
         failures.length === 0
           ? s.isOpen
-            ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds.ts in the same PR`
+            ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds-codex.ts in the same PR`
             : 'passes'
           : s.isOpen && isAsIssueSays
             ? `fails as its issue says (${rules})`
             : `fails, but not as its issue says (${rules})`
       const isFixedWhileOpen = failures.length === 0 && s.isOpen
       if (isFixedWhileOpen || (failures.length > 0 && !(s.isOpen && isAsIssueSays))) isSeedBroken = true
-      seedLines.push(`codex seed #${s.issue}, ${s.name}: ${verdict}`)
+      seedLines.push(`codex seed #${s.issue}, ${s.name}: ${verdict}${apartFrom(others)}`)
     }
     for (let n = 0; n < runs; n++) {
       const c = caseOf(rngOf(seed, n))

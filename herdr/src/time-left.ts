@@ -1,5 +1,6 @@
 import { SETTLED_MS } from '../../core/view/timing'
 import type { Block, Button } from './blocks'
+import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
 
 /** The share of a button's time left at `now`: 1 as its time starts, 0 once it has run out. */
 export function timeLeftShare(runsOutAt: number, now: number): number {
@@ -19,14 +20,14 @@ export const TIME_LEFT_STEP_MS = 250
 export type TimeLeft = { is: 'emptying' } | { is: 'paused'; share: number }
 
 function timeLeftOf(b: Button, drawn: ReadonlyMap<string, TimeLeft>, now: number): TimeLeft | null {
-  if (b.runsOutAt === undefined || b.isHidden) return null
+  if (b.runsOutAt === undefined || b.isSpent) return null
   const was = drawn.get(b.id)
   if (b.isOut) return { is: 'paused', share: was?.is === 'paused' ? was.share : timeLeftShare(b.runsOutAt, now) }
   return b.runsOutAt > now ? { is: 'emptying' } : null
 }
 
 const timedButtons = (blocks: Block[]): Button[] =>
-  blocks.flatMap(b => (b.kind === 'row' ? b.buttons : [])).filter(b => b.runsOutAt !== undefined && !b.isHidden)
+  blocks.flatMap(b => (b.kind === 'row' ? b.buttons : [])).filter(b => b.runsOutAt !== undefined)
 
 /** The time left of each drawn timed button that shows one, from what the last draw showed. */
 export function timeLeftDraws(
@@ -43,13 +44,18 @@ export function timeLeftDraws(
 }
 
 /**
- * When the look draws next for its timed buttons: a step on while a fill empties, and when a button's time runs out,
- * so a spent button does not stay drawn until something else redraws. Null when no button's time runs.
+ * When the look draws next for its timed buttons: a step on while a fill empties, when a button's time runs out, and
+ * as a spent button fades and leaves, so a spent button does not stay drawn until something else redraws. Null when no
+ * button's time runs.
  */
 export function timeLeftNextAt(blocks: Block[], now: number): number | null {
-  const ends = timedButtons(blocks)
-    .filter(b => !b.isOut && (b.runsOutAt ?? 0) > now)
-    .map(b => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS))
+  const timed = timedButtons(blocks)
+  const leaves = timed.flatMap(b => (b.leftAt === undefined ? [] : [b.leftAt + NEXT_FRAME_MS, b.leftAt + HOLD_MS]))
+  const running = timed.filter(b => !b.isOut && !b.isSpent && (b.runsOutAt ?? 0) > now)
+  const ends = [
+    ...running.map(b => Math.min(b.runsOutAt ?? 0, now + TIME_LEFT_STEP_MS)),
+    ...leaves.filter(at => at > now),
+  ]
 
   return ends.length > 0 ? Math.min(...ends) : null
 }

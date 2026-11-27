@@ -1,5 +1,5 @@
 import type { Child, Item, Subject } from '../../types'
-import { HELD_MARK, IDLE_MARK, SUBJECT_MARKS } from './help'
+import { HELD_MARK, heldMarkOf, IDLE_MARK, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import { IDLE_AFTER_MS, isOpen } from '../domain/status-limits'
 import { ago, cutAtPhrase, duration } from '../domain/text'
@@ -109,7 +109,7 @@ const DAY_MS = 24 * 60 * 60_000
 
 /**
  * A subject's stall word: how long it has gone without a change, in whole days, once it is open past `IDLE_AFTER_MS` with no
- * child of it running. A subject an open ask holds up has none, since its ◆ mark and its ask say it waits.
+ * child of it running. A subject an open ask holds up has none, since its ◆ or □ mark and its ask say it waits.
  */
 function subjectStall(x: Subject, isHeld: boolean, isWorkRunning: boolean, now: number): StatusStall | null {
   if (isHeld) return null
@@ -141,19 +141,19 @@ export type TextLevel = 'muted' | 'faint'
 export type NameLevel = 'plain' | TextLevel
 
 /** Whether a Status row is done (✓), so its name and the line under it draw faint and finished work reads settled. */
-const isSettled = (row: { tone: StatusTone }) => row.tone === 'done'
+const isSettled = (row: { mark: string }) => row.mark === SUBJECT_MARKS.done.mark
 
 /** The level of the line under a Status row's name: faint once the row is done, else muted. */
-export const textLevelOf = (row: { tone: StatusTone }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
+export const textLevelOf = (row: { mark: string }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
 
 /** The level of a Status parent's fold chevron and count: faint once the row is done, as its name is, else muted. */
-export const foldLevelOf = (row: { tone: StatusTone }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
+export const foldLevelOf = (row: { mark: string }): TextLevel => (isSettled(row) ? 'faint' : 'muted')
 
 /** The level of a Prev line, which says what a row or the goal was before it changed: faint under every row. */
 export const WAS_LEVEL: TextLevel = 'faint'
 
 /** The level of a Status row's name: faint once the row is done, else `otherwise`, the level its kind draws its name in. */
-export const nameLevelOf = (row: { tone: StatusTone }, otherwise: NameLevel): NameLevel =>
+export const nameLevelOf = (row: { mark: string }, otherwise: NameLevel): NameLevel =>
   isSettled(row) ? 'faint' : otherwise
 
 /** `text`, or `null` when it only repeats the row's `name`, as `comparableName` compares them. */
@@ -170,8 +170,9 @@ function isNamedLikeSubject(x: Subject, under: readonly Child[]): boolean {
 
 /**
  * What the one child that is named like its subject gives the subject's row: a moving mark while it works, the
- * needs-you mark while it is blocked, and ✓ once it finished, unless an open ask holds the subject up, which keeps its
- * own mark and words. Such a row has no stall word.
+ * needs-you mark while it is blocked, and ✓ once it finished. An open ask that holds the subject up keeps its own mark
+ * and words over a working or finished child. A blocked child's ◆ replaces a task's □, since the delegate waits on a
+ * decision. Such a row has no stall word.
  */
 function carriedByChild(
   c: Child,
@@ -256,11 +257,19 @@ function askWords(items: readonly Item[], ask: { id: string } | null): string | 
   return words || null
 }
 
+/** The words of the open ask that sets a subject's mark, in the tone of that ask's kind. */
+export type StatusWaitsOn = { text: string; tone: 'needsYou' | 'tasks' }
+
+const askTone = (ask: { kind: Item['kind'] } | null): StatusWaitsOn['tone'] =>
+  ask?.kind === 'task' ? 'tasks' : 'needsYou'
+
 /** What every part of the list reads to place and draw a subject. */
 export type ListContext = {
   isNew: (x: Subject) => boolean
   isHeld: (x: Subject) => boolean
-  oldestAskOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
+  /** The kinds of the open asks that hold `x` up. */
+  holdKindsOf: (x: Subject) => Item['kind'][]
+  askSettingMarkOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
   items: readonly Item[]
   running: Child[]
   isTurnRunning: boolean
@@ -290,13 +299,15 @@ export function partRows(
     const isWorkRunning = isRunning || under.some(ch => ch.endedAt === null)
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0]! : null
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null
-    const waitsOn = askWords(c.items, c.oldestAskOf(x))
+    const ask = c.askSettingMarkOf(x)
+    const words = askWords(c.items, ask)
+    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) }
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now)
     rows.push({
       kind: 'subject',
       id: x.id,
       depth,
-      ...(c.isHeld(x) ? HELD_MARK : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
+      ...(c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
       isRunning,
       ...carried,
       name: x.name,
@@ -307,7 +318,7 @@ export function partRows(
       was: c.isNew(x) ? x.was : null,
       hasChildren: under.length > 0 && lone === null,
       foldCount: lone === null ? under.length : 0,
-      ask: c.oldestAskOf(x),
+      ask: c.askSettingMarkOf(x),
     })
     if (lone === null)
       rows.push(

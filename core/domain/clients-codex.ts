@@ -161,6 +161,7 @@ export const CODEX: Client = {
     },
     'status-named-fold': { kind: 'full' },
     'status-faint-text': { kind: 'full' },
+    'supporting-text': { kind: 'full' },
     'status-parent-fold': {
       kind: 'different',
       reason:
@@ -196,6 +197,10 @@ export const CODEX: Client = {
     },
     'press-preconditions': { kind: 'full' },
     'task-results': { kind: 'full' },
+    'stopped-session-send': {
+      kind: 'different',
+      reason: 'The host holds no message after the person stops a turn, so it never refuses one for that.',
+    },
     'option-previews': { kind: 'full' },
     'remote-resume': { kind: 'unsupported', reason: 'Codex records no stopped-turn state to resume.' },
   },

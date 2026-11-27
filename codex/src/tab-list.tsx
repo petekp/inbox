@@ -4,8 +4,9 @@ import { partAttrs } from './tab-part-gap'
 import { closedTitleTone, DOT, settledMark, fieldExit, settledLabel, shortAgo } from '../../core/view/rows'
 import { entryId } from '../../core/view/action-plan'
 import { isRowTab } from '../../core/view/tabs'
-import { hasAge, isFailure, isStatusUnderActions } from '../../core/view/feedback'
-import { dropHeldAfter, heldAfterIds, holdAfter, type AfterLine } from './tab-held-after'
+import { isFailure, isStatusUnderActions, rowAgeAt } from '../../core/view/feedback'
+import { dropHeldAfter, heldAfterIds, holdAfter, type DrawnAfter } from './tab-held-after'
+import { isPressUnderWay } from '../../core/view/held-line'
 import type { RowView } from '../../core/view/rows'
 import { TAB_OF } from './arrivals'
 import { closedTitleClock, newRowIn } from '../../core/view/arrivals'
@@ -15,10 +16,11 @@ import type { Group } from './arrivals'
 import type { TabView as View } from './core'
 import { LEAVE_FADE_MS, drawsFormLeft, drawsPanel, stepRow, withLeaving } from '../../core/view/row-motion'
 import type { RowTarget, RowTrack } from '../../core/view/row-motion'
-import { tabState, SENDING, copies, entering, drawnRows } from './tab-state'
+import { SENDING } from '../../core/view/unshown-press'
+import { tabState, copies, entering, drawnRows } from './tab-state'
 import type { Key, Row, Entry, Lists } from './tab-state'
 import { reducedMotion } from './tab-motion'
-import { dispatch, drawnTab, errorOf, isGuarded, openRowId, pressRow } from './tab-ui'
+import { dispatch, drawnTab, errorOf, isGuarded, isRowGuarded, openRowId, pressRow } from './tab-ui'
 import { isUndoing, outOn } from './tab-press'
 import { listsOf, pressTitle, shownSettled } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
@@ -30,7 +32,7 @@ import { tabBanners } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
 import { markClassOf, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 import { TitleTint } from './tab-title-tint'
-import { SettledTitlePart, TitlePart } from './tab-title-cut'
+import { SettledResultPart, SettledTitlePart, TitlePart } from './tab-title-cut'
 import { StatusLines } from './tab-status-part'
 import {
   drawnPresses,
@@ -137,7 +139,7 @@ export function rowActions(row: Row): { options: Key[]; keys: Key[]; more: Key[]
 
 /** What a row's line and side column draw, in its open form or its closed one. */
 type LineForm = {
-  last: AfterLine | null
+  last: DrawnAfter | null
   side: string | null | undefined
   /** The row's status goes under its buttons, or its press sends with no status yet. */
   isStatusUnder: boolean
@@ -180,15 +182,15 @@ export function ListRow({
   )
 
   const press = isLeft ? (drawnPresses.get(row.id) ?? pressOf(row)) : pressOf(row)
-  const { isStatusOut, pending, isSending, isStatusSending, f, label, tone } = press
-  const ageAt = !isStatusOut && f && hasAge(f) ? f.at : null
+  const { pending, isSending, isStatusSending, f, label, tone } = press
+  const ageAt = rowAgeAt(row.feedback, null)
   const lineForm = (isOpen: boolean): LineForm => {
     const statusUnder = !isStatusSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
     const text = statusUnder ? null : label
     const side = isSending ? SENDING : ageAt !== null ? shortAgo(now - ageAt) : row.age
 
     return {
-      last: text ? { text, tone, isHidden: false } : null,
+      last: text ? { text, tone, isHidden: false, isLeaving: false } : null,
       side,
       isStatusUnder: isStatusSending || statusUnder !== null,
     }
@@ -200,7 +202,16 @@ export function ListRow({
       ? press.after
       : shown.last
     : isOpenForm
-      ? holdAfter(row.id, shown.last, shown.isStatusUnder, isFailure(pending ?? f))
+      ? holdAfter(
+          row.id,
+          shown.last,
+          {
+            isStatusUnder: shown.isStatusUnder,
+            isFailed: isFailure(pending ?? f),
+            isPressUnderWay: outOn(row.id) !== null || isPressUnderWay(pending ?? f),
+          },
+          Date.now(),
+        )
       : shown.last
   const drawn = { ...shown, last: heldLast }
   if (!isLeft) drawnPresses.set(row.id, { ...press, after: drawn.last })
@@ -208,8 +219,9 @@ export function ListRow({
   const closed = isClosing ? lineForm(false) : null
   const after = (form: LineForm, only?: 'open' | 'closed') => {
     if (!form.last) return null
-    const { text, tone: lastTone, isHidden } = form.last
-    const place = only === 'open' ? 'part open-only' : only === 'closed' ? 'part closed-only' : 'part'
+    const { text, tone: lastTone, isHidden, isLeaving } = form.last
+    const where = only === 'open' ? 'part open-only' : only === 'closed' ? 'part closed-only' : 'part'
+    const place = isLeaving ? `${where} leaving` : where
 
     return (
       <span class={isHidden ? `${place} held-hidden` : place} aria-hidden={isHidden ? 'true' : undefined}>
@@ -297,7 +309,7 @@ function Panel({ row, isClosing }: { row: Row; isClosing: boolean }) {
   const actionsPart = isTyping ? 'field' : 'buttons'
 
   return (
-    <div class={isClosing ? 'panel closing' : 'panel'} inert={isClosing}>
+    <div class={`panel${isClosing ? ' closing' : ''}${isRowGuarded(row.id) ? ' guarded' : ''}`} inert={isClosing}>
       {row.body ? (
         <div class="body" {...(row.bodyEnd ? {} : partAttrs('title', 'detail'))}>
           {row.body()}
@@ -374,10 +386,7 @@ function SettledView({ settled: r, wasOpen }: { settled: RowView; wasOpen: boole
         <div class="settled-head">
           <div class="settled-line parted">
             <SettledTitlePart title={r.title} tint={clock} tone={tone} />
-            <span class="part settled-result">
-              <Sep />
-              <span class="outcome-label">{settledLabel(state.label, state.delivery, state.reply)}</span>
-            </span>
+            <SettledResultPart text={settledLabel(state.label, state.delivery, state.reply)} />
             {error ? (
               <span class="part tone-error">
                 <Sep />

@@ -117,6 +117,7 @@ export async function sessionEnded(m: Mod, reason: SessionEndReason) {
   sessionState.loadRevision++
   sessionState.stopGeneration++
   sessionState.resuming = null
+  sessionState.isSendHeld = false
   if (mod.isOn) {
     await Promise.all([
       replaceDrawn(m, s => (s.stop ? { ...s, stop: null } : s)),

@@ -120,6 +120,7 @@ export function screenOf(
     shownSince: o.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs,
+    isSendHeld: read.isSendHeld,
   }
 
   return {

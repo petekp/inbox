@@ -16,6 +16,7 @@ import {
   PR_MARKS,
   RUNNING_FRAMES,
   SUBJECT_MARKS,
+  TASK_MARK,
 } from '../core/view/help'
 import type { Item, SessionStatus } from '../types'
 import { minutes } from '../evals/status-replay'
@@ -102,7 +103,7 @@ test('only a subject an open ask holds up says what it waits on, and one waiting
     { ...askItem('i2'), at: 10 * MIN },
   ]
   const stalls = (now: number) =>
-    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? [r.waitsOn, r.stall] : r.kind))
+    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? [r.waitsOn?.text ?? null, r.stall] : r.kind))
 
   const waiting = [
     ['Ask i2?', null],
@@ -134,7 +135,7 @@ test('an open subject unchanged for a day reads how long it has been idle, in wh
   const stalls = (now: number, turn = false) =>
     page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows.flatMap(r =>
       r.kind === 'subject'
-        ? [`${r.name}: ${r.waitsOn ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
+        ? [`${r.name}: ${r.waitsOn?.text ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
         : [],
     )
 
@@ -179,7 +180,7 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
   })
 })
 
-test('a subject that open asks hold up offers View on the oldest ask, named for its kind, an ask with no time counting as oldest, and no button once the asks close', () => {
+test('a subject that open asks hold up offers View on the ask that sets its mark, a question before a task and the oldest of a kind, an ask with no time counting as oldest, and no button once the asks close', () => {
   const o = after(
     null,
     'NEW: working | Offline mode | queue built\nNEW: working | Docs | outline ready\nLINK: i1 | s1\nLINK: i2 | s1\nLINK: i3 | s1',
@@ -196,7 +197,8 @@ test('a subject that open asks hold up offers View on the oldest ask, named for 
       statusKeyPlan(r).map(k => `${r.id} ${k.label} ${k.press.action === 'show-ask' ? k.press.askId : ''}`),
     )
 
-  expect(viewOf([asks.i1, asks.i2])).toEqual([['s1 View task i2'], []])
+  expect(viewOf([asks.i1, asks.i2])).toEqual([['s1 View question i1'], []])
+  expect(viewOf([asks.i2])).toEqual([['s1 View task i2'], []])
   expect(viewOf([asks.i1, asks.i2, asks.i3])).toEqual([['s1 View question i3'], []])
   expect(viewOf([asks.i1])).toEqual([['s1 View question i1'], []])
   expect(viewOf([])).toEqual([[], []])
@@ -302,6 +304,7 @@ test('the Help legend explains every mark a row or group title draws, once each'
     ...Object.values(SUBJECT_MARKS).map(m => m.mark),
     IDLE_MARK.mark,
     HELD_MARK.mark,
+    TASK_MARK.mark,
     ...Object.values(CLOSED_MARKS),
     ...Object.values(FINDING_GROUPS).map(g => g.mark),
     ...Object.values(NEEDS_YOU_MARKS).map(g => g.mark),

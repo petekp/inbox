@@ -117,8 +117,8 @@ export function StatusLine({
             <NameLine name={row.name} stall={row.stall} chevron={chevronOf(row)} />
           </ParentName>
           {row.waitsOn ? (
-            <div class="tone-needsYou clamp" style={{ '--lines': STATUS_TEXT_LINES }}>
-              {row.waitsOn}
+            <div class={`tone-${row.waitsOn.tone} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
+              {row.waitsOn.text}
             </div>
           ) : null}
           {row.text ? (

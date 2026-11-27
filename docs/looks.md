@@ -35,6 +35,7 @@ Change a rule in its owner. Do not change it in a reader.
 
 - [Tabs, lists, banners and the footer](looks/owners-tabs-and-lists.md)
 - [Rows, presses and feedback](looks/owners-rows-and-feedback.md)
+- [A question's parts on its row](looks/owners-question-rows.md)
 - [Rows: folds, keys and marks](looks/owners-rows-folds-and-keys.md)
 - [Presses: their messages, status and reducer](looks/owners-presses.md)
 - [The Status page](looks/owners-status.md)
@@ -61,7 +62,7 @@ The parts below hold the main table, split by subject. The omp table is in the p
 - [The Status goal's buttons and field](looks/differences-input-goal.md)
 - [Rows, tabs, banners and motion](looks/differences-drawing.md)
 - [The Status page and marks](looks/differences-status-and-marks.md)
-- [The Status page's text levels](looks/differences-status-text.md)
+- [Text levels](looks/differences-status-text.md)
 - [Spacing](looks/differences-spacing.md)
 - [How each host runs](looks/differences-hosts.md)
 - [How each host runs in Herdr](looks/differences-hosts-herdr.md)

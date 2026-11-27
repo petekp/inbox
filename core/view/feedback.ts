@@ -4,8 +4,8 @@ import { isPrRowId } from '../domain/presses'
 import type { RowPress } from '../domain/presses'
 import { retryOf, isRepeatOf } from './pressed'
 import { noteText } from './press-reducer'
-import { SETTLED_MS, pendingDeliveryAt, COMPARE_LIMIT_MS } from './timing'
-import { isHandedOffDone, isTerminalLike, DOT, deliveryLabel } from './rows'
+import { SETTLED_MS, pendingDeliveryAt, COMPARE_LIMIT_MS, queuedSentAt } from './timing'
+import { isHandedOffDone, isTerminalLike, DOT, deliveryLabel, STOPPED_REASON } from './rows'
 import type { Look, RowView, RowState } from './rows'
 import type { ViewInput } from './view'
 
@@ -16,7 +16,7 @@ export type Feedback =
   | { is: 'stillOpen'; at: number }
   | { is: 'noComparison'; at: number }
   /** The labels of a message on its way read as the row draws them, from `deliveryLabel`, as "Queued: Yes" or "Queued reply: Call it hello". */
-  | { is: 'sending'; label: string; at: number }
+  | { is: 'sending'; label: string; at: number; sentAt: number }
   | { is: 'queued'; label: string; at: number }
   | { is: 'unconfirmed'; label: string; at: number }
   | { is: 'notSent'; reason: string; retry: RowPress | null }
@@ -46,10 +46,12 @@ export function rowFeedbackText(row: RowView, look: Look): string | null {
  * When a row's press under way began, or null while none is: its talk press waits on the agent's reply, its message is
  * sending, or its open or copy runs. A settled row on its tab that was still in place when the press began waits for it
  * to end, so nothing shifts under the row being worked on. A queued or unconfirmed message does not count, since it can
- * wait a whole turn or for good.
+ * wait a whole turn or for good. A message held for Undo counts from when its host sent it, so a row that folded while
+ * it was held does not come back.
  */
 export function pressUnderWaySince(f: Feedback | null): number | null {
-  if (f?.is === 'working' || f?.is === 'sending') return f.at
+  if (f?.is === 'sending') return f.sentAt
+  if (f?.is === 'working') return f.at
   if (f?.is !== 'local') return null
 
   return f.talkOutSince ?? (f.result.state === 'pending' ? f.result.at : null)
@@ -75,7 +77,7 @@ export function feedbackOf(
     const under =
       last.kind === 'talk' ? feedbackOf(id, { ...last, result: undefined }, undefined, turns, now, reportedAt) : null
     const isTalkOut = under?.is === 'working' || under?.is === 'sending' || under?.is === 'queued'
-    const talkOutSince = isTalkOut ? under.at : undefined
+    const talkOutSince = isTalkOut ? (under.is === 'sending' ? under.sentAt : under.at) : undefined
 
     return { is: 'local', result, ...(talkOutSince === undefined ? {} : { talkOutSince }) }
   }
@@ -99,7 +101,12 @@ export function feedbackOf(
       ...(last.kind === 'handoff' ? { isHandoff: true as const } : {}),
     }
   if (pending === 'sending')
-    return { is: 'sending', label: deliveryLabel('sending', last.text, last.reply), at: last.at }
+    return {
+      is: 'sending',
+      label: deliveryLabel('sending', last.text, last.reply),
+      at: last.at,
+      sentAt: queuedSentAt(last),
+    }
   if (isUnreported) return { is: 'noComparison', at: last.at }
   if (!isAwaiting && !isPrRowId(id) && isFoldingPress(id, last)) return { is: 'stillOpen', at: last.at }
 
@@ -226,6 +233,14 @@ export function hasAge(
   )
 }
 
+/**
+ * When a row's age counts from: its last press, once that press has an age, else `arrivedAt`, when the row arrived.
+ * A press out leaves the age as it was until the press is saved, so every look shows the same age while it waits.
+ */
+export function rowAgeAt<T>(last: Feedback | null, arrivedAt: T): number | T {
+  return last && hasAge(last) ? last.at : arrivedAt
+}
+
 function isPressOut(f: Feedback | null): boolean {
   return (
     f?.is === 'working' ||
@@ -324,6 +339,36 @@ function localText(r: LocalResult, look: Look): string {
 
   return `${text}${isCommand ? `. ${runIt(look)}` : ''}`
 }
+
+/** The line an open row or PR block draws above its buttons while Claude Code holds the inbox's messages after a stop. */
+export const STOPPED_WARNING = 'Not sent until you write to Claude: you stopped this session.'
+
+type Buttons = readonly { kind: PressKind }[]
+
+const warningOf = (isSendHeld: boolean, sends: boolean, shown: string | null): string | null => {
+  const isRefusalShown = shown?.includes(STOPPED_REASON) ?? false
+  return isSendHeld && sends && !isRefusalShown ? STOPPED_WARNING : null
+}
+
+/**
+ * The stopped warning for an open row with `buttons` and the press result `shown` on it, or null. It shows while
+ * `isSendHeld`, when a button sends a message, and until the row reads the refusal itself. A row's Mark, such as an
+ * answer, sends once its Undo runs out.
+ */
+export const stoppedWarningOf = (isSendHeld: boolean, buttons: Buttons, shown: string | null): string | null =>
+  warningOf(
+    isSendHeld,
+    buttons.some(b => b.kind === 'talk' || b.kind === 'handoff' || b.kind === 'mark'),
+    shown,
+  )
+
+/** The stopped warning for a PR block, as `stoppedWarningOf` gives a row's. A PR's Mark, Dismiss, sends nothing. */
+export const prStoppedWarningOf = (isSendHeld: boolean, buttons: Buttons, shown: string | null): string | null =>
+  warningOf(
+    isSendHeld,
+    buttons.some(b => b.kind === 'talk' || b.kind === 'handoff'),
+    shown,
+  )
 
 export function feedbackText(f: Feedback, look: Look): string {
   switch (f.is) {

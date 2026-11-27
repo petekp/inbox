@@ -47,7 +47,7 @@ export type Row = {
   meta?: string
   /** The open subjects an ask holds up, as "Holds up Offline sync, Hotfix release". */
   holdsUp?: string
-  /** Whether the open row draws a tree under its title, which its ◆ in the mark column starts. */
+  /** Whether the open row draws a tree under its title, which its ◆ or □ in the mark column starts. */
   hasTree?: boolean
   age?: string
   /** Draws the open row's body at each render, so a decision a draw makes after rendering, such as whether a question's answers fit one line, reaches it. */
@@ -73,16 +73,11 @@ export const CODEX_LOOK: LookConfig = { runningMarks: 'pulse', titleTint: 'self'
 
 /**
  * What the tab keeps of each press the controller has out, by its press id: its row, its pending Local result or null
- * for a message, which reads SENDING, `lastBefore`, the row's saved last press when the press started, from
- * `lastPressKey`, and `kind`, the kind of the plan action pressed, or null for a press no plan action makes, such as
+ * for a message, which reads SENDING, and `kind`, the kind of the plan action pressed, or null for a press no plan action makes, such as
  * Undo or a typed reply.
  */
-export const localOuts = new Map<
-  number,
-  { rowId: string; pending: Feedback | null; lastBefore: string; kind: PressKind | null }
->()
+export const localOuts = new Map<number, { rowId: string; pending: Feedback | null; kind: PressKind | null }>()
 
-export const SENDING = 'Sending…'
 export const copies = new Map<string, { name: string; text: string }>()
 export const entering = new Set<string>()
 /** Folds whose list still shrinks after a press folded them, by the list's motion key after `closed-`. */
@@ -116,8 +111,13 @@ export type Kept = {
   /** The shared controller's state, from `restoredUi`. Missing on a state an earlier page kept. */
   ui?: { version: 3; state: UiState }
 }
+/**
+ * A page a swap starts beside the one it replaces. `prepare` reads its first view with the state the old page keeps,
+ * before it shows, and resolves whether it has one. A page from before `prepare` reads its first view once it starts.
+ */
 export type CandidatePage = {
   initialize: () => Promise<boolean>
+  prepare?: (kept: Kept) => Promise<boolean>
   activate: (kept: Kept) => void
   start: () => void
   dispose: () => void
@@ -164,6 +164,8 @@ class TabState {
   focusField: string | null = null
   /** Whether the draw under way shows a read of the view, not the person's input. */
   isReadDraw = false
+  /** The rows whose press the read under way answers, so what the answer brings them shows at once, as a press does. */
+  answeredRows: ReadonlySet<string> = new Set()
   lastLists: Lists | null = null
   /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
   lastPrs: DrawnPrs | null = null

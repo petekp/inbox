@@ -2,7 +2,8 @@ import type { LastAction, Ledger, PrCheck, PressKind, PrThread, PrView } from '.
 import type { Effect } from './press-reducer'
 import type { PrActionId, RowPress } from '../domain/presses'
 import { isAgain, outAction, pressFeedbackIn, pressOutAction } from './feedback'
-import type { ActionEmphasis } from './rows'
+import { sessionKeyOf } from './rows'
+import type { ActionEmphasis, SessionKey } from './rows'
 import type { PressState } from './feedback'
 import { CLEAR_FINISHED_ID, checkRowId, prMarkId, PR_REFRESH_ID, RANK_AGAIN_ID, threadRowId } from './pr-rows'
 import { failedSibling, isSameRun, runOf } from '../domain/pr-checks'
@@ -117,10 +118,13 @@ export function readFirstEffect(pr: PrView): Effect {
 }
 
 /**
- * The open or refresh a PR press runs first: a Local press's open or refresh, or `readFirstEffect` for a press that
- * reads the PR first. Null for a press that only sends or marks, or whose row is gone.
+ * The open or refresh a PR press runs first: Refresh PRs' `PR_REFRESH`, a Local press's open, or `readFirstEffect`
+ * for a press that reads the PR first. Null for a press that only sends or marks, or whose row is gone. `pr` is null
+ * for a press of the tab's own lines, which belongs to no PR.
  */
-export function prPressEffect(pr: PrView, p: PrPress): Effect | null {
+export function prPressEffect(pr: PrView | null, p: PrPress): Effect | null {
+  if (p.action === 'pr-refresh') return PR_REFRESH
+  if (!pr) return null
   if (isPrReadFirstPress(p)) return readFirstEffect(pr)
   switch (p.action) {
     case 'thread-open': {
@@ -228,6 +232,18 @@ export function again(row: LastPress, action: PrActionId, label: string): string
 
 export function withOut(row: LastPress, actions: PlannedPrAction[]): PrAction[] {
   return actions.map(a => ({ ...a, isOut: a.press.action === row.out }))
+}
+
+/**
+ * A PR row's buttons in the order every look shows them. A look that passes `canShowSession` draws `sessionKey` before
+ * them, as `sessionKeyOf` gives it for the row's refused message.
+ */
+export type PrPlan = { actions: PrAction[]; sessionKey: SessionKey | null }
+
+export function prPlan(row: LastPress, actions: PrAction[], canShowSession: boolean): PrPlan {
+  const delivery = row.last?.delivery
+
+  return { actions, sessionKey: sessionKeyOf(delivery?.state === 'failed' ? delivery.reason : null, canShowSession) }
 }
 
 export function retryAction(retry: { press: PrPress; kind: PressKind } | null): PlannedPrAction[] {

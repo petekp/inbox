@@ -8,6 +8,7 @@ import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks } from '../src/draw'
 import type { LookUi } from '../src/draw'
 import { NO_LINES_ABOVE, holdLinesAbove } from '../src/held-line'
+import { SENDING, sendingFeedback } from '../../core/view/unshown-press'
 import type { LinesAbove } from '../src/held-line'
 import { AGENT, NOW, demoScreen, dismissedSession, uiOn } from './fixtures'
 
@@ -23,36 +24,39 @@ const earlierReply: LastAction = {
 }
 const discuss: LastAction = { kind: 'talk', action: 'discuss', text: 'Discuss', at: NOW - 1000, turnsStarted: 14 }
 
-function heldAcross(draws: [LastAction | null, number, string][]) {
+function heldAcross(draws: [LastAction | null, number, string, number?][]) {
   const session = demoSession(NOW, AGENT)
   const { d23: _, ...others } = session.lastActions
   let held = NO_LINES_ABOVE
-  return draws.map(([last, applied, selected]) => {
+  return draws.map(([last, applied, selected, at = NOW]) => {
     const s = {
       ...session,
       lastActions: last ? { ...others, d23: last } : others,
       presence: { ...session.presence, turnsStarted: 14, turnsApplied: applied },
     }
     const screen = { ...demoScreen(), view: sessionView(s, NOW, SETTLED_MS, NO_HOLDS) }
-    const drawn = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected })), held, NOW)
+    const drawn = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected })), held, at)
     held = drawn.held
     const row = rowsOf(drawn.blocks).find(b => b.id === 'd23')!
     const line = row.heldLine
     const status = row.feedback ? `${row.isStatusHeldUnder ? 'under ' : ''}${row.feedback.text}` : null
-    return [status, line ? `${line.isHidden ? 'hidden ' : ''}${line.text}` : null]
+    const form = `${line?.leftAt === undefined ? '' : 'leaving '}${line?.isHidden ? 'hidden ' : ''}`
+    return [status, line ? `${form}${line.text}` : null]
   })
 }
 
-test('a row keeps its status line above its buttons while the host shows its press under way, until the press ends', () => {
+test('a row keeps its status line above its buttons while the host shows its press under way, then lets it fade out before the outcome comes', () => {
   expect(
     heldAcross([
       [earlierReply, 14, 'd23'],
       [discuss, 14, 'd23'],
       [discuss, 15, 'd23'],
+      [discuss, 15, 'd23', NOW + 200],
     ]),
   ).toEqual([
     ['Still open', null],
     ['Discussing…', 'Still open'],
+    ['✓ Discussed', 'leaving Still open'],
     ['✓ Discussed', null],
   ])
 })
@@ -71,7 +75,22 @@ test('a row deselected while its press is under way keeps its held line for when
   ])
 })
 
-test('a held failure keeps its space without its words, also once the press ends with its status under the buttons', () => {
+test('a row selected while it shows a status draws that status at rest, with no box opening for it', () => {
+  const session = demoSession(NOW, AGENT)
+  const discussed = {
+    ...session,
+    lastActions: { ...session.lastActions, d23: discuss },
+    presence: { ...session.presence, turnsStarted: 14, turnsApplied: 15 },
+  }
+  const screen = { ...demoScreen(), view: sessionView(discussed, NOW, SETTLED_MS, NO_HOLDS) }
+  const before = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected: 'd22' })), NO_LINES_ABOVE, NOW)
+  const after = holdLinesAbove(tabBlocks(screen, uiOn('findings', { selected: 'd23' })), before.held, NOW + 16)
+  const row = rowsOf(after.blocks).find(b => b.id === 'd23')
+  expect(row?.feedback?.text).toBe('✓ Discussed')
+  expect(row?.lineCameAt).toBeUndefined()
+})
+
+test('a held failure keeps its space without its words while the press is under way, then lets its space close', () => {
   const failed: LastAction = {
     ...discuss,
     at: NOW - 600_000,
@@ -83,13 +102,17 @@ test('a held failure keeps its space without its words, also once the press ends
   expect(
     heldAcross([
       [failed, 14, 'd23'],
+      [discuss, 14, 'd23'],
       [queued, 14, 'd23'],
       [unconfirmed, 14, 'd23'],
+      [unconfirmed, 14, 'd23', NOW + 1000],
     ]),
   ).toEqual([
     ['Not sent: the terminal was closed', null],
-    ['Queued: Discuss', 'hidden Not sent: the terminal was closed'],
-    ['Not confirmed: Discuss', 'hidden Not sent: the terminal was closed'],
+    ['Discussing…', 'hidden Not sent: the terminal was closed'],
+    ['Queued: Discuss', 'leaving hidden Not sent: the terminal was closed'],
+    ['Not confirmed: Discuss', 'leaving hidden Not sent: the terminal was closed'],
+    ['Not confirmed: Discuss', null],
   ])
 })
 
@@ -146,7 +169,7 @@ test('a held line that ends with its age keeps counting it', () => {
   }
   const sending: RowBlock = {
     ...row,
-    feedback: { text: 'Sending…', tone: 'muted', source: { is: 'sending', label: 'Sending…', at: NOW } },
+    feedback: { text: SENDING, tone: 'muted', source: sendingFeedback(NOW) },
   }
   const first = holdLinesAbove([done], NO_LINES_ABOVE, NOW)
   const later = holdLinesAbove([sending], first.held, NOW + 60_000)

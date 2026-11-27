@@ -18,7 +18,7 @@ import type { PressHost, PressOutcome } from '../runtime/host-press'
 import { startPress } from '../runtime/host-press'
 import { pressOn } from '../runtime/session-presses'
 import { NO_HOLDS } from '../view/timing'
-import { PRESS_LIFETIME_MS } from '../domain/preconditions'
+import { canonical, PRESS_LIFETIME_MS, rowFields, rowVersion } from '../domain/preconditions'
 
 export type RemoteCommand = {
   format: 2
@@ -35,35 +35,17 @@ const MAX_COMMANDS = 128
 const MAX_COMMAND_BYTES = 128_000
 const OUTCOME_RESERVE_BYTES = 4096
 
-export function remoteRowVersion(s: Session, id: string): string {
-  if (id === 'session')
-    return JSON.stringify([s.stop, s.presence.turnsStarted, s.presence.isTurnRunning, s.lastActions.session ?? null])
-  if (isPrRowId(id))
-    return JSON.stringify([
-      s.prViews,
-      s.ledger.prs,
-      s.ledger.prOrder,
-      Object.fromEntries(Object.entries(s.lastActions).filter(([key]) => isPrRowId(key))),
-    ])
-  if (id === 'goal') {
-    const overview = s.ledger.overview
-    return JSON.stringify([
-      overview?.goal ?? null,
-      overview?.goalRemoved ?? null,
-      overview?.suggestedGoal ?? null,
-      s.lastActions[id] ?? null,
-    ])
-  }
-  const item = s.ledger.items.find(row => row.id === id)
-  const normalized = item && Object.fromEntries(Object.entries(item).filter(([key]) => key !== 'dialog'))
-  return JSON.stringify([
-    normalized ?? null,
-    s.ledger.findings.find(row => row.id === id) ?? null,
-    s.ledger.closed.find(row => row.id === id) ?? null,
-    s.ledger.closedFindings.find(row => row.id === id) ?? null,
-    s.lastActions[id] ?? null,
-  ])
-}
+const remoteFields = (s: Session, id: string): unknown[] =>
+  id === 'session'
+    ? [s.stop, s.presence.turnsStarted, s.presence.isTurnRunning, s.lastActions.session ?? null]
+    : isPrRowId(id)
+      ? [
+          s.prViews,
+          s.ledger.prs,
+          s.ledger.prOrder,
+          Object.fromEntries(Object.entries(s.lastActions).filter(([key]) => isPrRowId(key))),
+        ]
+      : rowFields(s, id)
 
 async function digestText(text: string): Promise<string> {
   const subtle = crypto.subtle
@@ -74,24 +56,16 @@ async function digestText(text: string): Promise<string> {
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** A companion's row version: a SHA-256 of the same `rowFields` a look's `rowVersion` hashes. */
 export async function remoteRowDigest(s: Session, id: string): Promise<string> {
-  const row = JSON.parse(remoteRowVersion(s, id))
-  const canonical = JSON.stringify(row, (_key, value) =>
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? Object.fromEntries(
-          Object.keys(value)
-            .sort()
-            .map(key => [key, value[key]]),
-        )
-      : value,
-  )
-  return `row-sha256-v1:${await digestText(canonical)}`
+  return `row-sha256-v2:${await digestText(canonical(remoteFields(s, id)))}`
 }
 
 async function matchesRow(s: Session, command: RemoteCommand): Promise<boolean> {
+  const id = pressRowId(command.press)
   return (
-    command.expected === remoteRowVersion(s, pressRowId(command.press)) ||
-    command.expected === (await remoteRowDigest(s, pressRowId(command.press)))
+    command.expected === (id === 'session' || isPrRowId(id) ? canonical(remoteFields(s, id)) : rowVersion(s, id)) ||
+    command.expected === (await remoteRowDigest(s, id))
   )
 }
 

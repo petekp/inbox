@@ -305,7 +305,7 @@ describe('prs', () => {
         pr,
         pr.checks.find(c => c.name === name)!,
         presses,
-      ).map(a => [a.label, a.kind, a.hotkey ?? null])
+      ).actions.map(a => [a.label, a.kind, a.hotkey ?? null])
 
     expect(pr.checks.map(c => [c.name, c.bucket])).toEqual([
       ['lint', 'fail'],

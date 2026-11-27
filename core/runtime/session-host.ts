@@ -118,6 +118,8 @@ export type SessionHost<S extends Session> = {
    */
   fetchPrsInBackground(): void
   refreshPrsIfDue?(): Promise<void>
+  /** Asks Herdr what the session's delegates do, at most each `HERDR_CHECK_MS`, as while a look shows the Status. */
+  checkDelegatesIfDue?(): Promise<void>
   gh: {
     /**
      * What every session of the host shares about GitHub, so a view one session read lately serves the others, and

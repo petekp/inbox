@@ -3,13 +3,14 @@ import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import { sessionFolder } from './mod-commands'
 import { later } from './mod-drawn'
 import { publishToHerdr } from './mod-herdr'
+import { checkDelegatesIfDue } from './mod-pane-open'
 import type { Mod } from './mod-ports'
 import { wakeAfterSettle } from './mod-press-run'
 import { pollPrs } from './mod-prs'
 import { removeModRegistry, writeModRegistry } from './mod-registry'
 import { readRemoteState } from './mod-saves'
 import { conversation, currentOwner } from './mod-sessions'
-import { viewerLeases } from './mod-state'
+import { sessionState, viewerLeases } from './mod-state'
 import { SETTLED_MS } from '../../core/view/timing'
 
 type PublishCalls = Pick<
@@ -58,6 +59,7 @@ export async function publishStatus(m: PublishCalls, isEnding = false, isExit = 
           dialogs,
           ...(await readRemoteState(m.saves, conversation.id, session, viewerLeases.peek(conversation.id))),
           isUnread: unreadable === conversation.id,
+          isSendHeld: sessionState.isSendHeld,
         }
       },
       isExit,
@@ -74,6 +76,7 @@ export async function herdrPress(m: PublishCalls, id: string, f: HerdrFile): Pro
   const host = {
     ...m.hostOf(currentOwner(), 'terminal'),
     refreshPrsIfDue: () => pollPrs(m, true),
+    checkDelegatesIfDue: async () => void checkDelegatesIfDue(m).catch(() => undefined),
     viewers: viewerLeases.of(id, () => void m.publishStatus()),
     commands: m.saves.commands?.(id, () => void m.publishStatus()),
   }

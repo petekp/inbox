@@ -14,6 +14,14 @@ Checked live on 2026-11-11 by sending the request `core/remote/herdr-sweep.ts:la
 
 The sweep relies on the last three facts. It removes nothing unless the list holds its own terminal's `address` and every entry has a `labels` object.
 
+## `hc events --terminal`
+
+Checked live on 2026-11-26 with hc 0.1.22, on a terminal `hc run --bg` made, by setting its `inbox.press` label twice with `hc label`.
+
+- The first line is a snapshot, `{"channel":null,"seq":…,"terminals":[…]}`, so a reader wakes on it.
+- Each label change is one line: `{"jsonrpc":"2.0","method":"event","params":{"data":{"labels":{…,"inbox.press":"press-1"}},"seq":…,"terminal":"t1mr","type":"labels"}}`. `hooks/mod/mod-herdr.ts:wakeLabelIn` reads this shape.
+- `--doc <NAME>` follows a document by name. It does not follow labels, so the mod still follows the terminal and keeps its 10-second poll for an event it missed.
+
 ## The globals a mod gets
 
 Herdr's mod runtime is gpui-shell 0.7.1, built into the Herdr app. It runs a mod on QuickJS, through the `rquickjs` crate. The app's binary names its engine files under `vendor/gpui-kit/crates/shell/src/engine/quickjs/`. The source of the app and of gpui-kit was not available, so this list comes from the runtime, not from source. Herdr's own repository, the terminal multiplexer, holds no gpui-kit or app code.
@@ -34,4 +42,12 @@ The runtime freezes `Object.prototype`, `Array.prototype` and `String.prototype`
 
 With no `Intl`, QuickJS formats dates and numbers its own way and ignores the options. `toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })` gives `08:33:05 PM`, with seconds. `(1234.5).toLocaleString()` gives `1234.5`. The load spec runs on Bun's formatting, so it cannot catch a difference in this output.
 
-`herdr/tests/mod-load.spec.ts` loads the built `herdr/mod/inbox/main.js` with only these globals. After a Herdr app update, run the probe again and update `HERDR_GLOBALS` to match.
+`herdr/tests/mod-load.spec.ts` loads the built `herdr/mods/inbox/main.js` with only these globals. After a Herdr app update, run the probe again and update `HERDR_GLOBALS` to match.
+
+## `herdr-app check` and missing exports
+
+Checked on 2026-11-26 with Herdr app 0.1.18, by running `herdr-app check` with a scratch `HOME` and `HERDR_APP_HOME`.
+
+- A mod that names an export the `herdr` module lacks fails to load: "Could not find export 'notAThing' in module 'herdr…'", and the check fails. Reading the same name from `import * as herdr from 'herdr'` gives `undefined`. So the mod reads an export added in a recent app, such as `checking`, from the module (`herdr/src/main.ts:isChecking`).
+- `checking()` is true during a check. `init()` runs there and the check then ends, so timers it starts never fire. 0.1.18 warned "a reload stranded script tasks that will never settle (1 a HostModule's async function, 3 cx.timer.every(ms, fn))" until the mod started no work while checking (`herdr/src/background.ts:startBackground`).
+- The inbox's mod wrote no file to the scratch home during a check.

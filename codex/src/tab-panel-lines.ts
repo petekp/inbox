@@ -5,7 +5,7 @@ import {
   isStatusUnderActions,
   type FeedbackTone,
 } from '../../core/view/feedback'
-import type { AfterLine } from './tab-held-after'
+import type { DrawnAfter } from './tab-held-after'
 import { tabState } from './tab-state'
 import type { Row } from './tab-state'
 import { errorOf } from './tab-ui'
@@ -43,7 +43,7 @@ type Press = {
   label: string | null
   tone: FeedbackTone
   /** The status the row's line drew after its title, which the form a row leaves keeps. */
-  after?: AfterLine | null
+  after?: DrawnAfter | null
 }
 
 /** The press each row's line last drew, which the form a row leaves keeps while it fades out. */
@@ -78,7 +78,8 @@ export function startPanelLines() {
 
 /**
  * Steps the lines an open row's panel draws, on any tab: its press status under its buttons and its status lines above
- * them. Each grows in when it shows and closes from its place when it goes. `press` is the press the row's line last
+ * them. Each grows in when it shows, faint at once while the row's press is out or just answered, and closes from its
+ * place when it goes. `press` is the press the row's line last
  * drew, for a row that draws the form it leaves.
  */
 export function stepPanelLines(
@@ -90,9 +91,10 @@ export function stepPanelLines(
 ) {
   const { text, tone } = statusUnderOf(row, press)
   const lines = text ? [{ id: row.id, text, tone }] : []
-  pressLines.set(row.id, stepLines(lines, lastPressLines.get(row.id), pressMotion, now, changed, kept))
+  const isPressed = outOn(row.id) !== null || tabState.answeredRows.has(row.id)
+  pressLines.set(row.id, stepLines(lines, lastPressLines.get(row.id), pressMotion, now, changed, kept, isPressed))
   const status = statusLinesOf(row.id, statusTextOf(row))
-  statusLines.set(row.id, stepLines(status, lastStatusLines.get(row.id), statusMotion, now, changed, kept))
+  statusLines.set(row.id, stepLines(status, lastStatusLines.get(row.id), statusMotion, now, changed, kept, isPressed))
 }
 
 /** Keeps the panel lines a row drew last, unstepped, for a row drawn again from an earlier draw, as a settling PR block's. */

@@ -35,11 +35,13 @@ import {
 import { checkActions, prBlockActions, threadActions } from '../../core/view/pr-tab'
 import { type DrawnPr, isDismissed } from '../../core/view/pr-views'
 import { checkKey, commentLine, commentParts, readableComment, threadWhere } from '../../core/domain/prs'
-import { DOT, settledLabel, settledMark, type SettledState } from '../../core/view/rows'
+import { DOT, settledMark, type SettledState } from '../../core/view/rows'
 import { desktopTextPt } from './desktop-metrics'
-import { glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } from './terminal-text'
+import { desktopSettledLine, glued, lineCount, partedLines, statusAfterTitle, terminalTextLines } from './terminal-text'
 import { cellWidth, clipLabel } from '../../core/domain/text'
 import { runningMark } from '../../core/view/timing'
+import { prStoppedWarningOf } from '../../core/view/feedback'
+import { partSpace } from './pane-part-space'
 
 export function panePrRows(
   {
@@ -88,7 +90,7 @@ export function panePrRows(
       line: { ...(lead ? { before: `${lead} / ` } : {}), text: title, after: meta },
       subtitle: <Text color={pal.muted}>{lead ? `${lead}${DOT}${meta}` : meta}</Text>,
       body: null,
-      keys: () => checkActions(pr, c, presses).map(a => prKeyAction(a, `${pr.ref}-${checkKey(c)}`)),
+      keys: () => checkActions(pr, c, presses).actions.map(a => prKeyAction(a, `${pr.ref}-${checkKey(c)}`)),
     }
   }
   const threadRow = (pr: PrView, t: PrThread): Row => {
@@ -151,7 +153,7 @@ export function panePrRows(
       )
     }
     const text = threadRowText(pr, t, lastActions)
-    const actions = splitFollowUps(threadActions(pr, t, presses))
+    const actions = splitFollowUps(threadActions(pr, t, presses).actions)
 
     return {
       id,
@@ -182,11 +184,13 @@ type PanePrRows = ReturnType<typeof panePrRows>
 
 export function panePrBlocks({
   look,
+  isInline,
   pal,
   Text,
   Box,
   blankLine,
   isThreadSent,
+  isSendHeld,
   lastActions,
   prState,
   presses,
@@ -207,6 +211,7 @@ export function panePrBlocks({
   markGlyph,
   divided,
   pressLine,
+  feedbackLabel,
   listRow,
   prKeyAction,
   desktopLabel,
@@ -219,11 +224,13 @@ export function panePrBlocks({
   PaneBase,
   | 'listColumns'
   | 'look'
+  | 'isInline'
   | 'pal'
   | 'Text'
   | 'Box'
   | 'blankLine'
   | 'isThreadSent'
+  | 'isSendHeld'
   | 'lastActions'
   | 'prState'
   | 'presses'
@@ -237,7 +244,7 @@ export function panePrBlocks({
 > &
   Pick<PaneRowParts, 'section' | 'undoPlace' | 'settledContent' | 'groupTitle' | 'titleGap' | 'sections'> &
   Pick<PaneRowFrame, 'desktopFrame'> &
-  Pick<PaneRowLines, 'markGlyph' | 'divided' | 'pressLine'> &
+  Pick<PaneRowLines, 'markGlyph' | 'divided' | 'pressLine' | 'feedbackLabel'> &
   Pick<PaneRows, 'listRow'> &
   Pick<PanePrRows, 'prKeyAction'> &
   Pick<PaneRowKeys, 'desktopLabel' | 'desktopRowTextPt' | 'keyRow'> &
@@ -248,7 +255,9 @@ export function panePrBlocks({
     const undo: PrPress | null = state.canUndo ? { action: 'pr-undo', ref: pr.ref } : null
     const key = `settled-pr:${pr.ref}`
     const mark = settledMark(state)
-    if (look === 'desktop')
+    if (look === 'desktop') {
+      const desktopLine = desktopSettledLine(what, state, listColumns)
+
       return section(
         desktopFrame({
           key,
@@ -258,16 +267,22 @@ export function panePrBlocks({
           isSideCentered: true,
           children: [
             <Text wrap="wrap">
-              {what}
-              <Text color={pal.muted}>{`${DOT}${settledLabel(state.label, state.delivery, state.reply)}`}</Text>
+              {desktopLine.title}
+              {desktopLine.after.isUnder ? null : <Text color={pal.muted}>{desktopLine.after.text}</Text>}
             </Text>,
+            desktopLine.after.isUnder ? (
+              <Text key="label" wrap="wrap" color={pal.muted}>
+                {desktopLine.after.text}
+              </Text>
+            ) : null,
           ],
         }),
       )
+    }
 
     return section(
       <Box key={key} paddingLeft={1}>
-        {settledContent(what, state, undo, mark)}
+        {settledContent(what, state, undo, mark, listColumns - 2)}
       </Box>,
     )
   }
@@ -293,9 +308,11 @@ export function panePrBlocks({
     const tone = shown ? PR_TONES[shown.status] : null
     const isPrLastShown = !isDismissed(lastActions, pr.ref) && isBlockPressShown(pr, lastActions)
     const prLast = isPrLastShown ? pressLine(prMarkId(pr.ref)) : null
-    const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses, sync).map(a =>
+    const prActions = prBlockActions(pr, isThreadSent, prState.branchRef, presses, sync).actions.map(a =>
       prKeyAction(a, pr.ref),
     )
+    const shownPress = isPrLastShown ? (feedbackLabel(prMarkId(pr.ref))?.text ?? null) : null
+    const warning = prStoppedWarningOf(isSendHeld, prActions, shownPress)
 
     const fits = (text: string) =>
       look === 'desktop' ? desktopTextPt(text) <= desktopRowTextPt : cellWidth(text) <= listColumns - 2
@@ -330,12 +347,19 @@ export function panePrBlocks({
             </Text>
           </Box>
         ) : null}
+        {warning ? (
+          <Box marginTop={blankLine}>
+            <Text color={pal.tone.error} wrap="wrap">
+              {warning}
+            </Text>
+          </Box>
+        ) : null}
         <Box
           flexDirection="row"
           flexWrap="wrap"
           columnGap={space.buttonGap}
           rowGap={look === 'desktop' ? 1 : 0}
-          marginTop={blankLine}
+          marginTop={warning ? partSpace(look, isInline)('status', 'buttons') : blankLine}
         >
           {prActions.map(a =>
             a.emphasis === 'quiet' ? (
@@ -406,12 +430,21 @@ export function panePrBlocks({
     if (!order) return []
     const changed = order.changed
     const pressed = changed?.showsPress ? pressLine(RANK_AGAIN_ID) : null
+    const shownRank = changed?.showsPress ? (feedbackLabel(RANK_AGAIN_ID)?.text ?? null) : null
+    const warning = changed ? prStoppedWarningOf(isSendHeld, changed.actions, shownRank) : null
     const lines = (
       <Box flexDirection="column">
         <Text wrap="wrap">{order.title}</Text>
         {order.why ? mutedLine(order.why) : null}
         {changed ? (
           <Box flexDirection="column" marginTop={look === 'desktop' ? 1 : 0}>
+            {warning ? (
+              <Box marginBottom={partSpace(look, isInline)('status', 'buttons')}>
+                <Text color={pal.tone.error} wrap="wrap">
+                  {warning}
+                </Text>
+              </Box>
+            ) : null}
             <Box flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={space.buttonGap}>
               {changed.text ? <Text wrap="wrap">{changed.text}</Text> : null}
               {prOrderKeys.length > 0 ? keyRow(RANK_AGAIN_ID, prOrderKeys) : null}

@@ -8,6 +8,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-state.ts` | Codex adapter. The page's state. `tabState` holds each value that more than one tab file sets, and the file also holds the shared maps and sets and the row types. |
 | `codex/src/tab-host.ts` | Codex adapter. The bridge to Codex: timers, `request` and `callTool`, the message listener, the host's theme, and `dispose`. |
 | `codex/src/tab-motion.ts` | Codex adapter. Motion: measured heights, the animation each row state starts, tab widths and folds. |
+| `codex/src/tab-collapse.ts` | Codex adapter. A closing or settling row's collapse: the height it comes to rest at and the fades of what it drew open. A closing row whose closed form changes during the close moves to its new rest height. |
 | `codex/src/tab-panel-fade.ts` | Codex adapter. A row's panel fades: through a list of steps, the parts of a closing panel that fade, and a faint turned-back panel's close. |
 | `codex/src/tab-form-swap.ts` | Codex adapter. The fades of a row's change between its settled form and another: the form it leaves, drawn over the form it takes, fades out while the height holds, and the new form's lines fade in once the height moves. |
 | `codex/src/tab-wake.ts` | Codex adapter. The timed work after a draw: scrolling the open row into view, and the draw when the next move ends. |
@@ -27,12 +28,12 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-press.ts` | Codex adapter. Reads of the presses out in the controller's state that need no rows: the press out on a row, the Undos under way, and when the oldest press began. |
 | `codex/src/tab-rows.tsx` | Codex adapter. Each tab's rows, built from the view, with the actions each row's buttons press. |
 | `codex/src/tab-part-gap.ts` | Codex adapter. `partAttrs` names a part of an open row and sets its top padding, and `--above` for the tree's strokes, from `partGap`. |
-| `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's Holds up line, context and option lines as the `.tree` its ◆ starts. |
+| `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's Holds up line, context and option lines as the `.tree` its ◆ or □ starts. |
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
 | `codex/src/tab-parted.tsx` | Codex adapter. `Sep`, the ` · ` that leads each part of a `.parted` line, so a part that starts a line hides its dot. Its layout is in `tab-css/parted.css`. |
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |
 | `codex/src/tab-panel-lines.ts` | Codex adapter. A row's press as its line draws it, and the motion state of the press status under an open row's buttons and its status lines above them, on every tab. |
-| `codex/src/tab-held-after.ts` | Codex adapter. The status an open row's line keeps after its title while the row's status goes under its buttons. |
+| `codex/src/tab-held-after.ts` | Codex adapter. The status an open row's line keeps after its title while the row's status goes under its buttons, by `core/view/held-line.ts:stepHeldLine`. A status that lets go fades out, and the tab draws again when its fade ends. |
 | `codex/src/tab-groups.tsx` | Codex adapter. The Asks and Finds tabs: their groups, empty lines and Closed folds. |
 | `codex/src/tab-prs.tsx` | Codex adapter. The PRs tab: PR blocks, their keys, the order lines, and settled PRs. |
 | `codex/src/tab-pr-steps.ts` | Codex adapter. The motion state of each PR block, PR row, PR group, press line and the tab's own buttons on the PRs tab, through the row states. |

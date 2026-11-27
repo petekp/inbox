@@ -105,7 +105,7 @@ In the clone, each driver uses the VM user's real config folders, where the prev
 Every check that needs an agent turn uses a real one, on the evals' model. A scripted stand-in model cannot be pointed at all four agents:
 
 - Codex's inbox model runs `codex exec --ignore-user-config` (`codex/src/update.ts`), so a custom provider never reaches it.
-- omp picks the person's `@inbox` role first, then a Sonnet from the signed-in `anthropic` provider (`inboxModel` in `omp/src/host.ts`).
+- omp picks the person's `@inbox` role first, then a Sonnet from the signed-in `anthropic` provider (`inboxModel` in `omp/src/inbox-model.ts`).
 - Claude Code reaches a stand-in only by an API key, which changes the sign-in path that mods behave differently under.
 
 A real turn varies. A check that fails is run again at most twice. Every attempt is kept, and a check that passes only on a retry is marked flaky and goes to the release owner. It is never reported as a plain pass.

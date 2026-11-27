@@ -24,7 +24,7 @@ const isAnswer = (en: AskEntry | undefined) => en?.option !== undefined || en?.o
 const isJoined = (en: AskEntry) => en.noteOf !== undefined
 
 /**
- * A selected row's card on desktop when its lines hang from the row's ◆ on a tree: the title, each branch, and the
+ * A selected row's card on desktop when its lines hang from the row's ◆ or □ on a tree: the title, each branch, and the
  * answer buttons. The card's border, fill and top and bottom padding sit on one Box around the frames, so the app
  * rounds the whole card once. The app rounds each filled Box, so the frames inside draw no fill or border.
  */
@@ -39,9 +39,12 @@ export function paneDesktopCard({
   sideAge,
   keyedButton,
   partSpace,
+  restColor,
 }: Pick<PaneBase, 'Box' | 'Text' | 'pal' | 'space'> & {
   /** The space between two parts of the card, from `partSpace`. */
   partSpace: (above: RowPart, below: Exclude<RowPart, 'title'>) => number
+  /** The color of an entry's text after its label, from `paneAskTree`. */
+  restColor: (en: AskEntry) => string | undefined
 } & Pick<PaneRowKeys, 'keyedButton'> &
   Pick<PaneRowFrame, 'desktopFrame'> &
   Pick<ReturnType<typeof paneDesktopTree>, 'desktopTreeLine'> &
@@ -51,7 +54,7 @@ export function paneDesktopCard({
     <Text wrap="wrap">
       {en.lead ? <Text color={pal.muted}>{en.lead}</Text> : null}
       {en.label ? <Text bold={en.lead !== undefined}>{en.label}</Text> : null}
-      <Text color={pal.muted}>{en.rest}</Text>
+      <Text color={restColor(en)}>{en.rest}</Text>
     </Text>
   )
   const line = (rowId: string, en: AskEntry, above: AskEntry | undefined) =>

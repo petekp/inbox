@@ -1,13 +1,13 @@
 import type { Item, Closed, PressKind, Finding } from '../../types'
 import { closedState } from '../domain/ledger-close'
 import type { ClosedState } from '../domain/ledger-close'
-import { ago } from '../domain/text'
+import { ago, cutLine } from '../domain/text'
 import { capitalized } from '../domain/press-labels'
 import type { HelpStep } from '../domain/help-steps'
 import type { EarlierLine } from '../domain/earlier-answers'
 import type { RowPress } from '../domain/presses'
 import { offersUndo } from './pressed'
-import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS } from './help'
+import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS, TASK_MARK } from './help'
 import { canUndoClose, isUndoLeft } from './timing'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
@@ -87,6 +87,7 @@ export type ActionIcon = 'done' | 'retry' | 'open' | 'copy' | 'run'
 
 export const ROW_COPY = {
   retry: 'Try again',
+  goToSession: 'Go to session',
   send: 'Send',
   cancel: 'Cancel',
   discard: 'Discard',
@@ -97,24 +98,44 @@ export const ROW_COPY = {
   reopen: 'Reopen',
 } as const
 
+/**
+ * Why a message did not send when Claude Code held it after the person stopped the session. Claude Code holds plugin
+ * messages until the person types in that session, and a press from outside it, as in the Herdr look, does not count.
+ */
+export const STOPPED_REASON = 'you stopped this session. It takes inbox messages again after you write to it.'
+
+/** The button that shows the session a message was not sent to, so the person can type there. */
+export type SessionKey = { label: string; emphasis: 'normal' }
+
+/**
+ * Go to session for a message refused for `reason`, when the person stopped the session and the look shows the
+ * session from outside it, as the Herdr look does, and passes `canShowSession`. Null otherwise.
+ */
+export function sessionKeyOf(reason: string | null, canShowSession: boolean): SessionKey | null {
+  return canShowSession && reason === STOPPED_REASON ? { label: ROW_COPY.goToSession, emphasis: 'normal' } : null
+}
+
 /** The stop banner's button: Resume, and Resuming… while its message is on its way. */
 export function resumeLabel(isSending: boolean): string {
   return isSending ? 'Resuming…' : 'Resume'
 }
 
 /**
- * The press a Closed line offers: Undo after its notification was refused, else Reopen on a row the person dismissed,
- * which stays reachable for the rest of the session. Reopening loses nothing, since a dismissal sent nothing.
+ * A Closed line's buttons. Its press is Undo after its notification was refused, else Reopen on a row the person
+ * dismissed, which stays reachable for the rest of the session. Reopening loses nothing, since a dismissal sent nothing.
+ * A look that passes `canShowSession` draws `sessionKey` before the press, as `sessionKeyOf` gives it.
  */
-export function closedLineAction(d: {
-  id: string
-  how: Closed['how']
-  canRestore?: boolean
-  delivery: ClosedDelivery
-}): { label: string; press: RowPress } | null {
-  if (d.canRestore === false) return null
-  if (canUndoRefused(d.delivery)) return { label: ROW_COPY.undo, press: { id: d.id, action: 'undo' } }
-  return d.how === 'dismissed' ? { label: ROW_COPY.reopen, press: { id: d.id, action: 'undo' } } : null
+export function closedLinePlan(
+  d: { id: string; how: Closed['how']; canRestore?: boolean; delivery: ClosedDelivery },
+  canShowSession = false,
+): { action: { label: string; press: RowPress } | null; sessionKey: SessionKey | null } {
+  const sessionKey = sessionKeyOf(refusalOf(d.delivery), canShowSession)
+  if (d.canRestore === false) return { action: null, sessionKey }
+  if (canUndoRefused(d.delivery))
+    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: 'undo' } }, sessionKey }
+  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: 'undo' as const } }
+
+  return { action: d.how === 'dismissed' ? reopen : null, sessionKey }
 }
 
 export type ActionView = {
@@ -272,7 +293,7 @@ export function isHandedOffDone(row: Pick<RowView, 'state' | 'feedback'>): boole
  * in the row's mark column. `isRunning` says the look draws its running mark in place of `text`, as on the Status,
  * while what the row sent is on its way.
  */
-export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' | 'needsYou' }
+export type ResultMark = { text: string; isRunning: boolean; tone?: 'done' | 'needsYou' | 'tasks' }
 
 const RUNNING_RESULT: ResultMark = { text: RUNNING_MARK, isRunning: true }
 
@@ -293,14 +314,20 @@ export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultM
     : { text: '', isRunning: false }
 }
 
-export const ASK_MARK: ResultMark = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone }
+const QUESTION_MARK: ResultMark = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone }
+const TASK_ROW_MARK: ResultMark = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone }
+
+/** The mark an open row waits on the person with: □ on a task, ◆ on a question or a dialog, none on a finding. */
+export function openMark(row: Pick<RowView, 'type'>): ResultMark | null {
+  return row.type === 'finding' ? null : row.type === 'task' ? TASK_ROW_MARK : QUESTION_MARK
+}
 
 /**
- * A row's mark in the mark column: its result mark, or ◆ on an open question or task, which waits on the person. A
- * running mark replaces ◆ while the agent works on the row.
+ * A row's mark in the mark column: its result mark, or on an open row its `openMark`, which waits on the person. A
+ * running mark replaces it while the agent works on the row.
  */
 export function rowMark(row: Pick<RowView, 'state' | 'feedback' | 'type'>): ResultMark | null {
-  return rowResultMark(row) ?? (row.state.is === 'open' && row.type !== 'finding' ? ASK_MARK : null)
+  return rowResultMark(row) ?? (row.state.is === 'open' ? openMark(row) : null)
 }
 
 export function allRows(v: InboxView): RowView[] {
@@ -424,6 +451,9 @@ export function closedTitleTone(state: Pick<SettledState, 'delivery' | 'closedAs
   return state.closedAs === 'handled' ? 'done' : 'muted'
 }
 
+/** Why the agent refused a closed row's message, or null when it was not refused. */
+export const refusalOf = (delivery: ClosedDelivery): string | null => (isSendRefused(delivery) ? delivery.error : null)
+
 function isSendRefused(delivery: ClosedDelivery): delivery is { error: string; canUndo: boolean } {
   return delivery !== null && typeof delivery === 'object'
 }
@@ -434,7 +464,17 @@ export function settledLabel(label: string, delivery: ClosedDelivery, reply?: st
   return deliveryLabel(sendStepOf(delivery), label, reply)
 }
 
+const MAX_OUTCOME_CHARS = 120
+
+/**
+ * An outcome as a closed row shows it: whole, or cut at a word with an ellipsis when over `MAX_OUTCOME_CHARS`, so a
+ * long answer the person typed does not fill the row. The record keeps the whole text.
+ */
+export function shortOutcome(outcome: string): string {
+  return cutLine(outcome, t => t.length <= MAX_OUTCOME_CHARS)
+}
+
 /** A closed record's outcome as a look shows it. A finding a question replaced says where it went. */
 export function outcomeLabel(c: { outcome: string; askedAs?: string }): string {
-  return c.askedAs ? 'Now a question in Asks' : capitalized(c.outcome)
+  return c.askedAs ? 'Now a question in Asks' : capitalized(shortOutcome(c.outcome))
 }

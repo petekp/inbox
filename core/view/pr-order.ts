@@ -9,8 +9,8 @@ import type { PrLinks } from '../domain/pr-fetch'
 import { RANK_AGAIN_ID } from './pr-rows'
 import { openPrViews } from './pr-views'
 import type { DrawnPr } from './pr-views'
-import { lastPressOf, withOut } from './pr-press'
-import type { LastPress, PrAction } from './pr-press'
+import { lastPressOf, prPlan, withOut } from './pr-press'
+import type { LastPress, PrAction, PrPlan } from './pr-press'
 
 export const RANK_AGAIN_LABEL = 'Rank again'
 
@@ -129,6 +129,11 @@ export function prOrderView(
         }
       : null,
   }
+}
+
+/** The changed line's plan: its buttons, and Go to session after the stopped session refused Rank again. */
+export function rankAgainPlan(actions: PrAction[], presses: PressState, canShowSession: boolean): PrPlan {
+  return prPlan(lastPressOf(presses, RANK_AGAIN_ID), actions, canShowSession)
 }
 
 /**

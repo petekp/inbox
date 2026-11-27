@@ -9,7 +9,7 @@ import { seenSubjectIds } from '../../core/view/status-page'
 import type { StatusDrawn } from '../src/status-look'
 import { allOf, openPanel, writtenFiles } from './gpui-stand-in'
 
-const { isPaneShown, statusPlaced, surelyShown, StatusLook, writeLook } = await import('../src/status-look')
+const { isPaneShown, ownPaneId, statusPlaced, surelyShown, StatusLook, writeLook } = await import('../src/status-look')
 const { tabBlocks } = await import('../src/draw')
 const { NOW, demoScreen, uiOn } = await import('./fixtures')
 
@@ -69,6 +69,24 @@ test('the pane counts as shown only while its window has focus and its tab shows
   expect(isPaneShown('p-inbox', zoomedInbox, spacesWith({ active: true, zoomed: true }), { active: true })).toBe(true)
   expect(isPaneShown('p-inbox', panes, shownTab, null)).toBe(false)
   expect(isPaneShown(undefined, panes, shownTab, { active: true })).toBe(false)
+})
+
+test('a split panel finds its own pane whichever terminal in the tab it follows', () => {
+  const terminals: { address: string; labels: Record<string, string> }[] = [
+    { address: 't1', labels: { 'inbox.panel': 'p-inbox' } },
+    { address: 't2', labels: { 'inbox.session': 's2' } },
+  ]
+  const onePanel = [
+    { pane: 'p-t1', tab: 'tab1', mod: null },
+    { pane: 'p-inbox', tab: 'tab1', mod: 'inbox' },
+    { pane: 'p-other', tab: 'tab2', mod: 'inbox' },
+  ]
+  expect(ownPaneId(undefined, onePanel, 'tab1', terminals, 't1')).toBe('p-inbox')
+  expect(ownPaneId(undefined, onePanel, 'tab1', terminals, 't2')).toBe('p-inbox')
+  expect(ownPaneId('p-header', onePanel, 'tab1', terminals, 't2')).toBe('p-header')
+  const twoPanels = [...onePanel, { pane: 'p-second', tab: 'tab1', mod: 'inbox' }]
+  expect(ownPaneId(undefined, twoPanels, 'tab1', terminals, 't1')).toBe('p-inbox')
+  expect(ownPaneId(undefined, twoPanels, 'tab1', terminals, 't2')).toBeUndefined()
 })
 
 const drawnOf = (sessionId: string, placed: StatusDrawn['placed'], writtenAt = NOW + 100_000): StatusDrawn => ({
@@ -243,15 +261,16 @@ test('the Inbox view reports the Status rows it measured and drew when the perso
   expect(looks()).toHaveLength(2)
 })
 
-test('the Inbox view tells the host its PRs tab is shown on opening it and every half minute, and stops when another tab shows', async () => {
+test('the Inbox view tells the host its PRs tab or Status is shown on opening it and every half minute, and stops when another tab shows', async () => {
   let at = NOW + 1_000
   setSystemTime(at)
   const { panel, paint, click, settle } = await openPanel()
   const tab = (label: string) => allOf(paint()).find(n => n.label?.startsWith(label))!
-  const reports = () =>
+  const reportsOf = (kind: 'prsShown' | 'statusShown') =>
     writtenFiles.filter(
-      ({ path, text }) => path.startsWith(`${pressFolder('/app', 's1')}/`) && 'prsShown' in JSON.parse(text),
+      ({ path, text }) => path.startsWith(`${pressFolder('/app', 's1')}/`) && kind in JSON.parse(text),
     )
+  const reports = () => reportsOf('prsShown')
   const check = async (ms: number) => {
     at += ms
     setSystemTime(at)
@@ -275,6 +294,16 @@ test('the Inbox view tells the host its PRs tab is shown on opening it and every
   expect(reports()).toHaveLength(2)
   click(tab('PRs'))
   await check(1_000)
+  expect(reports()).toHaveLength(3)
+
+  const statusReports = reportsOf('statusShown').length
+  click(tab('Status'))
+  await check(1_000)
+  expect(reportsOf('statusShown')).toHaveLength(statusReports + 1)
+  await check(14_000)
+  expect(reportsOf('statusShown')).toHaveLength(statusReports + 1)
+  await check(1_000)
+  expect(reportsOf('statusShown')).toHaveLength(statusReports + 2)
   expect(reports()).toHaveLength(3)
   await settle()
 })

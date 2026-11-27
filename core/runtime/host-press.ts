@@ -184,6 +184,7 @@ export type PressHost<S extends Session> = Pick<
   | 'perform'
   | 'refreshPrs'
   | 'refreshPrsIfDue'
+  | 'checkDelegatesIfDue'
   | 'fetchPrsInBackground'
   | 'gh'
   | 'newId'

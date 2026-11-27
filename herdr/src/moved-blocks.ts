@@ -1,5 +1,5 @@
 import type { Block } from './blocks'
-import type { Tracks } from './motion'
+import type { Tracks } from './tracks'
 
 /**
  * The positions in `at` of a longest run of values that increase, not necessarily next to each other: the blocks that

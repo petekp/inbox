@@ -6,7 +6,8 @@ import { PRESS_GUARD_MS } from '../../core/view/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { NEXT_FRAME_MS } from '../src/block-glide'
-import { NO_TRACKS, moveRows } from '../src/motion'
+import { moveRows } from '../src/motion'
+import { NO_TRACKS } from '../src/tracks'
 import { heldTabs } from '../src/held-form'
 import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import { NOW, demoScreen, dismissedPr, dismissedSession, uiOn } from './fixtures'
@@ -109,17 +110,17 @@ test('a leaving group keeps its place among the blocks that remain, its heading 
   expect([...goneGroup].map(id => leaving.motion.get(id)?.state)).toEqual(['leaving', 'leaving', 'leaving', 'leaving'])
 })
 
-test('a PR dismissed and then undone changes form in place, never drawn twice and never fading in or out', () => {
+test('a PR dismissed and then undone by a press changes form in place at once, never drawn twice and never fading in or out', () => {
   const ref = 'acme/visor#29'
   const id = prMarkId(ref)
   const open = tabBlocks(demoScreen(), uiOn('prs'))
   const first = moveRows(open, NO_TRACKS, NOW, true)
-  const dismissed = moveRows(dismissedPr(ref).blocks, first.tracks, NOW + 1, false)
+  const dismissed = moveRows(dismissedPr(ref).blocks, first.tracks, NOW + 1, false, true)
   expect(dismissed.blocks.filter(b => b.id === id).map(b => b.kind)).toEqual(['row'])
-  expect(dismissed.motion.get(id)).toMatchObject({ state: 'settling', box: null })
-  const undone = moveRows(open, dismissed.tracks, NOW + 2, false)
+  expect(dismissed.motion.get(id)).toMatchObject({ state: 'settling', box: null, blockSwap: null })
+  const undone = moveRows(open, dismissed.tracks, NOW + 2, false, true)
   expect(undone.blocks.filter(b => b.id === id).map(b => b.kind)).toEqual(['pr'])
-  expect(undone.motion.get(id)).toMatchObject({ state: 'closing', box: null, closing: null })
+  expect(undone.motion.get(id)).toMatchObject({ state: 'closing', box: null, closing: null, blockSwap: null })
 })
 
 const openRow = (blocks: Block[]) => rowsOf(blocks).find(r => r.isSelected)?.id

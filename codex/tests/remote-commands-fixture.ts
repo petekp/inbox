@@ -1,6 +1,7 @@
 import { demoSession } from '../../core/view/demo'
 import { upgradeSession } from '../../core/view/session-files'
-import { remoteRowVersion, startRemoteCommand } from '../../core/remote/remote-commands'
+import { startRemoteCommand } from '../../core/remote/remote-commands'
+import { rowVersion } from '../../core/domain/preconditions'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
 import { commandsOf, remoteReceipts } from '../../core/runtime/remote-command-state'
 import { followCommandRows, movedLegacyCommands } from '../../core/runtime/command-store'
@@ -57,7 +58,7 @@ export function remoteCommandFixture(isRunning?: (runner: { id: string }) => boo
       id: `${now.toString(36)}-fixture-operation-${sequence++}`,
       session: 's1',
       issuedAt: now,
-      expected: remoteRowVersion(state, 'i1'),
+      expected: rowVersion(state, 'i1'),
       press: { action: 'type', id: 'i1', text },
     }
   }

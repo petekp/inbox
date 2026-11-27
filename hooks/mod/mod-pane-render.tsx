@@ -11,7 +11,7 @@ import { noteStatusTop, paneHandlers, paneViewKeys, restoreDesktopFocus } from '
 import { matchPaneEscape, paneDrawnOnDesktop, paneOpened } from './mod-pane-open'
 import { scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
-import { cancelUndoScroll, paneState } from './mod-state'
+import { cancelUndoScroll, paneState, sessionState } from './mod-state'
 import { currentOwner } from './mod-sessions'
 import { applyUiEvents, hostFactsOf } from './mod-ui'
 import { landTerminalFrame } from './mod-ui-loop'
@@ -47,9 +47,8 @@ import { statusKeyRows, statusSelected } from '../../core/view/status-keys'
 import { isRowTab, type ShownTab, shownTabs, tabBadge } from '../../core/view/tabs'
 import { glued } from '../pane/terminal-text'
 import { cellWidth } from '../../core/domain/text'
-import { PRESS_GUARD_MS } from '../../core/view/timing'
 import { noticeOf, rowErrorOf } from '../../core/view/ui-controller'
-import { collapsedOf, selectedOf } from '../../core/view/ui-controller-selection'
+import { collapsedOf, isGuardedRow, selectedOf } from '../../core/view/ui-controller-selection'
 import type { UiEvent } from '../../core/view/ui-controller-types'
 import { footerError } from '../../core/view/view'
 import { endClientDrawing, startClientDrawing } from '../pane/client-copy'
@@ -143,6 +142,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     handlers,
   )
   const isThreadSent = threadSentIn(lastActions)
+  const isSendHeld = sessionState.isSendHeld && !isDemo
   const presses = { lastActions, turns, now }
   const { prKeyAction, checkRow, threadRow } = panePrRows(
     { Text, pal, presses, Link, Box, Markdown, terminalText, lastActions, look, now },
@@ -186,9 +186,8 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
   const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
   const ids = rows[tab].map(r => r.id)
   const indexOf = new Map(ids.map((id, n) => [id, n]))
-  const guard = ui.selection[tab].guard
   const at = isListShown ? ids.indexOf(selectedOf(ui, drawn.view, tab) ?? '') : -1
-  const isOpenGuarded = !isStatusShown && guard !== null && now < guard.at + PRESS_GUARD_MS
+  const isRowGuarded = (rowId: string) => !isStatusShown && isGuardedRow(ui, tab, rowId, now)
   const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
   const isStatusCollapsed = (id: string) => view.collapsed.includes(id)
   const statusKeyRow = isStatusShown
@@ -210,7 +209,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     keyedButton,
     answersFit,
   } = paneRowKeys(
-    { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
+    { ...client, listColumns, isRowGuarded, look, Button, Box, pal, Text, space, Input, typing },
     handlers,
   )
   const {
@@ -275,6 +274,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
       isInline,
       e,
       optionsShown,
+      isSendHeld,
       blankLine,
       Button,
       settledLayout,
@@ -417,11 +417,13 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
 
   const { prsView } = panePrBlocks({
     look,
+    isInline,
     pal,
     Text,
     Box,
     blankLine,
     isThreadSent,
+    isSendHeld,
     lastActions,
     prState,
     presses,
@@ -442,6 +444,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     markGlyph,
     divided,
     pressLine,
+    feedbackLabel,
     ...rowFns,
     prKeyAction,
     desktopLabel,

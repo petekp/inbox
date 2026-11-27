@@ -6,20 +6,23 @@ import { prCheckId, prMarkId, prSyncOf, prThreadId, splitFollowUps, threadSentIn
 import { checkActions, prBlockActions, threadActions } from '../../core/view/pr-tab'
 import { isStatusUnderActions } from '../../core/view/feedback'
 import { pendingResult } from '../../core/view/pressed'
+import type { PrPlan } from '../../core/view/pr-press'
 import { demoSession } from '../../core/view/demo'
 import { herdrEnvelope } from '../../core/remote/herdr-envelope'
 import { sessionView } from '../../core/view/session-view'
 import { NO_HOLDS, QUEUED_AFTER_MS, SETTLED_MS } from '../../core/view/timing'
 import type { ListInput } from '../../core/view/timing'
 import { button } from '../src/blocks'
-import type { Block, RowBlock } from '../src/blocks'
+import type { Block, Button, RowBlock } from '../src/blocks'
+import { HOLD_MS } from '../src/block-glide'
 import { tabBlocks } from '../src/draw'
 import { keyMove } from '../src/keys'
 import { HERDR_LOOK, applyEvents } from '../src/controller'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
 import { freshUi } from '../../core/view/ui-controller-types'
 import type { SessionView } from '../../core/view/session-view'
-import { GIVE_UP_MS, SENDING, drawOuts, notAppliedText, rowSignature, settleOuts } from '../src/out'
+import { SENDING } from '../../core/view/unshown-press'
+import { GIVE_UP_MS, drawOuts, notAppliedText, rowSignature, settleOuts } from '../src/out'
 import type { Out } from '../src/out'
 import { pressFileText } from '../src/press-file'
 import { readSession } from '../src/files'
@@ -139,6 +142,8 @@ test('a press keeps its status under an open row’s buttons until it ends, even
   expect(isStatusUnderActions(ended.feedback!.source, true)).toBe(false)
 })
 
+const planLabels = (p: PrPlan) => [...(p.sessionKey ? [p.sessionKey.label] : []), ...p.actions.map(a => a.label)]
+
 test('the PRs tab draws each PR’s and each selected row’s buttons in the shared plans’ order', () => {
   const screen = demoScreen()
   const { view } = screen
@@ -148,8 +153,8 @@ test('the PRs tab draws each PR’s and each selected row’s buttons in the sha
   const blocks = tabBlocks(screen, uiOn('prs'))
   for (const pr of open) {
     const drawn = blocks.find(b => b.kind === 'pr' && b.id === prMarkId(pr.ref))
-    const planned = prBlockActions(pr, isSent, view.prs.branchRef, presses, prSyncOf(view.sync, pr.ref)).map(
-      a => a.label,
+    const planned = planLabels(
+      prBlockActions(pr, isSent, view.prs.branchRef, presses, prSyncOf(view.sync, pr.ref), true),
     )
     expect(drawn?.kind === 'pr' && drawn.buttons.map(b => b.label)).toEqual(planned)
   }
@@ -160,12 +165,13 @@ test('the PRs tab draws each PR’s and each selected row’s buttons in the sha
     const planned = open.flatMap(pr => [
       ...pr.threads
         .filter(t => prThreadId(pr, t) === row.id)
-        .map(t => splitFollowUps(threadActions(pr, t, presses)))
-        .map(({ keys, more }) => [...keys, ...more]),
-      ...pr.checks.filter(c => prCheckId(pr, c) === row.id).map(c => checkActions(pr, c, presses)),
+        .map(t => threadActions(pr, t, presses, true))
+        .map(p =>
+          planLabels({ ...p, actions: [...splitFollowUps(p.actions).keys, ...splitFollowUps(p.actions).more] }),
+        ),
+      ...pr.checks.filter(c => prCheckId(pr, c) === row.id).map(c => planLabels(checkActions(pr, c, presses, true))),
     ])
-    expect(planned.length).toBe(1)
-    expect(selected.buttons.map(b => b.label)).toEqual(planned[0]!.map(a => a.label))
+    expect(planned).toEqual([selected.buttons.map(b => b.label)])
   }
 })
 
@@ -248,11 +254,11 @@ test('while the last Undo’s press is out, u does nothing and that Undo’s fil
   expect(timeLeftDraws(out, paused, NOW + 3000).get('d7 undo')).toEqual({ is: 'paused', share })
 })
 
-test('once Undo ends, a row the list holds keeps a hidden Undo that u skips, and a row nothing holds folds', () => {
+test('once Undo ends, a row the list holds keeps a spent Undo that u skips, and a row nothing holds folds', () => {
   const at = NOW - SETTLED_MS - 500
   const held = dismissedRows({ d8: at }, at - 1000, { since: at, last: NOW - 100 })
   const spent = undoOf(held.blocks, 'd8')
-  expect(spent).toMatchObject({ label: 'Undo', isHidden: true, does: { is: 'nothing' } })
+  expect(spent).toMatchObject({ label: 'Undo', isSpent: true, does: { is: 'nothing' } })
   expect(pressOfKey(held.view).press).toBeNull()
   expect(timeLeftDraws(held.blocks, new Map(), NOW).size).toBe(0)
   const folded = dismissedRows({ d8: at }, at - 1000)
@@ -266,14 +272,14 @@ test('an Undo whose press is still out when its time ends stays drawn out in its
   const withOut = dismissedRows({ d8: at }, at - 1000, input, ['d8']).blocks
   const out = drawOuts(withOut, [outOn('d8', { action: 'undo', label: 'Undo' })], {}, NOW)
   expect(undoOf(out, 'd8')).toMatchObject({ label: 'Undo', isOut: true })
-  expect(undoOf(out, 'd8')?.isHidden).toBeUndefined()
+  expect(undoOf(out, 'd8')?.isSpent).toBeUndefined()
   expect(rowsOf(out).find(r => r.id === 'd8')?.buttons.length).toBe(
     rowsOf(blocks).find(r => r.id === 'd8')?.buttons.length,
   )
-  expect(undoOf(drawOuts(blocks, [], {}, NOW), 'd8')?.isHidden).toBe(true)
+  expect(undoOf(drawOuts(blocks, [], {}, NOW), 'd8')?.isSpent).toBe(true)
 })
 
-test('a settled answer keeps its spent Undo’s place until its message has waited for the agent past Undo’s end, and the look draws again then', () => {
+test('a settled answer keeps its spent Undo until its message has waited for the agent past Undo’s end, then fades it out before its place closes, and the look draws again then', () => {
   const at = NOW - SETTLED_MS - 500
   const s = demoSession(NOW, AGENT)
   const item = s.ledger.items.find(i => i.id === 'd11')!
@@ -300,16 +306,19 @@ test('a settled answer keeps its spent Undo’s place until its message has wait
   }
   const drawn = (screen: ReturnType<typeof screenAt>) => {
     const row = screen.is === 'inbox' ? rowsOf(screen.blocks).find(r => r.id === 'd11') : undefined
-    return [row?.settled?.label, row?.buttons.map(b => (b.isHidden ? `hidden ${b.label}` : b.label))]
+    const formOf = (b: Button) => (b.leftAt !== undefined ? 'leaving ' : b.isSpent ? 'spent ' : '')
+    return [row?.settled?.label, row?.buttons.map(b => `${formOf(b)}${b.label}`)]
   }
   const queued = { state: 'queued' as const, message: 'Pinch' }
   const placeEndsAt = at + SETTLED_MS + QUEUED_AFTER_MS
   const held = screenAt({ state: 'held', message: 'Pinch', until: at + SETTLED_MS, by: null }, NOW)
   const released = screenAt(queued, NOW)
   const waiting = screenAt(queued, placeEndsAt)
-  expect([drawn(held), drawn(released), drawn(waiting)]).toEqual([
-    ['Pinch', ['hidden Undo']],
-    ['Queued: Pinch', ['hidden Undo']],
+  const closed = screenAt(queued, placeEndsAt + HOLD_MS)
+  expect([drawn(held), drawn(released), drawn(waiting), drawn(closed)]).toEqual([
+    ['Pinch', ['spent Undo']],
+    ['Queued: Pinch', ['spent Undo']],
+    ['Queued: Pinch', ['leaving Undo']],
     ['Queued: Pinch', []],
   ])
   const ui = freshUi(HERDR_LOOK)

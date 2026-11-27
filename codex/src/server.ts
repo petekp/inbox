@@ -1,14 +1,11 @@
 import { makeCompanion } from './server-companion'
 import type { CompanionHandler } from './companion-protocol'
-import { delegatesSettled } from '../../core/domain/children'
 import type { RunWithInput } from './run'
-import { delegatesInHerdr, herdrCheckGate } from '../../core/remote/herdr'
 import type { DelegateSession } from '../../core/remote/hc-terminals'
 import type { PrPress } from '../../core/view/pr-press'
 import { noteText } from '../../core/view/press-reducer'
 import type { RowPress } from '../../core/domain/presses'
 import { preconditionsOf } from '../../core/domain/preconditions'
-import { statusChanged } from '../../core/runtime/session-status'
 import { recorded, withHolds } from '../../core/runtime/session-presses'
 import type { RowNote } from '../../types'
 import type { HerdrFile } from '../../core/remote/herdr-press-file'
@@ -131,32 +128,12 @@ export function makeServer(given: ServerDeps): Server {
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
   const background = makeBackground()
-  const { wakeAfterSettle, fetchPrsNow, fetchPrsWhenDue, served, onPress, onHerdrFile } = makeSessionHost(
-    deps,
-    newestTurns,
-    hooksTrustNow,
-    currentPage,
-    background,
-  )
+  const { wakeAfterSettle, fetchPrsNow, fetchPrsWhenDue, checkDelegatesWhenDue, served, onPress, onHerdrFile } =
+    makeSessionHost(deps, newestTurns, hooksTrustNow, currentPage, background)
   const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)
   const linkedPrs = linkedPrReads(id => readState(dir, id), fetchPrsNow)
   deps.followHerdrPresses?.(onHerdrFile)
   deps.followSaves?.(id => background.track(linkedPrs.heard(id)))
-
-  const isHerdrCheckDue = herdrCheckGate()
-
-  /**
-   * Asks Herdr about the running delegates at most each `HERDR_CHECK_MS` while the tab shows the Status, so a
-   * delegate's row follows Herdr while the session waits. The tab's next view shows the change.
-   */
-  function checkDelegatesWhenDue(id: string, s: SessionState) {
-    if (s.shownTab !== 'overview' || !isHerdrCheckDue(id, now())) return
-    background.track(
-      delegatesInHerdr(s.ledger.overview, deps.exec).then(states => {
-        if (states) return updateState(dir, id, x => statusChanged(x, o => delegatesSettled(o, states, now())), now)
-      }),
-    )
-  }
 
   async function callTool(
     name: string,

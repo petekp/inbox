@@ -6,7 +6,7 @@ import { localTarget } from './imports.mjs'
 import { API, nameOf, ts } from './ts.mjs'
 
 /** Committed build output, and types/parts, which scripts/build-types.mjs joins into types/index.d.ts instead of importing. */
-const SKIPPED_DIRS = ['codex/plugin/dist', 'herdr/mod', 'omp/dist', 'types/parts']
+const SKIPPED_DIRS = ['codex/plugin/dist', 'herdr/mods', 'omp/dist', 'types/parts']
 
 /**
  * Exports whose consumer is outside the repo's imports: a host or a tool loads the file, or a script reads it as text.
@@ -20,7 +20,10 @@ const ENTRY_POINTS = {
   'herdr/src/main.ts': { names: ['default'], why: 'The Herdr app loads the built mod and renders its default export.' },
   'core/domain/clients.ts': { names: ['CLIENTS'], why: 'scripts/structure/clients.mjs reads it.' },
   'core/domain/client-features.ts': { names: ['FeatureId'], why: 'scripts/structure/clients.mjs reads it.' },
-  'core/view/tones.ts': { names: ['DARK_TONES', 'LIGHT_TONES'], why: 'codex/build.mjs reads them for the tab colors.' },
+  'core/view/tones.ts': {
+    names: ['DARK_TONES', 'LIGHT_TONES', 'SUPPORTING_TEXT_SHARE'],
+    why: 'codex/build.mjs reads them for the tab colors.',
+  },
   'omp/src/host.ts': { names: ['default'], why: 'omp loads the built bundle and calls its default export.' },
   'prototypes/exact-inbox/app.ts': { names: ['answer', 'grants'], why: 'Exact loads the client data module.' },
   'prototypes/exact-inbox/tools/client-rules.ts': {

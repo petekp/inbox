@@ -48,13 +48,14 @@ type DrawnForHerdr = {
   session: Session
   dialogs: readonly Dialog[]
   isUnread: boolean
+  isSendHeld: boolean
 }
 
 /**
  * The engine calls the mod's Herdr code needs. `env` reads `HERDR_PANE_ID`, `HC_TERMINAL_ID`, `HERDR_APP_HOME` and
  * `HOME`, in that order, because the engine takes only a literal name. `stat` follows a link and says whether the
  * path is one. `spawn` streams a command's output, and the stream's `return` ends the command. `pluginRoot` is the
- * mod's install folder, which holds the Herdr mod at `herdr/mod/inbox`.
+ * mod's install folder, which holds the Herdr mod at `herdr/mods/inbox`.
  */
 export type HerdrCalls = {
   run: Run
@@ -199,7 +200,7 @@ export async function startInHerdr(calls: HerdrCalls, redraw: () => unknown): Pr
   await readHasMod(calls)
 }
 
-const bundledMod = (calls: HerdrCalls) => `${calls.pluginRoot}/herdr/mod/inbox`
+const bundledMod = (calls: HerdrCalls) => `${calls.pluginRoot}/herdr/mods/inbox`
 
 /** The calls the install question runs its presses with, and the pane's redraw, from the turn-on. */
 let askHost: { calls: HerdrCalls; redraw: () => unknown } | null = null
@@ -294,10 +295,8 @@ export async function publishToHerdr(
       const target = await targetOf(calls)
       if (!target) return null
       const appHome = target.kind === 'terminal' ? target.appHome : null
-      const [{ id, root, session, dialogs, isUnread, receipts, viewers, remoteHistoryAfter }, now] = await Promise.all([
-        drawn(),
-        calls.now(),
-      ])
+      const [{ id, root, session, dialogs, isUnread, isSendHeld, receipts, viewers, remoteHistoryAfter }, now] =
+        await Promise.all([drawn(), calls.now()])
       if (isExiting) return null
       const isPublished =
         target.kind === 'terminal' &&
@@ -318,6 +317,7 @@ export async function publishToHerdr(
             projectFolder: root,
             isFetchingPrs: session.prViews.isFetching,
             isReadFailed: isUnread,
+            isSendHeld,
             ...(dialogs[0] && { openDialog: dialogs[0].kind, openDialogText: dialogs[0].text }),
             ...(mod.version ? { version: mod.version, isNextBuild: mod.isNextBuild } : {}),
           },
@@ -454,7 +454,7 @@ export async function delegatesAsked(calls: HerdrCalls, o: SessionStatus | null)
   return delegatesInHerdr(o, calls.run, (await currentTarget(calls)).target)
 }
 
-async function checkDelegates(calls: DelegateCalls, herdr: HerdrCalls) {
+export async function checkDelegates(calls: DelegateCalls, herdr: HerdrCalls) {
   if (!isHerdrCheckDue(calls.ownerId, await calls.now())) return
   const agents = await delegatesAsked(herdr, await calls.overview())
   if (agents) await calls.settle(agents, await calls.now())

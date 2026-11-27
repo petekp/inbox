@@ -7,7 +7,7 @@ import {
   actionLabel,
   fieldExit,
   replyHint,
-  closedLineAction,
+  closedLinePlan,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -27,7 +27,7 @@ import { localEffects } from '../../core/domain/help-steps'
 import { groupEmptyText, tabBarBanners } from '../../core/view/banners'
 import type { BannerView } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
-import { feedbackTone, rowFeedbackText } from '../../core/view/feedback'
+import { feedbackTone, rowAgeAt, rowFeedbackText, stoppedWarningOf } from '../../core/view/feedback'
 import { FINDING_GROUPS } from '../../core/view/help'
 import { earlierLineText } from '../../core/domain/earlier-answers'
 import type { SessionView } from '../../core/view/session-view'
@@ -36,11 +36,12 @@ import type { ShownTab } from '../../core/view/tabs'
 import { SETTLED_MS, isDrawnInPlace } from '../../core/view/timing'
 import { footerError } from '../../core/view/view'
 import type { PressKind } from '../../types'
-import { button, emptyBlock } from './blocks'
+import { button, emptyBlock, sessionButtons } from './blocks'
+import { HOLD_MS } from './block-glide'
+import { undoPlaceEndsAt } from '../../core/view/ui-controller-clock'
 import type { Block, BodyLine, Button, Does, Field, Mark, RowBlock } from './blocks'
 import { prTabBlocks } from './draw-prs'
 import { prRowWaits } from '../../core/view/pr-rows'
-import { undoPlaceEndsAt } from '../../core/view/ui-controller-clock'
 import { openPrViews } from '../../core/view/pr-views'
 import { statusBlocks } from './draw-status'
 import { GOAL_KEYS_ID, goalSubmitLabel } from '../../core/view/status-keys'
@@ -72,6 +73,8 @@ export type LookScreen = {
   isGhMissing: boolean
   /** Whether the host has a PR fetch running, from the published file. */
   isFetchingPrs: boolean
+  /** Whether Claude Code holds the inbox's messages after the person stopped the session, from the published file. */
+  isSendHeld: boolean
 }
 
 const markOf = (m: ResultMark | null): Mark | null =>
@@ -88,7 +91,7 @@ function rowDoes(row: RowView, press: RowPress, kind: PressKind, agent: string):
 
 /** The row's buttons in the plan's order: its options, which the tree draws, then its keys, then its follow-ups. */
 function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] {
-  const { options, keys, more } = rowKeyPlan(row, isAllShown)
+  const { options, keys, more, sessionKey } = rowKeyPlan(row, isAllShown, true)
   const answers = options.map((o, n): Button => ({
     ...button(
       `${row.id} ${n}`,
@@ -103,6 +106,7 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
 
   return [
     ...answers,
+    ...sessionButtons(row.id, sessionKey),
     ...[...keys, ...more].map((k, n): Button => {
       const id = `${row.id} ${options.length + n}`
       if (k.slot === 'allOptions')
@@ -121,10 +125,10 @@ function rowButtons(row: RowView, isAllShown: boolean, agent: string): Button[] 
 }
 
 /**
- * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. Once it ends, the button keeps its place
- * hidden, as the Codex tab hides a spent Undo, so the row does not change shape before it folds. The panel draws Undo on
- * a line of its own, so a hidden one is an empty line. A row whose message waits for the agent stays until the agent
- * takes it, so it drops the place from `undoPlaceEndsAt` rather than hold that empty line.
+ * A settled row's Undo, as the plan's `undo` action gives it while Undo lasts. The panel draws Undo on a line of its
+ * own. Once Undo ends, the button keeps its place and its label, muted and taking no press, so the row neither changes
+ * shape before it folds nor shows an empty line. A row whose message waits for the agent stays until the agent takes
+ * it, so from `undoPlaceEndsAt` its spent Undo fades out while its place holds, then its place closes.
  */
 function undoButtons(row: RowView, agent: string, now: number): Button[] {
   if (row.state.is !== 'settled') return []
@@ -140,11 +144,12 @@ function undoButtons(row: RowView, agent: string, now: number): Button[] {
       },
     ]
 
-  const isWaitingForAgent = row.state.delivery === 'queued' && now >= undoPlaceEndsAt(row.state)
+  if (!row.state.offersUndo) return []
+  const leftAt = row.state.delivery === 'queued' ? undoPlaceEndsAt(row.state) : null
+  if (leftAt !== null && now >= leftAt + HOLD_MS) return []
+  const leaving = leftAt !== null && now >= leftAt ? { leftAt } : {}
 
-  return row.state.offersUndo && !isWaitingForAgent
-    ? [{ ...button(id, ROW_COPY.undo, 'quiet'), isHidden: true, runsOutAt }]
-    : []
+  return [{ ...button(id, ROW_COPY.undo, 'quiet'), isSpent: true, ...leaving, runsOutAt }]
 }
 
 /** An open field's buttons: Send, or the goal's Save, then Discard for a held reply or Cancel. */
@@ -160,6 +165,19 @@ function fieldOf(rowId: string, isDiscard: boolean, send: string = ROW_COPY.send
   }
 }
 
+/** The kinds of the row's planned buttons, which say whether a press sends a message. */
+function plannedKinds(row: RowView, isAllShown: boolean): { kind: PressKind }[] {
+  const { options, keys, more } = rowKeyPlan(row, isAllShown, true)
+
+  return [
+    ...options.map(o => ({ kind: o.action.kind })),
+    ...[...keys, ...more].flatMap(k =>
+      'action' in k ? [{ kind: k.action.kind }] : 'kind' in k ? [{ kind: k.kind }] : [],
+    ),
+  ]
+}
+
+/** The row's lines under its title. */
 function rowBody(row: RowView, isAllShown: boolean): BodyLine[] {
   const options = rowKeyPlan(row, isAllShown).options.map((o, n): BodyLine[] => [
     { part: 'answer', optionId: `${row.id} ${n}`, text: '', tone: 'muted' },
@@ -198,6 +216,14 @@ function sideBySideOf(row: RowView, isAllShown: boolean): Pick<RowBlock, 'sideBy
     : {}
 }
 
+/** How long ago the row's press was made, once it has an age, else how long ago the row arrived. A settled row draws none. */
+function rowAge(row: RowView, now: number): string | null {
+  if (row.state.is === 'settled') return null
+  const at = rowAgeAt(row.feedback, row.at)
+
+  return at === null ? null : shortAgo(now - at)
+}
+
 function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: LookScreen): RowBlock {
   const { state, feedback: f } = row
   const isSettled = state.is === 'settled'
@@ -207,6 +233,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
   const isCollapsed = screen.view.collapsed.includes(row.id)
   const isOpen = isSelected && !isCollapsed
   const isTyping = ui.typing === row.id
+  const warning = isOpen ? stoppedWarningOf(screen.isSendHeld, plannedKinds(row, isAllShown), text) : null
 
   return {
     kind: 'row',
@@ -214,7 +241,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
     depth: 0,
     mark: markOf(rowMark(row)),
     title: rowTitle(row, LOOK),
-    age: row.at === null ? null : shortAgo(screen.now - row.at),
+    age: rowAge(row, screen.now),
     feedback: text && f ? { text, tone: feedbackTone(f), source: f } : null,
     settled: isSettled
       ? {
@@ -236,6 +263,7 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
         ? rowButtons(row, isAllShown, screen.agent).filter(b => !isTyping || b.isOption)
         : [],
     field: isOpen && isTyping ? fieldOf(row.id, fieldExit(row) === 'discard') : null,
+    ...(warning && { warning }),
   }
 }
 
@@ -253,7 +281,7 @@ type ClosedLine = {
 type Group = { kind: FoldKind; title: string; mark: Mark | null; rows: RowView[]; closed: ClosedLine[] }
 
 function closedBlock(d: ClosedLine, now: number): RowBlock {
-  const action = closedLineAction(d)
+  const { action, sessionKey } = closedLinePlan(d, true)
   const closedDoes: Does = action ? { is: 'press', press: action.press, effects: [], kind: null } : { is: 'nothing' }
 
   return {
@@ -269,7 +297,10 @@ function closedBlock(d: ClosedLine, now: number): RowBlock {
     isSelectable: false,
     isSelected: false,
     body: [],
-    buttons: action ? [button(`closed ${d.id} 0`, action.label, 'quiet', closedDoes)] : [],
+    buttons: [
+      ...sessionButtons(`closed ${d.id}`, sessionKey),
+      ...(action ? [button(`closed ${d.id} 0`, action.label, 'quiet', closedDoes)] : []),
+    ],
     field: null,
   }
 }

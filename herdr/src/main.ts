@@ -19,11 +19,11 @@ import {
   window as herdrWindow,
   writeTextFile,
 } from 'herdr'
-import { publishedSessionPath, publishedSessionsFolder } from '../../core/remote/herdr'
+import * as herdr from 'herdr'
+import { publishedSessionPath } from '../../core/remote/herdr'
 import type { SessionView } from '../../core/view/session-view'
 import type { ShownTab } from '../../core/view/tabs'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
-import { collapsedOf } from '../../core/view/ui-controller-selection'
 import { closed, newRowsOf, opened } from '../../core/view/ui-controller-tabs'
 import { freshUi } from '../../core/view/ui-controller-types'
 import type { UiCommand, UiEvent, UiState } from '../../core/view/ui-controller-types'
@@ -35,16 +35,17 @@ import {
   buttonOf,
   fieldHints,
   hostFactsOf,
+  NO_DRAW,
+  drawOf,
   isAnswerDraw,
   isLookMove,
   keptLeft,
-  lookUiOf,
   pressSending,
   titleClickEvents,
 } from './controller'
 import type { LastDraw, LeftSession } from './controller'
 import type { TabCell } from './draw'
-import { isSessionChange, readSessionFile } from './files'
+import { readSessionFile } from './files'
 import type { ReadSession } from './files'
 import { follow } from './follow'
 import type { Followed } from './follow'
@@ -52,12 +53,14 @@ import { helpBlocks } from './draw-help'
 import { isFieldDrawn, keyMove } from './keys'
 import { writeCollapse } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
+import { heldAsDrawn } from './held-drawn'
 import type { LinesAbove } from './held-line'
-import { NO_TRACKS, moveRows } from './motion'
+import { moveRows } from './motion'
+import { NO_TRACKS } from './tracks'
 import { heldTabs } from './held-form'
 import { nextDrawAt } from './wake'
 import { HeldFades } from './held-fades'
-import type { Tracks } from './motion'
+import type { Tracks } from './tracks'
 import { Heights, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
@@ -69,23 +72,29 @@ import type { Paint, Theme } from './paint-theme'
 import { PressQueue } from './press-queue'
 import { herdrIo } from './io'
 import { runHere } from './run-here'
-import { screenOf } from './screen'
+import { FetchedReads, screenAt } from './fetched'
 import { ViewCache } from './view-cache'
 import { LookReports } from './look-reports'
-import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS, isPaneShown, statusDrawn } from './status-look'
+import { LIST_INPUT_STEP_MS, isPaneShown, ownPaneId } from './status-look'
+import { startBackground } from './background'
+import { statusDrawn } from './status-look'
 
 const { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home })
 
-type Timer = { cancel(): void }
+/**
+ * Whether `herdr-app check` is loading the mod. Herdr apps before `checking()` have no such export, and a mod that
+ * names a missing export in an import fails to load, so this reads it from the module.
+ */
+const isChecking = (): boolean => (herdr as { checking?: () => boolean }).checking?.() ?? false
 
-/** How often a pointer moving or scrolling over the list counts as list use, so a move does not run the controller per frame. */
-const LIST_INPUT_STEP_MS = 250
+type Timer = { cancel(): void }
 
 type Read = Extract<ReadSession, { is: 'read' }>
 
 export default class Inbox extends View {
   tab: string | null = null
   last: string | null = null
+  pane: string | undefined = undefined
   followed: Followed = { is: 'no-terminal' }
   sessionId: string | null = null
   read: ReadSession | null = null
@@ -111,12 +120,13 @@ export default class Inbox extends View {
   tracksOf = ''
   /** The blocks of the last draw, whose buttons give a key's press its label and effects. */
   blocks: Block[] = []
-  lastDraw: LastDraw = { tab: 'needsYou', rows: null, pressed: [] }
+  lastDraw: LastDraw = NO_DRAW
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
   /** When the person last pressed a key or clicked in the look, which lets the rows it moves grow at once. */
   movedAt = 0
+  fetched = new FetchedReads()
   /** The next read for the presses still out, the next draw for a move, and the controller's next wake. */
   outTimer: Timer | null = null
   drawTimer: Timer | null = null
@@ -126,19 +136,7 @@ export default class Inbox extends View {
 
   init(_props: unknown, cx: Context): void {
     this.focus = cx.focus_handle()
-    cx.spawn(async cx => {
-      for (;;) {
-        const changed = await watchFolder(publishedSessionsFolder(appHome())).catch(() => null)
-        if (changed === null) await cx.sleep(REREAD_MS)
-        else if (this.sessionId && isSessionChange(changed, appHome(), this.sessionId)) this.load(this.sessionId, cx)
-      }
-    })
-    cx.timer.every(REREAD_MS, cx => this.sessionId && this.load(this.sessionId, cx))
-    cx.timer.every(AGE_TICK_MS, cx => {
-      this.viewCache.prepare(cx, true)
-      cx.notify()
-    })
-    cx.timer.every(LOOK_TICK_MS, cx => cx.spawn(() => this.checkLook()))
+    startBackground(this, { isChecking, appHome, watchFolder }, cx)
   }
 
   get readSession(): Read | null {
@@ -158,9 +156,10 @@ export default class Inbox extends View {
     const now = Date.now()
     const view = this.viewAt(now)
     if (view === null) return
+    const isMove = events.some(isLookMove)
+    if (isMove && this.movedAt <= this.tracks.drawnAt) this.fetched.note(this, this.readSession, this.ui, now)
     const applied = applyEvents(this.ui, view, events, now)
     this.ui = applied.ui
-    const isMove = events.some(isLookMove)
     if (isMove) this.movedAt = now
     this.syncInput(isMove)
     for (const c of applied.commands) this.run(c, from, cx)
@@ -238,6 +237,7 @@ export default class Inbox extends View {
       const read = await readSessionFile(readTextFile, publishedSessionPath(appHome(), sessionId), ms => cx.sleep(ms))
       if (this.sessionId !== sessionId) return
       this.read = read
+      if (this.movedAt > this.tracks.drawnAt) this.fetched.note(this, this.readSession, this.ui, Date.now())
       if (read.is !== 'read') return void cx.notify()
       if (!this.isOpened) this.ui = opened(this.ui, this.shownAt)
       this.isOpened = true
@@ -248,7 +248,7 @@ export default class Inbox extends View {
 
   /** Writes the look at the Status for its session's host once the pane stops showing it. */
   async checkLook(isClosing = false): Promise<void> {
-    const isShown = !isClosing && isPaneShown(props()?.pane, panes(), spaces(), herdrWindow())
+    const isShown = !isClosing && isPaneShown(this.pane, panes(), spaces(), herdrWindow())
     const page = { tab: this.ui.tab, sessionId: this.sessionId, read: this.read }
     await this.look.check(queueIo, appHome(), isShown, page, Date.now())
   }
@@ -285,6 +285,7 @@ export default class Inbox extends View {
     const terminalRecords = terminals().map(({ address, labels, program }) => ({ address, labels, program }))
     this.followed = follow({ focused: focused(), panes: panes(), terminals: terminalRecords }, this.tab, this.last)
     if (this.followed.is !== 'no-terminal') this.last = this.followed.terminal
+    this.pane = ownPaneId(props()?.pane, panes(), this.tab, terminalRecords, this.last)
     const sessionId = this.followed.is === 'session' ? this.followed.sessionId : null
     if (sessionId === this.sessionId) return
     const now = Date.now()
@@ -339,7 +340,12 @@ export default class Inbox extends View {
     cx.stop_propagation()
     if (move.is === 'event') this.apply([move.event], cx)
     else if (move.is === 'press') this.apply(buttonEvents(move.button.does, this.ui, 'key'), cx, move.button)
-    else if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
+    else this.focusTerminal()
+  }
+
+  /** Gives focus to the terminal the look follows, whose session it shows. */
+  focusTerminal(): void {
+    if (this.followed.is !== 'no-terminal') run('pane.focus', { terminal: this.followed.terminal })
   }
 
   render(cx: Context): Element {
@@ -348,31 +354,27 @@ export default class Inbox extends View {
     const now = Date.now()
     const ui = this.ui
     const raw = this.viewAt(now)
-    const presses = {
-      now,
-      view: raw,
-      shownSince: ui.shownSince,
-      collapsed: (view: SessionView) => collapsedOf(ui, view),
-      queue: this.queue,
-    }
-    const lookUi = lookUiOf(ui, raw && { ...raw, collapsed: collapsedOf(ui, raw) })
-    const screen = screenOf(this.followed, this.read, lookUi, presses)
+    const screen = screenAt(this, this.read, ui, raw, now)
     this.drawTimer?.cancel()
     this.drawTimer = null
     const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`
     const isFirst = tracksOf !== this.tracksOf
     const resized = this.heights.takeResized()
+    const isForming = this.heights.isForming(isFirst, now)
     const paint: Paint = {
       t,
       mono: (theme() as { typography?: { mono?: string } }).typography?.mono ?? 'Menlo',
-      press: (b, cx, isAll) => this.apply(buttonEvents(b.does, this.ui, 'click', isAll), cx, b),
+      press: (b, cx, isAll) =>
+        b.does.is === 'focusTerminal'
+          ? this.focusTerminal()
+          : this.apply(buttonEvents(b.does, this.ui, 'click', isAll), cx, b),
       collapse: (id, isCollapsed, cx, isAll) =>
         this.apply(titleClickEvents(this.ui, id, isCollapsed, isAll === true), cx),
       select: (id, cx) => this.apply(titleClickEvents(this.ui, id, false, false), cx),
       pick: (tab: ShownTab, cx) => this.apply([{ type: 'show-tab', tab }], cx),
       motion: new Map(),
       heights: this.heights,
-      isAtOnce: key => isFirst || resized.has(key),
+      isAtOnce: key => isForming || resized.has(key),
       measure: (key, size, cx, isWidthDrawn) =>
         this.heights.measure(key, size, zoomOf(settings()), isWidthDrawn) && cx.notify(),
       now,
@@ -397,7 +399,7 @@ export default class Inbox extends View {
       this.timeLeft = new Map()
       this.tracksOf = ''
       this.blocks = []
-      this.lastDraw = { tab: ui.tab, rows: null, pressed: [] }
+      this.lastDraw = { ...NO_DRAW, tab: ui.tab }
       this.look.status.drew(null, now)
       this.fades.drew()
       return root.child(messageEl(screen.message, t))
@@ -405,12 +407,15 @@ export default class Inbox extends View {
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     this.blocks = shown
     this.hints = fieldHints(shown)
-    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now)
-    this.linesAbove = held.held
-    const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits)
-    this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map(o => o.rowId) }
+    const thisDraw = drawOf(ui.tab, screen.waits, this.queue.outs, this.read)
+    const isAnswer = isAnswerDraw(this.lastDraw, thisDraw, raw)
+    this.lastDraw = thisDraw
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
+    const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove
+    const held = holdLinesAbove(shown, lastAbove, now, isForming, isInput)
+    const fetched = this.fetched.drew(this.readSession, isAnswer, now)
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights, fetched)
+    this.linesAbove = heldAsDrawn(held, lastAbove, moved)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
@@ -466,7 +471,7 @@ export default class Inbox extends View {
           .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
-    const wakeAt = nextDrawAt(now, moved, this.fades.drew())
+    const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt])
     if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
 
     return drawn

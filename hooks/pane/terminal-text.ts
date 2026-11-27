@@ -1,9 +1,18 @@
 import { desktopLines, desktopTextPt } from './desktop-metrics'
 import { cellWidth, cutAtWord, cutForEllipsis, cutLine } from '../../core/domain/text'
-import { ROW_COLUMNS } from './pane-sizes'
-import { DOT } from '../../core/view/rows'
+import {
+  DESKTOP_CELL_PT,
+  DESKTOP_MARK_CELLS,
+  DESKTOP_SIDE_CELLS,
+  FRAME_INSET_PT,
+  ROW_COLUMNS,
+  UNDO_CELLS,
+} from './pane-sizes'
+import { UNDO_KEY } from '../../core/view/help'
+import { DOT, ROW_COPY, settledLabel, type SettledState } from '../../core/view/rows'
+import { RESULT_MARK_CELLS } from './desktop-svg'
 import { parseInline, type Span } from '../../core/view/inline'
-import type { NameLevel } from '../../core/view/status-page-parts'
+import type { NameLevel, StatusWaitsOn } from '../../core/view/status-page-parts'
 
 /**
  * `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. With `isCutAtWord`, the
@@ -74,9 +83,14 @@ export type TerminalSpan = Span & {
   /** The span sits on the selection color, so faint text takes the palette's `selectionFaint`. */
   isOnSelection?: true
   isNeedsYou?: true
+  isTasks?: true
   isDone?: true
   isUnbroken?: true
 }
+
+/** An ask's words under the work it holds up, in the tone of the ask's kind. */
+export const waitsOnSpan = (w: StatusWaitsOn): TerminalSpan =>
+  w.tone === 'tasks' ? { text: w.text, isTasks: true } : { text: w.text, isNeedsYou: true }
 
 export function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []
@@ -228,11 +242,20 @@ export function partedLines(parts: string[], fits: (text: string) => boolean): s
  * word (`cutLine`), so the list does not jump when the row folds into the one-line Closed fold. The label, cut to one
  * line, follows `statusAfterTitle`.
  */
-export function settledTitleLine(title: string, label: string, fits: (text: string) => boolean) {
+function settledTitleLine(title: string, label: string, fits: (text: string) => boolean) {
   const shown = cutLine(title, fits)
-  const cutLabel = fits(label) ? label : `${cutForEllipsis(label, fits)}…`
+  const cutLabel = cutLine(label, fits)
 
   return { title: shown, after: statusAfterTitle(`${DOT}${cutLabel}`, shown, fits) }
+}
+
+/** A desktop settled row's title and label, measured against its text column, whose side keeps Undo's place. */
+export function desktopSettledLine(title: string, state: SettledState, listColumns: number) {
+  const sideCells = 1 + (state.offersUndo ? UNDO_CELLS : DESKTOP_SIDE_CELLS)
+  const linePt = (listColumns - DESKTOP_MARK_CELLS - sideCells) * DESKTOP_CELL_PT - 2 * FRAME_INSET_PT
+  const label = settledLabel(state.label, state.delivery, state.reply)
+
+  return settledTitleLine(title, label, text => desktopTextPt(text) <= linePt)
 }
 
 /**
@@ -240,10 +263,29 @@ export function settledTitleLine(title: string, label: string, fits: (text: stri
  * arm on a row with no mark, less the cell its row keeps at the right edge.
  */
 export function terminalSettledTitle(title: string, listColumns: number, hasMark: boolean): string {
-  const { handleAt, textAt } = ROW_COLUMNS.tree
-  const cells = listColumns - 1 - (hasMark ? textAt : handleAt)
+  return cutLine(title, text => cellWidth(text) <= terminalSettledCells(listColumns, hasMark))
+}
 
-  return cutLine(title, text => cellWidth(text) <= cells)
+/** The cells a terminal settled row's text has: right of its mark, or of its tree arm on a row with no mark. */
+export function terminalSettledCells(listColumns: number, hasMark: boolean): number {
+  const { handleAt, textAt } = ROW_COLUMNS.tree
+
+  return listColumns - 1 - (hasMark ? textAt : handleAt)
+}
+
+export const TERMINAL_UNDO_LABEL = ` ↺ ${UNDO_KEY}: ${ROW_COPY.undo} `
+/** The columns between a terminal settled row's result label and its Undo. */
+export const SETTLED_LINE_GAP = 2
+
+/**
+ * A terminal settled row's result label cut at a word to the one line it has (`cutLine`): the row's `textCells`, less
+ * its result mark and its Undo, which sit on the label's line.
+ */
+export function terminalSettledLabel(label: string, textCells: number, hasMark: boolean, hasUndo: boolean): string {
+  const cells =
+    textCells - (hasMark ? RESULT_MARK_CELLS : 0) - (hasUndo ? cellWidth(TERMINAL_UNDO_LABEL) + SETTLED_LINE_GAP : 0)
+
+  return cutLine(label, text => cellWidth(text) <= cells)
 }
 
 /** A Status name or line as one span at its level: plain, muted or faint, on the selection color when `isOnSelection`. */

@@ -12,7 +12,7 @@ type Size = 'height' | 'width'
  * `Date.now()` time, and the animation that plays it. An element that comes or goes also scales its vertical padding
  * and top margin with its height, so it truly grows from and shrinks to no height.
  */
-type Glide = {
+export type Glide = {
   size: Size
   from: SpringState
   to: number
@@ -141,6 +141,31 @@ export function glide(
   glides.set(el, { size, from, to, delay, startsAt: Date.now() + delay, anim, scalesEdges })
 }
 
+/** The bottom of the lowest text drawn in `node`, or -Infinity when it draws none. */
+function textBottom(node: Node, range: Range): number {
+  if (node.nodeType !== node.TEXT_NODE)
+    return Math.max(-Infinity, ...[...node.childNodes].map(child => textBottom(child, range)))
+  if (!node.textContent?.trim()) return -Infinity
+  range.selectNodeContents(node)
+  const box = range.getBoundingClientRect()
+
+  return box.height > 0 ? box.bottom : -Infinity
+}
+
+/**
+ * How far an element's bottom edge sits below the last text or control it draws, in px. Infinity when it draws
+ * neither, since a moving edge can cut nothing in it.
+ */
+export function spaceUnder(el: HTMLElement): number {
+  const controls = [...el.querySelectorAll('button, input, textarea, select')].map(c => c.getBoundingClientRect())
+  const bottom = Math.max(
+    textBottom(el, el.ownerDocument.createRange()),
+    ...controls.filter(c => c.height > 0).map(c => c.bottom),
+  )
+
+  return bottom === -Infinity ? Infinity : Math.max(0, el.getBoundingClientRect().bottom - bottom)
+}
+
 /** An element's opacity: full unless an animation fades it. */
 export function opacityOf(el: HTMLElement): number {
   const opacity = parseFloat(getComputedStyle(el).opacity)
@@ -219,6 +244,15 @@ export function fadePseudoWith(el: HTMLElement, pseudo: string, row: HTMLElement
   if (reached !== null && reached !== undefined) a.currentTime = reached
 
   return a
+}
+
+/** Whether a fade takes the element out now, or has taken it out and holds it there. */
+export const isFadingOut = (el: HTMLElement) => {
+  const f = fades.get(el)
+  const fill = f?.anim.effect?.getTiming().fill
+  const isHeld = f?.anim.playState === 'finished' && (fill === 'forwards' || fill === 'both')
+
+  return f !== undefined && f.to === 0 && (isRunning(f.anim) || isHeld)
 }
 
 export const isFadingIn = (el: HTMLElement) => {

@@ -160,6 +160,14 @@ describe('herdrEnvelope', () => {
     expect('isFetchingPrs' in idle).toBe(false)
     expect(fetching.session).toEqual(idle.session)
   })
+
+  test('says Claude Code holds the inbox messages only while it does', () => {
+    const held = herdrEnvelope({ ...SOURCE, isSendHeld: true }, emptySession())
+    const free = herdrEnvelope({ ...SOURCE, isSendHeld: false }, emptySession())
+
+    expect(held.isSendHeld).toBe(true)
+    expect('isSendHeld' in free).toBe(false)
+  })
 })
 
 describe('pressFile', () => {
@@ -241,6 +249,33 @@ describe('a report that the Herdr look shows the PRs tab', () => {
     await startHerdrFile(host, file.file, 's1')
 
     expect([refreshes, updates]).toEqual([1, 0])
+  })
+})
+
+describe('a report that the Herdr look shows the Status', () => {
+  const REPORT = { format: 1, id: 'r1', statusShown: { at: 10 } }
+
+  test('is read, and refused without a time', () => {
+    expect(pressFile(JSON.stringify(REPORT))).toEqual({ ok: true, file: REPORT })
+    expect(pressFile(JSON.stringify({ ...REPORT, statusShown: {} }))).toEqual({
+      ok: false,
+      reason: 'statusShown without a time',
+    })
+  })
+
+  test('makes the host ask Herdr about the session’s delegates if a check is due, and changes nothing else', async () => {
+    let checks = 0
+    let updates = 0
+    const host = {
+      update: async () => void (updates += 1),
+      checkDelegatesIfDue: async () => void (checks += 1),
+    } as unknown as HerdrFileHost<Session>
+    const file = pressFile(JSON.stringify(REPORT))
+    if (!file.ok) throw new Error(file.reason)
+
+    await startHerdrFile(host, file.file, 's1')
+
+    expect([checks, updates]).toEqual([1, 0])
   })
 })
 

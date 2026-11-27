@@ -215,7 +215,8 @@ test('a row opened, closed before its panel shows and opened again fades to its 
 test('a collapsed row shows a title of one or two lines whole and cuts a longer one at a word at the end of its second line', () => {
   const { shown, titles } = framesOf([[0, asks(ALL, 'd15')]], 400)
   const end = Math.max(...shown.map(s => s.at))
-  const titleOf = (id: string) => shown.find(s => s.at === end && s.block === id && s.text.length > 20)?.text
+  const titleOf = (id: string) =>
+    shown.find(s => s.at === end && s.block === id && s.opacity > 0 && s.text.length > 20)?.text
   const boxOf = (id: string) => titles.findLast(t => t.id === id)?.box
   expect(['d16', 'd12', 'd11'].map(id => ({ id, title: titleOf(id), box: boxOf(id) }))).toEqual([
     { id: 'd16', title: 'Check the glances outdoors in bright sun', box: LINE_HEIGHT },

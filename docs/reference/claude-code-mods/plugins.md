@@ -19,7 +19,7 @@ Terms:
 
 - `name` is the only required key. Unknown top-level keys are stripped, not fatal. Unknown keys inside `userConfig` options are errors, "and the plugin doesn't load". [MF#fields; MF#unrecognized-fields]
 - The manifest has no key for a mod. Mods are declared under `modules` in `hooks/hooks.json`. [MF#fields; PC#hooks] `types` names "A `.d.ts` file that declares the `$.state` values and `$` nouns of a mod". [MF#fields]
-- The manifest has no minimum-engine field. [MF#fields] The only guards are a runtime check (`$.session.version()`) or a side effect, such as `options` locking out engines before 2.1.271.
+- The documented manifest fields list no minimum-engine key. The Claude Code binary, 2.1.332 checked, validates `engines["claude-code"]` as a version range and refuses to install a plugin whose range excludes it, and older versions strip the key. The inbox declares `>=2.1.292`. Other guards are a runtime check (`$.session.version()`) or a side effect, such as `options` locking out engines before 2.1.271.
 - `version` "pins the plugin to that version until you change it", except for command sources, claude.ai-hosted marketplaces and in-place loads. [MF#version]
 - Reserved names: prefixes `claude-`, `anthropic-`, `anthropics-`, `cc-plugin-`; exact `claude`, `anthropic`, `anthropics`, `claude-code`, `claude-mods`. Only `claude plugin init` and `tag` enforce this. [MF#name] `inbox` is safe.
 - Claude Code "doesn't load a `CLAUDE.md` at the plugin root". [PC#skills]

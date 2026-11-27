@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { remoteRowVersion } from '../../core/remote/remote-commands'
+import { remoteRowDigest } from '../../core/remote/remote-commands'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
 import { markArrived } from '../../core/runtime/remote-command-state'
 import { pressFile } from '../../core/remote/herdr-press-file'
@@ -51,7 +51,7 @@ test('remote goal edits retain receipts, reject stale revisions and never send a
   const original = f.state().ledger.overview!.goal!.text
   const edit: RemoteCommand = {
     ...f.command(),
-    expected: remoteRowVersion(f.state(), 'goal'),
+    expected: await remoteRowDigest(f.state(), 'goal'),
     press: { action: 'type', id: 'goal', text: 'Ship the private Inbox clients' },
   }
   assert.equal(pressFile(JSON.stringify(edit)).ok, true)
@@ -65,7 +65,7 @@ test('remote goal edits retain receipts, reject stale revisions and never send a
   assert.equal((await f.receipt(stale.id))?.state, 'stale')
   const remove: RemoteCommand = {
     ...f.command(),
-    expected: remoteRowVersion(f.state(), 'goal'),
+    expected: await remoteRowDigest(f.state(), 'goal'),
     press: { action: 'remove-goal', id: 'goal' },
   }
   assert.equal(pressFile(JSON.stringify(remove)).ok, true)
@@ -73,7 +73,7 @@ test('remote goal edits retain receipts, reject stale revisions and never send a
   assert.equal(f.state().ledger.overview!.goal, null)
   const undo: RemoteCommand = {
     ...f.command(),
-    expected: remoteRowVersion(f.state(), 'goal'),
+    expected: await remoteRowDigest(f.state(), 'goal'),
     press: { action: 'restore-goal', id: 'goal' },
   }
   await f.run(undo)
@@ -121,7 +121,7 @@ test('remote PR re-runs refresh their checks and retain the outcome across resta
     }))
   }
   const press = { action: 'check-rerun' as const, ref: FIX_REF, check: checkKey(check) }
-  const command: RemoteCommand = { ...f.command(), press, expected: remoteRowVersion(f.state(), pressRowId(press)) }
+  const command: RemoteCommand = { ...f.command(), press, expected: await remoteRowDigest(f.state(), pressRowId(press)) }
   assert.equal(pressFile(JSON.stringify(command)).ok, true)
   const result = await f.run(command)
   assert.equal(result.error, null)
@@ -143,7 +143,7 @@ test('remote PR commands reject changed sibling checks and extra payload fields'
     prViews: { ...s.prViews, views: { [FIX_REF]: BLOCKED_PR } },
   }))
   const press = { action: 'pr-conflicts' as const, ref: FIX_REF }
-  const command: RemoteCommand = { ...f.command(), press, expected: remoteRowVersion(f.state(), pressRowId(press)) }
+  const command: RemoteCommand = { ...f.command(), press, expected: await remoteRowDigest(f.state(), pressRowId(press)) }
   for (const malformed of [
     { ...press, id: 'i1' },
     { action: 'pr-refresh', ref: FIX_REF },
@@ -191,7 +191,7 @@ for (const currentTurn of [false, true]) {
     }))
     const command: RemoteCommand = {
       ...f.command(),
-      expected: remoteRowVersion(f.state(), 'i2'),
+      expected: await remoteRowDigest(f.state(), 'i2'),
       press: { action: 'done', id: 'i2' },
     }
     await f.run(command)
@@ -224,7 +224,7 @@ test('Resume is durable, sends once, and refuses a changed or non-resumable stop
   const resume = {
     ...f.command(),
     press: { action: 'resume', id: 'session' },
-    expected: remoteRowVersion(f.state(), 'session'),
+    expected: await remoteRowDigest(f.state(), 'session'),
   } as RemoteCommand
   assert.equal(pressFile(JSON.stringify(resume)).ok, true)
   assert.equal(pressFile(JSON.stringify({ ...resume, press: { action: 'resume', id: 'i1' } })).ok, false)
@@ -232,17 +232,17 @@ test('Resume is durable, sends once, and refuses a changed or non-resumable stop
   f.restart()
   await f.run(resume)
   assert.deepEqual(f.delivered, ['Continue'])
-  const repeated = { ...f.command(), press: resume.press, expected: remoteRowVersion(f.state(), 'session') }
+  const repeated = { ...f.command(), press: resume.press, expected: await remoteRowDigest(f.state(), 'session') }
   await f.run(repeated)
   assert.equal(f.delivered.length, 1)
   await f.host.update(s => ({
     ...s,
     stop: { kind: 'sign-in', apiError: null, detail: 'expired', resets: null, at: 1000010 },
   }))
-  const denied = { ...f.command(), press: resume.press, expected: remoteRowVersion(f.state(), 'session') }
+  const denied = { ...f.command(), press: resume.press, expected: await remoteRowDigest(f.state(), 'session') }
   await f.run(denied)
   assert.equal(f.delivered.length, 1)
-  const stale = { ...f.command(), press: resume.press, expected: remoteRowVersion(f.state(), 'session') }
+  const stale = { ...f.command(), press: resume.press, expected: await remoteRowDigest(f.state(), 'session') }
   await f.host.update(s => ({ ...s, stop: null }))
   await f.run(stale)
   assert.equal(f.delivered.length, 1)
@@ -258,7 +258,7 @@ test('a host without Resume support refuses a direct durable command', async () 
   const command: RemoteCommand = {
     ...f.command(),
     press: { action: 'resume', id: 'session' },
-    expected: remoteRowVersion(f.state(), 'session'),
+    expected: await remoteRowDigest(f.state(), 'session'),
   }
   await f.run(command)
   assert.equal(f.delivered.length, 0)

@@ -25,6 +25,8 @@ export type EnvelopeSource = {
   isFetchingPrs?: boolean
   /** Whether the host could not read the session's saved inbox, so its asks and findings may be missing. */
   isReadFailed?: boolean
+  /** Whether Claude Code holds the inbox's messages after the person stopped the session, until they write to it. */
+  isSendHeld?: boolean
   /** The kind of the agent's own dialog that waits on the person, while one is open. */
   openDialog?: Dialog['kind']
   /** What that dialog asks: the permission's action, as "npm test", or the question. */
@@ -41,13 +43,15 @@ export type EnvelopeSource = {
  * The file a host publishes for the Herdr look. It has `projectFolder` only when that is an absolute path. `trimmed` is set when the host left out closed items the view does not
  * draw in place, to keep the file under `PUBLISH_LIMIT_BYTES`. `lastPress` is the session's `lastHerdrPress`.
  * `isFetchingPrs` is set only while a fetch runs, so a file without it, as from an older host, reads as not fetching.
- * `isReadFailed` is set only while the host could not read the saved inbox. `isNextBuild` is set only on a next build.
+ * `isReadFailed` is set only while the host could not read the saved inbox. `isSendHeld` is set only while Claude Code
+ * holds the inbox's messages. `isNextBuild` is set only on a next build.
  */
-export type HerdrEnvelope = Omit<EnvelopeSource, 'isFetchingPrs' | 'isReadFailed' | 'isNextBuild'> & {
+export type HerdrEnvelope = Omit<EnvelopeSource, 'isFetchingPrs' | 'isReadFailed' | 'isSendHeld' | 'isNextBuild'> & {
   format: typeof HERDR_FORMAT
   trimmed?: true
   isFetchingPrs?: true
   isReadFailed?: true
+  isSendHeld?: true
   isNextBuild?: true
   lastPress?: HerdrPressOutcome
   receipts?: ReturnType<typeof remoteReceipts>
@@ -59,7 +63,7 @@ export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimme
   const shared = presentedSession(session)
 
   const { lastHerdrPress } = session
-  const { projectFolder, isFetchingPrs, isReadFailed, isNextBuild, ...rest } = source
+  const { projectFolder, isFetchingPrs, isReadFailed, isSendHeld, isNextBuild, ...rest } = source
 
   return {
     format: HERDR_FORMAT,
@@ -68,6 +72,7 @@ export function herdrEnvelope(source: EnvelopeSource, session: Session, isTrimme
     ...(isTrimmed && { trimmed: true }),
     ...(isFetchingPrs && { isFetchingPrs: true }),
     ...(isReadFailed && { isReadFailed: true }),
+    ...(isSendHeld && { isSendHeld: true }),
     ...(isNextBuild && { isNextBuild: true }),
     ...(lastHerdrPress && { lastPress: lastHerdrPress }),
     session: shared as Session,

@@ -121,6 +121,23 @@ Each Code-mode session runs in one of four environments. Source: https://code.cl
 | WSL | No | No | No | overview Markdown line 197; https://code.claude.com/docs/en/desktop-wsl (Markdown line 43). A `\\wsl.localhost` folder picked in the normal folder picker reopens as a WSL session. |
 | Cloud | Desktop-installed plugins do not reach it (desktop page, Markdown line 476) | Only for a plugin that reaches the session | No | In an Anthropic-hosted environment, "only server-managed settings reach the session, which waits for them before it installs plugins" (https://code.claude.com/docs/en/plugins/org#when-each-surface-applies-the-plugin-keys). A user-installed inbox does not reach it. |
 
+### Variables a Code session starts with
+
+Read in the bundle of app 6.28899.6 on 2026-11-26. Nothing was run live.
+
+- The app removes each `BUN_*` variable outside a short allowlist, such as `BUN_INSTALL` and `BUN_CONFIG_*`. It also removes `CLAUDECODE`, `CLAUDE_CODE_CHILD_SESSION`, `CLAUDE_CODE_LAUNCHED_BY_SESSION_IDS`, `CLAUDE_CODE_OFF_PERSONS_MACHINE`, `CLAUDE_CODE_REMOTE`, `CLAUDE_CODE_REMOTE_SESSION_ID` and `CLAUDE_CODE_CONTAINER_ID`.
+- It sets `CLAUDE_CODE_ENTRYPOINT` to `claude-desktop`, or `claude-desktop-3p` for a third-party deployment, and sets `CLAUDE_CODE_DESKTOP_APP_VERSION`.
+- It keeps `CLAUDE_CONFIG_DIR`, from its own environment or the variables saved in its settings.
+
+So `hooks/mod/mod-lifecycle.ts:isStartedByDesktopApp` still finds the app's process, and the inbox still reads the person's config folder. Whether a resumed session reads its earlier turns was not checked.
+
+### Plugin themes
+
+Read in engine 2.1.330 on 2026-11-26. Nothing was drawn live.
+
+- A plugin's theme is set as `custom:<plugin>:<file>`, which reaches the inbox through `config.set` on `theme`.
+- The desktop look draws with `DESKTOP_PALETTE` whatever the theme. For a name it does not know, the terminal look uses `THEME_KEY_PALETTE`, the theme's own color keys, which the host reads from the plugin theme and its base (`hooks/pane/palettes.ts:paletteFor`). So a light plugin theme gets the light theme's keys.
+
 ## Plugins and Customize
 
 - Install a plugin in Code mode through + > Plugins > Add plugin, per the docs. Live on app 2.37337.1 (2026-10-16), the + menu instead reads Add plugins, which opens a Directory of plugins. The Directory's + at the top right offers Add from a repository, which takes a GitHub `owner/repo`, adds the marketplace, and lists its plugins under a Code tab. A plugin's + there installs it at user scope without asking for a scope. Live on app 6.6395.1 (2026-11-19), the path changed again: + > Plugins > Manage plugins opens a Plugins page, whose Add menu at the top right holds Add marketplace, then Add from a repository. The repository field is a list that takes a typed `owner/repo` and needs its entry picked before Sync. A plugin's button there reads Add to this computer. Installing works for local and SSH sessions only: "The plugin browser isn't available in the desktop app's cloud sessions" (https://code.claude.com/docs/en/plugins/install#install-a-plugin).

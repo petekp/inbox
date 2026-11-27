@@ -109,6 +109,20 @@ test('a held row’s close label has no ✓, so it draws muted, not in the done 
   expect(line).toContain(`${ESC}2mClosed by omp: answered in chat${ESC}22m`)
 })
 
+test('a settled row’s long label is cut at a word with an ellipsis, not in the middle of one', () => {
+  const state = demoState(NOW)
+  const reason = 'Use the staging box for a week, then move the queue once alerts stay quiet'
+  state.ledger = closeItem(state.ledger, 'd14', { how: 'claude', outcome: reason }, NOW)
+  const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
+  const screen = { ...screenOf(), view: sessionView(state, NOW, SETTLED_MS, holds) }
+  const shown = /Put on the…\s+✓ (.*…)/.exec(text(screen, INITIAL_UI, 60))?.[1]
+  expect(shown).toBeDefined()
+  const words = (shown ?? '').slice(0, -1)
+  expect(reason.startsWith(words)).toBe(true)
+  expect(reason.charAt(words.length)).toBe(' ')
+  expect(words.length).toBeGreaterThan(20)
+})
+
 async function afterPresses(...presses: Parameters<ReturnType<typeof demoSource>['press']>[0][]) {
   let now = NOW
   const source = demoSource({
@@ -155,7 +169,7 @@ test('a row closed with Done shows its label and Undo, u returns the undo press,
   expect(out).toMatch(/Put on the glasses and pair them with this Mac\s+✓ Done\s+u Undo/)
   expect(out).toContain('1 closed')
   for (const width of [30, 46])
-    expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the.*… {2}✓ Do/)
+    expect(text(screen, INITIAL_UI, width), `at ${width} columns`).toMatch(/Put on the.*… {2}✓ Done/)
   expect(keyed(screen, INITIAL_UI, 'u', NOW).press).toEqual({ action: 'undo', id: 'd14' })
   const later = text(await demo.advance(), INITIAL_UI)
   expect(later).not.toContain('Put on the glasses')

@@ -3,7 +3,7 @@ import { test } from './test-with-timeout'
 
 import type { Earlier, Item, Session } from '../types'
 import { demoSession } from '../core/view/demo'
-import { answerIndex, bestEarlier, earlierLineOf, earlierLineText } from '../core/domain/earlier-answers'
+import { answerIndex, bestEarlier, earlierLineOf, earlierLineText, earlierOf } from '../core/domain/earlier-answers'
 import type { AnswerDoc } from '../core/domain/earlier-answers'
 import { historyStep, recordMatches } from '../core/runtime/history-store'
 import type { HistoryPlace } from '../core/runtime/history-store'
@@ -208,6 +208,40 @@ describe('the history step on a save', () => {
   })
 })
 
+describe('a long earlier answer', () => {
+  const typed =
+    'Use the staging box for the first week, then move the whole queue over once the backfill has caught up, the alerts have stayed quiet for two full days, and the on-call engineer has signed off on the plan in writing'
+  const match = { doc: doc('long', 'Where should it run?', typed), score: 0.5 }
+
+  test('is cut on the item, and a repeat of it still counts as the same answer', () => {
+    const earlier = earlierOf(match, true)
+    expect(earlier.answer.length).toBeLessThanOrEqual(200)
+    expect(earlier.answer.endsWith('…')).toBe(true)
+    const item = { ...question('i1', 'Where should it run?', ['staging', 'production']), earlier }
+    const ledger = closeItem({ ...EMPTY, items: [item] }, 'i1', { how: 'answered', outcome: typed }, NOW)
+    const file = questionHistory(null, { ...emptySession(), ledger }, { host: 'codex', session: 's1', repo: null }, NOW)
+    expect(file.questions.map(q => q.isAnsweredWithEarlier)).toEqual([true])
+  })
+
+  test('counts a repeat as the same answer when the item saved the earlier answer whole', () => {
+    const item = {
+      ...question('i1', 'Where should it run?', ['staging', 'production']),
+      earlier: { ...earlierOf(match, true), answer: typed },
+    }
+    const ledger = closeItem({ ...EMPTY, items: [item] }, 'i1', { how: 'answered', outcome: typed }, NOW)
+    const file = questionHistory(null, { ...emptySession(), ledger }, { host: 'codex', session: 's1', repo: null }, NOW)
+    expect(file.questions.map(q => q.isAnsweredWithEarlier)).toEqual([true])
+  })
+
+  test('is cut at a word with an ellipsis where the row draws it', () => {
+    const line = earlierLineOf(earlierOf(match, true), NOW)
+    expect(line?.answer.endsWith('…')).toBe(true)
+    expect(line?.answer.length).toBeLessThanOrEqual(200)
+    expect(typed.startsWith(line?.answer.slice(0, -1) ?? '')).toBe(true)
+    expect(typed.charAt((line?.answer.length ?? 0) - 1)).toBe(' ')
+  })
+})
+
 describe('the earlier answer on a row', () => {
   const rowOf = (item: Item) => {
     const s = { ...emptySession(), ledger: { ...EMPTY, items: [item] } }
@@ -257,5 +291,16 @@ describe('earlier answers in the record answer', () => {
     )
     const again = recordItem(CLAUDE_CODE, added.ledger, lockAsk, NOW, TOOL_FIELDS, found)
     expect(again.result).not.toContain('Yes, after five')
+  })
+
+  test('cut a long earlier answer at a word with an ellipsis', () => {
+    const long = 'In-process memory cache, sized for the nightly restart, '.repeat(8)
+    const found = [doc('b', 'Should the kiosk lock after five idle minutes?', long)]
+    const added = recordItem(CLAUDE_CODE, EMPTY, lockAsk, NOW, TOOL_FIELDS, found)
+    const shown = /They answered "(.*)"\./.exec(added.result)?.[1] ?? ''
+    expect(shown.endsWith('…')).toBe(true)
+    expect(shown.length).toBeLessThanOrEqual(200)
+    expect(long.startsWith(shown.slice(0, -1))).toBe(true)
+    expect(long.charAt(shown.length - 1)).toBe(' ')
   })
 })

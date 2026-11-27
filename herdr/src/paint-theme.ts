@@ -1,4 +1,6 @@
-import { DARK_TONES, faintOver, LIGHT_TONES } from '../../core/view/tones'
+import { DARK_TONES, faintOver, LIGHT_TONES, supportingOver } from '../../core/view/tones'
+import { isSupportingPart } from '../../core/view/row-parts'
+import type { RowPart } from '../../core/view/row-parts'
 import {
   BUTTON_BORDER_PT,
   BUTTON_PAD_X_PT,
@@ -92,6 +94,20 @@ export function faintOf(t: Theme, under: Theme[keyof Theme] = t.background): Col
 
   return faintOver(flatten(t.muted, page), page) as Color
 }
+
+/**
+ * The supporting text level in `t`: its muted color moved toward its text color, as `supportingOver` gives it, both
+ * made opaque over `under` laid over the background, as `faintOf` takes it.
+ */
+function supportingOf(t: Theme, under: Theme[keyof Theme] = t.background): Color {
+  const page = flatten(under, t.background)
+
+  return supportingOver(flatten(t.muted, page), flatten(t.foreground, page)) as Color
+}
+
+/** A line's text color under a row's title: the supporting level for a part `isSupportingPart` names, else its tone. */
+export const bodyTextColor = (t: Theme, l: { part?: RowPart; tone: Tone }, under: Theme[keyof Theme]): Color =>
+  l.part && isSupportingPart(l.part) ? supportingOf(t, under) : colorOf(t, l.tone)
 
 /** A theme color at a share of its strength, for a banner's fill and border. Tone colors are opaque `#rrggbb`. */
 export const tint = (c: Color, share: number): Color =>

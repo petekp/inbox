@@ -5,9 +5,9 @@ import type { Effect } from '../../core/view/press-reducer'
 import type { PrPress } from '../../core/view/pr-press'
 import type { RowPress } from '../../core/domain/presses'
 import { DOT, shortAgo } from '../../core/view/rows'
-import type { ActionEmphasis } from '../../core/view/rows'
+import type { ActionEmphasis, SessionKey } from '../../core/view/rows'
 import type { StatusStall } from '../../core/view/status-page'
-import type { NameLevel, TextLevel } from '../../core/view/status-page-parts'
+import type { NameLevel, StatusWaitsOn, TextLevel } from '../../core/view/status-page-parts'
 import type { PathLine } from '../../core/view/status-path'
 import type { EmptyTab, EmptyText } from '../../core/view/empty-tab'
 import type { ShownTab } from '../../core/view/tabs'
@@ -49,7 +49,7 @@ export type ViewChange =
  * refreshes, which the look shows as under way, and runs itself when each one is an open or a copy. `kind` is the
  * kind of the plan action the button draws, or null for a press that no plan action makes. `type` opens the
  * row's field with `text` in it and `hint` as its placeholder, `send` sends the field's words, and `leave` closes the field, dropping its draft
- * when `isDiscard`.
+ * when `isDiscard`. `focusTerminal` gives focus to the terminal of the session the look shows.
  */
 export type Does =
   | { is: 'view'; change: ViewChange }
@@ -58,6 +58,7 @@ export type Does =
   | { is: 'type'; rowId: string; text: string; hint: string }
   | { is: 'send'; rowId: string }
   | { is: 'leave'; rowId: string; isDiscard: boolean }
+  | { is: 'focusTerminal' }
   | { is: 'nothing' }
 
 /** A button a shared plan lists, as the look draws it. `hotkey` presses it while its row is selected. */
@@ -74,8 +75,12 @@ export type Button = {
   isOption?: true
   /** When the time this button offers runs out, as Undo's does. It draws the time left as a fill that empties. */
   runsOutAt?: number
-  /** A spent Undo, which keeps its place so the row does not change shape, but draws nothing and takes no press. */
-  isHidden?: true
+  /**
+   * A spent Undo, which keeps its place so the row does not change shape. It draws its label muted and takes no press.
+   */
+  isSpent?: true
+  /** When a spent Undo started to leave: it fades out while its place holds, then its place closes. */
+  leftAt?: number
 }
 
 export const button = (
@@ -85,6 +90,10 @@ export const button = (
   does: Does = { is: 'nothing' },
   hotkey: string | null = null,
 ): Button => ({ id, label, emphasis, isOut: false, hotkey, does })
+
+/** Go to session, when a plan gives its `sessionKey`, as the first button of the row or line `id`. */
+export const sessionButtons = (id: string, key: SessionKey | null): Button[] =>
+  key ? [button(`${id} session`, key.label, key.emphasis, { is: 'focusTerminal' })] : []
 
 /** The field a row or the goal draws while the person types in it, with its Send or Save, and Cancel or Discard. */
 export type Field = { rowId: string; buttons: Button[] }
@@ -144,11 +153,29 @@ export type RowBlock = {
   sideBySide?: { optionIds: string[]; recLine: string | null }
   /** The open reply field, in place of the buttons, or null. */
   field: Field | null
-  /** The line the row had above its buttons, kept while a press puts its status under them. See `holdLinesAbove`. */
-  heldLine?: { text: string; tone: Tone; isHidden: boolean }
+  /** An open row's stopped warning, from `stoppedWarningOf`, drawn above its answers, else above its buttons. */
+  warning?: string
+  /**
+   * The line the row had above its buttons, kept while a press puts its status under them, and when its hold let go,
+   * while it leaves. See `holdLinesAbove`.
+   */
+  heldLine?: { text: string; tone: Tone; isHidden: boolean; leftAt?: number }
+  /** When the status the row draws after its title, above any buttons, came, while its box still opens to hold it. */
+  lineCameAt?: number
+  /** The status that came took the place of a status of another kind, so its box moves from that line's height. */
+  isLineAgain?: true
+  /** The status that came did so in the space of a line that faded out, so it starts hidden while it measures. */
+  isLineSwapped?: true
+  /** The status waits while the line it takes the place of, drawn as `heldLine`, fades out. */
+  isLineWaiting?: true
+  /** The lines the open row added to its body, as "All N options" does, and when, while their box still opens. */
+  addedLines?: AddedLines
   /** Draws the status under the buttons, where the shared rule puts it above them. See `holdLinesAbove`. */
   isStatusHeldUnder?: true
 }
+
+/** A run of body lines a row added, by `bodyKey` in `herdr/src/held-line.ts`, and when. */
+export type AddedLines = { keys: string[]; at: number; cameAt: number }
 
 /** A status's words and the time its age counts from. */
 export type Aged = { lead: string; at: number }
@@ -188,8 +215,8 @@ export type StatusLine = {
    */
   nameLevel: NameLevel
   stall: { text: string; tone: StatusStall['tone'] } | null
-  /** What a subject waits on, in the needs-you tone, as its first line under the name. */
-  waitsOn?: string
+  /** What a subject waits on, in the tone of the ask's kind, as its first line under the name. */
+  waitsOn?: StatusWaitsOn
   /**
    * A Help line's words, in the column that starts after `HELP_COLUMN`. The left column holds the line's key, in `name`, or
    * its mark, or nothing for the version line. Such a line has nothing under it.
@@ -219,6 +246,8 @@ export type PrBlock = {
   status: { text: string; tone: Tone } | null
   unlisted: string[]
   error: string | null
+  /** The stopped warning above its buttons, from `prStoppedWarningOf`, or null. */
+  warning: string | null
   buttons: Button[]
   feedback: { text: string; tone: Tone } | null
 }
@@ -246,10 +275,14 @@ export function emptyBlock(tab: ShownTab, empty: EmptyTab, parts: EmptyUnderPart
   }
 }
 
-/** A line with a text and the buttons after it, as the PR order's changed line or the refresh line. */
+/**
+ * A line with a text and the buttons after it, as the PR order's changed line or the refresh line. `warning` is the
+ * stopped warning above it, from `prStoppedWarningOf`.
+ */
 export type LineBlock = {
   kind: 'line'
   id: string
+  warning?: string
   text: string | null
   under: string | null
   buttons: Button[]
