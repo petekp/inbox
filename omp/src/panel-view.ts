@@ -1,11 +1,14 @@
+import { countCellsWith } from '../../core/domain/text'
 import { fit } from './panel-text'
 
 /**
  * What the panel uses from the pi-tui module the installed omp supplies. omp 18 has `parseKey` and
  * `extractPrintableText`, which read raw terminal input. omp 19.2 dropped both and has `jsx` and `signal`, which
- * build a node that gets decoded keys.
+ * build a node that gets decoded keys. `visibleWidth` is how omp counts a line's cells before it cuts a line wider
+ * than the terminal.
  */
 type TuiModule = {
+  visibleWidth?: (line: string) => number
   parseKey?: (raw: string) => string | undefined
   extractPrintableText?: (raw: string) => string | undefined
   jsx?: (type: string, props: object) => unknown
@@ -22,6 +25,11 @@ type Panel = {
   render(width: number): string[]
   handleInput(key: string, text?: string): void
   dispose(): void
+}
+
+/** Makes the panel and the band count cells as omp does, so omp never cuts the end of a line they fit to its width. */
+export function countCellsAsOmp(tui: TuiModule): void {
+  if (tui.visibleWidth) countCellsWith(tui.visibleWidth)
 }
 
 export const screenRows = (ui: UiHost): number => ('size' in ui ? ui.size().rows : ui.terminal.rows)

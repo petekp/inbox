@@ -25,6 +25,11 @@ mock.module('../omp/src/panel', () => ({
   },
 }))
 const { createPanel } = await import('../omp/src/controller')
+const { countCellsAsOmp } = await import('../omp/src/panel-view')
+
+/** omp's TUI module, which counts cells as the installed omp does. Its source fails this project's strict type check, so tsc does not follow it. */
+const PI_TUI: string = '../omp/node_modules/@oh-my-pi/pi-tui/src/index'
+countCellsAsOmp(await import(PI_TUI))
 
 /** As `wakeLater` in `omp/src/host-sessions.ts` waits past the settle window. */
 const WAKE_MARGIN_MS = 250

@@ -197,10 +197,24 @@ const EMOJI = /\p{Emoji_Presentation}|\uFE0F/u
 const WIDE =
   /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u
 
-/** The cells a terminal draws `text` in: two for an emoji or a wide East Asian character, however many code points it takes. */
+/** How many cells one grapheme takes: `graphemeCells`, or the measure a host gave `countCellsWith`. */
+let cellsOf: (grapheme: string) => number = graphemeCells
+
+/**
+ * Makes `cellWidth` and `cutToCells` count each grapheme with `measure`. A host whose terminal UI measures a line and
+ * cuts one it counts too wide passes that measure, so a line a look fits to its width is never cut.
+ */
+export function countCellsWith(measure: (text: string) => number): void {
+  cellsOf = measure
+}
+
+/**
+ * The cells a terminal draws `text` in: two for an emoji or a wide East Asian character, however many code points it
+ * takes, or as the host counts them (`countCellsWith`).
+ */
 export function cellWidth(text: string): number {
   let cells = 0
-  for (const segment of graphemesOf(text)) cells += graphemeCells(segment)
+  for (const segment of graphemesOf(text)) cells += cellsOf(segment)
 
   return cells
 }
@@ -210,7 +224,7 @@ export function cutToCells(text: string, cells: number): string {
   let out = ''
   let used = 0
   for (const segment of graphemesOf(text)) {
-    used += graphemeCells(segment)
+    used += cellsOf(segment)
     if (used > cells) break
     out += segment
   }
