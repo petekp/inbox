@@ -39,9 +39,11 @@ const { readView } = await import('../herdr/src/screen')
 const realMoveRows = motion.moveRows
 let wasInput = false
 let wasFirst = false
+let wasMoved = false
 mock.module('../herdr/src/motion', () => ({
   ...motion,
   moveRows: (...args: Parameters<typeof realMoveRows>) => {
+    wasMoved = true
     wasFirst = args[3]
     wasInput = args[4] ?? false
     return realMoveRows(...args)
@@ -131,12 +133,16 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
   const steps: Step[] = []
   const pageAt: number[] = []
   let after = -1
+  let wasMessage = false
   const draw = () => {
     wasInput = false
     wasFirst = false
+    wasMoved = false
     const root = p.paint()
     const isInput = wasInput
-    if (wasFirst && pageAt.at(-1) !== clock - START) pageAt.push(clock - START)
+    const isMessageShown = !wasMoved && !wasMessage
+    wasMessage = !wasMoved
+    if ((wasFirst || isMessageShown) && pageAt.at(-1) !== clock - START) pageAt.push(clock - START)
     const blocks = p.panel.blocks
     const read = p.panel.readSession
     const view = read && readView(read, clock, holdsOf(p.panel.ui, clock), notesOf(p.panel.ui))
