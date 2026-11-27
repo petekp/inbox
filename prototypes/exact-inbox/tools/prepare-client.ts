@@ -20,6 +20,8 @@ function buildForma(): string {
   const darkInk = THEME_TEXT.dark
   const lightMuted = MUTED_TEXT.light
   const darkMuted = MUTED_TEXT.dark
+  const mix = (lShare: number, dShare: number, lUnder = lightBg, dUnder = darkBg) =>
+    lightDark(fadedOver(lightInk, lUnder, lShare), fadedOver(darkInk, dUnder, dShare))
   const lightSelected = fadedOver(lightInk, lightBg, 0.06)
   const darkSelected = fadedOver(darkInk, darkBg, 0.08)
 
@@ -58,14 +60,14 @@ function buildForma(): string {
     'theme',
     `  surface.bg = ${lightDark(lightBg, darkBg)}`,
     `  surface.rail = ${lightDark('#f7f7f8', '#1c1c1e')}`,
-    `  surface.raised = ${lightDark(fadedOver(lightInk, lightBg, 0.09), fadedOver(darkInk, darkBg, 0.11))}`,
+    `  surface.raised = ${mix(0.09, 0.11)}`,
     `  surface.selected = ${lightDark(lightSelected, darkSelected)}`,
-    `  surface.soft = ${lightDark(fadedOver(lightInk, lightBg, 0.08), fadedOver(darkInk, darkBg, 0.12))}`,
-    `  surface.hover = ${lightDark(fadedOver(lightInk, lightBg, 0.04), fadedOver(darkInk, darkBg, 0.06))}`,
-    `  border.key = ${lightDark(fadedOver(lightInk, lightBg, 0.28), fadedOver(darkInk, darkBg, 0.28))}`,
-    `  border.input = ${lightDark(fadedOver(lightInk, lightBg, 0.15), fadedOver(darkInk, darkBg, 0.15))}`,
-    `  tree.row = ${lightDark(fadedOver(lightInk, lightSelected, 0.32), fadedOver(darkInk, darkSelected, 0.32))}`,
-    `  tree.status = ${lightDark(fadedOver(lightInk, lightBg, 0.2), fadedOver(darkInk, darkBg, 0.2))}`,
+    `  surface.soft = ${mix(0.08, 0.12)}`,
+    `  surface.hover = ${mix(0.04, 0.06)}`,
+    `  border.key = ${mix(0.28, 0.28)}`,
+    `  border.input = ${mix(0.15, 0.15)}`,
+    `  tree.row = ${mix(0.32, 0.32, lightSelected, darkSelected)}`,
+    `  tree.status = ${mix(0.2, 0.2)}`,
     `  ink.primary = ${lightDark(lightInk, darkInk)}`,
     `  ink.muted = ${lightDark(lightMuted, darkMuted)}`,
     `  ink.faint = ${lightDark(faintOver(lightMuted, lightBg), faintOver(darkMuted, darkBg))}`,

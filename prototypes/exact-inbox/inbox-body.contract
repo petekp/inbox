@@ -32,7 +32,6 @@ component InboxBody
     top: number
     matching: bool
     draftsLoaded: bool
-    name: string
     connection: string
     readError: string
     actionError: string
@@ -68,7 +67,7 @@ component InboxBody
     onSend: action
   view
     list id=contentId appearance="none" flex=1 padding="4px 0 24px 0" box-sizing="border-box" min-height=0 scroll=onScroll scrollTop=top
-      InboxHeader(banners=(matching ? inbox.banners : []), busy=busy or disconnected, onAction=onChoose, name=name, connection=connection, readOnly=matching and inbox.readOnly, wideWeb=wideWeb, readError=readError, mutationError=actionError, receiptError=receiptError, tab=tab)
+      InboxHeader(banners=(matching ? inbox.banners : []), busy=busy or disconnected, onAction=onChoose, connection=connection, readOnly=matching and inbox.readOnly, wideWeb=wideWeb, readError=readError, mutationError=actionError, receiptError=receiptError, tab=tab)
       if helpShown
         HelpPane(info=helpInfo, loading=helpLoading, failed=helpFailed, reduced=reduced)
       else if not matching or not draftsLoaded

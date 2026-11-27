@@ -1,11 +1,18 @@
 use HostBanner from "./model.contract"
 
+component ErrorBanner
+  props
+    text: string
+    testId: string
+  view
+    row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
+      text text color="tone.error" testId=testId
+
 component InboxHeader
   props
     banners: HostBanner[]
     busy: bool
     onAction: action
-    name: string
     connection: string
     readOnly: bool
     wideWeb: bool
@@ -25,14 +32,11 @@ component InboxHeader
             if connection != ""
               text connection font-size=12 color="ink.muted" white-space="nowrap" testId=`connection-${tab}`
         if readError != ""
-          row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
-            text readError color="tone.error" testId=`read-error-${tab}`
+          ErrorBanner(text=readError, testId=`read-error-${tab}`)
         if mutationError != ""
-          row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
-            text mutationError color="tone.error" testId=`press-error-${tab}`
+          ErrorBanner(text=mutationError, testId=`press-error-${tab}`)
         if receiptError != ""
-          row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
-            text receiptError color="tone.error"
+          ErrorBanner(text=receiptError, testId="")
 
         for banner in banners key=banner.id
           row gap=12 align-items="center" padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color=(banner.tone == "error" ? "banner.error.line" : banner.tone == "warning" ? "banner.warning.line" : "banner.notice.line") background-color=(banner.tone == "error" ? "banner.error.fill" : banner.tone == "warning" ? "banner.warning.fill" : "banner.notice.fill")

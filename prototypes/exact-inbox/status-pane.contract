@@ -1,6 +1,6 @@
 use Inbox from "./model.contract"
 use MarkGlyph from "./mark-glyph.contract"
-use ButtonLabel from "./action-button.contract"
+use ActionPill from "./action-button.contract"
 use StatusRowView from "./status-row.contract"
 
 component StatusPane
@@ -48,10 +48,7 @@ component StatusPane
             row gap=8 flex-wrap="wrap" align-items="center" padding-top=4
               text inbox.statusOffer font-size=15 font-weight=600 color="ink.primary"
               for a in inbox.statusOfferActions key=a.action
-                button press=onAction(a) disabled=(a.disabled or pending or (a.key != "" and readOnly)) appearance="none" border-width=(a.emphasis == "quiet" ? 0 : 1) border-style="solid" border-color=(a.emphasis == "primary" ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color=(a.emphasis == "primary" ? "ink.primary" : "transparent") padding=(a.emphasis == "quiet" ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(a.disabled or pending or (a.key != "" and readOnly) ? 0.4 : 1)
-                  :active
-                    opacity=0.8
-                  ButtonLabel(label=a.label, icon="", color=(a.emphasis == "primary" ? "ink.on-primary" : a.emphasis == "quiet" ? "ink.muted" : "ink.primary"))
+                ActionPill(label=a.label, icon="", emphasis=a.emphasis, compact=compact, disabled=(a.disabled or pending or (a.key != "" and readOnly)), dimmed=false, testId="", onPress=onAction(a))
       column gap=0 padding-top=(inbox.statusHasGoal ? 6 : 2)
         for s in inbox.statusRows key=s.id
           StatusRowView(s=s, prefix=prefix, compact=compact, pending=pending, readOnly=readOnly, reduced=reduced, onAction=onAction)

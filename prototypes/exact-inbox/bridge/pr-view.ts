@@ -3,8 +3,8 @@ import { openPrViews } from '../../../core/view/pr-views'
 import { latestUndo, steppedIndex } from '../../../core/view/action-plan'
 import { createHash } from 'node:crypto'
 import { pressRowId } from '../../../core/view/pr-press'
-import type { ViewIdentity } from './row-view'
-import type { AllowedAction } from './row-view'
+import { toneColor } from './row-view'
+import type { AllowedAction, ViewIdentity } from './row-view'
 import { prBlockActions, threadActions, checkActions } from '../../../core/view/pr-tab'
 import type { PrAction } from '../../../core/view/pr-press'
 import type { Effect } from '../../../core/view/press-reducer'
@@ -31,8 +31,6 @@ import { otherPrsStart, OTHER_PRS_TEXT } from '../../../core/view/pr-order'
 import { feedbackOf, feedbackText, hasAge, isFailure } from '../../../core/view/feedback'
 import { settledLabel } from '../../../core/view/rows'
 import { ago, clipLabel } from '../../../core/domain/text'
-import { toneColors } from '../../../core/view/tones'
-import type { ToneName } from '../../../core/view/tones'
 import { parseInline } from '../../../core/view/inline'
 import { emptyTab } from '../../../core/view/empty-tab'
 import type { SessionView } from '../../../core/view/session-view'
@@ -59,11 +57,6 @@ const parts = (text: string): Line['quote'] =>
     strike: !!s.strike,
     href: safeLink(s.link ?? ''),
   }))
-const color = (tone: ToneName | null) => {
-  if (!tone) return '-exact-secondary-label'
-  const value = toneColors(tone)
-  return `light-dark(${value.light}, ${value.dark})`
-}
 
 export function projectPrs(
   view: SessionView,
@@ -131,7 +124,7 @@ export function projectPrs(
     quote: [],
     reply: [],
     mark: '',
-    color: color(null),
+    color: toneColor(null),
     running: false,
     folded: false,
     href: '',
@@ -185,7 +178,7 @@ export function projectPrs(
         isFirstBlock: drawn === view.prs.drawn[0],
         latestUndo: undo?.ref === pr.ref,
         href: safeLink(pr.url),
-        color: color(PR_TONES[ready.status]),
+        color: toneColor(PR_TONES[ready.status]),
         detail: settled
           ? settledLabel(state.label, state.delivery, state.reply)
           : (shownReadiness(pr, sync, sent, agent)?.text ?? ''),
@@ -219,7 +212,7 @@ export function projectPrs(
             t.reply ? `**@${t.reply.author}:** ${clipLabel(readableComment(t.reply.body), PR_QUOTE_CHARS)}` : '',
           ),
           mark: text.mark.text,
-          color: color(text.mark.tone),
+          color: toneColor(text.mark.tone),
           running: text.mark.isRunning,
           href: effectLink(commentEffect(pr, t)),
           controls: controls(threadActions(pr, t, presses), commentEffect(pr, t)),
@@ -234,7 +227,7 @@ export function projectPrs(
           detail: [text.meta, text.fold?.note].filter(Boolean).join(' · '),
           folded: !!text.fold,
           mark: text.mark.text,
-          color: color(text.mark.tone),
+          color: toneColor(text.mark.tone),
           running: text.mark.isRunning,
           href: effectLink(logEffect(pr, c)),
           controls: controls(checkActions(pr, c, presses), logEffect(pr, c)),

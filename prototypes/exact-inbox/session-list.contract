@@ -1,5 +1,6 @@
 use SessionEntry, sessionLabel from "./model.contract"
 use ActionIcon from "./action-icon.contract"
+use ErrorBanner from "./inbox-header.contract"
 
 component SessionList
   props
@@ -24,8 +25,7 @@ component SessionList
         row padding-bottom=4
           input key=searchKey value=search input=onSearch placeholder="Find a session" aria-label="Find a session" flex=1 min-width=0 min-height=30 box-sizing="border-box" padding="4px 10px" border-width=1 border-style="solid" border-color="border.input" border-radius=10 background-color="surface.bg" color="ink.primary" font-size=(rail ? 13 : 14)
         if error != ""
-          row padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
-            text error color="tone.error"
+          ErrorBanner(text=error, testId="")
         for s in entries key=s.id
           button press=onSelect(s.id) aria-current=(selected == s.id ? "page" : "false") testId=`${rail ? "rail" : "session"}-${s.id}` appearance="none" width="100%" box-sizing="border-box" border-width=0 border-radius=8 padding=(rail ? "8px 10px" : "10px 12px") text-align="left" background-color=(selected == s.id ? "surface.selected" : "transparent")
             :active

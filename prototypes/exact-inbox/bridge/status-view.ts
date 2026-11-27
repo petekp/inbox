@@ -1,7 +1,7 @@
 import { renderVersion } from './render-version'
 import { createHash } from 'node:crypto'
-import type { ViewIdentity } from './row-view'
-import type { AllowedAction } from './row-view'
+import { toneColor } from './row-view'
+import type { AllowedAction, ViewIdentity } from './row-view'
 import type { RowPress } from '../../../core/domain/presses'
 import { HEAD_GAP_PT, LIST_GAP_PT, SECTION_GAP_PT } from '../../../core/view/layout'
 import {
@@ -14,8 +14,6 @@ import {
   underLaterPt,
 } from '../../../core/view/status-gaps'
 import { isSpacedAbove, LATER_TEXT, workJoints } from '../../../core/view/status-path'
-import { toneColors } from '../../../core/view/tones'
-import type { ToneName } from '../../../core/view/tones'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../../core/view/status-goal-page'
 import { milestoneRows, unfoldedRows } from '../../../core/view/status-folds'
 import { goalKeyGroups, goalSubmitLabel, statusKeyRows, GOAL_FIELD } from '../../../core/view/status-keys'
@@ -30,11 +28,6 @@ type Line = Inbox['statusRows'][number]
 export type StatusOptions = { folds: string[]; collapsed: string[] }
 const noStatusOptions: StatusOptions = { folds: [], collapsed: [] }
 
-const color = (tone?: ToneName | null) => {
-  if (!tone) return '-exact-secondary-label'
-  const value = toneColors(tone)
-  return `light-dark(${value.light}, ${value.dark})`
-}
 const action = (
   { press, label, emphasis }: StatusKey,
   offer: (id: string) => string = () => '',
@@ -73,7 +66,7 @@ export function projectStatus(
     depth: 0,
     mark: '',
     kind: 'text',
-    color: color(),
+    color: toneColor(),
     bold: false,
     running: false,
     waitsOn: '',
@@ -103,7 +96,7 @@ export function projectStatus(
         seen: seenSubjectIds(r),
         depth: r.depth,
         mark: r.mark,
-        color: color(r.tone),
+        color: toneColor(r.tone),
         bold: true,
         detail: r.text ?? '',
         stall: r.stall?.text ?? '',
@@ -123,7 +116,7 @@ export function projectStatus(
         seen: seenSubjectIds(r),
         depth: r.depth,
         mark: r.mark,
-        color: color(r.tone),
+        color: toneColor(r.tone),
         detail: r.text ?? '',
         level: textLevelOf(r),
         running: r.isRunning,
@@ -146,7 +139,7 @@ export function projectStatus(
       seen: seenSubjectIds(r),
       depth: r.depth,
       mark: 'mark' in r ? r.mark : '',
-      color: color('tone' in r ? r.tone : undefined),
+      color: toneColor('tone' in r ? r.tone : undefined),
       bold: r.kind === 'part' && r.isTitle,
       isPartTitle: r.kind === 'part' && r.isTitle,
       detail: r.kind === 'part' ? (r.description ?? '') : '',
@@ -183,7 +176,7 @@ export function projectStatus(
         kind: 'milestone',
         seen: x ? seenSubjectIds(x) : [],
         mark: m.mark,
-        color: color(m.tone),
+        color: toneColor(m.tone),
         bold: m.isBold,
         isMutedName: m.isMuted,
         level: textLevelOf(m),
@@ -258,7 +251,7 @@ export function projectStatus(
     statusSubmitLabel: goalSubmitLabel(page),
     statusLabel: goal?.label ?? GOAL_HEADING,
     statusMark: goal?.mark?.mark ?? '',
-    statusMarkColor: goal?.mark ? color(goal.mark.tone) : color(),
+    statusMarkColor: goal?.mark ? toneColor(goal.mark.tone) : toneColor(),
     statusHasGoal: goal !== null,
     statusIsMet: goal?.isMet ?? false,
     statusTitle: goal?.text ?? NO_GOAL_TEXT,

@@ -4,12 +4,7 @@ component InlineText
   props
     parts: InlineSpan[]
   view
-    text
-      for s in parts key=s.id
-        if s.href != ""
-          text s.text href=s.href font-weight=(s.bold ? 600 : 400) font-style=(s.italic ? "italic" : "normal") font-family=(s.code ? "monospace" : "inherit") text-decoration=(s.strike ? "line-through" : "underline") color="ink.primary"
-        else
-          text s.text font-weight=(s.bold ? 600 : 400) font-style=(s.italic ? "italic" : "normal") font-family=(s.code ? "monospace" : "inherit") text-decoration=(s.strike ? "line-through" : "none")
+    ClampedInlineText(parts=parts, maxLines=0, bold=false)
 
 component ClampedInlineText
   props

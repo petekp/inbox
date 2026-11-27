@@ -1,4 +1,4 @@
-use Place, placeFor, sessionName, sessionPath, draftFor, CollapseEntry from "./model.contract"
+use Place, placeFor, sessionName, sessionPath, sessionTab, draftFor, CollapseEntry from "./model.contract"
 
 members App
   action restoreListLayout
@@ -21,7 +21,7 @@ members App
           nav = back(nav)
       else if nextSession != "" and nav.tab == "asks"
         let kept = placeFor(savedNavigation.places, nextSession)
-        let targetTab = kept.tab == "sessions" or kept.tab == "" ? "asks" : kept.tab
+        let targetTab = sessionTab(kept.tab)
         pickingSession = false
         nav = replace(select(nav, targetTab), sessionPath(targetTab, nextSession))
     else
@@ -110,7 +110,7 @@ members App
     revealAsk = ""
     pickingSession = false
     let kept = placeFor(places, id)
-    let nextTab = kept.tab == "sessions" or kept.tab == "" ? "asks" : kept.tab
+    let nextTab = sessionTab(kept.tab)
     places = places.filter(p => p.id != id).concat([Place(kept, tab=nextTab, name=sessionName(directory.entries, id))])
     selectedSession = id
     scrollOwner = ""
@@ -120,7 +120,7 @@ members App
     navigationRevision = navigationRevision + 1
   action showRailSelection
     pickingSession = false
-    let nextTab = activePlace.tab == "sessions" or activePlace.tab == "" ? "asks" : activePlace.tab
+    let nextTab = sessionTab(activePlace.tab)
     nav = replace(select(nav, nextTab), sessionPath(nextTab, selectedSession))
     scrollOwner = ""
     restoreRevision = restoreRevision + 1

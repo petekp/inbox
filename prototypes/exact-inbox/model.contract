@@ -347,6 +347,7 @@ shape ViewerAck
   released: bool
 
 fn sessionPath(tab: string, id: string): string = (tab == "status" ? "/status" : tab == "findings" ? "/findings" : tab == "prs" ? "/prs" : "/") + "?session=" + encodeURIComponent(id)
+fn sessionTab(tab: string): string = tab == "sessions" or tab == "" ? "asks" : tab
 
 fn visible(row: Geometry, clip: Geometry): bool = not row.unavailable and not row.provisional and not clip.unavailable and not clip.provisional and row.height > 0 and row.y < clip.y + clip.height and row.y + row.height > clip.y
 

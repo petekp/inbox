@@ -1,10 +1,26 @@
 use RowActions from "./row-actions.contract"
 use rowLayout, rowFade, rowBgFade, rowEntry, rowSlide, rowExit from "./motion.contract"
 use ReplyPane from "./reply-pane.contract"
-use VisualGroup from "./model.contract"
+use InlineSpan, Row, VisualGroup from "./model.contract"
 use InlineText, ClampedInlineText from "./inline-text.contract"
 use MarkGlyph from "./mark-glyph.contract"
 use ActionIcon from "./action-icon.contract"
+
+fn hasShownOptions(row: Row, all: bool): bool = row.options.length > 0 or (all and row.allOptions.length > 0)
+
+component AskTreeBranch
+  props
+    parts: InlineSpan[]
+    tree: bool
+    hasPrev: bool
+    hasNext: bool
+  derive armY = hasPrev ? 18 : 10
+  view
+    column position="relative" color="ink.muted" padding-top=(hasPrev ? 8 : 0)
+      if tree
+        box position="absolute" left=-17 top=0 height=(hasNext ? "100%" : armY) border-left="1.5px solid tree.row"
+        box position="absolute" left=-17 top=armY width=11 border-top="1.5px solid tree.row"
+      InlineText(parts=parts)
 
 component InboxRows
   props
@@ -82,27 +98,15 @@ component InboxRows
                       text r.row.age font-size=12 color="ink.faint" font-variant-numeric="tabular-nums" white-space="nowrap" padding-left=8
                 column position="relative" min-width=0 gap=0 padding-left=24 height=(r.target == "open" ? "auto" : "0px") overflow="hidden" inert=(r.target != "open") aria-hidden=(r.target != "open") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "open" ? 1 : 0) translate=rowSlide(r.target != "open") transition=rowFade(reduced)
                   if r.panel.state != "settled"
-                    column position="relative" gap=0 padding-bottom=(r.panel.hasTree and (r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? 8 : 0)
-                      if r.panel.hasTree and (r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0))
+                    column position="relative" gap=0 padding-bottom=(r.panel.hasTree and hasShownOptions(r.panel, optionsShown.includes(r.id)) ? 8 : 0)
+                      if r.panel.hasTree and hasShownOptions(r.panel, optionsShown.includes(r.id))
                         box position="absolute" left=-17 top=0 bottom=0 border-left="1.5px solid tree.row"
                       if r.panel.holdsUpParts.length > 0
-                        column position="relative" color="ink.muted"
-                          if r.panel.hasTree
-                            box position="absolute" left=-17 top=0 height=(not (r.panel.contextParts.length > 0 or r.panel.earlierParts.length > 0 or r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? 10 : "100%") border-left="1.5px solid tree.row"
-                            box position="absolute" left=-17 top=10 width=11 border-top="1.5px solid tree.row"
-                          InlineText(parts=r.panel.holdsUpParts)
+                        AskTreeBranch(parts=r.panel.holdsUpParts, tree=r.panel.hasTree, hasPrev=false, hasNext=(r.panel.contextParts.length > 0 or r.panel.earlierParts.length > 0 or hasShownOptions(r.panel, optionsShown.includes(r.id))))
                       if r.panel.contextParts.length > 0
-                        column position="relative" color="ink.muted" padding-top=(r.panel.holdsUpParts.length > 0 ? 8 : 0)
-                          if r.panel.hasTree
-                            box position="absolute" left=-17 top=0 height=(not (r.panel.earlierParts.length > 0 or r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? (r.panel.holdsUpParts.length > 0 ? 18 : 10) : "100%") border-left="1.5px solid tree.row"
-                            box position="absolute" left=-17 top=(r.panel.holdsUpParts.length > 0 ? 18 : 10) width=11 border-top="1.5px solid tree.row"
-                          InlineText(parts=r.panel.contextParts)
+                        AskTreeBranch(parts=r.panel.contextParts, tree=r.panel.hasTree, hasPrev=r.panel.holdsUpParts.length > 0, hasNext=(r.panel.earlierParts.length > 0 or hasShownOptions(r.panel, optionsShown.includes(r.id))))
                       if r.panel.earlierParts.length > 0
-                        column position="relative" color="ink.muted" padding-top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 ? 8 : 0)
-                          if r.panel.hasTree
-                            box position="absolute" left=-17 top=0 height=(not (r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? (r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 ? 18 : 10) : "100%") border-left="1.5px solid tree.row"
-                            box position="absolute" left=-17 top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 ? 18 : 10) width=11 border-top="1.5px solid tree.row"
-                          InlineText(parts=r.panel.earlierParts)
+                        AskTreeBranch(parts=r.panel.earlierParts, tree=r.panel.hasTree, hasPrev=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0), hasNext=hasShownOptions(r.panel, optionsShown.includes(r.id)))
                       if r.panel.detailParts.length > 0
                         column color="ink.primary" white-space="pre-line" padding-top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 or r.panel.earlierParts.length > 0 ? 6 : 0)
                           InlineText(parts=r.panel.detailParts)
@@ -110,7 +114,7 @@ component InboxRows
                         row gap=6 flex-wrap="wrap" align-items="center" padding-top=4
                           text r.panel.fileLabel color="ink.muted"
                           text r.panel.fileName font-family="monospace" font-size=12 padding="1px 4px" border-radius=4 background-color="surface.soft" color="ink.primary"
-                    column padding-top=(r.panel.hasTree and (r.panel.options.length > 0 or (optionsShown.includes(r.id) and r.panel.allOptions.length > 0)) ? 0 : 8)
+                    column padding-top=(r.panel.hasTree and hasShownOptions(r.panel, optionsShown.includes(r.id)) ? 0 : 8)
                       RowActions(item=r.panel, optionsShown=optionsShown.includes(r.id), compact=compact, session=session, disconnected=disconnected, pending=(pending or r.guarded), localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
                     if replyOpen and replyRow == r.row.id and r.row.state != "settled"
                       column padding-top=8

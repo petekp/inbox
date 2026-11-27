@@ -1,7 +1,6 @@
-import { describe, expect, test } from 'bun:test'
-import { expectTypeOf } from 'bun:test'
+import { describe, expect, expectTypeOf, test } from 'bun:test'
 import { closeItem } from '../../../core/domain/ledger-close'
-import { REMOTE_ACTIONS, remoteRowDigest } from '../../../core/remote/remote-commands'
+import { REMOTE_ACTIONS } from '../../../core/remote/remote-commands'
 import { NEEDS_YOU_MARKS } from '../../../core/view/help'
 import { feedbackTone } from '../../../core/view/feedback'
 import { HEAD_GAP_PT, LIST_GAP_PT, SECTION_GAP_PT } from '../../../core/view/layout'
@@ -220,13 +219,12 @@ describe('schema=2 view projections', () => {
     expect(m2.pathLine).not.toBe('')
     expect(m2.isMutedName).toBe(false)
     const doneMilestone = view.statusPage.goal!.milestones.find(m => m.id === 'm2')!
-    const expectedJoints = workJoints([], doneMilestone.line)
-    expect(expectedJoints).toEqual([])
+    const expectedJoints = workJoints(doneMilestone.rows, doneMilestone.line)
     const m2Child = open.statusRows.find(r => r.kind === 'subject' && r.id === 's1')!
-    const mPads = milestoneRowPads(doneMilestone, view.statusPage.goal!.milestones.find(m => m.id === 'm2')!.rows)
+    const mPads = milestoneRowPads(doneMilestone, doneMilestone.rows)
     expect(m2Child.padTop).toBe(mPads[0]?.above ?? LIST_GAP_PT / 2)
-    expect(m2Child.jointArm).not.toBe('')
-    expect(m2Child.jointBeside).not.toBe('')
+    expect(m2Child.jointArm).toBe(expectedJoints[0]?.arm ?? '')
+    expect(m2Child.jointBeside).toBe(expectedJoints[0]?.beside ?? '')
 
     const partList = view.statusPage.rows
     const listPads = statusRowPads(partList)

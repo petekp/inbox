@@ -2,7 +2,8 @@ use rowLayout, rowBgFade, rowEntry from "./motion.contract"
 use Inbox, isPrRow, VisualPr from "./model.contract"
 use InlineText from "./inline-text.contract"
 use MarkGlyph from "./mark-glyph.contract"
-use ButtonLabel from "./action-button.contract"
+use ActionPill from "./action-button.contract"
+use ErrorBanner from "./inbox-header.contract"
 
 component PrPane
   props
@@ -22,8 +23,8 @@ component PrPane
   view
     column gap=0
       if inbox.prNotice != ""
-        row margin="4px 16px 8px 16px" padding="8px 12px" border-radius=10 border-width=1 border-style="solid" border-color="banner.error.line" background-color="banner.error.fill"
-          text inbox.prNotice color="tone.error"
+        column margin="4px 16px 8px 16px"
+          ErrorBanner(text=inbox.prNotice, testId="")
       if inbox.prEmptyTitle != ""
         column padding="36px 24px" gap=6 align-items="center"
           text inbox.prEmptyTitle font-weight=600 color="ink.primary" text-align="center"
@@ -63,10 +64,7 @@ component PrPane
             if v.panel.controls.length > 0
               row appearance="none" gap=8 flex-wrap="wrap" align-items="center" padding-top=2
                 for control in v.panel.controls key=control.key
-                  button press=onAction(control) disabled=(control.disabled or busy or (control.scope == "row" and (guarded or v.guarded or v.target != "open")) or (control.command == "local" and localActive) or (sending and submittedKey == control.key)) appearance="none" border-width=(control.emphasis == "quiet" or control.primary ? 0 : 1) border-style="solid" border-color=(control.emphasis == "quiet" or control.primary ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color=(control.primary ? "ink.primary" : "transparent") padding=(control.emphasis == "quiet" ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(control.out or control.disabled or busy or (sending and submittedKey == control.key) ? 0.4 : 1) testId=`pr-action-${control.key}`
-                    :active
-                      opacity=0.8
-                    ButtonLabel(label=control.label, icon=control.icon, color=(control.primary ? "ink.on-primary" : control.emphasis == "quiet" ? "ink.muted" : "ink.primary"))
+                  ActionPill(label=control.label, icon=control.icon, emphasis=control.emphasis, compact=compact, disabled=(control.disabled or busy or (control.scope == "row" and (guarded or v.guarded or v.target != "open")) or (control.command == "local" and localActive) or (sending and submittedKey == control.key)), dimmed=control.out, testId=`pr-action-${control.key}`, onPress=onAction(control))
           if v.localText != ""
             text v.localText padding-left=(isPrRow(v.row) ? 24 : 0) color=(v.localFailed ? "tone.error" : "ink.muted")
           else if sending and v.row.controls.map(c => c.key).includes(submittedKey)

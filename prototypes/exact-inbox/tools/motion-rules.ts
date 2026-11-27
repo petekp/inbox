@@ -30,6 +30,33 @@ export const advanceMotion: typeof AdvanceMotion = ([
   const feedbackFor = (id: string, version: string) =>
     feedbacks.find(entry => entry.row === id && entry.version === version)
   const sameSession = before.session === inbox.key
+  const stepEntry = <
+    T extends { id: string; version: string },
+    V extends { id: string; panel: T; phase: string; since: number; hasPanel: boolean },
+  >(
+    row: T,
+    prior: V | undefined,
+    target: RowTarget,
+    added: boolean,
+  ) => {
+    const track = stepRow(trackOf(prior), target, now, added, reduced)
+    if (!track) return null
+    const keepsPanel = prior && track.hasOpenForm && ['closing', 'settling', 'leaving'].includes(track.state)
+    const note = feedbackFor(row.id, row.version)
+    return {
+      guarded: !reduced && isMoving(track.state) && isGuarded(track.since, now),
+      id: row.id,
+      row,
+      panel: keepsPanel ? prior.panel : row,
+      phase: track.state,
+      since: track.since,
+      hasPanel: track.hasOpenForm,
+      target,
+      arriving: track.state === 'entering',
+      localText: note?.text ?? '',
+      localFailed: note?.failed ?? false,
+    }
+  }
   const draw = (groups: typeof inbox.askGroups, previous: Frame['asks'], selected: string): Frame['asks'] => {
     const oldGroups = sameSession ? previous : []
     const beforeRows = oldGroups.flatMap(group => group.rows)
@@ -59,23 +86,8 @@ export const advanceMotion: typeof AdvanceMotion = ([
             : selected === row.id
               ? 'open'
               : 'closed'
-        const track = stepRow(trackOf(prior), target, now, recorded.added.rows.includes(row.id), reduced)
-        if (!track) continue
-        const keepsPanel = prior && track.hasOpenForm && ['closing', 'settling', 'leaving'].includes(track.state)
-        const note = feedbackFor(row.id, row.version)
-        rows.push({
-          guarded: !reduced && isMoving(track.state) && isGuarded(track.since, now),
-          id: row.id,
-          row,
-          panel: keepsPanel ? prior.panel : row,
-          phase: track.state,
-          since: track.since,
-          hasPanel: track.hasOpenForm,
-          target,
-          arriving: track.state === 'entering',
-          localText: note?.text ?? '',
-          localFailed: note?.failed ?? false,
-        })
+        const stepped = stepEntry(row, prior, target, recorded.added.rows.includes(row.id))
+        if (stepped) rows.push(stepped)
       }
       const retained = new Set(rows.map(row => row.id))
       return {
@@ -100,35 +112,12 @@ export const advanceMotion: typeof AdvanceMotion = ([
     const prior = oldPrs.find(old => old.id === row.id)
     const selectable = row.kind === 'thread' || row.kind === 'check'
     const target: RowTarget = !prIds.has(row.id) ? 'gone' : !selectable || selectedPr === row.id ? 'open' : 'closed'
-    const track = stepRow(trackOf(prior), target, now, sameSession && !oldPrIds.has(row.id), reduced)
-    if (!track) continue
-    const keepsPanel = prior && track.hasOpenForm && ['closing', 'settling', 'leaving'].includes(track.state)
-    const note = feedbackFor(row.id, row.version)
-    prs.push({
-      id: row.id,
-      row,
-      panel: keepsPanel ? prior.panel : row,
-      phase: track.state,
-      since: track.since,
-      hasPanel: track.hasOpenForm,
-      target,
-      arriving: track.state === 'entering',
-      guarded: !reduced && isMoving(track.state) && isGuarded(track.since, now),
-      localText: note?.text ?? '',
-      localFailed: note?.failed ?? false,
-    })
+    const stepped = stepEntry(row, prior, target, sameSession && !oldPrIds.has(row.id))
+    if (stepped) prs.push(stepped)
   }
-  const deadlines = [...asks, ...finds].flatMap(group =>
-    group.rows.flatMap(row => [
-      ...(isMoving(row.phase as RowState) ? [row.since + ROW_STATE_MS[row.phase as RowState]] : []),
-      ...(row.guarded ? [row.since + PRESS_GUARD_MS] : []),
-    ]),
-  )
-  deadlines.push(
-    ...prs.flatMap(row => [
-      ...(isMoving(row.phase as RowState) ? [row.since + ROW_STATE_MS[row.phase as RowState]] : []),
-      ...(row.guarded ? [row.since + PRESS_GUARD_MS] : []),
-    ]),
-  )
+  const deadlines = [...asks.flatMap(g => g.rows), ...finds.flatMap(g => g.rows), ...prs].flatMap(row => [
+    ...(isMoving(row.phase as RowState) ? [row.since + ROW_STATE_MS[row.phase as RowState]] : []),
+    ...(row.guarded ? [row.since + PRESS_GUARD_MS] : []),
+  ])
   return { session: inbox.key, signature, asks, finds, prs, deadline: deadlines.length ? Math.min(...deadlines) : 0 }
 }

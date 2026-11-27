@@ -1,5 +1,5 @@
 use InlineText from "./inline-text.contract"
-use ButtonLabel from "./action-button.contract"
+use ActionPill from "./action-button.contract"
 use Button, Row from "./model.contract"
 
 component RowActions
@@ -53,18 +53,10 @@ component RowActionButton
     isSendingRow: bool
     onChoose: action
     onLocal: action
-  derive isQuiet = a.emphasis == "quiet"
   derive isOutState = a.out or (a.key == submittedKey and isSendingRow)
   derive isDisabled = a.command == "local" ? (a.disabled or disconnected or pending or localActive) : (a.disabled or disconnected or (pending and a.command != "options") or (a.key == submittedKey and isSendingRow))
-  derive fgColor = a.primary ? "ink.on-primary" : isQuiet ? "ink.muted" : "ink.primary"
   view
     if a.command == "local"
-      button press=onLocal(a, session, item.id, item.version) disabled=isDisabled testId=`action-${a.key}` appearance="none" border-width=(isQuiet ? 0 : 1) border-style="solid" border-color=(isQuiet ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color="transparent" padding=(isQuiet ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(isOutState or isDisabled ? 0.4 : 1)
-        :active
-          background-color="surface.soft"
-        ButtonLabel(label=a.label, icon=a.icon, color=fgColor)
+      ActionPill(label=a.label, icon=a.icon, emphasis=a.emphasis, compact=compact, disabled=isDisabled, dimmed=isOutState, testId=`action-${a.key}`, onPress=onLocal(a, session, item.id, item.version))
     else
-      button press=onChoose(a.key, a.input, item.id, item.title) disabled=isDisabled testId=`action-${a.key}` appearance="none" border-width=(isQuiet or a.primary ? 0 : 1) border-style="solid" border-color=(a.primary or isQuiet ? "transparent" : "border.key") border-radius=(compact ? 14 : 18) background-color=(a.primary ? "ink.primary" : "transparent") padding=(isQuiet ? "4px 5px" : "3px 12px") min-height=(compact ? 28 : 36) box-sizing="border-box" opacity=(isOutState or isDisabled ? 0.4 : 1)
-        :active
-          opacity=0.8
-        ButtonLabel(label=a.label, icon=a.icon, color=fgColor)
+      ActionPill(label=a.label, icon=a.icon, emphasis=a.emphasis, compact=compact, disabled=isDisabled, dimmed=isOutState, testId=`action-${a.key}`, onPress=onChoose(a.key, a.input, item.id, item.title))

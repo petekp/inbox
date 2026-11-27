@@ -63,7 +63,7 @@ function isDeviceLink(target: string): boolean {
   }
 }
 
-function markColor(tone: ToneName | null | undefined): string {
+export function toneColor(tone: ToneName | null | undefined): string {
   if (tone == null) return '-exact-secondary-label'
   const colors = toneColors(tone)
   return `light-dark(${colors.light}, ${colors.dark})`
@@ -264,7 +264,7 @@ function projectRow(
     fileName: row.fileName ?? '',
     age: row.at === null ? '' : shortAgo(now - row.at),
     markTone: tone ?? '',
-    markColor: markColor(tone),
+    markColor: toneColor(tone),
     waiting: isWaitingRow(row),
     running: mark?.isRunning ?? false,
   }
@@ -329,7 +329,7 @@ export function projectRowGroups(
         outcome: settledLabel(d.outcomeLabel, d.delivery),
         mark: d.mark.text,
         tone: d.mark.tone ?? '',
-        color: markColor(d.mark.tone),
+        color: toneColor(d.mark.tone),
         age: shortAgo(now - at),
         actions,
       }
@@ -341,7 +341,7 @@ export function projectRowGroups(
       title,
       mark,
       tone,
-      color: markColor(tone),
+      color: toneColor(tone),
       count: waitingCount(rows),
       empty: rows.length === 0 ? groupEmptyText(title) : '',
       rows: rows.map(row => ({
