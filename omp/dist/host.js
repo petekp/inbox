@@ -199,17 +199,25 @@ function graphemesOf(text) {
 var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
 var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
 var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
+var cellsOf = graphemeCells;
+function countCellsWith(measure) {
+  const was = cellsOf;
+  cellsOf = measure;
+  return () => {
+    cellsOf = was;
+  };
+}
 function cellWidth(text) {
   let cells = 0;
   for (const segment of graphemesOf(text))
-    cells += graphemeCells(segment);
+    cells += cellsOf(segment);
   return cells;
 }
 function cutToCells(text, cells) {
   let out = "";
   let used = 0;
   for (const segment of graphemesOf(text)) {
-    used += graphemeCells(segment);
+    used += cellsOf(segment);
     if (used > cells)
       break;
     out += segment;
@@ -14975,6 +14983,9 @@ function demoSource(deps) {
 }
 
 // src/panel-view.ts
+function countCellsAsOmp(tui) {
+  return tui.visibleWidth ? countCellsWith(tui.visibleWidth) : () => {};
+}
 var screenRows = (ui) => ("size" in ui) ? ui.size().rows : ui.terminal.rows;
 function panelView(tui, ui, panel) {
   let isDisposed = false;
@@ -18471,6 +18482,7 @@ function createInbox(pi, deps = defaultDeps) {
   return inbox;
 }
 function host_default(pi) {
+  import("@oh-my-pi/pi-tui").then(countCellsAsOmp);
   createInbox(pi);
 }
 export {

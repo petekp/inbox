@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T05:12:51.057Z. 411275 characters follow.
+// Built at 2026-11-27T05:33:00.726Z. 411336 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -121,10 +121,11 @@ function graphemesOf(text) {
 var ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cc}\p{Cf}]+$/u;
 var EMOJI = /\p{Emoji_Presentation}|\uFE0F/u;
 var WIDE = /^[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6\u{20000}-\u{3FFFD}]/u;
+var cellsOf = graphemeCells;
 function cellWidth(text) {
   let cells = 0;
   for (const segment of graphemesOf(text))
-    cells += graphemeCells(segment);
+    cells += cellsOf(segment);
   return cells;
 }
 function graphemeCells(grapheme) {
@@ -6190,6 +6191,7 @@ function titleCopiesOf(r, sizes) {
 
 // src/panel-steps.ts
 var spaceNow = (s, now) => springStep(s.box, s.to, now - s.at);
+var isGrowingFrom = (rest, space) => rest !== null && space.to > rest.to + HEIGHT_SPRING.epsilon;
 function aimSpace(last, to, now) {
   if (last === null)
     return { box: { x: to, v: 0 }, at: now, to };
@@ -6386,7 +6388,7 @@ function underMotion(u, now, height) {
 function underPushMs(last, b, space) {
   if (!last || b.kind !== "row" || last.block.kind !== "row")
     return null;
-  if (last.restSpace && space.to > last.restSpace.to)
+  if (isGrowingFrom(last.restSpace, space))
     return enterDelayMs(space.to, space.box);
   return b.field !== null && last.block.field === null ? HEIGHT_SETTLE_MS - ENTER_FADE_MS : null;
 }
@@ -6576,8 +6578,7 @@ function stepFieldWait(last, b, space, now) {
     return { since: now, waitMs: null, goneShown: null };
   if (wait === null || wait.waitMs !== null)
     return wait;
-  const isGrowing = last.restSpace !== null && space.to > last.restSpace.to;
-  return isGrowing ? { ...wait, waitMs: now - wait.since + enterDelayMs(space.to, space.box) } : wait;
+  return isGrowingFrom(last.restSpace, space) ? { ...wait, waitMs: now - wait.since + enterDelayMs(space.to, space.box) } : wait;
 }
 function goneWait(w, now) {
   const opening = fieldOpening(w, now);
