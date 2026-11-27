@@ -3078,6 +3078,10 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 }
 
 // ../core/view/status-goal-page.ts
+var goalNotes = (g) => [
+  ...g?.now ? [{ kind: "now", text: g.now }] : [],
+  ...g?.was ? [{ kind: "was", text: g.was }] : []
+];
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
 var suggestedGoalOffer = (text) => `Next goal: \u201C${text}\u201D?`;
@@ -11556,7 +11560,8 @@ function drawGoalPart(part, d, isSelected) {
   if (part.is === "title") {
     const g = part.suggestion === null ? part.goal : null;
     const text = part.isTyping ? fieldLines(d, textAt) : part.suggestion !== null ? offerLines(part.suggestion, d, textAt, isSelected) : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity);
-    return [...text, ...g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : [], ...g?.now ? at(g.now, s.dim) : []];
+    const notes = goalNotes(g).flatMap((n) => at(n.kind === "was" ? `${WAS_PREFIX}${n.text}` : n.text, s.dim));
+    return [...text, ...notes];
   }
   if (part.is === "milestone")
     return milestoneLines(part.row, d, isSelected);

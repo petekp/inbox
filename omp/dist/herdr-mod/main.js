@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T20:44:53.409Z. 433308 characters follow.
+// Built at 2026-11-27T21:04:50.090Z. 433447 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -1265,6 +1265,10 @@ function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
 }
 
 // ../core/view/status-goal-page.ts
+var goalNotes = (g) => [
+  ...g?.now ? [{ kind: "now", text: g.now }] : [],
+  ...g?.was ? [{ kind: "was", text: g.was }] : []
+];
 var GOAL_HEADING = "Goal";
 var NO_GOAL_TEXT = "No goal yet. The inbox sets one when the work shows where it's headed.";
 var suggestedGoalOffer = (text) => `Next goal: “${text}”?`;
@@ -9353,8 +9357,7 @@ function goalBlocks(page, { isUnfolded, isCollapsed, goalField }) {
   const atText = (b) => g.mark && b.kind === "note" ? { ...b, isAtEdge: false } : b;
   const lines = goalField ? field : (isSuggested ? suggestion : [
     headTitle("goal text", g.text),
-    ...g.was ? [{ ...headNote("goal was", `${WAS_PREFIX}${g.was}`, "muted"), level: WAS_LEVEL }] : [],
-    ...g.now ? [headNote("goal now", g.now, "muted")] : []
+    ...goalNotes(g).map((n) => n.kind === "was" ? { ...headNote("goal was", `${WAS_PREFIX}${n.text}`, "muted"), level: WAS_LEVEL } : headNote("goal now", n.text, "muted"))
   ]).map(atText);
   const fold = g.milestonesFold;
   const foldLine = fold ? [
