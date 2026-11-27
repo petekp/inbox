@@ -182,14 +182,19 @@ export async function askStatus<T extends { text: string | null }>(
   const retry = retryFor(answer, first.text)
   if (retry === null) return { answer, text: first.text, last: first }
   const again = await ask(retry.prompt)
+  const retried = parseStatus(again.text)
+  const unmatched = new Map<string, number>()
+  for (const op of retried?.kind === 'ops' ? retried.ops.filter(retry.keeps) : []) {
+    const key = JSON.stringify(op)
+    unmatched.set(key, (unmatched.get(key) ?? 0) + 1)
+  }
   const kept = (again.text ?? '').split(NL).filter(line => {
     const one = parseStatus(line)
-    return one?.kind === 'ops' && one.ops.every(retry.keeps)
+    const keys = one?.kind === 'ops' ? one.ops.map(op => JSON.stringify(op)) : []
+    const isAdded = keys.length > 0 && keys.every(key => (unmatched.get(key) ?? 0) > 0)
+    if (isAdded) for (const key of keys) unmatched.set(key, (unmatched.get(key) ?? 0) - 1)
+    return isAdded
   })
 
-  return {
-    answer: withRetryLines(answer, parseStatus(again.text), retry.keeps),
-    text: [first.text, ...kept].join(NL),
-    last: again,
-  }
+  return { answer: withRetryLines(answer, retried, retry.keeps), text: [first.text, ...kept].join(NL), last: again }
 }
