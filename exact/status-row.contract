@@ -27,7 +27,7 @@ component StatusRowView
   derive indent = s.depth * 24
   derive parentX = (s.depth - 1) * 24 + 7
   derive armY = s.padTop + 10
-  derive nameColor = s.isMutedName or s.level == "faint" ? "ink.faint" : s.bold ? "ink.primary" : "ink.muted"
+  derive nameColor = s.kind == "ask" ? s.color : s.isMutedName or s.level == "faint" ? "ink.faint" : s.bold ? "ink.primary" : "ink.muted"
   view
     column id=`${prefix}-status-${s.id}` padding="0 16px"
       if s.spaceAbove > 0
@@ -76,7 +76,7 @@ component StatusRowView
             box position="absolute" left=7 top=armY width=17 border-top="1px solid tree.status"
 
           row margin-left=indent gap=8 align-items="start" flex=1 min-width=0
-            column width=16 padding-top=(s.mark == "□" ? 4 : 6) align-items="center"
+            column width=16 padding-top=(s.mark == "□" ? 4 : s.mark == "?" ? 2 : 6) align-items="center"
               if s.mark != "" or s.running
                 MarkGlyph(mark=s.mark, color=s.color, running=s.running, reduced=reduced, size=(s.mark == "□" ? 13 : 8))
             column flex=1 min-width=0 gap=0

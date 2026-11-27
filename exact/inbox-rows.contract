@@ -90,7 +90,7 @@ component InboxRows
                   :hover
                     background-color="transparent"
                   row gap=8 align-items="start" width="100%"
-                    column width=16 padding-top=(r.row.mark == "□" ? 4 : 6) align-items="center"
+                    column width=16 padding-top=(r.row.mark == "□" ? 4 : r.row.mark == "?" ? 2 : 6) align-items="center"
                       if r.row.mark != "" or r.row.running
                         MarkGlyph(mark=r.row.mark, color=r.row.markColor, running=r.row.running, reduced=reduced, size=(r.row.mark == "□" ? 13 : 8))
                     column flex=1 min-width=0 gap=0

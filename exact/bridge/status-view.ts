@@ -15,7 +15,7 @@ import {
 } from '../../core/view/status-gaps'
 import { isSpacedAbove, LATER_TEXT, workJoints } from '../../core/view/status-path'
 import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
-import { milestoneRows, unfoldedRows } from '../../core/view/status-folds'
+import { milestoneRows, unfoldedRows, hasTreeDown } from '../../core/view/status-folds'
 import { goalKeyGroups, goalSubmitLabel, statusKeyRows, GOAL_FIELD } from '../../core/view/status-keys'
 import type { StatusKey } from '../../core/view/status-keys'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
@@ -103,13 +103,20 @@ export function projectStatus(
         stall: r.stall?.text ?? '',
         level: textLevelOf(r),
         running: r.isRunning,
-        waitsOn: r.waitsOn?.text ?? '',
-        waitsOnColor: toneColor(r.waitsOn?.tone ?? 'needsYou'),
         was: r.was ? WAS_PREFIX + r.was : '',
         merged: r.merged ? mergedLine(r.merged, () => true) : '',
-        hasChildren: r.hasChildren && !collapsed(r.id),
+        hasChildren: hasTreeDown(r, collapsed),
         foldCount: r.foldCount,
         foldOpen: r.foldCount > 0 && !collapsed(r.id),
+        ...extras,
+      })
+    if (r.kind === 'ask')
+      return line(r.id, r.text, {
+        kind: r.kind,
+        depth: r.depth,
+        mark: r.mark,
+        color: toneColor(r.tone),
+        branch: r.branch ?? '',
         ...extras,
       })
     if (r.kind === 'child')
@@ -184,8 +191,6 @@ export function projectStatus(
         level: textLevelOf(m),
         detail: m.text ?? '',
         stall: x?.stall?.text ?? '',
-        waitsOn: x?.waitsOn?.text ?? '',
-        waitsOnColor: toneColor(x?.waitsOn?.tone ?? 'needsYou'),
         merged: x?.merged ? mergedLine(x.merged, () => true) : '',
         running: x?.isRunning ?? false,
         was: m.was ? WAS_PREFIX + m.was : '',
