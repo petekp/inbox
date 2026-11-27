@@ -197,7 +197,7 @@ function motionFailures(run: HerdrRun): Failure[] {
   for (let i = 1; i < times.length; i++) {
     const t = times[i] ?? 0
     const before = frames.get(times[i - 1] ?? 0) ?? []
-    const now = new Map((frames.get(t) ?? []).map(s => [keyOf(s), s]))
+    const now = new Map((frames.get(t) ?? []).filter(s => s.opacity > 0).map(s => [keyOf(s), s]))
     const blocksNow = new Set([...now.values()].map(s => s.block))
     const stem = (t: string) => t.replace(/…$/, '')
     const goesOn = (s: ShownText) =>

@@ -34,6 +34,7 @@ The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/seeds.t
 Every seed for #834 to #837, #959, #968, #982, #983 and #987 now passes. #772 and #783 (open or close just after Undo) have no seed yet.
 
 Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so the seeds for #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line) cannot run there.
+
 ## Terminal and desktop
 
 `./scripts/fuzz.sh --look mod [--seed N] [--runs N]` writes the cases into one fuzz file, `fuzz/out/<run>/mod/cases.fuzz.ts`. It runs that file with `scripts/test-files.sh`, which copies a `fuzz/*.fuzz.ts` file into the test folder as a test. The plugin test engine passes no environment variables to a test, so the cases go in the file itself.

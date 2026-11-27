@@ -501,6 +501,20 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       [{ is: 'key', key: 'right' }],
     ),
   },
+  {
+    name: 'Explain on a task while the host takes presses after 200 ms',
+    rule: 'vanish',
+    detail: '"Queued: Explain" in d17',
+    issue: 991,
+    isOpen: true,
+    case: {
+      ...herdr({ ...demo, ledger: { ...demo.ledger, items: demo.ledger.items.filter(i => i.id === 'd17') } }, [
+        { is: 'wait', ms: 3751 },
+        { is: 'key', key: 'e' },
+      ]),
+      takeAfterMs: 200,
+    },
+  },
 ]
 
 /** Fixed cases for the mod's terminal and desktop looks, run before each mod pass. */
@@ -554,6 +568,7 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
+  { issue: 991, look: 'herdr', rule: 'vanish', details: ['"Queued: '] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
 ]
 
