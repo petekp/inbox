@@ -1,5 +1,6 @@
 import { ENTER_FADE_MS, FAINT_OPACITY, LEAVE_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import type { Element } from 'gpui-kit'
+import { div } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import type { BodyLine, RowBlock, Tone } from './blocks'
 import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
@@ -48,13 +49,15 @@ const withTrunk = (el: Element, trunk: Element | null): Element =>
 
 /**
  * The lines a row draws between its title and its panel, drawn by `lineEl`, for `shown`, the form the row draws, each
- * with the trunk `trunkOf` gives beside it, which fades only with the panel. A
- * closing row keeps the lines of the open form it closes from while its panel holds its height, as it keeps that
- * form's panel, so a line its closed form adds, such as a press's "Sending…" that its buttons held under them, does
- * not push the fading panel down. A kept line its closed form drops fades out with the panel (`withPanel`). Once the
- * panel is left out, a line the closed form adds fades in from the next draw, while the row's box shrinks to its
- * closed height, so no line pops in or out. A status that comes or goes after that, as `holdLinesAbove` gives it, moves
- * in its own box, as on a row at rest, so it keeps its fade when the close ends.
+ * with the trunk `trunkOf` gives beside it, which fades only with the panel. A closing row keeps the lines of the open
+ * form it closes from while its panel holds its height, as it keeps that form's panel, so a line its closed form adds,
+ * such as a press's "Sending…" that its buttons held under them, does not push the fading panel down. A kept line its
+ * closed form drops fades out with the panel (`withPanel`). When a press closed the row (`isPanelPressed`), a line its
+ * closed form adds shows faint at once over the top of the panel, in `over`, which takes no space, so the press shows
+ * in its first draw. Once the panel is left out, a line the closed form adds fades in from the next draw, from the
+ * opacity it shows, while the row's box shrinks to its closed height, so no line pops in or out. A status that comes or
+ * goes after that, as `holdLinesAbove` gives it, moves in its own box, as on a row at rest, so it keeps its fade when
+ * the close ends.
  */
 export function titleLineEls(
   r: RowBlock,
@@ -64,22 +67,26 @@ export function titleLineEls(
   lineEl: (l: TitleLine, n: number) => Element,
   trunkOf: (n: number) => Element | null,
   withPanel: (el: Element) => Element,
-): Element[] {
+): { lines: Element[]; over: Element[] } {
   const drawn = (l: TitleLine, n: number) =>
     leavingEl(r, l, lineEl(l, n).id(`status above ${r.id} line ${n}`), n, p, trunkOf(n))
   const closing = m?.closing ?? null
   const lines = linesOf(shown)
-  if (closing === null) return lines.map(drawn)
+  if (closing === null) return { lines: lines.map(drawn), over: [] }
   const kept = linesOf(closing)
   const isAdded = (l: TitleLine) => !kept.some(k => k.text === l.text)
   const isDropped = (l: TitleLine) => !lines.some(s => s.text === l.text)
   const fadeName = (n: number) => `status above ${r.id} ${n}`
   if (!m?.isPanelLeftOut) {
-    lines.forEach((l, n) => isAdded(l) && p.fades.fade(fadeName(n), 0, 0, 0, p.now))
-    return kept.map((l, n) => (isDropped(l) ? withPanel(drawn(l, n)) : drawn(l, n)))
+    const opacity = m?.isPanelPressed ? FAINT_OPACITY : 0
+    const added = lines.flatMap((l, n) =>
+      isAdded(l) ? [fadeEl(lineEl(l, n).id(fadeName(n)), fadeName(n), opacity, { duration: 0, delay: 0 }, p)] : [],
+    )
+    const over = m?.isPanelPressed && added.length > 0 ? [overEl(added)] : []
+    return { lines: kept.map((l, n) => (isDropped(l) ? withPanel(drawn(l, n)) : drawn(l, n))), over }
   }
 
-  return lines.map((l, n) => {
+  const comes = lines.map((l, n) => {
     const isMovedByHold = l.cameAt !== undefined || l.leftAt !== undefined
     if (!isAdded(l) || isMovedByHold) return drawn(l, n)
     const name = fadeName(n)
@@ -88,7 +95,15 @@ export function titleLineEls(
       trunkOf(n),
     )
   })
+
+  return { lines: comes, over: [] }
 }
+
+/** Lines drawn over what follows them, from where they start, taking no space. */
+const overEl = (els: Element[]): Element =>
+  div()
+    .relative()
+    .child(div().absolute().top(0).left(0).w_full().child(v_flex().children(els)))
 
 /**
  * A held line whose hold let go, as `holdLinesAbove` gives it: it fades out while its box holds the line's height, then

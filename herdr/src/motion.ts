@@ -14,7 +14,8 @@ import { MOVED_TO, NO_SIZES, copyIdOf, panelId, restId, titleId } from './height
 import type { Sizes } from './heights'
 import { titleRestOf } from './title-cut'
 import { HOLD_MS, NEXT_FRAME_MS, glideOf, isShownAtOnce } from './block-glide'
-import { aimSpace, faintCloseSteps, opacityAt, panelOf, stepsFrom } from './panel-steps'
+import { aimSpace, bringsStatusUnder, isPanelFaint, panelOf, panelPressOf, stepPanel } from './panel-steps'
+import { holdsShape } from './reshape-hold'
 import type { Glide } from './block-glide'
 import { stepTitle, titleMotion, titleTimes } from './title-motion'
 import type { TitleMotion } from './title-motion'
@@ -41,23 +42,25 @@ const NO_IDS: ReadonlySet<string> = new Set()
 
 /**
  * How a block moves in this draw. `isStart` marks the draw a move began. A block that enters or leaves draws in a box
- * whose height springs and whose content fades over `fadeMs`, once the box is nearly open if `waitsForSpace`: `box` is `open` at the block's
- * measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
- * `closing` the open form whose panel a closing row keeps drawn. `isPanelWaiting` says an opening row's panel fades in
- * once its space is nearly open, as an entering block's content does, the person's own move included. A row that turns
- * back from a close fades its panel in at once instead, in the steps of `turnBackFades`, and `panelFadeMs` is the
- * length of the step it is in. `isPanelLeftOut` says the row's content box moves to
- * its measured height less its panel's: through a close once its panel has faded, through all of a close whose panel
- * showed nothing yet, as one that turns an open back before its panel faded in, and in the draw after a close, before
- * the row measures without the panel.
- * `title` is how a row's title draws while it moves between its one-line and wrapped forms, null when it draws one.
- * `isHeightHeld` says a closing row keeps its open height, its title's and its panel's, while its panel fades, and
- * while a leaving block holds its space if the close starts in the draw that block starts to leave. `shutForMs` is how long the box of a block that turned
- * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
- * still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a row's buttons
- * draws as it comes and goes, `status` and `prTail` how a PR block's lines do, and `warning` the stopped warning. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
- * is dismissed, so its box keeps that form's height until the new form measures, and `blockSwap` how its content fades from
- * the one form to the other, as a Status line's parts do as they change. `field` is how the buttons of a row's reply field draw
+ * whose height springs and whose content fades over `fadeMs`, once the box is nearly open if `waitsForSpace`: `box` is
+ * `open` at the block's measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades
+ * to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and `closing`
+ * the open form whose panel a closing row keeps drawn. `isPanelWaiting` says an opening row's panel fades in once its
+ * space is nearly open, as an entering block's content does, the person's own move included. A row that turns back from
+ * a close fades its panel in at once instead, in the steps of `turnBackFades`, and `panelFadeMs` is the length of the
+ * step it is in. `isPanelPressed` says a press stepped the panel to faint (`panelPressOf`). `isPanelLeftOut` says the
+ * row's content box moves to its measured height less its panel's: through a close once its panel has faded, through
+ * all of a close whose panel showed nothing yet, as one that turns an open back before its panel faded in, and in the
+ * draw after a close, before the row measures without the panel. `title` is how a row's title draws while it moves
+ * between its one-line and wrapped forms, null when it draws one. `isHeightHeld` says a closing row keeps its open
+ * height, its title's and its panel's, while its panel fades, and while a leaving block holds its space if the close
+ * starts in the draw that block starts to leave. `shutForMs` is how long the box of a block that turned back had been
+ * springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it
+ * left behind are still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a
+ * row's buttons draws as it comes and goes, `status` and `prTail` how a PR block's lines do, and `warning` the stopped
+ * warning. `former` is the block's last form in the draw it changes kind, as a PR's block does when it is dismissed, so
+ * its box keeps that form's height until the new form measures, and `blockSwap` how its content fades from the one form
+ * to the other, as a Status line's parts do as they change. `field` is how the buttons of a row's reply field draw
  * while the field comes, null at rest, and `countLeft` a group heading's count that went.
  */
 export type RowMotion = {
@@ -71,6 +74,7 @@ export type RowMotion = {
   panel: number | null
   isPanelWaiting: boolean
   panelFadeMs: number | null
+  isPanelPressed: boolean
   closing: RowBlock | null
   isPanelLeftOut: boolean
   title: TitleMotion | null
@@ -89,12 +93,6 @@ export type RowMotion = {
 
 const targetOf = (b: Block): RowTarget =>
   b.kind !== 'row' ? 'closed' : b.settled ? 'settled' : isOpenRow(b) ? 'open' : 'closed'
-
-/** Whether a Status line's place in the tree changes: its depth, its connectors or its path. */
-const isReshaped = (was: Block, b: Block): boolean =>
-  was.kind === 'status' &&
-  b.kind === 'status' &&
-  (was.depth !== b.depth || JSON.stringify([was.tree, was.path]) !== JSON.stringify([b.tree, b.path]))
 
 const isFolding = (state: RowState | undefined): boolean => state === 'opening' || state === 'closing'
 
@@ -154,10 +152,8 @@ export function moveRows(
     if (height <= 0 || (t.track.state !== 'open' && t.track.state !== 'opening')) return false
     const fadesAt = t.panelSteps ? t.track.since : t.track.since + NEXT_FRAME_MS + enterDelayMs(height)
 
-    return t.track.state === 'open' || (now >= fadesAt && !isPanelFaint(t))
+    return t.track.state === 'open' || (now >= fadesAt && !isPanelFaint(t, now))
   }
-  const isPanelFaint = (t: Tracked): boolean =>
-    t.track.state === 'opening' && t.panelSteps !== null && now < (t.panelSteps.at(-1)?.at ?? now)
   const panelFadeWaitMs = (t: Tracked): number => (t.track.state === 'open' ? NEXT_FRAME_MS : 0)
   const panelHolds = new Map(
     blocks.flatMap(b => {
@@ -212,21 +208,7 @@ export function moveRows(
     const prTail =
       block.kind === 'pr' ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInputTo(block.id)) : null
     const warning = stepWarning(last?.warning ?? null, last?.block, block, now, isFirst, isInputTo(block.id))
-    const isTurnedBack = isStart && track.state === 'opening' && last?.track.state === 'closing' && last.opened !== null
     const panelHeight = heightOf(panelId(block.id))
-    const lastSteps = last?.panelSteps ?? null
-    const isFaintClose = isStart && track.state === 'closing' && last !== undefined && isPanelFaint(last)
-    const panelSteps =
-      track.state !== 'opening' && track.state !== 'closing'
-        ? null
-        : isTurnedBack
-          ? stepsFrom(now, last?.panelSpace ?? null, panelHeight ?? 0, lastSteps ? opacityAt(lastSteps, now) : 0)
-          : isFaintClose && lastSteps
-            ? faintCloseSteps(now, lastSteps)
-            : isStart
-              ? null
-              : lastSteps
-    const panelStep = panelSteps?.findLast(step => step.at <= now) ?? null
     const panelHeldUntil =
       track.state !== 'closing' ? 0 : isStart ? (panelHolds.get(block.id) ?? now) : (last?.panelHeldUntil ?? 0)
     const closing = track.state === 'closing' && block.kind === 'row' ? opened : null
@@ -252,6 +234,19 @@ export function moveRows(
       underPushMs(last, block, restSpace),
       now,
     )
+    const isShown = last !== undefined && isPanelShown(last, block.id)
+    const press = panelPressOf(track, last, closing, block, under, now, isInputTo(block.id), isShown)
+    const { steps: panelSteps, isPressed: isPanelPressed } = stepPanel(
+      track,
+      last,
+      now,
+      panelHeight,
+      press,
+      panelHeldUntil,
+    )
+    const panelStep = panelSteps?.findLast(step => step.at <= now) ?? null
+    const isUnderInPanel = isPanelPressed && isPanelFaint({ track, panelSteps }, now)
+    const underNow = underMotion(under, now, heightOf(underId(block.id)))
     const waited = waitSwap(swap, restSpace, rest, now)
     const fieldWait = stepFieldWait(last, block, restSpace, now)
     const panelSpace = aimSpace(
@@ -285,6 +280,7 @@ export function moveRows(
       warning,
       panelSpace,
       panelSteps,
+      isPanelPressed,
       panelHeldUntil,
       swap: waited,
       restSpace,
@@ -303,12 +299,13 @@ export function moveRows(
       panel: panelStep?.to ?? panelOf(track.state, isStart, last, closing),
       isPanelWaiting: track.state === 'opening',
       panelFadeMs: panelStep?.ms ?? null,
+      isPanelPressed,
       closing,
       isPanelLeftOut,
       title: titleMotion(title, now),
       isHeightHeld: isHeld,
       springId,
-      under: underMotion(under, now, heightOf(underId(block.id))),
+      under: underNow && isUnderInPanel ? { ...underNow, opacity: null } : underNow,
       status: underMotion(status, now, heightOf(underId(block.id))),
       prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
       warning: underMotion(warning, now, heightOf(warningId(block.id))),
@@ -333,8 +330,9 @@ export function moveRows(
     const opens = old !== undefined && targetOf(b) === 'open' && targetOf(old.block) !== 'open'
     const waitsForLeave = opens && !isInputTo(b.id) && isHolding
     const isTurningBack = old?.track.state === 'closing' && old.swap?.inAt !== null
-    const waitsForClose = opens && old.block.kind === 'row' && opensAfterClose > now && !isTurningBack
-    const waitsToReshape = old !== undefined && isHolding && isReshaped(old.block, b)
+    const isPressShown = isInputTo(b.id) && bringsStatusUnder(old?.block, b)
+    const waitsForClose = opens && old.block.kind === 'row' && opensAfterClose > now && !isTurningBack && !isPressShown
+    const waitsToReshape = old !== undefined && holdsShape(old.block, b, isHolding)
     const drawn =
       waitsForLeave || waitsToReshape
         ? old.block

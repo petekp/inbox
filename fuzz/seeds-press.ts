@@ -165,7 +165,7 @@ export const PRESS_SEEDS: {
     rule: 'press-shows',
     detail: '"✓ Opened the log"',
     issue: 1018,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([], ['acme/visor#31']), [
         { is: 'click', on: 'tab', n: 3, label: 'prs' },
@@ -177,11 +177,27 @@ export const PRESS_SEEDS: {
     },
   },
   {
+    name: 'o on a check row whose box still grows',
+    rule: 'press-shows',
+    detail: '"✓ Opened the log"',
+    issue: 1018,
+    isOpen: false,
+    case: {
+      ...herdr(only([], ['acme/visor#31']), [
+        { is: 'click', on: 'tab', n: 3, label: 'prs' },
+        { is: 'wait', ms: 50 },
+        { is: 'click', on: 'row', n: 1 },
+        { is: 'key', key: 'o' },
+      ]),
+      takeAfterMs: 800,
+    },
+  },
+  {
     name: 'Address on a PR thread',
     rule: 'press-shows',
     detail: HOST_ANSWER,
     issue: 1019,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([], ['acme/visor#31']), [
         { is: 'click', on: 'tab', n: 3, label: 'prs' },
@@ -196,7 +212,7 @@ export const PRESS_SEEDS: {
     rule: 'press-shows',
     detail: HOST_ANSWER,
     issue: 1019,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(emptySession(), [
         { is: 'record', args: { kind: 'finding', finding_kind: '', title: 'R', detail: 'D' } },
@@ -212,7 +228,7 @@ export const PRESS_SEEDS: {
     rule: 'cut',
     detail: '"Undo" shows',
     issue: 1022,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'click', on: 'tab', n: 3, label: 'prs' },
       { is: 'wait', ms: 400 },
@@ -236,7 +252,7 @@ export const PRESS_SEEDS: {
     rule: 'jump',
     detail: 'the highlight of row ',
     issue: 1024,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(emptySession(), [
         { is: 'record', args: { kind: 'finding', finding_kind: '', title: 'R', detail: 'D' } },
