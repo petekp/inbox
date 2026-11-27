@@ -6478,9 +6478,9 @@ function dialogActivity(questions, outcome) {
   const head = `asked the user in a dialog${asked}`;
   switch (outcome.kind) {
     case "answered":
-      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+      return `${head}; answer: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`;
     case "timed-out":
-      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`;
     case "dismissed":
       return `${head}; the user dismissed it without answering`;
     case "open":
@@ -7698,12 +7698,13 @@ function earlierLineText(line) {
 
 // ../core/domain/record-matches.ts
 var MATCH_TEXT_CHARS = 200;
+var shortText2 = (text) => cutLine(text, (t) => t.length <= MATCH_TEXT_CHARS);
 function earlierAnswersText(id, earlier, now) {
   if (earlier.length === 0)
     return "";
   const lines = earlier.map((doc) => {
     const where = doc.repo ? `, in ${doc.repo}` : "";
-    return `- ${agoText(now - doc.at)}${where}: "${clipLabel(doc.ask, MATCH_TEXT_CHARS)}" They answered "${clipLabel(doc.answer, MATCH_TEXT_CHARS)}".`;
+    return `- ${agoText(now - doc.at)}${where}: "${shortText2(doc.ask)}" They answered "${shortText2(doc.answer)}".`;
   });
   return [
     "",
