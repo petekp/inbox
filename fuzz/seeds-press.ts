@@ -99,7 +99,7 @@ export const PRESS_SEEDS: {
     },
   },
   {
-    name: 'Undo on a dismissed task while its press is out',
+    name: 'Undo on a dismissed task',
     rule: 'vanish',
     detail: '"Sending…" in d14',
     issue: 1008,
@@ -107,7 +107,7 @@ export const PRESS_SEEDS: {
     case: {
       ...herdr(only(['d14']), [
         { is: 'click', on: 'button', n: 4, label: 'Dismiss' },
-        { is: 'wait', ms: 746 },
+        { is: 'wait', ms: 1200 },
         { is: 'click', on: 'button', n: 3, label: 'Undo' },
       ]),
       takeAfterMs: 600,

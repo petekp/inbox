@@ -74,8 +74,14 @@ export type OmpDraw = {
 }
 
 /**
- * A key the person pressed, by the indexes of three draws: the last before it, its own, which omp renders on its next
- * tick, and the first after the work the key started settled.
+ * How many chained promise callbacks a key's own draw waits for, as omp renders only after its handler's microtasks.
+ * The stand-in host answers a press a timer later, as the live host reads and locks the session's files first.
+ */
+const MICROTASK_HOPS = 10
+
+/**
+ * A key the person pressed, by the indexes of three draws: the last before it, its own, drawn once the key's
+ * microtasks have run, and the first after the work the key started settled.
  */
 export type OmpKey = { key: string; before: number; own: number; settled: number }
 
@@ -127,6 +133,7 @@ async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
       version: '1.2.3',
     }),
     press: async (p, holds, _pressId, when) => {
+      await new Promise(resolve => setTimeout(resolve, 0))
       const outcome = await press(host, p, false, holds, undefined, when)
       if (outcome.wakesAfterSettle) add(() => void wakeAfterSettle(host), SETTLED_MS + WAKE_MARGIN_MS, true)
       return {
@@ -214,6 +221,7 @@ async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
     if (e.is === 'key') {
       const before = draws.length - 1
       panel.handleInput(e.key, e.text ?? (e.key.length === 1 ? e.key : undefined))
+      for (let i = 0; i < MICROTASK_HOPS; i++) await Promise.resolve()
       draw()
       keys.push({ key: e.key, before, own: draws.length - 1, settled: draws.length })
       return `pressed ${e.key}`

@@ -14,10 +14,6 @@ type At = (t: number) => Pick<Failure, 'look' | 'at' | 'after'>
 
 /** A moved block's copy and its boxes at its new place carry its id, then `~from` or `~to` and the time it moved. */
 export const baseOf = (block: string) => block.replace(/~(from|to) \d+$/, '')
-/** The place a block draws in: a moved block's copy draws in the place the block left. */
-const placeOf = (block: string) => block.replace(/~from \d+$/, '')
-
-const keyOf = (s: ShownText) => `${placeOf(s.block)}|${s.text}`
 const isShown = (s: ShownText) => s.opacity * s.share >= CUT_OPACITY && s.text.trim() !== ''
 const stem = (t: string) => t.replace(/…$/, '')
 const isRunningMark = (text: string) => (RUNNING_FRAMES as readonly string[]).includes(text)
@@ -92,11 +88,25 @@ export function vanishFailures(run: HerdrRun, shown: ShownText[], at: At): Failu
     const b = blockAt(t, block)
     return b?.kind === 'row' ? b.mark : null
   }
+  /** The place a moved block's copy draws in: the place the block drew in the frame before the copy came. */
+  const copyPlaces = new Map<string, string>()
+  const placeOf = (block: string) => copyPlaces.get(block) ?? block
+  const keyOf = (s: ShownText) => `${placeOf(s.block)}|${s.text}`
+  const isCopy = (block: string) => /~from \d+$/.test(block)
+  const movedAt = (block: string) => Number(block.match(/~to (\d+)$/)?.[1] ?? -1)
+  for (const [i, t] of times.entries()) {
+    const before = frames.get(times[i - 1] ?? Number.NaN) ?? []
+    for (const s of frames.get(t) ?? []) {
+      if (!isCopy(s.block) || copyPlaces.has(s.block)) continue
+      const left = before.map(b => b.block).filter(b => baseOf(b) === baseOf(s.block) && !isCopy(b))
+      copyPlaces.set(s.block, left.sort((a, b) => movedAt(a) - movedAt(b)).at(-1) ?? baseOf(s.block))
+    }
+  }
   for (let i = 1; i < times.length; i++) {
     const t = times[i] ?? 0
     const was = times[i - 1] ?? 0
-    if (isInputDraw(t)) continue
     const before = frames.get(was) ?? []
+    if (isInputDraw(t)) continue
     const now = new Map((frames.get(t) ?? []).filter(s => s.opacity > 0).map(s => [keyOf(s), s]))
     const wasShown = new Set(before.filter(isShown).map(keyOf))
     const blocksNow = new Set((frames.get(t) ?? []).map(s => baseOf(s.block)))

@@ -2,7 +2,7 @@ import { CUT_OPACITY } from '../core/view/row-motion'
 import { NEXT_FRAME_MS } from '../herdr/src/block-glide'
 import type { Block } from '../herdr/src/blocks'
 import type { Failure } from './failure'
-import type { HerdrRun, Press } from './look-herdr'
+import type { HerdrRun } from './look-herdr'
 import { baseOf } from './rules-herdr-vanish'
 
 type ShownText = { at: number; block: string; text: string; opacity: number; share: number }
@@ -60,24 +60,28 @@ const draws = (text: string, word: string) =>
 /**
  * The `press-shows` rule: the draw that answers a press shows what the press brought to its block. A press answers in
  * the person's own draw and again in the draw after the host applies its press file. What it brought is the words the
- * view gives the pressed block in that draw that it did not give it in the draw before, which the block then draws at
- * `CUT_OPACITY` or more within `WINDOW_MS`. One of them must start to show within `SHOWS_WITHIN_MS` of the answer's
- * first frame, or the pressed button's label must go.
+ * view gives the pressed block in its draws after the press, until the person's next input or the next press, that it
+ * did not give it in the draw before. When the block draws one at `CUT_OPACITY` or more before the next input and within
+ * `WINDOW_MS`, one must start to show within `SHOWS_WITHIN_MS` of the first frame after the press, or the pressed
+ * button's label must go.
  */
 export function pressShowsFailures(run: HerdrRun, shown: ShownText[], at: At): Failure[] {
   const out: Failure[] = []
-  const blockOf = (i: number, id: string): Block | undefined => run.draws[i]?.blocks.find(b => b.id === id)
   for (const p of run.presses) {
-    const i = run.draws.findLastIndex(d => d.at <= p.at)
-    const before = run.draws.slice(0, i).findLast(d => d.at < p.at)
-    const now = blockOf(i, p.block)
+    const before = run.draws[p.draw - 1]
+    const nextInput = Math.min(p.at + WINDOW_MS, ...run.inputStarts.filter(e => e.after > p.after).map(e => e.at))
+    const next = Math.min(nextInput, ...run.presses.filter(x => x !== p && x.at > p.at).map(x => x.at))
+    const after = run.draws
+      .slice(p.draw)
+      .filter(d => d.at < next)
+      .flatMap(d => d.blocks.filter(b => b.id === p.block))
+    const now = after[0]
     if (!now || !before) continue
     const was = before.blocks.find(b => b.id === p.block)
     if (p.by === 'host' && isRowFormSwap(was, now)) continue
     const had = new Set(wordsOf(was ?? null))
-    const brought = [...new Set(wordsOf(now))].filter(w => !had.has(w))
+    const brought = [...new Set(after.flatMap(b => wordsOf(b)))].filter(w => !had.has(w))
     if (brought.length === 0) continue
-    const next = Math.min(p.at + WINDOW_MS, ...nextInputs(run, p))
     const first = shown.find(s => s.at >= p.at)?.at
     if (first === undefined) continue
     const lastFrame = shown.findLast(s => s.at < first)?.at
@@ -87,14 +91,19 @@ export function pressShowsFailures(run: HerdrRun, shown: ShownText[], at: At): F
         : new Set(
             shown.filter(s => s.at === lastFrame && baseOf(s.block) === p.block && s.opacity > 0).map(s => s.text),
           )
-    const sawButton = shown.some(
-      s =>
-        s.at === lastFrame && baseOf(s.block) === p.block && s.text === p.label && s.opacity * s.share >= CUT_OPACITY,
-    )
-    if (had.has(p.label) && !sawButton) continue
+    const isSeen = (text?: string) =>
+      lastFrame === undefined ||
+      shown.some(
+        s =>
+          s.at === lastFrame &&
+          baseOf(s.block) === p.block &&
+          (text === undefined || s.text === text) &&
+          s.opacity * s.share >= CUT_OPACITY,
+      )
+    if (!isSeen() || (had.has(p.label) && !isSeen(p.label))) continue
     const ofPress = (s: ShownText) =>
       baseOf(s.block) === p.block && !drewBefore.has(s.text) && brought.some(w => draws(s.text, w))
-    const later = shown.find(s => s.at >= first && s.at < next && ofPress(s) && s.opacity * s.share >= CUT_OPACITY)
+    const later = shown.find(s => s.at >= first && s.at < nextInput && ofPress(s) && s.opacity * s.share >= CUT_OPACITY)
     if (!later) continue
     const isEarly = (s: ShownText) => s.at >= first && s.at <= first + SHOWS_WITHIN_MS
     const isShown = shown.some(s => isEarly(s) && ofPress(s) && s.opacity >= STARTED && s.share > 0)
@@ -120,6 +129,3 @@ export function pressShowsFailures(run: HerdrRun, shown: ShownText[], at: At): F
  */
 const isRowFormSwap = (was: Block | undefined, now: Block) =>
   was?.kind === 'row' && now.kind === 'row' && (was.settled === null) !== (now.settled === null)
-
-/** The times of the input and presses after a press, which can bring words of their own. */
-const nextInputs = (run: HerdrRun, p: Press) => [...run.inputAt, ...run.presses.map(x => x.at)].filter(t => t > p.at)
