@@ -10,7 +10,7 @@ import type { ToneName } from '../../core/view/tones'
 import { parseInline } from '../../core/view/inline'
 import { earlierLineText } from '../../core/domain/earlier-answers'
 import { groupEmptyText } from '../../core/view/banners'
-import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../core/view/help'
+import { FINDING_GROUPS } from '../../core/view/help'
 import { LEGACY_REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import {
   ROW_COPY,
@@ -27,6 +27,7 @@ import {
   closedTitleTone,
   shortAgo,
   waitingCount,
+  NEEDS_YOU_GROUPS,
 } from '../../core/view/rows'
 import type { RowView } from '../../core/view/rows'
 import { closedLineView } from '../../core/view/closed-line'
@@ -353,24 +354,9 @@ export function projectRowGroups(
     }
   }
   const groups = {
-    askGroups: [
-      group(
-        'questions',
-        'Questions',
-        NEEDS_YOU_MARKS.question.mark,
-        NEEDS_YOU_MARKS.question.tone,
-        view.needsYou.questions,
-        view.needsYou.closed.questions,
-      ),
-      group(
-        'tasks',
-        'Tasks',
-        NEEDS_YOU_MARKS.task.mark,
-        NEEDS_YOU_MARKS.task.tone,
-        view.needsYou.tasks,
-        view.needsYou.closed.tasks,
-      ),
-    ],
+    askGroups: NEEDS_YOU_GROUPS.map(g =>
+      group(g.list, g.title, g.mark.mark, g.mark.tone, view.needsYou[g.list], view.needsYou.closed[g.list]),
+    ),
     findingGroups: Object.entries(FINDING_GROUPS).map(([kind, info]) =>
       group(
         kind,
