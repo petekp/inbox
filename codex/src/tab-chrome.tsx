@@ -15,8 +15,9 @@ import { swapPage } from './tab-swap'
 import { pulseInStep, MarkGlyph, markClassOf, GroupTitle, Banner } from './tab-parts'
 import { HerdrAskBanner } from './tab-herdr-ask'
 import { bannerMotion, lineMotion } from './tab-line-steps'
-import { countMotion } from './tab-line-steps'
-import type { BannerLine, CountLine } from './tab-line-steps'
+import type { BannerLine } from './tab-line-steps'
+import { countMotion } from './tab-count-motion'
+import type { CountLine } from './tab-count-motion'
 
 /** The Help tab's icon: a question mark in a circle, in the tab's text color. */
 function HelpIcon() {

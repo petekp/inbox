@@ -2,7 +2,12 @@ import { ENTER_FADE_MS, enterDelayMs, LEAVE_FADE_MS } from '../../core/view/row-
 import { shownTabs } from '../../core/view/tabs'
 import { drawnRows, root, tabState } from './tab-state'
 import { fade, glide, glides, isRunning, opacityOf, springOf } from './tab-glide'
-import { countMotion } from './tab-line-steps'
+import type { Tab } from '../../types'
+
+/** A row tab's count, keyed by its tab. It comes when the tab gains a count and goes when the tab loses it. */
+export type CountLine = { id: Tab; badge: string }
+
+export const countMotion = (tab: string) => `count-${tab}`
 
 /** The box that holds a tab's count. Its width glides as the count comes and goes. */
 const COUNT_BOX = '[data-count]'
