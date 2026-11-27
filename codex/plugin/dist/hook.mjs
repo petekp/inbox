@@ -41,6 +41,103 @@ async function ancestorCli(exec, startPid) {
   return (await ancestorCodex(exec, startPid))?.cli ?? null;
 }
 
+// ../core/remote/remote-press.ts
+var REMOTE_PR_ACTIONS = [
+  "thread-address",
+  "thread-draft",
+  "thread-discuss",
+  "pr-conflicts",
+  "pr-address-all",
+  "pr-merge",
+  "pr-dismiss",
+  "pr-undo",
+  "check-fix",
+  "check-rerun",
+  "pr-rank-again",
+  "pr-refresh",
+  "pr-clear-finished"
+];
+
+// ../core/domain/presses.ts
+function isPrRowId(id) {
+  return id.startsWith("pr:") || id.includes(" ");
+}
+
+// ../core/domain/last-actions.ts
+function isAwaitingReply(last, turns) {
+  const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
+  return pressed2 !== void 0 && pressed2 <= turns.turnsStarted && turns.turnsApplied <= pressed2;
+}
+function repliedAtTurnEnd(lastActions, turns, endedAt) {
+  return Object.fromEntries(
+    Object.entries(lastActions).map(([id, last]) => {
+      const isAnswered = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === void 0 && last.turnsStarted !== void 0 && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
+      return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt) } : last];
+    })
+  );
+}
+function isHandedOff(last, turns) {
+  return last?.kind === "handoff" && isAwaitingReply(last, turns);
+}
+function isFoldingPress(id, last) {
+  return !id.startsWith("pr:") && last?.kind === "handoff" && last.action !== "address";
+}
+function isFixSent(last) {
+  return last?.action === "address" && !last.isKept && last.delivery?.state !== "failed";
+}
+var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
+var PR_RENAMES = [
+  [/^address-all-/, "pr-address-all"],
+  [/^resolve-/, "pr-conflicts"]
+];
+var THREAD_RENAMES = [
+  [/^address-/, "thread-address"],
+  [/^draft-/, "thread-draft"],
+  [/^discuss-/, "thread-discuss"]
+];
+var ROW_RENAMES = [
+  [/^explain(-|$)/, "explain"],
+  [/^(help-.+-|step-)\d+$/, (old) => `step-${old.split("-").pop()}`],
+  [/^typed$/, "type"],
+  [/^address(-|$)/, "address"],
+  [/^discuss(-|$)/, "discuss"]
+];
+function upgradedLastAction(key, old) {
+  const renames = key.startsWith("pr:") ? PR_RENAMES : key.includes(" thread ") ? THREAD_RENAMES : ROW_RENAMES;
+  const found = renames.find(([pattern]) => pattern.test(old.action));
+  const action = found ? typeof found[1] === "function" ? found[1](old.action) : found[1] : null;
+  if (action === null) return null;
+  const { isHandoff, ...kept } = old;
+  const isHandedOff2 = isHandoff ?? HANDOFF_IDS.test(action);
+  return {
+    ...kept,
+    kind: isHandedOff2 ? "handoff" : "talk",
+    action,
+    // Earlier builds saved "Explain sent" or "Sent to Claude to fix"; a last action is now the label pressed.
+    text: /^Sent to (Claude|Codex) to /.test(old.text) ? "Address" : old.text.replace(/ sent$/, "")
+  };
+}
+function upgradeLastActions(saved) {
+  return Object.fromEntries(
+    Object.entries(saved).flatMap(([key, entry]) => {
+      const {
+        tab: _tab,
+        title: _title,
+        index: _index,
+        ...last
+      } = entry;
+      if ("kind" in last && last.kind) return [[key, last]];
+      const upgraded2 = upgradedLastAction(key, last);
+      return upgraded2 ? [[key, upgraded2]] : [];
+    })
+  );
+}
+
+// ../core/domain/open-targets.ts
+function baseName(path) {
+  return path.replace(/\/+$/, "").split("/").pop() ?? path;
+}
+
 // ../core/domain/status-limits.ts
 var OPEN_SUBJECTS = 6;
 var NAME_KEPT = 20;
@@ -184,83 +281,6 @@ var MEANING = new Map(SYNONYMS.flatMap((group) => group.map((w) => [stem(w), ste
 function sameAsk(a, b) {
   const norm = (s) => words2(s).join(" ");
   return norm(a) !== "" && norm(a) === norm(b);
-}
-
-// ../core/domain/ledger-close.ts
-var MAX_CLOSED = 12;
-function closedRecord(item, closing, now) {
-  const { id, kind, ask, label } = item;
-  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
-}
-function closeItem(ledger, id, closing, now) {
-  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
-  return reopenAskedFindings(
-    { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
-    records
-  );
-}
-var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
-function leavesWorkOpen(c) {
-  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
-}
-function reopenAskedFindings(ledger, closes) {
-  return closes.filter(leavesWorkOpen).reduce((l, c) => {
-    const record2 = l.closedFindings.findLast((f) => f.askedAs === c.id);
-    if (!record2) return l;
-    const reopened = reopenFinding(l, record2.id);
-    return {
-      ...reopened,
-      findings: reopened.findings.map((f) => {
-        const { askedAs: _askedAs, ...rest } = f;
-        return f.id === record2.id ? { ...rest, reopenedAt: c.at } : f;
-      })
-    };
-  }, ledger);
-}
-function pruneClosed(ledger, keep) {
-  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
-  return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
-}
-function idNumber(id) {
-  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
-}
-function inIdOrder(open2, entry) {
-  const at = open2.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
-  return at < 0 ? [...open2, entry] : [...open2.slice(0, at), entry, ...open2.slice(at)];
-}
-function reopenItem(ledger, id) {
-  const item = ledger.closed.findLast((c) => c.id === id)?.item;
-  if (!item || ledger.items.some((i) => i.id === id)) return ledger;
-  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
-}
-function reopenFinding(ledger, id) {
-  const record2 = ledger.closedFindings.findLast((f) => f.id === id);
-  if (!record2 || ledger.findings.some((f) => f.id === id)) return ledger;
-  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record2;
-  return {
-    ...ledger,
-    findings: inIdOrder(ledger.findings, finding),
-    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
-  };
-}
-var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
-var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
-function closedState(d) {
-  if (d.how === "dismissed") return "dismissed";
-  if (d.how === "expired") return "lapsed";
-  const isOvertaken = OVERTAKEN.test(d.outcome);
-  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
-}
-function closedAt(c) {
-  return "closedAt" in c ? c.closedAt : c.at;
-}
-function isLapsed(d) {
-  return closedState(d) !== "handled";
-}
-
-// ../core/domain/open-targets.ts
-function baseName(path) {
-  return path.replace(/\/+$/, "").split("/").pop() ?? path;
 }
 
 // ../core/domain/option-previews.ts
@@ -593,6 +613,78 @@ function stepIconKind(step) {
   if (step.step.some((h) => h.kind === "run")) return "run";
   const first = step.step[0]?.kind;
   return first === "copy" || first === "terminal" ? "copy" : first === "open" || first === "link" ? "open" : void 0;
+}
+
+// ../core/domain/ledger-close.ts
+var MAX_CLOSED = 12;
+function closedRecord(item, closing, now) {
+  const { id, kind, ask, label } = item;
+  return { id, kind, ask, ...label ? { label } : {}, ...closing, at: now, item };
+}
+function closeItem(ledger, id, closing, now) {
+  const records = ledger.items.filter((i) => i.id === id).map((i) => closedRecord(i, closing, now));
+  return reopenAskedFindings(
+    { ...ledger, items: ledger.items.filter((i) => i.id !== id), closed: [...ledger.closed, ...records] },
+    records
+  );
+}
+var PUT_OFF = /\b(?:not (?:now|yet)|put off|for later|postpone|defer)/i;
+function leavesWorkOpen(c) {
+  return c.how !== "done" && (isLapsed(c) || PUT_OFF.test(c.outcome));
+}
+function reopenAskedFindings(ledger, closes) {
+  return closes.filter(leavesWorkOpen).reduce((l, c) => {
+    const record2 = l.closedFindings.findLast((f) => f.askedAs === c.id);
+    if (!record2) return l;
+    const reopened = reopenFinding(l, record2.id);
+    return {
+      ...reopened,
+      findings: reopened.findings.map((f) => {
+        const { askedAs: _askedAs, ...rest } = f;
+        return f.id === record2.id ? { ...rest, reopenedAt: c.at } : f;
+      })
+    };
+  }, ledger);
+}
+function pruneClosed(ledger, keep) {
+  const pruned2 = (records) => records.filter((r, n) => n >= records.length - MAX_CLOSED || keep.has(r.id) || r.how === "dismissed");
+  return { ...ledger, closed: pruned2(ledger.closed), closedFindings: pruned2(ledger.closedFindings) };
+}
+function idNumber(id) {
+  return Number(id.match(/\d+/)?.[0] ?? Number.NaN);
+}
+function inIdOrder(open2, entry) {
+  const at = open2.findIndex((x) => idNumber(x.id) > idNumber(entry.id));
+  return at < 0 ? [...open2, entry] : [...open2.slice(0, at), entry, ...open2.slice(at)];
+}
+function reopenItem(ledger, id) {
+  const item = ledger.closed.findLast((c) => c.id === id)?.item;
+  if (!item || ledger.items.some((i) => i.id === id)) return ledger;
+  return { ...ledger, items: inIdOrder(ledger.items, item), closed: ledger.closed.filter((c) => c.id !== id) };
+}
+function reopenFinding(ledger, id) {
+  const record2 = ledger.closedFindings.findLast((f) => f.id === id);
+  if (!record2 || ledger.findings.some((f) => f.id === id)) return ledger;
+  const { how: _how, outcome: _outcome, closedAt: _closedAt, ...finding } = record2;
+  return {
+    ...ledger,
+    findings: inIdOrder(ledger.findings, finding),
+    closedFindings: ledger.closedFindings.filter((f) => f.id !== id)
+  };
+}
+var OVERTAKEN_OUTCOMES = "no longer applies|replaced|superseded|moot";
+var OVERTAKEN = new RegExp(`^(?:closed by \\w+: )?(?:${OVERTAKEN_OUTCOMES})`, "i");
+function closedState(d) {
+  if (d.how === "dismissed") return "dismissed";
+  if (d.how === "expired") return "lapsed";
+  const isOvertaken = OVERTAKEN.test(d.outcome);
+  return (d.how === "claude" || d.how === "update") && isOvertaken ? "lapsed" : "handled";
+}
+function closedAt(c) {
+  return "closedAt" in c ? c.closedAt : c.at;
+}
+function isLapsed(d) {
+  return closedState(d) !== "handled";
 }
 
 // ../core/domain/press-labels.ts
@@ -1098,175 +1190,6 @@ function withUnconfirmed(lastActions, message2, pressedAt, deliveryId) {
   );
 }
 
-// ../core/runtime/remote-command-state.ts
-var EMPTY_LOG = { version: 1, writtenAt: 0, floor: 0, commands: {} };
-function withLegacy(log, s) {
-  const legacy = s.remoteCommands ?? {};
-  const isSessionFloorKept = s.remoteCommands !== void 0 || log.writtenAt === 0;
-  const floor = isSessionFloorKept ? Math.max(log.floor, s.remoteCommandFloor ?? 0) : log.floor;
-  const further = Object.entries(legacy).filter(([id, c]) => {
-    const kept = log.commands[id];
-    return !kept || kept.state === "accepted" && c.state !== "accepted";
-  });
-  if (further.length === 0 && floor === log.floor) return log;
-  return { ...log, floor, commands: { ...log.commands, ...Object.fromEntries(further) } };
-}
-function withoutLegacy(s) {
-  if (!s.remoteCommands) return s;
-  const { remoteCommands: _moved, ...rest } = s;
-  return rest;
-}
-var withRecord = (log, id, record2) => ({
-  ...log,
-  commands: { ...log.commands, [id]: record2 }
-});
-function awaitsDoneNotice(c, s) {
-  return c.doneNotification ? !c.doneNotification.error : isDoneNoticeDue(c, s.ledger.turn);
-}
-var isDoneAwaited = (s, row) => s.ledger.closed.some((c) => c.id === row && awaitsDoneNotice(c, s));
-function remoteCommandState(log, s) {
-  let commands = log.commands;
-  for (const [row, last] of Object.entries(s.lastActions)) {
-    const id = last.commandId;
-    const command = id && commands[id];
-    if (!id || !command || command.row !== row || command.state === "expired" || command.state === "refused") continue;
-    const delivery = last.delivery;
-    const deliveryId = delivery && "id" in delivery ? delivery.id ?? command.deliveryId : command.deliveryId;
-    const delivered = command.delivered || delivery?.state === "arrived";
-    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery && isDoneAwaited(s, row));
-    const error = delivery?.state === "failed" ? delivery.reason.slice(0, 256) : command.error;
-    const state = delivery?.state === "failed" ? "failed" : command.state;
-    if (deliveryId === command.deliveryId && delivered === command.delivered && pendingDelivery === command.pendingDelivery && error === command.error && state === command.state)
-      continue;
-    commands = { ...commands, [id]: { ...command, deliveryId, delivered, pendingDelivery, error, state } };
-  }
-  for (const closed of s.ledger.closed) {
-    const id = closed.commandId;
-    const command = id && commands[id];
-    if (!id || !command || command.state === "cancelled" || command.state === "expired" || command.state === "refused")
-      continue;
-    const deliveryId = closed.doneNotification?.id ?? command.deliveryId;
-    const pendingDelivery = !command.delivered && awaitsDoneNotice(closed, s);
-    if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
-      commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
-  }
-  return commands === log.commands ? log : { ...log, commands };
-}
-async function commandsOf(store, s) {
-  return remoteCommandState(withLegacy(store ? await store.read() : EMPTY_LOG, s), s);
-}
-function hasCommandRows(s) {
-  return Object.values(s.lastActions).some((last) => last.commandId !== void 0) || s.ledger.closed.some((c) => c.commandId !== void 0);
-}
-function pendingCommandRows(s) {
-  const rows = Object.entries(s.lastActions).flatMap(([row, last]) => {
-    const delivery = last.delivery;
-    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === void 0 || last.action === "done" && !delivery && isDoneAwaited(s, row);
-    return last.commandId && isWaiting ? [row] : [];
-  });
-  const closed = s.ledger.closed.flatMap((c) => c.commandId && isDoneNoticeDue(c, s.ledger.turn) ? [c.id] : []);
-  return [...rows, ...closed];
-}
-async function markArrived(store, deliveryId) {
-  if (!store || !deliveryId) return;
-  await store.update(
-    (log) => Object.entries(log.commands).reduce(
-      (next, [id, c]) => c.deliveryId === deliveryId && !c.delivered ? withRecord(next, id, { ...c, delivered: true, pendingDelivery: false }) : next,
-      log
-    )
-  ).catch(() => void 0);
-}
-function remoteReceipts(log) {
-  return Object.fromEntries(
-    Object.entries(log.commands).map(([id, c]) => [
-      id,
-      {
-        state: c.state,
-        error: c.state === "expired" ? "This request is outside saved history. Delivery cannot be confirmed." : c.state === "refused" ? c.error ?? "The host did not accept this action. Your reply is kept." : c.error ? c.state === "stale" ? "This item changed before the action." : "The host could not confirm this action." : null,
-        row: c.row,
-        deliveryId: c.deliveryId,
-        delivered: c.delivered,
-        pendingDelivery: c.pendingDelivery ?? false
-      }
-    ])
-  );
-}
-
-// ../core/domain/presses.ts
-function isPrRowId(id) {
-  return id.startsWith("pr:") || id.includes(" ");
-}
-
-// ../core/domain/last-actions.ts
-function isAwaitingReply(last, turns) {
-  const pressed2 = last?.delivery?.state !== "failed" ? last?.turnsStarted : void 0;
-  return pressed2 !== void 0 && pressed2 <= turns.turnsStarted && turns.turnsApplied <= pressed2;
-}
-function repliedAtTurnEnd(lastActions, turns, endedAt) {
-  return Object.fromEntries(
-    Object.entries(lastActions).map(([id, last]) => {
-      const isAnswered = last.kind === "handoff" && isPrRowId(id) && last.repliedAt === void 0 && last.turnsStarted !== void 0 && last.turnsStarted < turns.turnsStarted && isAwaitingReply(last, turns);
-      return [id, isAnswered ? { ...last, repliedAt: Math.max(last.at, endedAt) } : last];
-    })
-  );
-}
-function isHandedOff(last, turns) {
-  return last?.kind === "handoff" && isAwaitingReply(last, turns);
-}
-function isFoldingPress(id, last) {
-  return !id.startsWith("pr:") && last?.kind === "handoff" && last.action !== "address";
-}
-function isFixSent(last) {
-  return last?.action === "address" && !last.isKept && last.delivery?.state !== "failed";
-}
-var HANDOFF_IDS = /^(address|type|step-\d+|thread-address|pr-conflicts|pr-address-all)$/;
-var PR_RENAMES = [
-  [/^address-all-/, "pr-address-all"],
-  [/^resolve-/, "pr-conflicts"]
-];
-var THREAD_RENAMES = [
-  [/^address-/, "thread-address"],
-  [/^draft-/, "thread-draft"],
-  [/^discuss-/, "thread-discuss"]
-];
-var ROW_RENAMES = [
-  [/^explain(-|$)/, "explain"],
-  [/^(help-.+-|step-)\d+$/, (old) => `step-${old.split("-").pop()}`],
-  [/^typed$/, "type"],
-  [/^address(-|$)/, "address"],
-  [/^discuss(-|$)/, "discuss"]
-];
-function upgradedLastAction(key, old) {
-  const renames = key.startsWith("pr:") ? PR_RENAMES : key.includes(" thread ") ? THREAD_RENAMES : ROW_RENAMES;
-  const found = renames.find(([pattern]) => pattern.test(old.action));
-  const action = found ? typeof found[1] === "function" ? found[1](old.action) : found[1] : null;
-  if (action === null) return null;
-  const { isHandoff, ...kept } = old;
-  const isHandedOff2 = isHandoff ?? HANDOFF_IDS.test(action);
-  return {
-    ...kept,
-    kind: isHandedOff2 ? "handoff" : "talk",
-    action,
-    // Earlier builds saved "Explain sent" or "Sent to Claude to fix"; a last action is now the label pressed.
-    text: /^Sent to (Claude|Codex) to /.test(old.text) ? "Address" : old.text.replace(/ sent$/, "")
-  };
-}
-function upgradeLastActions(saved) {
-  return Object.fromEntries(
-    Object.entries(saved).flatMap(([key, entry]) => {
-      const {
-        tab: _tab,
-        title: _title,
-        index: _index,
-        ...last
-      } = entry;
-      if ("kind" in last && last.kind) return [[key, last]];
-      const upgraded2 = upgradedLastAction(key, last);
-      return upgraded2 ? [[key, upgraded2]] : [];
-    })
-  );
-}
-
 // ../core/view/timing.ts
 var SETTLED_MS = 5120;
 var QUEUED_AFTER_MS = 1e3;
@@ -1676,6 +1599,100 @@ function lastPressOf(presses, rowId, fetchedAt) {
 }
 function withOut(row, actions) {
   return actions.map((a) => ({ ...a, isOut: a.press.action === row.out }));
+}
+
+// ../core/runtime/remote-command-state.ts
+var EMPTY_LOG = { version: 1, writtenAt: 0, floor: 0, commands: {} };
+function withLegacy(log, s) {
+  const legacy = s.remoteCommands ?? {};
+  const isSessionFloorKept = s.remoteCommands !== void 0 || log.writtenAt === 0;
+  const floor = isSessionFloorKept ? Math.max(log.floor, s.remoteCommandFloor ?? 0) : log.floor;
+  const further = Object.entries(legacy).filter(([id, c]) => {
+    const kept = log.commands[id];
+    return !kept || kept.state === "accepted" && c.state !== "accepted";
+  });
+  if (further.length === 0 && floor === log.floor) return log;
+  return { ...log, floor, commands: { ...log.commands, ...Object.fromEntries(further) } };
+}
+function withoutLegacy(s) {
+  if (!s.remoteCommands) return s;
+  const { remoteCommands: _moved, ...rest } = s;
+  return rest;
+}
+var withRecord = (log, id, record2) => ({
+  ...log,
+  commands: { ...log.commands, [id]: record2 }
+});
+function awaitsDoneNotice(c, s) {
+  return c.doneNotification ? !c.doneNotification.error : isDoneNoticeDue(c, s.ledger.turn);
+}
+var isDoneAwaited = (s, row) => s.ledger.closed.some((c) => c.id === row && awaitsDoneNotice(c, s));
+function remoteCommandState(log, s) {
+  let commands = log.commands;
+  for (const [row, last] of Object.entries(s.lastActions)) {
+    const id = last.commandId;
+    const command = id && commands[id];
+    if (!id || !command || command.row !== row || command.state === "expired" || command.state === "refused") continue;
+    const delivery = last.delivery;
+    const deliveryId = delivery && "id" in delivery ? delivery.id ?? command.deliveryId : command.deliveryId;
+    const delivered = command.delivered || delivery?.state === "arrived";
+    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery && isDoneAwaited(s, row));
+    const error = delivery?.state === "failed" ? delivery.reason.slice(0, 256) : command.error;
+    const state = delivery?.state === "failed" ? "failed" : command.state;
+    if (deliveryId === command.deliveryId && delivered === command.delivered && pendingDelivery === command.pendingDelivery && error === command.error && state === command.state)
+      continue;
+    commands = { ...commands, [id]: { ...command, deliveryId, delivered, pendingDelivery, error, state } };
+  }
+  for (const closed of s.ledger.closed) {
+    const id = closed.commandId;
+    const command = id && commands[id];
+    if (!id || !command || command.state === "cancelled" || command.state === "expired" || command.state === "refused")
+      continue;
+    const deliveryId = closed.doneNotification?.id ?? command.deliveryId;
+    const pendingDelivery = !command.delivered && awaitsDoneNotice(closed, s);
+    if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
+      commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
+  }
+  return commands === log.commands ? log : { ...log, commands };
+}
+async function commandsOf(store, s) {
+  return remoteCommandState(withLegacy(store ? await store.read() : EMPTY_LOG, s), s);
+}
+function hasCommandRows(s) {
+  return Object.values(s.lastActions).some((last) => last.commandId !== void 0) || s.ledger.closed.some((c) => c.commandId !== void 0);
+}
+function pendingCommandRows(s) {
+  const rows = Object.entries(s.lastActions).flatMap(([row, last]) => {
+    const delivery = last.delivery;
+    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === void 0 || last.action === "done" && !delivery && isDoneAwaited(s, row);
+    return last.commandId && isWaiting ? [row] : [];
+  });
+  const closed = s.ledger.closed.flatMap((c) => c.commandId && isDoneNoticeDue(c, s.ledger.turn) ? [c.id] : []);
+  return [...rows, ...closed];
+}
+async function markArrived(store, deliveryId) {
+  if (!store || !deliveryId) return;
+  await store.update(
+    (log) => Object.entries(log.commands).reduce(
+      (next, [id, c]) => c.deliveryId === deliveryId && !c.delivered ? withRecord(next, id, { ...c, delivered: true, pendingDelivery: false }) : next,
+      log
+    )
+  ).catch(() => void 0);
+}
+function remoteReceipts(log) {
+  return Object.fromEntries(
+    Object.entries(log.commands).map(([id, c]) => [
+      id,
+      {
+        state: c.state,
+        error: c.state === "expired" ? "This request is outside saved history. Delivery cannot be confirmed." : c.state === "refused" ? c.error ?? "The host did not accept this action. Your reply is kept." : c.error ? c.state === "stale" ? "This item changed before the action." : "The host could not confirm this action." : null,
+        row: c.row,
+        deliveryId: c.deliveryId,
+        delivered: c.delivered,
+        pendingDelivery: c.pendingDelivery ?? false
+      }
+    ])
+  );
 }
 
 // ../core/view/collapse.ts
@@ -2787,13 +2804,20 @@ function inboxView({
   const held = new Set([...questionRows, ...taskRows, ...findingRows].filter((r) => r.state.is === "held").map((r) => r.id));
   const closed = [...ledger.closed].filter((d) => !held.has(d.id)).reverse().map((d) => {
     const delivery = d.doneNotification?.error !== void 0 ? { error: d.doneNotification.error, canUndo: isUndoable(d) } : (d.how === "answered" || d.how === "done") && lastActions[d.id]?.kind === "mark" && lastActions[d.id]?.at === d.at ? pendingDeliveryAt(lastActions[d.id], now) : null;
-    return { ...d, outcomeLabel: outcomeLabel(d), delivery, mark: closedMark(closedState(d), delivery) };
+    return {
+      ...d,
+      canRestore: d.item !== void 0,
+      outcomeLabel: outcomeLabel(d),
+      delivery,
+      mark: closedMark(closedState(d), delivery)
+    };
   });
   const fixesSent = ledger.findings.filter((f) => isFixSent(lastActions[f.id])).map((f) => {
     const outcome = fixLabel(f);
     const delivery = pendingDeliveryAt(lastActions[f.id], now);
     return {
       ...f,
+      canRestore: true,
       how: "answered",
       outcome,
       outcomeLabel: outcomeLabel({ ...f, outcome }),
@@ -2815,7 +2839,13 @@ function inboxView({
       pressOutSince: placingFor.findings.pressOutSince,
       rows: findingRows,
       closed: [
-        ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null, mark: closedMark(closedState(f), null) })),
+        ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({
+          ...f,
+          canRestore: true,
+          outcomeLabel: outcomeLabel(f),
+          delivery: null,
+          mark: closedMark(closedState(f), null)
+        })),
         ...fixesSent
       ].sort((a, b) => b.closedAt - a.closedAt)
     },
@@ -3375,7 +3405,7 @@ function pruned(s, now = Date.now(), viewers = {}) {
 var PRS_HIDDEN_REFRESH_MS = 10 * 6e4;
 
 // ../core/remote/remote-commands.ts
-var REMOTE_ACTIONS = [
+var LEGACY_REMOTE_ACTIONS = [
   "type",
   "answer",
   "done",
@@ -3384,12 +3414,18 @@ var REMOTE_ACTIONS = [
   "dismiss",
   "discuss",
   "explain",
-  "compare",
   "issue",
-  "discard",
+  "discard"
+];
+var REMOTE_ACTIONS = [
+  ...LEGACY_REMOTE_ACTIONS,
+  ...REMOTE_PR_ACTIONS,
+  "compare",
+  "step",
   "remove-goal",
   "restore-goal",
-  "take-goal"
+  "take-goal",
+  "resume"
 ];
 
 // src/viewers.ts
@@ -5513,7 +5549,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           receipts: remoteReceipts(commands),
           viewers: remoteViewerReceipts(viewers.leases),
           remoteProtocol: 2,
-          remoteActions: REMOTE_ACTIONS,
+          remoteActions: REMOTE_ACTIONS.filter((action) => action !== "resume"),
           remoteHistoryAfter: commands.floor,
           host: "codex",
           agent: CODEX2.agent,

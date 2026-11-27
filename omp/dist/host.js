@@ -1533,7 +1533,8 @@ var CLAUDE_CODE = {
       kind: "different",
       reason: "The open row warns before a press, and a refused row says the person stopped the session. Neither offers Go to session, since the person is already in it."
     },
-    "option-previews": { kind: "full" }
+    "option-previews": { kind: "full" },
+    "remote-resume": { kind: "full" }
   }
 };
 
@@ -1714,7 +1715,8 @@ var CODEX = {
       kind: "different",
       reason: "The host holds no message after the person stops a turn, so it never refuses one for that."
     },
-    "option-previews": { kind: "full" }
+    "option-previews": { kind: "full" },
+    "remote-resume": { kind: "unsupported", reason: "Codex records no stopped-turn state to resume." }
   }
 };
 
@@ -1847,7 +1849,8 @@ var OMP = {
       kind: "different",
       reason: "The host holds no message after the person stops a turn, so it never refuses one for that."
     },
-    "option-previews": { kind: "full" }
+    "option-previews": { kind: "full" },
+    "remote-resume": { kind: "full" }
   }
 };
 
@@ -5170,6 +5173,8 @@ function resumeLabel(isSending) {
 }
 function closedLinePlan(d, canShowSession = false) {
   const sessionKey = sessionKeyOf(refusalOf2(d.delivery), canShowSession);
+  if (d.canRestore === false)
+    return { action: null, sessionKey };
   if (canUndoRefused(d.delivery))
     return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
   const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
@@ -8679,13 +8684,20 @@ function inboxView({
   const held = new Set([...questionRows, ...taskRows, ...findingRows].filter((r) => r.state.is === "held").map((r) => r.id));
   const closed = [...ledger.closed].filter((d) => !held.has(d.id)).reverse().map((d) => {
     const delivery = d.doneNotification?.error !== undefined ? { error: d.doneNotification.error, canUndo: isUndoable(d) } : (d.how === "answered" || d.how === "done") && lastActions[d.id]?.kind === "mark" && lastActions[d.id]?.at === d.at ? pendingDeliveryAt(lastActions[d.id], now) : null;
-    return { ...d, outcomeLabel: outcomeLabel(d), delivery, mark: closedMark(closedState(d), delivery) };
+    return {
+      ...d,
+      canRestore: d.item !== undefined,
+      outcomeLabel: outcomeLabel(d),
+      delivery,
+      mark: closedMark(closedState(d), delivery)
+    };
   });
   const fixesSent = ledger.findings.filter((f) => isFixSent(lastActions[f.id])).map((f) => {
     const outcome = fixLabel(f);
     const delivery = pendingDeliveryAt(lastActions[f.id], now);
     return {
       ...f,
+      canRestore: true,
       how: "answered",
       outcome,
       outcomeLabel: outcomeLabel({ ...f, outcome }),
@@ -8707,7 +8719,13 @@ function inboxView({
       pressOutSince: placingFor.findings.pressOutSince,
       rows: findingRows,
       closed: [
-        ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null, mark: closedMark(closedState(f), null) })),
+        ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({
+          ...f,
+          canRestore: true,
+          outcomeLabel: outcomeLabel(f),
+          delivery: null,
+          mark: closedMark(closedState(f), null)
+        })),
         ...fixesSent
       ].sort((a, b) => b.closedAt - a.closedAt)
     },
@@ -9249,6 +9267,27 @@ function isRepeatWhileOut(s, p, at, drawn) {
   return outAction(last, feedback) === actionId(p);
 }
 function pressOn(s, p, at, drawn, texts, localPressId) {
+  if (p.action === "resume") {
+    const previous = s.lastActions.session;
+    const alreadyRequested = s.stop && previous && previous.at >= s.stop.at && previous.turnsStarted === s.presence.turnsStarted && previous.delivery?.state !== "failed";
+    if (p.id !== "session" || !s.stop || !isResumable(s.stop) || s.presence.isTurnRunning || alreadyRequested)
+      return { stale: true };
+    return {
+      ledger: s.ledger,
+      lasts: {
+        session: {
+          kind: "handoff",
+          action: "resume",
+          text: "Resume",
+          at,
+          turnsStarted: s.presence.turnsStarted,
+          delivery: { state: "queued", message: RESUME_TEXT }
+        }
+      },
+      drop: [],
+      effects: [{ kind: "send", text: RESUME_TEXT, by: null }]
+    };
+  }
   if (isRepeatWhileOut(s, p, at, drawn))
     return { ledger: s.ledger, lasts: {}, drop: [], effects: [] };
   const ctx = { now: at, turnsStarted: s.presence.turnsStarted, localPressId };
@@ -9705,18 +9744,19 @@ function isAnyFoldOpen(folds, state) {
   return folds.closed.some((k) => state.unfolded.includes(k)) || folds.statusFolds.some((id) => state.statusUnfolded.includes(id)) || folds.parents.some(isOpen) || folds.rows.some(isOpen);
 }
 function foldAll(folds, state, isOpening) {
-  const set = (list, these) => isOpening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
+  const opening = isOpening ?? !isAnyFoldOpen(folds, state);
+  const set = (list, these) => opening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
   const collapsible = [...folds.parents, ...folds.rows];
   return {
     unfolded: set(state.unfolded, folds.closed),
     statusUnfolded: set(state.statusUnfolded, folds.statusFolds),
-    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === isOpening ? [{ id, isCollapsed: !isOpening }] : [])
+    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === opening ? [{ id, isCollapsed: !opening }] : [])
   };
 }
 function foldAllOn(view, tab, open, isOpening) {
   const folds = tabFolds(view, tab);
   const state = { ...open, collapsed: view.collapsed };
-  return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
+  return foldAll(folds, state, isOpening);
 }
 
 // ../core/view/ui-controller-types.ts
@@ -12672,14 +12712,176 @@ function finishedDelegate(now, id, name, hoursAgo, summary) {
   };
 }
 
-// ../core/view/demo.ts
+// ../core/view/demo-prs.ts
 var MIN2 = 60000;
 var REPO2 = "https://github.com/acme/visor";
+function demoPrViews(now) {
+  return {
+    branchRef: "acme/visor#31",
+    isFetching: false,
+    views: {
+      "acme/visor#31": {
+        ref: "acme/visor#31",
+        number: 31,
+        title: "Add pinch-to-dismiss to glances",
+        url: `${REPO2}/pull/31`,
+        isDraft: false,
+        state: "OPEN",
+        base: "main",
+        mergeable: "CONFLICTING",
+        reviewDecision: "CHANGES_REQUESTED",
+        checks: [
+          {
+            name: "format",
+            bucket: "pass",
+            url: `${REPO2}/actions/runs/1`,
+            workflow: "CI",
+            startedAt: now - 16 * MIN2,
+            finishedAt: now - 16 * MIN2 + 19000
+          },
+          {
+            name: "unit tests",
+            bucket: "fail",
+            url: `${REPO2}/actions/runs/2`,
+            workflow: "CI",
+            startedAt: now - 16 * MIN2,
+            finishedAt: now - 12 * MIN2 - 8000
+          },
+          {
+            name: "lint",
+            bucket: "fail",
+            url: `${REPO2}/actions/runs/3`,
+            workflow: "CI",
+            startedAt: now - 16 * MIN2,
+            finishedAt: now - 15 * MIN2 - 19000
+          },
+          {
+            name: "device matrix",
+            bucket: "cancelled",
+            url: `${REPO2}/actions/runs/4/job/40`,
+            workflow: "E2E",
+            startedAt: now - 16 * MIN2,
+            finishedAt: now - 9 * MIN2
+          },
+          { name: "gesture e2e", bucket: "pending", url: null, workflow: "CI", startedAt: now - 2 * MIN2 }
+        ],
+        threads: [
+          {
+            id: "DT1",
+            author: "sam",
+            reply: null,
+            isWaiting: true,
+            isOutdated: false,
+            isLinesChanged: false,
+            path: "src/view/Glance.tsx",
+            line: 47,
+            body: "A glance flickers for one frame before it fades out. Can it wait for the fade?",
+            url: `${REPO2}/pull/31#discussion_r1`,
+            at: now - 3 * 60 * MIN2
+          },
+          {
+            id: "DT2",
+            author: "sam",
+            reply: {
+              author: "robin",
+              body: "Agreed, the glance you look at is the one you mean.",
+              url: `${REPO2}/pull/31#discussion_r3`,
+              at: now - 5 * 60 * MIN2
+            },
+            isWaiting: true,
+            isOutdated: true,
+            isLinesChanged: false,
+            path: "src/input/gestures.ts",
+            line: 87,
+            body: "Should a pinch dismiss only the glance you look at?",
+            url: `${REPO2}/pull/31#discussion_r2`,
+            at: now - 26 * 60 * MIN2
+          },
+          {
+            id: "DT3",
+            author: "robin",
+            reply: {
+              author: "you",
+              body: "Done in the latest push.",
+              url: `${REPO2}/pull/31#discussion_r5`,
+              at: now - 2 * 60 * MIN2
+            },
+            isWaiting: false,
+            isOutdated: false,
+            isLinesChanged: false,
+            path: "src/view/glances.ts",
+            line: 112,
+            body: "Can the angle come from gaze.ts instead of being computed again here?",
+            url: `${REPO2}/pull/31#discussion_r4`,
+            at: now - 26 * 60 * MIN2
+          },
+          {
+            id: "DT4",
+            author: "review-bot",
+            reply: null,
+            isWaiting: true,
+            isOutdated: true,
+            isLinesChanged: true,
+            path: "src/input/gestures.ts",
+            line: 114,
+            body: "A dismissed glance still takes pinches.",
+            url: `${REPO2}/pull/31#discussion_r6`,
+            at: now - 50 * MIN2
+          }
+        ],
+        isYours: true,
+        wasSeenOpen: true,
+        error: null
+      },
+      "acme/visor#29": {
+        ref: "acme/visor#29",
+        number: 29,
+        title: "Show the battery level as a glance",
+        url: `${REPO2}/pull/29`,
+        isDraft: false,
+        state: "OPEN",
+        base: "main",
+        mergeable: "MERGEABLE",
+        reviewDecision: "APPROVED",
+        checks: [
+          { name: "format", bucket: "pass", url: null },
+          { name: "unit tests", bucket: "pass", url: null }
+        ],
+        threads: [],
+        isYours: true,
+        wasSeenOpen: true,
+        error: null
+      },
+      "acme/visor#33": {
+        ref: "acme/visor#33",
+        number: 33,
+        title: "Remember where each glance was pinned",
+        url: `${REPO2}/pull/33`,
+        isDraft: true,
+        state: "OPEN",
+        base: "main",
+        mergeable: "MERGEABLE",
+        reviewDecision: "",
+        checks: [
+          { name: "format", bucket: "pass", url: null },
+          { name: "unit tests", bucket: "pending", url: null }
+        ],
+        threads: [],
+        isYours: true,
+        wasSeenOpen: true,
+        error: null
+      }
+    }
+  };
+}
+
+// ../core/view/demo.ts
+var MIN3 = 60000;
 var DEMO_PLACE = { folder: "/Users/you/code/visor", branch: "pinch-dismiss" };
 function withDemoPresence(s, now) {
   return {
     ...s,
-    presence: { ...s.presence, isTurnRunning: false, lastReplyAt: now - 2 * MIN2 },
+    presence: { ...s.presence, isTurnRunning: false, lastReplyAt: now - 2 * MIN3 },
     place: DEMO_PLACE
   };
 }
@@ -12716,16 +12918,16 @@ function demoView(now, agent) {
       overview: {
         head: { title: "Pinch to dismiss", description: "Adding a pinch that dismisses glances" },
         subjects: [
-          subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN2),
-          subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN2),
-          subject("s3", "queued", "Flick option", "waits on your pick", now - 12 * MIN2, {
+          subject("s1", "working", "Dismiss gesture", "pinch fades the glance", now - 2 * MIN3),
+          subject("s2", "working", "Glasses pairing", "needs this Mac paired", now - 12 * MIN3),
+          subject("s3", "queued", "Flick option", "waits on your pick", now - 12 * MIN3, {
             was: "flick and pinch both"
           }),
-          subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN2),
-          subject("s5", "waits-on-other", "Glasses trial", "lenses ship Friday", now - 3 * 60 * MIN2),
-          subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN2),
-          subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN2),
-          subject("s8", "done", "Haptic tap", "a tap confirms the pinch", now - 7 * 60 * MIN2)
+          subject("s4", "done", "Fade-out", "dismissed glances fade", now - 25 * MIN3),
+          subject("s5", "waits-on-other", "Glasses trial", "lenses ship Friday", now - 3 * 60 * MIN3),
+          subject("s6", "done", "Glance hit test", "finds the glance you look at", now - 5 * 60 * MIN3),
+          subject("s7", "done", "Settings toggle", "pinch can be turned off", now - 6 * 60 * MIN3),
+          subject("s8", "done", "Haptic tap", "a tap confirms the pinch", now - 7 * 60 * MIN3)
         ],
         children: [
           {
@@ -12734,9 +12936,9 @@ function demoView(now, agent) {
             kind: "subagent",
             name: "Review the gesture code",
             subjectId: "s1",
-            startedAt: now - 4 * MIN2,
+            startedAt: now - 4 * MIN3,
             endedAt: null,
-            lastActivityAt: now - MIN2,
+            lastActivityAt: now - MIN3,
             delegateState: null
           },
           {
@@ -12745,9 +12947,9 @@ function demoView(now, agent) {
             kind: "delegate",
             name: "Tune how hard a pinch must be",
             subjectId: "s1",
-            startedAt: now - 9 * MIN2,
+            startedAt: now - 9 * MIN3,
             endedAt: null,
-            lastActivityAt: now - 9 * MIN2,
+            lastActivityAt: now - 9 * MIN3,
             delegateState: "blocked"
           },
           {
@@ -12756,9 +12958,9 @@ function demoView(now, agent) {
             kind: "delegate",
             name: "Time the fade-out",
             subjectId: "s1",
-            startedAt: now - 30 * MIN2,
-            endedAt: now - 3 * MIN2,
-            lastActivityAt: now - 30 * MIN2,
+            startedAt: now - 30 * MIN3,
+            endedAt: now - 3 * MIN3,
+            lastActivityAt: now - 30 * MIN3,
             delegateState: "finished"
           },
           {
@@ -12767,9 +12969,9 @@ function demoView(now, agent) {
             kind: "subagent",
             name: "Search the pairing errors",
             subjectId: "s2",
-            startedAt: now - 25 * MIN2,
+            startedAt: now - 25 * MIN3,
             endedAt: null,
-            lastActivityAt: now - 20 * MIN2,
+            lastActivityAt: now - 20 * MIN3,
             delegateState: null
           },
           finishedDelegate(now, "c6", "Calibrate the eye tracker", 2, "PR #31 open"),
@@ -12779,13 +12981,13 @@ function demoView(now, agent) {
         askSubjects: { d11: ["s3"], d14: ["s2"], d17: ["s2"] },
         nextId: 8,
         nextChildId: 9,
-        lastLookAt: now - 30 * MIN2,
+        lastLookAt: now - 30 * MIN3,
         missedInLastLook: {},
         look: null,
         lastCallReadAt: null,
         goal: {
           text: "Pinch ships in the beta",
-          setAt: now - 60 * MIN2,
+          setAt: now - 60 * MIN3,
           metAt: null,
           was: null,
           isAwaitingMilestones: false,
@@ -12800,8 +13002,8 @@ function demoView(now, agent) {
             status: "done",
             text: "",
             was: null,
-            changedAt: now - 5 * 60 * MIN2,
-            closedAt: now - 5 * 60 * MIN2
+            changedAt: now - 5 * 60 * MIN3,
+            closedAt: now - 5 * 60 * MIN3
           },
           {
             id: "m1",
@@ -12809,8 +13011,8 @@ function demoView(now, agent) {
             status: "done",
             text: "",
             was: null,
-            changedAt: now - 40 * MIN2,
-            closedAt: now - 40 * MIN2
+            changedAt: now - 40 * MIN3,
+            closedAt: now - 40 * MIN3
           },
           {
             id: "m2",
@@ -12818,7 +13020,7 @@ function demoView(now, agent) {
             status: "working",
             text: "tuning pinch pressure",
             was: null,
-            changedAt: now - 35 * MIN2,
+            changedAt: now - 35 * MIN3,
             closedAt: null
           },
           {
@@ -12827,7 +13029,7 @@ function demoView(now, agent) {
             status: "queued",
             text: "waits on your pick",
             was: null,
-            changedAt: now - 5 * MIN2,
+            changedAt: now - 5 * MIN3,
             closedAt: null
           },
           {
@@ -12836,7 +13038,7 @@ function demoView(now, agent) {
             status: "queued",
             text: "after the glasses trial",
             was: null,
-            changedAt: now - 60 * MIN2,
+            changedAt: now - 60 * MIN3,
             closedAt: null
           }
         ],
@@ -12867,11 +13069,11 @@ function demoView(now, agent) {
           isDesignChoice: true,
           helps: [],
           turn: 14,
-          at: now - 12 * MIN2,
+          at: now - 12 * MIN3,
           earlier: {
             ask: "Which gesture should clear a glance?",
             answer: "Flick",
-            at: now - 3 * 24 * 60 * MIN2,
+            at: now - 3 * 24 * 60 * MIN3,
             repo: "glasses-app",
             score: 0.41,
             isShown: true
@@ -12887,7 +13089,7 @@ function demoView(now, agent) {
           rec: "Leave it gone",
           helps: [],
           turn: 14,
-          at: now - 12 * MIN2
+          at: now - 12 * MIN3
         },
         {
           id: "d13",
@@ -12899,7 +13101,7 @@ function demoView(now, agent) {
           rec: "No",
           helps: [],
           turn: 14,
-          at: now - 12 * MIN2
+          at: now - 12 * MIN3
         },
         {
           id: "d14",
@@ -12911,7 +13113,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [{ kind: "terminal", command: "visor pair", name: "visor pair" }],
           turn: 14,
-          at: now - 5 * MIN2
+          at: now - 5 * MIN3
         },
         {
           id: "d15",
@@ -12923,7 +13125,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [],
           turn: 11,
-          at: now - 40 * MIN2
+          at: now - 40 * MIN3
         },
         {
           id: "d16",
@@ -12935,7 +13137,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [{ kind: "copy", text: "http://localhost:3000/preview", name: "preview URL" }],
           turn: 14,
-          at: now - 5 * MIN2
+          at: now - 5 * MIN3
         },
         {
           id: "d18",
@@ -12947,7 +13149,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [{ kind: "run", command: "npm run test:gestures", name: "gesture tests" }],
           turn: 14,
-          at: now - 4 * MIN2
+          at: now - 4 * MIN3
         },
         {
           id: "d17",
@@ -12959,7 +13161,7 @@ function demoView(now, agent) {
           rec: null,
           helps: [],
           turn: 12,
-          at: now - 25 * MIN2
+          at: now - 25 * MIN3
         }
       ],
       closed: [
@@ -12969,7 +13171,7 @@ function demoView(now, agent) {
           ask: "Track hands with the camera or the wristband?",
           outcome: "Wristband",
           how: "answered",
-          at: now - 90 * MIN2
+          at: now - 90 * MIN3
         },
         {
           id: "d6",
@@ -12977,7 +13179,7 @@ function demoView(now, agent) {
           ask: "Commit the gesture and the anchor fix separately?",
           outcome: "yes",
           how: "answered",
-          at: now - 60 * MIN2
+          at: now - 60 * MIN3
         },
         {
           id: "d9",
@@ -12985,7 +13187,19 @@ function demoView(now, agent) {
           ask: "Add the simulator key to .env.local",
           outcome: "done",
           how: "done",
-          at: now - 45 * MIN2
+          at: now - 45 * MIN3,
+          item: {
+            id: "d9",
+            kind: "task",
+            label: null,
+            from: "record",
+            ask: "Add the simulator key to .env.local",
+            options: [],
+            rec: null,
+            helps: [],
+            turn: 12,
+            at: now - 50 * MIN3
+          }
         },
         {
           id: "d7",
@@ -12993,7 +13207,7 @@ function demoView(now, agent) {
           ask: "Fall back to voice when your hands are busy?",
           outcome: `closed by ${agent}: no longer applies: voice already takes over when no hand is seen`,
           how: "claude",
-          at: now - 30 * MIN2
+          at: now - 30 * MIN3
         },
         {
           id: "d8",
@@ -13001,7 +13215,19 @@ function demoView(now, agent) {
           ask: "Add a gaze-only mode too?",
           outcome: "dismissed",
           how: "dismissed",
-          at: now - 20 * MIN2
+          at: now - 20 * MIN3,
+          item: {
+            id: "d8",
+            kind: "question",
+            label: null,
+            from: "record",
+            ask: "Add a gaze-only mode too?",
+            options: ["Yes", "No"],
+            rec: "No",
+            helps: [],
+            turn: 13,
+            at: now - 25 * MIN3
+          }
         },
         {
           id: "d10",
@@ -13020,7 +13246,7 @@ function demoView(now, agent) {
             rec: "Yes, fade it",
             helps: [],
             turn: 14,
-            at: now - 12 * MIN2
+            at: now - 12 * MIN3
           }
         }
       ],
@@ -13031,7 +13257,7 @@ function demoView(now, agent) {
           title: "Pinch and flick could share one gesture handler",
           detail: "Both paths read the hand **the same way** before acting. One `onGesture` handler would keep them from *drifting apart*.",
           path: "src/input/gestures.ts",
-          at: now - 3 * 60 * MIN2
+          at: now - 3 * 60 * MIN3
         },
         {
           id: "d21",
@@ -13039,7 +13265,7 @@ function demoView(now, agent) {
           title: "Glances could re-sort only when one moves",
           detail: "The view sorts every glance by distance on every frame. Sorting only when one moves would save battery on long sessions.",
           path: "src/view/glances.ts",
-          at: now - 90 * MIN2
+          at: now - 90 * MIN3
         },
         {
           id: "d22",
@@ -13047,7 +13273,7 @@ function demoView(now, agent) {
           title: "Snoozed glances come back after a restart",
           detail: "The saved layout keeps snoozed glances, and a restart shows them again, so a glance snoozed for an hour returns at once.",
           path: "src/view/layout.ts",
-          at: now - 45 * MIN2
+          at: now - 45 * MIN3
         },
         {
           id: "d23",
@@ -13055,7 +13281,7 @@ function demoView(now, agent) {
           title: "Pinned glances drift in a dim room",
           detail: "Anchoring trusts the camera\u2019s position even when tracking is poor, so in a dim room a pinned glance slides a few centimeters a minute.",
           path: "src/space/anchors.ts",
-          at: now - 30 * MIN2
+          at: now - 30 * MIN3
         }
       ],
       closedFindings: [
@@ -13065,10 +13291,10 @@ function demoView(now, agent) {
           title: "The view redraws every glance when one changes",
           detail: "A change to one glance redraws all of them.",
           path: "src/view/Glance.tsx",
-          at: now - 4 * 60 * MIN2,
+          at: now - 4 * 60 * MIN3,
           how: "claude",
           outcome: `closed by ${agent}: fixed, it now redraws only the glance that changed`,
-          closedAt: now - 2 * 60 * MIN2
+          closedAt: now - 2 * 60 * MIN3
         }
       ],
       prs: ["acme/visor#31", "acme/visor#29", "acme/visor#33"],
@@ -13079,178 +13305,22 @@ function demoView(now, agent) {
       updates: 14
     },
     stop: null,
-    prViews: {
-      branchRef: "acme/visor#31",
-      isFetching: false,
-      views: {
-        "acme/visor#31": {
-          ref: "acme/visor#31",
-          number: 31,
-          title: "Add pinch-to-dismiss to glances",
-          url: `${REPO2}/pull/31`,
-          isDraft: false,
-          state: "OPEN",
-          base: "main",
-          mergeable: "CONFLICTING",
-          reviewDecision: "CHANGES_REQUESTED",
-          checks: [
-            {
-              name: "format",
-              bucket: "pass",
-              url: `${REPO2}/actions/runs/1`,
-              workflow: "CI",
-              startedAt: now - 16 * MIN2,
-              finishedAt: now - 16 * MIN2 + 19000
-            },
-            {
-              name: "unit tests",
-              bucket: "fail",
-              url: `${REPO2}/actions/runs/2`,
-              workflow: "CI",
-              startedAt: now - 16 * MIN2,
-              finishedAt: now - 12 * MIN2 - 8000
-            },
-            {
-              name: "lint",
-              bucket: "fail",
-              url: `${REPO2}/actions/runs/3`,
-              workflow: "CI",
-              startedAt: now - 16 * MIN2,
-              finishedAt: now - 15 * MIN2 - 19000
-            },
-            {
-              name: "device matrix",
-              bucket: "cancelled",
-              url: `${REPO2}/actions/runs/4/job/40`,
-              workflow: "E2E",
-              startedAt: now - 16 * MIN2,
-              finishedAt: now - 9 * MIN2
-            },
-            { name: "gesture e2e", bucket: "pending", url: null, workflow: "CI", startedAt: now - 2 * MIN2 }
-          ],
-          threads: [
-            {
-              id: "DT1",
-              author: "sam",
-              reply: null,
-              isWaiting: true,
-              isOutdated: false,
-              isLinesChanged: false,
-              path: "src/view/Glance.tsx",
-              line: 47,
-              body: "A glance flickers for one frame before it fades out. Can it wait for the fade?",
-              url: `${REPO2}/pull/31#discussion_r1`,
-              at: now - 3 * 60 * MIN2
-            },
-            {
-              id: "DT2",
-              author: "sam",
-              reply: {
-                author: "robin",
-                body: "Agreed, the glance you look at is the one you mean.",
-                url: `${REPO2}/pull/31#discussion_r3`,
-                at: now - 5 * 60 * MIN2
-              },
-              isWaiting: true,
-              isOutdated: true,
-              isLinesChanged: false,
-              path: "src/input/gestures.ts",
-              line: 87,
-              body: "Should a pinch dismiss only the glance you look at?",
-              url: `${REPO2}/pull/31#discussion_r2`,
-              at: now - 26 * 60 * MIN2
-            },
-            {
-              id: "DT3",
-              author: "robin",
-              reply: {
-                author: "you",
-                body: "Done in the latest push.",
-                url: `${REPO2}/pull/31#discussion_r5`,
-                at: now - 2 * 60 * MIN2
-              },
-              isWaiting: false,
-              isOutdated: false,
-              isLinesChanged: false,
-              path: "src/view/glances.ts",
-              line: 112,
-              body: "Can the angle come from gaze.ts instead of being computed again here?",
-              url: `${REPO2}/pull/31#discussion_r4`,
-              at: now - 26 * 60 * MIN2
-            },
-            {
-              id: "DT4",
-              author: "review-bot",
-              reply: null,
-              isWaiting: true,
-              isOutdated: true,
-              isLinesChanged: true,
-              path: "src/input/gestures.ts",
-              line: 114,
-              body: "A dismissed glance still takes pinches.",
-              url: `${REPO2}/pull/31#discussion_r6`,
-              at: now - 50 * MIN2
-            }
-          ],
-          isYours: true,
-          wasSeenOpen: true,
-          error: null
-        },
-        "acme/visor#29": {
-          ref: "acme/visor#29",
-          number: 29,
-          title: "Show the battery level as a glance",
-          url: `${REPO2}/pull/29`,
-          isDraft: false,
-          state: "OPEN",
-          base: "main",
-          mergeable: "MERGEABLE",
-          reviewDecision: "APPROVED",
-          checks: [
-            { name: "format", bucket: "pass", url: null },
-            { name: "unit tests", bucket: "pass", url: null }
-          ],
-          threads: [],
-          isYours: true,
-          wasSeenOpen: true,
-          error: null
-        },
-        "acme/visor#33": {
-          ref: "acme/visor#33",
-          number: 33,
-          title: "Remember where each glance was pinned",
-          url: `${REPO2}/pull/33`,
-          isDraft: true,
-          state: "OPEN",
-          base: "main",
-          mergeable: "MERGEABLE",
-          reviewDecision: "",
-          checks: [
-            { name: "format", bucket: "pass", url: null },
-            { name: "unit tests", bucket: "pending", url: null }
-          ],
-          threads: [],
-          isYours: true,
-          wasSeenOpen: true,
-          error: null
-        }
-      }
-    },
+    prViews: demoPrViews(now),
     lastActions: {
       d18: {
         kind: "handoff",
         action: "step-0",
         text: "Run gesture tests",
-        at: now - 1 * MIN2,
+        at: now - 1 * MIN3,
         turnsStarted: 14
       },
       "acme/visor#31 thread DT1": {
         kind: "handoff",
         action: "thread-address",
         text: "Address",
-        at: now - 2 * MIN2,
+        at: now - 2 * MIN3,
         turnsStarted: 14,
-        repliedAt: now - 1 * MIN2
+        repliedAt: now - 1 * MIN3
       }
     },
     notes: {},
@@ -16204,6 +16274,83 @@ function herdrEnvelope(source, session, isTrimmed = false) {
   };
 }
 
+// ../core/remote/remote-press.ts
+var REMOTE_PR_ACTIONS = [
+  "thread-address",
+  "thread-draft",
+  "thread-discuss",
+  "pr-conflicts",
+  "pr-address-all",
+  "pr-merge",
+  "pr-dismiss",
+  "pr-undo",
+  "check-fix",
+  "check-rerun",
+  "pr-rank-again",
+  "pr-refresh",
+  "pr-clear-finished"
+];
+function isRemotePrPress(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return false;
+  const p = value;
+  if (typeof p.action !== "string" || !REMOTE_PR_ACTIONS.includes(p.action))
+    return false;
+  const tab = ["pr-rank-again", "pr-refresh", "pr-clear-finished"].includes(p.action);
+  const thread = p.action.startsWith("thread-");
+  const check = p.action.startsWith("check-");
+  const fields = tab ? ["action"] : thread ? ["action", "ref", "thread"] : check ? ["action", "ref", "check"] : ["action", "ref"];
+  if (Object.keys(p).length !== fields.length || !Object.keys(p).every((key) => fields.includes(key)))
+    return false;
+  if (tab)
+    return true;
+  if (typeof p.ref !== "string" || p.ref.length > 256 || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]{0,15}$/.test(p.ref))
+    return false;
+  const target = thread ? p.thread : check ? p.check : null;
+  return target === null || typeof target === "string" && target.length > 0 && target.length <= 1024 && !/[\u0000-\u001f]/.test(target);
+}
+function isRemoteCommandPress(value) {
+  if (isRemotePrPress(value))
+    return true;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return false;
+  const p = value;
+  const actions = [
+    "type",
+    "answer",
+    "step",
+    "done",
+    "address",
+    "undo",
+    "dismiss",
+    "discuss",
+    "explain",
+    "compare",
+    "issue",
+    "discard",
+    "remove-goal",
+    "restore-goal",
+    "take-goal",
+    "resume"
+  ];
+  if (typeof p.action !== "string" || !actions.includes(p.action) || typeof p.id !== "string")
+    return false;
+  const goal = p.id === "goal" && ["type", "remove-goal", "restore-goal", "take-goal"].includes(p.action);
+  const resume = p.id === "session" && p.action === "resume";
+  if (p.action === "resume" && !resume)
+    return false;
+  if (!goal && !resume && !/^[if]\d{1,16}$/.test(p.id))
+    return false;
+  const fields = p.action === "type" ? ["action", "id", "text"] : p.action === "answer" ? ["action", "id", "option"] : p.action === "step" ? ["action", "id", "step", "label"] : ["action", "id"];
+  if (Object.keys(p).length !== fields.length || !Object.keys(p).every((key) => fields.includes(key)))
+    return false;
+  if (p.action === "type" || p.action === "answer") {
+    const text = p.action === "type" ? p.text : p.option;
+    return typeof text === "string" && text.trim() !== "" && text.length <= 8000;
+  }
+  return p.action !== "step" || typeof p.step === "number" && Number.isInteger(p.step) && p.step >= 0 && p.step < 256 && typeof p.label === "string" && p.label.trim() !== "" && p.label.length <= 256;
+}
+
 // ../core/remote/herdr-press-file.ts
 var isLookFile = (file) => ("look" in file);
 var isPrsShownFile = (file) => ("prsShown" in file);
@@ -16293,8 +16440,7 @@ function pressFile(text) {
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
   }
   if (file.format === 2 && file.kind === "command") {
-    const isGoalPress = isRecord2(file.press) && file.press.id === "goal";
-    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && pressProblem(file.press) === null && isRecord2(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8000 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8000 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "compare", "issue", "discard"]).includes(String(file.press.action)));
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16000 && isRemoteCommandPress(file.press);
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
   }
   if (file.format !== HERDR_FORMAT)
@@ -16753,6 +16899,12 @@ var LIFETIME_MS = PRESS_LIFETIME_MS;
 var MAX_COMMANDS = 128;
 var MAX_COMMAND_BYTES = 128000;
 var OUTCOME_RESERVE_BYTES = 4096;
+var remoteFields = (s, id) => id === "session" ? [s.stop, s.presence.turnsStarted, s.presence.isTurnRunning, s.lastActions.session ?? null] : isPrRowId(id) ? [
+  s.prViews,
+  s.ledger.prs,
+  s.ledger.prOrder,
+  Object.fromEntries(Object.entries(s.lastActions).filter(([key]) => isPrRowId(key)))
+] : rowFields(s, id);
 async function digestText(text) {
   const subtle = crypto.subtle;
   if (!("digest" in subtle) || typeof subtle.digest !== "function")
@@ -16763,10 +16915,11 @@ async function digestText(text) {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 async function remoteRowDigest(s, id) {
-  return `row-sha256-v2:${await digestText(canonical(rowFields(s, id)))}`;
+  return `row-sha256-v2:${await digestText(canonical(remoteFields(s, id)))}`;
 }
 async function matchesRow(s, command) {
-  return command.expected === rowVersion(s, command.press.id) || command.expected === await remoteRowDigest(s, command.press.id);
+  const id = pressRowId(command.press);
+  return command.expected === (id === "session" || isPrRowId(id) ? canonical(remoteFields(s, id)) : rowVersion(s, id)) || command.expected === await remoteRowDigest(s, id);
 }
 async function requireDurableWrite(host, seq, issuedAt) {
   if (!host.readDurable)
@@ -16783,7 +16936,7 @@ var rejected = (error) => ({
   isRowFailed: false,
   wakesAfterSettle: false
 });
-var REMOTE_ACTIONS = [
+var LEGACY_REMOTE_ACTIONS = [
   "type",
   "answer",
   "done",
@@ -16792,15 +16945,29 @@ var REMOTE_ACTIONS = [
   "dismiss",
   "discuss",
   "explain",
-  "compare",
   "issue",
-  "discard",
+  "discard"
+];
+var REMOTE_ACTIONS = [
+  ...LEGACY_REMOTE_ACTIONS,
+  ...REMOTE_PR_ACTIONS,
+  "compare",
+  "step",
   "remove-goal",
   "restore-goal",
-  "take-goal"
+  "take-goal",
+  "resume"
 ];
-function supportsRemotePress(p) {
-  return REMOTE_ACTIONS.includes(p.action);
+function supportsRemotePress(p, host) {
+  if (p.action === "resume")
+    return host.supportsResume === true;
+  return isPrPress(p) ? isRemotePrPress(p) : REMOTE_ACTIONS.includes(p.action);
+}
+function isAgentStep(s, p, now, host) {
+  if (p.action !== "step")
+    return true;
+  const planned = pressOn(s, p, now, { settleWindowMs: host.settleWindowMs, holds: NO_HOLDS }, host);
+  return !("stale" in planned) && planned.effects.length > 0 && planned.effects.every((effect) => effect.kind === "send");
 }
 function isUnresolved(c) {
   return c.state === "accepted" || c.state === "attempting" || c.state === "uncertain" && !c.delivered || c.state === "applied" && !c.delivered && (c.pendingDelivery === true || c.deliveryId !== null);
@@ -16818,7 +16985,7 @@ function fits(commands) {
 var done = (outcome) => ({ is: "done", outcome });
 async function settled(host, store, command, outcome) {
   if (outcome.error || outcome.isUnconfirmed)
-    await host.update((s) => blockRemoteDeferred(s, command.id, command.press.id, "This action could not be confirmed saved.")).catch(() => {
+    await host.update((s) => blockRemoteDeferred(s, command.id, pressRowId(command.press), "This action could not be confirmed saved.")).catch(() => {
       return;
     });
   const s = await host.read();
@@ -16883,7 +17050,7 @@ async function startRemoteCommand(host, command, sessionId) {
         drop(id);
     }
     const expired = !validTime || command.issuedAt <= floor;
-    const supported = supportsRemotePress(command.press);
+    const supported = supportsRemotePress(command.press, host) && isAgentStep(s, command.press, now, host);
     const stale = !expired && supported && !await matchesRow(s, command);
     const record = {
       payload,
@@ -16892,7 +17059,7 @@ async function startRemoteCommand(host, command, sessionId) {
       acceptedAt: now,
       state: expired ? "expired" : !supported ? "refused" : stale ? "stale" : "accepted",
       error: expired ? "This request is outside retained history. Delivery cannot be confirmed." : !supported ? "This remote action is not supported." : stale ? "This item changed before the action." : null,
-      row: command.press.id,
+      row: pressRowId(command.press),
       deliveryId: null,
       delivered: false
     };
@@ -17877,7 +18044,8 @@ function sessionCalls(context) {
       settleWindowMs: deps.settleWindowMs,
       newId: deps.newId,
       comparePage: deps.comparePage,
-      compareInBackground: isCompareInBackground("omp")
+      compareInBackground: isCompareInBackground("omp"),
+      supportsResume: true
     };
   }
   const conversationText = (ctx) => {

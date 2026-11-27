@@ -230,6 +230,73 @@ var QUEUED_RESULT = { text: SUBJECT_MARKS.queued.mark, isRunning: false };
 var SESSION_FILE = /^[\w-]{1,100}\.json$/;
 var isSessionFile = (name) => SESSION_FILE.test(name);
 
+// ../core/remote/remote-press.ts
+var REMOTE_PR_ACTIONS = [
+  "thread-address",
+  "thread-draft",
+  "thread-discuss",
+  "pr-conflicts",
+  "pr-address-all",
+  "pr-merge",
+  "pr-dismiss",
+  "pr-undo",
+  "check-fix",
+  "check-rerun",
+  "pr-rank-again",
+  "pr-refresh",
+  "pr-clear-finished"
+];
+function isRemotePrPress(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const p = value;
+  if (typeof p.action !== "string" || !REMOTE_PR_ACTIONS.includes(p.action)) return false;
+  const tab = ["pr-rank-again", "pr-refresh", "pr-clear-finished"].includes(p.action);
+  const thread = p.action.startsWith("thread-");
+  const check = p.action.startsWith("check-");
+  const fields = tab ? ["action"] : thread ? ["action", "ref", "thread"] : check ? ["action", "ref", "check"] : ["action", "ref"];
+  if (Object.keys(p).length !== fields.length || !Object.keys(p).every((key) => fields.includes(key))) return false;
+  if (tab) return true;
+  if (typeof p.ref !== "string" || p.ref.length > 256 || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]{0,15}$/.test(p.ref))
+    return false;
+  const target = thread ? p.thread : check ? p.check : null;
+  return target === null || typeof target === "string" && target.length > 0 && target.length <= 1024 && !/[\u0000-\u001f]/.test(target);
+}
+function isRemoteCommandPress(value) {
+  if (isRemotePrPress(value)) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const p = value;
+  const actions = [
+    "type",
+    "answer",
+    "step",
+    "done",
+    "address",
+    "undo",
+    "dismiss",
+    "discuss",
+    "explain",
+    "compare",
+    "issue",
+    "discard",
+    "remove-goal",
+    "restore-goal",
+    "take-goal",
+    "resume"
+  ];
+  if (typeof p.action !== "string" || !actions.includes(p.action) || typeof p.id !== "string") return false;
+  const goal = p.id === "goal" && ["type", "remove-goal", "restore-goal", "take-goal"].includes(p.action);
+  const resume = p.id === "session" && p.action === "resume";
+  if (p.action === "resume" && !resume) return false;
+  if (!goal && !resume && !/^[if]\d{1,16}$/.test(p.id)) return false;
+  const fields = p.action === "type" ? ["action", "id", "text"] : p.action === "answer" ? ["action", "id", "option"] : p.action === "step" ? ["action", "id", "step", "label"] : ["action", "id"];
+  if (Object.keys(p).length !== fields.length || !Object.keys(p).every((key) => fields.includes(key))) return false;
+  if (p.action === "type" || p.action === "answer") {
+    const text = p.action === "type" ? p.text : p.option;
+    return typeof text === "string" && text.trim() !== "" && text.length <= 8e3;
+  }
+  return p.action !== "step" || typeof p.step === "number" && Number.isInteger(p.step) && p.step >= 0 && p.step < 256 && typeof p.label === "string" && p.label.trim() !== "" && p.label.length <= 256;
+}
+
 // ../core/remote/herdr.ts
 var STATUS_TOKEN = "inbox";
 var STOP_TOKEN = "inbox-stop";
@@ -356,8 +423,7 @@ function pressFile(text) {
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote viewer" };
   }
   if (file.format === 2 && file.kind === "command") {
-    const isGoalPress = isRecord2(file.press) && file.press.id === "goal";
-    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16e3 && pressProblem(file.press) === null && isRecord2(file.press) && typeof file.press.id === "string" && (isGoalPress || /^[if]\d{1,16}$/.test(file.press.id)) && (file.press.action === "type" ? typeof file.press.text === "string" && file.press.text.trim() !== "" && file.press.text.length <= 8e3 : file.press.action === "answer" ? !isGoalPress && typeof file.press.option === "string" && file.press.option.length <= 8e3 && file.press.option.trim() !== "" : (isGoalPress ? ["remove-goal", "restore-goal", "take-goal"] : ["done", "address", "undo", "dismiss", "discuss", "explain", "compare", "issue", "discard"]).includes(String(file.press.action)));
+    const valid = typeof file.id === "string" && /^[a-z0-9]{1,12}-[a-zA-Z0-9_-]{16,100}$/.test(file.id) && typeof file.session === "string" && /^[\w-]{1,100}$/.test(file.session) && isTime(file.issuedAt) && Number.isSafeInteger(file.issuedAt) && file.issuedAt >= 0 && typeof file.expected === "string" && file.expected.length <= 16e3 && isRemoteCommandPress(file.press);
     return valid ? { ok: true, file } : { ok: false, reason: "invalid remote command" };
   }
   if (file.format !== HERDR_FORMAT) return { ok: false, reason: `unknown format ${String(file.format)}` };

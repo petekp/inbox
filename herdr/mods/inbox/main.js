@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T19:35:57.302Z. 432973 characters follow.
+// Built at 2026-11-27T20:44:53.409Z. 433308 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -2183,6 +2183,8 @@ function sessionKeyOf(reason, canShowSession) {
 }
 function closedLinePlan(d, canShowSession = false) {
   const sessionKey = sessionKeyOf(refusalOf(d.delivery), canShowSession);
+  if (d.canRestore === false)
+    return { action: null, sessionKey };
   if (canUndoRefused(d.delivery))
     return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
   const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
@@ -3936,13 +3938,20 @@ function inboxView({
   const held = new Set([...questionRows, ...taskRows, ...findingRows].filter((r) => r.state.is === "held").map((r) => r.id));
   const closed = [...ledger.closed].filter((d) => !held.has(d.id)).reverse().map((d) => {
     const delivery = d.doneNotification?.error !== undefined ? { error: d.doneNotification.error, canUndo: isUndoable(d) } : (d.how === "answered" || d.how === "done") && lastActions[d.id]?.kind === "mark" && lastActions[d.id]?.at === d.at ? pendingDeliveryAt(lastActions[d.id], now) : null;
-    return { ...d, outcomeLabel: outcomeLabel(d), delivery, mark: closedMark(closedState(d), delivery) };
+    return {
+      ...d,
+      canRestore: d.item !== undefined,
+      outcomeLabel: outcomeLabel(d),
+      delivery,
+      mark: closedMark(closedState(d), delivery)
+    };
   });
   const fixesSent = ledger.findings.filter((f) => isFixSent(lastActions[f.id])).map((f) => {
     const outcome = fixLabel(f);
     const delivery = pendingDeliveryAt(lastActions[f.id], now);
     return {
       ...f,
+      canRestore: true,
       how: "answered",
       outcome,
       outcomeLabel: outcomeLabel({ ...f, outcome }),
@@ -3964,7 +3973,13 @@ function inboxView({
       pressOutSince: placingFor.findings.pressOutSince,
       rows: findingRows,
       closed: [
-        ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({ ...f, outcomeLabel: outcomeLabel(f), delivery: null, mark: closedMark(closedState(f), null) })),
+        ...ledger.closedFindings.filter((f) => !held.has(f.id)).map((f) => ({
+          ...f,
+          canRestore: true,
+          outcomeLabel: outcomeLabel(f),
+          delivery: null,
+          mark: closedMark(closedState(f), null)
+        })),
         ...fixesSent
       ].sort((a, b) => b.closedAt - a.closedAt)
     },
@@ -4516,18 +4531,19 @@ function isAnyFoldOpen(folds, state) {
   return folds.closed.some((k) => state.unfolded.includes(k)) || folds.statusFolds.some((id) => state.statusUnfolded.includes(id)) || folds.parents.some(isOpen) || folds.rows.some(isOpen);
 }
 function foldAll(folds, state, isOpening) {
-  const set = (list, these) => isOpening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
+  const opening = isOpening ?? !isAnyFoldOpen(folds, state);
+  const set = (list, these) => opening ? [...list, ...these.filter((t) => !list.includes(t))] : list.filter((t) => !these.includes(t));
   const collapsible = [...folds.parents, ...folds.rows];
   return {
     unfolded: set(state.unfolded, folds.closed),
     statusUnfolded: set(state.statusUnfolded, folds.statusFolds),
-    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === isOpening ? [{ id, isCollapsed: !isOpening }] : [])
+    collapses: collapsible.flatMap((id) => state.collapsed.includes(id) === opening ? [{ id, isCollapsed: !opening }] : [])
   };
 }
 function foldAllOn(view, tab, open, isOpening) {
   const folds = tabFolds(view, tab);
   const state = { ...open, collapsed: view.collapsed };
-  return foldAll(folds, state, isOpening ?? !isAnyFoldOpen(folds, state));
+  return foldAll(folds, state, isOpening);
 }
 
 // ../core/view/ui-controller-types.ts
@@ -5562,12 +5578,7 @@ function isAnswerDraw(last, now, view) {
   return last.outs.some((o) => waitsIn(lastRows, o.rowId) && !waitsIn(rows, o.rowId));
 }
 
-// src/files.ts
-function isSessionChange(changed, appHome, sessionId) {
-  const folder = publishedSessionsFolder(appHome);
-  const file = publishedSessionPath(appHome, sessionId);
-  return changed.some((p) => p === file || p === folder || p === `${folder}/`);
-}
+// ../core/remote/herdr-read.ts
 var isRecord2 = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
 var SOURCE_FIELDS = ["host", "agent", "sessionId", "terminal"];
 function lastPressOf2(x) {
@@ -5728,18 +5739,6 @@ var isFieldDrawn = (typing, isHelpShown) => typing !== null && !isHelpShown;
 // src/press-file.ts
 var pressPath = (appHome, sessionId, pressId) => `${pressFolder(appHome, sessionId)}/${pressId}.json`;
 var newPressId = (now, random) => `${now.toString(36)}-${Math.floor(random * 36 ** 6).toString(36)}`;
-function pressFileText(id, pressedAt, press, holds, result = null, when = []) {
-  const { replies, discarded, shownSince, listInput } = holds;
-  return JSON.stringify({
-    format: HERDR_FORMAT,
-    id,
-    pressedAt,
-    press,
-    holds: { replies, discarded, shownSince, listInput },
-    ...result ? { result } : {},
-    ...when.length > 0 ? { when } : {}
-  });
-}
 
 // src/collapse.ts
 async function writeCollapse(io, to, read, row, c) {
@@ -8580,6 +8579,20 @@ function blockEl(b, p) {
   return div19();
 }
 
+// ../core/remote/herdr-press-write.ts
+function pressFileText(id, pressedAt, press, holds, result = null, when = []) {
+  const { replies, discarded, shownSince, listInput } = holds;
+  return JSON.stringify({
+    format: HERDR_FORMAT,
+    id,
+    pressedAt,
+    press,
+    holds: { replies, discarded, shownSince, listInput },
+    ...result ? { result } : {},
+    ...when.length > 0 ? { when } : {}
+  });
+}
+
 // src/run-here.ts
 var isOpenedHere = (target, projectFolder) => /^https?:\/\//.test(target) || target.startsWith("/") || target.startsWith("~/") || projectFolder !== null;
 function isRunHere(effects, projectFolder) {
@@ -9945,6 +9958,13 @@ class LookReports {
     if (target)
       await writeShown(io, appHome, target, now);
   }
+}
+
+// src/files.ts
+function isSessionChange(changed, appHome, sessionId) {
+  const folder = publishedSessionsFolder(appHome);
+  const file = publishedSessionPath(appHome, sessionId);
+  return changed.some((p) => p === file || p === folder || p === `${folder}/`);
 }
 
 // src/background.ts
