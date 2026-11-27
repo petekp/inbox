@@ -21,7 +21,7 @@ import { feedbackOf, feedbackTone, markedFeedbackText, rowAgeAt, rowFeedbackText
 import { actionId } from '../../core/domain/press-labels'
 import { localEffects } from '../../core/domain/help-steps'
 import type { RowPress } from '../../core/domain/presses'
-import { isPrPress, PR_REFRESH, prPressEffect, pressRowId } from '../../core/view/pr-press'
+import { isPrPress, prPressEffect, pressRowId } from '../../core/view/pr-press'
 import type { PrPress } from '../../core/view/pr-press'
 import type { Effect } from '../../core/view/press-reducer'
 import { unshownPressFeedback, unshownPressOut } from '../../core/view/unshown-press'
@@ -422,9 +422,8 @@ const isSentPress = (p: PanelPress): p is RowPress | PrPress =>
 /** The opens, copies and reads a press on `line` runs first, which its row reads while they are under way. */
 function pressEffects(screen: PanelScreen, line: Line, press: RowPress | PrPress, kind: PressKind | null): Effect[] {
   if (!isPrPress(press)) return kind === 'local' && line.row ? localEffects(line.row, press) : []
-  if (press.action === 'pr-refresh') return [PR_REFRESH]
   const pr = 'ref' in press ? screen.view.prs.drawn.find(d => d.pr.ref === press.ref)?.pr : undefined
-  const effect = pr ? prPressEffect(pr, press) : null
+  const effect = prPressEffect(pr ?? null, press)
 
   return effect ? [effect] : []
 }

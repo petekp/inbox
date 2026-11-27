@@ -1,5 +1,6 @@
 import { feedbackText, feedbackTone, holdsStatusWhileOut, type FeedbackTone } from '../../core/view/feedback'
 import type { Feedback } from '../../core/view/feedback'
+import { sendingFeedback } from '../../core/view/unshown-press'
 import { actionId } from '../../core/domain/press-labels'
 import { pressRowId } from '../../core/view/pr-press'
 import type { PrPress } from '../../core/view/pr-press'
@@ -11,9 +12,6 @@ import type { SettledOutcome } from '../../core/view/ui-controller-types'
 import type { LocalResult, PressKind } from '../../types'
 import type { Block, Button } from './blocks'
 import type { LastPress } from './files'
-
-/** What an out press's row reads until a publish shows the press, as the Codex tab's. */
-export const SENDING = 'Sending…'
 
 /** A press with no reread of the session file yet reads the file again then, in case a file watch was missed. */
 const REREAD_AFTER_MS = 5_000
@@ -189,9 +187,9 @@ export function drawOuts(blocks: Block[], outs: readonly Out[], lines: Record<st
     const out = byRow.get(id)
     const refused = lines[id]
     if (!out || holdsStatusWhileOut(out.kind) || refused) return refused ?? null
-    const source: Feedback = out.pending ?? { is: 'sending', label: SENDING, at: now, sentAt: now }
+    const source: Feedback = out.pending ?? sendingFeedback(now)
     if (out.result) return { ...resultLine(out.result), source }
-    return { text: out.pending ? feedbackText(out.pending, 'herdr') : SENDING, tone: 'muted', source }
+    return { text: feedbackText(source, 'herdr'), tone: 'muted', source }
   }
 
   return blocks.map((b): Block => {

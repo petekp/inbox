@@ -9,6 +9,9 @@ import type { PressOut } from './ui-controller-types'
 /** What a press that sends reads on its row from the moment of the press until the host records it. */
 export const SENDING = 'Sending…'
 
+/** The status of a press that sends, from `at` until its host records it. */
+export const sendingFeedback = (at: number): Feedback => ({ is: 'sending', label: SENDING, at, sentAt: at })
+
 /**
  * The latest press out on row or PR line `id` that `view` does not show yet, or null. The view shows a press once its
  * row's last action differs from the one it had when pressed, as a saved pending result or a new action does. A reply
@@ -36,5 +39,5 @@ export function unshownPressFeedback(kind: PressKind | null, effects: readonly E
   if (holdsStatusWhileOut(kind)) return null
   if (effects.some(e => e.kind !== 'send')) return { is: 'local', result: pendingResult([...effects], at) }
 
-  return { is: 'sending', label: SENDING, at, sentAt: at }
+  return sendingFeedback(at)
 }
