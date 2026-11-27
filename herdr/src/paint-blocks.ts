@@ -231,15 +231,18 @@ function panelEl(
 /**
  * `el` fading as the row's panel fades while the row opens or closes. The trunk beside a wrapped title fades with the
  * panel, so the tree comes and goes whole with the lines it joins. The panel of a form a row leaves keeps what it
- * showed while it fades out with that form's lines.
+ * showed while it fades out with that form's lines. A panel that waits for its space shows nothing from its first draw,
+ * so a panel the row's former form drew does not fade out under the new form as it fades in.
  */
 function panelFadeEl(r: RowBlock, m: RowMotion | undefined, p: Paint, el: Element): Element {
   const opacity = m?.swap?.panel ?? m?.panel ?? null
   if (opacity === null) return el
   const height = p.heights.get(panelId(r.id)) ?? 0
   const turnBackFadeMs = m?.panelFadeMs ?? null
-  const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0
-  const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? 'open']
+  const isWaiting = m?.isPanelWaiting === true && turnBackFadeMs === null
+  const isHidden = isWaiting && opacity === 0
+  const delay = isWaiting && !isHidden ? enterDelayMs(height) : 0
+  const duration = isHidden ? 0 : (turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? 'open'])
 
   return fadeEl(el, panelId(r.id), opacity, { duration, delay }, p)
 }
@@ -449,8 +452,9 @@ export function blockEl(b: Block, p: Paint): Element {
   if (b.kind === 'field') {
     const isShownAsOpening = m?.state === 'entering' && m.box !== null && m.fadeMs === 0
     const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null
-    const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0)
-    const opening = isShownAsOpening ? { isOpen: m.box === 'open', delayMs } : keepsButtonsFade
+    const height = p.heights.get(b.id)
+    const delayMs = enterDelayMs(height ?? 0)
+    const opening = isShownAsOpening ? { isOpen: m.box === 'open' && height !== undefined, delayMs } : keepsButtonsFade
 
     return div()
       .pl(b.isAtEdge ? EDGE : TEXT_X)

@@ -173,8 +173,10 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
       isMessage: p.panel.readSession === null,
     })
     const last = steps.at(-1)
-    if (last && last[0] === clock - START) steps.pop()
-    steps.push(isInput ? [clock - START, blocks, 'input'] : [clock - START, blocks])
+    const isSameMs = last !== undefined && last[0] === clock - START
+    if (isSameMs) steps.pop()
+    const isInputMs = isInput || (isSameMs && last[2] === 'input')
+    steps.push(isInputMs ? [clock - START, blocks, 'input'] : [clock - START, blocks])
   }
   const reread = async () => {
     if (!isPublished) return

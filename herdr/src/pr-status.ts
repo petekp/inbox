@@ -41,11 +41,15 @@ function stepPrLine<L>(
   now: number,
   isFirst: boolean,
   isInput: boolean,
+  isSameLine?: (a: L, b: L) => boolean,
 ) {
   if (isFirst) return line && { line, since: -Infinity, isLeaving: false, isInput: false }
 
-  return stepLine(last, line, b.kind === 'pr', now, isInput)
+  return stepLine(last, line, b.kind === 'pr', now, isInput, isSameLine)
 }
+
+/** A press result that keeps its tone is the same line, so "Refreshing PR #31…" and "Could not refresh PR #31" differ. */
+const isSameResult = (a: PrResult, b: PrResult) => a.tone === b.tone
 
 /** A PR block's status line as it comes and goes. */
 export const stepPrStatus = (last: UnderLine<PrLine> | null, b: Block, now: number, isFirst: boolean) =>
@@ -62,7 +66,7 @@ export function stepPrTail(last: PrTail | null, b: Block, now: number, isFirst: 
   return {
     error: stepPrLine(last?.error ?? null, pr?.error ?? null, b, now, isFirst, isInput),
     buttons: stepPrLine(last?.buttons ?? null, buttons, b, now, isFirst, false),
-    result: stepPrLine(last?.result ?? null, pr?.feedback ?? null, b, now, isFirst, isInput),
+    result: stepPrLine(last?.result ?? null, pr?.feedback ?? null, b, now, isFirst, isInput, isSameResult),
   }
 }
 

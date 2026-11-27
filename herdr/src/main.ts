@@ -36,6 +36,8 @@ import {
   buttonOf,
   fieldHints,
   hostFactsOf,
+  NO_DRAW,
+  drawOf,
   isAnswerDraw,
   isLookMove,
   keptLeft,
@@ -120,7 +122,7 @@ export default class Inbox extends View {
   tracksOf = ''
   /** The blocks of the last draw, whose buttons give a key's press its label and effects. */
   blocks: Block[] = []
-  lastDraw: LastDraw = { tab: 'needsYou', rows: null, pressed: [] }
+  lastDraw: LastDraw = NO_DRAW
   timeLeft: ReadonlyMap<string, TimeLeft> = new Map()
   linesAbove: LinesAbove = NO_LINES_ABOVE
   focus: FocusHandle | null = null
@@ -404,7 +406,7 @@ export default class Inbox extends View {
       this.timeLeft = new Map()
       this.tracksOf = ''
       this.blocks = []
-      this.lastDraw = { tab: ui.tab, rows: null, pressed: [] }
+      this.lastDraw = { ...NO_DRAW, tab: ui.tab }
       this.look.status.drew(null, now)
       this.fades.drew()
       return root.child(messageEl(screen.message, t))
@@ -412,8 +414,9 @@ export default class Inbox extends View {
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     this.blocks = shown
     this.hints = fieldHints(shown)
-    const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits)
-    this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map(o => o.rowId) }
+    const thisDraw = drawOf(ui.tab, screen.waits, this.queue.outs, this.read)
+    const isAnswer = isAnswerDraw(this.lastDraw, thisDraw, raw)
+    this.lastDraw = thisDraw
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt
     const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove
     const held = holdLinesAbove(shown, lastAbove, now, isForming, isInput)

@@ -12,6 +12,8 @@ import type { HostFacts, InputKind, LookConfig, UiCommand, UiEvent, UiState } fr
 import type { Block, Button, Does, ViewChange } from './blocks'
 import type { LookUi } from './draw'
 import type { ReadSession } from './files'
+import { rowSignature } from './out'
+import type { Out } from './out'
 import { foldClickOpens } from './fold-all'
 import type { PressTarget } from './press-queue'
 
@@ -169,20 +171,42 @@ export function keptLeft(
 }
 
 /**
- * The tab a draw showed, its rows, and the rows that had a press out, or null rows when it showed no inbox, as while
- * a session is read.
+ * A press the look had out at a draw: its id, its row, the row as the look drew it when pressed, and whether the opens
+ * and copies the look runs itself had ended.
  */
-export type LastDraw = { tab: ShownTab; rows: RowWait[] | null; pressed: string[] }
+type DrawnOut = Pick<Out, 'pressId' | 'rowId' | 'before'> & { hasRun: boolean }
+
+/**
+ * What a draw showed: its tab, its rows, the presses out, and the last press the host's file named. Rows are null
+ * when it showed no inbox, as while a session is read.
+ */
+export type LastDraw = { tab: ShownTab; rows: RowWait[] | null; outs: DrawnOut[]; lastPressId: string | null }
+
+export const NO_DRAW: LastDraw = { tab: 'needsYou', rows: null, outs: [], lastPressId: null }
+
+/** What a draw of the inbox shows of the presses: its tab and rows, the presses out, and the host's last press. */
+export const drawOf = (tab: ShownTab, rows: RowWait[], outs: readonly Out[], read: ReadSession | null): LastDraw => ({
+  tab,
+  rows,
+  outs: outs.map(o => ({ pressId: o.pressId, rowId: o.rowId, before: o.before, hasRun: o.result !== null })),
+  lastPressId: (read?.is === 'read' && read.lastPress?.id) || null,
+})
 
 const waitsIn = (rows: RowWait[], id: string) => rows.some(r => r.id === id && r.isWaiting)
 
 /**
- * Whether this draw answers the person's press: a row that had a press out at the last draw of the same tab no longer
- * waits. Its moves are then the person's, so they glide at once.
+ * Whether this draw shows the answer to a press the look had out at the last draw: the opens and copies the look ran
+ * itself ended, the host's file names the press as its last for the first time, the press's row changed, or, on the
+ * same tab, its row no longer waits. What the answer brings is then the person's, so it shows and glides at once.
  */
-export function isAnswerDraw(last: LastDraw, tab: ShownTab, rows: RowWait[] | null): boolean {
-  const lastRows = last.tab === tab ? last.rows : null
+export function isAnswerDraw(last: LastDraw, now: LastDraw, view: SessionView | null): boolean {
+  const hasRun = (o: DrawnOut) => !o.hasRun && now.outs.some(n => n.pressId === o.pressId && n.hasRun)
+  const isNamed = (o: DrawnOut) => now.lastPressId === o.pressId && last.lastPressId !== o.pressId
+  const isChanged = (o: DrawnOut) => view !== null && rowSignature(view, o.rowId) !== o.before
+  if (last.outs.some(o => hasRun(o) || isNamed(o) || isChanged(o))) return true
+  const lastRows = last.tab === now.tab ? last.rows : null
+  const rows = now.rows
   if (rows === null || lastRows === null) return false
 
-  return last.pressed.some(id => waitsIn(lastRows, id) && !waitsIn(rows, id))
+  return last.outs.some(o => waitsIn(lastRows, o.rowId) && !waitsIn(rows, o.rowId))
 }
