@@ -17,11 +17,20 @@ const isShown = (s: ShownText) => s.opacity * s.share >= CUT_OPACITY && s.text.t
 const stem = (t: string) => t.replace(/…$/, '')
 const isRunningMark = (text: string) => (RUNNING_FRAMES as readonly string[]).includes(text)
 
+/** The part of a Status line a text is: its mark, what it waits on, a button, or another line. */
+function statusPartOf(b: Extract<Block, { kind: 'status' }>, text: string): string {
+  if (b.mark?.text === text) return 'the mark'
+  if (b.waitsOn?.text === text) return 'what it waits on'
+  if (b.buttons.some(x => x.label === text)) return 'the button'
+  return 'the line'
+}
+
 /**
  * What part of a block drew `text` in a draw: a row's mark, title, age, status, settled label or button, or a line. A
  * status goes under the buttons only while they show, `shown` being the texts the block showed then.
  */
 function partOf(b: Block | undefined, text: string, shown: Set<string>): string {
+  if (b?.kind === 'status') return statusPartOf(b, text)
   if (b?.kind !== 'row') return 'the line'
   if (b.mark?.text === text || (b.mark?.isRunning === true && isRunningMark(text))) return 'the mark'
   if (b.age === text) return 'the age'

@@ -591,7 +591,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
   {
     name: 'a question answered while the Status tab shows',
     rule: 'vanish',
-    detail: 'the line "View question" in s3',
+    detail: 'the button "View question" in s3',
     issue: 1000,
     isOpen: true,
     case: {

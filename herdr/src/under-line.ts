@@ -46,7 +46,13 @@ const lineOf = (b: Block): Line | null => (b.kind === 'row' && isStatusUnder(b) 
  * its fade ends. A row that closes or settles takes it away with its panel, and a line the person's input takes away
  * goes at once, as a press shows what it did at once.
  */
-export const stepUnder = (last: UnderLine | null, b: Block, now: number, isInput = false): UnderLine | null =>
+export const stepUnder = (
+  last: UnderLine | null,
+  b: Block,
+  now: number,
+  isInput = false,
+  height?: number,
+): UnderLine | null =>
   stepLine(
     last,
     lineOf(b),
@@ -54,6 +60,7 @@ export const stepUnder = (last: UnderLine | null, b: Block, now: number, isInput
     now,
     isInput,
     (x, y) => statusKindOf(x) === statusKindOf(y),
+    height,
   )
 
 /**
@@ -62,7 +69,7 @@ export const stepUnder = (last: UnderLine | null, b: Block, now: number, isInput
  * another, such as "Explaining…" turning into "Queued: Explain", or "Refreshing PR #31…" into "Could not refresh PR
  * #31", takes the old line's place once it has faded out, as `replaced` says. A line that was still coming in, which its
  * growing box may cut, or one the person's press brings, comes again from this draw, since its box grows again to its
- * new height.
+ * new height. `height` is the line's measured height, which says when its fade in ends.
  */
 export function stepLine<L>(
   last: UnderLine<L> | null,
@@ -71,9 +78,10 @@ export function stepLine<L>(
   now: number,
   isInput: boolean,
   isSameLine: (a: L, b: L) => boolean = () => true,
+  height?: number,
 ): UnderLine<L> | null {
   const isReplaced = last !== null && line !== null && !isSameLine(last.line, line) && isSameForm && !isInput
-  if (last?.next !== undefined || (isReplaced && (last.isLeaving || isShown(last, now))))
+  if (last?.next !== undefined || (isReplaced && (last.isLeaving || isShown(last, now, height))))
     return replaced(last, line, isSameForm, now, isInput, isSameLine)
   if (line && last?.isLeaving) return { line, since: now, isLeaving: false, isInput, isBack: true }
   if (!line) return leaving(last, isSameForm, now, isInput)
@@ -91,8 +99,18 @@ export function stepLine<L>(
   }
 }
 
-/** Whether a line shows whole at `now`, past the start a growing box may cut: one that came back, or one at rest. */
-const isShown = (u: UnderLine<unknown>, now: number): boolean => u.isBack === true || now >= u.since + restsAfter(u)
+/**
+ * Whether a line shows whole at `now`, past the start a growing box may cut: one that came back, one whose fade in has
+ * ended, as `underMotion` draws it for its measured `height`, or one at rest.
+ */
+function isShown(u: UnderLine<unknown>, now: number, height: number | undefined): boolean {
+  const fadedInAt =
+    u.waitMs === undefined && height !== undefined
+      ? u.since + NEXT_FRAME_MS + enterDelayMs(height) + ENTER_FADE_MS
+      : u.since + restsAfter(u)
+
+  return u.isBack === true || now >= Math.min(fadedInAt, u.since + restsAfter(u))
+}
 
 /**
  * A line that `line`, of another kind, takes the place of: it fades out while its space holds, then `line` comes in

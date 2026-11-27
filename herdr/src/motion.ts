@@ -228,7 +228,7 @@ export function moveRows(
     const leftOut = isPanelLeftOut ? (panelHeight ?? 0) : 0
     const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now)
     const under = pushUnder(
-      stepUnder(last?.under ?? null, block, now, isInput),
+      stepUnder(last?.under ?? null, block, now, isInput, heightOf(underId(block.id))),
       underPushMs(last, block, restSpace),
       now,
     )
