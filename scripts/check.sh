@@ -150,12 +150,31 @@ fi
 # It runs on a copy of the mod folder, since it writes type files beside the mod. env -i leaves out HC_TERMINAL_ID and
 # every HERDR_ variable of the shell, and HOME and HERDR_APP_HOME both name the scratch folder, so no variable the
 # check reads names the real app home.
+# The check exits 0 when the mod starts timers or tasks it cannot end, and only warns that a reload stranded them. The
+# warning has to fail the step.
+herdr_app_check() {
+    app_log=$(mktemp)
+    if ! env -i PATH="$PATH" HOME="$herdr_scratch/home" HERDR_APP_HOME="$herdr_scratch/home" \
+        herdr-app check "$herdr_scratch/inbox" >"$app_log" 2>&1; then
+        cat "$app_log"
+        rm -f "$app_log"
+        return 1
+    fi
+    cat "$app_log"
+    if grep -q 'stranded script tasks' "$app_log"; then
+        echo "The mod starts background work while the app checks it, and the check ends before that work can finish."
+        echo "Start no timers or tasks when herdr.checking() is true, as herdr/src/background.ts does."
+        rm -f "$app_log"
+        return 1
+    fi
+    rm -f "$app_log"
+}
+
 if command -v herdr-app >/dev/null 2>&1; then
     herdr_scratch=$(mktemp -d)
     mkdir "$herdr_scratch/home" "$herdr_scratch/inbox"
     cp "$DIR/herdr/mod/inbox/main.js" "$DIR/herdr/mod/inbox/mod.json" "$herdr_scratch/inbox/"
-    check "herdr app check" env -i PATH="$PATH" HOME="$herdr_scratch/home" HERDR_APP_HOME="$herdr_scratch/home" \
-        herdr-app check "$herdr_scratch/inbox"
+    check "herdr app check" herdr_app_check
     rm -rf "$herdr_scratch"
     herdr_scratch=
 else
