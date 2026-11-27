@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T21:18:10.566Z. 437507 characters follow.
+// Built at 2026-11-27T22:23:49.093Z. 437437 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -361,9 +361,9 @@ function recommendedOption(options, rec) {
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
 var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
-function isQuestionBack(answer, options) {
+function isQuestionBack(answer) {
   const text = answer.trim();
-  return text.endsWith("?") && (QUESTION_WORD.test(text) || recommendedOption(options, text) === null);
+  return text.endsWith("?") && QUESTION_WORD.test(text);
 }
 var FILLER = new Set([
   "the",
@@ -468,7 +468,7 @@ function quotedAsk(item) {
 Options: ${item.options.join(" / ")}` : ""}`;
 }
 var messages = {
-  answer: (item, answer) => isQuestionBack(answer, item.options) ? `About this question you asked me: ${answer}
+  answer: (item, answer) => isQuestionBack(answer) ? `About this question you asked me: ${answer}
 ${quotedAsk(item)}` : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";

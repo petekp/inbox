@@ -1255,9 +1255,9 @@ function recommendedOption(options, rec) {
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
 var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
-function isQuestionBack(answer, options) {
+function isQuestionBack(answer) {
   const text = answer.trim();
-  return text.endsWith("?") && (QUESTION_WORD.test(text) || recommendedOption(options, text) === null);
+  return text.endsWith("?") && QUESTION_WORD.test(text);
 }
 var FILLER = new Set([
   "the",
@@ -1887,7 +1887,7 @@ function quotedAsk(item) {
 Options: ${item.options.join(" / ")}` : ""}`;
 }
 var messages = {
-  answer: (item, answer) => isQuestionBack(answer, item.options) ? `About this question you asked me: ${answer}
+  answer: (item, answer) => isQuestionBack(answer) ? `About this question you asked me: ${answer}
 ${quotedAsk(item)}` : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
@@ -4285,7 +4285,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   for (const item of ledger.items) {
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
-    const isQuestionBackOutcome = outcome !== undefined && item.kind === "question" && isQuestionBack(outcome, item.options);
+    const isQuestionBackOutcome = outcome !== undefined && item.kind === "question" && isQuestionBack(outcome);
     const isClosing = outcome !== undefined && !isQuestionBackOutcome && (item.from !== "record" || isPersonsAnswer(outcome));
     if (isClosing)
       closed.push(closedRecord(item, { outcome, how: "update" }, now));
@@ -8067,7 +8067,7 @@ function recordClose(host, ledger, input, now, presses) {
   if (answer === "" && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, "Not closed: your record updated this question, and it stays open for the user.");
   const item = ledger.items.find((i) => i.id === id);
-  if (item?.kind === "question" && answer !== "" && isQuestionBack(answer, item.options))
+  if (item?.kind === "question" && answer !== "" && isQuestionBack(answer))
     return unchanged(ledger, "Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.");
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now);
   if (r.closed && "item" in r.closed)
