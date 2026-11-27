@@ -16935,8 +16935,9 @@ async function digestText(text) {
     throw new Error("The host returned an invalid command hash.");
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+var ROW_DIGEST_PREFIX = "row-sha256-v2:";
 async function remoteRowDigest(s, id) {
-  return `row-sha256-v2:${await digestText(canonical(remoteFields(s, id)))}`;
+  return ROW_DIGEST_PREFIX + await digestText(canonical(remoteFields(s, id)));
 }
 async function matchesRow(s, command) {
   const id = pressRowId(command.press);
