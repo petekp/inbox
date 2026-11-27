@@ -33,7 +33,7 @@ type PressRunCalls = Pick<
 
 /** Runs the press the controller sent as `pressId`, then tells it how the press ended. */
 export async function runPress(
-  m: PressRunCalls & Pick<Mod, 'focusPaneKey'>,
+  m: PressRunCalls & Pick<Mod, 'takePaneKeys'>,
   pressId: number,
   p: RowPress | PrPress,
   holds: Holds,
@@ -52,10 +52,9 @@ export async function runPress(
   if (effects) {
     if (mayStayOnRow && effects.some(effect => effect.kind === 'send')) cancelUndoScroll()
     const undoKey = await undoKeyAfterPress(m, p, surface)
-    const isUndoCurrent = () => undoRevision === paneState.undoScrollRevision
-    if (undoKey !== null && isUndoCurrent()) {
+    if (undoKey !== null && undoRevision === paneState.undoScrollRevision) {
       if (paneState.isInlineTerminalPane) await keepUndoVisible(m, undoKey, pressRowId(p), now, undoRevision)
-      void m.focusPaneKey(undoKey, isUndoCurrent).catch(() => undefined)
+      void m.takePaneKeys().catch(() => undefined)
     }
   }
   const outcome = started ? await started.finish() : null

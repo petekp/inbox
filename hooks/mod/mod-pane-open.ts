@@ -184,19 +184,11 @@ export async function focusOpenedField(m: PaneOpenCalls, id: string) {
   await focusField(m, id)
 }
 
-/** Gives the shown pane the keys and focuses `key` once it is drawn, while `stillCurrent` holds. */
-export async function focusPaneKey(m: PaneOpenCalls, key: string, stillCurrent: () => boolean) {
+/** Gives the shown pane the keys, so the bound keys, such as `u` for Undo, reach it after a click. */
+export async function takePaneKeys(m: PaneOpenCalls) {
   if (!(await isPaneShown(m))) return
-  // A click leaves the keys with the prompt, and `ui.focus` is refused in a pane that lacks them.
+  // A click leaves the keys with the prompt.
   await openPane(m, !paneState.paneClosesOnEscape)
-  for (let tries = 0; tries < 10 && stillCurrent(); tries++) {
-    const isMoved = await m.pane.focus(key).then(
-      r => r.deny === undefined,
-      () => false,
-    )
-    if (isMoved) return
-    await m.clock.sleep(30)
-  }
 }
 
 export async function focusField(m: PaneOpenCalls, id: string) {

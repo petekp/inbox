@@ -11,7 +11,7 @@ import type { HistoryEngine } from './mod/mod-history'
 import { hostOf } from './mod/mod-host'
 import { conversationSwitched, sessionMoved } from './mod/mod-load'
 import { paneClosed, paneMessaged, panePressed, paneScrolled } from './mod/mod-pane-events'
-import { focusPaneKey, syncLook } from './mod/mod-pane-open'
+import { syncLook, takePaneKeys } from './mod/mod-pane-open'
 import { paneTree } from './mod/mod-pane-render'
 import { type Mod, PANE } from './mod/mod-ports'
 import { commandRowStored, ownMessageStored, promptSubmitted, replyStored } from './mod/mod-prompts'
@@ -232,7 +232,7 @@ function modOf($: EngineInterface): Mod {
     sendUi: (events, surface) => sendUi(m, events, surface),
     publishStatus: (isEnding, isExit) => publishStatus(m, isEnding, isExit),
     syncLook: isOpen => syncLook(m, isOpen),
-    focusPaneKey: (key, stillCurrent) => focusPaneKey(m, key, stillCurrent),
+    takePaneKeys: () => takePaneKeys(m),
     hostOf: (owner, surface) => hostOf(m, owner, surface),
     fetchPrs: (findsBranchPr, isPress) => fetchPrs(m, findsBranchPr, isPress),
   }
