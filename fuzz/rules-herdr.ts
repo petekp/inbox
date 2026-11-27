@@ -11,6 +11,7 @@ import type { HerdrDraw, HerdrRun } from './look-herdr'
 import { badText, glyphCut } from './rules-text'
 import { LINE_HEIGHT } from '../herdr/src/paint-theme'
 import { vanishFailures } from './rules-herdr-vanish'
+import { pressShowsFailures } from './rules-herdr-press'
 
 const LOOK = 'herdr'
 const STILL_PX = 0.5
@@ -187,6 +188,7 @@ function motionFailures(run: HerdrRun): Failure[] {
     })
 
   out.push(...vanishFailures(run, f.shown, at))
+  out.push(...pressShowsFailures(run, f.shown, at))
 
   return out
 }

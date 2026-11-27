@@ -46,7 +46,7 @@ One in-memory host (`fuzz/host.ts`) holds the session and a virtual clock, as `t
 The person's events are each look's own input, so the look's own key handling and its shared UI controller decide what they do:
 
 - omp: a key name, as `handleKey` in `omp/src/panel-keys.ts` takes it, through the real panel controller (`createPanel` in `omp/src/controller.ts`) with a source backed by the in-memory host.
-- Herdr: a key, as `keyMove` in `herdr/src/keys.ts` takes it, a click on the n-th drawn row or tab, or a click on the selected row's n-th drawn button, through the stand-in's `press` and `click`. Typing goes into the open text field. A press goes through the look's real `PressQueue`, which writes a press file to an in-memory folder. The host takes the file after a seeded delay and runs it with `startHerdrFile` in `core/remote/herdr-app.ts`. The look reads the session back from `publishedText` through `readSession` and draws it with `screenOf`. So "Sending…", a press nobody took and the give-up time all happen as they do live.
+- Herdr: a key, as `keyMove` in `herdr/src/keys.ts` takes it, a click on the n-th drawn row or tab, or a click on the n-th drawn button, counting the selected row's buttons first and then those outside rows that show, such as the Status goal's and a PR's, through the stand-in's `press` and `click`. Typing goes into the open text field. A press goes through the look's real `PressQueue`, which writes a press file to an in-memory folder. The host takes the file after a seeded delay and runs it with `startHerdrFile` in `core/remote/herdr-app.ts`. The look reads the session back from `publishedText` through `readSession` and draws it with `screenOf`. So "Sending…", a press nobody took and the give-up time all happen as they do live.
 
 Shared events, the same for every look:
 
@@ -100,7 +100,7 @@ None. A seeded PRNG is ten lines, and the shrinker works on the case's own JSON.
 - `host.ts`: the in-memory host. `agent.ts`: the agent's events through the shared code.
 - `look-omp.ts`, `look-herdr.ts`: each look's driver. `look-codex.ts` and `codex-page.ts`: the Codex tab's driver and the code it runs in the page. `look-mod.ts`, `mod-look.ts` and `mod-case.ts`: the mod's looks, with `tsconfig.mod.json` to type-check the part that runs in the test engine. `look-rows.ts`: the shared row stepper, with its own generator, rules and shrinking, since a case there is a list of draws rather than a session.
 - `rules-text.ts`, `rules-omp.ts`, `rules-herdr.ts`, `rules-herdr-vanish.ts`, `failure.ts`: the rules.
-- `seeds.ts`, `seeds-codex.ts` and `seeds-mod.ts`: the seeds. `known.ts`: the failures open issues already describe.
+- `seeds.ts`, `seeds-press.ts`, `seeds-codex.ts` and `seeds-mod.ts`: the seeds, with the helpers that build them in `seed-cases.ts`. `known.ts`: the failures open issues already describe.
 - `shrink.ts`, `tsconfig.json`.
 
 `scripts/fuzz.sh` runs it. Reports go to `fuzz/out/`, which Git ignores. Each file stays at 5,000 tokens or under.

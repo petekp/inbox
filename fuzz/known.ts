@@ -32,6 +32,29 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
+  { issue: 1005, look: 'herdr', rule: 'press-shows', details: ["in the draw after the host's answer"] },
+  { issue: 1006, look: 'herdr', rule: 'press-shows', details: [['in its own draw', '"✓ Opened ']] },
+  { issue: 1007, look: 'herdr', rule: 'cut', details: ['"No goal yet.'] },
+  {
+    issue: 1007,
+    look: 'herdr',
+    rule: 'connector-gap',
+    details: ['in fit m', 'in space m', 'in space s', 'in space c'],
+  },
+  { issue: 1015, look: 'herdr', rule: 'cut', details: [['"Could not refresh PR', 'in its box status result pr:']] },
+  { issue: 1013, look: 'herdr', rule: 'cut', details: [['"text field: ', 'in its box box goal field']] },
+  { issue: 1008, look: 'herdr', rule: 'vanish', details: ['"Sending…" in d'] },
+  { issue: 1008, look: 'herdr', rule: 'connector-gap', details: ['in panel '] },
+  { issue: 1009, look: 'herdr', rule: 'vanish', details: ['in empty overview'] },
+  { issue: 1010, look: 'herdr', rule: 'cut', details: [['"Undo"', 'in its box panel pr:']] },
+  {
+    issue: 1011,
+    look: 'omp',
+    rule: 'press-shows',
+    details: ['x', 'u', 'e', 'i', 'a', 'b', 'c', 'd', 'enter'].map(key => `the key "${key}" changed nothing`),
+  },
+  { issue: 1012, look: 'codex', rule: 'press-shows', details: ['"✓ Opened the comment"'] },
+  { issue: 1014, look: 'codex', rule: 'press-shows', details: ['"✓ Opened previews"'] },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */

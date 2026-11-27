@@ -45,11 +45,50 @@ const PLAIN: Style = {
   tint: (_tone, _share, s) => s,
 }
 
-export type OmpDraw = { at: number; after: number; lines: string[]; view: SessionView | null; ui: PanelUi | null }
+const ESC = String.fromCodePoint(0x1b)
+const codesOf = (s: string) => [...s].map(c => c.codePointAt(0)).join(';')
+const mark = (code: string, s: string) => `${ESC}[${code}m${s}${ESC}[0m`
+
+/**
+ * Marks each style with an escape that names it and its arguments, which omp measures as no width, so two draws that
+ * differ only in style differ as text.
+ */
+const MARKED: Style = {
+  bold: s => mark('1', s),
+  dim: s => mark('2', s),
+  inverse: s => mark('7', s),
+  underline: s => mark('4', s),
+  tone: (n, s) => mark(`90;${codesOf(n)}`, s),
+  banner: (t, part, s) => mark(`91;${codesOf(t)};${codesOf(part)}`, s),
+  tint: (t, share, s, rest) => mark(`92;${codesOf(t)};${Math.round(share * 1000)};${codesOf(rest ?? '')}`, s),
+}
+
+/** A draw's lines, plain, and `styled` with each style marked as `MARKED` does. */
+export type OmpDraw = {
+  at: number
+  after: number
+  lines: string[]
+  styled: string[]
+  view: SessionView | null
+  ui: PanelUi | null
+}
+
+/**
+ * How many chained promise callbacks a key's own draw waits for, as omp renders only after its handler's microtasks.
+ * The stand-in host answers a press a timer later, as the live host reads and locks the session's files first.
+ */
+const MICROTASK_HOPS = 10
+
+/**
+ * A key the person pressed, by the indexes of three draws: the last before it, its own, drawn once the key's
+ * microtasks have run, and the first after the work the key started settled.
+ */
+export type OmpKey = { key: string; before: number; own: number; settled: number }
 
 export type OmpRun = {
   width: number
   draws: OmpDraw[]
+  keys: OmpKey[]
   notes: string[]
   error: { at: number; after: number; message: string } | null
 }
@@ -94,6 +133,7 @@ async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
       version: '1.2.3',
     }),
     press: async (p, holds, _pressId, when) => {
+      await new Promise(resolve => setTimeout(resolve, 0))
       const outcome = await press(host, p, false, holds, undefined, when)
       if (outcome.wakesAfterSettle) add(() => void wakeAfterSettle(host), SETTLED_MS + WAKE_MARGIN_MS, true)
       return {
@@ -116,9 +156,18 @@ async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
       return () => void listeners.delete(listener)
     },
   }
+  let style = PLAIN
   const panel = createPanel({
     source,
-    style: PLAIN,
+    style: {
+      bold: s => style.bold(s),
+      dim: s => style.dim(s),
+      inverse: s => style.inverse(s),
+      underline: s => style.underline(s),
+      tone: (n, s) => style.tone(n, s),
+      banner: (t, part, s) => style.banner(t, part, s),
+      tint: (t, share, s, rest) => style.tint(t, share, s, rest),
+    },
     now: () => Date.now(),
     openedAt: clock,
     requestRender: () => {},
@@ -134,13 +183,17 @@ async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
     height: () => undefined,
   })
   const draws: OmpDraw[] = []
+  const keys: OmpKey[] = []
   const notes: string[] = []
   let after = -1
   const draw = () => {
     lastDrawn = null
     const lines = panel.render(c.width)
     const drawn = lastDrawn as Drawn | null
-    draws.push({ at: clock - START, after, lines, view: drawn?.view ?? null, ui: drawn?.ui ?? null })
+    style = MARKED
+    const styled = panel.render(c.width)
+    style = PLAIN
+    draws.push({ at: clock - START, after, lines, styled, view: drawn?.view ?? null, ui: drawn?.ui ?? null })
   }
   const wait = async (ms: number) => {
     const end = clock + ms
@@ -165,8 +218,14 @@ async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
       for (const ch of e.text) panel.handleInput(ch, ch)
       return 'typed'
     }
-    if (e.is === 'key')
-      return (panel.handleInput(e.key, e.text ?? (e.key.length === 1 ? e.key : undefined)), `pressed ${e.key}`)
+    if (e.is === 'key') {
+      const before = draws.length - 1
+      panel.handleInput(e.key, e.text ?? (e.key.length === 1 ? e.key : undefined))
+      for (let i = 0; i < MICROTASK_HOPS; i++) await Promise.resolve()
+      draw()
+      keys.push({ key: e.key, before, own: draws.length - 1, settled: draws.length })
+      return `pressed ${e.key}`
+    }
     return ''
   }
 
@@ -188,6 +247,7 @@ async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
     return {
       width: c.width,
       draws,
+      keys,
       notes,
       error: { at: clock - START, after, message: err instanceof Error ? (err.stack ?? err.message) : String(err) },
     }
@@ -195,5 +255,5 @@ async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
     panel.dispose()
   }
 
-  return { width: c.width, draws, notes, error: null }
+  return { width: c.width, draws, keys, notes, error: null }
 }
