@@ -189,7 +189,8 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
   const indexOf = new Map(ids.map((id, n) => [id, n]))
   const guard = ui.selection[tab].guard
   const at = isListShown ? ids.indexOf(selectedOf(ui, drawn.view, tab) ?? '') : -1
-  const isOpenGuarded = !isStatusShown && guard !== null && now < guard.at + PRESS_GUARD_MS
+  const isRowGuarded = (rowId: string) =>
+    !isStatusShown && guard !== null && now < guard.at + PRESS_GUARD_MS && rowId === ui.selection[tab].id
   const isStatusUnfolded = (id: string) => statusUnfolded.includes(id)
   const isStatusCollapsed = (id: string) => view.collapsed.includes(id)
   const statusKeyRow = isStatusShown
@@ -211,7 +212,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
     keyedButton,
     answersFit,
   } = paneRowKeys(
-    { ...client, listColumns, isOpenGuarded, look, Button, Box, pal, Text, space, Input, typing },
+    { ...client, listColumns, isRowGuarded, look, Button, Box, pal, Text, space, Input, typing },
     handlers,
   )
   const {

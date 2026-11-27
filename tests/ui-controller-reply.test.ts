@@ -245,7 +245,7 @@ test('a confirmed Undo selects the row it brought back once a tab lists it, guar
     const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by }, T0 + 10)
     expect(pressed.commands[0]).toMatchObject({ kind: 'press', holds: { undoOut: [] } })
     const settled = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: OK }, T0 + 20)
-    expect(settled.ui.restoring).toEqual({ id: 'i2', at: T0 + 20, by })
+    expect(settled.ui.restoring).toEqual({ id: 'i2', at: T0 + 10, by })
     return read(settled.ui, S, T0 + 30)
   }
   const back = undone('key')
@@ -261,21 +261,24 @@ test('a refused Undo whose row’s Undo time ended while it was out reports unde
   const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by: 'key' }, T0 + 10)
   const inTime = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 20)
   expect(rowErrorOf(inTime.ui, 'i2', T0 + 20)).toBe(REFUSED.error)
+  expect(inTime.ui.restoring).toBe(null)
   const late = T0 + 5 + SETTLED_MS
   const ended = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: REFUSED }, late)
   expect(rowErrorOf(ended.ui, 'i2', late)).toBe(null)
   expect(noticeOf(ended.ui, late)).toEqual({ text: REFUSED.error, at: late, isError: true })
 })
 
-test('a confirmed Undo whose answer lands after the read that lists its row selects the row at once', () => {
+test('an Undo whose row a read lists before the press answers selects the row at that read', () => {
   const closed = dismissedByPerson(S, 'i2', T0 + 5)
   const { ui } = openOn(closed)
   const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by: 'key' }, T0 + 10)
   const listed = read(pressed.ui, S, T0 + 15)
+  expect(listed.ui.selection.needsYou.id).toBe('i2')
+  expect(listed.ui.restoring).toBe(null)
+  expect(listed.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i2', closedId: null })
   const settled = send(listed.ui, S, { type: 'press-settled', pressId: 1, outcome: OK }, T0 + 20)
   expect(settled.ui.selection.needsYou.id).toBe('i2')
-  expect(settled.ui.restoring).toBe(null)
-  expect(settled.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i2', closedId: null })
+  expect(settled.commands).not.toContainEqual(expect.objectContaining({ kind: 'reveal' }))
 })
 
 test('a close the person pressed moves the cursor at once when the read that shows it comes while the press is out', () => {
