@@ -90,11 +90,12 @@ function pagedFrames(run: HerdrRun, end: number): Frames {
   const steps = [...run.steps, ...atStarts]
     .sort((a, b) => a[0] - b[0])
     .map(s => (starts.has(s[0]) ? ([s[0], s[1], 'page'] as Step) : s))
-  const f = framesOf(steps, end)
+  const f = framesOf(steps, end, 0, run.fetchedAt)
   const shown = <T extends { at: number }>(list: T[]) => list.filter(x => x.at >= 0)
 
   return {
     jumps: shown(f.jumps),
+    shrinks: shown(f.shrinks),
     titles: shown(f.titles),
     gaps: shown(f.gaps),
     heights: [],
@@ -178,6 +179,13 @@ function motionFailures(run: HerdrRun): Failure[] {
       rule: 'jump',
       detail: `${j.id} moved ${j.by.toFixed(1)} px in one frame, off its spring`,
       seen: j,
+    })
+  for (const s of f.shrinks)
+    out.push({
+      ...at(s.at),
+      rule: 'jump',
+      detail: `the highlight of ${s.id} shrank ${s.by.toFixed(1)} px in one frame, ahead of its box`,
+      seen: s,
     })
   for (const g of f.gaps)
     out.push({

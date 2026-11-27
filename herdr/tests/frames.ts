@@ -5,10 +5,13 @@ import { checkMotionIds, columnOf, fieldOf } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 import { boxOf, checkFadeIds, fadesOn } from './fade-boxes'
 import { type Box, layout, linesOf } from './layout'
+import { gapsOf, segmentsOf } from './connector-gaps'
 
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
 const { moveRows } = await import('../src/motion')
+const { fetchedIn } = await import('./fetched-steps')
+const { filledRows, offSpringBy } = await import('./off-spring')
 const { NO_TRACKS } = await import('../src/tracks')
 const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
@@ -28,60 +31,9 @@ type TitleForm = { at: number; id: string; tall: number; short: number; box: num
 type ColumnGap = { at: number; id: string; x: number; y: number }
 type Cut = { at: number; box: string; text: string; share: number; opacity: number }
 type Fading = { at: number; id: string; height: number; opacity: number }
-type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean; isHidden: boolean }
 type Shown = { at: number; block: string; text: string; opacity: number; share: number; isFormPart: boolean }
 type ShownLine = { block: string; text: string; top: number; height: number; opacity: number }
 type Rest = { fits: { id: string | null; height: number; content: number }[]; lines: ShownLine[] }
-
-const lengthIn = (length: number | string, height: number): number =>
-  typeof length === 'string' && length.endsWith('%') ? (parseFloat(length) / 100) * height : Number(length)
-
-function segmentsOf(root: Painted, placed: Map<Painted, Box>, isHidden: (n: Painted) => boolean): Segment[] {
-  const out: Segment[] = []
-  const walk = (n: Painted, clip: [number, number], id: string) => {
-    const box = placed.get(n)
-    if (!box) return
-    const own: [number, number] = n.style.isClipped
-      ? [Math.max(clip[0], box.top), Math.min(clip[1], box.top + box.height)]
-      : clip
-    for (const k of n.kids) {
-      if (!k.style.isAbsolute) {
-        walk(k, own, k.id ?? id)
-        continue
-      }
-      if (k.style.w !== 1) continue
-      const y0 = box.top + lengthIn(k.style.top ?? 0, box.height)
-      const runsOn = k.style.h === undefined
-      const y1 = runsOn
-        ? box.top + box.height - lengthIn(k.style.bottom ?? 0, box.height)
-        : y0 + lengthIn(k.style.h ?? 0, box.height)
-      const shown = { y0: Math.max(y0, own[0]), y1: Math.min(y1, own[1]) }
-      if (shown.y1 < shown.y0) {
-        const isBelowClip = y0 > own[1] && Number.isFinite(own[1])
-        if (isBelowClip)
-          out.push({ id, x: k.style.left ?? 0, y0: own[1], y1: own[1], runsIn: false, runsOn, isHidden: isHidden(k) })
-        continue
-      }
-      out.push({ id, x: k.style.left ?? 0, ...shown, runsIn: (k.style.top ?? 0) === 0, runsOn, isHidden: isHidden(k) })
-    }
-  }
-  walk(root, [-Infinity, Infinity], '')
-
-  return out
-}
-
-function gapsOf(segments: Segment[], end: number): { id: string; x: number; y: number }[] {
-  const isMet = (s: Segment, y: number) =>
-    segments.some(o => o !== s && !o.isHidden && o.x === s.x && o.y0 <= y + 0.5 && o.y1 >= y - 0.5)
-  const ends = segments
-    .filter(s => !s.isHidden)
-    .flatMap(s => [
-      ...(s.runsIn && s.y0 > 0.5 ? [{ s, y: s.y0 }] : []),
-      ...(s.runsOn && s.y1 < end - 0.5 ? [{ s, y: s.y1 }] : []),
-    ])
-
-  return ends.filter(({ s, y }) => !isMet(s, y)).map(({ s, y }) => ({ id: s.id, x: s.x, y }))
-}
 
 class Springs {
   states = new Map<string, Spring>()
@@ -311,6 +263,7 @@ class Frames {
   private fadeEnds = new Map<string, number>()
   private drawnIds = new Set<string>()
   jumps: Jump[] = []
+  shrinks: Jump[] = []
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
   listHeights: number[] = []
@@ -349,13 +302,13 @@ class Frames {
     }
   }
 
-  draw(blocks: Block[], now: number, isInput = false) {
+  draw(blocks: Block[], now: number, isInput = false, fetched?: ReadonlySet<string>) {
     const isFirst = this.last === null
     const resized = this.heights.takeResized()
     const isForming = this.heights.isForming(isFirst, now)
     const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove
     const held = holdLinesAbove(blocks, lastAbove, now, isForming, isInput)
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights, fetched)
     this.linesAbove = heldAsDrawn(held, lastAbove, moved)
     this.tracks = moved.tracks
     const paint = paintOf(
@@ -411,12 +364,14 @@ class Frames {
     const isInMovedBlock = (id: string) => startsHere.some(b => id.endsWith(` ${b}`))
     if (this.last && !isForming) {
       const stillAt = (id: string) => (was.has(id) && shown.has(id) ? this.lastShown.get(id) : shown.get(id))
+      const filled = filledRows(tree)
       for (const [id, box] of layout(tree, stillAt).boxes) {
         const before = this.last.get(id)
-        const isSprung = /^(box|fit) /.test(id)
-        if (!before || !(isSprung || /^(size|panel) /.test(id)) || isInMovedBlock(id)) continue
-        const by = Math.max(Math.abs(box.top - before.top), isSprung ? Math.abs(box.height - before.height) : 0)
-        if (by >= 0.5) this.jumps.push({ at: now, id, by })
+        if (!before || isInMovedBlock(id)) continue
+        const by = offSpringBy(id, box, before)
+        if (by !== null && by >= 0.5) this.jumps.push({ at: now, id, by })
+        const shrank = filled.has(id) ? before.height - box.height : 0
+        if (shrank >= 0.5) this.shrinks.push({ at: now, id, by: shrank })
       }
     }
     for (const { node } of sized) {
@@ -454,8 +409,10 @@ export function framesOf(
   steps: Step[],
   ms = 1500,
   measureLagMs = 0,
+  fetchedAt: ReadonlyMap<number, ReadonlySet<string>> = new Map(),
 ): {
   jumps: Jump[]
+  shrinks: Jump[]
   titles: TitleForm[]
   gaps: ColumnGap[]
   heights: number[]
@@ -470,6 +427,7 @@ export function framesOf(
   if (!first)
     return {
       jumps: [],
+      shrinks: [],
       titles: [],
       gaps: [],
       heights: [],
@@ -480,17 +438,24 @@ export function framesOf(
       rest: frames.rest,
     }
   const start = 1_000_000
-  let drawn: Step | null = null
+  let drawn = -1
   for (let at = -500; at < ms; at += FRAME_MS) {
-    const step = steps.findLast(([from]) => at >= from) ?? first
+    const index = Math.max(
+      steps.findLastIndex(([from]) => at >= from),
+      0,
+    )
+    const step = steps[index] ?? first
     const isNewPage = steps.some(([from, , kind]) => kind === 'page' && from > at - FRAME_MS && from <= at)
     if (isNewPage) frames.showPage()
-    frames.draw(step[1], start + at, step !== drawn && step[2] === 'input')
-    drawn = step
+    const isInput = index !== drawn && step[2] === 'input'
+    const fetched = isInput ? fetchedIn(steps.slice(drawn + 1, index + 1), fetchedAt) : undefined
+    frames.draw(step[1], start + at, isInput, fetched)
+    drawn = index
   }
 
   return {
     jumps: frames.jumps.map(j => ({ ...j, at: j.at - start })),
+    shrinks: frames.shrinks.map(j => ({ ...j, at: j.at - start })),
     titles: frames.titles.map(t => ({ ...t, at: t.at - start })),
     gaps: frames.gaps.map(g => ({ ...g, at: g.at - start })),
     heights: frames.listHeights,

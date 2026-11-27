@@ -114,7 +114,7 @@ async function main() {
   const seedLines: string[] = []
   let isSeedBroken = false
   for (const s of SEEDS.filter(s => args.looks.includes(s.case.look))) {
-    const { own: failures, others } = ownFailures(s.case.look, s.issue, await failuresOf(s.case))
+    const { own: failures, others } = ownFailures(s.case.look, s.issue, await failuresOf(s.case), s)
     const rules = [...new Set(failures.map(f => f.rule))].join(', ')
     const isAsIssueSays = failures.some(
       f => f.rule === s.rule && (s.detail === undefined || f.detail.includes(s.detail)),

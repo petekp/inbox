@@ -40,12 +40,14 @@ const realMoveRows = motion.moveRows
 let wasInput = false
 let wasFirst = false
 let wasMoved = false
+let wasFetched: ReadonlySet<string> = new Set()
 mock.module('../herdr/src/motion', () => ({
   ...motion,
   moveRows: (...args: Parameters<typeof realMoveRows>) => {
     wasMoved = true
     wasFirst = args[3]
     wasInput = args[4] ?? false
+    wasFetched = args[6] ?? new Set()
     return realMoveRows(...args)
   },
 }))
@@ -59,6 +61,7 @@ const { publishedSessionPath } = await import('../core/remote/herdr')
 const { pressFile } = await import('../core/remote/herdr-press-file')
 const { REREAD_MS, AGE_TICK_MS } = await import('../herdr/src/status-look')
 const { lookUiOf } = await import('../herdr/src/controller')
+const { fetchedIds } = await import('../herdr/src/fetched')
 
 export const START = Date.UTC(2026, 10, 10, 12)
 
@@ -85,6 +88,8 @@ export type HerdrRun = {
   inputStarts: { after: number; at: number }[]
   /** Each press and the host's answer to it: the draw's time, the block pressed and the press's label or key. */
   presses: Press[]
+  /** The blocks a read changed in each draw that was not the host's answer to a press, by the draw's time. */
+  fetchedAt: Map<number, ReadonlySet<string>>
   notes: string[]
   error: { at: number; after: number; message: string } | null
 }
@@ -149,12 +154,15 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
   const presses: Press[] = []
   /** The block and label of each press file the look wrote, by path, so the host's answer names them. */
   const pressed = new Map<string, Pick<Press, 'block' | 'label'>>()
+  const fetchedAt = new Map<number, ReadonlySet<string>>()
+  let drawnRead = p.panel.readSession
   let after = -1
   let wasMessage = false
   const draw = () => {
     wasInput = false
     wasFirst = false
     wasMoved = false
+    wasFetched = new Set()
     const root = p.paint()
     const isInput = wasInput
     const isMessageShown = !wasMoved && !wasMessage
@@ -162,6 +170,9 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     if ((wasFirst || isMessageShown) && pageAt.at(-1) !== clock - START) pageAt.push(clock - START)
     const blocks = p.panel.blocks
     const read = p.panel.readSession
+    const fetched = isInput ? [...wasFetched] : [...fetchedIds(p.panel, drawnRead, read, p.panel.ui, clock)]
+    drawnRead = read
+    if (fetched.length > 0) fetchedAt.set(clock - START, new Set([...(fetchedAt.get(clock - START) ?? []), ...fetched]))
     const view = read && readView(read, clock, holdsOf(p.panel.ui, clock), notesOf(p.panel.ui))
     draws.push({
       at: clock - START,
@@ -267,12 +278,13 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
       inputAt,
       inputStarts,
       presses,
+      fetchedAt,
       notes,
       error: { at: clock - START, after, message: err instanceof Error ? (err.stack ?? err.message) : String(err) },
     }
   }
 
-  return { draws, steps, pageAt, inputAt, inputStarts, presses, notes, error: null }
+  return { draws, steps, pageAt, inputAt, inputStarts, presses, fetchedAt, notes, error: null }
 
   async function apply(e: Ev, target: { block: string | null }): Promise<string | void> {
     if (e.is === 'wait') return wait(e.ms)

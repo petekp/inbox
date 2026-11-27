@@ -5,18 +5,18 @@ import { MOD_SEEDS } from './seeds-mod'
 
 /**
  * Failures of generated cases that an open issue already describes, by look, rule and what the failure's detail holds:
- * one of `details`, where a list stands for a detail that holds every text in it, as a cut's text and its box. A run
- * that finds only these passes, so a fixed-seed run fails only on something new.
+ * one of `details`, where a list stands for a detail that holds every text in it, as a cut's text and its box, and a
+ * pattern for a detail it matches. A run that finds only these passes, so a fixed-seed run fails only on something new.
  */
-const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string; details: (string | string[])[] }[] = [
-  {
-    issue: 1007,
-    look: 'herdr',
-    rule: 'connector-gap',
-    details: ['in fit m', 'in space m', 'in space s', 'in space c'],
-  },
-  { issue: 1010, look: 'herdr', rule: 'cut', details: [['"Undo"', 'in its box panel pr:']] },
-  { issue: 1017, look: 'herdr', rule: 'vanish', details: [['the line " · ', 'in group ']] },
+const KNOWN: {
+  issue: number
+  look: Case['look'] | 'codex' | 'mod'
+  rule: string
+  details: (string | string[] | RegExp)[]
+}[] = [
+  { issue: 1007, look: 'herdr', rule: 'connector-gap', details: [/ in (space|fit) [msc]\d/] },
+  { issue: 1022, look: 'herdr', rule: 'cut', details: [['"Undo"', 'in its box panel pr:']] },
+  { issue: 1024, look: 'herdr', rule: 'jump', details: ['the highlight of row '] },
   { issue: 1018, look: 'herdr', rule: 'press-shows', details: [['in its own draw', '"✓ Opened ']] },
   {
     issue: 1019,
@@ -49,22 +49,30 @@ export function knownIssueOf(f: { look: string; rule: string; detail: string }):
       open.has(k.issue) &&
       k.look === f.look &&
       k.rule === f.rule &&
-      k.details.some(d => (typeof d === 'string' ? [d] : d).every(part => f.detail.includes(part))),
+      k.details.some(d =>
+        d instanceof RegExp
+          ? d.test(f.detail)
+          : (typeof d === 'string' ? [d] : d).every(part => f.detail.includes(part)),
+      ),
   )
   return k?.issue ?? null
 }
 
 /**
  * A seed's failures, less those that an open issue other than the seed's own already describes, as when a seed's moves
- * also show a cut another issue tracks, and those issues.
+ * also show a cut another issue tracks, and those issues. A failure that `seen`, the rule and detail the seed's own issue
+ * saw, describes stays the seed's own, so a fixed issue that comes back fails its seed.
  */
 export function ownFailures<F extends { rule: string; detail: string }>(
   look: string,
   issue: number,
   failures: F[],
+  seen?: { rule: string; detail?: string },
 ): { own: F[]; others: number[] } {
   const others = new Set<number>()
+  const isSeen = (f: F) => seen?.detail !== undefined && f.rule === seen.rule && f.detail.includes(seen.detail)
   const own = failures.filter(f => {
+    if (isSeen(f)) return true
     const known = knownIssueOf({ look, rule: f.rule, detail: f.detail })
     if (known === null || known === issue) return true
     others.add(known)
