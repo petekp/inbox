@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T12:16:17.706Z. 424395 characters follow.
+// Built at 2026-11-27T12:34:49.817Z. 424556 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -4434,6 +4434,7 @@ function prTabOf(s, lastActions, now, { shownSince, listInput, undoShown, undoOu
     pressOutSince
   };
 }
+var lastActionKey = (view, id) => JSON.stringify(view?.lastActions[id] ?? null);
 
 // ../core/view/fold-all.ts
 var statusFoldsOf = (view) => {
@@ -4772,7 +4773,9 @@ function press(ui, view, p, by, now) {
     return withCommands(ui);
   const holds = holdsOf(ui, now);
   const pressId = ui.nextPressId;
-  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, by };
+  const atBefore = view.lastActions[rowId]?.at ?? null;
+  const lastBefore = lastActionKey(view, rowId);
+  const out = { pressId, rowId, tab: ui.tab, action, isReply, at: now, lastBefore, by };
   const { [rowId]: _error, ...errors } = ui.errors;
   const { [rowId]: _note, ...notes } = ui.notes;
   let next = {
@@ -4785,7 +4788,7 @@ function press(ui, view, p, by, now) {
   };
   if (isReply) {
     const text = p.text.trim();
-    const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false };
+    const sent = { pressId, text, atBefore, isConfirmed: false };
     next = {
       ...next,
       typing: next.typing === rowId ? null : next.typing,
