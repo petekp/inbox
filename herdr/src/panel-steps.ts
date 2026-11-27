@@ -1,4 +1,11 @@
-import { ENTER_FADE_MS, FAINT_OPACITY, faintCloseFades, turnBackFades } from '../../core/view/row-motion'
+import {
+  ENTER_FADE_MS,
+  FAINT_OPACITY,
+  ROW_STATE_MS,
+  enterDelayMs,
+  faintCloseFades,
+  turnBackFades,
+} from '../../core/view/row-motion'
 import type { FadeStep, RowState, RowTrack } from '../../core/view/row-motion'
 import { HEIGHT_SETTLE_MS, HEIGHT_SPRING, springStep } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
@@ -11,7 +18,8 @@ import type { Tracked } from './tracks'
 import type { UnderLine } from './under-line'
 
 /**
- * One step of a turned-back or faintly closing panel's fade, with when it starts and the opacity it starts from. A step
+ * One step of a panel's fade as its row turns back, closes while faint or takes a press, with when it starts and the
+ * opacity it starts from. A step
  * of no length still lasts a frame, so the look draws it before the next step starts.
  */
 export type PanelStep = FadeStep & { at: number; from: number }
@@ -126,12 +134,15 @@ const addsTitleLine = (opened: RowBlock, b: Block): boolean =>
   !b.isLineWaiting &&
   (isStatusUnder(opened) || opened.feedback?.text !== b.feedback.text)
 
-/** Whether a row's block, `b`, brings a status under its buttons that its last form, `was`, did not draw. */
+/**
+ * Whether a row's block, `b`, brings a status under its buttons whose text its last form, `was`, did not draw, wherever
+ * that form drew its status.
+ */
 export const bringsStatusUnder = (was: Block | undefined, b: Block): boolean =>
   b.kind === 'row' &&
   b.feedback !== null &&
   isStatusUnder(b) &&
-  (was?.kind !== 'row' || !isStatusUnder(was) || was.feedback?.text !== b.feedback.text)
+  (was?.kind !== 'row' || was.feedback?.text !== b.feedback.text)
 
 /**
  * The press that steps a row's panel to faint in this draw, from the row as last drawn, `last`, the open form a
@@ -152,16 +163,26 @@ export function panelPressOf(
   if (!isInput) return null
   if (track.state === 'closing')
     return track.since === now && isShown && closing && addsTitleLine(closing, b) ? 'close' : null
-  const isUnderNew = under?.since === now && under.isInput && last?.under?.line.text !== under.line.text
+  const isUnderNew = under?.since === now && under.isInput && bringsStatusUnder(last?.block, b)
+  const isTurnedBack = last?.track.state === 'closing'
 
-  return track.state === 'opening' && isUnderNew && !isShown && last?.isPanelPressed !== true ? 'open' : null
+  return track.state === 'opening' && isUnderNew && !isShown && !isTurnedBack && last?.isPanelPressed !== true
+    ? 'open'
+    : null
 }
 
 /**
  * The panel's fade steps from a press, as `PanelPress` says. A panel that closes fades out from the next draw until its
- * box lets go of its height, `heldUntil`. A panel that opens holds faint as long as any box takes to be nearly open.
+ * box lets go of its height, `heldUntil`. A panel that opens on its `track` holds faint until a panel `height` px tall
+ * would start to fade in, as its space is nearly open, then fades to full by the time the row is open.
  */
-function pressedSteps(now: number, press: 'close' | 'open', heldUntil: number): PanelStep[] {
+function pressedSteps(
+  now: number,
+  press: 'close' | 'open',
+  heldUntil: number,
+  track: RowTrack,
+  height: number | undefined,
+): PanelStep[] {
   const outAt = now + NEXT_FRAME_MS
   if (press === 'close')
     return [
@@ -169,11 +190,14 @@ function pressedSteps(now: number, press: 'close' | 'open', heldUntil: number): 
       { at: outAt, from: FAINT_OPACITY, to: 0, ms: Math.max(0, heldUntil - outAt) },
     ]
 
-  return timed(now, 0, [
-    { to: FAINT_OPACITY, ms: 0 },
-    { to: FAINT_OPACITY, ms: HEIGHT_SETTLE_MS - ENTER_FADE_MS },
-    { to: 1, ms: ENTER_FADE_MS },
-  ])
+  const delay = height === undefined ? HEIGHT_SETTLE_MS - ENTER_FADE_MS : enterDelayMs(height)
+  const fadeAt = Math.max(outAt, track.since + NEXT_FRAME_MS + delay)
+  const openAt = track.since + ROW_STATE_MS.opening
+
+  return [
+    { at: now, from: 0, to: FAINT_OPACITY, ms: 0 },
+    { at: fadeAt, from: FAINT_OPACITY, to: 1, ms: Math.max(0, Math.min(ENTER_FADE_MS, openAt - fadeAt)) },
+  ]
 }
 
 /**
@@ -194,7 +218,7 @@ export function stepPanel(
   const lastSteps = last?.panelSteps ?? null
   const none = { steps: null, isPressed: false }
   if (track.state !== 'opening' && track.state !== 'closing') return none
-  if (press) return { steps: pressedSteps(now, press, heldUntil), isPressed: true }
+  if (press) return { steps: pressedSteps(now, press, heldUntil, track, height), isPressed: true }
   if (isStart && track.state === 'opening' && last?.track.state === 'closing' && last.opened !== null) {
     const from = lastSteps ? opacityAt(lastSteps, now) : 0
     return { steps: stepsFrom(now, last.panelSpace, height ?? 0, from), isPressed: false }

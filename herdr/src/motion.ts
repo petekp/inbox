@@ -42,23 +42,25 @@ const NO_IDS: ReadonlySet<string> = new Set()
 
 /**
  * How a block moves in this draw. `isStart` marks the draw a move began. A block that enters or leaves draws in a box
- * whose height springs and whose content fades over `fadeMs`, once the box is nearly open if `waitsForSpace`: `box` is `open` at the block's
- * measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and
- * `closing` the open form whose panel a closing row keeps drawn. `isPanelWaiting` says an opening row's panel fades in
- * once its space is nearly open, as an entering block's content does, the person's own move included. A row that turns
- * back from a close fades its panel in at once instead, in the steps of `turnBackFades`, and `panelFadeMs` is the
- * length of the step it is in. `isPanelPressed` says a press stepped the panel to faint (`panelPressOf`).
- * `isPanelLeftOut` says the row's content box moves to its measured height less its panel's: through a close once its panel has faded, through all of a close whose panel
- * showed nothing yet, as one that turns an open back before its panel faded in, and in the draw after a close, before
- * the row measures without the panel.
- * `title` is how a row's title draws while it moves between its one-line and wrapped forms, null when it draws one.
- * `isHeightHeld` says a closing row keeps its open height, its title's and its panel's, while its panel fades, and
- * while a leaving block holds its space if the close starts in the draw that block starts to leave. `shutForMs` is how long the box of a block that turned
- * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
- * still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a row's buttons
- * draws as it comes and goes, `status` and `prTail` how a PR block's lines do, and `warning` the stopped warning. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
- * is dismissed, so its box keeps that form's height until the new form measures, and `blockSwap` how its content fades from
- * the one form to the other, as a Status line's parts do as they change. `field` is how the buttons of a row's reply field draw
+ * whose height springs and whose content fades over `fadeMs`, once the box is nearly open if `waitsForSpace`: `box` is
+ * `open` at the block's measured height, `shut` at none, and null at rest, and `isShown` says whether the content fades
+ * to full opacity. `panel` is the opacity of a row's panel, its body and buttons, as it opens or closes, and `closing`
+ * the open form whose panel a closing row keeps drawn. `isPanelWaiting` says an opening row's panel fades in once its
+ * space is nearly open, as an entering block's content does, the person's own move included. A row that turns back from
+ * a close fades its panel in at once instead, in the steps of `turnBackFades`, and `panelFadeMs` is the length of the
+ * step it is in. `isPanelPressed` says a press stepped the panel to faint (`panelPressOf`). `isPanelLeftOut` says the
+ * row's content box moves to its measured height less its panel's: through a close once its panel has faded, through
+ * all of a close whose panel showed nothing yet, as one that turns an open back before its panel faded in, and in the
+ * draw after a close, before the row measures without the panel. `title` is how a row's title draws while it moves
+ * between its one-line and wrapped forms, null when it draws one. `isHeightHeld` says a closing row keeps its open
+ * height, its title's and its panel's, while its panel fades, and while a leaving block holds its space if the close
+ * starts in the draw that block starts to leave. `shutForMs` is how long the box of a block that turned back had been
+ * springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it
+ * left behind are still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a
+ * row's buttons draws as it comes and goes, `status` and `prTail` how a PR block's lines do, and `warning` the stopped
+ * warning. `former` is the block's last form in the draw it changes kind, as a PR's block does when it is dismissed, so
+ * its box keeps that form's height until the new form measures, and `blockSwap` how its content fades from the one form
+ * to the other, as a Status line's parts do as they change. `field` is how the buttons of a row's reply field draw
  * while the field comes, null at rest, and `countLeft` a group heading's count that went.
  */
 export type RowMotion = {

@@ -49,14 +49,15 @@ const withTrunk = (el: Element, trunk: Element | null): Element =>
 
 /**
  * The lines a row draws between its title and its panel, drawn by `lineEl`, for `shown`, the form the row draws, each
- * with the trunk `trunkOf` gives beside it, which fades only with the panel. A
- * closing row keeps the lines of the open form it closes from while its panel holds its height, as it keeps that
- * form's panel, so a line its closed form adds, such as a press's "Sending…" that its buttons held under them, does
- * not push the fading panel down. A kept line its closed form drops fades out with the panel (`withPanel`). When a press
- * closed the row (`isPanelPressed`), a line its closed form adds shows faint at once over the top of the panel, in
- * `over`, which takes no space, so the press shows in its first draw. Once the panel is left out, a line the closed
- * form adds fades in from the next draw, from the opacity it shows, while the row's box shrinks to its closed height, so no line pops in or out. A status that comes or goes after that, as `holdLinesAbove` gives it, moves
- * in its own box, as on a row at rest, so it keeps its fade when the close ends.
+ * with the trunk `trunkOf` gives beside it, which fades only with the panel. A closing row keeps the lines of the open
+ * form it closes from while its panel holds its height, as it keeps that form's panel, so a line its closed form adds,
+ * such as a press's "Sending…" that its buttons held under them, does not push the fading panel down. A kept line its
+ * closed form drops fades out with the panel (`withPanel`). When a press closed the row (`isPanelPressed`), a line its
+ * closed form adds shows faint at once over the top of the panel, in `over`, which takes no space, so the press shows
+ * in its first draw. Once the panel is left out, a line the closed form adds fades in from the next draw, from the
+ * opacity it shows, while the row's box shrinks to its closed height, so no line pops in or out. A status that comes or
+ * goes after that, as `holdLinesAbove` gives it, moves in its own box, as on a row at rest, so it keeps its fade when
+ * the close ends.
  */
 export function titleLineEls(
   r: RowBlock,

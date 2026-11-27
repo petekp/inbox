@@ -252,7 +252,7 @@ export const PRESS_SEEDS: {
     rule: 'jump',
     detail: 'the highlight of row ',
     issue: 1024,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(emptySession(), [
         { is: 'record', args: { kind: 'finding', finding_kind: '', title: 'R', detail: 'D' } },

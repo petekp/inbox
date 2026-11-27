@@ -93,7 +93,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .pl(EDGE + r.depth * NEST)
     .pr(EDGE)
     .py(padOf(r))
-    .when(r.isSelected, e => e.bg(t.selected))
+    .when(r.isSelected && m?.box != null, e => e.bg(t.selected))
     .when(isPressable && !isOpen, e =>
       e
         .hover(s => s.bg(t.hover))

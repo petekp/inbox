@@ -264,7 +264,8 @@ function kindFadeEl(el: Element, b: Block, m: RowMotion, s: BlockSwapMotion, key
  * A block's content box. Its height springs to none while the block's box is shut, and to the content's measured
  * height while it is open or at rest, so a change of content glides as the block enters, leaves or changes. In a draw
  * that takes heights at once, and at rest for content whose height follows the pane's, the box takes its content's
- * height.
+ * height. A selected row's highlight fills the box, so it glides with the box, unless the block enters or leaves, when
+ * the row draws it and it fades with the row.
  */
 function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element, strokes: Element[]): Element {
   const id = b.id
@@ -277,6 +278,7 @@ function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element, st
   const height = m?.box === 'shut' ? 0 : m?.box === 'open' ? open : atRest
 
   return springBox(`fit ${m?.springId ?? id}`, height)
+    .when(isRow && b.isSelected && !m?.box, e => e.bg(p.t.selected))
     .when(strokes.length > 0, e => e.relative())
     .child(isRow ? el : sizeEl(id, p, formKey !== null ? sizeEl(formKey, p, el) : el))
     .children(strokes)

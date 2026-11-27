@@ -1,4 +1,5 @@
 import { CUT_OPACITY } from '../core/view/row-motion'
+import { HEIGHT_SETTLE_MS } from '../core/view/springs'
 import { NEXT_FRAME_MS } from '../herdr/src/block-glide'
 import type { Block } from '../herdr/src/blocks'
 import type { Failure } from './failure'
@@ -61,10 +62,11 @@ const draws = (text: string, word: string) =>
  * The `press-shows` rule: the draw that answers a press shows what the press brought to its block. A press answers in
  * the person's own draw and again in the draw after the host applies its press file. What it brought is the words the
  * view gives the pressed block in its draws after the press, until the person's next input or the next press, that it
- * did not give it in the draw before. When the block draws one at `CUT_OPACITY` or more before the next input and within
- * `WINDOW_MS`, one must start to show within `SHOWS_WITHIN_MS` of the first frame after the press, or the pressed
- * button's label must go. A word drawn at `STARTED` or more within that time, and in every frame after it until its growing
- * box reaches it, also shows the press, as a status under the buttons of a row that is still opening.
+ * did not give it in the draw before. When the block draws one at `CUT_OPACITY` or more before the next input and
+ * within `WINDOW_MS`, one must start to show within `SHOWS_WITHIN_MS` of the first frame after the press, or the
+ * pressed button's label must go. A word drawn at `STARTED` or more within that time, and in every frame after it until
+ * its growing box reaches it, within `HEIGHT_SETTLE_MS`, also shows the press, as a status under the buttons of a row
+ * that is still opening.
  */
 export function pressShowsFailures(run: HerdrRun, shown: ShownText[], at: At): Failure[] {
   const out: Failure[] = []
@@ -109,7 +111,9 @@ export function pressShowsFailures(run: HerdrRun, shown: ShownText[], at: At): F
     const isEarly = (s: ShownText) => s.at >= first && s.at <= first + SHOWS_WITHIN_MS
     const isShown = shown.some(s => isEarly(s) && ofPress(s) && s.opacity >= STARTED && s.share > 0)
     const isDrawnFaint = (s: ShownText) => ofPress(s) && s.opacity >= STARTED
-    const reached = shown.find(s => s.at >= first && isDrawnFaint(s) && s.share > 0)?.at
+    const reached = shown.find(
+      s => s.at >= first && s.at <= first + HEIGHT_SETTLE_MS && isDrawnFaint(s) && s.share > 0,
+    )?.at
     const frames = [...new Set(shown.filter(s => s.at >= first && s.at <= (reached ?? first)).map(s => s.at))]
     const waitsForBox =
       reached !== undefined &&
