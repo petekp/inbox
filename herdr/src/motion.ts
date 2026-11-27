@@ -123,7 +123,7 @@ export function moveRows(
   const copies = new Map([...moved].map(id => [id, copyIdOf(id, now)]))
   const isDrawn = new Set(blocks.map(b => b.id))
   const isFieldBack = (id: string) => !wasDrawn.has(id) || was.rows.get(id)?.track.state === 'leaving'
-  const isFieldPressed = !isFirst && blocks.some(b => b.kind === 'field' && isFieldBack(b.id))
+  const isFieldPressed = !isFirst && isInput && blocks.some(b => b.kind === 'field' && isFieldBack(b.id))
   const startsLeave = was.order.some(id => {
     const old = was.rows.get(id)
     const holdsSpace =
@@ -181,7 +181,7 @@ export function moveRows(
     const isOpen = block.kind === 'row' && isOpenRow(block)
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? (last?.opened ?? null) : null
     const isStart = track.since === now && isMoving(track.state)
-    const isPressed = block.kind === 'field'
+    const isPressed = block.kind === 'field' && isInput
     const glide = glideOf(
       track,
       isStart,

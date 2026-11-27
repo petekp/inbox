@@ -37,8 +37,9 @@ export type Glide = {
  * has ended. A block that enters springs its box open, at `opensAt` when a leaving block holds its space, and its
  * content fades in once the box is nearly open. A block that turns back mid-glide was already in its box, so it moves
  * to its new end from where it is, at once: one that turns back to enter fades in from where its fade is, and if its box
- * had begun to shut or had not yet opened, once the box is nearly open. A field enters as soon as its press, so it never
- * waits for a leaving block, and shows as soon as its box opens. A field that leaves while its box is still short of
+ * had begun to shut or had not yet opened, once the box is nearly open. A field the person's input brings, `isPressed`,
+ * enters in that draw, so it never waits for a leaving block, and shows as soon as its box opens. A field that comes
+ * without their input enters as any block does. A field that leaves while its box is still short of
  * open, measured by `height`, turns back as it came: it hides at once and its box springs shut from where it is, in the
  * same draw, holding no space. Once its box is nearly open, it leaves as any block does. A block the
  * field replaces (`isReplaced`) hides at once

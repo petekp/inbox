@@ -226,7 +226,8 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
     return head + (prStatusHeight(b, m, p) ?? status) + lines
   }
   if (b.kind !== 'row') {
-    const measured = p.heights.get(id)
+    const formKey = m?.blockSwap?.formKey ?? null
+    const measured = p.heights.get(formKey ?? id) ?? (formKey !== null ? m?.blockSwap?.fromHeight : undefined)
 
     return measured === undefined ? former() : measured - panel + warningRise(b, m, p)
   }
@@ -241,12 +242,18 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
 }
 
 /**
- * A block that changes kind, `el`, fading from its former form to its new one: the former form fades out, and the new
- * one shows nothing until it measures, then fades in once its box is nearly at the new height.
+ * A block that changes whole, `el`, fading from its former form to its new one: the former form fades out, and the new
+ * one shows nothing, or shows faint when the person's input brought it, until it measures, then fades in once its box
+ * is nearly at the new height. A block that keeps its kind measures its new form under the swap's `formKey` and glides
+ * from the height the swap kept, since its own key still holds its former form's height.
  */
 function kindFadeEl(el: Element, b: Block, m: RowMotion, s: BlockSwapMotion, key: string, p: Paint): Element {
-  const height = s.isOut ? undefined : fitHeight(b, { ...m, former: null }, p)
-  const from = fitHeight(s.from, undefined, p) ?? height
+  const height = s.isOut
+    ? undefined
+    : s.formKey !== null
+      ? p.heights.get(s.formKey)
+      : fitHeight(b, { ...m, former: null }, p)
+  const from = (s.formKey !== null ? s.fromHeight : fitHeight(s.from, undefined, p)) ?? height
   const delay = height === undefined ? null : enterDelayMs(height, { x: from ?? height, v: 0 })
   const fade = swapPartFade(s, delay)
 
@@ -264,13 +271,14 @@ function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element, st
   const isRow = b.kind === 'row'
   const isAtOnce = isRow ? p.isAtOnce(titleId(id)) || p.isAtOnce(restId(id)) : p.isAtOnce(id)
   const measured = fitHeight(b, m, p)
+  const formKey = m?.blockSwap?.formKey ?? null
   const atRest = isAtOnce || b.kind === 'empty' ? undefined : measured
   const open = isAtOnce ? undefined : (measured ?? 0)
   const height = m?.box === 'shut' ? 0 : m?.box === 'open' ? open : atRest
 
   return springBox(`fit ${m?.springId ?? id}`, height)
     .when(strokes.length > 0, e => e.relative())
-    .child(isRow ? el : sizeEl(id, p, el))
+    .child(isRow ? el : sizeEl(id, p, formKey !== null ? sizeEl(formKey, p, el) : el))
     .children(strokes)
 }
 
