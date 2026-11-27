@@ -11,6 +11,7 @@ import { newRowsOf } from '../../core/view/ui-controller-tabs'
 import { textMark } from '../../core/view/marks'
 import { COLLAPSED_TITLE_LINES } from '../../core/view/row-parts'
 import type { BannerView } from '../../core/view/banners'
+import { HERDR_ASK_BUTTONS } from '../../core/remote/herdr-ask'
 import type { ResultMark } from '../../core/view/rows'
 import { askTreeLines } from './panel-ask-tree'
 import { AGENT, LEAD_CELLS, focusOf, isShut } from './panel-lines'
@@ -51,8 +52,8 @@ const BODY_LINES = 8
 
 const LEAD_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'needsYou', notice: 'key', ask: 'key' }
 
-/** A banner's lines: its lead in bold, in the tone's color, then its body, wrapped inside the box. */
-export function bannerLines(b: BannerView, width: number, s: Style): string[] {
+/** A banner's lines: its lead in bold, in the tone's color, then its body, wrapped inside the box, then `under`. */
+export function bannerLines(b: BannerView, width: number, s: Style, under: string[] = []): string[] {
   const text = b.body ? `${b.lead} ${b.body}` : b.lead
   const lead = (w: string) => s.tone(LEAD_TONES[b.tone], s.bold(w))
   let leadWords = b.lead.split(/\s+/).length
@@ -63,7 +64,24 @@ export function bannerLines(b: BannerView, width: number, s: Style): string[] {
       .join(' '),
   )
 
-  return boxed(lines, b.tone, width, s)
+  return boxed([...lines, ...under], b.tone, width, s)
+}
+
+/**
+ * The Herdr install question's answers as one line of keys, or one line each when they do not fit beside each other
+ * inside a banner `width` wide. Install is underlined and marked, as omp marks a recommended answer.
+ */
+export function herdrAskKeyLines(width: number, s: Style): string[] {
+  const room = width - 4
+  const cells = HERDR_ASK_BUTTONS.map(a => {
+    const face: ButtonFace = { label: a.label, key: a.hotkey, isRecommended: a.isYes, isFollowUp: false }
+    const mark = a.isYes ? labelMark(face, room, s) : ''
+
+    return buttonCell(face, false, s, mark).trimEnd()
+  })
+  const together = cells.join('  ')
+
+  return visibleLength(together) <= room ? [together] : cells
 }
 
 /** Cells an unfocused button's label starts in from its cell's edge: a space, then its key and a space if it has one. */
@@ -250,13 +268,7 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
       ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}`
       : ''
   const paintTitle = (text: string) => {
-    const own = line.isDim
-      ? s.dim(text)
-      : line.titleTone
-        ? s.tone(line.titleTone, s.bold(text))
-        : isOpen
-          ? s.bold(text)
-          : text
+    const own = line.isDim ? s.dim(text) : isOpen ? s.bold(text) : text
     return tint ? s.tint(tint.tone, tint.share, own) : own
   }
   // The lines under a row on the tree draw in the room right of its trunk, or of the space left of a last row's arm.
