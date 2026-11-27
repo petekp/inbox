@@ -111,8 +111,7 @@ export function applyUpdate(ledger: Ledger, u: Update, now: number, turn: number
   for (const item of ledger.items) {
     const outcome = closing.get(item.id)
     const helps = u.helped.filter(h => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps)
-    const isQuestionBackOutcome =
-      outcome !== undefined && item.kind === 'question' && isQuestionBack(outcome, item.options)
+    const isQuestionBackOutcome = outcome !== undefined && item.kind === 'question' && isQuestionBack(outcome)
     const isClosing =
       outcome !== undefined && !isQuestionBackOutcome && (item.from !== 'record' || isPersonsAnswer(outcome))
     if (isClosing) closed.push(closedRecord(item, { outcome, how: 'update' }, now))

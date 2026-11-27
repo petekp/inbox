@@ -28,7 +28,7 @@ describe('items the agent recorded', () => {
     expect(answered.closed.map(c => [c.id, c.outcome, c.how])).toEqual([['i1', 'Redis', 'update']])
   })
 
-  test('a question back closes no question, from a CLOSED line or the close tool, while a named option closes it', () => {
+  test('a question back closes no question, from a CLOSED line or the close tool, while an answer worded as a question closes it', () => {
     const presses = { lastActions: {}, turnStartedAt: null }
     const asked = applyUpdate(
       { ...EMPTY, turn: 1 },
@@ -37,17 +37,18 @@ describe('items the agent recorded', () => {
       1,
     )
     for (const ledger of [recorded(), asked])
-      for (const outcome of ['Why not Memcached?', 'Is that the cheaper one?'])
+      for (const outcome of ['Why not Memcached?', 'How much does Redis cost?'])
         expect(applyUpdate(ledger, parseReply(`CLOSED: i1 | ${outcome}`)!, 2000, 1).items.map(i => i.id)).toEqual([
           'i1',
         ])
+    expect(applyUpdate(asked, parseReply('CLOSED: i1 | Sure, why not?')!, 2000, 1).items).toEqual([])
     const refused = recordClose(CLAUDE_CODE, recorded(), { id: 'i1', answer: 'Why not Memcached?' }, 2000, presses)
     expect(refused.result).toBe(
       'Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.',
     )
     expect(refused.ledger.items.map(i => i.id)).toEqual(['i1'])
     expect(refused.personLine).toBeNull()
-    for (const answer of ['Redis?', 'Redis', 'What you recommended'])
+    for (const answer of ['Redis?', 'Redis', 'What you recommended', 'Is that the cheaper one?', 'Sure, why not?'])
       expect(
         recordClose(CLAUDE_CODE, recorded(), { id: 'i1', answer }, 2000, presses).ledger.closed.map(c => c.outcome),
       ).toEqual([answer])

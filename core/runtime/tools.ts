@@ -313,7 +313,7 @@ export function recordClose(
   if (answer === '' && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, 'Not closed: your record updated this question, and it stays open for the user.')
   const item = ledger.items.find(i => i.id === id)
-  if (item?.kind === 'question' && answer !== '' && isQuestionBack(answer, item.options))
+  if (item?.kind === 'question' && answer !== '' && isQuestionBack(answer))
     return unchanged(
       ledger,
       'Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.',
