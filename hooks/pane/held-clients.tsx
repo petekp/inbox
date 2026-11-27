@@ -15,10 +15,7 @@ export function noteShown(key: string, shown: ShownClient) {
   paneState.shownClients.set(key, shown)
 }
 
-/**
- * Whether row `id` is on its way back from Undo. The ledger reopens the row before the Undo press settles and the
- * controller selects it, so the pane draws the row collapsed in between.
- */
+/** Whether row `id` is on its way back from Undo: an Undo press is out on it, or the controller has yet to select it. */
 export function isComingBack(ui: UiState, id: string): boolean {
   return Object.values(ui.pressesOut).some(p => p.action === 'undo' && p.rowId === id) || ui.restoring?.id === id
 }

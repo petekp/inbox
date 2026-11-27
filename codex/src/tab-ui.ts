@@ -9,7 +9,13 @@ import type { ShownTab } from '../../core/view/tabs'
 import { reduceUi, rowErrorOf } from '../../core/view/ui-controller'
 import { holdsOf } from '../../core/view/ui-controller-reply'
 import { readWakeAt } from '../../core/view/ui-controller-clock'
-import { collapsedOf, isGuardedPress, openRowOf, selectedOf } from '../../core/view/ui-controller-selection'
+import {
+  collapsedOf,
+  isGuardedPress,
+  isGuardedRow,
+  openRowOf,
+  selectedOf,
+} from '../../core/view/ui-controller-selection'
 import type {
   HostFacts,
   InputKind,
@@ -76,6 +82,9 @@ export const errorOf = (id: string): string | null => rowErrorOf(tabState.ui, id
 /** Whether a press by `by` on row `id` falls in the guard of the input that opened it. */
 export const isGuarded = (id: string, by: InputKind): boolean =>
   isGuardedPress(tabState.ui, tabState.ui.tab, id, by, Date.now())
+
+/** Whether row `id` is inside the guard of the click or key that opened it, so its buttons draw dim. */
+export const isRowGuarded = (id: string): boolean => isGuardedRow(tabState.ui, tabState.ui.tab, id, Date.now())
 
 /** One timer: it reads the view again when the view changes on the clock, and otherwise ticks the controller. */
 let wake: { at: number; isRead: boolean; timer: number } | null = null
