@@ -7,7 +7,8 @@ import { heldTabs } from './held-form'
 /**
  * How a tab's count draws. While `opening`, the count came, and its box springs open from no width as it fades in.
  * While `fading`, it went, and it fades out in a box held at its width. While `closing`, that fade has run its course,
- * and the box springs shut. At `rest`, it draws at its own width, or the tab has no count.
+ * and the box springs shut. A count that comes back while it fades out is at rest again, so it fades back in from
+ * where it is. At `rest`, it draws at its own width, or the tab has no count.
  */
 type CountMotion = 'rest' | 'opening' | 'fading' | 'closing'
 
@@ -33,8 +34,12 @@ export class TabCounts {
     for (const t of shown) {
       const was = isFirst ? undefined : this.last.find(l => l.id === t.id)
       if (was?.badge && t.badge === null) this.changes.set(t.id, { is: 'leaving', since: now, badge: was.badge })
-      if (was && was.badge === null && t.badge !== null)
-        this.changes.set(t.id, { is: 'opening', since: now, badge: t.badge })
+      if (was && was.badge === null && t.badge !== null) {
+        const change = this.changes.get(t.id)
+        const isFadingOut = change !== undefined && formAt(change, now)?.count === 'fading'
+        if (isFadingOut) this.changes.delete(t.id)
+        else this.changes.set(t.id, { is: 'opening', since: now, badge: t.badge })
+      }
     }
     this.last = shown
     const ends: number[] = []
