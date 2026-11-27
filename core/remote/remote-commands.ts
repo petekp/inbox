@@ -56,10 +56,15 @@ async function digestText(text: string): Promise<string> {
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
+const ROW_DIGEST_PREFIX = 'row-sha256-v2:'
+
 /** A companion's row version: a SHA-256 of the same `rowFields` a look's `rowVersion` hashes. */
 export async function remoteRowDigest(s: Session, id: string): Promise<string> {
-  return `row-sha256-v2:${await digestText(canonical(remoteFields(s, id)))}`
+  return ROW_DIGEST_PREFIX + (await digestText(canonical(remoteFields(s, id))))
 }
+
+export const isRemoteRowDigest = (value: string): boolean =>
+  value.startsWith(ROW_DIGEST_PREFIX) && /^[a-f0-9]{64}$/.test(value.slice(ROW_DIGEST_PREFIX.length))
 
 async function matchesRow(s: Session, command: RemoteCommand): Promise<boolean> {
   const id = pressRowId(command.press)
