@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T02:25:49.590Z. 410588 characters follow.
+// Built at 2026-11-27T03:35:05.561Z. 411043 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -7121,6 +7121,7 @@ function lineEl2(id, c, top, height, t) {
   const sized = height === null ? el.bottom(0) : el.h(height);
   return c.isDashed ? sized.border_dashed() : sized;
 }
+var PATH = { depth: 0, isDashed: false };
 var pathColumn = (line) => line === null ? [] : [{ depth: 0, isDashed: line === "to-next" }];
 function runsIn(b) {
   const path = "path" in b ? b.path : undefined;
@@ -7242,10 +7243,16 @@ function contentStrokeEls(key, b, top, t, f, passes, feeds) {
     return [abovePart, belowPart];
   };
   const below = (c, name) => lower(c, name, top + LINE_HEIGHT);
-  const pathEls = (side) => side.is === "work" ? pathColumn(side.line).flatMap((c) => whole(c, "path")) : [
-    ...pathColumn(side.above).map((c) => upper(c, "path", top)),
-    ...pathColumn(side.below).map((c) => below(c, "path"))
-  ];
+  const lacking = (part) => (part === "top" ? f.above(0) : f.below(0))(lineEl2(idOf("path", part), PATH, armAt + 1, 0, t));
+  const pathEls = (side) => {
+    if (side.is === "work") {
+      const [line] = pathColumn(side.line);
+      return line ? whole(line, "path") : [lacking("top"), lacking("bottom")];
+    }
+    const [above] = pathColumn(side.above);
+    const [under] = pathColumn(side.below);
+    return [above ? upper(above, "path", top) : lacking("top"), under ? below(under, "path") : lacking("bottom")];
+  };
   const reaches = new Map;
   const reachOf = (c) => {
     const r = reaches.get(c.depth) ?? { isDashed: true, toEnd: false, toArm: false, lowerFrom: null };
@@ -7382,7 +7389,9 @@ var titleHeightOf = (r, p) => {
 };
 function titleEl(r, p, el) {
   const key = titleId(r.id);
-  const height = isOpenRow(r) && p.isAtOnce(key) ? undefined : titleHeightOf(r, p);
+  const isTitleMoving = (p.motion.get(r.id)?.title ?? null) !== null;
+  const isTakenAtOnce = p.isAtOnce(key) && (isOpenRow(r) || !isTitleMoving);
+  const height = isTakenAtOnce ? undefined : titleHeightOf(r, p);
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el));
 }
 function fitHeight(b, m, p) {
