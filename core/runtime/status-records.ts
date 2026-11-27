@@ -184,7 +184,7 @@ export async function askAndWriteStatus<S extends Session>(
   const prompt = statusCallPrompt(input, call.exchange)
   const system = hostStatusSystem(host.names)
   const heards: { kind: CallKind; heard: HeardCall; retry: string | null }[] = []
-  const { answer, last } = await askStatus(
+  const { answer, text, last } = await askStatus(
     async retry => {
       const kind = { call: 'status', reads: call.exchange.kind, isRetry: heards.length > 0 } as const
       const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now())
@@ -197,14 +197,16 @@ export async function askAndWriteStatus<S extends Session>(
   let before: SessionStatus | null = null
   let isWritten = false
   const answeredTurn = (x: S) => (call.exchange.kind === 'reply' ? call.exchange.exchange.turn : x.ledger.turn)
+  const unprompted = heards.filter(h => h.retry === null)
   const noted = (current: S, now: number) => {
     const isCurrent = isStatusCallCurrent(current, appliedAfter)
 
-    return heards.reduce((x, h) => {
-      const isParsed = h.heard.text !== null && parseStatus(h.heard.text) !== null
-      const recorded = withCall(x, h.kind, h.heard, isParsed, now)
+    return unprompted.reduce((x, h, n) => {
+      const heard = n === unprompted.length - 1 ? { ...h.heard, text } : h.heard
+      const isParsed = heard.text !== null && parseStatus(heard.text) !== null
+      const recorded = withCall(x, h.kind, heard, isParsed, now)
 
-      return isCurrent ? withAnswer(recorded, h.kind, h.heard, isParsed, now, answeredTurn(x)) : recorded
+      return isCurrent ? withAnswer(recorded, h.kind, heard, isParsed, now, answeredTurn(x)) : recorded
     }, current)
   }
   const after = await host.update(async current => {

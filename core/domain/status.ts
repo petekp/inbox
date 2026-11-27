@@ -166,22 +166,30 @@ export function withRetryLines(
  * Asks the Status call through `ask`, and once more when the answer holds no operation, as `parseStatus` refuses it.
  * When `retryFor` gives a retry for an answer that parses, the call is asked once more with its prompt, and the lines
  * of the second answer it keeps are added to the first. A call that gives no text is not asked again. Returns the
- * answer to apply, null when none parsed, and the last call's result.
+ * answer to apply, null when none parsed, the text of that answer, and the last call's result.
  */
 export async function askStatus<T extends { text: string | null }>(
   ask: (prompt: string | null) => Promise<T>,
   retryFor: (answer: StatusAnswer, text: string) => StatusRetry | null = () => null,
-): Promise<{ answer: StatusAnswer | null; last: T }> {
+): Promise<{ answer: StatusAnswer | null; text: string | null; last: T }> {
   const first = await ask(null)
-  if (first.text === null) return { answer: null, last: first }
+  if (first.text === null) return { answer: null, text: null, last: first }
   const answer = parseStatus(first.text)
   if (answer === null) {
     const again = await ask(null)
-    return { answer: parseStatus(again.text), last: again }
+    return { answer: parseStatus(again.text), text: again.text, last: again }
   }
   const retry = retryFor(answer, first.text)
-  if (retry === null) return { answer, last: first }
+  if (retry === null) return { answer, text: first.text, last: first }
   const again = await ask(retry.prompt)
+  const kept = (again.text ?? '').split(NL).filter(line => {
+    const one = parseStatus(line)
+    return one?.kind === 'ops' && one.ops.every(retry.keeps)
+  })
 
-  return { answer: withRetryLines(answer, parseStatus(again.text), retry.keeps), last: again }
+  return {
+    answer: withRetryLines(answer, parseStatus(again.text), retry.keeps),
+    text: [first.text, ...kept].join(NL),
+    last: again,
+  }
 }
