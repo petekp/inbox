@@ -21,13 +21,16 @@ const changedParts = (was: StatusLine, b: StatusLine): StatusPart[] =>
  * A block that changes form and has no motion of its own for it. A block that keeps its id and changes kind, as a PR's
  * block does when a fetch finds the PR closed and it becomes a settled row, fades whole, and `parts` is null. A Status
  * line fades only the `parts` that change, as its question's line and button when the question is answered. What
- * changes fades out from `since`, then the new form draws from `inAt`, null until then, and what is new fades in once
- * the block's box is nearly at its new height, from `fromHeight`. `isBack` says the change turned back to the former
- * form while it faded out, so that form fades back in at once.
+ * changes fades out from `since` until `outUntil`, which a part that starts to change meanwhile puts off until it has
+ * faded out too. The new form, `to`, draws from `inAt`, null until then, and what is new fades in once the block's box
+ * is nearly at its new height, from `fromHeight`. `isBack` says the change turned back to the former form while it
+ * faded out, so that form fades back in at once.
  */
 export type BlockSwap = {
   from: Block
+  to: Block
   parts: StatusPart[] | null
+  outUntil: number
   since: number
   inAt: number | null
   isBack: boolean
@@ -46,7 +49,6 @@ export type BlockSwapMotion = {
   inDelayMs: number | null
 }
 
-const outEndsAt = (s: BlockSwap): number => s.since + NEXT_FRAME_MS + LEAVE_FADE_MS
 const endsAt = (s: BlockSwap): number => (s.inAt ?? Infinity) + NEXT_FRAME_MS + HEIGHT_SETTLE_MS + ENTER_FADE_MS
 
 const isFormOf = (s: BlockSwap, b: Block): boolean =>
@@ -57,10 +59,13 @@ const isFormOf = (s: BlockSwap, b: Block): boolean =>
 const partsOf = (was: Block, b: Block): StatusPart[] | null =>
   was.kind !== b.kind ? null : was.kind === 'status' && b.kind === 'status' ? changedParts(was, b) : []
 
+const isOtherForm = (was: Block, b: Block): boolean => partsOf(was, b)?.length !== 0
+
 /**
  * The change of form in this draw, from the last one, the block last drawn, `was`, the block the view gives, `b`, and
  * the height `was` measured. A change starts only for a block whose box neither enters nor leaves, `isBoxAtRest`. A
- * Status line whose changed parts were all empty has nothing to fade out, so its new parts come at once.
+ * Status line whose changed parts were all empty has nothing to fade out, so its new parts come at once. A change in a
+ * draw that follows the person's input, `isInput`, shows at once, as a press's answer does.
  */
 export function stepBlockSwap(
   last: BlockSwap | null,
@@ -68,20 +73,34 @@ export function stepBlockSwap(
   b: Block,
   now: number,
   isBoxAtRest: boolean,
+  isInput: boolean,
   height: number | undefined,
 ): BlockSwap | null {
   const live = last !== null && now < endsAt(last) ? last : null
   if (live?.inAt === null) {
-    if (isFormOf(live, b)) return { ...live, inAt: now, isBack: true }
+    if (isFormOf(live, b)) return { ...live, to: b, inAt: now, isBack: true }
+    if (isInput && isOtherForm(live.to, b)) return null
     const more = live.from.kind === 'status' && b.kind === 'status' ? changedParts(live.from, b) : null
-    const parts = live.parts && more && [...new Set([...live.parts, ...more])]
-    return { ...live, parts, inAt: now >= outEndsAt(live) ? now : null }
+    const added = live.parts && more ? more.filter(part => !live.parts?.includes(part)) : []
+    const parts = live.parts && more && [...live.parts, ...added]
+    const outUntil = added.length > 0 ? Math.max(live.outUntil, now + LEAVE_FADE_MS) : live.outUntil
+    return { ...live, to: b, parts, outUntil, inAt: now >= outUntil ? now : null }
   }
   const parts = was === undefined ? [] : partsOf(was, b)
-  if (was === undefined || !isBoxAtRest || parts?.length === 0) return live
+  if (was === undefined || !isBoxAtRest || isInput || parts?.length === 0) return live
   const isAdded = was.kind === 'status' && parts !== null && parts.every(part => PART_KEYS[part](was) === '')
+  const outUntil = now + NEXT_FRAME_MS + LEAVE_FADE_MS
 
-  return { from: was, parts, since: now, inAt: isAdded ? now : null, isBack: false, fromHeight: height }
+  return {
+    from: was,
+    to: b,
+    parts,
+    since: now,
+    outUntil,
+    inAt: isAdded ? now : null,
+    isBack: false,
+    fromHeight: height,
+  }
 }
 
 /** `b` with the parts of `from` that fade out in place of its own. */
@@ -119,7 +138,7 @@ export const blockSwapMotion = (s: BlockSwap | null, now: number, height: number
   }
 
 export const blockSwapTimes = (s: BlockSwap | null): number[] =>
-  s === null ? [] : s.inAt === null ? [s.since + NEXT_FRAME_MS, outEndsAt(s)] : [s.inAt + NEXT_FRAME_MS, endsAt(s)]
+  s === null ? [] : s.inAt === null ? [s.since + NEXT_FRAME_MS, s.outUntil] : [s.inAt + NEXT_FRAME_MS, endsAt(s)]
 
 /** The fade of what changes in a block that changes form, with `inDelayMs` the wait before what is new fades in, or null. */
 export const swapPartFade = (m: BlockSwapMotion, inDelayMs: number | null) =>

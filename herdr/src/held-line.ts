@@ -101,7 +101,7 @@ const comingRow = (b: RowBlock, l: { cameAt: number; isAgain?: boolean; isSwappe
   ...(l.isSwapped ? { isLineSwapped: true as const } : {}),
 })
 
-/** Whether `f` is another line than `l`: another kind of status, in other words, as a pending open that turns into how it ended does not. */
+/** Whether `f` is another line than `l`: another kind of status, in other words. */
 const isOtherLine = (l: LineAbove, f: Status): boolean => l.kind !== statusKindOf(f) && l.text !== f.text
 
 /** A line that lets go at `now`: it fades out while its space holds, then its space closes. */

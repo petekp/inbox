@@ -309,7 +309,7 @@ export function moveRows(
     const isBoxAtRest = old !== undefined && (old.glide === null || now >= old.glide.endsAt)
     const blockSwap = isFirst
       ? null
-      : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, heightOf(b.id))
+      : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, isInput, heightOf(b.id))
     if (blockSwap) blockSwaps.set(b.id, blockSwap)
     const given = swapDrawn(blockSwap, b)
     const opens = old !== undefined && targetOf(b) === 'open' && targetOf(old.block) !== 'open'
