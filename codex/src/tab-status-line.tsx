@@ -2,7 +2,7 @@ import { Icon, RowActions } from './row-actions'
 import { seenSubjectIds, STATUS_TEXT_LINES } from '../../core/view/status-page'
 import { mergedLine, textLevelOf } from '../../core/view/status-page-parts'
 import { GOAL_KEYS_ID, statusKeyPlan } from '../../core/view/status-keys'
-import { COUNTS_GAP, COUNTS_LABEL, countWords, unfoldedRows } from '../../core/view/status-folds'
+import { COUNTS_GAP, COUNTS_LABEL, countWords, hasTreeDown, unfoldedRows } from '../../core/view/status-folds'
 import { statusRowPads } from '../../core/view/status-gaps'
 import type { StatusKey } from '../../core/view/status-keys'
 import type { StatusRow } from '../../core/view/status-page'
@@ -79,10 +79,10 @@ export function rowPads(rows: StatusRow[], pads = statusRowPads(rows)): RowPad[]
  * `under` is the motion keys of the rows drawn under it, which a done fold's rows, drawn with their list, leave out.
  */
 function subjectConnector(row: Extract<StatusRow, { kind: 'subject' }>, under: string[] | undefined): string | null {
-  if (!row.hasChildren) return null
+  if (!row.hasChildren && row.ask === null) return null
   if (under !== undefined && under.length > 0) return connectorClass(connectorMotion(under))
 
-  return isParentFolded(row.id) ? null : ''
+  return hasTreeDown(row, isParentFolded) ? '' : null
 }
 
 export function StatusLine({
@@ -100,7 +100,6 @@ export function StatusLine({
   if (row.kind === 'subject') {
     const connector = subjectConnector(row, under)
     const merged = row.merged
-    const keys = statusKeyPlan(row).map(statusKey)
 
     return (
       <div
@@ -116,11 +115,6 @@ export function StatusLine({
           <ParentName id={row.id} foldCount={row.foldCount} class={nameClassOf(row, 'plain')}>
             <NameLine name={row.name} stall={row.stall} chevron={chevronOf(row)} />
           </ParentName>
-          {row.waitsOn ? (
-            <div class={`tone-${row.waitsOn.tone} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
-              {row.waitsOn.text}
-            </div>
-          ) : null}
           {row.text ? (
             <div class={`${textLevelOf(row)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
               {row.text}
@@ -134,11 +128,24 @@ export function StatusLine({
             />
           ) : null}
           {row.was ? <WasLine was={row.was} /> : null}
-          {keys.length > 0 ? <RowActions keys={keys} more={[]} reply={null} isBlocked={() => false} /> : null}
         </div>
       </div>
     )
   }
+  if (row.kind === 'ask')
+    return (
+      <div class={row.branch ? `row child branch-${row.branch}` : 'row'} style={rowStyle} {...lineMotion(motion)}>
+        <span class={markClassOf(row.tone, false)}>
+          <MarkGlyph text={row.mark} />
+        </span>
+        <div class="content tight">
+          <div class={`tone-${row.tone} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
+            {row.text}
+          </div>
+          <Keys keys={statusKeyPlan(row)} />
+        </div>
+      </div>
+    )
   if (row.kind === 'child')
     return (
       <div class={row.branch ? `row child branch-${row.branch}` : 'row'} style={rowStyle} {...lineMotion(motion)}>

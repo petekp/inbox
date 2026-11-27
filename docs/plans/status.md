@@ -48,7 +48,7 @@ From `GLOSSARY.md`: SessionStatus, Head, Subject, Child, Stall words, Last look,
 
 - **A fix for one failure causes another.** Pushing the head to follow the work can make it change at every step. Pushing rows to close can close set-aside work. The replays hold both sides at once, on a busy page, so a prompt that does only one half fails.
 - **The page is only as current as the last reply or the last mid-turn call.** While the agent sits idle, the subject rows do not change. A delegate that finishes while its coordinator is idle leaves the child rows, and its subject changes at the coordinator's next turn.
-- **A wrong link draws ◆ on the wrong work.** Code clears ◆ when an ask closes, but it cannot tell whether the link was right.
+- **A wrong link hangs an ask under the wrong work.** Code clears the ask's line when the ask closes, but it cannot tell whether the link was right.
 - **The judge learns its examples.** A judge tuned on a few pages can pass a bad page it has not seen. The second page set, which the judge's author never learns from, checks for this.
 - **Three runs show only a failure that comes back often.** A failure in one run of five can pass. The person's daily use is the main signal, and a failure seen there becomes a case.
 

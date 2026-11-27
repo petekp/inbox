@@ -1,5 +1,5 @@
 import type { Child, Item, Subject } from '../../types'
-import { HELD_MARK, heldMarkOf, IDLE_MARK, SUBJECT_MARKS } from './help'
+import { askMarkOf, heldToneOf, IDLE_MARK, SUBJECT_MARKS, WAITS_ON_YOU_MARK } from './help'
 import type { StatusTone } from './help'
 import { IDLE_AFTER_MS, isOpen } from '../domain/status-limits'
 import { ago, cutAtPhrase, duration } from '../domain/text'
@@ -109,7 +109,7 @@ const DAY_MS = 24 * 60 * 60_000
 
 /**
  * A subject's stall word: how long it has gone without a change, in whole days, once it is open past `IDLE_AFTER_MS` with no
- * child of it running. A subject an open ask holds up has none, since its ◆ or □ mark and its ask say it waits.
+ * child of it running. A subject an open ask holds up has none, since the ask under it says it waits.
  */
 function subjectStall(x: Subject, isHeld: boolean, isWorkRunning: boolean, now: number): StatusStall | null {
   if (isHeld) return null
@@ -169,16 +169,16 @@ function isNamedLikeSubject(x: Subject, under: readonly Child[]): boolean {
 }
 
 /**
- * What the one child that is named like its subject gives the subject's row: a moving mark while it works, the
- * needs-you mark while it is blocked, and ✓ once it finished. An open ask that holds the subject up keeps its own mark
- * and words over a working or finished child. A blocked child's ◆ replaces a task's □, since the delegate waits on a
- * decision. Such a row has no stall word.
+ * What the one child that is named like its subject gives the subject's row: a moving mark while it works, ◆ while it
+ * is blocked, and ✓ once it finished. A subject an open ask holds up keeps its own mark over a working or finished
+ * child. A blocked child's ◆ replaces it, since the delegate waits on the person's answer or approval. Such a row has no
+ * stall word.
  */
 function carriedByChild(
   c: Child,
   isHeld: boolean,
 ): Pick<StatusRow & { kind: 'subject' }, 'mark' | 'tone' | 'isRunning'> | null {
-  if (c.delegateState === 'blocked') return { ...HELD_MARK, isRunning: false }
+  if (c.delegateState === 'blocked') return { ...WAITS_ON_YOU_MARK, isRunning: false }
   if (c.delegateState === 'finished' && !isHeld) return { ...SUBJECT_MARKS.done, isRunning: false }
   if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true }
 
@@ -200,7 +200,7 @@ export function finishedLine(c: Pick<Child, 'startedAt' | 'endedAt' | 'summary'>
 /** A child's row. `text` is the line under its name, which only a finished delegate in a done fold draws. */
 export function childRow(c: Child, branch: StatusBranch | null, depth: number, text: string | null = null): StatusRow {
   const marks =
-    c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? HELD_MARK : CHILD_MARK
+    c.delegateState === 'finished' ? SUBJECT_MARKS.done : c.delegateState === 'blocked' ? WAITS_ON_YOU_MARK : CHILD_MARK
 
   return {
     kind: 'child',
@@ -257,17 +257,43 @@ function askWords(items: readonly Item[], ask: { id: string } | null): string | 
   return words || null
 }
 
-/** The words of the open ask that sets a subject's mark, in the tone of that ask's kind. */
-export type StatusWaitsOn = { text: string; tone: 'needsYou' | 'tasks' }
+/**
+ * The open ask that holds up the subject or milestone above it, hung under that row on its tree line: the ask's mark,
+ * ? for a question or □ for a task, its words on one line in the tone of its kind, then its View button. It is the
+ * first row under the work it holds up and shows while the person has that work folded. `branch` is its place in a
+ * subject's tree, as a child's: `last` while no child row follows it. It is null under a milestone, whose rows join
+ * the milestone's column.
+ */
+export type StatusAskRow = {
+  kind: 'ask'
+  id: string
+  depth: number
+  mark: string
+  tone: 'needsYou' | 'tasks'
+  text: string
+  ask: { id: string; kind: Item['kind'] }
+  branch: StatusBranch | null
+}
 
-const askTone = (ask: { kind: Item['kind'] } | null): StatusWaitsOn['tone'] =>
-  ask?.kind === 'task' ? 'tasks' : 'needsYou'
+/** The ask row under the row `parentId`, for `ask`, or none when the ask has no words. */
+export function askRows(
+  parentId: string,
+  ask: { id: string; kind: Item['kind'] } | null,
+  items: readonly Item[],
+  depth: number,
+  branch: StatusBranch | null,
+): StatusAskRow[] {
+  const text = askWords(items, ask)
+  if (ask === null || text === null) return []
+
+  return [{ kind: 'ask', id: `${parentId}-ask`, depth, ...askMarkOf(ask.kind), text, ask, branch }]
+}
 
 /** What every part of the list reads to place and draw a subject. */
 export type ListContext = {
   isNew: (x: Subject) => boolean
   isHeld: (x: Subject) => boolean
-  /** The kinds of the open asks that hold `x` up. */
+  /** The kinds of the open asks that hold `x` up, which set its mark's tone. */
   holdKindsOf: (x: Subject) => Item['kind'][]
   askSettingMarkOf: (x: Subject) => { id: string; kind: Item['kind'] } | null
   items: readonly Item[]
@@ -299,27 +325,28 @@ export function partRows(
     const isWorkRunning = isRunning || under.some(ch => ch.endedAt === null)
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0]! : null
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null
-    const ask = c.askSettingMarkOf(x)
-    const words = askWords(c.items, ask)
-    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) }
+    const hasChildren = under.length > 0 && lone === null
+    const asks = askRows(x.id, c.askSettingMarkOf(x), c.items, depth + 1, hasChildren ? 'mid' : 'last')
+    const ownMark = isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now)
     rows.push({
       kind: 'subject',
       id: x.id,
       depth,
-      ...(c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status]),
+      ...ownMark,
+      ...(c.isHeld(x) ? { tone: heldToneOf(c.holdKindsOf(x)) } : {}),
       isRunning,
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? textBeyondName(x.name, x.text) : null,
-      stall: waitsOn === null && !carried ? ownStall : null,
-      waitsOn,
+      stall: asks.length === 0 && !carried ? ownStall : null,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0 && lone === null,
+      hasChildren,
       foldCount: lone === null ? under.length : 0,
-      ask: c.askSettingMarkOf(x),
+      ask: asks[0]?.ask ?? null,
     })
+    rows.push(...asks)
     if (lone === null)
       rows.push(
         ...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? 'last' : 'mid', depth + 1)),

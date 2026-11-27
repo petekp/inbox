@@ -56,6 +56,7 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)
     .when(s.isBold, e => e.font_semibold())
     .when(s.nameLevel !== 'plain', e => e.text_color(s.nameLevel === 'faint' ? faintOf(t) : t.muted))
+    .when(s.nameTone !== undefined, e => e.text_color(colorOf(t, s.nameTone ?? 'needsYou')))
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : []
   const toggle = s.fold?.toggle
   const chevron = s.fold
@@ -81,9 +82,6 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         )
         .child(partEl('mark', markEl(s.mark, t)))
         .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
-    )
-    .when(s.waitsOn !== undefined, e =>
-      e.child(partEl('waitsOn', lineEl(s.waitsOn?.text ?? '', colorOf(t, s.waitsOn?.tone ?? 'needsYou')))),
     )
     .child(
       partEl('under', v_flex().children(s.under.map(l => lineEl(l.text, l.level === 'faint' ? faintOf(t) : t.muted)))),

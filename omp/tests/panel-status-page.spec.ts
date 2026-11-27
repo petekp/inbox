@@ -51,8 +51,7 @@ test('the Status page shows the head’s title and description, then its rows in
   const withWas = subjects.filter(r => r.was !== null && r.text !== null)
   expect(withWas.length).toBeGreaterThan(0)
   for (const row of withWas) {
-    const first = at(row.name) + (row.waitsOn ? 2 : 1)
-    if (row.waitsOn) expect(lines[at(row.name) + 1]).toContain(row.waitsOn.text)
+    const first = at(row.name) + 1
     expect(lines[first]).toContain(row.text!)
     expect(lines[first + 1]).toContain(`Prev: ${row.was}`)
   }
@@ -163,15 +162,19 @@ test('no line on the Status page is wider than the panel', () => {
     for (const line of drawn(screen, onPage, width)) expect(cellWidth(strip(line))).toBeLessThanOrEqual(width)
 })
 
-test('on the Status page, a subject an open ask holds up draws what it waits on under its name, with no stall word', () => {
+test('on the Status page, the ask that holds up a subject hangs under its description with the ask’s mark, and the subject has no stall word', () => {
   const screen = noGoalScreen()
-  const held = screen.view.statusPage.rows.flatMap(r =>
-    r.kind === 'subject' && r.waitsOn ? [{ row: r, words: r.waitsOn.text }] : [],
-  )
+  const rows = screen.view.statusPage.rows
+  const held = rows.flatMap((r, n) => {
+    const ask = rows[n + 1]
+    return r.kind === 'subject' && r.text && ask?.kind === 'ask' ? [{ row: r, ask }] : []
+  })
   expect(held.length).toBeGreaterThan(0)
-  const drawnText = text(screen, onPage)
-  for (const { row, words } of held) {
-    expect(drawnText).toContain(words)
+  const lines = text(screen, onPage).split('\n')
+  const at = (s: string) => lines.findIndex(l => l.includes(s))
+  for (const { row, ask } of held) {
+    expect(at(ask.text)).toBeGreaterThan(at(row.text!))
+    expect(lines[at(ask.text)]).toContain(`${ask.mark} ${ask.text}`)
     expect(row.stall).toBeNull()
   }
 })

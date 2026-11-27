@@ -6,7 +6,7 @@ import { statusPage } from '../core/view/status-page'
 import { w, world } from './hooks-world'
 import { PANE } from './hooks-helpers'
 
-test('a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s View key, j and k wrap past its last and first rows, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
+test('a look starts when the Status page shows, the page shows the head and the subjects in place of rows, binds only the held subject’s ask row View key, j and k wrap past its last and first rows, View shows Asks with its ask selected, and an ask names the subject it holds up', async ($, on) => {
   const clock = mock.clock(on, { now: 1_000_000 })
   world($, on, [])
   w.paneState = { isShown: true, isFocused: true }
@@ -33,22 +33,23 @@ test('a look starts when the Status page shows, the page shows the head and the 
     /^Adding a greeting CLI ─+Building a CLI that greets by name$/,
   )
   expect((await pane.find({ key: 'status-s1-name' }))?.text).toBe('Runtime')
-  expect((await pane.find({ key: 'status-s1-waits-on' }))?.text).toBe('Use Node or Python?')
+  expect((await pane.find({ key: 'status-s1-ask-text' }))?.text).toBe('Use Node or Python?')
+  expect((await pane.find({ key: 'status-s1-ask' }))?.text).toContain('?')
   expect((await pane.find({ key: 'status-s1-text' }))?.text).toBe('Node or Python')
-  expect((await pane.find({ key: 'status-s1' }))?.text).toContain('◆')
+  expect((await pane.find({ key: 'status-s1' }))?.text).not.toContain('◆')
   expect((await pane.find({ key: 'status-s2-text' }))?.text).toBe('written')
   expect(await pane.find({ key: 'answer-i1-0' })).toBeUndefined()
   const rowKeys = async () =>
     (await pane.findAll({ type: 'Button' }))
       .map(b => b.key ?? '')
       .filter(k => k.endsWith('-key') && !k.startsWith('tab-'))
-  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
-  expect((await pane.find({ key: 'show-ask-s1' }))?.text).toBe('v: View question')
-  expect(await pane.find({ key: 'show-ask-s2' })).toBeUndefined()
+  expect(await rowKeys()).toEqual(['show-ask-s1-ask-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
+  expect((await pane.find({ key: 'show-ask-s1-ask' }))?.text).toBe('v: View question')
+  expect(await pane.find({ key: 'show-ask-s2-ask' })).toBeUndefined()
   await pane.press({ key: 'next' })
   expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   await pane.press({ key: 'previous' })
-  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-ask-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   await pane.press({ key: 'no-row-d-key' })
   await $.tool.call({
     tool: 'mcp__inbox__record',
@@ -59,9 +60,9 @@ test('a look starts when the Status page shows, the page shows the head and the 
   })
   await clock.settle()
   expect(await pane.find({ key: 'status-head' })).toBeDefined()
-  expect(await rowKeys()).toEqual(['show-ask-s1-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
+  expect(await rowKeys()).toEqual(['show-ask-s1-ask-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
 
-  await pane.press({ key: 'show-ask-s1-key' })
+  await pane.press({ key: 'show-ask-s1-ask-key' })
   await clock.settle()
   expect(lookOf()).toBeNull()
   expect(await pane.find({ key: 'status-head' })).toBeUndefined()
@@ -74,7 +75,7 @@ test('a look starts when the Status page shows, the page shows the head and the 
   await pane.press({ key: 'tab-key-overview' })
   await clock.settle()
   expect((await pane.find({ key: 'status-s1' }))?.text).not.toContain('◆')
-  expect(await pane.find({ key: 'show-ask-s1' })).toBeUndefined()
+  expect(await pane.find({ key: 'show-ask-s1-ask' })).toBeUndefined()
   expect(await rowKeys()).toEqual(['type-goal-goal-key', 'no-row-d-key', 'no-row-x-key', 'last-undo-key'])
   expect((await pane.find({ key: 'type-goal-goal' }))?.text).toBe('n: New')
 })

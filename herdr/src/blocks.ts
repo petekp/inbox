@@ -7,7 +7,7 @@ import type { RowPress } from '../../core/domain/presses'
 import { DOT, shortAgo } from '../../core/view/rows'
 import type { ActionEmphasis, SessionKey } from '../../core/view/rows'
 import type { StatusStall } from '../../core/view/status-page'
-import type { NameLevel, StatusWaitsOn, TextLevel } from '../../core/view/status-page-parts'
+import type { NameLevel, StatusAskRow, TextLevel } from '../../core/view/status-page-parts'
 import type { PathLine } from '../../core/view/status-path'
 import type { EmptyTab, EmptyText } from '../../core/view/empty-tab'
 import type { ShownTab } from '../../core/view/tabs'
@@ -214,9 +214,9 @@ export type StatusLine = {
    * done (✓), else plain.
    */
   nameLevel: NameLevel
+  /** The name's color where it takes a tone in place of its level: an ask's words, in the tone of the ask's kind. */
+  nameTone?: StatusAskRow['tone']
   stall: { text: string; tone: StatusStall['tone'] } | null
-  /** What a subject waits on, in the tone of the ask's kind, as its first line under the name. */
-  waitsOn?: StatusWaitsOn
   /**
    * A Help line's words, in the column that starts after `HELP_COLUMN`. The left column holds the line's key, in `name`, or
    * its mark, or nothing for the version line. Such a line has nothing under it.

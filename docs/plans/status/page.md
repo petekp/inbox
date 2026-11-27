@@ -28,13 +28,13 @@ The marks:
 | ✓ | Delivered | `done` |
 | ✗ | Dropped, with why | `dropped` |
 | A mark of its own, proposed `→` | Filed for later. The session will not do it. | A new closed status, not built yet |
-| ◆ | Held up by an open ask, at least one of them a question. It replaces the status's mark until the ask closes. | Code, from the link |
-| □ | Held up only by open tasks, in the tasks tone. It replaces the status's mark until the tasks close. | Code, from the link |
+| The status's mark in the needs-you tone | Held up by an open ask, at least one of them a question. The question hangs under the row on its own line, marked ?, until it closes. | Code, from the link |
+| The status's mark in the tasks tone | Held up only by open tasks. The task hangs under the row on its own line, marked □, until it closes. | Code, from the link |
 
 More rules of the drawn page, all in `core/view/status-page.ts:statusPage`:
 
 - A subject's text wraps to at most 3 lines.
-- Rows run ◆ and □, ●, ◌, ○, then ✓ and ✗ together, each group newest change first, whether or not the person has seen them.
+- Rows run held work, ●, ◌, ○, then ✓ and ✗ together, each group newest change first, whether or not the person has seen them.
 - At most 2 finished rows show, both changed since the last look. The rest fold into the count. Property 10 asks for more; see "Not built yet".
 - Once the person has seen an open row, it keeps where it stands and drops its Prev line.
 - At most 3 children show under one subject. The rest read "+ 2 more running".

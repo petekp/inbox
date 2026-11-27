@@ -31,10 +31,10 @@ import type { PaneStatusLines } from './pane-status-lines'
 import { GOAL_KEYS_ID, statusKeyPlan, type StatusKeyTarget } from '../../core/view/status-keys'
 import { seenSubjectIds, type StatusRow, WAS_PREFIX } from '../../core/view/status-page'
 import { mergedLine, nameLevelOf, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
-import { countsText, countsUnits, isParentCollapsed, unfoldedRows } from '../../core/view/status-folds'
+import { countsText, countsUnits, hasTreeDown, isParentCollapsed, unfoldedRows } from '../../core/view/status-folds'
 import { foldGlyph } from '../../core/view/fold-chevron'
 import { statusRowPads } from '../../core/view/status-gaps'
-import { levelSpan, SELECTION_BAR, waitsOnSpan } from './terminal-text'
+import { askSpan, levelSpan, SELECTION_BAR } from './terminal-text'
 
 export function paneStatus(
   {
@@ -347,7 +347,6 @@ export function paneStatus(
         r.foldCount > 0
           ? parentName(r, name, r.stall, r.depth, isFolded)
           : statusNameLine(`status-${r.id}-name`, name, r.stall, r.depth),
-        ...(r.waitsOn ? [statusPageText(`status-${r.id}-waits-on`, [waitsOnSpan(r.waitsOn)], r.depth)] : []),
         ...(r.text
           ? [statusPageText(`status-${r.id}-text`, [levelSpan(r.text, textLevelOf(r), isRowSelected)], r.depth)]
           : []),
@@ -369,17 +368,15 @@ export function paneStatus(
               ),
             ]
           : []),
-        ...keysRow({ id: r.id, keys: statusKeyPlan(r) }, statusTextWidth(r.depth)),
       ]
       const line = statusRowLine({
         key: `status-${r.id}`,
         depth: r.depth,
         mark,
         content,
-        tree:
-          r.hasChildren && !isFolded
-            ? statusTree(`status-${r.id}-tree`, 'down', r.depth, pad.padY, pad.padBelow)
-            : null,
+        tree: hasTreeDown(r, isCollapsed)
+          ? statusTree(`status-${r.id}-tree`, 'down', r.depth, pad.padY, pad.padBelow)
+          : null,
         isSelected: isRowSelected,
         ...pad,
       })
@@ -401,6 +398,19 @@ export function paneStatus(
         ...pad,
       })
     }
+    if (r.kind === 'ask')
+      return statusRowLine({
+        key: `status-${r.id}`,
+        depth: r.depth,
+        mark: markGlyph({ text: r.mark, isRunning: false }, r.id, pal.mark[r.tone]),
+        content: [
+          statusPageText(`status-${r.id}-text`, [askSpan(r)], r.depth),
+          ...keysRow({ id: r.id, keys: statusKeyPlan(r) }, statusTextWidth(r.depth)),
+        ],
+        tree: r.branch ? statusTree(`status-${r.id}-tree`, r.branch, r.depth - 1, pad.padY, pad.padBelow) : null,
+        isSelected: look === 'terminal' && r.id === statusKeyRow?.id,
+        ...pad,
+      })
     if (r.kind === 'more')
       return statusRowLine({
         key: `status-${r.id}`,

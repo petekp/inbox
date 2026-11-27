@@ -51,7 +51,7 @@ The goal adds these:
 - A goal set with no press restates neither the goal before it nor a goal the person removed, as `restatesGoal` judges it.
 - The goal shows met exactly while every milestone that is not dropped is done.
 - A milestone that code closes because its linked work closed, with no line of the answer closing it, shows no text.
-- A milestone shows a held mark exactly while it is open and an open ask holds it up, itself or through a subject that serves it: ◆ while an open question does, else □.
+- A milestone draws its mark in a held color exactly while it is open and an open ask holds it up, itself or through a subject that serves it: the needs-you color while an open question does, else the tasks color.
 - A milestone an open ask holds up, itself or through a subject that serves it, is not done.
 - Under Other work, an open subject that changed since the person looked, or that an ask holds up, has its own row.
 - While the goal shows milestones, every subject not under one sits under Other work. While it shows none, a subject not linked yet sits above Other work.

@@ -1,4 +1,4 @@
-import { CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS, TASK_MARK } from '../../core/view/help'
+import { CLOSED_MARKS, NEEDS_YOU_MARKS, TASK_MARK, WAITS_ON_YOU_MARK } from '../../core/view/help'
 import { RUNNING_PULSE_MS } from '../../core/view/timing'
 import { markShape, mutedMarkShape } from '../../core/view/marks'
 import { DARK_TONES, LIGHT_TONES, toneColors, type ToneName } from '../../core/view/tones'
@@ -39,7 +39,7 @@ export function toneSvg(tone: ToneName, mark: string, tint?: string): { source: 
     : tone === 'error'
       ? [LIGHT_TONES.errorMark, DARK_TONES.errorMark]
       : [light, dark]
-  const cells = mark === HELD_MARK.mark || mark === TASK_MARK.mark ? HELD_MARK_CELLS : 1
+  const cells = mark === WAITS_ON_YOU_MARK.mark || mark === TASK_MARK.mark ? WAITS_MARK_CELLS : 1
 
   return { source: markSvg(mark, desktopMarkShape(mark), lightMark, darkMark, cells), cells }
 }
@@ -49,10 +49,10 @@ const TRUNK_MID_PT = DESKTOP_TREE_AT * DESKTOP_CELL_PT
  * ◆ as a square diamond centred on the trunk, as wide as the Svg's left edge leaves it whole. The system font draws ◆
  * wider than a cell, so as text in a one-cell Svg it lost its right half.
  */
-const HELD_MARK_PT = 2 * TRUNK_MID_PT
-const HELD_MARK_CELLS = Math.ceil(HELD_MARK_PT / DESKTOP_CELL_PT)
-function heldMarkShape(midY: number): string {
-  const half = HELD_MARK_PT / 2
+const WAITS_MARK_PT = 2 * TRUNK_MID_PT
+const WAITS_MARK_CELLS = Math.ceil(WAITS_MARK_PT / DESKTOP_CELL_PT)
+function waitsMarkShape(midY: number): string {
+  const half = WAITS_MARK_PT / 2
   const points = [
     [TRUNK_MID_PT, midY - half],
     [TRUNK_MID_PT + half, midY],
@@ -73,7 +73,7 @@ const CHECKBOX_SHIFT_PT = 0.35
  * the same scale, centred on the trunk as ◆ is, since a tree hangs from either.
  */
 export function desktopMarkShape(mark: string): string | null {
-  if (mark === HELD_MARK.mark) return heldMarkShape(DESKTOP_LINE_PT / 2)
+  if (mark === WAITS_ON_YOU_MARK.mark) return waitsMarkShape(DESKTOP_LINE_PT / 2)
   const shape = markShape(mark, DESKTOP_LINE_PT / 2)
   const isBox = mark === NEEDS_YOU_MARKS.task.mark || mark === TASK_MARK.mark
   if (shape === null || !isBox) return shape

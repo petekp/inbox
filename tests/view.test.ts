@@ -341,7 +341,7 @@ const ask = (id: string, turn: number, kind: Item['kind'] = 'question'): Item =>
   from: 'record',
 })
 
-test('the inbox view lists questions and tasks newest reply first, counts each open one as waiting, and marks an open question ◆ and an open task □', () => {
+test('the inbox view lists questions and tasks newest reply first, counts each open one as waiting, and marks an open question ? and an open task □', () => {
   const s = emptySession()
   const v = inboxView({
     ledger: { ...s.ledger, items: [ask('q1', 1), ask('t1', 2, 'task'), ask('q2', 3)] },
@@ -363,8 +363,8 @@ test('the inbox view lists questions and tasks newest reply first, counts each o
   expect(v.needsYou.count).toBe(3)
   expect(v.findings.count).toBe(0)
   expect([...v.needsYou.questions, ...v.needsYou.tasks].map(r => rowMark(r))).toEqual([
-    { text: '◆', isRunning: false, tone: 'needsYou' },
-    { text: '◆', isRunning: false, tone: 'needsYou' },
+    { text: '?', isRunning: false, tone: 'needsYou' },
+    { text: '?', isRunning: false, tone: 'needsYou' },
     { text: '□', isRunning: false, tone: 'tasks' },
   ])
 })

@@ -39,7 +39,7 @@ test('each row tab keeps its own cursor, so switching back returns to the same r
 
 test('after View opens an ask, the guard holds only Enter on that row: the cursor moves, and Enter on the next row presses it', () => {
   const screen = screenOf()
-  const onAsk = keyed(screen, keys(screen, onPage, 'j'), 'enter', NOW).ui
+  const onAsk = keyed(screen, onPage, 'enter', NOW).ui
   expect(cursorOf(onAsk)).toBe('d11')
   const moved = keyed(screen, onAsk, 'down', NOW + 1).ui
   expect(cursorOf(moved)).toBe('d12')
