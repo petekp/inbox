@@ -26,9 +26,9 @@ import { listsOf, pressTitle, shownSettled } from './tab-rows'
 import { stepPrs } from './tab-pr-steps'
 import type { DrawnPrs } from './tab-pr-steps'
 import { stepStatus } from './tab-status-steps'
-import { bannerMotion, lineMotion, stepLines } from './tab-line-steps'
-import type { BannerLine } from './tab-line-steps'
-import { tabBanners } from './tab-chrome'
+import { bannerMotion, countMotion, lineMotion, stepLines } from './tab-line-steps'
+import type { BannerLine, CountLine } from './tab-line-steps'
+import { tabBanners, tabCountLines } from './tab-chrome'
 import type { DrawnStatus } from './tab-status-steps'
 import { markClassOf, MarkGlyph, pulseInStep, ResultMarkView, UndoPlace } from './tab-parts'
 import { TitleTint } from './tab-title-tint'
@@ -52,6 +52,7 @@ export function stepLists(v: View): {
   prs: DrawnPrs | null
   status: DrawnStatus | null
   banners: BannerLine[]
+  counts: CountLine[]
   changed: Set<string>
   drawnAt: number
 } {
@@ -65,6 +66,7 @@ export function stepLists(v: View): {
   const prs = t === 'prs' ? stepPrs(v, now, changed, kept) : null
   const status = t === 'overview' ? stepStatus(v.statusPage, now, changed, kept) : null
   const banners = stepLines(tabBanners(v), tabState.lastBanners ?? undefined, bannerMotion, now, changed, kept)
+  const counts = stepLines(tabCountLines(v), tabState.lastCounts ?? undefined, countMotion, now, changed, kept)
   for (const group of (Object.keys(LIST_OF) as Group[]).filter(g => TAB_OF[g] === t)) {
     const listed = lists[LIST_OF[group]]
     const listedIds = new Set(listed.map(entryId))
@@ -105,7 +107,7 @@ export function stepLists(v: View): {
   for (const id of [...drawnRows.keys()]) if (!kept.has(id)) drawnRows.delete(id)
   for (const id of [...drawnPresses.keys()]) if (!drawnRows.has(id)) drawnPresses.delete(id)
   for (const id of heldAfterIds()) if (!drawnRows.has(id)) dropHeldAfter(id)
-  return { lists, prs, status, banners, changed, drawnAt: now }
+  return { lists, prs, status, banners, counts, changed, drawnAt: now }
 }
 
 /**

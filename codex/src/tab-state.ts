@@ -14,7 +14,7 @@ import type { RowTrack } from '../../core/view/row-motion'
 import type { HostContext } from './tab-host'
 import type { DrawnPrs, OpenPrBlock } from './tab-pr-steps'
 import type { DrawnStatus } from './tab-status-steps'
-import type { BannerLine } from './tab-line-steps'
+import type { BannerLine, CountLine } from './tab-line-steps'
 import type { HerdrAsk } from '../../core/remote/herdr-ask'
 
 export type Tone = 'needsYou' | 'issue' | 'findings' | 'tasks' | 'done' | 'opportunity' | 'error'
@@ -173,6 +173,8 @@ class TabState {
   lastStatus: DrawnStatus | null = null
   /** The banners under the tab bar as the last draw drew them, or null before a view. */
   lastBanners: BannerLine[] | null = null
+  /** The tab counts as the last draw drew them, a count that goes included, or null before a view. */
+  lastCounts: CountLine[] | null = null
   requested = 0
   shown = 0
   activePresses = 0

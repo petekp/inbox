@@ -1,5 +1,6 @@
 import { enteredByPress, stepRow, withLeaving } from '../../core/view/row-motion'
 import type { BannerView } from '../../core/view/banners'
+import type { Tab } from '../../types'
 import type { TextLevel } from '../../core/view/status-page-parts'
 import { drawnRows } from './tab-state'
 import { reducedMotion } from './tab-motion'
@@ -11,6 +12,11 @@ export type TextLine = { id: string; text: string; level?: TextLevel }
 export type BannerLine = { id: string; banner: BannerView }
 
 export const bannerMotion = (kind: string) => `banner-${kind}`
+
+/** A row tab's count, keyed by its tab. It comes when the tab gains a count and goes when the tab loses it. */
+export type CountLine = { id: Tab; badge: string }
+
+export const countMotion = (tab: string) => `count-${tab}`
 
 /**
  * Steps lines through the row states, as `stepLists` does for rows. A line that `lines` brings in after the last draw

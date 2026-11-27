@@ -107,6 +107,7 @@ function draw() {
   tabState.lastPrs = step?.prs ?? null
   tabState.lastStatus = step?.status ?? null
   tabState.lastBanners = step?.banners ?? null
+  tabState.lastCounts = step?.counts ?? null
   const app = () => <App lists={tabState.lastLists} prs={tabState.lastPrs} status={tabState.lastStatus} />
   render(app(), root)
   if (settleAnswers(root)) render(app(), root)
