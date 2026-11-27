@@ -67,26 +67,42 @@ function inputDraws(run: HerdrRun): number[] {
   return [...moves, ...run.pageAt]
 }
 
+/** Whether a frame at a time comes within a frame after a draw that follows the person's input (`inputDraws`). */
+export function isInputDrawOf(run: HerdrRun): (t: number) => boolean {
+  const inputs = inputDraws(run)
+
+  return t => inputs.some(s => s > t - FRAME_MS && s <= t)
+}
+
 /**
  * The `vanish` rule: a text that shows at `CUT_OPACITY` or more of opacity times share does not go in one frame of a
  * draw that does not follow the person's input, while its block still shows. A text changed rather than went when a
  * text new in that frame goes on from it, longer, shorter or after a prefix, when its block shows as many new texts as
- * went, or when a row's mark took another form, as a running mark that turns into a task's drawn checkbox. A text
- * field that opens hides the lines it takes the place of at once.
+ * went, or when a row's mark took another form, as a running mark that turns into a task's drawn checkbox, or the mark
+ * of the form a row leaves that turns into its new form's. A text field that opens hides the lines it takes the place
+ * of at once.
  */
 export function vanishFailures(run: HerdrRun, shown: ShownText[], at: At): Failure[] {
   const out: Failure[] = []
   const frames = new Map<number, ShownText[]>()
   for (const s of shown) frames.set(s.at, [...(frames.get(s.at) ?? []), s])
   const times = [...frames.keys()].sort((a, b) => a - b)
-  const inputs = inputDraws(run)
-  const isInputDraw = (t: number) => inputs.some(s => s > t - FRAME_MS && s <= t)
+  const isInputDraw = isInputDrawOf(run)
   const blockAt = (t: number, block: string) =>
     run.draws.findLast(d => d.at <= t)?.blocks.find(x => x.id === baseOf(block))
   const markAt = (t: number, block: string) => {
     const b = blockAt(t, block)
     return b?.kind === 'row' ? b.mark : null
   }
+  /**
+   * Whether `text` was the row `block`'s mark in a draw up to `t`, as a row that changes form draws its old form's
+   * mark.
+   */
+  const wasMarkOf = (t: number, block: string, text: string) =>
+    run.draws.some(d => {
+      const b = d.at <= t ? d.blocks.find(x => x.id === baseOf(block)) : undefined
+      return b?.kind === 'row' && b.mark !== null && (b.mark.text === text || (b.mark.isRunning && isRunningMark(text)))
+    })
   /** The place a moved block's copy draws in: the place the block drew in the frame before the copy came. */
   const copyPlaces = new Map<string, string>()
   const placeOf = (block: string) => copyPlaces.get(block) ?? block
@@ -116,11 +132,7 @@ export function vanishFailures(run: HerdrRun, shown: ShownText[], at: At): Failu
           placeOf(n.block) === placeOf(s.block) &&
           (n.text.startsWith(stem(s.text)) || n.text.endsWith(s.text) || s.text.startsWith(stem(n.text))),
       )
-    const isMarkSwap = (s: ShownText) => {
-      const last = markAt(was, s.block)
-      const isLastMark = last !== null && (last.text === s.text || (last.isRunning && isRunningMark(s.text)))
-      return isLastMark && markAt(t, s.block) !== null
-    }
+    const isMarkSwap = (s: ShownText) => wasMarkOf(was, s.block, s.text) && markAt(t, s.block) !== null
     const shownIn = (block: string) =>
       new Set(before.filter(s => placeOf(s.block) === block && isShown(s)).map(s => s.text))
     const opensField = (block: string) => comes.some(n => placeOf(n.block) === block && n.text.startsWith(FIELD_TEXT))

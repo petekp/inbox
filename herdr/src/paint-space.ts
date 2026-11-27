@@ -25,7 +25,15 @@ import { warningBoxId, warningRise } from './warning-line'
 import { underId } from './under-line'
 import { shortTitleOf } from './title-cut'
 import { shutTo } from './block-glide'
-import { contentStrokeEls, feedsOf, passingOf, runsIn, spaceColumnEl, strokeFadesOf } from './paint-strokes'
+import {
+  contentStrokeEls,
+  feedsOf,
+  joinedWaits,
+  passingOf,
+  runsIn,
+  spaceColumnEl,
+  strokeFadesOf,
+} from './paint-strokes'
 import { SLIDE_PX, enterDelayMs } from '../../core/view/row-motion'
 import { HEIGHT_SPRING } from '../../core/view/springs'
 import { fadeEl } from './paint-parts'
@@ -155,9 +163,9 @@ export const springBox = (id: string, height: number | undefined): Element =>
   )
 
 /** Content that reports its size under `key`. */
-export const sizeEl = (key: string, p: Paint, el: Element): Element =>
+export const sizeEl = (key: string, p: Paint, el: Element, name = key): Element =>
   div()
-    .id(`size ${key}`)
+    .id(`size ${name}`)
     .flex_none()
     .on_size_change((size, cx) => p.measure(key, size, cx))
     .child(el)
@@ -291,7 +299,7 @@ function contentEl(b: Block, m: RowMotion | undefined, p: Paint, el: Element, st
       e.bg(p.t.selected).when(isRowHoverable(b, m), h => h.hover(s => s.bg(p.t.hover))),
     )
     .when(strokes.length > 0, e => e.relative())
-    .child(isRow ? el : sizeEl(id, p, formKey !== null ? sizeEl(formKey, p, el) : el))
+    .child(isRow ? el : sizeEl(id, p, formKey !== null ? sizeEl(formKey, p, el) : el, m?.springId ?? id))
     .children(strokes)
 }
 
@@ -313,12 +321,14 @@ function spaceEl(s: Space, p: Paint, columns: Element[]): Element {
  * Each block in a box that never shrinks, with its space above it. Every distance that can change is the height of a
  * box whose spring is declared in every draw: the space, and the content. So a move that starts while another glides
  * starts where each box is drawn. A block that enters or leaves also fades its own drawing: out while its space holds,
- * and in once its space is nearly open. Its connectors fade with it, and so does a column that joins it to a block that
- * stays, so no connector shows while what it joins does not (`strokeFadesOf`). A column that runs on past it between
- * two blocks that stay does not fade. The fade and slide go on a box named for the block, since gpui-kit keys a
- * transition to its element's identity, and an element with no id takes its place in the tree as its identity, which
- * shifts as blocks enter or leave above it. The list scrolls in a box of fixed height, and a block that could shrink loses its
- * space, or the end of its text, whenever the list overflows.
+ * and in once its space is nearly open. Its connectors fade with it, and so does a column that joins it to a block
+ * that stays, so no connector shows while what it joins does not (`strokeFadesOf`). A column that runs on past it
+ * between two blocks that stay does not fade. Blocks that enter together and share a column wait as long as the
+ * longest wait among them (`joinedWaits`), so the column never shows beside one still hidden. The fade and slide go on
+ * a box named for the block, since gpui-kit keys a transition to its element's identity, and an element with no id
+ * takes its place in the tree as its identity, which shifts as blocks enter or leave above it. The list scrolls in a
+ * box of fixed height, and a block that could shrink loses its space, or the end of its text, whenever the list
+ * overflows.
  */
 export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element): Element[] {
   const isShut = (b: Block) => p.motion.get(b.id)?.box === 'shut'
@@ -332,12 +342,17 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
   const spaces = spacesOf(blocks, isShut, heldForm)
   const drawn = spaces.map(s => s.block)
   const passing = passingOf(drawn, isShut)
-  const looks = drawn.map(b => {
+  const heights = drawn.map(b => fitHeight(b, p.motion.get(b.id), p))
+  const waits = drawn.map((b, i) => {
     const m = p.motion.get(b.id)
-    const height = fitHeight(b, m, p)
-    const isShown = m?.box === 'open' && m.isShown && height !== undefined
-    const delay = m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : 0
-    const glide = { duration: m?.fadeMs ?? 0, delay, easing: 'ease-out' as const }
+    const height = heights[i]
+    return m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : null
+  })
+  const delays = joinedWaits(drawn, passing, waits)
+  const looks = drawn.map((b, i) => {
+    const m = p.motion.get(b.id)
+    const isShown = m?.box === 'open' && m.isShown && heights[i] !== undefined
+    const glide = { duration: m?.fadeMs ?? 0, delay: delays[i] ?? 0, easing: 'ease-out' as const }
     const fade = (e: Element): Element =>
       m?.box ? fadeEl(e, `box ${m.springId ?? b.id}`, isShown ? 1 : 0, glide, p) : e
     const isMoving = m?.box != null

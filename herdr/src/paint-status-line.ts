@@ -38,8 +38,9 @@ function keyEl(s: StatusLine, does: string, t: Theme): Element {
 const SHOWN_PART = { opacity: 1, duration: LEAVE_FADE_MS, delay: 0 }
 
 /**
- * A Status line. While its parts change, the parts that change fade out, and then the new ones fade in, as
- * `BlockSwap` gives them, and the buttons that fade out take no press. A part that does not change still declares its
+ * A Status line. While its parts change, the parts that change fade out, and then the new ones fade in, as `BlockSwap`
+ * gives them, and the buttons that fade out take no press. A mark that turns into another takes its new form when the
+ * new parts come, with no fade, so the mark's column never shows empty. A part that does not change still declares its
  * fade, since gpui-kit animates only a later change of opacity, and a part that starts to change while the others fade
  * out must fade from where it is.
  */
@@ -50,7 +51,8 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const areButtonsLeaving = swap?.isOut === true && swap.parts?.includes('buttons') === true
   const partEl = (part: StatusPart, el: Element): Element => {
     const name = `status ${part} ${s.id}`
-    const fade = swap?.parts?.includes(part) ? swapPartFade(swap, swap.inDelayMs) : SHOWN_PART
+    const isMarkKept = part === 'mark' && swap?.from.kind === 'status' && swap.from.mark !== null && s.mark !== null
+    const fade = swap?.parts?.includes(part) && !isMarkKept ? swapPartFade(swap, swap.inDelayMs) : SHOWN_PART
     return fadeEl(el.id(name), name, fade.opacity, fade, p)
   }
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)

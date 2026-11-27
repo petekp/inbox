@@ -317,10 +317,8 @@ export function moveRows(
     })
   }
   for (const b of blocks) {
-    const prior = was.rows.get(b.id)
-    const isMovedOn = prior?.track.state === 'entering' && prior.springId?.includes(MOVED_TO) === true
-    const isMoved = moved.has(b.id) && !isMovedOn
-    const old = isMoved ? undefined : prior
+    const isMoved = moved.has(b.id)
+    const old = isMoved ? undefined : was.rows.get(b.id)
     const isBoxAtRest = old !== undefined && (old.glide === null || now >= old.glide.endsAt)
     const blockSwap = isFirst
       ? null

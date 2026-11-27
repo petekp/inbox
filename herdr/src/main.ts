@@ -57,7 +57,7 @@ import { heldAsDrawn } from './held-drawn'
 import type { LinesAbove } from './held-line'
 import { moveRows } from './motion'
 import { NO_TRACKS } from './tracks'
-import { heldTabs } from './held-form'
+import { TabCounts } from './tab-counts'
 import { nextDrawAt } from './wake'
 import { HeldFades } from './held-fades'
 import type { Tracks } from './tracks'
@@ -111,7 +111,7 @@ export default class Inbox extends View {
   input: { rowId: string; state: InputState } | null = null
   queue = new PressQueue(queueIo)
   tracks: Tracks = NO_TRACKS
-  drawnTabs: TabCell[] = []
+  tabCounts = new TabCounts()
   heights = new Heights()
   viewCache = new ViewCache(() => {
     const read = this.readSession
@@ -419,7 +419,7 @@ export default class Inbox extends View {
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion
-    this.drawnTabs = heldTabs(screen.tabs, this.drawnTabs, moved.motion)
+    const tabs = this.tabCounts.draw(screen.tabs, moved.motion, now, isFirst)
     const read = this.readSession && ui.tab === 'overview' && !ui.isHelpShown ? this.readSession : null
     const room = moved.nextAt === null ? paint.listRoom : null
     this.look.status.drew(statusDrawn(this.sessionId, read, screen.view, moved.blocks, this.heights, room), now)
@@ -434,7 +434,7 @@ export default class Inbox extends View {
     const drawn = root
       .when(focus !== null, e => (focus ? e.track_focus(focus) : e))
       .on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx))
-      .child(fitEl('tabs', paint, tabsEl(this.drawnTabs, ui.isHelpShown, paint)))
+      .child(fitEl('tabs', paint, tabsEl(tabs, ui.isHelpShown, paint)))
       .child(
         fitEl(
           'chrome',
@@ -471,7 +471,7 @@ export default class Inbox extends View {
           .child(scrollFadeEl(t, 'bottom'))
           .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
       )
-    const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt])
+    const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt, this.tabCounts.nextAt])
     if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())
 
     return drawn

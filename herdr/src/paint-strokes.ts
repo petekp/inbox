@@ -108,10 +108,41 @@ export function passingOf(blocks: Block[], isShut: (b: Block) => boolean): Colum
   return out
 }
 
+/**
+ * How long each block's content waits before it fades in, from `waits`, each block's own wait, or null for one that does
+ * not wait for its space. Blocks that wait and that a column joins one to the next wait for the longest of them, so they
+ * fade in together, and a short line's connector never shows while the taller line it joins is still hidden.
+ */
+export function joinedWaits(blocks: Block[], passing: Column[][], waits: (number | null)[]): number[] {
+  const depths = (cs: Column[], i: number) => new Set([...cs, ...(passing[i] ?? [])].map(c => c.depth))
+  const isJoined = (i: number) => {
+    const above = blocks[i - 1]
+    const b = blocks[i]
+    if (!above || !b || waits[i - 1] == null || waits[i] == null) return false
+    const ons = depths(runsOn(above), i - 1)
+
+    return [...depths(runsIn(b), i)].some(d => ons.has(d))
+  }
+  const out: number[] = []
+  let start = 0
+  for (let i = 0; i <= blocks.length; i++) {
+    if (i < blocks.length && i > 0 && isJoined(i)) continue
+    const run = waits.slice(start, i).map(w => w ?? 0)
+    const longest = Math.max(0, ...run)
+    out.push(...waits.slice(start, i).map(w => (w === null ? 0 : longest)))
+    start = i
+  }
+
+  return out
+}
+
 /** Gives an element a block's fade, or leaves it as it is. */
 type Fade = (el: Element) => Element
 
 const NO_FADE: Fade = el => el
+
+/** A column of a block that has left, once it no longer runs between two blocks that stay. */
+const HIDDEN: Fade = el => el.opacity(0)
 
 /**
  * The fade each part of a block's strokes takes: its arms take the block's own, and a column, above the block's first
@@ -128,7 +159,8 @@ type StrokeMove = { isMoving: boolean; isGone: boolean }
  * column that ends at a block that enters or leaves fades with that block, in the block's own box and in the box it
  * joins, as a fold's rows fade with the column from their parent. A block that stays and that a column only passes,
  * as a row nested beside it, joins nothing there: the column fades past it as it does at the blocks it joins. A block
- * that has left joins nothing.
+ * that has left joins nothing, and a column of its own that no longer runs between two blocks that stay hides at once,
+ * since its content has already faded, as when the blocks around it take their new forms.
  */
 export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: StrokeMove[], fades: Fade[]): StrokeFades[] {
   const depths = (cs: Column[], i: number) => new Set([...cs, ...(passing[i] ?? [])].map(c => c.depth))
@@ -162,7 +194,8 @@ export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: Strok
         ons[i]?.has(depth) === true &&
         reach(i, depth, -1).stays &&
         reach(i, depth, 1).stays
-      const side = (depth: number) => (isThrough(depth) ? NO_FADE : own)
+      const off = moves[i]?.isGone ? HIDDEN : own
+      const side = (depth: number) => (isThrough(depth) ? NO_FADE : off)
 
       return { own, above: side, below: side }
     }

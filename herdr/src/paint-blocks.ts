@@ -63,7 +63,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .items_start()
     .when(isPressable && isOpen, e => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt)))
     .when(hasTree, e => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk)))
-    .child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark)
+    .child(swap?.isMarkFaded ? swapFadeEl(swap, mark) : mark)
     .child(titleTextEl(r, p, titleColorOf(r, p)))
     .when(shown.age !== null, e => {
       const age = div()

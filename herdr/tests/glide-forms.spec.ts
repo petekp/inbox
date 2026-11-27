@@ -421,10 +421,22 @@ function settleCases(): [string, Step[]][] {
 }
 
 for (const [name, steps] of settleCases())
-  test(`a row that settles or comes back through Undo fades its mark and every line under its title out and in, so none pops or is cut: ${name}`, () => {
+  test(`a row that settles or comes back through Undo swaps its mark with no fade and fades every line under its title out and in, so none pops or is cut: ${name}`, () => {
     const rows = steps.flatMap(([, blocks]) => blocks.flatMap(b => (b.kind === 'row' ? [b.id] : [])))
+    const marksOf = (id: string) =>
+      new Set(
+        steps.flatMap(([, blocks]) =>
+          blocks.flatMap(b => (b.kind === 'row' && b.id === id && b.mark ? [b.mark.text] : [])),
+        ),
+      )
+    const isMarkSwap = (key: string) => {
+      const [id = '', ...text] = key.split(' ')
+      const marks = marksOf(id)
+      return marks.size > 1 && marks.has(text.join(' '))
+    }
     const cuts = framesOf(steps, 900).cuts.filter(c => c.at >= 0)
-    expect({ pops: popsOf(steps, [...new Set(rows)]), cuts }).toEqual({ pops: [], cuts: [] })
+    const pops = popsOf(steps, [...new Set(rows)]).filter(p => !isMarkSwap(p.text))
+    expect({ pops, cuts }).toEqual({ pops: [], cuts: [] })
   })
 
 test('a row that settles while its new form reports its height a frame late shows no line under its title until its box has room for it', () => {

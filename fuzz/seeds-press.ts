@@ -4,6 +4,22 @@ import { UNCONFIRMED, demo, herdr, omp, only } from './seed-cases'
 
 const HOST_ANSWER = "in the draw after the host's answer"
 
+/**
+ * Remove on the Status goal, then a Status answer of `line` while its lines still move, with a host that takes presses
+ * after 200 ms.
+ */
+const removeThenStatus = (line: string): Case => ({
+  ...herdr(only(['d11', 'd14']), [
+    { is: 'click', on: 'tab', n: 4 },
+    { is: 'click', on: 'button', n: 5, label: 'Remove' },
+    { is: 'wait', ms: 285 },
+    { is: 'status', lines: [line] },
+  ]),
+  outcomes: { deliver: ['accepted'], isHeldUntilRun: true, performFails: [false] },
+  takeAfterMs: 200,
+  width: 140,
+})
+
 /** Seeds for presses that do not show what they did at once, and for what the press rules first reached. */
 export const PRESS_SEEDS: {
   name: string
@@ -241,7 +257,7 @@ export const PRESS_SEEDS: {
     rule: 'connector-gap',
     detail: '~to ',
     issue: 1007,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'key', key: 'left' },
       { is: 'click', on: 'button', n: 7, label: 'Remove' },
@@ -276,5 +292,58 @@ export const PRESS_SEEDS: {
       ]),
       outcomes: UNCONFIRMED,
     },
+  },
+  {
+    name: 'the agent closing the only question, as the Asks count goes',
+    rule: 'vanish',
+    detail: 'of tab needsYou',
+    issue: 1031,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'question', ask: 'Ship the beta?', options: ['Ship it', 'No'] } },
+        { is: 'wait', ms: 700 },
+        { is: 'close', n: 0, reason: 'answered' },
+      ]),
+      takeAfterMs: 600,
+    },
+  },
+  {
+    name: 'Undo pressed 25 ms after Remove on the Status goal, in a narrow pane',
+    rule: 'connector-gap',
+    detail: 'in fit m4',
+    issue: 1034,
+    isOpen: true,
+    case: {
+      ...herdr(only([]), [
+        { is: 'click', on: 'tab', n: 4, label: 'overview' },
+        { is: 'click', on: 'button', n: 3, label: 'Remove' },
+        { is: 'wait', ms: 25 },
+        { is: 'click', on: 'button', n: 2, label: 'Undo' },
+      ]),
+      outcomes: {
+        deliver: ['accepted', 'rejected', 'accepted', 'accepted', 'rejected', 'accepted', 'accepted', 'accepted'],
+        isHeldUntilRun: false,
+        performFails: [true, false, false, false, true, true, false, false],
+      },
+      takeAfterMs: 20,
+      width: 80,
+    },
+  },
+  {
+    name: 'a Status answer while Remove on the Status goal moves its lines',
+    rule: 'jump',
+    detail: 'other moved',
+    issue: 1032,
+    isOpen: true,
+    case: removeThenStatus('GOAL: ├─ └─ │ | working Flaky test: 同步失败时是否重试; queued Flaky test'),
+  },
+  {
+    name: 'a Status answer with a new goal while Remove on the Status goal moves its lines',
+    rule: 'vanish',
+    detail: '"Undo" in goal heading',
+    issue: 1032,
+    isOpen: true,
+    case: removeThenStatus('GOAL: Ship the beta | working Flaky test: retry on sync failure; queued Flaky test'),
   },
 ]

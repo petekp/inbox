@@ -1,7 +1,7 @@
 import type { Block } from './blocks'
 
 /** Whether a Status line's place in the tree changes: its depth, its connectors or its path. */
-const isReshaped = (was: Block, b: Block): boolean =>
+export const isReshaped = (was: Block, b: Block): boolean =>
   was.kind === 'status' &&
   b.kind === 'status' &&
   (was.depth !== b.depth || JSON.stringify([was.tree, was.path]) !== JSON.stringify([b.tree, b.path]))
