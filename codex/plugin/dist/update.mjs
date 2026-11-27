@@ -5760,6 +5760,7 @@ var CODEX2 = {
   recordTool: "mcp__inbox__record",
   closeTool: "mcp__inbox__close",
   splitsPlanIntoSubjects: true,
+  heldActRule: null,
   intro: "The inbox plugin shows the user what waits on them: your open questions and the tasks only they can do, and your findings, in the Inbox tab beside the conversation."
 };
 
