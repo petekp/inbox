@@ -1,6 +1,7 @@
 import type { Case } from './case'
 import { CODEX_SEEDS } from './seeds-codex'
-import { MOD_SEEDS, SEEDS } from './seeds'
+import { SEEDS } from './seeds'
+import { MOD_SEEDS } from './seeds-mod'
 
 /**
  * Failures of generated cases that an open issue already describes, by look, rule and what the failure's detail holds:
@@ -30,29 +31,6 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
     ],
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
-  {
-    issue: 997,
-    look: 'herdr',
-    rule: 'vanish',
-    details: [
-      ['the status "', 'came at 0.10'],
-      ['the status "', 'nothing came in its place'],
-      ['the line "', ' thread ', 'came at 0.10'],
-    ],
-  },
-  { issue: 998, look: 'herdr', rule: 'vanish', details: [['the age "', 'nothing came in its place']] },
-  { issue: 999, look: 'herdr', rule: 'vanish', details: [['the line "', '" in pr:', 'nothing came in its place']] },
-  {
-    issue: 1000,
-    look: 'herdr',
-    rule: 'vanish',
-    details: [
-      ['the mark "◆" in s', 'nothing came in its place'],
-      ['the mark "◆" in m', 'nothing came in its place'],
-      ['the button "View question" in ', 'nothing came in its place'],
-      ['what it waits on "', 'nothing came in its place'],
-    ],
-  },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
 ]
 

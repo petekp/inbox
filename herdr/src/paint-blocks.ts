@@ -49,9 +49,9 @@ import { isWarningDrawn, rowWarningEl, warningBoxEl } from './paint-warning'
 function rowEl(r: RowBlock, p: Paint): Element {
   const { t } = p
   const m = p.motion.get(r.id)
-  const isLeaving = m?.state === 'leaving'
+  const isInert = m?.state === 'leaving' || m?.blockSwap?.isOut === true
   const isOpen = isOpenRow(r)
-  const isPressable = r.isSelectable && !isLeaving
+  const isPressable = r.isSelectable && !isInert
   const swap = m?.swap ?? null
   const shown = swap?.from ?? r
   const hasTree = (m?.closing ?? shown).body.some(l => l.tree !== undefined)
@@ -64,27 +64,25 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .when(hasTree, e => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk)))
     .child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark)
     .child(titleTextEl(r, p, titleColorOf(r, p)))
-    .when(r.age !== null, e =>
-      e.child(
-        div()
-          .flex_none()
-          .ml(INSET)
-          .text_color(faintOf(t, r.isSelected ? t.selected : t.background))
-          .child(r.age ?? ''),
-      ),
-    )
+    .when(shown.age !== null, e => {
+      const age = div()
+        .id(`age ${r.id}`)
+        .flex_none()
+        .ml(INSET)
+        .text_color(faintOf(t, r.isSelected ? t.selected : t.background))
+        .child(shown.age ?? '')
+      return e.child(swap?.isAgeSwapped ? swapFadeEl(swap, age) : age)
+    })
   const lines = titleLineEls(
     r,
     shown,
     m,
     p,
     (l, n) => {
-      const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
-      const trunk = panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`))
-      const el = bodyLineEl(l, above, t, r.isSelected).when(hasTree, e => e.child(trunk))
-
+      const el = bodyLineEl(l, partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus'), t, r.isSelected)
       return l.isHidden ? el.opacity(0) : el
     },
+    n => (hasTree ? panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`)) : null),
     el => panelFadeEl(r, m, p, el),
   )
   const titleEnd: RowPart = lines.length > 0 ? 'titleStatus' : 'title'
@@ -109,7 +107,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .id(`form ${r.id}`)
           .when(swap !== null, e => swapFadeEl(swap, e))
           .children(lines)
-          .children(panelEl(r, shown, m, p, isLeaving, titleEnd)),
+          .children(panelEl(r, shown, m, p, isInert, titleEnd)),
       ),
     )
 }
@@ -437,17 +435,18 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
  */
 export function blockEl(b: Block, p: Paint): Element {
   const { t } = p
-  const isLeaving = p.motion.get(b.id)?.state === 'leaving'
+  const m = p.motion.get(b.id)
+  const isLeaving = m?.state === 'leaving'
+  const isInert = isLeaving || (m?.blockSwap?.isOut === true && m.blockSwap.parts === null)
   if (b.kind === 'row') return rowEl(b, p)
   if (b.kind === 'status') return statusEl(b, p, isLeaving)
-  if (b.kind === 'pr') return prEl(b, p, isLeaving)
-  if (b.kind === 'line') return textLineEl(b, p, isLeaving)
-  if (b.kind === 'heading') return headingEl(b, p, isLeaving)
-  if (b.kind === 'empty') return emptyEl(b, p, isLeaving)
-  if (b.kind === 'fold' || b.kind === 'more') return foldEl(b, p, isLeaving)
+  if (b.kind === 'pr') return prEl(b, p, isInert)
+  if (b.kind === 'line') return textLineEl(b, p, isInert)
+  if (b.kind === 'heading') return headingEl(b, p, isInert)
+  if (b.kind === 'empty') return emptyEl(b, p, isInert)
+  if (b.kind === 'fold' || b.kind === 'more') return foldEl(b, p, isInert)
   if (b.kind === 'rule') return ruleEl(b, t)
   if (b.kind === 'field') {
-    const m = p.motion.get(b.id)
     const isShownAsOpening = m?.state === 'entering' && m.box !== null && m.fadeMs === 0
     const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null
     const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0)

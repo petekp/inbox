@@ -1,12 +1,12 @@
 import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
 import type { Case, Ev } from './case'
-import type { ModCase } from './mod-case'
 import { openIds } from './agent'
 import { START } from './gen'
 import type { HostOutcomes } from './host'
 
 const ACCEPTED: HostOutcomes = { deliver: ['accepted'], isHeldUntilRun: false, performFails: [false] }
+const UNCONFIRMED: HostOutcomes = { deliver: ['unconfirmed'], isHeldUntilRun: false, performFails: [false] }
 
 const herdr = (session: Case['session'], events: Ev[]): Case => ({
   look: 'herdr',
@@ -29,8 +29,8 @@ const only = (ids: string[], prs: string[] = []): Case['session'] => ({
     views: Object.fromEntries(Object.entries(demo.prViews.views).filter(([k]) => prs.includes(k))),
   },
 })
-const ESC = String.fromCodePoint(0x1b)
-const BEL = String.fromCodePoint(7)
+export const ESC = String.fromCodePoint(0x1b)
+export const BEL = String.fromCodePoint(7)
 const LONG_URL = `https://example.com/${'path/'.repeat(30)}`
 
 /**
@@ -553,7 +553,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'vanish',
     detail: 'the status "Explaining…" in d14',
     issue: 997,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd14' },
@@ -568,7 +568,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'vanish',
     detail: 'the age "12m" in d13',
     issue: 998,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'wait', ms: 400 },
       { is: 'click', on: 'row', n: 0, label: 'd13' },
@@ -581,7 +581,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'vanish',
     detail: 'the line "Open PR" in pr:acme/visor#33',
     issue: 999,
-    isOpen: true,
+    isOpen: false,
     case: herdr(only([], ['acme/visor#33']), [
       { is: 'click', on: 'tab', n: 3, label: 'prs' },
       { is: 'wait', ms: 25 },
@@ -593,7 +593,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'vanish',
     detail: 'the button "View question" in s3',
     issue: 1000,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only(['d11']), [
         { is: 'click', on: 'button', n: 1, label: 'Flick' },
@@ -603,26 +603,51 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       takeAfterMs: 600,
     },
   },
-]
-
-/** Fixed cases for the mod's terminal and desktop looks, run before each mod pass. */
-export const MOD_SEEDS: { name: string; issue: number; isOpen: boolean; rule: string; case: ModCase }[] = [
   {
-    name: 'a finding whose title holds escapes, in the terminal',
-    rule: 'drawn',
-    issue: 830,
+    name: 'a status that comes while its row closes',
+    rule: 'cut',
+    detail: '"This changed before your press. Nothing was sent."',
+    issue: 1001,
     isOpen: false,
     case: {
-      look: 'terminal',
-      columns: 80,
-      records: [
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'question', ask: 'Yes', options: ['No'] } },
+        { is: 'click', on: 'button', n: 4, label: 'No' },
+        { is: 'key', key: 'w' },
+        { is: 'record', args: { kind: 'question', ask: 'Yes', options: ['Rename the settings page'] } },
+      ]),
+      outcomes: UNCONFIRMED,
+      takeAfterMs: 600,
+      width: 40,
+    },
+  },
+  {
+    name: 'a hidden status between a title and its panel',
+    rule: 'connector-gap',
+    issue: 1002,
+    isOpen: false,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'question', ask: 'Yes', options: ['No'] } },
+        { is: 'click', on: 'button', n: 4, label: 'No' },
+        { is: 'key', key: 'w' },
         {
-          kind: 'finding',
-          finding_kind: 'issue',
-          title: `Red ${ESC}[31mtext${ESC}[0m and ${ESC}]52;c;aGk=${BEL}clipboard`,
-          detail: 'd',
+          is: 'record',
+          args: {
+            kind: 'question',
+            ask: 'Yes',
+            options: ['trailing\n', 'Fix the flaky test', 'Rename the settings page'],
+            context: '✓ Done · Undo … ↵ ❯',
+            steps: ['/repo/x', 'git push', 'https://example.com'],
+          },
         },
-      ],
+        { is: 'wait', ms: 937 },
+        { is: 'key', key: 'w' },
+        { is: 'click', on: 'button', n: 5, label: 'Dismiss' },
+      ]),
+      outcomes: UNCONFIRMED,
+      takeAfterMs: 600,
+      width: 40,
     },
   },
 ]

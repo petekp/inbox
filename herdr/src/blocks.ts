@@ -164,6 +164,10 @@ export type RowBlock = {
   lineCameAt?: number
   /** The status that came took the place of a status of another kind, so its box moves from that line's height. */
   isLineAgain?: true
+  /** The status that came did so in the space of a line that faded out, so it starts hidden while it measures. */
+  isLineSwapped?: true
+  /** The status waits while the line it takes the place of, drawn as `heldLine`, fades out. */
+  isLineWaiting?: true
   /** The lines the open row added to its body, as "All N options" does, and when, while their box still opens. */
   addedLines?: AddedLines
   /** Draws the status under the buttons, where the shared rule puts it above them. See `holdLinesAbove`. */

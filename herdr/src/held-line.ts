@@ -11,9 +11,18 @@ import type { Sizes } from './heights'
 /**
  * A row's status line that the panel draws on its own line between the row's title and its buttons. `aged` keeps a
  * status's age counting while the line is held. `kind` is what the status says, as `statusKindOf` reads it. `isAgain`
- * marks a line that came in place of a line of another kind.
+ * marks a line that came in place of a line of another kind, and `isSwapped` one that came in the space of a line that
+ * faded out, so it starts hidden.
  */
-type LineAbove = { text: string; tone: Tone; kind: string | undefined; aged?: Aged; cameAt?: number; isAgain?: true }
+type LineAbove = {
+  text: string
+  tone: Tone
+  kind: string | undefined
+  aged?: Aged
+  cameAt?: number
+  isAgain?: true
+  isSwapped?: true
+}
 
 type Status = NonNullable<RowBlock['feedback']>
 
@@ -22,22 +31,28 @@ export const statusKindOf = (l: Status): string | undefined =>
   l.source?.is === 'local' ? `local ${l.source.result.state}` : l.source?.is
 
 /**
- * What each row holds above its buttons, by row id: the line it last drew there, or null for a row that drew none
- * there when its press went out, so its status stays under its buttons. `lineless` names the rows that last drew their
- * buttons with no line above them, and `bare` the rows that last drew no buttons and no line after their title.
- * `comes` gives when the status after the title of a row with no buttons came, while its box opens, and `kinds` the
- * kind of the status each such row drew there, as `statusKindOf` reads it. `bodies` gives
- * the keys of each open row's body lines as last drawn, and `added` the lines a row added while their box opens.
+ * When a status came after the title of a row with no buttons, whether it came in place of one of another kind, and
+ * whether it came in the space of a line that faded out.
  */
-/** When a status came after the title of a row with no buttons, and whether it came in place of one of another kind. */
-type Coming = { at: number; isAgain: boolean }
+type Coming = { at: number; isAgain: boolean; isSwapped: boolean }
+
+/**
+ * What each row holds above its buttons, by row id: the line it last drew there, or the line after its title that lets
+ * go, or null for a row that drew none there when its press went out, so its status stays under its buttons.
+ * `lineless` names the rows that last drew their buttons with no line above them, and `bare` the rows that last drew no
+ * buttons and no line after their title. `comes` gives when the status after the title of a row with no buttons came,
+ * while its box opens, `afterTitle` the status each such row drew there, and `goes` the line after its title that
+ * lets go. `bodies` gives the keys of each open
+ * row's body lines as last drawn, and `added` the lines a row added while their box opens.
+ */
 
 export type LinesAbove = {
   held: ReadonlyMap<string, HeldLine<LineAbove> | null>
   lineless: ReadonlySet<string>
   bare: ReadonlySet<string>
   comes: ReadonlyMap<string, Coming>
-  kinds: ReadonlyMap<string, string | undefined>
+  afterTitle: ReadonlyMap<string, LineAbove>
+  goes: ReadonlyMap<string, HeldLine<LineAbove>>
   bodies: ReadonlyMap<string, string[]>
   added: ReadonlyMap<string, AddedLines>
 }
@@ -47,7 +62,8 @@ export const NO_LINES_ABOVE: LinesAbove = {
   lineless: new Set(),
   bare: new Set(),
   comes: new Map(),
-  kinds: new Map(),
+  afterTitle: new Map(),
+  goes: new Map(),
   bodies: new Map(),
   added: new Map(),
 }
@@ -67,20 +83,49 @@ const hasActions = (r: RowBlock): boolean => r.buttons.length > 0 || r.field !==
 export const isStatusUnder = (r: RowBlock): boolean =>
   r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)))
 
-const lineOf = (f: Status, cameAt: number | undefined, isAgain: boolean): LineAbove => ({
+const lineOf = (f: Status, cameAt: number | undefined, isAgain: boolean, isSwapped = false): LineAbove => ({
   text: f.text,
   tone: f.tone,
   kind: statusKindOf(f),
   ...(f.aged ? { aged: f.aged } : {}),
   ...(cameAt === undefined ? {} : { cameAt }),
   ...(isAgain ? { isAgain: true as const } : {}),
+  ...(isSwapped ? { isSwapped: true as const } : {}),
 })
 
 /** The block of a row whose status is still coming above its buttons, as `comingEl` draws it. */
-const comingRow = (b: RowBlock, l: LineAbove & { cameAt: number }): RowBlock => ({
+const comingRow = (b: RowBlock, l: { cameAt: number; isAgain?: boolean; isSwapped?: boolean }): RowBlock => ({
   ...b,
   lineCameAt: l.cameAt,
   ...(l.isAgain ? { isLineAgain: true as const } : {}),
+  ...(l.isSwapped ? { isLineSwapped: true as const } : {}),
+})
+
+/** Whether `f` is another line than `l`: another kind of status, in other words. */
+const isOtherLine = (l: LineAbove, f: Status): boolean => l.kind !== statusKindOf(f) && l.text !== f.text
+
+/** A line that lets go at `now`: it fades out while its space holds, then its space closes. */
+const lettingGo = (line: LineAbove, now: number): HeldLine<LineAbove> => ({
+  line,
+  isFailure: false,
+  isHidden: false,
+  leftAt: now,
+})
+
+/** Whether a held line that let go still shows its words as it fades, so a status that comes waits for its space. */
+const isFadingOut = (k: HeldLine<LineAbove> | null | undefined, now: number): k is HeldLine<LineAbove> =>
+  k?.leftAt != null && !k.isHidden && now < k.leftAt + HOLD_MS
+
+/** Whether a held line that let go is still drawn, as it fades or its space closes. */
+const isLetGo = (k: HeldLine<LineAbove> | null | undefined, now: number): k is HeldLine<LineAbove> =>
+  k?.leftAt != null && now < k.leftAt + HELD_LEAVE_MS
+
+/** A row's held line as the panel draws it, its age counting. */
+const heldLineOf = (d: { line: LineAbove; isHidden: boolean; leftAt: number | null }, now: number) => ({
+  text: d.line.aged ? agedText(d.line.aged, now) : d.line.text,
+  tone: d.line.tone,
+  isHidden: d.isHidden,
+  ...(d.leftAt === null ? {} : { leftAt: d.leftAt }),
 })
 
 const isComing = (l: LineAbove | undefined, now: number): l is LineAbove & { cameAt: number } =>
@@ -157,62 +202,106 @@ function addLines(blocks: Block[], last: LinesAbove, now: number, isAtOnce: bool
  * buttons glide down (`lineCameAt`). So does a status that comes after the title of a row that last drew no buttons and
  * no line there, such as a folded row whose press is not applied, so the row's box grows with it. A row that shows its
  * buttons again, such as one selected, draws its line at rest, as does a draw that takes heights at once, `isAtOnce`.
- * A status that takes the place of a status of another kind above the buttons comes again from that draw, its box
- * moving from the old line's height (`isLineAgain`), as a status under the buttons comes again.
+ *
+ * A status that turns into one of another kind, above the buttons or after the title, lets go of its line, which fades
+ * out while its space holds. The new status waits, then comes in that space, hidden for a draw while its height is
+ * measured, its box moving from the old line's height (`isLineAgain`, `isLineSwapped`). A status after the title
+ * that goes, or that a row which shows its buttons puts under them, lets go the same way, then its space closes. In a
+ * draw that follows the person's input, `isInput`, a status of another kind comes again from that draw instead, so a
+ * press shows at once.
  */
 export function holdLinesAbove(
   blocks: Block[],
   last: LinesAbove,
   now: number,
   isAtOnce = false,
+  isInput = false,
 ): { blocks: Block[]; held: LinesAbove; nextAt: number | null } {
   const next = new Map<string, HeldLine<LineAbove> | null>()
   const lineless = new Set<string>()
   const bare = new Set<string>()
   const comes = new Map<string, Coming>()
-  const kinds = new Map<string, string | undefined>()
+  const afterTitle = new Map<string, LineAbove>()
+  const goes = new Map<string, HeldLine<LineAbove>>()
+  const isEased = !isAtOnce && !isInput
+  const waiting = (b: RowBlock, k: HeldLine<LineAbove>): Block => ({
+    ...b,
+    heldLine: heldLineOf(k, now),
+    isLineWaiting: true,
+  })
   const bareRow = (b: RowBlock, key: string): Block => {
-    if (b.feedback === null || isStatusUnder(b)) return (bare.add(key), b)
-    const kind = statusKindOf(b.feedback)
-    kinds.set(key, kind)
-    const was = last.comes.get(key)
-    const isNew = !isAtOnce && last.bare.has(key)
-    const isNewKind = !isAtOnce && last.kinds.has(key) && last.kinds.get(key) !== kind
-    const come = isNewKind
-      ? { at: now, isAgain: true }
-      : was !== undefined && now < was.at + LINE_COMES_MS
-        ? was
-        : isNew
-          ? { at: now, isAgain: false }
-          : undefined
+    const own = b.feedback !== null && !isStatusUnder(b) ? b.feedback : null
+    const was = last.afterTitle.get(key)
+    const isGone = isEased && was !== undefined && (own === null || isOtherLine(was, own))
+    const going = isGone ? lettingGo(was, now) : last.goes.get(key)
+    const letGo = isLetGo(going, now) ? going : undefined
+    if (letGo && (own === null || isFadingOut(letGo, now))) {
+      goes.set(key, letGo)
+      return own === null ? { ...b, heldLine: heldLineOf(letGo, now) } : waiting(b, letGo)
+    }
+    if (own === null) return (bare.add(key), b)
+    const prior = last.comes.get(key)
+    const isNewKind = !isAtOnce && was !== undefined && isOtherLine(was, own)
+    const come: Coming | undefined = letGo
+      ? { at: now, isAgain: true, isSwapped: true }
+      : isNewKind
+        ? { at: now, isAgain: true, isSwapped: false }
+        : prior !== undefined && now < prior.at + LINE_COMES_MS
+          ? prior
+          : !isAtOnce && last.bare.has(key)
+            ? { at: now, isAgain: false, isSwapped: false }
+            : undefined
+    afterTitle.set(key, lineOf(own, come?.at, come?.isAgain === true))
     if (come === undefined) return b
     comes.set(key, come)
-    return { ...b, lineCameAt: come.at, ...(come.isAgain ? { isLineAgain: true as const } : {}) }
+    return comingRow(b, { cameAt: come.at, isAgain: come.isAgain, isSwapped: come.isSwapped })
   }
   const shown = blocks.map((b): Block => {
     if (b.kind !== 'row') return b
     const key = heldKey(b)
-    const kept = last.held.get(key)
     const f = b.feedback
     const source = f?.source ?? null
     const isUnderWay = isPressUnderWay(source)
     if (!hasActions(b)) {
-      if (kept !== undefined && isUnderWay) next.set(key, kept)
+      const held = last.held.get(key)
+      if (held !== undefined && isUnderWay) next.set(key, held)
       return bareRow(b, key)
     }
     const isUnder = isStatusUnder(b)
+    const ownStatus = f !== null && !isUnder ? f : null
+    const wasAfter = last.afterTitle.get(key)
+    const goingAfter = last.goes.get(key)
+    const held = last.held.get(key)
+    const kept =
+      held !== undefined
+        ? held
+        : !isAtOnce && wasAfter !== undefined && ownStatus === null
+          ? lettingGo(wasAfter, now)
+          : isLetGo(goingAfter, now)
+            ? goingAfter
+            : undefined
     const isStarting = kept === undefined && f !== null && isUnder && (isUnderWay || source?.is === 'queued')
     if (kept === null || isStarting) {
       next.set(key, null)
       lineless.add(key)
       return kept === null && f !== null && !isUnder ? { ...b, isStatusHeldUnder: true } : b
     }
+    const isOtherKind = ownStatus !== null && kept?.leftAt === null && isOtherLine(kept.line, ownStatus)
+    const letGo = isEased && isOtherKind && !kept.isHidden ? lettingGo(kept.line, now) : kept
+    if (ownStatus !== null && isEased && isFadingOut(letGo, now)) {
+      next.set(key, letGo)
+      return waiting(b, letGo)
+    }
+    const isAfterLeave = ownStatus !== null && isEased && isLetGo(kept, now)
     const isNewLine = kept === undefined && !isAtOnce && last.lineless.has(key)
     const isDrawn = kept?.leftAt === null
-    const isNewKind = !isAtOnce && isDrawn && f !== null && !isUnder && kept.line.kind !== statusKindOf(f)
-    const cameAt = isNewLine || isNewKind ? now : isDrawn ? kept.line.cameAt : undefined
-    const isAgain = isNewKind || (isDrawn && !isNewLine && kept.line.isAgain === true)
-    const own = f !== null && !isUnder ? lineOf(f, cameAt, isAgain) : null
+    const isNewKind = !isAtOnce && isDrawn && isOtherKind
+    const isComeAgain = isNewKind || isAfterLeave
+    const isKeptComing = isDrawn && !isNewLine && !isComeAgain
+    const cameAt = isNewLine || isComeAgain ? now : isDrawn ? kept.line.cameAt : undefined
+    const isAgain = isComeAgain || (isKeptComing && kept.line.isAgain === true)
+    const isSwapped = isAfterLeave || (isKeptComing && kept.line.isSwapped === true)
+    const own = ownStatus !== null ? lineOf(ownStatus, cameAt, isAgain, isSwapped) : null
     const isOwnFailure = f !== null && isFailure(f.source)
     const step = stepHeldLine(
       kept,
@@ -224,28 +313,30 @@ export function holdLinesAbove(
     const d = step.drawn
     if (!d && !own) lineless.add(key)
     if (!d) return own && isComing(own, now) ? comingRow(b, own) : b
-    const text = d.line.aged ? agedText(d.line.aged, now) : d.line.text
 
-    return {
-      ...b,
-      heldLine: { text, tone: d.line.tone, isHidden: d.isHidden, ...(d.leftAt === null ? {} : { leftAt: d.leftAt }) },
-    }
+    return { ...b, heldLine: heldLineOf(d, now) }
   })
   const withAdded = addLines(shown, last, now, isAtOnce)
-  const ends = [...next.values()].flatMap(k => {
-    if (isComing(k?.line, now))
-      return [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter(at => at > now)
-    const end = heldLineEndsAt(k, HELD_LEAVE_MS)
-    return end === null || k?.leftAt == null
-      ? []
-      : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter(at => at > now)
-  })
+  const ends = [...next.values()].flatMap(k =>
+    isComing(k?.line, now)
+      ? [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter(at => at > now)
+      : leaveEnds(k, now),
+  )
 
   for (const { at } of comes.values()) ends.push(...[at + NEXT_FRAME_MS, at + LINE_COMES_MS].filter(t => t > now))
+  for (const k of goes.values()) ends.push(...leaveEnds(k, now))
   ends.push(...withAdded.ends)
-  const held = { held: next, lineless, bare, comes, kinds, bodies: withAdded.bodies, added: withAdded.added }
+  const held = { held: next, lineless, bare, comes, afterTitle, goes, bodies: withAdded.bodies, added: withAdded.added }
 
   return { blocks: withAdded.blocks, held, nextAt: ends.length === 0 ? null : Math.min(...ends) }
+}
+
+/** When a held line that let go next changes how it draws: as its fade starts, as its space starts to close, and as it ends. */
+function leaveEnds(k: HeldLine<LineAbove> | null | undefined, now: number): number[] {
+  const end = heldLineEndsAt(k, HELD_LEAVE_MS)
+  return end === null || k?.leftAt == null
+    ? []
+    : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter(at => at > now)
 }
 
 /** Whether a row's held line that let go has faded, so its box shuts. */

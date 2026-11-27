@@ -5,7 +5,10 @@ import { STALL_GAP } from '../../core/view/status-page-parts'
 import type { StatusLine } from './blocks'
 import { EDGE, HELP_COLUMN, HELP_INDENT, LIST_GAP, MARK_W, NEST, colorOf, faintOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
-import { buttonsEl, lineEl, markEl } from './paint-parts'
+import { buttonsEl, fadeEl, lineEl, markEl } from './paint-parts'
+import { LEAVE_FADE_MS } from '../../core/view/row-motion'
+import { swapPartFade } from './block-swap'
+import type { StatusPart } from './block-swap'
 import { foldChevronEl } from './paint-chevron'
 
 /**
@@ -31,9 +34,25 @@ function keyEl(s: StatusLine, does: string, t: Theme): Element {
     .child(div().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does))
 }
 
+/** A part of a Status line that does not change. */
+const SHOWN_PART = { opacity: 1, duration: LEAVE_FADE_MS, delay: 0 }
+
+/**
+ * A Status line. While its parts change, the parts that change fade out, and then the new ones fade in, as
+ * `BlockSwap` gives them, and the buttons that fade out take no press. A part that does not change still declares its
+ * fade, since gpui-kit animates only a later change of opacity, and a part that starts to change while the others fade
+ * out must fade from where it is.
+ */
 export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const { t } = p
   if (s.does !== undefined) return keyEl(s, s.does, t)
+  const swap = p.motion.get(s.id)?.blockSwap ?? null
+  const areButtonsLeaving = swap?.isOut === true && swap.parts?.includes('buttons') === true
+  const partEl = (part: StatusPart, el: Element): Element => {
+    const name = `status ${part} ${s.id}`
+    const fade = swap?.parts?.includes(part) ? swapPartFade(swap, swap.inDelayMs) : SHOWN_PART
+    return fadeEl(el.id(name), name, fade.opacity, fade, p)
+  }
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name)
     .when(s.isBold, e => e.font_semibold())
     .when(s.nameLevel !== 'plain', e => e.text_color(s.nameLevel === 'faint' ? faintOf(t) : t.muted))
@@ -60,12 +79,16 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
         .when(toggle !== undefined && !isInert, e =>
           e.on_click((e, cx) => (toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)),
         )
-        .child(markEl(s.mark, t))
+        .child(partEl('mark', markEl(s.mark, t)))
         .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
     )
     .when(s.waitsOn !== undefined, e =>
-      e.child(lineEl(s.waitsOn?.text ?? '', colorOf(t, s.waitsOn?.tone ?? 'needsYou'))),
+      e.child(partEl('waitsOn', lineEl(s.waitsOn?.text ?? '', colorOf(t, s.waitsOn?.tone ?? 'needsYou')))),
     )
-    .children(s.under.map(l => lineEl(l.text, l.level === 'faint' ? faintOf(t) : t.muted)))
-    .when(s.buttons.length > 0, e => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)))
+    .child(
+      partEl('under', v_flex().children(s.under.map(l => lineEl(l.text, l.level === 'faint' ? faintOf(t) : t.muted)))),
+    )
+    .when(s.buttons.length > 0, e =>
+      e.child(partEl('buttons', buttonsEl(s.buttons, p, MARK_W, isInert || areButtonsLeaving))),
+    )
 }

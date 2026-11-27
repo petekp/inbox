@@ -9,8 +9,8 @@ import type { PanelSpace, PanelStep } from './panel-steps'
 /**
  * A row's change between its settled form and another, as it settles or as Undo brings it back. `from` is the form it
  * leaves, as last drawn, and `fromShown` the opacity its lines under the title showed then: less than 1 when a change
- * before this one had not yet shown them whole. Those lines, and its mark when `isMarkSwapped` says the two forms' marks
- * differ, fade out from the draw after `since`, while the row's height holds, until `showsAt`. `isSettled` is the form
+ * before this one had not yet shown them whole. Those lines, its mark when `isMarkSwapped` says the two forms' marks
+ * differ, and its age when `isAgeSwapped` says their ages differ, fade out from the draw after `since`, while the row's height holds, until `showsAt`. `isSettled` is the form
  * the row goes to. `inAt` is the first draw of that form's lines, which show nothing until their wait ends. It is null
  * until the row draws that form, which a row the selection opens does only once the panel it waits for has faded.
  * `panelShown` is the opacity `from`'s panel showed as the change started, less than 1 while that panel still waited
@@ -23,6 +23,7 @@ export type FormSwap = {
   from: RowBlock
   isSettled: boolean
   isMarkSwapped: boolean
+  isAgeSwapped: boolean
   since: number
   showsAt: number
   inAt: number | null
@@ -33,13 +34,14 @@ export type FormSwap = {
 }
 
 /**
- * How a row's lines under its title, and its mark when the forms' marks differ, draw while it changes form: `from`'s
+ * How a row's lines under its title, and its mark and age when the forms' differ, draw while it changes form: `from`'s
  * in place of its own while they fade out, and the opacity of what it draws, with the length of its fade. `panel` is
  * the opacity `from`'s panel keeps while it fades out with them, when it showed less than whole, and null otherwise.
  */
 export type SwapMotion = {
   from: RowBlock | null
   isMarkSwapped: boolean
+  isAgeSwapped: boolean
   opacity: number
   fadeMs: number
   panel: number | null
@@ -91,12 +93,28 @@ export function stepSwap(
   if (live?.inAt === null) {
     const isBack = isSettledRow(live.from) === isSettled && isOpenRow(live.from) === isOpenRow(b)
     if (isBack) return { ...live, isSettled, showsAt: now, inAt: now - NEXT_FRAME_MS, inWait: { from: now, ms: 0 } }
-    return { ...live, isSettled, isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text }
+    return {
+      ...live,
+      isSettled,
+      isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text,
+      isAgeSwapped: live.isAgeSwapped || live.from.age !== b.age,
+    }
   }
   const isMarkSwapped = was.mark?.text !== b.mark?.text
+  const isAgeSwapped = was.age !== b.age
   const fromShown = live === null ? 1 : linesShownOf(live, now)
   const showsAt = now + NEXT_FRAME_MS + (fromShown > 0 ? LEAVE_FADE_MS : 0)
-  const swap = { from: was, isSettled, isMarkSwapped, since: now, showsAt, inAt: null, fromShown, panelShown }
+  const swap = {
+    from: was,
+    isSettled,
+    isMarkSwapped,
+    isAgeSwapped,
+    since: now,
+    showsAt,
+    inAt: null,
+    fromShown,
+    panelShown,
+  }
 
   return { ...swap, restIn: undefined, inWait: null }
 }
@@ -139,15 +157,22 @@ export const swapWaitsUntil = (s: FormSwap | null): number => (s?.inAt === null 
 
 export function swapMotion(s: FormSwap | null, now: number): SwapMotion | null {
   if (s === null) return null
-  const { from, isMarkSwapped } = s
+  const { from, isMarkSwapped, isAgeSwapped } = s
   if (s.inAt === null) {
     const panel = s.panelShown < 1 ? s.panelShown : null
 
-    return { from, isMarkSwapped, opacity: now === s.since ? s.fromShown : 0, fadeMs: LEAVE_FADE_MS, panel }
+    return {
+      from,
+      isMarkSwapped,
+      isAgeSwapped,
+      opacity: now === s.since ? s.fromShown : 0,
+      fadeMs: LEAVE_FADE_MS,
+      panel,
+    }
   }
   const opacity = s.inWait !== null && now >= s.inWait.from + s.inWait.ms ? 1 : 0
 
-  return { from: null, isMarkSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null }
+  return { from: null, isMarkSwapped, isAgeSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null }
 }
 
 /** The times a form change changes how it draws, so the look draws again then. */

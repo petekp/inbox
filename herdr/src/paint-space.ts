@@ -5,6 +5,8 @@ import { ROW_PAD_PT } from '../../core/view/layout'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import type { RowMotion } from './motion'
+import { swapPartFade } from './block-swap'
+import type { BlockSwapMotion } from './block-swap'
 import {
   CHILD_GAP,
   CONTROL_GAP,
@@ -239,6 +241,19 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
 }
 
 /**
+ * A block that changes kind, `el`, fading from its former form to its new one: the former form fades out, and the new
+ * one shows nothing until it measures, then fades in once its box is nearly at the new height.
+ */
+function kindFadeEl(el: Element, b: Block, m: RowMotion, s: BlockSwapMotion, key: string, p: Paint): Element {
+  const height = s.isOut ? undefined : fitHeight(b, { ...m, former: null }, p)
+  const from = fitHeight(s.from, undefined, p) ?? height
+  const delay = height === undefined ? null : enterDelayMs(height, { x: from ?? height, v: 0 })
+  const fade = swapPartFade(s, delay)
+
+  return fadeEl(el, `kind ${key}`, fade.opacity, fade, p)
+}
+
+/**
  * A block's content box. Its height springs to none while the block's box is shut, and to the content's measured
  * height while it is open or at rest, so a change of content glides as the block enters, leaves or changes. In a draw
  * that takes heights at once, and at rest for content whose height follows the pane's, the box takes its content's
@@ -328,7 +343,9 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     if (!look || !f) throw new Error(`no look for block ${b.id}`)
     const { m, isShown, glide, fade } = look
     const key = m?.springId ?? b.id
-    const drawing = v_flex().id(`drawing ${key}`).child(el(b))
+    const drawn = v_flex().id(`drawing ${key}`).child(el(b))
+    const drawing =
+      m?.blockSwap && m.blockSwap.parts === null && !m.box ? kindFadeEl(drawn, b, m, m.blockSwap, key, p) : drawn
     const slide = (e: Element): Element =>
       m?.box
         ? e

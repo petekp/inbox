@@ -5,7 +5,7 @@ import type { ModCase } from './mod-case'
 import { recordArgs } from './gen'
 import { type Rng, rngOf } from './rng'
 import { knownIssueOf } from './known'
-import { MOD_SEEDS } from './seeds'
+import { MOD_SEEDS } from './seeds-mod'
 import { without } from './shrink'
 
 type ModFailure = { rule: string; detail: string }
@@ -77,7 +77,7 @@ export async function runMod(seed: number, runs: number, out: string): Promise<{
     const verdict =
       failures.length === 0
         ? s.isOpen
-          ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds.ts in the same PR`
+          ? `passes, though its issue is open. Close #${s.issue} and mark the seed closed in fuzz/seeds-mod.ts in the same PR`
           : 'passes'
         : isAsIssueSays
           ? 'fails as its issue says'

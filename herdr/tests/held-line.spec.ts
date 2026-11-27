@@ -44,16 +44,18 @@ function heldAcross(draws: [LastAction | null, number, string, number?][]) {
   })
 }
 
-test('a row keeps its status line above its buttons while the host shows its press under way, until the press ends', () => {
+test('a row keeps its status line above its buttons while the host shows its press under way, then lets it fade out before the outcome comes', () => {
   expect(
     heldAcross([
       [earlierReply, 14, 'd23'],
       [discuss, 14, 'd23'],
       [discuss, 15, 'd23'],
+      [discuss, 15, 'd23', NOW + 200],
     ]),
   ).toEqual([
     ['Still open', null],
     ['Discussing…', 'Still open'],
+    ['✓ Discussed', 'leaving Still open'],
     ['✓ Discussed', null],
   ])
 })
