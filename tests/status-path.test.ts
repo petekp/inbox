@@ -8,6 +8,7 @@ import { statusListRows } from '../core/view/status-folds'
 import type { StatusRow } from '../core/view/status-page'
 import { milestoneRows } from '../core/view/status-folds'
 import { workJoints } from '../core/view/status-path'
+import { goalNotes } from '../core/view/status-goal-page'
 import { goalBlocks } from '../core/domain/status-prompt-goal'
 import { MILESTONE_SUBJECTS } from '../core/domain/status-limits'
 import type { SessionStatus } from '../types'
@@ -87,6 +88,16 @@ test('the goal leaves out its Now line when it only names the milestone that rea
   expect(page(named, 45).goal?.now).toBeNull()
   expect(page(more, 45).goal?.now).toBe('Now: Explaining errors in the import dialog')
   expect(page(setTypedGoal(named, 'Demo on Friday', 50), 55).goal?.now).toBe('Now: Explaining errors')
+})
+
+test('under a goal that replaced another, the Now line comes first and the goal before it last', () => {
+  const named = after(planned(), 'HEAD: Errors | Explaining errors', 40)
+  const replaced = page(setTypedGoal(named, 'Demo on Friday', 50), 55).goal ?? null
+
+  expect(goalNotes(replaced)).toEqual([
+    { kind: 'now', text: 'Now: Explaining errors' },
+    { kind: 'was', text: 'Import ready to demo' },
+  ])
 })
 
 test('a done milestone the person has seen, with its work seen and finished, folds to its name with its work behind the fold', () => {

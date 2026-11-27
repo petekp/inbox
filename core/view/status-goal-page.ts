@@ -72,6 +72,15 @@ export type GoalBlock = {
   milestones: MilestoneRow[]
 }
 
+/** A line under the goal's text: where the work stands now, or the goal this one replaced. */
+type GoalNote = { kind: 'now' | 'was'; text: string }
+
+/** The lines under the goal's text, in the order every look draws them: the Now line, then the goal before it, last. */
+export const goalNotes = (g: GoalBlock | null): GoalNote[] => [
+  ...(g?.now ? [{ kind: 'now' as const, text: g.now }] : []),
+  ...(g?.was ? [{ kind: 'was' as const, text: g.was }] : []),
+]
+
 /** The goal's parts of the Status page. */
 export type GoalParts = {
   goal: GoalBlock | null

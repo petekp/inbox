@@ -20,7 +20,13 @@ import type { Drawn } from './pane-status-tops'
 import type { PaneStatusLines } from './pane-status-lines'
 import type { PaneStatusPath } from './pane-status-path'
 import type { GoalBlock, MilestoneRow } from '../../core/view/status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
+import {
+  GOAL_HEADING,
+  goalNotes,
+  NO_GOAL_TEXT,
+  shownMilestones,
+  suggestedGoalOffer,
+} from '../../core/view/status-goal-page'
 import { paneGoalField, uncounted } from './pane-status-goal-field'
 import { GOAL_KEYS_ID, goalKeyGroups, milestoneKeyPlan, type StatusKey } from '../../core/view/status-keys'
 import type { StatusKeyTarget } from '../../core/view/status-keys'
@@ -391,7 +397,7 @@ export function paneStatusGoal(
   }
   /**
    * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at its right,
-   * then the goal's text with its was and Now lines, or the line that says no goal is set, then the
+   * then the goal's text with its Now and Prev lines, or the line that says no goal is set, then the
    * milestones, each after a blank line. While the person types a goal, the field and its Cancel take the text's place,
    * and the buttons leave the heading. While the suggested goal shows, its offer takes the text's place with its
    * buttons after it, and the heading keeps only Undo.
@@ -422,8 +428,11 @@ export function paneStatusGoal(
         : suggestion !== null
           ? offerLines(suggestion, groups.offer, width)
           : [goalText]),
-      ...(shownGoal?.was ? [muted('goal-was', `${WAS_PREFIX}${shownGoal.was}`, width, WAS_LEVEL)] : []),
-      ...(shownGoal?.now ? [muted('goal-now', shownGoal.now, width)] : []),
+      ...goalNotes(shownGoal).map(n =>
+        n.kind === 'was'
+          ? muted('goal-was', `${WAS_PREFIX}${n.text}`, width, WAS_LEVEL)
+          : muted('goal-now', n.text, width),
+      ),
     ]
     const body = [
       ...goalHeading(g?.label ?? GOAL_HEADING, keys, mark),

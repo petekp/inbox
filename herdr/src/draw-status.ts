@@ -1,7 +1,13 @@
 import type { StatusTone } from '../../core/view/help'
 import { goalKeyGroups, milestoneKeyPlan, statusKeyPlan, GOAL_FIELD, GOAL_KEYS_ID } from '../../core/view/status-keys'
 import type { StatusKey } from '../../core/view/status-keys'
-import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
+import {
+  GOAL_HEADING,
+  goalNotes,
+  NO_GOAL_TEXT,
+  shownMilestones,
+  suggestedGoalOffer,
+} from '../../core/view/status-goal-page'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
 import { foldLevelOf, mergedLine, nameLevelOf, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
@@ -334,8 +340,11 @@ function goalBlocks(page: StatusPage, { isUnfolded, isCollapsed, goalField }: St
         ? suggestion
         : [
             headTitle('goal text', g.text),
-            ...(g.was ? [{ ...headNote('goal was', `${WAS_PREFIX}${g.was}`, 'muted'), level: WAS_LEVEL }] : []),
-            ...(g.now ? [headNote('goal now', g.now, 'muted')] : []),
+            ...goalNotes(g).map(n =>
+              n.kind === 'was'
+                ? { ...headNote('goal was', `${WAS_PREFIX}${n.text}`, 'muted'), level: WAS_LEVEL }
+                : headNote('goal now', n.text, 'muted'),
+            ),
           ]
       ).map(atText)
   const fold = g.milestonesFold
