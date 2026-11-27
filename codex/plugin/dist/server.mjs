@@ -109,8 +109,9 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
+var QUESTION_MARK = { mark: "?", tone: "needsYou" };
 var NEEDS_YOU_MARKS = {
-  question: { mark: "?", tone: "needsYou" },
+  question: QUESTION_MARK,
   task: { mark: "\u2611", tone: "tasks" }
 };
 var SUBJECT_MARKS = {
@@ -120,7 +121,7 @@ var SUBJECT_MARKS = {
   done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var WAITS_ON_YOU_MARK = { mark: "\u25C6", tone: "needsYou" };
 var TASK_MARK = { mark: "\u25A1", tone: "tasks" };
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
@@ -131,7 +132,7 @@ var CLOSED_MARKS = {
   lapsed: SUBJECT_MARKS.dropped.mark
 };
 var PR_MARKS = {
-  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  waiting: { text: WAITS_ON_YOU_MARK.mark, tone: "needsYou" },
   sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
   failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
   cancelled: { text: "\u2298", tone: null }
@@ -152,19 +153,29 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
-  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
-    mark: NEEDS_YOU_MARKS.question.mark,
-    tone: NEEDS_YOU_MARKS.question.tone,
+    mark: QUESTION_MARK.mark,
+    tone: QUESTION_MARK.tone,
     isRunning: false,
-    words: "A question the agent asked you"
+    words: "A question for you. The work it holds up takes its color."
+  },
+  {
+    mark: TASK_MARK.mark,
+    tone: TASK_MARK.tone,
+    isRunning: false,
+    words: "A step only you can do. The work it holds up takes its color."
   },
   {
     mark: NEEDS_YOU_MARKS.task.mark,
     tone: NEEDS_YOU_MARKS.task.tone,
     isRunning: false,
-    words: "A step only you can do"
+    words: "The group of steps only you can do"
+  },
+  {
+    mark: WAITS_ON_YOU_MARK.mark,
+    tone: WAITS_ON_YOU_MARK.tone,
+    isRunning: false,
+    words: "Waits on your answer or approval: a delegate, a permission or a review thread"
   },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
@@ -213,8 +224,6 @@ var NEEDS_YOU_GROUPS = [
   { kind: "question", title: "Questions", list: "questions", mark: NEEDS_YOU_MARKS.question },
   { kind: "task", title: "Tasks", list: "tasks", mark: NEEDS_YOU_MARKS.task }
 ];
-var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
-var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
 var QUEUED_RESULT = { text: SUBJECT_MARKS.queued.mark, isRunning: false };
 
 // ../core/view/session-files.ts

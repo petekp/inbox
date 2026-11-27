@@ -2634,8 +2634,9 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
+var QUESTION_MARK = { mark: "?", tone: "needsYou" };
 var NEEDS_YOU_MARKS = {
-  question: { mark: "?", tone: "needsYou" },
+  question: QUESTION_MARK,
   task: { mark: "\u2611", tone: "tasks" }
 };
 var SUBJECT_MARKS = {
@@ -2645,9 +2646,10 @@ var SUBJECT_MARKS = {
   done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var WAITS_ON_YOU_MARK = { mark: "\u25C6", tone: "needsYou" };
 var TASK_MARK = { mark: "\u25A1", tone: "tasks" };
-var heldMarkOf = (kinds) => kinds.some((k) => k === "question") ? HELD_MARK : TASK_MARK;
+var askMarkOf = (kind) => kind === "task" ? TASK_MARK : QUESTION_MARK;
+var heldToneOf = (kinds) => kinds.some((k) => k === "question") ? QUESTION_MARK.tone : TASK_MARK.tone;
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: "working" };
@@ -2657,7 +2659,7 @@ var CLOSED_MARKS = {
   lapsed: SUBJECT_MARKS.dropped.mark
 };
 var PR_MARKS = {
-  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  waiting: { text: WAITS_ON_YOU_MARK.mark, tone: "needsYou" },
   sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
   failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
   cancelled: { text: "\u2298", tone: null }
@@ -2678,19 +2680,29 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
-  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
-    mark: NEEDS_YOU_MARKS.question.mark,
-    tone: NEEDS_YOU_MARKS.question.tone,
+    mark: QUESTION_MARK.mark,
+    tone: QUESTION_MARK.tone,
     isRunning: false,
-    words: "A question the agent asked you"
+    words: "A question for you. The work it holds up takes its color."
+  },
+  {
+    mark: TASK_MARK.mark,
+    tone: TASK_MARK.tone,
+    isRunning: false,
+    words: "A step only you can do. The work it holds up takes its color."
   },
   {
     mark: NEEDS_YOU_MARKS.task.mark,
     tone: NEEDS_YOU_MARKS.task.tone,
     isRunning: false,
-    words: "A step only you can do"
+    words: "The group of steps only you can do"
+  },
+  {
+    mark: WAITS_ON_YOU_MARK.mark,
+    tone: WAITS_ON_YOU_MARK.tone,
+    isRunning: false,
+    words: "Waits on your answer or approval: a delegate, a permission or a review thread"
   },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
@@ -2856,7 +2868,7 @@ function isNamedLikeSubject(x, under) {
 }
 function carriedByChild(c, isHeld) {
   if (c.delegateState === "blocked")
-    return { ...HELD_MARK, isRunning: false };
+    return { ...WAITS_ON_YOU_MARK, isRunning: false };
   if (c.delegateState === "finished" && !isHeld)
     return { ...SUBJECT_MARKS.done, isRunning: false };
   if (isChildWorking(c) && !isHeld)
@@ -2872,7 +2884,7 @@ function finishedLine(c, now) {
   return `Ran ${duration(c.endedAt - c.startedAt)}, finished ${finished}`;
 }
 function childRow(c, branch, depth, text = null) {
-  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
+  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? WAITS_ON_YOU_MARK : CHILD_MARK;
   return {
     kind: "child",
     id: c.id,
@@ -2897,10 +2909,17 @@ function unplacedChildren(children, c) {
   return { loose: unshown.filter((l) => !isFoldedFinished(l)), settled };
 }
 function askWords(items, ask) {
-  const words = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
-  return words || null;
+  const item = items.find((i) => i.id === ask?.id);
+  if (item === undefined)
+    return null;
+  return item.ask.replace(/\s+/g, " ").trim() || item.label?.trim() || (item.kind === "task" ? "Open task" : "Open question");
 }
-var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
+function askRows(parentId, ask, items, depth, branch) {
+  const text = askWords(items, ask);
+  if (ask === null || text === null)
+    return [];
+  return [{ kind: "ask", id: `${parentId}-ask`, depth, ...askMarkOf(ask.kind), text, ask, branch }];
+}
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -2915,27 +2934,28 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const ask = c.askSettingMarkOf(x);
-    const words = askWords(c.items, ask);
-    const waitsOn = words === null ? null : { text: words, tone: askTone(ask) };
+    const hasChildren = under.length > 0 && lone === null;
+    const asks = askRows(x.id, c.askSettingMarkOf(x), c.items, depth + 1, hasChildren ? "mid" : "last");
+    const ownMark = isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status];
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
-      ...c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...ownMark,
+      ...c.isHeld(x) ? { tone: heldToneOf(c.holdKindsOf(x)) } : {},
       isRunning,
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? textBeyondName(x.name, x.text) : null,
-      stall: waitsOn === null && !carried ? ownStall : null,
-      waitsOn,
+      stall: asks.length === 0 && !carried ? ownStall : null,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0 && lone === null,
+      hasChildren,
       foldCount: lone === null ? under.length : 0,
-      ask: c.askSettingMarkOf(x)
+      ask: asks[0]?.ask ?? null
     });
+    rows.push(...asks);
     if (lone === null)
       rows.push(...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1)));
     const hidden = under.slice(CHILD_ROWS);
@@ -2980,20 +3000,23 @@ var parentChevron = (isCollapsed, foldCount) => isCollapsed ? `${foldGlyph(false
 var NONE_COLLAPSED = () => false;
 function withoutCollapsed(rows, isCollapsed) {
   let hiddenBelow = null;
-  return rows.filter((r) => {
+  return rows.flatMap((r) => {
     if (hiddenBelow !== null && r.depth > hiddenBelow)
-      return false;
+      return r.kind === "ask" && r.depth === hiddenBelow + 1 ? [{ ...r, branch: "last" }] : [];
     hiddenBelow = r.kind === "subject" && isParentCollapsed(r, isCollapsed) ? r.depth : null;
-    return true;
+    return [r];
   });
 }
+var askRowsOf = (rows) => rows.filter((r) => r.kind === "ask" && r.depth === 1);
+var hasTreeDown = (r, isCollapsed) => r.ask !== null || r.hasChildren && !isParentCollapsed(r, isCollapsed);
 function unfoldedRows(rows, isUnfolded, isCollapsed = NONE_COLLAPSED) {
   return withoutCollapsed(rows, isCollapsed).flatMap((r) => (r.kind === "done-fold" || r.kind === "counts") && isUnfolded(r.id) ? [r, ...r.rows] : [r]);
 }
 var isParentCollapsed = (p, isCollapsed) => p.foldCount > 0 && isCollapsed(p.id);
 function milestoneRows(m, isUnfolded, isCollapsed = NONE_COLLAPSED) {
-  const isShut = m.foldId !== null && !isUnfolded(m.foldId) || isParentCollapsed(m, isCollapsed);
-  return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed);
+  if (m.foldId !== null && !isUnfolded(m.foldId))
+    return [];
+  return isParentCollapsed(m, isCollapsed) ? askRowsOf(m.rows) : unfoldedRows(m.rows, isUnfolded, isCollapsed);
 }
 var listRows = (milestones, rows) => [
   ...milestones.flatMap((m) => [...m.subject ? [m.subject] : [], ...m.foldId === null ? m.rows : []]),
@@ -3044,7 +3067,7 @@ function workJoints(rows, line) {
   });
 }
 function isSpacedAbove(milestones, n, isUnfolded, isCollapsed = () => false) {
-  const drawsNameOnly = (m) => m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded, isCollapsed).length === 0;
+  const drawsNameOnly = (m) => m.text === null && m.was === null && milestoneRows(m, isUnfolded, isCollapsed).length === 0;
   const above = milestones[n - 1];
   const m = milestones[n];
   return above === undefined || m === undefined || m.startsLater || !drawsNameOnly(above);
@@ -3086,11 +3109,17 @@ function milestoneRow(step, o, items) {
     return to.some((id) => id === m.id || servingIds.has(id));
   });
   const isHeld = isOpen2 && holds.length > 0;
+  const openServing = new Set(o.subjects.filter((s) => servingIds.has(s.id) && isOpen(s)).map((s) => s.id));
+  const ownHolds = holds.filter((i) => {
+    const to = o.askSubjects[i.id] ?? [];
+    return to.includes(m.id) && !to.some((id) => openServing.has(id));
+  });
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
   return {
     id: m.id,
-    ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
+    ...SUBJECT_MARKS[m.status],
+    ...isHeld ? { tone: heldToneOf(holds.map((i) => i.kind)) } : {},
     name: m.name,
     place: step.place,
     line: step.line,
@@ -3101,8 +3130,7 @@ function milestoneRow(step, o, items) {
     foldCount: 0,
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
-    ask: isHeld ? askSettingMark(holds) : null,
-    rows: [],
+    rows: isHeld ? askRows(m.id, askSettingMark(ownHolds), items, 1, null) : [],
     subject: null
   };
 }
@@ -3152,7 +3180,7 @@ function statusKeyPlan(row) {
     return [toggleFold(row.id, row.text)];
   if (row.kind === "counts")
     return [toggleFold(row.id, countsText(row.counts))];
-  return row.kind === "subject" && row.ask !== null ? [viewAsk(row.ask)] : [];
+  return row.kind === "ask" ? [viewAsk(row.ask)] : [];
 }
 var toggleFold = (foldId, label) => ({
   press: { action: "toggle-fold", foldId },
@@ -3162,9 +3190,7 @@ var toggleFold = (foldId, label) => ({
   emphasis: "quiet"
 });
 function milestoneKeyPlan(m) {
-  if (m.foldId !== null)
-    return [toggleFold(m.foldId, m.name)];
-  return m.ask === null ? [] : [viewAsk(m.ask)];
+  return m.foldId === null ? [] : [toggleFold(m.foldId, m.name)];
 }
 function milestonesFoldKeyPlan(g) {
   const fold = g?.milestonesFold ?? null;
@@ -5219,10 +5245,11 @@ function rowResultMark(row) {
     return RUNNING_RESULT;
   return isHandedOffDone(row) ? { text: SUBJECT_MARKS.done.mark, isRunning: false, tone: "done" } : { text: "", isRunning: false };
 }
-var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
-var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
 function openMark(row) {
-  return row.type === "finding" ? null : row.type === "task" ? TASK_ROW_MARK : QUESTION_MARK;
+  if (row.type === "finding")
+    return null;
+  const m = row.type === "task" ? TASK_MARK : row.type === "dialog" ? WAITS_ON_YOU_MARK : QUESTION_MARK;
+  return { text: m.mark, isRunning: false, tone: m.tone };
 }
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
@@ -8918,7 +8945,7 @@ function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
   if (row?.kind !== "subject")
     return m;
-  const work = under.map((r) => r.kind === "child" || r.kind === "more" ? { ...r, branch: null } : r);
+  const work = under.map((r) => r.kind === "child" || r.kind === "more" || r.kind === "ask" ? { ...r, branch: null } : r);
   return {
     ...m,
     id: row.id,
@@ -8929,7 +8956,6 @@ function milestoneAsSubject(m, subjectRows) {
     foldCount: work.length === 0 ? 0 : row.foldCount,
     text: row.text,
     was: row.was,
-    ask: row.ask,
     rows: work,
     subject: row
   };
@@ -9085,7 +9111,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     const inPlace = o && milestone && !hasLooseWork ? subjectInPlaceOf(o, milestone, s.ledger.items) : null;
     if (inPlace)
       return milestoneAsSubject(m, partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0));
-    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
+    const rows = [...m.rows, ...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
     const changedAt = milestone?.changedAt ?? Infinity;
     const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {
@@ -11174,7 +11200,6 @@ function pageText(text, room, maxLines, paint) {
 var GLUE = "\uE000";
 function pageLine(d, indent, mark, name, namePaint, {
   stall = null,
-  waitsOn = null,
   text = null,
   chevron = null
 } = {}) {
@@ -11183,10 +11208,9 @@ function pageLine(d, indent, mark, name, namePaint, {
   const full = pageRoom(indent, width);
   const room = chevron ? Math.max(10, full - cellWidth(chevron.text) - 1) : full;
   const names = stall ? stalledName(name, stall, room, namePaint, s) : pageText(name, room, STATUS_TEXT_LINES, namePaint);
-  const waits = waitsOn ? pageText(waitsOn.text, room, STATUS_TEXT_LINES, (t) => s.tone(waitsOn.tone, t)) : [];
   if (chevron)
     names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ""} ${chevron.paint(chevron.text)}`;
-  const seconds = [...waits, ...text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []];
+  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [];
   return [
     `${" ".repeat(indent)}${mark} ${names[0] ?? ""}`,
     ...[...names.slice(1), ...seconds].map((l) => " ".repeat(textAt) + l)
@@ -11241,11 +11265,9 @@ function drawPageRow(row, d, isSelected = false) {
   if (row.kind === "subject") {
     const mark = paintMark(row, now, s);
     const chevron = foldChevron(row, d, isSelected);
-    const isFolded = isParentCollapsed(row, collapsedIn(d.screen.view));
     const quiet = nameLevelOf(row, "plain") === "plain" ? (t) => t : s.dim;
     const out = pageLine(d, at, mark, row.name, (t) => quiet(chevron && isSelected ? s.bold(t) : t), {
       stall: row.stall,
-      waitsOn: row.waitsOn,
       text: row.text,
       chevron
     });
@@ -11254,8 +11276,19 @@ function drawPageRow(row, d, isSelected = false) {
       out.push(...indented(mergedLine(row.merged, (t) => cellWidth(t) <= room), textAt, width, STATUS_TEXT_LINES, s.dim));
     if (row.was)
       out.push(...indented(`${WAS_PREFIX}${row.was}`, textAt, width, STATUS_TEXT_LINES, s.dim));
-    out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, textAt));
-    return row.hasChildren && !isFolded ? withTree(out, at, null, "\u2502", s) : out;
+    return hasTreeDown(row, collapsedIn(d.screen.view)) ? withTree(out, at, null, "\u2502", s) : out;
+  }
+  if (row.kind === "ask") {
+    const mark = paintMark({ ...row, isRunning: false }, now, s);
+    const askAt = row.branch ? childAt(row.depth - 1) : at;
+    const out = [
+      ...pageLine(d, askAt, mark, row.text, (t) => s.tone(row.tone, t)),
+      ...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, askAt + PAGE_TEXT_AT - PAGE_MARK_AT)
+    ];
+    if (!row.branch)
+      return out;
+    const arm = TREE_ARMS[row.branch];
+    return withTree(out, markAt(row.depth - 1), arm.first, arm.rest, s);
   }
   if (row.kind === "child") {
     const mark = paintMark(row, now, s);
@@ -11439,8 +11472,7 @@ function milestoneLines(m, d, isSelected) {
   const [first = "", ...rest] = pageLine(d, PAGE_MARK_AT, mark, m.name, namePaint, {
     text: m.text,
     chevron,
-    stall: x?.stall ?? null,
-    waitsOn: x?.waitsOn ?? null
+    stall: x?.stall ?? null
   });
   const merged = x?.merged ? indented(mergedLine(x.merged, (t) => cellWidth(t) <= pageRoom(PAGE_MARK_AT, width)), PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
   const was = m.was ? indented(`${WAS_PREFIX}${m.was}`, PAGE_TEXT_AT, width, STATUS_TEXT_LINES, s.dim) : [];
