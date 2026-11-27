@@ -223,6 +223,16 @@ describe('a long earlier answer', () => {
     expect(file.questions.map(q => q.isAnsweredWithEarlier)).toEqual([true])
   })
 
+  test('counts a repeat as the same answer when the item saved the earlier answer whole', () => {
+    const item = {
+      ...question('i1', 'Where should it run?', ['staging', 'production']),
+      earlier: { ...earlierOf(match, true), answer: typed },
+    }
+    const ledger = closeItem({ ...EMPTY, items: [item] }, 'i1', { how: 'answered', outcome: typed }, NOW)
+    const file = questionHistory(null, { ...emptySession(), ledger }, { host: 'codex', session: 's1', repo: null }, NOW)
+    expect(file.questions.map(q => q.isAnsweredWithEarlier)).toEqual([true])
+  })
+
   test('is cut at a word with an ellipsis where the row draws it', () => {
     const line = earlierLineOf(earlierOf(match, true), NOW)
     expect(line?.answer.endsWith('…')).toBe(true)
