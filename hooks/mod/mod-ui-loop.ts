@@ -31,7 +31,7 @@ type UiLoopCalls = Pick<
   | 'sendUi'
   | 'publishStatus'
   | 'syncLook'
-  | 'takePaneKeys'
+  | 'focusPaneKey'
   | 'hostOf'
   | 'fetchPrs'
 >
