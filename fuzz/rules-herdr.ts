@@ -192,7 +192,7 @@ function motionFailures(run: HerdrRun): Failure[] {
     out.push({
       ...at(g.at),
       rule: 'connector-gap',
-      detail: `a connector in ${g.id} breaks at y ${g.y.toFixed(1)}`,
+      detail: `a connector in ${g.id} breaks at y ${g.y.toFixed(1)}${g.into ? `, where it runs into ${g.into}` : ''}`,
       seen: g,
     })
 

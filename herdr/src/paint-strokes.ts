@@ -141,7 +141,7 @@ type Fade = (el: Element) => Element
 
 const NO_FADE: Fade = el => el
 
-/** A column of a block that has left, once it no longer runs between two blocks that stay. */
+/** A column of a block that has left, where the column no longer joins two blocks. */
 const HIDDEN: Fade = el => el.opacity(0)
 
 /**
@@ -150,17 +150,27 @@ const HIDDEN: Fade = el => el.opacity(0)
  */
 type StrokeFades = { own: Fade; above: (depth: number) => Fade; below: (depth: number) => Fade }
 
-/** What a block of the list is to its strokes: whether it enters or leaves, and whether it has left. */
-type StrokeMove = { isMoving: boolean; isGone: boolean }
+/**
+ * Where a column runs from a block, up or down: to a block that stays, or to the block that enters or leaves where it
+ * ends, `end`, past `first`, the nearest such block it passes.
+ */
+type ColumnReach = { stays: boolean; first: number | null; end: number | null }
 
 /**
- * Who each block's strokes fade with, so a connector shows only while both things it joins show. A column that runs
- * from a block that stays to another that stays never fades, so it stays whole past a block that comes or goes. A
- * column that ends at a block that enters or leaves fades with that block, in the block's own box and in the box it
- * joins, as a fold's rows fade with the column from their parent. A block that stays and that a column only passes,
- * as a row nested beside it, joins nothing there: the column fades past it as it does at the blocks it joins. A block
- * that has left joins nothing, and a column of its own that no longer runs between two blocks that stay hides at once,
- * since its content has already faded, as when the blocks around it take their new forms.
+ * What a block of the list is to its strokes: whether it enters or leaves, whether it has left, and whether its content
+ * hides, as it does while it leaves or while it enters and waits for its space.
+ */
+type StrokeMove = { isMoving: boolean; isGone: boolean; isHiding: boolean }
+
+/**
+ * Who each block's strokes fade with, so a connector shows only while both things it joins show. Up and down, a column
+ * joins the nearest block that stays or where it ends. It runs past a row that stays nested beside it, a block that has
+ * left, and a block that enters or leaves while the column runs on below it, as the path runs past a subject's mark. A
+ * column whose two ends stay never fades, so it stays whole past a block that comes or goes. Otherwise it fades along
+ * its whole way with an end that enters or leaves: the end whose content hides, as while it leaves or waits for its
+ * space, else the block where the part is drawn, else the upper end. So a fold's rows fade with the column from their
+ * parent, and a column stays whole past a copy that has left while both its ends show. A column of a block that has left
+ * that no longer joins two blocks hides at once, since its content has already faded.
  */
 export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: StrokeMove[], fades: Fade[]): StrokeFades[] {
   const depths = (cs: Column[], i: number) => new Set([...cs, ...(passing[i] ?? [])].map(c => c.depth))
@@ -171,44 +181,54 @@ export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: Strok
 
     return b !== undefined && ins[j]?.has(depth) === true && ons[j]?.has(depth) === true && !meetsAt(b, depth)
   }
-  const reach = (i: number, depth: number, by: 1 | -1): { stays: boolean; first: number | null } => {
+  const reach = (i: number, depth: number, by: 1 | -1): ColumnReach => {
     let first: number | null = null
     for (let j = i + by; j >= 0 && j < blocks.length; j += by) {
       const move = moves[j]
       if (move?.isGone) continue
       if (!(by === 1 ? ins[j] : ons[j])?.has(depth)) break
-      if (!move?.isMoving && !isPassed(j, depth)) return { stays: true, first }
+      if (!move?.isMoving && !isPassed(j, depth)) return { stays: true, first, end: null }
       if (!move?.isMoving) continue
       first ??= j
-      if (!(by === 1 ? ons[j] : ins[j])?.has(depth)) break
+      if (!(by === 1 ? ons[j] : ins[j])?.has(depth)) return { stays: false, first, end: j }
     }
 
-    return { stays: false, first }
+    return { stays: false, first, end: null }
+  }
+  const joinsAt = (r: ColumnReach): number | null | undefined => (r.stays ? null : (r.end ?? undefined))
+  /** The fade of the end that shows last among `ends`, where null is an end that stays. */
+  const shownLast = (ends: (number | null)[]): Fade => {
+    const moving = ends.filter(j => j !== null)
+    const end = moving.find(j => moves[j]?.isHiding) ?? moving[0]
+
+    return end === undefined ? NO_FADE : (fades[end] ?? NO_FADE)
   }
 
   return blocks.map((_, i) => {
     const own = fades[i] ?? NO_FADE
     if (moves[i]?.isMoving) {
-      const isThrough = (depth: number) =>
-        ins[i]?.has(depth) === true &&
-        ons[i]?.has(depth) === true &&
-        reach(i, depth, -1).stays &&
-        reach(i, depth, 1).stays
       const off = moves[i]?.isGone ? HIDDEN : own
-      const side = (depth: number) => (isThrough(depth) ? NO_FADE : off)
+      const side = (depth: number): Fade => {
+        const hasIn = ins[i]?.has(depth) === true
+        const hasOn = ons[i]?.has(depth) === true
+        const isThrough = hasIn && hasOn
+        if (moves[i]?.isGone && !isThrough) return off
+        const above = hasIn ? joinsAt(reach(i, depth, -1)) : i
+        const below = hasOn ? joinsAt(reach(i, depth, 1)) : i
+        if (above === undefined || below === undefined) return off
+
+        return shownLast(isThrough ? [above, below] : [i, hasIn ? above : below])
+      }
 
       return { own, above: side, below: side }
     }
     const endOf = (depth: number, by: 1 | -1) => {
-      const { stays, first } = reach(i, depth, by)
+      const { stays, first, end } = reach(i, depth, by)
 
-      return stays ? null : first
+      return stays ? null : (end ?? first)
     }
-    const side = (by: 1 | -1) => (depth: number) => {
-      const end = isPassed(i, depth) ? (endOf(depth, -1) ?? endOf(depth, 1)) : endOf(depth, by)
-
-      return end === null ? NO_FADE : (fades[end] ?? NO_FADE)
-    }
+    const side = (by: 1 | -1) => (depth: number) =>
+      isPassed(i, depth) ? shownLast([endOf(depth, -1), endOf(depth, 1)]) : shownLast([endOf(depth, by)])
 
     return { own, above: side(-1), below: side(1) }
   })

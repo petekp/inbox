@@ -14,8 +14,24 @@ const KNOWN: {
   rule: string
   details: (string | string[] | RegExp)[]
 }[] = [
-  { issue: 1032, look: 'herdr', rule: 'jump', details: ['other moved'] },
-  { issue: 1034, look: 'herdr', rule: 'connector-gap', details: [/in (fit|space) [msc]\d(~to \d+)? breaks/] },
+  {
+    issue: 1032,
+    look: 'herdr',
+    rule: 'jump',
+    details: ['other moved', /~(from|to) \d+ moved/, /^(size|fit|box) done moved/],
+  },
+  {
+    issue: 1032,
+    look: 'herdr',
+    rule: 'connector-gap',
+    details: [/in fit m\d breaks at y [\d.]+(, where it runs into a box that has not opened \(fit m\d\))?$/],
+  },
+  {
+    issue: 1041,
+    look: 'herdr',
+    rule: 'connector-gap',
+    details: [/in space c\d breaks at y [\d.]+, where it runs into a box that has not opened \(fit [sc]\d\)$/],
+  },
   { issue: 1032, look: 'herdr', rule: 'vanish', details: ['"5 done" in other-done', '"Undo" in goal heading'] },
 ]
 

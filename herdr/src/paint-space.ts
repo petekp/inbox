@@ -356,7 +356,12 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const fade = (e: Element): Element =>
       m?.box ? fadeEl(e, `box ${m.springId ?? b.id}`, isShown ? 1 : 0, glide, p) : e
     const isMoving = m?.box != null
-    const move = { isMoving, isGone: isMoving && m?.state === 'leaving' && m.box === 'shut' }
+    const isLeaving = m?.state === 'leaving'
+    const move = {
+      isMoving,
+      isGone: isMoving && isLeaving && m.box === 'shut',
+      isHiding: isMoving && (isLeaving || m.waitsForSpace),
+    }
 
     return { m, isShown, glide, fade, move }
   })

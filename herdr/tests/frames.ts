@@ -6,6 +6,7 @@ import type { Painted } from './gpui-stand-in'
 import { boxOf, checkFadeIds, fadesOn } from './fade-boxes'
 import { type Box, layout, linesOf } from './layout'
 import { gapsOf, segmentsOf } from './connector-gaps'
+import type { Gap, Hidden } from './connector-gaps'
 
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
@@ -28,7 +29,7 @@ const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 type Spring = { x: number; v: number; target: number | undefined }
 type Jump = { at: number; id: string; by: number }
 type TitleForm = { at: number; id: string; tall: number; short: number; box: number; isBoxResting: boolean }
-type ColumnGap = { at: number; id: string; x: number; y: number }
+type ColumnGap = Gap & { at: number }
 type Cut = { at: number; box: string; text: string; share: number; opacity: number }
 type Fading = { at: number; id: string; height: number; opacity: number }
 type Shown = { at: number; block: string; text: string; opacity: number; share: number; isFormPart: boolean }
@@ -280,7 +281,7 @@ class Frames {
     this.motionIds = null
   }
 
-  private hiddenStrokes(root: Painted, now: number): (n: Painted) => boolean {
+  private hiddenStrokes(root: Painted, now: number): (n: Painted) => Hidden {
     const fadeEnds = new Map<string, number>()
     const drawn = new Set<string>()
     const walk = (n: Painted) => {
@@ -294,11 +295,14 @@ class Frames {
     walk(root)
     this.fadeEnds = fadeEnds
     this.drawnIds = drawn
-    const isFadedOut = (n: Painted) => now >= (n.id ? (fadeEnds.get(n.id) ?? Infinity) : Infinity)
+    const hiddenAs = (n: Painted): Hidden => {
+      const end = n.id ? (fadeEnds.get(n.id) ?? Infinity) : Infinity
+      return now < end ? null : end === -Infinity ? 'unopened' : 'faded'
+    }
 
     return n => {
-      for (let up: Painted | null = n; up; up = up.parent) if (isFadedOut(up)) return true
-      return false
+      for (let up: Painted | null = n; up; up = up.parent) if (hiddenAs(up)) return hiddenAs(up)
+      return null
     }
   }
 
