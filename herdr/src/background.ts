@@ -2,7 +2,7 @@ import { publishedSessionsFolder } from '../../core/remote/herdr'
 import { isSessionChange } from './files'
 import { AGE_TICK_MS, LOOK_TICK_MS, REREAD_MS } from './status-look'
 
-/** What the look's work between draws, and the view cache it prepares, use of the look's context. */
+/** The parts of the look's context that its work between draws and its view cache use. */
 type LookContext = {
   spawn(body: (cx: LookContext) => unknown): unknown
   sleep(ms?: number): Promise<void>
