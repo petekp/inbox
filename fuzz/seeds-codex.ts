@@ -328,4 +328,27 @@ export const CODEX_SEEDS: {
       ],
     },
   },
+  {
+    name: 'Explain on a row opened from the closed fold, then the row closed and opened again',
+    rule: 'cut',
+    detail: '"Explaining…"',
+    issue: 987,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 520,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'row', n: 4 },
+        { is: 'wait', ms: 800 },
+        { is: 'click', on: 'row', n: 9 },
+        { is: 'click', on: 'button', n: 6 },
+        { is: 'wait', ms: 300 },
+        { is: 'key', key: '2' },
+        { is: 'click', on: 'row', n: 9 },
+        { is: 'key', key: 'Enter' },
+      ],
+    },
+  },
 ]

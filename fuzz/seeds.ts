@@ -475,6 +475,32 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       [{ is: 'click', on: 'row', n: 7, label: 'd18' }],
     ),
   },
+  {
+    name: 'the right arrow on the Inbox tab, with two findings and no tasks',
+    rule: 'jump',
+    detail: 'd20 moved',
+    issue: 988,
+    isOpen: true,
+    case: herdr(
+      {
+        ...demo,
+        ledger: {
+          ...demo.ledger,
+          items: [],
+          closed: demo.ledger.closed.filter(c => c.id === 'd10'),
+          findings: demo.ledger.findings.flatMap(f =>
+            f.id === 'd20'
+              ? [{ ...f, title: LONG_URL, detail: 'Rename the settings page' }]
+              : f.id === 'd21'
+                ? [{ ...f, title: '◆ ◇ ● ○', detail: 'No' }]
+                : [],
+          ),
+        },
+        prViews: { ...demo.prViews, views: {} },
+      },
+      [{ is: 'key', key: 'right' }],
+    ),
+  },
 ]
 
 /** Fixed cases for the mod's terminal and desktop looks, run before each mod pass. */
@@ -532,6 +558,8 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   { issue: 981, look: 'herdr', rule: 'vanish', details: [['"aaaaaaaaaa', 'in d18 went from 1.00 to gone']] },
   { issue: 982, look: 'codex', rule: 'cut', details: [['"✓ Opened previews"', 'in its box d11']] },
   { issue: 983, look: 'codex', rule: 'jump', details: ['press-d22 moved'] },
+  { issue: 987, look: 'codex', rule: 'cut', details: [['"Explaining…"', 'in its box d17']] },
+  { issue: 988, look: 'herdr', rule: 'jump', details: ['d20 moved 19.0 px in one frame'] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
 ]
 
