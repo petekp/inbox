@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T13:52:05.870Z. 424949 characters follow.
+// Built at 2026-11-27T14:54:28.185Z. 428099 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -6974,11 +6974,25 @@ var blockSwapMotion = (s, now, height) => s && {
 var blockSwapTimes = (s) => s === null ? [] : s.inAt === null ? [s.since + NEXT_FRAME_MS, s.outUntil] : [s.inAt + NEXT_FRAME_MS, endsAt2(s)];
 var swapPartFade = (m, inDelayMs) => m.isOut ? { opacity: m.isFirst ? 1 : 0, duration: LEAVE_FADE_MS, delay: 0 } : inDelayMs === null ? { opacity: m.isInput ? FAINT_OPACITY : 0, duration: 0, delay: 0 } : { opacity: 1, duration: ENTER_FADE_MS, delay: inDelayMs };
 
+// src/heading-count.ts
+var endsAt3 = (c) => c.leftAt + NEXT_FRAME_MS + LEAVE_FADE_MS;
+function stepCountLeft(last, was, b, now) {
+  if (b.kind !== "heading" || b.count !== null)
+    return null;
+  if (was?.kind === "heading" && was.count !== null)
+    return { count: was.count, leftAt: now };
+  return last !== null && now < endsAt3(last) ? last : null;
+}
+var countLeftTimes = (c) => c === null ? [] : [c.leftAt + NEXT_FRAME_MS, endsAt3(c)];
+
 // src/motion.ts
+var NO_IDS = new Set;
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
+var isReshaped = (was, b) => was.kind === "status" && b.kind === "status" && (was.depth !== b.depth || JSON.stringify([was.tree, was.path]) !== JSON.stringify([b.tree, b.path]));
 var isFolding = (state) => state === "opening" || state === "closing";
-function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES) {
+function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES, fetched = NO_IDS) {
   const heightOf = (key) => sizes.get(key);
+  const isInputTo = (id) => isInput && !fetched.has(id);
   const was = isFirst ? NO_TRACKS : last;
   const wasDrawn = new Set(was.order);
   const moved = movedOf(blocks, was);
@@ -7032,11 +7046,11 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isStart = track.since === now && isMoving(track.state);
     const isPressed = block.kind === "field" && isInput;
     const glide = glideOf(track, isStart, last?.glide ?? null, now, Math.max(holdsUntil, closeHoldsUntil), isPressed, isFieldPressed, heightOf(block.id));
-    const isReleased = isInput && opensRow && track.state === "closing";
-    const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
+    const isReleased = isInputTo(block.id) && opensRow && track.state === "closing";
+    const isInputMove = isStart ? isInputTo(block.id) : (last?.isInputMove ?? false) || isReleased;
     const status = stepPrStatus(last?.status ?? null, block, now, isFirst);
-    const prTail = block.kind === "pr" ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInput) : null;
-    const warning = stepWarning(last?.warning ?? null, last?.block, block, now, isFirst, isInput);
+    const prTail = block.kind === "pr" ? stepPrTail(last?.prTail ?? null, block, now, isFirst, isInputTo(block.id)) : null;
+    const warning = stepWarning(last?.warning ?? null, last?.block, block, now, isFirst, isInputTo(block.id));
     const isTurnedBack = isStart && track.state === "opening" && last?.track.state === "closing" && last.opened !== null;
     const panelHeight = heightOf(panelId(block.id));
     const lastSteps = last?.panelSteps ?? null;
@@ -7057,11 +7071,12 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isPanelLeftOut = isLeftOut || wasClosing && block.kind === "row";
     const leftOut = isPanelLeftOut ? panelHeight ?? 0 : 0;
     const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now);
-    const under = pushUnder(stepUnder(last?.under ?? null, block, now, isInput, heightOf(underId(block.id))), underPushMs(last, block, restSpace), now);
+    const under = pushUnder(stepUnder(last?.under ?? null, block, now, isInputTo(block.id), heightOf(underId(block.id))), underPushMs(last, block, restSpace), now);
     const waited = waitSwap(swap, restSpace, rest, now);
     const fieldWait = stepFieldWait(last, block, restSpace, now);
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
     const title = block.kind === "row" && last ? stepTitle(last.title, titleRestOf(last.block, last.swap, sizes), titleRestOf(block, swap, sizes), now, heightOf(titleId(block.id)), Math.max(0, heldUntil - now)) : null;
+    const countLeft = stepCountLeft(last?.countLeft ?? null, last?.block, block, now);
     rows.set(block.id, {
       track,
       block,
@@ -7080,7 +7095,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       swap: waited,
       restSpace,
       fieldWait,
-      blockSwap: blockSwaps.get(block.id) ?? null
+      blockSwap: blockSwaps.get(block.id) ?? null,
+      countLeft
     });
     motion.set(block.id, {
       state: track.state,
@@ -7105,7 +7121,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       former: last && last.block.kind !== block.kind ? last.block : null,
       blockSwap: blockSwapMotion(blockSwaps.get(block.id) ?? null, now, heightOf(block.id)),
       swap: swapMotion(waited, now),
-      field: fieldOpening(fieldWait, now)
+      field: fieldOpening(fieldWait, now),
+      countLeft
     });
   };
   for (const b of blocks) {
@@ -7114,16 +7131,17 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isMoved = moved.has(b.id) && !isMovedOn;
     const old = isMoved ? undefined : prior;
     const isBoxAtRest = old !== undefined && (old.glide === null || now >= old.glide.endsAt);
-    const blockSwap = isFirst ? null : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, isInput, heightOf(b.id));
+    const blockSwap = isFirst ? null : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, isInputTo(b.id), heightOf(b.id));
     if (blockSwap)
       blockSwaps.set(b.id, blockSwap);
     const given = swapDrawn(blockSwap, b);
     const opens = old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
-    const waitsForLeave = opens && !isInput && isHolding;
+    const waitsForLeave = opens && !isInputTo(b.id) && isHolding;
     const isTurningBack = old?.track.state === "closing" && old.swap?.inAt !== null;
     const waitsForClose = opens && old.block.kind === "row" && opensAfterClose > now && !isTurningBack;
-    const drawn = waitsForLeave ? old.block : waitsForClose ? { ...old.block, isSelected: true, isCollapsed: true } : given;
-    if (waitsForLeave || waitsForClose || given !== b)
+    const waitsToReshape = old !== undefined && isHolding && isReshaped(old.block, b);
+    const drawn = waitsForLeave || waitsToReshape ? old.block : waitsForClose ? { ...old.block, isSelected: true, isCollapsed: true } : given;
+    if (waitsForLeave || waitsToReshape || waitsForClose || given !== b)
       waiting.set(b.id, drawn);
     const track = stepRow(old?.track, targetOf(drawn), now, isMoved || !isFirst && !wasDrawn.has(b.id));
     if (track)
@@ -7156,6 +7174,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     ...swapTimes(t.swap),
     ...fieldTimes(t.fieldWait),
     ...blockSwapTimes(t.blockSwap),
+    ...countLeftTimes(t.countLeft),
     holdsUntil,
     closeHoldsUntil,
     opensAfterClose,
@@ -8401,12 +8420,22 @@ function textLineEl(b, p, isInert) {
   const { t } = p;
   return v_flex7().pl(EDGE).pr(EDGE).child(warningBoxEl(b.id, b.warning ?? null, p, (text) => lineEl(text, colorOf(t, "error"), 0).pb(LIST_GAP))).child(h_flex11().gap(CONTROL_GAP).items_center().child(div18().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex11().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
+function countEls(b, left, p) {
+  const count = b.count ?? left?.count ?? null;
+  if (count === null)
+    return [];
+  const name = `count ${b.id}`;
+  const isGoing = b.count === null && left !== null;
+  const opacity = isGoing && p.now !== left.leftAt ? 0 : 1;
+  const el = div18().id(name).text_color(p.t.muted).child(`${SEP}${count}`);
+  return [fadeEl(el, name, opacity, { duration: isGoing ? LEAVE_FADE_MS : 0, delay: 0 }, p)];
+}
 function headingEl(b, p, isInert) {
   const { t } = p;
   const buttons = h_flex11().flex_none().gap(CONTROL_GAP).items_center().children(b.buttons.map((x) => buttonEl(x, p, isInert)));
   if (b.isLabel)
     return h_flex11().flex_wrap().pl(EDGE).pr(EDGE).gap(CONTROL_GAP).items_center().child(h_flex11().min_w(0).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(statusPartEl(b.text).text_color(b.mark?.tone ? colorOf(t, b.mark.tone) : t.muted))).child(ruleLine(t).min_w(END_SPACE)).child(buttons);
-  return h_flex11().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div18().min_w(0).whitespace_normal().font_semibold().child(b.text)).when(b.count !== null, (e) => e.child(div18().text_color(t.muted).child(`${SEP}${b.count}`))).child(div18().flex_1()).when(b.aside !== undefined, (e) => e.child(div18().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
+  return h_flex11().pl(EDGE).pr(EDGE).items_center().when(b.mark !== null, (e) => e.child(markEl(b.mark, t))).child(div18().min_w(0).whitespace_normal().font_semibold().child(b.text)).children(countEls(b, p.motion.get(b.id)?.countLeft ?? null, p)).child(div18().flex_1()).when(b.aside !== undefined, (e) => e.child(div18().flex_none().ml(INSET).font_family(p.mono).text_color(t.muted).child(b.aside ?? ""))).child(buttons);
 }
 var countsEl = (counts, t) => {
   const items = counts.items.map((c) => h_flex11().flex_none().children([
@@ -9603,6 +9632,43 @@ function screenOf(followed, read, ui, o) {
   };
 }
 
+// src/fetched.ts
+function screenAt(look, read, ui, view, now) {
+  const collapsed = (v) => collapsedOf(ui, v);
+  const presses = { now, view, shownSince: ui.shownSince, collapsed, queue: look.queue };
+  const lookUi = lookUiOf(ui, view && { ...view, collapsed: collapsed(view) });
+  return screenOf(look.followed, read, lookUi, presses);
+}
+var NONE_FETCHED = new Set;
+function fetchedIds(look, from, to, ui, now) {
+  if (from === null || to === null || from === to)
+    return NONE_FETCHED;
+  const blocksOf = (read) => {
+    const s = screenAt(look, read, ui, readView(read, now, holdsOf(ui, now), notesOf(ui)), now);
+    return s.is === "inbox" ? s.blocks : [];
+  };
+  const before = new Map(blocksOf(from).map((b) => [b.id, JSON.stringify(b)]));
+  return new Set(blocksOf(to).flatMap((b) => before.get(b.id) === JSON.stringify(b) ? [] : [b.id]));
+}
+
+class FetchedReads {
+  drawn = { read: null, at: 0, before: null };
+  noted = { ids: NONE_FETCHED, inFrame: NONE_FETCHED };
+  note(look, read, ui, now) {
+    const { at, before } = this.drawn;
+    const ids = fetchedIds(look, this.drawn.read, read, ui, now);
+    this.noted = { ids, inFrame: at === now ? fetchedIds(look, before, read, ui, now) : ids };
+  }
+  drew(read, isAnswer, now) {
+    const isSameFrame = this.drawn.at === now;
+    const ids = isAnswer ? NONE_FETCHED : isSameFrame ? this.noted.inFrame : this.noted.ids;
+    const before = isSameFrame ? this.drawn.before : this.drawn.read;
+    this.drawn = { read, at: now, before };
+    this.noted = { ids: NONE_FETCHED, inFrame: NONE_FETCHED };
+    return ids;
+  }
+}
+
 // src/view-cache.ts
 class ViewCache {
   shown;
@@ -9837,6 +9903,7 @@ class Inbox extends View {
   linesAbove = NO_LINES_ABOVE;
   focus = null;
   movedAt = 0;
+  fetched = new FetchedReads;
   outTimer = null;
   drawTimer = null;
   fades = new HeldFades;
@@ -9857,9 +9924,11 @@ class Inbox extends View {
     const view = this.viewAt(now);
     if (view === null)
       return;
+    const isMove = events.some(isLookMove);
+    if (isMove && this.movedAt <= this.tracks.drawnAt)
+      this.fetched.note(this, this.readSession, this.ui, now);
     const applied = applyEvents(this.ui, view, events, now);
     this.ui = applied.ui;
-    const isMove = events.some(isLookMove);
     if (isMove)
       this.movedAt = now;
     this.syncInput(isMove);
@@ -9932,6 +10001,8 @@ class Inbox extends View {
       if (this.sessionId !== sessionId)
         return;
       this.read = read;
+      if (this.movedAt > this.tracks.drawnAt)
+        this.fetched.note(this, this.readSession, this.ui, Date.now());
       if (read.is !== "read")
         return void cx.notify();
       if (!this.isOpened)
@@ -10044,15 +10115,7 @@ class Inbox extends View {
     const now = Date.now();
     const ui = this.ui;
     const raw = this.viewAt(now);
-    const presses = {
-      now,
-      view: raw,
-      shownSince: ui.shownSince,
-      collapsed: (view) => collapsedOf(ui, view),
-      queue: this.queue
-    };
-    const lookUi = lookUiOf(ui, raw && { ...raw, collapsed: collapsedOf(ui, raw) });
-    const screen = screenOf(this.followed, this.read, lookUi, presses);
+    const screen = screenAt(this, this.read, ui, raw, now);
     this.drawTimer?.cancel();
     this.drawTimer = null;
     const tracksOf = `${this.sessionId} ${ui.tab} ${ui.isHelpShown}`;
@@ -10098,7 +10161,8 @@ class Inbox extends View {
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt;
     const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove;
     const held = holdLinesAbove(shown, lastAbove, now, isForming, isInput);
-    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights);
+    const fetched = this.fetched.drew(this.readSession, isAnswer, now);
+    const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights, fetched);
     this.linesAbove = heldAsDrawn(held, lastAbove, moved);
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
