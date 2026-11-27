@@ -8,7 +8,13 @@ import {
   type StatusKey,
 } from '../../core/view/status-keys'
 import type { GoalBlock, MilestoneRow } from '../../core/view/status-goal-page'
-import { GOAL_HEADING, NO_GOAL_TEXT, shownMilestones, suggestedGoalOffer } from '../../core/view/status-goal-page'
+import {
+  GOAL_HEADING,
+  goalNotes,
+  NO_GOAL_TEXT,
+  shownMilestones,
+  suggestedGoalOffer,
+} from '../../core/view/status-goal-page'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
 import { mergedLine } from '../../core/view/status-page-parts'
 import type { StatusPage } from '../../core/view/status-page'
@@ -321,7 +327,9 @@ export function drawGoalPart(part: GoalPart, d: Draw, isSelected: boolean): stri
         ? offerLines(part.suggestion, d, textAt, isSelected)
         : at(g ? g.text : NO_GOAL_TEXT, g ? s.bold : s.dim, Infinity)
 
-    return [...text, ...(g?.was ? at(`${WAS_PREFIX}${g.was}`, s.dim) : []), ...(g?.now ? at(g.now, s.dim) : [])]
+    const notes = goalNotes(g).flatMap(n => at(n.kind === 'was' ? `${WAS_PREFIX}${n.text}` : n.text, s.dim))
+
+    return [...text, ...notes]
   }
   if (part.is === 'milestone') return milestoneLines(part.row, d, isSelected)
   if (part.is === 'suggestion') return offerLines(part.offer, d, PAGE_MARK_AT, isSelected)

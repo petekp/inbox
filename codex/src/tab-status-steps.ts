@@ -1,5 +1,5 @@
 import { milestoneRows, unfoldedRows } from '../../core/view/status-folds'
-import { shownMilestones } from '../../core/view/status-goal-page'
+import { goalNotes, shownMilestones } from '../../core/view/status-goal-page'
 import type { GoalBlock, MilestoneRow } from '../../core/view/status-goal-page'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { WAS_LEVEL } from '../../core/view/status-page-parts'
@@ -57,14 +57,13 @@ const laterLines = (milestones: MilestoneRow[]): LaterLine[] => {
   return first ? [{ id: first.id }] : []
 }
 
-/** The lines under the goal's text: what it was and where it stands now. None under a suggestion. */
+/** The lines under the goal's text: where it stands now, then what it was. None under a suggestion. */
 function goalHead(page: StatusPage): TextLine[] {
   const g = page.suggestedGoal === null ? page.goal : null
 
-  return [
-    ...(g?.was ? [{ id: GOAL_WAS_LINE, text: g.was, level: WAS_LEVEL }] : []),
-    ...(g?.now ? [{ id: 'now', text: g.now }] : []),
-  ]
+  return goalNotes(g).map(n =>
+    n.kind === 'was' ? { id: GOAL_WAS_LINE, text: n.text, level: WAS_LEVEL } : { id: 'now', text: n.text },
+  )
 }
 
 /**
