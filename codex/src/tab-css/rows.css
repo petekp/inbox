@@ -422,7 +422,8 @@ code {
   background: none;
   color: var(--text);
 }
-.key.out {
+.key.out,
+.panel.guarded .key {
   opacity: 0.4;
 }
 .actions {

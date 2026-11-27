@@ -58,12 +58,17 @@ export function openRowOf(ui: UiState, view: SessionView, tab: ShownTab): string
   return id !== null && !collapsedOf(ui, view).includes(id) ? id : null
 }
 
-/** Whether a press by `by` on row `id` falls inside the guard of the input that opened it. */
-export function isGuardedPress(ui: UiState, tab: ShownTab, id: string, by: InputKind, now: number): boolean {
+/** Whether row `id` is inside the guard of the click or key that opened it. Its buttons draw dim while it is. */
+export function isGuardedRow(ui: UiState, tab: ShownTab, id: string, now: number): boolean {
   if (!isRowTab(tab)) return false
   const { id: cursorId, guard } = ui.selection[tab]
 
-  return cursorId === id && guard !== null && guard.by === by && now < guard.at + PRESS_GUARD_MS
+  return cursorId === id && guard !== null && now < guard.at + PRESS_GUARD_MS
+}
+
+/** Whether a press by `by` on row `id` falls inside the guard of the input that opened it. */
+export function isGuardedPress(ui: UiState, tab: ShownTab, id: string, by: InputKind, now: number): boolean {
+  return isRowTab(tab) && isGuardedRow(ui, tab, id, now) && ui.selection[tab].guard?.by === by
 }
 
 export const withCursor = (ui: UiState, tab: Tab, cursor: UiCursor): UiState => ({
@@ -252,8 +257,8 @@ export function foldAll(ui: UiState, view: SessionView, isOpening: boolean | nul
 }
 
 /**
- * Selects the row a confirmed Undo brought back, once a row tab lists it open again, unless a field is open on another
- * row. An Undo clicked guards the row, as a click that opens a row does.
+ * Selects the row an Undo is bringing back, once a row tab lists it open again, unless a field is open on another row.
+ * An Undo clicked guards the row, as a click that opens a row does.
  */
 export function selectRestored(ui: UiState, view: SessionView, now: number): UiStep {
   const restoring = ui.restoring

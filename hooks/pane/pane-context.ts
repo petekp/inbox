@@ -135,7 +135,8 @@ export type PaneBase = {
   /** The cursor's index. Its row draws open unless the person collapsed it. */
   at: number
   collapsed: ReadonlySet<string>
-  isOpenGuarded: boolean
+  /** Whether row `rowId` is the cursor's row and its press guard still holds. */
+  isRowGuarded: (rowId: string) => boolean
   statusKeyRow: ReturnType<typeof statusSelected>
   shownError: string | null
   /** The line under the tabs for a press whose row is gone, while it shows. */

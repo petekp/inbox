@@ -33,7 +33,7 @@ export function paneRowKeys(
     hasClient,
     elements,
     listColumns,
-    isOpenGuarded,
+    isRowGuarded,
     look,
     Button,
     Box,
@@ -45,7 +45,7 @@ export function paneRowKeys(
   }: PaneClient &
     Pick<
       PaneBase,
-      'listColumns' | 'isOpenGuarded' | 'look' | 'Button' | 'Box' | 'pal' | 'Text' | 'space' | 'Input' | 'typing'
+      'listColumns' | 'isRowGuarded' | 'look' | 'Button' | 'Box' | 'pal' | 'Text' | 'space' | 'Input' | 'typing'
     >,
   {
     unlessGuarded,
@@ -76,7 +76,7 @@ export function paneRowKeys(
     (rowId: string, isFollowUp = false, width = Infinity) =>
     ({ hotkey, kind: _kind, emphasis, icon, isOut = false, note: _note, ...action }: KeyAction) => {
       const { label: _label, ...unlabeled } = action
-      const isDim = isOpenGuarded || isOut
+      const isDim = isRowGuarded(rowId) || isOut
       const label = terminalLabel({ ...action, ...(hotkey ? { hotkey } : {}) }, width)
 
       return look === 'desktop' ? (
@@ -124,7 +124,7 @@ export function paneRowKeys(
       gap: DESKTOP_LINK_GAP_CELLS,
       slack: DESKTOP_LINK_SLACK_CELLS,
       fallbackColumns: desktopTextColumns(DESKTOP_MARK_CELLS),
-      isGuarded: isOpenGuarded,
+      isGuarded: isRowGuarded(rowId),
       colors: { muted: pal.muted, hover: null },
     }
 

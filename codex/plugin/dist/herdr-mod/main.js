@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T03:35:05.561Z. 411043 characters follow.
+// Built at 2026-11-27T05:01:37.924Z. 411275 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -4565,11 +4565,14 @@ function selectedOf(ui, view, tab) {
   const cursor = ui.selection[tab];
   return cursor.id ?? tabWaits(ui, view, tab).find(opensFor2)?.id ?? null;
 }
-function isGuardedPress(ui, tab, id, by, now) {
+function isGuardedRow(ui, tab, id, now) {
   if (!isRowTab(tab))
     return false;
   const { id: cursorId, guard } = ui.selection[tab];
-  return cursorId === id && guard !== null && guard.by === by && now < guard.at + PRESS_GUARD_MS;
+  return cursorId === id && guard !== null && now < guard.at + PRESS_GUARD_MS;
+}
+function isGuardedPress(ui, tab, id, by, now) {
+  return isRowTab(tab) && isGuardedRow(ui, tab, id, now) && ui.selection[tab].guard?.by === by;
 }
 var withCursor = (ui, tab, cursor) => ({
   ...ui,
@@ -4776,7 +4779,8 @@ function press(ui, view, p, by, now) {
     nextPressId: pressId + 1,
     pressesOut: { ...ui.pressesOut, [pressId]: out },
     errors,
-    notes
+    notes,
+    ...p.action === "undo" ? { restoring: { id: rowId, at: now, by } } : {}
   };
   if (isReply) {
     const text = p.text.trim();
@@ -4843,8 +4847,8 @@ function pressSettled(ui, view, pressId, outcome, now) {
     const { [row]: _sent, ...rest } = next.sentReplies;
     next = { ...next, sentReplies: isRefused ? rest : { ...rest, [row]: { ...sent, isConfirmed } } };
   }
-  if (out.action === "undo" && isConfirmed)
-    next = { ...next, restoring: { id: row, at: now, by: out.by } };
+  if (out.action === "undo" && next.restoring?.id === row)
+    next = { ...next, restoring: isConfirmed ? { ...next.restoring, at: now } : null };
   const restored = selectRestored(next, view, now);
   next = restored.ui;
   if (outcome.isDemoSent)
