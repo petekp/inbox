@@ -3,7 +3,7 @@ import { holdsStatusWhileOut } from './feedback'
 import type { Feedback } from './feedback'
 import { pendingResult } from './pressed'
 import type { Effect } from './press-reducer'
-import type { SessionView } from './session-view'
+import { lastActionKey, type SessionView } from './session-view'
 import type { PressOut } from './ui-controller-types'
 
 /** What a press that sends reads on its row from the moment of the press until the host records it. */
@@ -11,7 +11,8 @@ export const SENDING = 'Sending…'
 
 /**
  * The latest press out on row or PR line `id` that `view` does not show yet, or null. The view shows a press once its
- * row's last action is not the one it had when pressed. A reply is never out, so it counts as none.
+ * row's last action differs from the one it had when pressed, as a saved pending result or a new action does. A reply
+ * is never out, so it counts as none.
  */
 export function unshownPressOut(
   pressesOut: Readonly<Record<number, PressOut>>,
@@ -21,7 +22,7 @@ export function unshownPressOut(
   const out = Object.values(pressesOut)
     .filter(p => p.rowId === id && !p.isReply)
     .pop()
-  if (!out || (view.lastActions[id]?.at ?? null) !== out.atBefore) return null
+  if (!out || lastActionKey(view, id) !== out.lastBefore) return null
 
   return out
 }

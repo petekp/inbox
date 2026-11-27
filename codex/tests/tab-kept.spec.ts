@@ -57,7 +57,7 @@ test('what a page keeps reads in a 0.6.0 page as the same tab, cursors, draft an
         tab: 'needsYou',
         action: 'explain',
         at: NOW - 50,
-        atBefore: null,
+        lastBefore: 'null',
         isReply: false,
         by: 'click',
       },

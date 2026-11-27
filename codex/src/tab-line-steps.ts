@@ -1,7 +1,7 @@
-import { enteredByInput, stepRow, withLeaving } from '../../core/view/row-motion'
+import { enteredByPress, stepRow, withLeaving } from '../../core/view/row-motion'
 import type { BannerView } from '../../core/view/banners'
 import type { TextLevel } from '../../core/view/status-page-parts'
-import { drawnRows, tabState } from './tab-state'
+import { drawnRows } from './tab-state'
 import { reducedMotion } from './tab-motion'
 
 /** A line of text that comes and goes inside the tab, such as a press's status. */
@@ -14,8 +14,9 @@ export const bannerMotion = (kind: string) => `banner-${kind}`
 
 /**
  * Steps lines through the row states, as `stepLists` does for rows. A line that `lines` brings in after the last draw
- * grows in, faint at once in a draw that follows the person's input (`enteredByInput`), and a line it drops leaves from
- * the place it had. With no last draw, every line is drawn at rest.
+ * grows in, and a line it drops leaves from the place it had. With `isPressed`, the lines belong to a row whose press
+ * is out or just answered, so a line that grows in shows faint at once (`enteredByPress`). With no last draw, every
+ * line is drawn at rest.
  */
 export function stepLines<T extends { id: string }>(
   lines: T[],
@@ -24,10 +25,10 @@ export function stepLines<T extends { id: string }>(
   now: number,
   changed: Set<string>,
   kept: Set<string>,
+  isPressed = false,
 ): T[] {
   const listed = new Set(lines.map(l => l.id))
   const wasDrawn = new Set((lastLines ?? []).map(l => l.id))
-  const isInput = !tabState.isReadDraw || tabState.isAnswerDraw
   const entries = withLeaving(
     lines,
     lastLines ?? [],
@@ -40,7 +41,7 @@ export function stepLines<T extends { id: string }>(
     const before = drawnRows.get(id)
     const isNew = lastLines !== undefined && !wasDrawn.has(l.id)
     const stepped = stepRow(before?.track, listed.has(l.id) ? 'closed' : 'gone', now, isNew, reducedMotion.matches)
-    const track = isInput ? enteredByInput(stepped, now) : stepped
+    const track = isPressed ? enteredByPress(stepped, now) : stepped
     if (!track) return false
     if (track !== before?.track) changed.add(id)
     drawnRows.set(id, { track })

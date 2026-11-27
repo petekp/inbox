@@ -202,3 +202,7 @@ function prTabOf(
     pressOutSince,
   }
 }
+
+/** Row or PR line `id`'s last action in `view` as a key, which changes whenever the host records a press on it. */
+export const lastActionKey = (view: Pick<SessionView, 'lastActions'> | null, id: string): string =>
+  JSON.stringify(view?.lastActions[id] ?? null)

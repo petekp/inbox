@@ -73,14 +73,10 @@ export const CODEX_LOOK: LookConfig = { runningMarks: 'pulse', titleTint: 'self'
 
 /**
  * What the tab keeps of each press the controller has out, by its press id: its row, its pending Local result or null
- * for a message, which reads SENDING, `lastBefore`, the row's saved last press when the press started, from
- * `lastPressKey`, and `kind`, the kind of the plan action pressed, or null for a press no plan action makes, such as
+ * for a message, which reads SENDING, and `kind`, the kind of the plan action pressed, or null for a press no plan action makes, such as
  * Undo or a typed reply.
  */
-export const localOuts = new Map<
-  number,
-  { rowId: string; pending: Feedback | null; lastBefore: string; kind: PressKind | null }
->()
+export const localOuts = new Map<number, { rowId: string; pending: Feedback | null; kind: PressKind | null }>()
 
 export const SENDING = 'Sending…'
 export const copies = new Map<string, { name: string; text: string }>()
@@ -169,8 +165,8 @@ class TabState {
   focusField: string | null = null
   /** Whether the draw under way shows a read of the view, not the person's input. */
   isReadDraw = false
-  /** Whether the read under way carries the answer to a press, so what it brings shows at once, as a press does. */
-  isAnswerDraw = false
+  /** The rows whose press the read under way answers, so what the answer brings them shows at once, as a press does. */
+  answeredRows: ReadonlySet<string> = new Set()
   lastLists: Lists | null = null
   /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
   lastPrs: DrawnPrs | null = null

@@ -117,8 +117,8 @@ export type RowTarget = 'closed' | 'open' | 'settled' | 'undoing' | 'gone'
  * row, one opening or growing in open, and a row closing, settling or leaving from the open form. `entersSettled` marks
  * a row growing in settled, and `leavesSettled` a row opening or closing from its settled form, as after Undo. A row
  * Undo brought back that opens or closes while its settled form still fades out keeps that fade: it moves as if Undo
- * had moved it there, from when Undo did (`isSettledFormFading`). `entersFaint` marks a line growing in that the
- * person's input brought (`enteredByInput`).
+ * had moved it there, from when Undo did (`isSettledFormFading`). `entersFaint` marks a line growing in that a
+ * press or its answer brought (`enteredByPress`).
  */
 export type RowTrack = {
   state: RowState
@@ -208,11 +208,11 @@ export function stepRow(
 }
 
 /**
- * `track` as `stepRow` gave it in a draw that follows the person's input, a press or its answer. A line that starts to
+ * `track` as `stepRow` gave it for a line of a row whose press is out or just answered. A line that starts to
  * grow in there shows at `FAINT_OPACITY` in that draw, so the press shows at once, faint enough that the edge of its
  * growing space may cut it. It fades to full once its space is nearly open, through `turnBackFades`.
  */
-export const enteredByInput = (track: RowTrack | null, now: number): RowTrack | null =>
+export const enteredByPress = (track: RowTrack | null, now: number): RowTrack | null =>
   track?.state === 'entering' && track.since === now ? { ...track, entersFaint: true } : track
 
 function entering(form: Exclude<Form, 'gone'>, now: number): RowTrack {

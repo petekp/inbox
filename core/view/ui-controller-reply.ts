@@ -8,7 +8,7 @@ import { drawnPreconditions } from './press-preconditions'
 import type { RowPress } from '../domain/presses'
 import { allRows } from './rows'
 import type { SessionView } from './session-view'
-import { PRESS_TIMEOUT_MS } from './session-view'
+import { lastActionKey, PRESS_TIMEOUT_MS } from './session-view'
 import { isRowTab } from './tabs'
 import { heldReplies, keptDiscards, SETTLED_MS, type Holds } from './timing'
 import { isGuardedPress, selectedOf, selectRestored, tabWaits, withCursor } from './ui-controller-selection'
@@ -89,7 +89,8 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
   const holds = holdsOf(ui, now)
   const pressId = ui.nextPressId
   const atBefore = view.lastActions[rowId]?.at ?? null
-  const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now, atBefore, by }
+  const lastBefore = lastActionKey(view, rowId)
+  const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now, lastBefore, by }
   const { [rowId]: _error, ...errors } = ui.errors
   const { [rowId]: _note, ...notes } = ui.notes
   let next: UiState = {
