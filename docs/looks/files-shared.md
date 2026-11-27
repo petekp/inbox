@@ -75,6 +75,8 @@ Part of [the look map](../looks.md#files).
 | `core/view/pr-order.ts` | Shared module. The agent's PR order: the order's lines above the PR blocks, the "Other PRs" line above the PRs it does not rank and the rule for when that line draws, the statuses it records, and its Rank again button. |
 | `core/view/pr-press.ts` | Shared module. The PR press types, the open or refresh each press runs, the row each press records on, and the helpers the PR button plans share, which add "again" to a label, add Try again, and mark the button whose press is out. |
 | `core/runtime/tools.ts` | Shared module. The record and close tools, and `agentTools`, the one list of their names, descriptions and schemas that every host and eval probe registers. Each call's answer holds the text the agent reads and the line the person sees under the call. |
+| `core/runtime/tool-answer.ts` | Shared module. `ToolAnswer`, the answer to an agent tool call, and the helpers the tools share to read an argument and answer with no change. |
+| `core/runtime/order-prs-tool.ts` | Shared module. The `order_prs` tool's description and the answer that sets, replaces or clears the PRs tab's order. |
 | `core/domain/tool-schemas.ts` | Shared module. The input schemas of the record, close and order_prs tools, with the description of each argument the agent reads. Their tool fields: this build's in `TOOL_FIELDS`, 0.3.0's in `V0_3_TOOL_FIELDS`, and a session's in `sessionToolFields`. |
 | `core/view/demo.ts` | Shared module. Sample data for `/inbox demo` and the Codex demo. |
 | `core/view/demo-prs.ts` | Shared module. Sample PR views for the shared demo session. |

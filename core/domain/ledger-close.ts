@@ -19,7 +19,7 @@ function closedFindingRecord(finding: Finding, closing: Closing, now: number, as
  * own message, with that answer as its outcome, or one that is done or no
  * longer applies, with the agent's reason. A finding moves to
  * `closedFindings` the same way. `closed` is null when no open one has the id.
- * Its `how` is the stored value 'claude' for either agent.
+ * Its `how` is the stored value 'claude' for either agent. An item's record also says the agent closed it.
  */
 export function closeByAgent(
   host: Host,
@@ -33,14 +33,14 @@ export function closeByAgent(
       ? { how: 'answered', outcome: how.answer }
       : { how: 'claude', outcome: `closed by ${host.agent}: ${how.reason}` }
   const item = ledger.items.find(i => i.id === id)
-  if (item) return { ledger: closeItem(ledger, id, closing, now), closed: { item } }
+  if (item) return { ledger: closeItem(ledger, id, { ...closing, closedBy: 'agent' }, now), closed: { item } }
   const finding = ledger.findings.find(f => f.id === id)
   if (finding) return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } }
 
   return { ledger, closed: null }
 }
 
-type Closing = Pick<Closed, 'how' | 'outcome'>
+type Closing = Pick<Closed, 'how' | 'outcome' | 'closedBy'>
 
 export function closeItem(ledger: Ledger, id: string, closing: Closing, now: number): Ledger {
   const records = ledger.items.filter(i => i.id === id).map(i => closedRecord(i, closing, now))

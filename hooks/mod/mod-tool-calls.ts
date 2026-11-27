@@ -46,7 +46,8 @@ import { noteActivity } from './mod-updates'
 import { statusChanged } from '../../core/runtime/session-status'
 import { commandFindings, noteActivity as noteTurnActivity } from '../../core/runtime/session-turns'
 import { childEnded } from '../../core/domain/status-children'
-import { type AgentTool, NOT_SAVED, type ToolAnswer } from '../../core/runtime/tools'
+import { type AgentTool, NOT_SAVED } from '../../core/runtime/tools'
+import type { ToolAnswer } from '../../core/runtime/tool-answer'
 
 type ToolCallCalls = Pick<
   Mod,

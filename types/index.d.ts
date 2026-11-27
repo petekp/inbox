@@ -303,6 +303,8 @@ export type Closed = {
    * reason; or the per-reply update closed it, with an outcome the model wrote.
    */
   how: 'answered' | 'done' | 'dismissed' | 'expired' | 'claude' | 'update'
+  /** The agent closed it with its `close` tool. Missing when the person or the inbox closed it, and on a record saved before the inbox kept it. */
+  closedBy?: 'agent'
   at: number
   /** The item as it was while open, so it can be reopened; missing on a record saved before the mod kept it. */
   item?: Item

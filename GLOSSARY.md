@@ -301,7 +301,7 @@ The line the conversation shows under the agent's `record` or `close` call,
 written for the person, such as "Question: Which cache should the API use?". A
 call that changed nothing shows none. The agent reads its own answer to the
 call, which Codex shows in place of the line. `personLine` in
-`core/runtime/tools.ts:ToolAnswer`.
+`core/runtime/tool-answer.ts:ToolAnswer`.
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Status,

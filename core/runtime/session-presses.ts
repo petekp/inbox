@@ -19,7 +19,8 @@ import { applyPress, withAcceptedSend, withArrival, withRewrite, withUnconfirmed
 import type { PressTexts } from '../domain/press-messages'
 import type { RowPress } from '../domain/presses'
 import { toolAnswer } from './tools'
-import type { AgentTool, ToolAnswer } from './tools'
+import type { AgentTool } from './tools'
+import type { ToolAnswer } from './tool-answer'
 import { allRows } from '../view/rows'
 import { isShownSince } from '../view/timing'
 import { outAction, pressFeedbackIn } from '../view/feedback'
@@ -186,7 +187,7 @@ export function completedAttempt<S extends Session>(state: S, deliveryId: string
 
 /**
  * Applies a call of one of `agentTools` from the agent to the ledger. `result` is the tool's answer, and `personLine` the
- * line the person sees under the call, as `core/runtime/tools.ts:ToolAnswer` says. `fields` are the input fields of the tools
+ * line the person sees under the call, as `core/runtime/tool-answer.ts:ToolAnswer` says. `fields` are the input fields of the tools
  * the agent has, as its host knows them. `delegate` is the delegate session this is, as
  * `core/remote/hc-terminals.ts:delegateSession` reads it, or null when it is none. `earlier` are the earlier answers the
  * `record` answer lists, from `core/runtime/history-store.ts:recordMatches`.

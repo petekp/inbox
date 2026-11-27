@@ -5,11 +5,11 @@ import { addAgentItem, addFinding } from '../domain/ledger-update'
 import { stepHelp } from '../domain/reply-parse'
 import type { DelegateSession } from '../remote/hc-terminals'
 import type { Host } from '../domain/model-text'
-import { MAX_ORDERED_PRS, tabPrs } from '../domain/pr-fetch'
-import { isDismissed } from '../view/pr-views'
 import { bodyChanges, missingText, questionBody, withBody } from '../domain/question-checks'
 import { previewsLeftOutText } from '../domain/option-previews'
-import { CLOSE_LIMITS, ORDER_LIMITS, RECORD_LIMITS, recordFields, tooLongText } from '../domain/field-limits'
+import { CLOSE_LIMITS, RECORD_LIMITS, recordFields, tooLongText } from '../domain/field-limits'
+import { orderDescription, orderPrs } from './order-prs-tool'
+import { type ToolAnswer, trimmed, unchanged } from './tool-answer'
 import { earlierAnswersText } from '../domain/record-matches'
 import { CLOSE_SCHEMA, ORDER_SCHEMA, RECORD_SCHEMA } from '../domain/tool-schemas'
 import { CLOSE_ID_RULE } from '../domain/inbox-text'
@@ -20,10 +20,6 @@ const NAME_BY_CONTENT = 'Name it by what it says, never by its id.'
 /** The id to close a new row by, which the inbox text beside the user's prompt lists only from the next turn. */
 function closeIdText(id: string): string {
   return ` Its close id is ${id}. ${CLOSE_ID_RULE}`
-}
-
-function orderDescription(host: Host): string {
-  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`
 }
 
 function recordDescription(host: Host): string {
@@ -94,6 +90,7 @@ export function toolAnswer(
 
       return (
         recordAfterCompare(host, ledger, input, now, presses, fields) ??
+        recordAfterOwnClose(host, ledger, input, now, presses, fields) ??
         recordItem(host, ledger, input, now, fields, earlier)
       )
     case 'close':
@@ -103,10 +100,6 @@ export function toolAnswer(
   }
 }
 
-function trimmed(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : ''
-}
-
 const MAX_OPTIONS = 8
 const MAX_STEPS = 3
 
@@ -114,18 +107,8 @@ function list(value: unknown, max: number): string[] {
   return Array.isArray(value) ? value.map(trimmed).filter(Boolean).slice(0, max) : []
 }
 
-/**
- * A `record` or `close` call's answer. `result` is the text the agent reads back. `personLine` is the line the person
- * sees under the call in the conversation, or null when the call changed nothing in the inbox.
- */
-export type ToolAnswer = { ledger: Ledger; result: string; personLine: string | null }
-
 /** What follows an answer whose change the user sees now, when the store refused to save the session as full. */
 export const NOT_SAVED = "Not saved: the inbox's store is full, so this change is lost if this session restarts."
-
-function unchanged(ledger: Ledger, result: string): ToolAnswer {
-  return { ledger, result, personLine: null }
-}
 
 export function recordItem(
   host: Host,
@@ -296,6 +279,38 @@ function recordAfterCompare(
   return isUpdated ? r : null
 }
 
+/**
+ * A record that repeats a question or task the agent closed with an answer during the running turn. The row reopens
+ * and the record updates it, so the agent can take back a close it made by mistake. A row the person answered, or the
+ * agent closed before this turn, stays closed. Null when no such row matches.
+ */
+function recordAfterOwnClose(
+  host: Host,
+  ledger: Ledger,
+  input: Record<string, unknown>,
+  now: number,
+  presses: Presses,
+  fields: ToolFields,
+): ToolAnswer | null {
+  const { turnStartedAt } = presses
+  if (turnStartedAt === null) return null
+  const isOwnCloseThisTurn = (c: Closed) => c.closedBy === 'agent' && c.how === 'answered' && c.at >= turnStartedAt
+  for (const closed of ledger.closed.filter(isOwnCloseThisTurn).toReversed()) {
+    const r = recordItem(host, reopenItem(ledger, closed.id), input, now, fields)
+    const reopened = r.ledger.items.find(i => i.id === closed.id && i.reportedAt === now)
+    if (reopened)
+      return {
+        ledger: r.ledger,
+        result:
+          `Reopened: you closed it earlier in this turn. The user sees it in ${host.surface} again.` +
+          closeIdText(closed.id),
+        personLine: `${reopened.kind === 'question' ? 'Question' : 'Task'}: ${reopened.ask}`,
+      }
+  }
+
+  return null
+}
+
 export function recordClose(
   host: Host,
   ledger: Ledger,
@@ -338,67 +353,4 @@ export function recordClose(
     ledger,
     `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`,
   )
-}
-
-const REPO = /^[\w.-]+\/[\w.-]+$/
-
-/** A PR number as the agent gave it, as 3401 or "#3401", or null when it is not one. */
-function prNumber(value: unknown): number | null {
-  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value.trim().replace(/^#/, '')) : NaN
-
-  return Number.isInteger(n) && n > 0 ? n : null
-}
-
-/**
- * Sets the PRs tab's order from an `order_prs` call. The tab shows and fetches each PR the order ranks, without
- * linking it, so a new order or an empty list, which clears it, takes the old order's PRs off the tab. A PR the
- * person or a fetch dismissed stays off it.
- */
-function orderPrs(
-  host: Host,
-  ledger: Ledger,
-  input: Record<string, unknown>,
-  now: number,
-  lastActions: Record<string, LastAction>,
-): ToolAnswer {
-  if (!Array.isArray(input.numbers)) return unchanged(ledger, 'Not set: numbers must be a list of PR numbers.')
-  if (input.numbers.length === 0) {
-    if (ledger.prOrder === null) return unchanged(ledger, 'No order was set.')
-
-    return {
-      ledger: { ...ledger, prOrder: null },
-      result: `Cleared. The PRs show in their usual order in ${host.prsIn}.`,
-      personLine: 'PR order cleared',
-    }
-  }
-  const numbers = input.numbers.map(prNumber)
-  if (numbers.includes(null)) return unchanged(ledger, 'Not set: numbers must be PR numbers, such as 3401.')
-  const repo = trimmed(input.repo)
-  if (!REPO.test(repo)) return unchanged(ledger, 'Not set: give repo as owner/name.')
-  const refs = [...new Set(numbers.map(n => `${repo}#${n}`))]
-  if (refs.length > MAX_ORDERED_PRS) return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`)
-  const label = trimmed(input.label)
-  if (!label) return unchanged(ledger, 'Not set: give label, what the user does with the order.')
-  const why = trimmed(input.why)
-  if (!why) return unchanged(ledger, 'Not set: give why, the reason for this order.')
-  const tooLong = tooLongText(input, ORDER_LIMITS)
-  if (tooLong) return unchanged(ledger, `Not set: ${tooLong}`)
-  const dismissed = refs.filter(ref => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref))
-  const onTab = tabPrs(ledger)
-  const added = refs.filter(ref => !onTab.includes(ref))
-  const addedText =
-    added.length === 0
-      ? ''
-      : added.length === 1
-        ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open."
-        : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`
-
-  return {
-    ledger: {
-      ...ledger,
-      prOrder: { refs, label, why, statuses: {}, dismissed, by: host.agent, at: now },
-    },
-    result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
-    personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? 'PR' : 'PRs'}`,
-  }
 }

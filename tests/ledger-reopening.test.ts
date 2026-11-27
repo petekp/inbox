@@ -13,8 +13,11 @@ import {
 } from '../core/domain/ledger-close'
 import { addAgentItem, addFinding, applyUpdate } from '../core/domain/ledger-update'
 import { parseReply } from '../core/domain/reply-parse'
-import { recordClose } from '../core/runtime/tools'
+import { recordClose, toolAnswer } from '../core/runtime/tools'
+import { TOOL_FIELDS } from '../core/domain/tool-schemas'
 import type { Item } from '../types'
+
+const NO_PRESSES = { lastActions: {}, turnStartedAt: null }
 
 describe('reopening', () => {
   const item = (id: string, options: string[] = []): Item => ({
@@ -80,6 +83,28 @@ describe('reopening', () => {
     expect(
       recordClose(CLAUDE_CODE, expired, { id: 'f7', reason: 'x' }, 9, { lastActions: {}, turnStartedAt: null }).result,
     ).toContain('Not closed:')
+  })
+
+  test('the agent reopens a row it closed with an answer this turn by recording it again, and no other answered row', () => {
+    const ask = { kind: 'question', ask: 'Which cache should the API use?', options: ['Redis', 'Memcached'] }
+    const recorded = toolAnswer(CLAUDE_CODE, { ...EMPTY, turn: 1 }, 'record', ask, 1000, NO_PRESSES, TOOL_FIELDS, null)
+    const record = (ledger: typeof EMPTY, turnStartedAt: number) =>
+      toolAnswer(CLAUDE_CODE, ledger, 'record', ask, 2000, { lastActions: {}, turnStartedAt }, TOOL_FIELDS, null)
+    const closedByAgent = closeByAgent(CLAUDE_CODE, recorded.ledger, 'i1', { answer: 'I ran npm login' }, 1500).ledger
+    expect(closedByAgent.closed.map(c => c.closedBy)).toEqual(['agent'])
+
+    const reopened = record(closedByAgent, 1200)
+    expect(reopened.result).toStartWith('Reopened: you closed it earlier in this turn.')
+    expect(reopened.personLine).toBe('Question: Which cache should the API use?')
+    expect(reopened.ledger.items.map(i => [i.id, i.ask])).toEqual([['i1', 'Which cache should the API use?']])
+    expect(reopened.ledger.closed).toEqual([])
+
+    const closedByPerson = closeItem(recorded.ledger, 'i1', { how: 'answered', outcome: 'Redis' }, 1500)
+    for (const [ledger, turnStartedAt] of [
+      [closedByAgent, 1600],
+      [closedByPerson, 1200],
+    ] as const)
+      expect(record(ledger, turnStartedAt).result).toStartWith('Not recorded: the user answered it')
   })
 
   test('Claude and the per-turn update close findings with how and outcome, and the update closes one only as fixed', () => {
