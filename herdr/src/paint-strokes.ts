@@ -35,6 +35,9 @@ function lineEl(id: string, c: Column, top: number, height: number | null, t: Th
   return c.isDashed ? sized.border_dashed() : sized
 }
 
+/** The path's column, solid. */
+const PATH: Column = { depth: 0, isDashed: false }
+
 const pathColumn = (line: PathLine): Column[] => (line === null ? [] : [{ depth: 0, isDashed: line === 'to-next' }])
 
 /** The columns a block's strokes run in on from above it. */
@@ -237,13 +240,18 @@ export function contentStrokeEls(
     return [abovePart, belowPart]
   }
   const below = (c: Column, name: string): Element => lower(c, name, top + LINE_HEIGHT)
-  const pathEls = (side: PathSide): Element[] =>
-    side.is === 'work'
-      ? pathColumn(side.line).flatMap(c => whole(c, 'path'))
-      : [
-          ...pathColumn(side.above).map(c => upper(c, 'path', top)),
-          ...pathColumn(side.below).map(c => below(c, 'path')),
-        ]
+  const lacking = (part: 'top' | 'bottom'): Element =>
+    (part === 'top' ? f.above(0) : f.below(0))(lineEl(idOf('path', part), PATH, armAt + 1, 0, t))
+  const pathEls = (side: PathSide): Element[] => {
+    if (side.is === 'work') {
+      const [line] = pathColumn(side.line)
+      return line ? whole(line, 'path') : [lacking('top'), lacking('bottom')]
+    }
+    const [above] = pathColumn(side.above)
+    const [under] = pathColumn(side.below)
+
+    return [above ? upper(above, 'path', top) : lacking('top'), under ? below(under, 'path') : lacking('bottom')]
+  }
   const reaches = new Map<number, Reach>()
   const reachOf = (c: Column): Reach => {
     const r = reaches.get(c.depth) ?? { isDashed: true, toEnd: false, toArm: false, lowerFrom: null }
