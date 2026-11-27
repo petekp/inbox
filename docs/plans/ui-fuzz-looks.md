@@ -6,7 +6,7 @@ This is part of [the UI fuzz plan](ui-fuzz.md). It covers the two looks that run
 
 ## Codex tab
 
-`./scripts/fuzz.sh --look codex [--seed N] [--runs N]` serves the built tab with `codex/scripts/tab-page.sh` on port 4795. It drives the page in a headless Chrome through agent-browser, in the session `inbox-fuzz-codex`, and closes both when it ends. It serves the bundle in `codex/plugin/dist`, so a branch that changes the tab builds it first with `./scripts/bundles.sh build`. A case is a theme, a width of 360, 520 or 800 pixels, reduced motion on or off, and a list of events: waits, keys, typing, and clicks on the n-th row, button or tab.
+`./scripts/fuzz.sh --look codex [--seed N] [--runs N]` serves the built tab with `codex/scripts/tab-page.sh` on port 4795. It drives the page in a headless Chrome through agent-browser, in the session `inbox-fuzz-codex`, and closes both when it ends. It builds the Codex bundle in `codex/plugin/dist` from the working tree first, so a run tests the sources it sees. It refuses to start when a server already answers port 4795, since that server, such as a tab page left from an earlier check, would serve its own bundle. The build leaves `codex/plugin/dist` changed on a branch that changes the tab; never commit it. A case is a theme, a width of 360, 520 or 800 pixels, reduced motion on or off, and a list of events: waits, keys, typing, and clicks on the n-th row, button or tab.
 
 `drive` in `fuzz/codex-page.ts` runs inside the page. It opens a new thread, so each case starts from the demo session. It fires each event at the tab's iframe, then samples every animation frame until the page has been still for 1.5 s. A click sends pointer and mouse events before the click, as a person's does. It checks these rules on each frame:
 
@@ -33,8 +33,7 @@ The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/seeds.t
 
 Every seed for #834 to #837, #959 and #968 now passes. #982, #983 and #987 have open seeds. #772 and #783 (open or close just after Undo) have no seed yet.
 
-Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so the seeds for #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line) cannot run there. The driver also does not check that the server answering port 4795 is the one it started: a tab page server left running there from an earlier check serves its older bundle, and the run then reports failures the build under test does not have.
-
+Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so the seeds for #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line) cannot run there.
 ## Terminal and desktop
 
 `./scripts/fuzz.sh --look mod [--seed N] [--runs N]` writes the cases into one fuzz file, `fuzz/out/<run>/mod/cases.fuzz.ts`. It runs that file with `scripts/test-files.sh`, which copies a `fuzz/*.fuzz.ts` file into the test folder as a test. The plugin test engine passes no environment variables to a test, so the cases go in the file itself.

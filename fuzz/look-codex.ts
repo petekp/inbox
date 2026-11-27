@@ -61,15 +61,27 @@ const browse = (...args: string[]) => $`agent-browser --session ${SESSION} ${arg
 let thread = 0
 let server: ReturnType<typeof Bun.spawn> | null = null
 
-/** Starts the tab page on its own port, with demo data, and the browser session that draws it. */
+const answers = async () => (await fetch(`http://127.0.0.1:${PORT}/`).catch(() => null))?.ok === true
+
+/**
+ * Builds the Codex bundle from the working tree, then starts the tab page on its own port, with demo data, and the
+ * browser session that draws it. Refuses when a server already answers the port, since that server would serve its
+ * own, older bundle.
+ */
 async function open(): Promise<void> {
+  if (await answers())
+    throw new Error(
+      `a server already answers port ${PORT}, so this run would test its bundle. Stop it first: lsof -nP -iTCP:${PORT} -sTCP:LISTEN`,
+    )
+  const build = await $`npm --prefix ${join(import.meta.dir, '..', 'codex')} run --silent build`.nothrow().quiet()
+  if (build.exitCode !== 0)
+    throw new Error(`the Codex bundle did not build: ${build.stderr.toString().trim().split('\n')[0] ?? ''}`)
   server = Bun.spawn(['sh', join(import.meta.dir, '..', 'codex', 'scripts', 'tab-page.sh'), String(PORT)], {
     stdout: 'ignore',
     stderr: 'ignore',
   })
   for (let i = 0; i < 50; i++) {
-    const r = await fetch(`http://127.0.0.1:${PORT}/`).catch(() => null)
-    if (r?.ok) return
+    if (await answers()) return
     await Bun.sleep(100)
   }
   throw new Error(`the tab page did not start on port ${PORT}`)
