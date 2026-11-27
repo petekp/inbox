@@ -11,6 +11,7 @@ import type { DrawnStatus } from './tab-status-steps'
 import { later, dispose, request, applyHost, READ_TIMEOUT_MS } from './tab-host'
 import type { HostContext } from './tab-host'
 import { measure, animateDraw } from './tab-motion'
+import { restCounts } from './tab-count-motion'
 import { wakeForMoves } from './tab-wake'
 import { applyPageVariables } from './tab-page-variables'
 import './list-input'
@@ -101,6 +102,7 @@ function draw() {
   const isPageSwitch = drawnPage !== null && page !== drawnPage
   if (isPageSwitch) document.documentElement.classList.add('page-switched', 'page-switching')
   drawnPage = page
+  if (isPageSwitch) restCounts()
   const before = measure()
   const step = tabState.view ? stepLists(tabState.view) : null
   tabState.lastLists = step?.lists ?? null
