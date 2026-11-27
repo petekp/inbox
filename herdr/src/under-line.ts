@@ -3,7 +3,7 @@ import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import { isOpenRow } from './blocks'
 import type { Block, RowBlock } from './blocks'
 import { NEXT_FRAME_MS } from './block-glide'
-import { isStatusUnder } from './held-line'
+import { isStatusUnder, statusKindOf } from './held-line'
 import type { PanelSpace } from './panel-steps'
 
 type Line = NonNullable<RowBlock['feedback']>
@@ -37,10 +37,6 @@ const restsAfter = (u: UnderLine<unknown>): number =>
 
 const lineOf = (b: Block): Line | null => (b.kind === 'row' && isStatusUnder(b) ? b.feedback : null)
 
-/** What a status says, as a press under way or its outcome: an open or refresh that runs, and how it ended, differ. */
-const kindOf = (l: Line): string | undefined =>
-  l.source?.is === 'local' ? `local ${l.source.result.state}` : l.source?.is
-
 /**
  * The status under a block's buttons at `now`, after `last`. A line that comes stays drawn and grows the row's box
  * from the draw after it. One that goes from a row that stays open stays drawn while it fades and the box holds, until
@@ -54,7 +50,7 @@ export const stepUnder = (last: UnderLine | null, b: Block, now: number, isInput
     b.kind === 'row' && isOpenRow(b) && !b.settled,
     now,
     isInput,
-    (x, y) => kindOf(x) === kindOf(y),
+    (x, y) => statusKindOf(x) === statusKindOf(y),
   )
 
 /**

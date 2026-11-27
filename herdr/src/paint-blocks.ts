@@ -38,7 +38,7 @@ import type { Paint, Theme } from './paint-theme'
 import { bannerEl } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { titleTextEl } from './paint-title-text'
-import { addedOptionsEls, titleLineEls } from './paint-row-lines'
+import { addedLinesEls, titleLineEls } from './paint-row-lines'
 import { noteEl, ruleEl, ruleLine } from './paint-notes'
 import { partedEl } from './paint-parted'
 import { NO_BREAK_SPACE, feedbackEl, wordEls } from './paint-text'
@@ -154,7 +154,7 @@ function bodyEls(
     : from.body
   let end = titleEnd
   let isWarned = false
-  const els = shown.flatMap(l => {
+  const els = shown.map(l => {
     const isFirstAnswer = !isWarned && (l.optionId !== undefined || l.part === 'answers')
     const warning = isFirstAnswer ? warn(partPt(end, l.part), partPt('status', l.part), l.tree !== undefined) : null
     const above = warning ? 0 : partPt(end, l.part)
@@ -165,7 +165,7 @@ function bodyEls(
     return [...(warning ? [warning] : []), bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)]
   })
 
-  return { els: addedOptionsEls(from, shown, els, p), end, isWarned }
+  return { els: addedLinesEls(from, shown, els, p), end, isWarned }
 }
 
 /**
