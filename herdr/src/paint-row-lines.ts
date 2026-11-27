@@ -3,21 +3,34 @@ import type { Element } from 'gpui-kit'
 import { v_flex } from 'gpui-base'
 import type { BodyLine, RowBlock, Tone } from './blocks'
 import { HOLD_MS, NEXT_FRAME_MS } from './block-glide'
-import { isStatusUnder } from './held-line'
+import { addedAt, bodyKey, isStatusUnder } from './held-line'
 import { aboveId, aboveLineId, addedId, addedLinesId } from './heights'
 import { sizeEl, springBox } from './paint-space'
 import type { RowMotion } from './motion'
 import { fadeEl } from './paint-parts'
 import type { Paint } from './paint-theme'
 
-/** A line a row draws between its title and its panel. */
-type TitleLine = { text: string; tone: Tone; isHidden?: boolean; leftAt?: number; cameAt?: number }
+/**
+ * A line a row draws between its title and its panel. `isStatus` marks the row's status or held line, which sits in a
+ * box of its own.
+ */
+type TitleLine = {
+  text: string
+  tone: Tone
+  isHidden?: boolean
+  leftAt?: number
+  cameAt?: number
+  isAgain?: boolean
+  isStatus?: true
+}
 
 /** The lines a row's form draws between its title and its panel: its settled label, a status after the title, its held line. */
 const linesOf = (r: RowBlock): TitleLine[] => [
   ...(r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : []),
-  ...(r.feedback && !isStatusUnder(r) ? [{ ...r.feedback, cameAt: r.lineCameAt }] : []),
-  ...(r.heldLine ? [r.heldLine] : []),
+  ...(r.feedback && !isStatusUnder(r)
+    ? [{ ...r.feedback, cameAt: r.lineCameAt, isAgain: r.isLineAgain, isStatus: true as const }]
+    : []),
+  ...(r.heldLine ? [{ ...r.heldLine, isStatus: true as const }] : []),
 ]
 
 /**
@@ -58,13 +71,14 @@ export function titleLineEls(
 
 /**
  * A held line whose hold let go, as `holdLinesAbove` gives it: it fades out while its box holds the line's height, then
- * the box shuts, with the row's box, so the buttons under it glide up and no empty space stays. Other lines draw as
- * they are.
+ * the box shuts, with the row's box, so the buttons under it glide up and no empty space stays. A status at rest
+ * reports its height as its box's, so a status that comes in its place moves the box from where it is drawn. Other
+ * lines draw as they are.
  */
 function leavingEl(r: RowBlock, l: TitleLine, el: Element, n: number, p: Paint): Element {
   const leftAt = l.leftAt
-  if (l.cameAt !== undefined) return comingEl(r, l.cameAt, el, n, p)
-  if (leftAt === undefined) return el
+  if (l.cameAt !== undefined) return comingEl(r, l, l.cameAt, el, n, p)
+  if (leftAt === undefined) return l.isStatus ? sizeEl(aboveId(r.id), p, sizeEl(aboveLineId(r.id), p, el)) : el
   const isFading = p.now < leftAt + HOLD_MS
   const name = `status above ${r.id} line ${n}`
   const shown = l.isHidden ? el : fadeEl(el, name, p.now === leftAt ? 1 : 0, { duration: LEAVE_FADE_MS, delay: 0 }, p)
@@ -76,35 +90,48 @@ function leavingEl(r: RowBlock, l: TitleLine, el: Element, n: number, p: Paint):
 /**
  * A status that came above a row's buttons, as `holdLinesAbove` gives it: its box opens from none, with the row's box,
  * so the buttons under it glide down, and the line shows faint in its first draw, so a press shows at once, then fades
- * in once the box is nearly open.
+ * in once the box is nearly open. A status that came in place of one of another kind moves its box from the height it
+ * was drawn at, as a status under the buttons comes again.
  */
-function comingEl(r: RowBlock, cameAt: number, el: Element, n: number, p: Paint): Element {
+function comingEl(r: RowBlock, l: TitleLine, cameAt: number, el: Element, n: number, p: Paint): Element {
   const isStart = p.now === cameAt
   const height = p.heights.get(aboveLineId(r.id))
+  const from = l.isAgain ? (p.heights.get(aboveId(r.id)) ?? 0) : 0
   const name = `status above ${r.id} line ${n}`
-  const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) }
+  const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0, { x: from, v: 0 }) }
   const shown = fadeEl(el, name, isStart ? FAINT_OPACITY : 1, fade, p)
-  const box = springBox(`fit ${aboveId(r.id)}`, isStart ? 0 : height)
+  const box = springBox(`fit ${aboveId(r.id)}`, isStart ? from : height)
 
   return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)))
 }
 
 /**
- * A row's body lines, `els` drawn for `lines`, with the options the open row added, as `holdLinesAbove` gives them, in
- * a box of their own: it opens from none, with the row's box, so the buttons under it glide down. The options show
- * faint until they have measured, so the press shows at once, then fade in once the box is nearly open.
+ * A row's body lines, `els` drawn for `lines`, a group for each line, with the lines the open row added, as
+ * `holdLinesAbove` gives them, in a box of their own: it opens from none, with the row's box, so the buttons under it
+ * glide down. The lines show faint until they have measured, so a press shows at once, then fade in once the box is
+ * nearly open.
  */
-export function addedOptionsEls(r: RowBlock, lines: BodyLine[], els: Element[], p: Paint): Element[] {
-  const added = r.addedOptions
-  const from = added ? lines.findIndex(l => l.optionId === added.firstId) : -1
-  const end = lines.findLastIndex(l => l.optionId !== undefined || l.isOptionNote === true) + 1
-  if (!added || from < 0 || end <= from) return els
+export function addedLinesEls(r: RowBlock, lines: BodyLine[], els: Element[][], p: Paint): Element[] {
+  const added = r.addedLines
+  const from = added ? addedAt(lines.map(bodyKey), added) : -1
+  if (!added || from < 0) return els.flat()
+  const end = from + added.keys.length
   const height = p.heights.get(addedLinesId(r.id))
   const isStart = p.now === added.cameAt || height === undefined
   const name = addedId(r.id)
   const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) }
-  const shown = fadeEl(v_flex().id(name).children(els.slice(from, end)), name, isStart ? FAINT_OPACITY : 1, fade, p)
+  const shown = fadeEl(
+    v_flex().id(name).children(els.slice(from, end).flat()),
+    name,
+    isStart ? FAINT_OPACITY : 1,
+    fade,
+    p,
+  )
   const box = springBox(`fit ${name}`, isStart ? 0 : height)
 
-  return [...els.slice(0, from), sizeEl(name, p, box.child(sizeEl(addedLinesId(r.id), p, shown))), ...els.slice(end)]
+  return [
+    ...els.slice(0, from).flat(),
+    sizeEl(name, p, box.child(sizeEl(addedLinesId(r.id), p, shown))),
+    ...els.slice(end).flat(),
+  ]
 }

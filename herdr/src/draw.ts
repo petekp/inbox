@@ -27,7 +27,7 @@ import { localEffects } from '../../core/domain/help-steps'
 import { groupEmptyText, tabBarBanners } from '../../core/view/banners'
 import type { BannerView } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
-import { feedbackTone, hasAge, rowFeedbackText, stoppedWarningOf } from '../../core/view/feedback'
+import { feedbackTone, rowAgeAt, rowFeedbackText, stoppedWarningOf } from '../../core/view/feedback'
 import { FINDING_GROUPS } from '../../core/view/help'
 import { earlierLineText } from '../../core/domain/earlier-answers'
 import type { SessionView } from '../../core/view/session-view'
@@ -219,7 +219,7 @@ function sideBySideOf(row: RowView, isAllShown: boolean): Pick<RowBlock, 'sideBy
 /** How long ago the row's press was made, once it has an age, else how long ago the row arrived. A settled row draws none. */
 function rowAge(row: RowView, now: number): string | null {
   if (row.state.is === 'settled') return null
-  const at = row.feedback && hasAge(row.feedback) ? row.feedback.at : row.at
+  const at = rowAgeAt(row.feedback, row.at)
 
   return at === null ? null : shortAgo(now - at)
 }

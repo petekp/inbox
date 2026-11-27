@@ -10,6 +10,7 @@ import {
   type Feedback,
   type FeedbackTone,
   hasAge,
+  rowAgeAt,
   isAfterTitle,
   markedFeedbackText,
   rowFeedbackText,
@@ -319,7 +320,7 @@ export function paneRowLines({
   }
   const sideAge = (row: Row) => {
     const f = row.view ? row.view.feedback : feedbackOf(row.id, lastActions[row.id], notes[row.id], turns, now)
-    const at = f && hasAge(f) ? f.at : row.at
+    const at = rowAgeAt(f, row.at)
     return at === undefined ? '' : shortAgo(now - at)
   }
   const rowClientProps = (row: Row, textColumnPt: number, titleColor?: string): RowProps => {

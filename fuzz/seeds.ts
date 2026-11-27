@@ -364,7 +364,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box panel d18',
     issue: 971,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [{ is: 'click', on: 'row', n: 7, label: 'd18' }, { is: 'wait', ms: 187 }, { is: 'end' }]),
   },
   {
@@ -372,7 +372,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box panel i1',
     issue: 972,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(emptySession(), [
         {
@@ -414,7 +414,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'cut',
     detail: 'in its box panel d18',
     issue: 967,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(demo, [
         { is: 'click', on: 'row', n: 7, label: 'd18' },
@@ -435,6 +435,71 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       { is: 'wait', ms: 1000 },
       { is: 'key', key: 'w' },
     ]),
+  },
+  {
+    name: 'a Status milestone that finishes while the Status page draws',
+    rule: 'motion-id',
+    detail: 'stroke m1 path bottom became stroke m1 path top',
+    issue: 980,
+    isOpen: true,
+    case: herdr(emptySession(), [
+      { is: 'key', key: 'left' },
+      { is: 'key', key: 'left' },
+      {
+        is: 'status',
+        lines: [
+          'NEW: working | Rename the settings page | x',
+          'GOAL: Rename the settings page | working Release notes: ; queued Sync retries',
+        ],
+      },
+      { is: 'key', key: 'right' },
+      { is: 'status', lines: ['MILESTONE: done | Sync retries | x'] },
+    ]),
+  },
+  {
+    name: 'clicking a task whose title is one long word',
+    rule: 'vanish',
+    detail: 'in d18 went from 1.00 to gone',
+    issue: 981,
+    isOpen: true,
+    case: herdr(
+      {
+        ...demo,
+        ledger: {
+          ...demo.ledger,
+          items: demo.ledger.items
+            .filter(i => i.id === 'd16' || i.id === 'd18')
+            .map(i => (i.id === 'd18' ? { ...i, ask: `${ESC}[31mred${ESC}[0m text ${'a'.repeat(240)}` } : i)),
+        },
+      },
+      [{ is: 'click', on: 'row', n: 7, label: 'd18' }],
+    ),
+  },
+  {
+    name: 'the right arrow on the Inbox tab, with two findings and no tasks',
+    rule: 'jump',
+    detail: 'd20 moved',
+    issue: 988,
+    isOpen: true,
+    case: herdr(
+      {
+        ...demo,
+        ledger: {
+          ...demo.ledger,
+          items: [],
+          closed: demo.ledger.closed.filter(c => c.id === 'd10'),
+          findings: demo.ledger.findings.flatMap(f =>
+            f.id === 'd20'
+              ? [{ ...f, title: LONG_URL, detail: 'Rename the settings page' }]
+              : f.id === 'd21'
+                ? [{ ...f, title: '◆ ◇ ● ○', detail: 'No' }]
+                : [],
+          ),
+        },
+        prViews: { ...demo.prViews, views: {} },
+      },
+      [{ is: 'key', key: 'right' }],
+    ),
   },
 ]
 
@@ -488,28 +553,13 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
     ],
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
-  {
-    issue: 967,
-    look: 'herdr',
-    rule: 'cut',
-    details: [
-      [' again"', 'in its box panel d18'],
-      ['"Done"', 'in its box panel d18'],
-      ['"Dismiss"', 'in its box panel d18'],
-      ['"Not applied', 'in its box status above d18'],
-    ],
-  },
-  {
-    issue: 971,
-    look: 'herdr',
-    rule: 'cut',
-    details: [
-      ['"Reply"', 'in its box panel d18'],
-      ['"Explain"', 'in its box panel d18'],
-    ],
-  },
-  { issue: 968, look: 'codex', rule: 'cut', details: ['"Run gesture tests"'] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
+  { issue: 980, look: 'herdr', rule: 'motion-id', details: ['stroke m1 path bottom became stroke m1 path top'] },
+  { issue: 981, look: 'herdr', rule: 'vanish', details: [['"aaaaaaaaaa', 'in d18 went from 1.00 to gone']] },
+  { issue: 982, look: 'codex', rule: 'cut', details: [['"✓ Opened previews"', 'in its box d11']] },
+  { issue: 983, look: 'codex', rule: 'jump', details: ['press-d22 moved'] },
+  { issue: 987, look: 'codex', rule: 'cut', details: [['"Explaining…"', 'in its box d17']] },
+  { issue: 988, look: 'herdr', rule: 'jump', details: [['d20 moved', 'in one frame, off its spring']] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
 ]
 

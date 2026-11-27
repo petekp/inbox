@@ -4,7 +4,7 @@ import { partAttrs } from './tab-part-gap'
 import { closedTitleTone, DOT, settledMark, fieldExit, settledLabel, shortAgo } from '../../core/view/rows'
 import { entryId } from '../../core/view/action-plan'
 import { isRowTab } from '../../core/view/tabs'
-import { hasAge, isFailure, isStatusUnderActions } from '../../core/view/feedback'
+import { isFailure, isStatusUnderActions, rowAgeAt } from '../../core/view/feedback'
 import { dropHeldAfter, heldAfterIds, holdAfter, type DrawnAfter } from './tab-held-after'
 import { isPressUnderWay } from '../../core/view/held-line'
 import type { RowView } from '../../core/view/rows'
@@ -181,8 +181,8 @@ export function ListRow({
   )
 
   const press = isLeft ? (drawnPresses.get(row.id) ?? pressOf(row)) : pressOf(row)
-  const { isStatusOut, pending, isSending, isStatusSending, f, label, tone } = press
-  const ageAt = !isStatusOut && f && hasAge(f) ? f.at : null
+  const { pending, isSending, isStatusSending, f, label, tone } = press
+  const ageAt = rowAgeAt(row.feedback, null)
   const lineForm = (isOpen: boolean): LineForm => {
     const statusUnder = !isStatusSending && isStatusUnderActions(pending ?? f, isOpen) ? label : null
     const text = statusUnder ? null : label
