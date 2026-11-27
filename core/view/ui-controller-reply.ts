@@ -88,7 +88,8 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
   if (isRepeat || isBlank || isGuardedPress(ui, ui.tab, rowId, by, now)) return withCommands(ui)
   const holds = holdsOf(ui, now)
   const pressId = ui.nextPressId
-  const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now, by }
+  const atBefore = view.lastActions[rowId]?.at ?? null
+  const out: PressOut = { pressId, rowId, tab: ui.tab, action, isReply, at: now, atBefore, by }
   const { [rowId]: _error, ...errors } = ui.errors
   const { [rowId]: _note, ...notes } = ui.notes
   let next: UiState = {
@@ -101,7 +102,7 @@ export function press(ui: UiState, view: SessionView, p: RowPress | PrPress, by:
   }
   if (isReply) {
     const text = p.text.trim()
-    const sent = { pressId, text, atBefore: view.lastActions[rowId]?.at ?? null, isConfirmed: false }
+    const sent = { pressId, text, atBefore, isConfirmed: false }
     next = {
       ...next,
       typing: next.typing === rowId ? null : next.typing,

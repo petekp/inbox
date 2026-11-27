@@ -169,6 +169,8 @@ class TabState {
   focusField: string | null = null
   /** Whether the draw under way shows a read of the view, not the person's input. */
   isReadDraw = false
+  /** Whether the read under way carries the answer to a press, so what it brings shows at once, as a press does. */
+  isAnswerDraw = false
   lastLists: Lists | null = null
   /** The PRs tab as the last draw drew it, or null when that draw showed another tab. */
   lastPrs: DrawnPrs | null = null

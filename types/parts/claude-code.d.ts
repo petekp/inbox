@@ -37,6 +37,8 @@ export type PressOut = {
   action: string
   isReply: boolean
   at: number
+  /** The row's last action's `at` when it was pressed, or null when it had none, so a look can tell when a view shows the press. */
+  atBefore: number | null
   /** The input that pressed. A click that closes its row guards the row the cursor moves to. */
   by: InputKind
 }

@@ -244,10 +244,12 @@ function applyView(next: View, seq: number, answers: UiEvent[] = []) {
   dispatch(events, { isDrawn: false })
   markEntering(before, tabState.ui.rowsSeen)
   tabState.isReadDraw = true
+  tabState.isAnswerDraw = answers.length > 0
   try {
     tabState.draw()
   } finally {
     tabState.isReadDraw = false
+    tabState.isAnswerDraw = false
   }
 }
 
