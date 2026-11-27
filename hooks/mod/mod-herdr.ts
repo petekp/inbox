@@ -54,7 +54,7 @@ type DrawnForHerdr = {
  * The engine calls the mod's Herdr code needs. `env` reads `HERDR_PANE_ID`, `HC_TERMINAL_ID`, `HERDR_APP_HOME` and
  * `HOME`, in that order, because the engine takes only a literal name. `stat` follows a link and says whether the
  * path is one. `spawn` streams a command's output, and the stream's `return` ends the command. `pluginRoot` is the
- * mod's install folder, which holds the Herdr mod at `herdr/mod/inbox`.
+ * mod's install folder, which holds the Herdr mod at `herdr/mods/inbox`.
  */
 export type HerdrCalls = {
   run: Run
@@ -199,7 +199,7 @@ export async function startInHerdr(calls: HerdrCalls, redraw: () => unknown): Pr
   await readHasMod(calls)
 }
 
-const bundledMod = (calls: HerdrCalls) => `${calls.pluginRoot}/herdr/mod/inbox`
+const bundledMod = (calls: HerdrCalls) => `${calls.pluginRoot}/herdr/mods/inbox`
 
 /** The calls the install question runs its presses with, and the pane's redraw, from the turn-on. */
 let askHost: { calls: HerdrCalls; redraw: () => unknown } | null = null

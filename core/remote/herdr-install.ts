@@ -38,7 +38,7 @@ export type ModFiles = {
   removeFolder: (path: string) => Promise<void>
 }
 
-/** The mod a host carries: the files of `herdr/mod/inbox` and when they were built. */
+/** The mod a host carries: the files of `herdr/mods/inbox` and when they were built. */
 type BundledMod = { mainJs: string; modJson: string; builtAt: string }
 
 /** The mod a host carries in `folder`, or null when it cannot be read, names no build time or is cut off. */

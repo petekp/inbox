@@ -8,14 +8,14 @@ Status: proposed.
 
 A Herdr mod is a folder in `<app home>/mods/<name>/`. Herdr loads a new folder at once and reloads a mod when a file in it is saved. A mod the person copies in never updates by itself.
 
-Herdr does not reload a mod whose folder is a symbolic link. In Herdr 0.1.15, `<app home>/mods/inbox` was made a link to a worktree's `herdr/mod/inbox`. The open panels kept drawing the earlier build after each of three tries: the link change itself, a touch of `main.js`, and an identical file moved onto `main.js`. Which build a newly opened panel loads through the link was not checked. When the link was replaced with a real folder holding the build, the open panels drew it only after the app restarted. After that, copying a changed `main.js` and `mod.json` into the folder reloaded the open panels in place, with no restart.
+Herdr does not reload a mod whose folder is a symbolic link. In Herdr 0.1.15, `<app home>/mods/inbox` was made a link to a worktree's `herdr/mods/inbox`. The open panels kept drawing the earlier build after each of three tries: the link change itself, a touch of `main.js`, and an identical file moved onto `main.js`. Which build a newly opened panel loads through the link was not checked. When the link was replaced with a real folder holding the build, the open panels drew it only after the app restarted. After that, copying a changed `main.js` and `mod.json` into the folder reloaded the open panels in place, with no restart.
 
 Herdr lists shared mods at herdr.dev/mods, from public GitHub repos with the topic `herdr-mod`, and the person's agent copies the files.
 
-The inbox's three hosts each install the inbox from this repo, so each install already holds the built mod, `herdr/mod/inbox/`. Two ways to get it into Herdr were weighed:
+The inbox's three hosts each install the inbox from this repo, so each install already holds the built mod, `herdr/mods/inbox/`. Two ways to get it into Herdr were weighed:
 
 1. **The hosts install and update it.** A host that runs in a Herdr app terminal compares its bundled mod's version with the one in `<app home>/mods/inbox/`. When its own is newer, it copies its copy in, and Herdr reloads the mod in place. The first install asks the person once, in the inbox, before writing into Herdr's folder. The look then updates with the inbox, and every host carries the same files.
-2. **herdr.dev/mods.** The repo takes the `herdr-mod` topic, and the person's agent copies `herdr/mod/inbox/`. The mod never updates unless the person copies it again, and the listing covers the whole repo, not the mod alone.
+2. **herdr.dev/mods.** The repo takes the `herdr-mod` topic, and the person's agent copies `herdr/mods/inbox/`. The mod never updates unless the person copies it again, and the listing covers the whole repo, not the mod alone.
 
 Pete chose 1. A mod that falls behind the hosts breaks when the envelope's `format` moves, and the person has no reason to copy it again by hand. When two hosts carry different versions, the newer one wins, and the mod reads older envelopes through `upgradeSession`.
 

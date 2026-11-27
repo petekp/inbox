@@ -1,4 +1,4 @@
-// Bundles src/main.ts and the shared modules it imports into mod/inbox/main.js, the Herdr app mod a host copies into
+// Bundles src/main.ts and the shared modules it imports into mods/inbox/main.js, the Herdr app mod a host copies into
 // the app's mods folder. The bundle is committed, since an install runs no build. The Herdr app supplies gpui-kit,
 // gpui-base and herdr to a mod, so they stay external.
 //
@@ -6,7 +6,7 @@
 // codex/plugin/dist/herdr-mod and omp/dist/herdr-mod as well. The bundle's second line says when it was built. A host
 // replaces an installed mod built earlier. A build whose code matches the committed bundle keeps that bundle's time.
 //
-//   bun build.ts          writes main.js and mod.json in mod/inbox and in both copies
+//   bun build.ts          writes main.js and mod.json in mods/inbox and in both copies
 //   bun build.ts --check  exits 1 when any of them does not match the sources
 //
 // The mod runtime has no Node modules. For a browser build Bun swaps a Node module for an empty stand-in, which loads
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url'
 import { BUILT_AT_LINE, stampedBundle } from './stamp'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const out = join(here, 'mod', 'inbox')
+const out = join(here, 'mods', 'inbox')
 const isCheck = process.argv[2] === '--check'
 const APP_MODULES = ['gpui-kit', 'gpui-base', 'herdr']
 const MOD_JSON = `${JSON.stringify({ place: 'none' })}\n`
