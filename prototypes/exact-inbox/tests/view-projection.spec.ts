@@ -113,10 +113,13 @@ describe('schema=2 view projections', () => {
 
     const qTreeSource = view.needsYou.questions.find(r => r.id === questionWithTree.id)!
     const qBareSource = view.needsYou.questions.find(r => r.id === questionWithoutTree.id)!
+    const openTask = askRows.find(r => r.kind === 'task' && r.state === 'open')!
     expect(groups.askGroups[0]!.mark).toBe(NEEDS_YOU_MARKS.question.mark)
     expect(qTree.mark).toBe(rowMark(qTreeSource)!.text)
     expect(qTree.mark).toBe('◆')
     expect(qTree.hasTree).toBe(true)
+    expect(openTask.mark).toBe('□')
+    expect(openTask.markTone).toBe('tasks')
     expect(qBare.mark).toBe(rowMark(qBareSource)!.text)
     expect(qBare.hasTree).toBe(false)
     expect(openFinding.mark).toBe('')

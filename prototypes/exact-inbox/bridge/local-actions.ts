@@ -21,7 +21,7 @@ function requestOf(value: unknown): Request {
     typeof v.row === 'string' &&
     v.row.length <= 1400 &&
     typeof v.version === 'string' &&
-    /^row-sha256-v1:[a-f0-9]{64}$/.test(v.version)
+    /^row-sha256-v[12]:[a-f0-9]{64}$/.test(v.version)
   if (!knownFields || !validIdentity) throw new Error('Invalid local action identity.')
   return v as Request
 }

@@ -15,9 +15,10 @@ component AskTreeBranch
     tree: bool
     hasPrev: bool
     hasNext: bool
+    supporting: bool
   derive armY = hasPrev ? 18 : 10
   view
-    column position="relative" color="ink.muted" padding-top=(hasPrev ? 8 : 0)
+    column position="relative" color=(supporting ? "ink.supporting" : "ink.muted") padding-top=(hasPrev ? 8 : 0)
       if tree
         box position="absolute" left=-17 top=0 height=(hasNext ? "100%" : armY) border-left="1.5px solid tree.row"
         box position="absolute" left=-17 top=armY width=11 border-top="1.5px solid tree.row"
@@ -89,9 +90,9 @@ component InboxRows
                   :hover
                     background-color="transparent"
                   row gap=8 align-items="start" width="100%"
-                    column width=16 padding-top=6 align-items="center"
+                    column width=16 padding-top=(r.row.mark == "□" ? 4 : 6) align-items="center"
                       if r.row.mark != "" or r.row.running
-                        MarkGlyph(mark=r.row.mark, color=r.row.markColor, running=r.row.running, reduced=reduced, size=8)
+                        MarkGlyph(mark=r.row.mark, color=r.row.markColor, running=r.row.running, reduced=reduced, size=(r.row.mark == "□" ? 13 : 8))
                     column flex=1 min-width=0 gap=0
                       ClampedInlineText(parts=r.row.titleParts, maxLines=(isRowOpen(r, selected) ? 0 : 2), bold=isRowOpen(r, selected))
                       if r.row.holdsUpParts.length > 0 and not isRowOpen(r, selected)
@@ -105,11 +106,11 @@ component InboxRows
                       if r.panel.hasTree and hasShownOptions(r.panel, optionsShown.includes(r.id))
                         box position="absolute" left=-17 top=0 bottom=0 border-left="1.5px solid tree.row"
                       if r.panel.holdsUpParts.length > 0
-                        AskTreeBranch(parts=r.panel.holdsUpParts, tree=r.panel.hasTree, hasPrev=false, hasNext=(r.panel.contextParts.length > 0 or r.panel.earlierParts.length > 0 or hasShownOptions(r.panel, optionsShown.includes(r.id))))
+                        AskTreeBranch(parts=r.panel.holdsUpParts, tree=r.panel.hasTree, hasPrev=false, hasNext=(r.panel.contextParts.length > 0 or r.panel.earlierParts.length > 0 or hasShownOptions(r.panel, optionsShown.includes(r.id))), supporting=true)
                       if r.panel.contextParts.length > 0
-                        AskTreeBranch(parts=r.panel.contextParts, tree=r.panel.hasTree, hasPrev=r.panel.holdsUpParts.length > 0, hasNext=(r.panel.earlierParts.length > 0 or hasShownOptions(r.panel, optionsShown.includes(r.id))))
+                        AskTreeBranch(parts=r.panel.contextParts, tree=r.panel.hasTree, hasPrev=r.panel.holdsUpParts.length > 0, hasNext=(r.panel.earlierParts.length > 0 or hasShownOptions(r.panel, optionsShown.includes(r.id))), supporting=true)
                       if r.panel.earlierParts.length > 0
-                        AskTreeBranch(parts=r.panel.earlierParts, tree=r.panel.hasTree, hasPrev=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0), hasNext=hasShownOptions(r.panel, optionsShown.includes(r.id)))
+                        AskTreeBranch(parts=r.panel.earlierParts, tree=r.panel.hasTree, hasPrev=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0), hasNext=hasShownOptions(r.panel, optionsShown.includes(r.id)), supporting=false)
                       if r.panel.detailParts.length > 0
                         column color="ink.primary" white-space="pre-line" padding-top=(r.panel.holdsUpParts.length > 0 or r.panel.contextParts.length > 0 or r.panel.earlierParts.length > 0 ? 6 : 0)
                           InlineText(parts=r.panel.detailParts)

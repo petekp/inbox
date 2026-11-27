@@ -121,7 +121,11 @@ test('remote PR re-runs refresh their checks and retain the outcome across resta
     }))
   }
   const press = { action: 'check-rerun' as const, ref: FIX_REF, check: checkKey(check) }
-  const command: RemoteCommand = { ...f.command(), press, expected: await remoteRowDigest(f.state(), pressRowId(press)) }
+  const command: RemoteCommand = {
+    ...f.command(),
+    press,
+    expected: await remoteRowDigest(f.state(), pressRowId(press)),
+  }
   assert.equal(pressFile(JSON.stringify(command)).ok, true)
   const result = await f.run(command)
   assert.equal(result.error, null)
@@ -143,7 +147,11 @@ test('remote PR commands reject changed sibling checks and extra payload fields'
     prViews: { ...s.prViews, views: { [FIX_REF]: BLOCKED_PR } },
   }))
   const press = { action: 'pr-conflicts' as const, ref: FIX_REF }
-  const command: RemoteCommand = { ...f.command(), press, expected: await remoteRowDigest(f.state(), pressRowId(press)) }
+  const command: RemoteCommand = {
+    ...f.command(),
+    press,
+    expected: await remoteRowDigest(f.state(), pressRowId(press)),
+  }
   for (const malformed of [
     { ...press, id: 'i1' },
     { action: 'pr-refresh', ref: FIX_REF },

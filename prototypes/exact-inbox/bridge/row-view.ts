@@ -14,7 +14,7 @@ import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../../core/view/help'
 import { LEGACY_REMOTE_ACTIONS } from '../../../core/remote/remote-commands'
 import {
   ROW_COPY,
-  closedLineAction,
+  closedLinePlan,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -291,7 +291,7 @@ export function projectRowGroups(
     const drawn = new Set(rows.filter(row => row.state.is === 'settled').map(row => row.id))
     const total = closedTotal(closed, drawn)
     const closedRows = closedShown(closed, drawn, true).map(d => {
-      const action = closedLineAction(d)
+      const action = closedLinePlan(d).action
       const title = 'ask' in d ? d.ask : d.title
       const at = 'closedAt' in d ? d.closedAt : d.at
       const actions: Button[] = []

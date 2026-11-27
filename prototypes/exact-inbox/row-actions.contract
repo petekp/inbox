@@ -30,7 +30,7 @@ component RowActions
             box position="absolute" left=-17 top=armY width=11 border-top="1.5px solid tree.row"
           RowActionButton(a=option.button, item=item, compact=compact, session=session, disconnected=disconnected, pending=pending, localActive=localActive, submittedKey=submittedKey, isSendingRow=isSendingRow, onChoose=onChoose, onLocal=onLocal)
           if option.body.length > 0 or option.reason.length > 0
-            column color="ink.muted" padding-left=13 gap=2
+            column color="ink.supporting" padding-left=13 gap=2
               if option.body.length > 0
                 InlineText(parts=option.body)
               if option.reason.length > 0

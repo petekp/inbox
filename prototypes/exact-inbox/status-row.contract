@@ -76,9 +76,9 @@ component StatusRowView
             box position="absolute" left=7 top=armY width=17 border-top="1px solid tree.status"
 
           row margin-left=indent gap=8 align-items="start" flex=1 min-width=0
-            column width=16 padding-top=6 align-items="center"
+            column width=16 padding-top=(s.mark == "□" ? 4 : 6) align-items="center"
               if s.mark != "" or s.running
-                MarkGlyph(mark=s.mark, color=s.color, running=s.running, reduced=reduced, size=8)
+                MarkGlyph(mark=s.mark, color=s.color, running=s.running, reduced=reduced, size=(s.mark == "□" ? 13 : 8))
             column flex=1 min-width=0 gap=0
               match first(foldActions)
                 case some(fa)
@@ -95,7 +95,7 @@ component StatusRowView
                 case none
                   StatusTitle(s=s, nameColor=nameColor)
               if s.waitsOn != ""
-                text s.waitsOn color="tone.needsYou" line-clamp=2 text-overflow="ellipsis"
+                text s.waitsOn color=s.waitsOnColor line-clamp=2 text-overflow="ellipsis"
               if s.detail != ""
                 text s.detail color=(s.level == "faint" ? "ink.faint" : "ink.muted") line-clamp=2 text-overflow="ellipsis"
               if s.merged != ""

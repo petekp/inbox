@@ -106,6 +106,7 @@ shape StatusLine
   bold: bool
   running: bool
   waitsOn: string
+  waitsOnColor: string
   was: string
   merged: string
   stall: string

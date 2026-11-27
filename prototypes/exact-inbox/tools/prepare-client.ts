@@ -6,6 +6,7 @@ import {
   faintOver,
   LIGHT_TONES,
   MUTED_TEXT,
+  supportingOver,
   THEME_BACKGROUND,
   THEME_TEXT,
 } from '../../../core/view/tones'
@@ -69,6 +70,7 @@ function buildForma(): string {
     `  tree.row = ${mix(0.32, 0.32, lightSelected, darkSelected)}`,
     `  tree.status = ${mix(0.2, 0.2)}`,
     `  ink.primary = ${lightDark(lightInk, darkInk)}`,
+    `  ink.supporting = ${lightDark(supportingOver(lightMuted, lightInk), supportingOver(darkMuted, darkInk))}`,
     `  ink.muted = ${lightDark(lightMuted, darkMuted)}`,
     `  ink.faint = ${lightDark(faintOver(lightMuted, lightBg), faintOver(darkMuted, darkBg))}`,
     `  ink.age = ${lightDark(fadedOver(lightMuted, lightBg, 0.9), fadedOver(darkMuted, darkBg, 0.85))}`,

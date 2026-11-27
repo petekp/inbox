@@ -228,6 +228,7 @@ export function isSnapshot(value: unknown): value is Result<'loadInbox'> {
           'kind',
           'color',
           'waitsOn',
+          'waitsOnColor',
           'was',
           'merged',
           'stall',

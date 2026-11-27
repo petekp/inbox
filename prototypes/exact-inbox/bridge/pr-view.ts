@@ -194,7 +194,7 @@ export function projectPrs(
                 },
               ])
             : []
-          : controls(prBlockActions(pr, sent, view.prs.branchRef, presses, sync), prPageEffect(pr)),
+          : controls(prBlockActions(pr, sent, view.prs.branchRef, presses, sync).actions, prPageEffect(pr)),
         ...feedback(prMarkId(pr.ref), isBlockPressShown(pr, view.lastActions)),
       }),
     )
@@ -215,7 +215,7 @@ export function projectPrs(
           color: toneColor(text.mark.tone),
           running: text.mark.isRunning,
           href: effectLink(commentEffect(pr, t)),
-          controls: controls(threadActions(pr, t, presses), commentEffect(pr, t)),
+          controls: controls(threadActions(pr, t, presses).actions, commentEffect(pr, t)),
           ...feedback(prThreadId(pr, t)),
         })
       },
@@ -230,7 +230,7 @@ export function projectPrs(
           color: toneColor(text.mark.tone),
           running: text.mark.isRunning,
           href: effectLink(logEffect(pr, c)),
-          controls: controls(checkActions(pr, c, presses), logEffect(pr, c)),
+          controls: controls(checkActions(pr, c, presses).actions, logEffect(pr, c)),
           ...feedback(prCheckId(pr, c)),
         })
       },
