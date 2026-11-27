@@ -5,7 +5,7 @@ import {
   closedTitleClock,
   followTo,
   isPrsTabEmpty,
-  isTabEmpty,
+  isEmptyForFollowing,
   NEW_FADE_MS,
   NEW_HOLD_MS,
   newRowIn,
@@ -77,13 +77,18 @@ test('a row tab is empty only with no blocker, no row that is not settled, and n
   const folded = { isUnfolded: false, rows: [{ id: 'c1' }] }
   const unfolded = { ...folded, isUnfolded: true }
   const none = new Set<string>()
-  expect(isTabEmpty({ rows: [], settled: none, closed: [folded], hasBlocker: false })).toBe(true)
-  expect(isTabEmpty({ rows: [], settled: none, closed: [unfolded], hasBlocker: false })).toBe(false)
-  expect(isTabEmpty({ rows: [], settled: new Set(['c1']), closed: [unfolded], hasBlocker: false })).toBe(true)
+  expect(isEmptyForFollowing({ rows: [], settled: none, closed: [folded], hasBlocker: false })).toBe(true)
+  expect(isEmptyForFollowing({ rows: [], settled: none, closed: [unfolded], hasBlocker: false })).toBe(false)
+  expect(isEmptyForFollowing({ rows: [], settled: new Set(['c1']), closed: [unfolded], hasBlocker: false })).toBe(true)
   expect(
-    isTabEmpty({ rows: [{ id: 'q1', state: { is: 'handedOff' } }], settled: none, closed: [], hasBlocker: false }),
+    isEmptyForFollowing({
+      rows: [{ id: 'q1', state: { is: 'handedOff' } }],
+      settled: none,
+      closed: [],
+      hasBlocker: false,
+    }),
   ).toBe(false)
-  expect(isTabEmpty({ rows: [], settled: none, closed: [], hasBlocker: true })).toBe(false)
+  expect(isEmptyForFollowing({ rows: [], settled: none, closed: [], hasBlocker: true })).toBe(false)
   expect(isPrsTabEmpty(0, false)).toBe(true)
   expect(isPrsTabEmpty(0, true)).toBe(false)
 })

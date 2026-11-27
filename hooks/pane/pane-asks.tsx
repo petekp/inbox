@@ -26,6 +26,7 @@ import {
   type RowView,
   waitingCount,
 } from '../../core/view/rows'
+import { closedLineView } from '../../core/view/closed-line'
 import { type TerminalSpan, terminalTextLines } from './terminal-text'
 import { ago } from '../../core/domain/text'
 
@@ -239,7 +240,9 @@ export function paneAskTabs(
   const needsYouView = () => {
     const groups = needsYouGroups.flatMap(g => {
       const { entries } = g
-      const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries), closedAll.includes(g.kind))
+      const closed = closedShown(view.needsYou.closed[g.list], settledIn(entries), closedAll.includes(g.kind)).map(d =>
+        closedLineView(d),
+      )
       if (isUnread) return []
       const isUnfolded = unfolded.includes(g.kind)
       const open = divided(
@@ -316,16 +319,7 @@ export function paneAskTabs(
     if (empty) return emptyState(empty)
     const groups = lists.findingGroups.map(g => {
       const closedOf = view.findings.closed.filter(f => f.kind === g.kind)
-      const closed = closedShown(closedOf, settled, closedAll.includes(g.kind)).map(f => ({
-        id: f.id,
-        how: f.how,
-        canRestore: f.canRestore,
-        ask: f.title,
-        at: f.closedAt,
-        outcomeLabel: f.outcomeLabel,
-        delivery: f.delivery,
-        mark: f.mark,
-      }))
+      const closed = closedShown(closedOf, settled, closedAll.includes(g.kind)).map(f => closedLineView(f))
       return section([
         groupTitle(g.title, waitingCount(rowsIn(g.entries).map(r => r.view)), FINDING_GROUPS[g.kind]),
         ...titleGap(),

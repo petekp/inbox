@@ -1,13 +1,14 @@
-import type { Closed, FoldKind } from '../../types'
+import type { FoldKind } from '../../types'
 import type { RowPress } from '../../core/domain/presses'
-import type { ClosedDelivery, ResultMark, RowView } from '../../core/view/rows'
+import type { ResultMark, RowView } from '../../core/view/rows'
+import { closedLineView } from '../../core/view/closed-line'
+import type { ClosedLineView } from '../../core/view/closed-line'
 import {
   NEEDS_YOU_GROUPS,
   ROW_COPY,
   actionLabel,
   fieldExit,
   replyHint,
-  closedLinePlan,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -267,21 +268,10 @@ function rowBlock(row: RowView, ui: LookUi, selected: string | null, screen: Loo
   }
 }
 
-type ClosedLine = {
-  id: string
-  how: Closed['how']
-  canRestore?: boolean
-  title: string
-  at: number
-  outcomeLabel: string
-  delivery: ClosedDelivery
-  mark: ResultMark
-}
+type Group = { kind: FoldKind; title: string; mark: Mark | null; rows: RowView[]; closed: ClosedLineView[] }
 
-type Group = { kind: FoldKind; title: string; mark: Mark | null; rows: RowView[]; closed: ClosedLine[] }
-
-function closedBlock(d: ClosedLine, now: number): RowBlock {
-  const { action, sessionKey } = closedLinePlan(d, true)
+function closedBlock(d: ClosedLineView, now: number): RowBlock {
+  const { action, sessionKey } = d
   const closedDoes: Does = action ? { is: 'press', press: action.press, effects: [], kind: null } : { is: 'nothing' }
 
   return {
@@ -291,7 +281,7 @@ function closedBlock(d: ClosedLine, now: number): RowBlock {
     mark: markOf(d.mark),
     title: d.title,
     age: shortAgo(now - d.at),
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: 'muted', source: null },
+    feedback: { text: d.outcome, tone: 'muted', source: null },
     settled: null,
     isDim: true,
     isSelectable: false,
@@ -359,7 +349,7 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
       title: g.title,
       mark: { text: g.mark.mark, tone: g.mark.tone, isRunning: false },
       rows: view.needsYou[g.list].filter(r => isDrawnInPlace(r, shownSince)),
-      closed: view.needsYou.closed[g.list].map(d => ({ ...d, title: d.ask })),
+      closed: view.needsYou.closed[g.list].map(d => closedLineView(d, true)),
     }))
 
   return (Object.keys(FINDING_GROUPS) as (keyof typeof FINDING_GROUPS)[]).map(kind => ({
@@ -367,7 +357,7 @@ function groupsOf(view: SessionView, tab: 'needsYou' | 'findings', shownSince: n
     title: FINDING_GROUPS[kind].title,
     mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone, isRunning: false },
     rows: view.findings.rows.filter(r => r.finding?.kind === kind && isDrawnInPlace(r, shownSince)),
-    closed: view.findings.closed.filter(f => f.kind === kind).map(f => ({ ...f, at: f.closedAt })),
+    closed: view.findings.closed.filter(f => f.kind === kind).map(f => closedLineView(f, true)),
   }))
 }
 

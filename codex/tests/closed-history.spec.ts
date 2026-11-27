@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { demoSession } from '../../core/view/demo'
 import { sessionView } from '../../core/view/session-view'
-import { closedLinePlan } from '../../core/view/rows'
+import { closedLinePlan } from '../../core/view/closed-line'
 import { pressOn } from '../../core/runtime/session-presses'
 import { NO_HOLDS, SETTLED_MS } from '../../core/view/timing'
 
