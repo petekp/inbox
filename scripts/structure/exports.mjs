@@ -6,7 +6,7 @@ import { localTarget } from './imports.mjs'
 import { API, nameOf, ts } from './ts.mjs'
 
 /** Committed build output, and types/parts, which scripts/build-types.mjs joins into types/index.d.ts instead of importing. */
-const SKIPPED_DIRS = ['codex/plugin/dist', 'herdr/mod', 'omp/dist', 'types/parts']
+const SKIPPED_DIRS = ['codex/plugin/dist', 'herdr/mods', 'omp/dist', 'types/parts']
 
 /**
  * Exports whose consumer is outside the repo's imports: a host or a tool loads the file, or a script reads it as text.

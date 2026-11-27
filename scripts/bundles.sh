@@ -1,6 +1,6 @@
 #!/bin/sh
 # The built bundles: the files Git tracks in the folders the builds write, codex/plugin/dist (codex/build.mjs), omp/dist
-# (omp/build.ts) and herdr/mod/inbox (herdr/build.ts, which also writes codex/plugin/dist/herdr-mod and
+# (omp/build.ts) and herdr/mods/inbox (herdr/build.ts, which also writes codex/plugin/dist/herdr-mod and
 # omp/dist/herdr-mod). An install runs no build, so next and main commit them. A pull request carries source only: after
 # each push to next, .github/workflows/bundles.yml rebuilds them and commits any change, with scripts/bundle-bot.sh.
 # A commit whose message holds [skip ci] starts no workflow, so its bundles wait for the next push.
@@ -19,7 +19,7 @@
 set -eu
 
 DIR=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
-BUNDLE_DIRS='codex/plugin/dist omp/dist herdr/mod/inbox'
+BUNDLE_DIRS='codex/plugin/dist omp/dist herdr/mods/inbox'
 
 cd "$DIR"
 

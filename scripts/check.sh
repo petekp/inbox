@@ -173,7 +173,7 @@ herdr_app_check() {
 if command -v herdr-app >/dev/null 2>&1; then
     herdr_scratch=$(mktemp -d)
     mkdir "$herdr_scratch/home" "$herdr_scratch/inbox"
-    cp "$DIR/herdr/mod/inbox/main.js" "$DIR/herdr/mod/inbox/mod.json" "$herdr_scratch/inbox/"
+    cp "$DIR/herdr/mods/inbox/main.js" "$DIR/herdr/mods/inbox/mod.json" "$herdr_scratch/inbox/"
     check "herdr app check" herdr_app_check
     rm -rf "$herdr_scratch"
     herdr_scratch=

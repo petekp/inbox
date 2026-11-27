@@ -43,7 +43,7 @@ settings or inbox: `env HOME=/path/to/empty/folder omp -e omp/src/host.ts`.
 ## Built bundles
 
 An install runs no build, so `next` and `main` commit the built bundles: `codex/plugin/dist`,
-`omp/dist` and `herdr/mod/inbox`. A pull request carries source only. Its CI fails when its
+`omp/dist` and `herdr/mods/inbox`. A pull request carries source only. Its CI fails when its
 commits change a bundle, and still fails when a bundle does not build. After each push to
 `next`, `.github/workflows/bundles.yml` rebuilds the bundles and commits any change to `next`
 as "Rebuild bundles for <short sha>". A release fast-forwards `main` to `next`, and CI on `main`
