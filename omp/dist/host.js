@@ -5175,15 +5175,6 @@ function sessionKeyOf(reason, canShowSession) {
 function resumeLabel(isSending) {
   return isSending ? "Resuming\u2026" : "Resume";
 }
-function closedLinePlan(d, canShowSession = false) {
-  const sessionKey = sessionKeyOf(refusalOf2(d.delivery), canShowSession);
-  if (d.canRestore === false)
-    return { action: null, sessionKey };
-  if (canUndoRefused(d.delivery))
-    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
-  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
-  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
-}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   return actions.flatMap((a) => {
@@ -8181,7 +8172,7 @@ function isRowTabRunning(v, tab, isUnfolded) {
   const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedShown(g.rows, settled) : []);
   return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => d.mark.isRunning);
 }
-function isTabEmpty({
+function isEmptyForFollowing({
   rows,
   settled,
   closed,
@@ -10193,7 +10184,7 @@ function isShownEmpty(ui, view, tab) {
   if (tab === "prs")
     return isPrsTabEmpty(view.prs.drawn.length, ui.host.isFetchingPrs);
   const rows = tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows;
-  return isTabEmpty({
+  return isEmptyForFollowing({
     rows,
     settled: new Set(settledRowIds(rows)),
     closed: closedGroups(view, tab, (kind) => ui.unfolded.includes(kind)),
@@ -10871,7 +10862,7 @@ var isGroupEmpty = (g) => g.rows.length === 0 && closedTotal(g.closed, settledIn
 var closedId = (id) => `closed ${id}`;
 var foldId = (kind) => `fold ${kind}`;
 function closedLines(d) {
-  const action = closedLinePlan(d).action;
+  const { action } = d;
   const buttons = action ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }] : [];
   return {
     ...blankLine(closedId(d.id)),
@@ -10881,7 +10872,7 @@ function closedLines(d) {
     title: d.title,
     isDim: true,
     age: d.at,
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null, source: null },
+    feedback: { text: d.outcome, tone: null, source: null },
     buttons,
     isStatic: buttons.length === 0,
     isWaiting: false
@@ -11572,6 +11563,30 @@ function drawGoalPart(part, d, isSelected) {
   return fieldLines(d, PAGE_MARK_AT);
 }
 
+// ../core/view/closed-line.ts
+function closedLinePlan(d, canShowSession = false) {
+  const sessionKey = sessionKeyOf(refusalOf2(d.delivery), canShowSession);
+  if (d.canRestore === false)
+    return { action: null, sessionKey };
+  if (canUndoRefused(d.delivery))
+    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
+  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
+  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
+}
+function closedLineView(d, canShowSession = false) {
+  const { action, sessionKey } = closedLinePlan(d, canShowSession);
+  return {
+    id: d.id,
+    title: "ask" in d ? d.ask : d.title,
+    at: "ask" in d ? d.at : d.closedAt,
+    mark: d.mark,
+    outcome: settledLabel(d.outcomeLabel, d.delivery),
+    action,
+    isUndoOfRefusal: canUndoRefused(d.delivery),
+    sessionKey
+  };
+}
+
 // ../core/remote/herdr-install.ts
 var BUILD_BANNER = "// Built by herdr/build.ts ";
 var BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)\. (\d+) characters follow\.$/;
@@ -11841,14 +11856,14 @@ function rowEntries(screen, ui, tab, now) {
     mark: { text: g.mark.mark, tone: g.mark.tone },
     isRowLed: true,
     rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, ui.shownSince)),
-    closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
+    closed: view.needsYou.closed[g.list].map((d) => closedLineView(d))
   })) : Object.keys(FINDING_GROUPS).map((kind) => ({
     kind,
     title: FINDING_GROUPS[kind].title,
     mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
     isRowLed: false,
     rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
-    closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
+    closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => closedLineView(f))
   }));
   const stops = tab === "needsYou" ? [...herdrAskEntries(screen), ...stopEntries(screen, ui)] : [];
   const empty = emptyTab(view, {

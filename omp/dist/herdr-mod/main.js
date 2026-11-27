@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T21:11:17.964Z. 437131 characters follow.
+// Built at 2026-11-27T21:18:10.566Z. 437507 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -2185,15 +2185,6 @@ var STOPPED_REASON = "you stopped this session. It takes inbox messages again af
 function sessionKeyOf(reason, canShowSession) {
   return canShowSession && reason === STOPPED_REASON ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
 }
-function closedLinePlan(d, canShowSession = false) {
-  const sessionKey = sessionKeyOf(refusalOf(d.delivery), canShowSession);
-  if (d.canRestore === false)
-    return { action: null, sessionKey };
-  if (canUndoRefused(d.delivery))
-    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
-  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
-  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
-}
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
   return actions.flatMap((a) => {
@@ -2774,7 +2765,7 @@ function isRowTabRunning(v, tab, isUnfolded) {
   const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedShown(g.rows, settled) : []);
   return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => d.mark.isRunning);
 }
-function isTabEmpty({
+function isEmptyForFollowing({
   rows,
   settled,
   closed,
@@ -4981,7 +4972,7 @@ function isShownEmpty(ui, view, tab) {
   if (tab === "prs")
     return isPrsTabEmpty(view.prs.drawn.length, ui.host.isFetchingPrs);
   const rows = tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows;
-  return isTabEmpty({
+  return isEmptyForFollowing({
     rows,
     settled: new Set(settledRowIds(rows)),
     closed: closedGroups(view, tab, (kind) => ui.unfolded.includes(kind)),
@@ -8857,6 +8848,30 @@ function herdrIo({ exec, hc, readTextFile, writeTextFile, home }) {
   return { queueIo, hereIo };
 }
 
+// ../core/view/closed-line.ts
+function closedLinePlan(d, canShowSession = false) {
+  const sessionKey = sessionKeyOf(refusalOf(d.delivery), canShowSession);
+  if (d.canRestore === false)
+    return { action: null, sessionKey };
+  if (canUndoRefused(d.delivery))
+    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
+  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
+  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
+}
+function closedLineView(d, canShowSession = false) {
+  const { action, sessionKey } = closedLinePlan(d, canShowSession);
+  return {
+    id: d.id,
+    title: "ask" in d ? d.ask : d.title,
+    at: "ask" in d ? d.at : d.closedAt,
+    mark: d.mark,
+    outcome: settledLabel(d.outcomeLabel, d.delivery),
+    action,
+    isUndoOfRefusal: canUndoRefused(d.delivery),
+    sessionKey
+  };
+}
+
 // ../core/view/empty-tab.ts
 var EMPTY_TITLES = {
   needsYou: NOTHING_NEEDED_TEXT,
@@ -9640,7 +9655,7 @@ function rowBlock(row, ui, selected, screen) {
   };
 }
 function closedBlock(d, now) {
-  const { action, sessionKey } = closedLinePlan(d, true);
+  const { action, sessionKey } = d;
   const closedDoes = action ? { is: "press", press: action.press, effects: [], kind: null } : { is: "nothing" };
   return {
     kind: "row",
@@ -9649,7 +9664,7 @@ function closedBlock(d, now) {
     mark: markOf3(d.mark),
     title: d.title,
     age: shortAgo(now - d.at),
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: "muted", source: null },
+    feedback: { text: d.outcome, tone: "muted", source: null },
     settled: null,
     isDim: true,
     isSelectable: false,
@@ -9716,14 +9731,14 @@ function groupsOf(view, tab, shownSince) {
       title: g.title,
       mark: { text: g.mark.mark, tone: g.mark.tone, isRunning: false },
       rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, shownSince)),
-      closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
+      closed: view.needsYou.closed[g.list].map((d) => closedLineView(d, true))
     }));
   return Object.keys(FINDING_GROUPS).map((kind) => ({
     kind,
     title: FINDING_GROUPS[kind].title,
     mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone, isRunning: false },
     rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, shownSince)),
-    closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
+    closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => closedLineView(f, true))
   }));
 }
 var waitsOf = (groups, collapsed) => groups.flatMap((g) => g.rows).map((r) => ({ id: r.id, isWaiting: isWaitingRow(r), isCollapsed: collapsed.includes(r.id) }));
