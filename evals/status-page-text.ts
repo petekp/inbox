@@ -4,6 +4,7 @@ import { countsText } from '../core/view/status-folds'
 import { WAS_LABEL } from '../core/view/status-page'
 import { mergedLine, STALL_GAP } from '../core/view/status-page-parts'
 import type { StatusPage, StatusRow, StatusStall } from '../core/view/status-page'
+import { goalNotes } from '../core/view/status-goal-page'
 import type { MilestoneRow } from '../core/view/status-goal-page'
 import { milestoneRows } from '../core/view/status-folds'
 import { LATER_TEXT } from '../core/view/status-path'
@@ -66,15 +67,14 @@ function milestoneText(m: MilestoneRow): string[] {
   ]
 }
 
-/** The goal with its Now line and its milestones, each with its rows under it, in the order the looks draw them. */
+/** The goal with its Now and Prev lines and its milestones, each with its rows under it, in the order the looks draw them. */
 function goalText(page: StatusPage): string[] {
   const g = page.goal
   const goal = g
     ? [
         g.label,
         g.text,
-        ...(g.was ? [`${WAS_LABEL}${g.was}`] : []),
-        ...(g.now ? [g.now] : []),
+        ...goalNotes(g).map(n => (n.kind === 'was' ? `${WAS_LABEL}${n.text}` : n.text)),
         ...g.milestones.flatMap(milestoneText),
       ]
     : []
