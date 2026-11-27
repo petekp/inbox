@@ -48,9 +48,8 @@ export type Host = {
   /** The first paragraph of `guidanceText`: what the inbox shows the person, and where. */
   intro: string
   /**
-   * Sentences the guidance adds after its held-act line, for an agent whose own system prompt leaves it asking about a
-   * commit nobody asked for. Null for Claude Code, whose system prompt says to commit only when asked, and for Codex,
-   * which passes `uncommitted-change-not-asked` without them.
+   * Sentences the guidance adds after its held-act line, or null. See "Held-act sentences in the guidance" in
+   * docs/looks/differences-omp-host.md.
    */
   heldActRule: string | null
   /**
