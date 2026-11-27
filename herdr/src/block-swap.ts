@@ -76,6 +76,32 @@ const isFormOf = (s: BlockSwap, b: Block): boolean => partsOf(s.from, b)?.length
 
 const isOtherForm = (was: Block, b: Block): boolean => partsOf(was, b)?.length !== 0
 
+/** A change that keeps the block's kind and changes it whole, as a note's or a line's text does. */
+const isWholeInPlace = (was: Block, b: Block): boolean => was.kind === b.kind && partsOf(was, b) === null
+
+function startSwap(
+  was: Block,
+  b: Block,
+  parts: StatusPart[] | null,
+  now: number,
+  isInput: boolean,
+  height: number | undefined,
+): BlockSwap {
+  const isAdded = was.kind === 'status' && parts !== null && parts.every(part => PART_KEYS[part](was) === '')
+
+  return {
+    from: was,
+    to: b,
+    parts,
+    since: now,
+    outUntil: now + NEXT_FRAME_MS + LEAVE_FADE_MS,
+    inAt: isAdded || isInput ? now : null,
+    isBack: false,
+    isInput,
+    fromHeight: height,
+  }
+}
+
 /**
  * The change of form in this draw, from the last one, the block last drawn, `was`, the block the view gives, `b`, and
  * the height `was` measured. A change starts only for a block whose box neither enters nor leaves, `isBoxAtRest`. A
@@ -96,7 +122,9 @@ export function stepBlockSwap(
   const live = last !== null && now < endsAt(last) ? last : null
   if (live?.inAt === null) {
     if (isFormOf(live, b)) return { ...live, to: b, inAt: now, isBack: true }
-    if (isInput && isOtherForm(live.to, b)) return null
+    if (isInput && isOtherForm(live.to, b)) {
+      return isWholeInPlace(live.from, b) ? startSwap(live.from, b, null, now, true, live.fromHeight) : null
+    }
     const more = live.from.kind === 'status' && b.kind === 'status' ? changedParts(live.from, b) : null
     const added = live.parts && more ? more.filter(part => !live.parts?.includes(part)) : []
     const parts = live.parts && more && [...live.parts, ...added]
@@ -104,22 +132,10 @@ export function stepBlockSwap(
     return { ...live, to: b, parts, outUntil, inAt: now >= outUntil ? now : null }
   }
   const parts = was === undefined ? [] : partsOf(was, b)
-  const isShownAtOnce = isInput && (parts !== null || was?.kind !== b.kind)
-  if (was === undefined || !isBoxAtRest || parts?.length === 0 || isShownAtOnce) return live
-  const isAdded = was.kind === 'status' && parts !== null && parts.every(part => PART_KEYS[part](was) === '')
-  const outUntil = now + NEXT_FRAME_MS + LEAVE_FADE_MS
+  if (was === undefined || !isBoxAtRest || parts?.length === 0) return live
+  if (isInput && !isWholeInPlace(was, b)) return live
 
-  return {
-    from: was,
-    to: b,
-    parts,
-    since: now,
-    outUntil,
-    inAt: isAdded || isInput ? now : null,
-    isBack: false,
-    isInput,
-    fromHeight: height,
-  }
+  return startSwap(was, b, parts, now, isInput, height)
 }
 
 /** `b` with the parts of `from` that fade out in place of its own. */

@@ -244,8 +244,8 @@ function fitHeight(b: Block, m: RowMotion | undefined, p: Paint): number | undef
 /**
  * A block that changes whole, `el`, fading from its former form to its new one: the former form fades out, and the new
  * one shows nothing, or shows faint when the person's input brought it, until it measures, then fades in once its box
- * is nearly at the new height. A block that keeps its kind measures under the same key, so the height its former form
- * measured is the one the swap kept.
+ * is nearly at the new height. A block that keeps its kind measures its new form under the swap's `formKey` and glides
+ * from the height the swap kept, since its own key still holds its former form's height.
  */
 function kindFadeEl(el: Element, b: Block, m: RowMotion, s: BlockSwapMotion, key: string, p: Paint): Element {
   const height = s.isOut
