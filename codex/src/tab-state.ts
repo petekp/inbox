@@ -78,7 +78,6 @@ export const CODEX_LOOK: LookConfig = { runningMarks: 'pulse', titleTint: 'self'
  */
 export const localOuts = new Map<number, { rowId: string; pending: Feedback | null; kind: PressKind | null }>()
 
-export const SENDING = 'Sending…'
 export const copies = new Map<string, { name: string; text: string }>()
 export const entering = new Set<string>()
 /** Folds whose list still shrinks after a press folded them, by the list's motion key after `closed-`. */
