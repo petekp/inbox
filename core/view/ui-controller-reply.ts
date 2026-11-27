@@ -196,7 +196,8 @@ export function pressSettled(
     const { [row]: _sent, ...rest } = next.sentReplies
     next = { ...next, sentReplies: isRefused ? rest : { ...rest, [row]: { ...sent, isConfirmed } } }
   }
-  if (out.action === 'undo' && !isConfirmed && next.restoring?.id === row) next = { ...next, restoring: null }
+  if (out.action === 'undo' && next.restoring?.id === row)
+    next = { ...next, restoring: isConfirmed ? { ...next.restoring, at: now } : null }
   const restored = selectRestored(next, view, now)
   next = restored.ui
   if (outcome.isDemoSent)

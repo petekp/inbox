@@ -245,7 +245,7 @@ test('a confirmed Undo selects the row it brought back once a tab lists it, guar
     const pressed = send(ui, closed, { type: 'press', press: { action: 'undo', id: 'i2' }, by }, T0 + 10)
     expect(pressed.commands[0]).toMatchObject({ kind: 'press', holds: { undoOut: [] } })
     const settled = send(pressed.ui, closed, { type: 'press-settled', pressId: 1, outcome: OK }, T0 + 20)
-    expect(settled.ui.restoring).toEqual({ id: 'i2', at: T0 + 10, by })
+    expect(settled.ui.restoring).toEqual({ id: 'i2', at: T0 + 20, by })
     return read(settled.ui, S, T0 + 30)
   }
   const back = undone('key')

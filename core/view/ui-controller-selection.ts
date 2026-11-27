@@ -252,8 +252,8 @@ export function foldAll(ui: UiState, view: SessionView, isOpening: boolean | nul
 }
 
 /**
- * Selects the row a confirmed Undo brought back, once a row tab lists it open again, unless a field is open on another
- * row. An Undo clicked guards the row, as a click that opens a row does.
+ * Selects the row an Undo is bringing back, once a row tab lists it open again, unless a field is open on another row.
+ * An Undo clicked guards the row, as a click that opens a row does.
  */
 export function selectRestored(ui: UiState, view: SessionView, now: number): UiStep {
   const restoring = ui.restoring
