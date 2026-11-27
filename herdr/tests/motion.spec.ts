@@ -1,11 +1,12 @@
 import { expect, setSystemTime, test } from 'bun:test'
 
 import { prMarkId } from '../../core/view/pr-rows'
-import { ENTER_FADE_MS, LEAVE_FADE_MS, ROW_STATE_MS } from '../../core/view/row-motion'
+import { ENTER_FADE_MS, FAINT_OPACITY, LEAVE_FADE_MS, ROW_STATE_MS } from '../../core/view/row-motion'
 import { PRESS_GUARD_MS } from '../../core/view/timing'
 import type { Block, RowBlock } from '../src/blocks'
 import { tabBlocks, tabCells } from '../src/draw'
 import { NEXT_FRAME_MS } from '../src/block-glide'
+import { swapPartFade } from '../src/block-swap'
 import { moveRows } from '../src/motion'
 import { NO_TRACKS } from '../src/tracks'
 import { heldTabs } from '../src/held-form'
@@ -110,17 +111,24 @@ test('a leaving group keeps its place among the blocks that remain, its heading 
   expect([...goneGroup].map(id => leaving.motion.get(id)?.state)).toEqual(['leaving', 'leaving', 'leaving', 'leaving'])
 })
 
-test('a PR dismissed and then undone by a press changes form in place at once, never drawn twice and never fading in or out', () => {
+test('a PR dismissed and then undone by a press shows its new form faint at once, in place, never drawn twice', () => {
   const ref = 'acme/visor#29'
   const id = prMarkId(ref)
   const open = tabBlocks(demoScreen(), uiOn('prs'))
   const first = moveRows(open, NO_TRACKS, NOW, true)
   const dismissed = moveRows(dismissedPr(ref).blocks, first.tracks, NOW + 1, false, true)
   expect(dismissed.blocks.filter(b => b.id === id).map(b => b.kind)).toEqual(['row'])
-  expect(dismissed.motion.get(id)).toMatchObject({ state: 'settling', box: null, blockSwap: null })
+  const dismissedSwap = dismissed.motion.get(id)?.blockSwap
+  expect(dismissedSwap).toMatchObject({ isOut: false, inDelayMs: null })
+  expect(dismissedSwap && swapPartFade(dismissedSwap, dismissedSwap.inDelayMs).opacity).toBe(FAINT_OPACITY)
   const undone = moveRows(open, dismissed.tracks, NOW + 2, false, true)
   expect(undone.blocks.filter(b => b.id === id).map(b => b.kind)).toEqual(['pr'])
-  expect(undone.motion.get(id)).toMatchObject({ state: 'closing', box: null, closing: null, blockSwap: null })
+  expect(undone.motion.get(id)).toMatchObject({
+    state: 'closing',
+    box: null,
+    closing: null,
+    blockSwap: { isOut: false },
+  })
 })
 
 const openRow = (blocks: Block[]) => rowsOf(blocks).find(r => r.isSelected)?.id

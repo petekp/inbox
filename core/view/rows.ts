@@ -7,7 +7,15 @@ import type { HelpStep } from '../domain/help-steps'
 import type { EarlierLine } from '../domain/earlier-answers'
 import type { RowPress } from '../domain/presses'
 import { offersUndo } from './pressed'
-import { RUNNING_MARK, SUBJECT_MARKS, CLOSED_MARKS, HELD_MARK, NEEDS_YOU_MARKS, TASK_MARK } from './help'
+import {
+  RUNNING_MARK,
+  SUBJECT_MARKS,
+  CLOSED_MARKS,
+  QUESTION_MARK,
+  NEEDS_YOU_MARKS,
+  TASK_MARK,
+  WAITS_ON_YOU_MARK,
+} from './help'
 import { canUndoClose, isUndoLeft } from './timing'
 import type { Feedback } from './feedback'
 import type { InboxView } from './view'
@@ -314,12 +322,12 @@ export function rowResultMark(row: Pick<RowView, 'state' | 'feedback'>): ResultM
     : { text: '', isRunning: false }
 }
 
-const QUESTION_MARK: ResultMark = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone }
-const TASK_ROW_MARK: ResultMark = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone }
-
-/** The mark an open row waits on the person with: □ on a task, ◆ on a question or a dialog, none on a finding. */
+/** The mark an open row waits on the person with: ? on a question, □ on a task, ◆ on a dialog, none on a finding. */
 export function openMark(row: Pick<RowView, 'type'>): ResultMark | null {
-  return row.type === 'finding' ? null : row.type === 'task' ? TASK_ROW_MARK : QUESTION_MARK
+  if (row.type === 'finding') return null
+  const m = row.type === 'task' ? TASK_MARK : row.type === 'dialog' ? WAITS_ON_YOU_MARK : QUESTION_MARK
+
+  return { text: m.mark, isRunning: false, tone: m.tone }
 }
 
 /**

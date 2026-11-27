@@ -1,9 +1,9 @@
 import type { Item, Milestone, SessionStatus, StatusGoal } from '../../types'
 import { isOpen as isOpenStatus } from '../domain/status-limits'
-import { heldMarkOf, SUBJECT_MARKS } from './help'
+import { heldToneOf, SUBJECT_MARKS } from './help'
 import type { StatusTone } from './help'
 import type { StatusRow } from './status-page'
-import { namedList, textBeyondName } from './status-page-parts'
+import { askRows, namedList, textBeyondName } from './status-page-parts'
 import { milestonePath, namesOnlyMilestoneUnderWay } from './status-path'
 import { hasRunningGoal } from '../domain/status-suggest'
 import type { PathLine, PathPlace, PathStep } from './status-path'
@@ -34,13 +34,16 @@ export type MilestoneRow = {
   text: string | null
   /** The plan a change replaced, while the person has not seen it. */
   was: string | null
-  /** The open ask that sets its mark, a question before a task, which its View button opens. */
-  ask: { id: string; kind: Item['kind'] } | null
-  /** The work that serves it, drawn under it one step in. `statusPage` fills it. */
+  /**
+   * The work that serves it, drawn under it one step in. `goalPage` puts the `ask` row of the open ask linked to the
+   * milestone itself first, a question before a task, and `statusPage` adds the work after it. An ask that holds it up
+   * through an open subject, linked to the milestone too or not, hangs under that subject's row instead, so each ask
+   * draws once.
+   */
   rows: StatusRow[]
   /**
-   * The subject drawn in its place, as `subjectInPlaceOf` finds it, or null. Its id, mark, name, text, was and ask are
-   * then the subject's, its rows are the subject's children, and a look draws the rest of the subject's row on it and
+   * The subject drawn in its place, as `subjectInPlaceOf` finds it, or null. Its id, mark, name, text and was are then
+   * the subject's, its rows are the subject's ask row and children, and a look draws the rest of the subject's row on it and
    * counts the subject seen while it shows. `statusPage` fills it.
    */
   subject: (StatusRow & { kind: 'subject' }) | null
@@ -117,8 +120,8 @@ export function metMilestonesFold(
 }
 
 /**
- * The open ask whose kind sets the mark of work that `holds` hold up: the oldest question while one is open, else the
- * oldest task. It is the ask the row's View button opens, so the button matches the row's mark.
+ * The open ask that hangs under work that `holds` hold up: the oldest question while one is open, else the oldest task.
+ * Its kind matches the tone of the work's mark.
  */
 export function askSettingMark(holds: readonly Item[]): { id: string; kind: Item['kind'] } | null {
   const oldestFirst = [...holds].sort((i, j) => (i.at ?? -Infinity) - (j.at ?? -Infinity))
@@ -155,12 +158,18 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     return to.some(id => id === m.id || servingIds.has(id))
   })
   const isHeld = isOpen && holds.length > 0
+  const openServing = new Set(o.subjects.filter(s => servingIds.has(s.id) && isOpenStatus(s)).map(s => s.id))
+  const ownHolds = holds.filter(i => {
+    const to = o.askSubjects[i.id] ?? []
+    return to.includes(m.id) && !to.some(id => openServing.has(id))
+  })
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity)
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0)
 
   return {
     id: m.id,
-    ...(isHeld ? heldMarkOf(holds.map(i => i.kind)) : SUBJECT_MARKS[m.status]),
+    ...SUBJECT_MARKS[m.status],
+    ...(isHeld ? { tone: heldToneOf(holds.map(i => i.kind)) } : {}),
     name: m.name,
     place: step.place,
     line: step.line,
@@ -171,8 +180,7 @@ function milestoneRow(step: PathStep, o: SessionStatus, items: readonly Item[]):
     foldCount: 0,
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
-    ask: isHeld ? askSettingMark(holds) : null,
-    rows: [],
+    rows: isHeld ? askRows(m.id, askSettingMark(ownHolds), items, 1, null) : [],
     subject: null,
   }
 }

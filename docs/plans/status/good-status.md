@@ -18,8 +18,9 @@ A good page after the person was away two hours, drawn as decided:
 Offline sync
 Adding offline sync to the notes app
 
-◆ Sync conflicts
+◐ Sync conflicts
   merge logic ready
+  └ ? Which conflict rule ships?
 ● Export button
   works on web
   ├ ◆ Lay out the PDF export
@@ -47,7 +48,7 @@ A judge or a rule judges a page against the facts up to that point in the sessio
 | 5. Marks and closing | Each piece's real state: being done, set aside, waiting on something outside, delivered, dropped or filed for later |
 | 6. Where it stands | The same states, part by part where the parts differ |
 | 7. Running work | The host's events for each child, what each child was started to do, and the piece it serves |
-| 8. ◆ | The open asks, and the pieces each one holds up |
+| 8. Held work | The open asks, and the pieces each one holds up |
 | 9. No repeats of Asks | The text of the open asks and findings |
 | 10. Changes shown | What was on screen at the last look, and which pieces changed since |
 | 11. Nothing moves | The page before the exchange, and whether the exchange changed any piece |
@@ -148,22 +149,22 @@ A delegate whose session publishes no focus, such as one that does not run the i
 
 ### Which pieces wait on me?
 
-#### 8. ◆ or □ marks every piece an open ask holds up, and only those
+#### 8. Every piece an open ask holds up shows it, and only those
 
-From the page alone, the person sees which pieces cannot move until they act. ◆ marks a piece any open question holds up, and □ one that only open tasks hold up. The mark goes when they answer or do the task.
+From the page alone, the person sees which pieces cannot move until they act. A piece an open ask holds up keeps its own mark, drawn in the needs-you color while any open question holds it up, else the tasks color. The ask hangs under it on its own line: ? and the question, or □ and the task. Both go when they answer or do the task.
 
-- **Good:** the open question "Which conflict rule ships?" puts ◆ on `Sync conflicts`.
-- **Good:** one open task, "Sign in to the app store", puts □ on both `2.4 release` and `Hotfix release`.
-- **Bad:** ◆ on `Export button` for the conflict question.
-- **Bad:** `● Sync conflicts` while the work cannot move until the answer.
+- **Good:** the open question "Which conflict rule ships?" hangs as `└ ? Which conflict rule ships?` under `Sync conflicts`.
+- **Good:** one open task, "Sign in to the app store", hangs as `└ □ Sign in to the app store` under both `2.4 release` and `Hotfix release`.
+- **Bad:** the conflict question under `Export button`.
+- **Bad:** `● Sync conflicts` with no ask under it while the work cannot move until the answer.
 
 #### 9. The page points to Asks and never repeats them
 
 The Status shows the work. Asks and Finds show the person's to-dos. A row held up by an ask says where its work stands.
 
-- **Good:** `◆ Sync conflicts: merge logic ready`.
-- **Bad:** `◆ Sync conflicts: needs your decision`. ◆ and the band already say so.
-- **Bad:** `◆ Sync conflicts: last-write-wins or manual merge?`. That is the question, copied.
+- **Good:** `◐ Sync conflicts: merge logic ready`.
+- **Bad:** `◐ Sync conflicts: needs your decision`. The ask's line and the band already say so.
+- **Bad:** `◐ Sync conflicts: last-write-wins or manual merge?`. That is the question, copied.
 
 ### What moved since I last looked?
 

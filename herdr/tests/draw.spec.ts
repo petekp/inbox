@@ -282,14 +282,18 @@ test('the Status page joins each parent to the rows under it: work beside the pa
     [{ depth: 0, is: 'down' }],
     [{ depth: 0, is: 'down' }],
   ])
-  expect(['s1', 'c1', 'c4', 's3', 's2', 'c5'].map(treeOf)).toEqual([
+  expect(['s1', 'c1', 'c4', 's3', 's3-ask', 's2', 'c5'].map(treeOf)).toEqual([
     [
       { depth: 0, is: 'arm' },
       { depth: 1, is: 'down' },
     ],
     [{ depth: 1, is: 'mid' }],
     [{ depth: 1, is: 'last' }],
-    [{ depth: 0, is: 'last' }],
+    [
+      { depth: 0, is: 'last' },
+      { depth: 1, is: 'down' },
+    ],
+    [{ depth: 1, is: 'last' }],
     [{ depth: 0, is: 'down' }],
     [{ depth: 0, is: 'last' }],
   ])
@@ -365,15 +369,16 @@ test('the PRs tab draws Clear merged and closed above the first PR, m presses it
   expect(branchOnly.some(b => b.id === CLEAR_FINISHED_ID)).toBe(false)
 })
 
-test('a subject an open ask holds up draws what it waits on in its own line, and no stall word', () => {
-  const blocks = tabBlocks(demoScreen(), uiOn('overview'))
-  const held = blocks.flatMap(b => (b.kind === 'status' && b.waitsOn !== undefined ? [b] : []))
+test('an ask hangs under the work it holds up, on its tree, with its mark, words in its tone and View', () => {
+  const asks = tabBlocks(demoScreen(), uiOn('overview')).flatMap(b => (b.kind === 'status' && b.nameTone ? [b] : []))
 
-  expect(held.length).toBeGreaterThan(0)
-  for (const b of held) {
-    expect(b.waitsOn?.text).toMatch(/^\S/)
-    expect(b.stall).toBeNull()
-    expect(b.buttons.length).toBeGreaterThan(0)
+  expect(asks.length).toBeGreaterThan(0)
+  for (const ask of asks) {
+    const isQuestion = ask.mark?.text === '?'
+    expect(isQuestion || ask.mark?.text === '□').toBe(true)
+    expect(ask.mark?.tone).toBe(ask.nameTone)
+    expect(ask.buttons.map(b => b.label)).toEqual([isQuestion ? 'View question' : 'View task'])
+    expect(ask.tree).toHaveLength(1)
   }
 })
 

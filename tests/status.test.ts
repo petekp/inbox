@@ -11,12 +11,12 @@ import {
   CLOSED_MARKS,
   FINDING_GROUPS,
   NEEDS_YOU_MARKS,
-  HELD_MARK,
   MARK_LEGEND,
   PR_MARKS,
   RUNNING_FRAMES,
   SUBJECT_MARKS,
   TASK_MARK,
+  WAITS_ON_YOU_MARK,
 } from '../core/view/help'
 import type { Item, SessionStatus } from '../types'
 import { minutes } from '../evals/status-replay'
@@ -51,14 +51,16 @@ test('an open row the person has seen keeps where it stands but not its was line
   expect(p.head?.title).toBe('Work offline')
   expect(shape(p.rows)).toEqual([
     '== Work offline',
-    '◆ Offline mode: needs a sync pick · Ask i1?',
+    '◐ Offline mode: needs a sync pick',
+    '└ ? Ask i1?',
     '○ Docs: outline ready',
   ])
   const seenAt = { ...after(o, 'WAS: s2 | sync on every save', 90 * MIN, new Set(['i1'])), lastLookAt: 95 * MIN }
   const seen = page(seenAt, now, {}, [askItem('i1')]).rows
   expect(shape(seen)).toEqual([
     '== Work offline',
-    '◆ Offline mode: needs a sync pick · Ask i1?',
+    '◐ Offline mode: needs a sync pick',
+    '└ ? Ask i1?',
     '○ Docs: outline ready',
   ])
   expect(seen[1]).toMatchObject({ kind: 'subject', was: null })
@@ -80,8 +82,10 @@ test('the list shows held, working, waiting, queued, then finished rows, newest 
   const rows = page({ ...o, lastLookAt: 50 * MIN }, 86 * MIN, {}, [askItem('i1'), askItem('i2')]).rows
 
   expect(shape(rows)).toEqual([
-    '◆ Flick: needs a pick · Ask i1?',
-    '◆ Seen queue: later · Ask i2?',
+    '◐ Flick: needs a pick',
+    '└ ? Ask i1?',
+    '○ Seen queue: later',
+    '└ ? Ask i2?',
     '◐ Sync: step two',
     '◐ Export: step one',
     '◌ Review: sent for review',
@@ -103,16 +107,12 @@ test('only a subject an open ask holds up says what it waits on, and one waiting
     { ...askItem('i2'), at: 10 * MIN },
   ]
   const stalls = (now: number) =>
-    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? [r.waitsOn?.text ?? null, r.stall] : r.kind))
+    page(o, now, {}, asks).rows.map(r => (r.kind === 'subject' ? r.stall : r.kind === 'ask' ? r.text : r.kind))
 
-  const waiting = [
-    ['Ask i2?', null],
-    [null, null],
-    [null, null],
-  ]
+  const waiting = [null, 'Ask i2?', null, null]
   expect(stalls(20 * MIN)).toEqual(waiting)
   expect(stalls(2 * 60 * MIN)).toEqual(waiting)
-  expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[1]).toBe('◌ Review: sent for review')
+  expect(shape(page(o, 2 * 60 * MIN, {}, asks).rows)[2]).toBe('◌ Review: sent for review')
 })
 
 test('an open subject unchanged for a day reads how long it has been idle, in whole days, muted, unless its work runs or an ask holds it', () => {
@@ -132,12 +132,16 @@ test('an open subject unchanged for a day reads how long it has been idle, in wh
     lastActivityAt: 0,
   }
   const running = { ...withChild(o, child, 0), children: [{ ...withChild(o, child, 0).children[0]!, subjectId: 's2' }] }
-  const stalls = (now: number, turn = false) =>
-    page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows.flatMap(r =>
-      r.kind === 'subject'
-        ? [`${r.name}: ${r.waitsOn?.text ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
-        : [],
-    )
+  const stalls = (now: number, turn = false) => {
+    const rows = page(running, now, { isTurnRunning: turn }, [askItem('i1')]).rows
+    return rows.flatMap((r, n) => {
+      const below = rows[n + 1]
+      const ask = below?.kind === 'ask' ? below.text : null
+      return r.kind === 'subject'
+        ? [`${r.name}: ${ask ?? r.stall?.text ?? '-'}${r.stall ? ` (${r.stall.tone})` : ''}`]
+        : []
+    })
+  }
 
   expect(stalls(DAY - MIN)).toEqual(['Sync: Ask i1?', 'Search: -', 'Review: -', 'Docs: -'])
   expect(stalls(2 * DAY + 5 * 60 * MIN)).toEqual(['Sync: Ask i1?', 'Search: -', 'Review: idle 2d (muted)', 'Docs: -'])
@@ -164,7 +168,7 @@ test('a merged line is cut at the last phrase that fits, and keeps its first phr
   expect(mergedLine('Sync retry with backoff', fits(20))).toBe('merged in: Sync retry with backoff')
 })
 
-test('an open ask linked to an open subject marks it ◆ and stops its running mark until the ask closes, and the call reads each ask with its link', () => {
+test('an open ask linked to an open subject keeps its own mark and stops its running mark until the ask closes, and the call reads each ask with its link', () => {
   const o = after(null, 'NEW: working | Offline mode | queue built\nLINK: i1 | s1\nLINK: i2 | s1', 0, new Set(['i1']))
   const held = page(o, MIN, { isTurnRunning: true }, [askItem('i1')]).rows[0]
   const answered = page(o, MIN, { isTurnRunning: true }, []).rows[0]
@@ -173,14 +177,14 @@ test('an open ask linked to an open subject marks it ◆ and stops its running m
   expect(asksText(o, [askItem('i1'), { ...askItem('i3'), context: 'PRs 4 | 5 block the 2.5 release' }])).toBe(
     'i1 | Ask i1? | s1\ni3 | Ask i3? | - | PRs 4 / 5 block the 2.5 release',
   )
-  expect(held).toMatchObject({ mark: '◆', tone: 'needsYou', isRunning: false })
+  expect(held).toMatchObject({ mark: '◐', tone: 'needsYou', isRunning: false })
   expect(answered).toMatchObject({ mark: '●', tone: 'working', isRunning: true })
   expect(page(after(o, 'DONE: s1 | works offline', MIN), MIN, {}, [askItem('i1')]).rows[0]).toMatchObject({
     mark: '✓',
   })
 })
 
-test('a subject that open asks hold up offers View on the ask that sets its mark, a question before a task and the oldest of a kind, an ask with no time counting as oldest, and no button once the asks close', () => {
+test('a subject that open asks hold up offers View on the ask row it hangs under, a question before a task and the oldest of a kind, an ask with no time counting as oldest, and no button once the asks close', () => {
   const o = after(
     null,
     'NEW: working | Offline mode | queue built\nNEW: working | Docs | outline ready\nLINK: i1 | s1\nLINK: i2 | s1\nLINK: i3 | s1',
@@ -197,10 +201,10 @@ test('a subject that open asks hold up offers View on the ask that sets its mark
       statusKeyPlan(r).map(k => `${r.id} ${k.label} ${k.press.action === 'show-ask' ? k.press.askId : ''}`),
     )
 
-  expect(viewOf([asks.i1, asks.i2])).toEqual([['s1 View question i1'], []])
-  expect(viewOf([asks.i2])).toEqual([['s1 View task i2'], []])
-  expect(viewOf([asks.i1, asks.i2, asks.i3])).toEqual([['s1 View question i3'], []])
-  expect(viewOf([asks.i1])).toEqual([['s1 View question i1'], []])
+  expect(viewOf([asks.i1, asks.i2])).toEqual([[], ['s1-ask View question i1'], []])
+  expect(viewOf([asks.i2])).toEqual([[], ['s1-ask View task i2'], []])
+  expect(viewOf([asks.i1, asks.i2, asks.i3])).toEqual([[], ['s1-ask View question i3'], []])
+  expect(viewOf([asks.i1])).toEqual([[], ['s1-ask View question i1'], []])
   expect(viewOf([])).toEqual([[], []])
 })
 
@@ -303,7 +307,7 @@ test('the Help legend explains every mark a row or group title draws, once each'
   const drawn = new Set([
     ...Object.values(SUBJECT_MARKS).map(m => m.mark),
     IDLE_MARK.mark,
-    HELD_MARK.mark,
+    WAITS_ON_YOU_MARK.mark,
     TASK_MARK.mark,
     ...Object.values(CLOSED_MARKS),
     ...Object.values(FINDING_GROUPS).map(g => g.mark),

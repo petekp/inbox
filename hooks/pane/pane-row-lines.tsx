@@ -2,6 +2,7 @@ import type { UiPressArgument } from 'claude-code'
 import { DESKTOP_CHARS_PER_CELL, DESKTOP_CLIP_CHARS_PER_CELL, desktopTextPt } from './desktop-metrics'
 import { MUTED_MARK, mutedMarkSvg, RUNNING_SVG_CELLS, runningSvg, toneSvg, WORKING_MARK } from './desktop-svg'
 import { textMark } from '../../core/view/marks'
+import { toneColors, type ToneName } from '../../core/view/tones'
 import { WORKING } from './palettes'
 import {
   feedbackOf,
@@ -373,10 +374,11 @@ export function paneRowLines({
     ) : (
       line
     )
-  const markGlyph = (mark: ResultMark, key: string, color: string) => {
+  const markGlyph = (mark: ResultMark, key: string, color: string, tone?: ToneName) => {
     if (mark.isRunning) return runningDot(key, mark.text, color)
-    // An Svg cannot read a theme key, so one takes the muted mark's colors, or the working mark's for the text key.
-    const { light, dark } = svgColorsOf(color)
+    // An Svg cannot read a theme key, so one takes its tone's colors, else the muted mark's, or the working mark's for the text key.
+    const isThemeTone = tone !== undefined && !color.startsWith('#') && color !== WORKING
+    const { light, dark } = isThemeTone ? toneColors(tone) : svgColorsOf(color)
     const drawn = ToneSvg ? mutedMarkSvg(mark.text, light, dark) : null
     if (drawn) return svgCell(drawn.source, mark.text, `${key}-mark`, drawn.cells)
     return <Text color={color}>{textMark(mark.text) || ' '}</Text>

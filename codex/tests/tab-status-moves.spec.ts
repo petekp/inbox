@@ -60,8 +60,10 @@ test("when a Status moves subjects into a new goal's milestones and back, the ro
     assert.deepEqual(ids(toMilestones.rows), [
       'other',
       's2',
+      's2-ask',
       'c5',
       's3',
+      's3-ask',
       's1',
       'c1',
       'c3',
@@ -79,9 +81,11 @@ test("when a Status moves subjects into a new goal's milestones and back, the ro
     assert.deepEqual(ids(fromMilestones.rows), [
       'other',
       's2',
+      's2-ask',
       'c5',
       'other-done',
       's3',
+      's3-ask',
       's1',
       'c1',
       'c3',

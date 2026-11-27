@@ -648,8 +648,9 @@ var FINDING_GROUPS = {
   issue: { title: "Issues", mark: "\u25B2", tone: "issue" },
   opportunity: { title: "Opportunities", mark: "\u2726", tone: "opportunity" }
 };
+var QUESTION_MARK = { mark: "?", tone: "needsYou" };
 var NEEDS_YOU_MARKS = {
-  question: { mark: "?", tone: "needsYou" },
+  question: QUESTION_MARK,
   task: { mark: "\u2611", tone: "tasks" }
 };
 var SUBJECT_MARKS = {
@@ -659,9 +660,10 @@ var SUBJECT_MARKS = {
   done: { mark: "\u2713", tone: null },
   dropped: { mark: "\u2717", tone: null }
 };
-var HELD_MARK = { mark: "\u25C6", tone: "needsYou" };
+var WAITS_ON_YOU_MARK = { mark: "\u25C6", tone: "needsYou" };
 var TASK_MARK = { mark: "\u25A1", tone: "tasks" };
-var heldMarkOf = (kinds) => kinds.some((k) => k === "question") ? HELD_MARK : TASK_MARK;
+var askMarkOf = (kind) => kind === "task" ? TASK_MARK : QUESTION_MARK;
+var heldToneOf = (kinds) => kinds.some((k) => k === "question") ? QUESTION_MARK.tone : TASK_MARK.tone;
 var RUNNING_FRAMES = ["\u25CF", "\u25C9", "\u25CE", "\u25C9"];
 var RUNNING_MARK = RUNNING_FRAMES[0];
 var IDLE_MARK = { mark: "\u25D0", tone: "working" };
@@ -671,7 +673,7 @@ var CLOSED_MARKS = {
   lapsed: SUBJECT_MARKS.dropped.mark
 };
 var PR_MARKS = {
-  waiting: { text: HELD_MARK.mark, tone: "needsYou" },
+  waiting: { text: WAITS_ON_YOU_MARK.mark, tone: "needsYou" },
   sent: { text: SUBJECT_MARKS.done.mark, tone: "done" },
   failing: { text: FINDING_GROUPS.issue.mark, tone: "error" },
   cancelled: { text: "\u2298", tone: null }
@@ -692,19 +694,29 @@ var MARK_LEGEND = [
     isRunning: false,
     words: "Waits on something other than you, such as a build or a review"
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: "Waits on your answer or approval" },
-  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: "Waits on a step only you can do" },
   {
-    mark: NEEDS_YOU_MARKS.question.mark,
-    tone: NEEDS_YOU_MARKS.question.tone,
+    mark: QUESTION_MARK.mark,
+    tone: QUESTION_MARK.tone,
     isRunning: false,
-    words: "A question the agent asked you"
+    words: "A question for you. The work it holds up takes its color."
+  },
+  {
+    mark: TASK_MARK.mark,
+    tone: TASK_MARK.tone,
+    isRunning: false,
+    words: "A step only you can do. The work it holds up takes its color."
   },
   {
     mark: NEEDS_YOU_MARKS.task.mark,
     tone: NEEDS_YOU_MARKS.task.tone,
     isRunning: false,
-    words: "A step only you can do"
+    words: "The group of steps only you can do"
+  },
+  {
+    mark: WAITS_ON_YOU_MARK.mark,
+    tone: WAITS_ON_YOU_MARK.tone,
+    isRunning: false,
+    words: "Waits on your answer or approval: a delegate, a permission or a review thread"
   },
   { mark: SUBJECT_MARKS.done.mark, tone: "done", isRunning: false, words: "Done, or handed to the agent" },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords("dropped work") },
@@ -781,7 +793,7 @@ function isNamedLikeSubject(x, under) {
   return under.length === 1 && comparableName(under[0].name) === comparableName(x.name);
 }
 function carriedByChild(c, isHeld) {
-  if (c.delegateState === "blocked") return { ...HELD_MARK, isRunning: false };
+  if (c.delegateState === "blocked") return { ...WAITS_ON_YOU_MARK, isRunning: false };
   if (c.delegateState === "finished" && !isHeld) return { ...SUBJECT_MARKS.done, isRunning: false };
   if (isChildWorking(c) && !isHeld) return { ...SUBJECT_MARKS.working, isRunning: true };
   return null;
@@ -793,7 +805,7 @@ function finishedLine(c, now) {
   return `Ran ${duration(c.endedAt - c.startedAt)}, finished ${finished}`;
 }
 function childRow(c, branch, depth, text2 = null) {
-  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? HELD_MARK : CHILD_MARK;
+  const marks = c.delegateState === "finished" ? SUBJECT_MARKS.done : c.delegateState === "blocked" ? WAITS_ON_YOU_MARK : CHILD_MARK;
   return {
     kind: "child",
     id: c.id,
@@ -818,10 +830,15 @@ function unplacedChildren(children, c) {
   return { loose: unshown.filter((l) => !isFoldedFinished(l)), settled };
 }
 function askWords(items, ask) {
-  const words3 = items.find((i) => i.id === ask?.id)?.ask.replace(/\s+/g, " ").trim();
-  return words3 || null;
+  const item = items.find((i) => i.id === ask?.id);
+  if (item === void 0) return null;
+  return item.ask.replace(/\s+/g, " ").trim() || item.label?.trim() || (item.kind === "task" ? "Open task" : "Open question");
 }
-var askTone = (ask) => ask?.kind === "task" ? "tasks" : "needsYou";
+function askRows(parentId, ask, items, depth, branch) {
+  const text2 = askWords(items, ask);
+  if (ask === null || text2 === null) return [];
+  return [{ kind: "ask", id: `${parentId}-ask`, depth, ...askMarkOf(ask.kind), text: text2, ask, branch }];
+}
 function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
   const rows = [];
   const firstClosed = shown.findIndex((x) => !isOpen(x));
@@ -835,27 +852,28 @@ function partRows(shown, c, depth, afterOpen = [], afterClosed = []) {
     const isWorkRunning = isRunning2 || under.some((ch) => ch.endedAt === null);
     const lone = isOpen(x) && isNamedLikeSubject(x, under) ? under[0] : null;
     const carried = lone ? carriedByChild(lone, c.isHeld(x)) : null;
-    const ask = c.askSettingMarkOf(x);
-    const words3 = askWords(c.items, ask);
-    const waitsOn = words3 === null ? null : { text: words3, tone: askTone(ask) };
+    const hasChildren = under.length > 0 && lone === null;
+    const asks = askRows(x.id, c.askSettingMarkOf(x), c.items, depth + 1, hasChildren ? "mid" : "last");
+    const ownMark = isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status];
     const ownStall = subjectStall(x, c.isHeld(x), isWorkRunning, c.now);
     rows.push({
       kind: "subject",
       id: x.id,
       depth,
-      ...c.isHeld(x) ? heldMarkOf(c.holdKindsOf(x)) : isIdle ? IDLE_MARK : SUBJECT_MARKS[x.status],
+      ...ownMark,
+      ...c.isHeld(x) ? { tone: heldToneOf(c.holdKindsOf(x)) } : {},
       isRunning: isRunning2,
       ...carried,
       name: x.name,
       text: c.isNew(x) || isOpen(x) ? textBeyondName(x.name, x.text) : null,
-      stall: waitsOn === null && !carried ? ownStall : null,
-      waitsOn,
+      stall: asks.length === 0 && !carried ? ownStall : null,
       merged: c.isNew(x) ? x.merged : null,
       was: c.isNew(x) ? x.was : null,
-      hasChildren: under.length > 0 && lone === null,
+      hasChildren,
       foldCount: lone === null ? under.length : 0,
-      ask: c.askSettingMarkOf(x)
+      ask: asks[0]?.ask ?? null
     });
+    rows.push(...asks);
     if (lone === null)
       rows.push(
         ...shownUnder.map((ch, n) => childRow(ch, n === shownUnder.length - 1 && !isMore ? "last" : "mid", depth + 1))
@@ -961,11 +979,17 @@ function milestoneRow(step, o, items) {
     return to.some((id) => id === m.id || servingIds.has(id));
   });
   const isHeld = isOpen2 && holds.length > 0;
+  const openServing = new Set(o.subjects.filter((s) => servingIds.has(s.id) && isOpen(s)).map((s) => s.id));
+  const ownHolds = holds.filter((i) => {
+    const to = o.askSubjects[i.id] ?? [];
+    return to.includes(m.id) && !to.some((id) => openServing.has(id));
+  });
   const lastChangeAt = Math.max(m.changedAt, m.madeNextAt ?? -Infinity);
   const isChanged = o.lastLookAt !== null && lastChangeAt > o.lastLookAt && lastChangeAt > (o.goal?.setAt ?? 0);
   return {
     id: m.id,
-    ...isHeld ? heldMarkOf(holds.map((i) => i.kind)) : SUBJECT_MARKS[m.status],
+    ...SUBJECT_MARKS[m.status],
+    ...isHeld ? { tone: heldToneOf(holds.map((i) => i.kind)) } : {},
     name: m.name,
     place: step.place,
     line: step.line,
@@ -976,8 +1000,7 @@ function milestoneRow(step, o, items) {
     foldCount: 0,
     text: textBeyondName(m.name, m.text) ?? workCountText(m, o),
     was: isChanged ? m.was : null,
-    ask: isHeld ? askSettingMark(holds) : null,
-    rows: [],
+    rows: isHeld ? askRows(m.id, askSettingMark(ownHolds), items, 1, null) : [],
     subject: null
   };
 }
@@ -1351,8 +1374,6 @@ function isWaitingRow(row) {
   return row.state.is === "open";
 }
 var RUNNING_RESULT = { text: RUNNING_MARK, isRunning: true };
-var QUESTION_MARK = { text: HELD_MARK.mark, isRunning: false, tone: HELD_MARK.tone };
-var TASK_ROW_MARK = { text: TASK_MARK.mark, isRunning: false, tone: TASK_MARK.tone };
 function allRows(v) {
   return [...v.needsYou.questions, ...v.needsYou.tasks, ...v.findings.rows];
 }
@@ -3017,7 +3038,9 @@ function headPart(head, goal, subjects, rows) {
 function milestoneAsSubject(m, subjectRows) {
   const [row, ...under] = subjectRows;
   if (row?.kind !== "subject") return m;
-  const work = under.map((r) => r.kind === "child" || r.kind === "more" ? { ...r, branch: null } : r);
+  const work = under.map(
+    (r) => r.kind === "child" || r.kind === "more" || r.kind === "ask" ? { ...r, branch: null } : r
+  );
   return {
     ...m,
     id: row.id,
@@ -3028,7 +3051,6 @@ function milestoneAsSubject(m, subjectRows) {
     foldCount: work.length === 0 ? 0 : row.foldCount,
     text: row.text,
     was: row.was,
-    ask: row.ask,
     rows: work,
     subject: row
   };
@@ -3199,7 +3221,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     const hasLooseWork = loose.some((l) => l.milestoneId === m.id);
     const inPlace = o && milestone && !hasLooseWork ? subjectInPlaceOf(o, milestone, s.ledger.items) : null;
     if (inPlace) return milestoneAsSubject(m, partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0));
-    const rows2 = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
+    const rows2 = [...m.rows, ...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)];
     const changedAt = milestone?.changedAt ?? Infinity;
     const isShrunk = m.place === "done" && look !== null && changedAt <= look && isAllSeen(m, p);
     return isShrunk ? {

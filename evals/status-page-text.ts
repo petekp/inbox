@@ -33,6 +33,10 @@ function rowText(r: StatusRow): string[] {
       const branch = r.branch === null ? '  ' : `${'  '.repeat(r.depth - 1)}  ${r.branch === 'last' ? '└' : '├'} `
       return [`${branch}${r.mark} ${r.name}`]
     }
+    case 'ask': {
+      const branch = r.branch === null ? pad : `${'  '.repeat(r.depth - 1)}  ${r.branch === 'last' ? '└' : '├'} `
+      return [`${branch}${r.mark} ${r.text}`]
+    }
     case 'more':
       return [r.branch === null ? `  ${r.text}` : `${'  '.repeat(r.depth - 1)}  └ ${r.text}`]
     case 'fold':

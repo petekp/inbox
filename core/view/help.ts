@@ -10,9 +10,15 @@ export const FINDING_GROUPS: Record<Finding['kind'], { title: string; mark: stri
   opportunity: { title: 'Opportunities', mark: '✦', tone: 'opportunity' },
 }
 
+/**
+ * The mark of an open question: on its Asks row, on the Questions group title and on the line under the work it holds
+ * up on the Status.
+ */
+export const QUESTION_MARK: { mark: string; tone: 'needsYou' } = { mark: '?', tone: 'needsYou' }
+
 /** The mark a group title on the Asks tab leads with, as a Finds group title leads with its kind's mark. */
 export const NEEDS_YOU_MARKS = {
-  question: { mark: '?', tone: 'needsYou' },
+  question: QUESTION_MARK,
   task: { mark: '☑', tone: 'tasks' },
 } as const
 
@@ -27,17 +33,24 @@ export const SUBJECT_MARKS: Record<SubjectStatus, { mark: string; tone: StatusTo
   dropped: { mark: '✗', tone: null },
 }
 /**
- * The mark of an open question, of an open subject or milestone that an open question holds up, in place of its
- * status's mark, and of a delegate that waits for the person.
+ * The mark of what waits on the person's answer or approval and is not one of their questions: a delegate at a question
+ * or an approval, a permission dialog's Asks row, and a PR review thread that waits on them.
  */
-export const HELD_MARK: { mark: string; tone: 'needsYou' } = { mark: '◆', tone: 'needsYou' }
+export const WAITS_ON_YOU_MARK: { mark: string; tone: 'needsYou' } = { mark: '◆', tone: 'needsYou' }
 
-/** The mark of an open task, and of an open subject or milestone that only open tasks hold up. */
+/** The mark of an open task: on its Asks row and on the line under the work it holds up on the Status. */
 export const TASK_MARK: { mark: string; tone: 'tasks' } = { mark: '□', tone: 'tasks' }
 
-/** The mark of work the open asks of `kinds` hold up: ◆ while one is a question, since a decision waits on the person. */
-export const heldMarkOf = (kinds: readonly Item['kind'][]): { mark: string; tone: 'needsYou' | 'tasks' } =>
-  kinds.some(k => k === 'question') ? HELD_MARK : TASK_MARK
+/** The mark of an open ask of `kind`. */
+export const askMarkOf = (kind: Item['kind']): { mark: string; tone: 'needsYou' | 'tasks' } =>
+  kind === 'task' ? TASK_MARK : QUESTION_MARK
+
+/**
+ * The tone of the own mark of work the open asks of `kinds` hold up: the needs-you tone while one is a question, since a
+ * decision waits on the person, else the tasks tone.
+ */
+export const heldToneOf = (kinds: readonly Item['kind'][]): 'needsYou' | 'tasks' =>
+  kinds.some(k => k === 'question') ? QUESTION_MARK.tone : TASK_MARK.tone
 
 /** The marks a running row cycles through in the text looks, one each `RUNNING_FRAME_MS`. */
 export const RUNNING_FRAMES = ['●', '◉', '◎', '◉'] as const
@@ -56,7 +69,7 @@ export const CLOSED_MARKS: Record<ClosedState, string> = {
 
 /** A PR row's mark: a review thread that waits on the person, one sent to the agent, a failing check and a cancelled one. */
 export const PR_MARKS = {
-  waiting: { text: HELD_MARK.mark, tone: 'needsYou' },
+  waiting: { text: WAITS_ON_YOU_MARK.mark, tone: 'needsYou' },
   sent: { text: SUBJECT_MARKS.done.mark, tone: 'done' },
   failing: { text: FINDING_GROUPS.issue.mark, tone: 'error' },
   cancelled: { text: '⊘', tone: null },
@@ -87,19 +100,29 @@ export const MARK_LEGEND: readonly LegendEntry[] = [
     isRunning: false,
     words: 'Waits on something other than you, such as a build or a review',
   },
-  { mark: HELD_MARK.mark, tone: HELD_MARK.tone, isRunning: false, words: 'Waits on your answer or approval' },
-  { mark: TASK_MARK.mark, tone: TASK_MARK.tone, isRunning: false, words: 'Waits on a step only you can do' },
   {
-    mark: NEEDS_YOU_MARKS.question.mark,
-    tone: NEEDS_YOU_MARKS.question.tone,
+    mark: QUESTION_MARK.mark,
+    tone: QUESTION_MARK.tone,
     isRunning: false,
-    words: 'A question the agent asked you',
+    words: 'A question for you. The work it holds up takes its color.',
+  },
+  {
+    mark: TASK_MARK.mark,
+    tone: TASK_MARK.tone,
+    isRunning: false,
+    words: 'A step only you can do. The work it holds up takes its color.',
   },
   {
     mark: NEEDS_YOU_MARKS.task.mark,
     tone: NEEDS_YOU_MARKS.task.tone,
     isRunning: false,
-    words: 'A step only you can do',
+    words: 'The group of steps only you can do',
+  },
+  {
+    mark: WAITS_ON_YOU_MARK.mark,
+    tone: WAITS_ON_YOU_MARK.tone,
+    isRunning: false,
+    words: 'Waits on your answer or approval: a delegate, a permission or a review thread',
   },
   { mark: SUBJECT_MARKS.done.mark, tone: 'done', isRunning: false, words: 'Done, or handed to the agent' },
   { mark: SUBJECT_MARKS.dropped.mark, tone: null, isRunning: false, words: stoppedWords('dropped work') },

@@ -78,11 +78,15 @@ test('a milestone whose only subject is named alike, with no ask naming the mile
     id: 's2',
     name: 'Demo script',
     text: 'outline not started',
-    ask: { id: 'i1', kind: 'question' },
+    tone: 'needsYou',
     place: 'next',
     subject: { kind: 'subject', id: 's2' },
   })
-  expect(merged?.rows).toMatchObject([{ kind: 'child', name: 'Draft script', branch: null }])
+  expect(merged?.subject).toMatchObject({ ask: { id: 'i1', kind: 'question' } })
+  expect(merged?.rows).toMatchObject([
+    { kind: 'ask', id: 's2-ask', mark: '?', text: 'Ask i1?', ask: { id: 'i1', kind: 'question' }, branch: null },
+    { kind: 'child', name: 'Draft script', branch: null },
+  ])
   expect(statusListRows(p).map(r => r.id)).toContain('s2')
 })
 

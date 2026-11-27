@@ -52,7 +52,7 @@ export function statusKeyPlan(row: StatusRow): StatusKey[] {
   if (row.kind === 'done-fold') return [toggleFold(row.id, row.text)]
   if (row.kind === 'counts') return [toggleFold(row.id, countsText(row.counts))]
 
-  return row.kind === 'subject' && row.ask !== null ? [viewAsk(row.ask)] : []
+  return row.kind === 'ask' ? [viewAsk(row.ask)] : []
 }
 
 const toggleFold = (foldId: string, label: string): StatusKey => ({
@@ -63,14 +63,9 @@ const toggleFold = (foldId: string, label: string): StatusKey => ({
   emphasis: 'quiet',
 })
 
-/**
- * A milestone's buttons: View question or View task while an open ask holds it up, or the fold of a done milestone
- * folded to its name, which each look draws as the milestone's row.
- */
+/** A milestone's buttons: the fold of a done milestone folded to its name, which each look draws as the milestone's row. */
 export function milestoneKeyPlan(m: MilestoneRow): StatusKey[] {
-  if (m.foldId !== null) return [toggleFold(m.foldId, m.name)]
-
-  return m.ask === null ? [] : [viewAsk(m.ask)]
+  return m.foldId === null ? [] : [toggleFold(m.foldId, m.name)]
 }
 
 /** The fold a met goal's milestones start in, which each look draws as its fold line. */

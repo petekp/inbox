@@ -44,7 +44,7 @@ function TitleMark({ isRunning }: { isRunning: boolean }) {
   )
 }
 
-/** An Asks or Finds row's mark in the mark column: its result's, or on an open row its `openMark`: ◆ on a question, □ on a task. */
+/** An Asks or Finds row's mark in the mark column: its result's, or on an open row its `openMark`: ? on a question, ◆ on a dialog, □ on a task. */
 export function resultHandle(r: RowView): Pick<Row, 'handle' | 'handleTone' | 'isHandleRunning'> {
   const mark = rowMark(r)
 

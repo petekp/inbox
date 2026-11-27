@@ -8,7 +8,7 @@ const START = 'NEW: working | CSV import | bad rows skipped\nNEW: working | Dark
 const GOAL = 'GOAL: Import ready to demo | done Parsing works; working Errors explained'
 const LINKS = 'SERVES: s1 | m2\nLINK: i1 | m2\nLINK: i2 | m2\nLINK: i1 | s1\nLINK: i2 | s1'
 
-test('the View button under a mark opens the ask that sets it: a question before an older task, on a milestone and on a subject', () => {
+test('the View button on an ask row opens the ask that sets the mark above it: a question before an older task, under a subject serving a milestone', () => {
   const asks = [
     { ...askItem('i1'), kind: 'task' as const, at: 1 },
     { ...askItem('i2'), at: 2 },
@@ -18,12 +18,16 @@ test('the View button under a mark opens the ask that sets it: a question before
   const p = page(held, 40, {}, asks)
   const milestone = p.goal?.milestones.find(m => m.id === 'm2')
   const subject = milestone?.rows.find(r => r.id === 's1')
-
-  expect(milestone).toMatchObject({ mark: '◆', ask: { id: 'i2', kind: 'question' } })
-  expect(subject).toMatchObject({ mark: '◆', ask: { id: 'i2', kind: 'question' } })
-  expect(
+  const askRow = milestone?.rows.find(r => r.id === 's1-ask')
+  const keysOf = (id: string) =>
     statusKeyRows(p)
-      .find(k => k.id === 'm2')
-      ?.keys.map(k => k.label),
-  ).toEqual(['View question', 'Fold'])
+      .find(k => k.id === id)
+      ?.keys.map(k => k.label)
+
+  expect(milestone).toMatchObject({ mark: '●', tone: 'needsYou' })
+  expect(subject).toMatchObject({ mark: '◐', tone: 'needsYou' })
+  expect(askRow).toMatchObject({ kind: 'ask', mark: '?', ask: { id: 'i2', kind: 'question' } })
+  expect(keysOf('s1-ask')).toEqual(['View question'])
+  expect(keysOf('s1')).not.toContain('View question')
+  expect(keysOf('m2')).toEqual(['Fold'])
 })

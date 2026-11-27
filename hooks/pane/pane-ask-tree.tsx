@@ -40,7 +40,7 @@ type RowEntriesInput = {
 
 /**
  * An open question's or task's Holds up line, context, earlier answer, stopped warning and option lines, in that order. In the terminal
- * they hang from the row's ◆ or □ on one connector: the Holds up line and each option on a branch, the context and earlier
+ * they hang from the row's ?, ◆ or □ on one connector: the Holds up line and each option on a branch, the context and earlier
  * answer beside it. Answers that `answerRow` lets sit side by side and that fit `width` share one branch, with the
  * recommendation's reason under them. `askEntries` gives desktop the same entries, which it draws on its own hairline
  * pieces.

@@ -34,7 +34,7 @@ const ITEM: Item = {
   from: 'record',
 }
 
-test('the Status page draws each status with its mark and tone, and ◆ on a subject an open ask holds up, whose Asks row names it until the subject closes', () => {
+test('the Status page draws each status with its mark and tone, and an open ask hangs on its own row under the subject it holds up, whose Asks row names it until the subject closes', () => {
   const statuses = ['working', 'queued', 'waits-on-other', 'queued'] as const
   const asks = new Set([ITEM.id])
   const opened = applyStatus(
@@ -50,7 +50,7 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
   )
 
   expect(rows).toEqual([
-    ['Part 3', '◆', 'needsYou'],
+    ['Part 3', '○', 'needsYou'],
     ['Part 2', '◌', null],
     ['Part 1', '○', null],
     ['Part 0', '✓', null],
@@ -65,7 +65,7 @@ test('the Status page draws each status with its mark and tone, and ◆ on a sub
   expect(allRows(sessionView(heldDone, 3000, 1000, NO_HOLDS)).find(r => r.id === ITEM.id)?.holdsUpLine).toBeNull()
 })
 
-test('one ask linked to two subjects marks both ◆, and its Asks row names each open one', () => {
+test('one ask linked to two subjects keeps both marks and hangs under each, and its Asks row names each open one', () => {
   const asks = new Set([ITEM.id])
   const linked = applyStatus(
     null,
@@ -90,9 +90,10 @@ test('one ask linked to two subjects marks both ◆, and its Asks row names each
   )
 
   expect(view.statusPage.rows.flatMap(r => (r.kind === 'subject' ? [[r.name, r.mark]] : []))).toEqual([
-    ['2.4 release', '◆'],
-    ['Hotfix release', '◆'],
+    ['2.4 release', '◐'],
+    ['Hotfix release', '◐'],
   ])
+  expect(view.statusPage.rows.filter(r => r.kind === 'ask').map(r => r.id)).toEqual(['s1-ask', 's2-ask'])
   expect(allRows(view).find(r => r.id === ITEM.id)?.holdsUpLine).toBe('Holds up 2.4 release, Hotfix release')
   expect(allRows(oneDone).find(r => r.id === ITEM.id)?.holdsUpLine).toBe('Holds up Hotfix release')
 })
@@ -136,7 +137,7 @@ test('a sample saved without a Status is replaced, and the sample session carrie
     ['subject'],
     [],
     ['subject', 'child', 'child', 'child'],
-    ['subject'],
+    ['subject', 'ask'],
     ['subject'],
   ])
   expect(page.goal?.milestones.map(m => [m.place, m.foldId])).toEqual([
@@ -146,7 +147,7 @@ test('a sample saved without a Status is replaced, and the sample session carrie
     ['next', null],
     ['later', null],
   ])
-  expect(page.rows.map(r => r.kind)).toEqual(['part', 'subject', 'child', 'done-fold'])
+  expect(page.rows.map(r => r.kind)).toEqual(['part', 'subject', 'ask', 'child', 'done-fold'])
 })
 
 test('a conversation start carries the head and where each open subject stands, not on a resume the guidance, and nothing for an empty session', () => {

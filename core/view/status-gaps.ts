@@ -5,15 +5,15 @@ import type { StatusRow } from './status-page'
 
 /** A Status row that shows its name line alone, with no line or button under it. */
 function isOneLineStatusRow(r: StatusRow): boolean {
+  if (r.kind === 'ask') return false
   if (r.kind !== 'subject') return true
 
-  return !r.waitsOn && !r.text && !r.merged && !r.was && statusKeyPlan(r).length === 0
+  return !r.text && !r.merged && !r.was && statusKeyPlan(r).length === 0
 }
 
 /** A milestone that shows its name line alone, or a done milestone folded to its name. */
 export const isOneLineMilestone = (m: MilestoneRow): boolean =>
-  m.foldId !== null ||
-  (!m.text && !m.was && !m.subject?.merged && !m.subject?.waitsOn && milestoneKeyPlan(m).length === 0)
+  m.foldId !== null || (!m.text && !m.was && !m.subject?.merged && milestoneKeyPlan(m).length === 0)
 
 /**
  * The gap above each row of a Status list, in points, from the last line of the row above to this row's first line.
