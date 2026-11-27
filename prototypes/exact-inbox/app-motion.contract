@@ -11,7 +11,7 @@ members App
   task updateMotion when matchingInbox and visualFrame.signature != motionKey key=motionKey
     after(1, updateMotion)
   task settleMotion when matchingInbox and visualFrame.session == selectedSession and visualFrame.deadline > 0 key=`${motionKey}:${visualFrame.deadline}`
-    every(frame, settleVisualFrame)
+    every(50, settleVisualFrame)
   action settleVisualFrame
     if time.epochAtZero + performanceNow() >= visualFrame.deadline and not pending(nextFrame)
       updateMotion()

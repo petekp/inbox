@@ -1,12 +1,13 @@
 use RowActions from "./row-actions.contract"
-use rowLayout, rowFade, rowBgFade, rowEntry, rowSlide, rowExit from "./motion.contract"
+use rowLayout, rowPanelFade, rowBgFade, rowEntry, rowSlide, rowExit from "./motion.contract"
 use ReplyPane from "./reply-pane.contract"
-use InlineSpan, Row, VisualGroup from "./model.contract"
+use InlineSpan, Row, VisualGroup, VisualRow from "./model.contract"
 use InlineText, ClampedInlineText from "./inline-text.contract"
 use MarkGlyph from "./mark-glyph.contract"
 use ActionIcon from "./action-icon.contract"
 
 fn hasShownOptions(row: Row, all: bool): bool = row.options.length > 0 or (all and row.allOptions.length > 0)
+fn isRowOpen(row: VisualRow, selected: string): bool = row.target != "gone" and row.row.state != "settled" and selected == row.row.id
 
 component AskTreeBranch
   props
@@ -83,8 +84,8 @@ component InboxRows
                 if g.count > 0
                   text `${g.count}` font-size=(compact ? 13 : 14) color="ink.muted" font-variant-numeric="tabular-nums"
             for r in g.rows key=r.id
-              column id=`${prefix}-row-${r.id}` gap=0 padding=(r.target == "gone" ? "0px" : "6px 16px") background-color=(r.target == "open" or r.phase == "closing" ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(r.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(r.target == "gone") aria-hidden=(r.target == "gone") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "gone" ? 0 : 1) translate=rowSlide(r.target == "gone") animation=rowEntry(reduced, r.arriving) testId=`row-${r.row.id}`
-                button press=onToggle(r.row.id, r.row.collapse) appearance="none" background-color="transparent" border-width=0 padding=0 width="100%" text-align="left" aria-expanded=(selected == r.row.id) color="ink.primary" testId=`select-${r.row.id}` min-height=(compact ? 24 : 36)
+              column id=`${prefix}-row-${r.id}` gap=0 padding=(r.target == "gone" ? "0px" : "6px 16px") background-color=(isRowOpen(r, selected) ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(r.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(r.target == "gone") aria-hidden=(r.target == "gone") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "gone" ? 0 : 1) translate=rowSlide(r.target == "gone") animation=rowEntry(reduced, r.arriving) testId=`row-${r.row.id}`
+                button press=onToggle(r.row.id, r.row.collapse) appearance="none" background-color="transparent" border-width=0 padding=0 width="100%" text-align="left" aria-expanded=isRowOpen(r, selected) color="ink.primary" testId=`select-${r.row.id}` min-height=(compact ? 24 : 36)
                   :hover
                     background-color="transparent"
                   row gap=8 align-items="start" width="100%"
@@ -92,13 +93,13 @@ component InboxRows
                       if r.row.mark != "" or r.row.running
                         MarkGlyph(mark=r.row.mark, color=r.row.markColor, running=r.row.running, reduced=reduced, size=8)
                     column flex=1 min-width=0 gap=0
-                      ClampedInlineText(parts=r.row.titleParts, maxLines=(r.target == "open" or r.phase == "closing" ? 0 : 2), bold=(r.target == "open" or r.phase == "closing"))
-                      if r.row.holdsUpParts.length > 0 and selected != r.row.id
+                      ClampedInlineText(parts=r.row.titleParts, maxLines=(isRowOpen(r, selected) ? 0 : 2), bold=isRowOpen(r, selected))
+                      if r.row.holdsUpParts.length > 0 and not isRowOpen(r, selected)
                         column color="ink.muted"
                           ClampedInlineText(parts=r.row.holdsUpParts, maxLines=1, bold=false)
                     if r.row.age != ""
                       text r.row.age font-size=12 color="ink.faint" font-variant-numeric="tabular-nums" white-space="nowrap" padding-left=8
-                column position="relative" min-width=0 gap=0 padding-left=24 height=(r.target == "open" ? "auto" : "0px") overflow="hidden" inert=(r.target != "open") aria-hidden=(r.target != "open") -exact-layout-transition=rowLayout(reduced) opacity=(r.target == "open" ? 1 : 0) translate=rowSlide(r.target != "open") transition=rowFade(reduced)
+                column position="relative" min-width=0 gap=0 padding-left=24 height=(isRowOpen(r, selected) ? "auto" : "0px") overflow="hidden" inert=(not isRowOpen(r, selected)) aria-hidden=(not isRowOpen(r, selected)) opacity=(isRowOpen(r, selected) ? 1 : 0) transition=rowPanelFade(reduced)
                   if r.panel.state != "settled"
                     column position="relative" gap=0 padding-bottom=(r.panel.hasTree and hasShownOptions(r.panel, optionsShown.includes(r.id)) ? 8 : 0)
                       if r.panel.hasTree and hasShownOptions(r.panel, optionsShown.includes(r.id))

@@ -1,9 +1,11 @@
-use rowLayout, rowBgFade, rowEntry from "./motion.contract"
+use rowLayout, rowPanelFade, rowBgFade, rowEntry from "./motion.contract"
 use Inbox, isPrRow, VisualPr from "./model.contract"
 use InlineText from "./inline-text.contract"
 use MarkGlyph from "./mark-glyph.contract"
 use ActionPill from "./action-button.contract"
 use ErrorBanner from "./inbox-header.contract"
+
+fn isPrOpen(v: VisualPr, selected: string): bool = isPrRow(v.row) and v.target != "gone" and selected == v.row.id
 
 component PrPane
   props
@@ -31,11 +33,11 @@ component PrPane
           if inbox.prEmptyHint != ""
             text inbox.prEmptyHint color="ink.muted" text-align="center" max-width=360
       for v in visual key=v.id
-        column id=`${prefix}-pr-${v.row.id}` gap=4 padding=(v.target == "gone" ? "0px" : v.row.kind == "group" ? "12px 16px 4px 40px" : "6px 16px 6px 40px") background-color=(isPrRow(v.row) and (v.target == "open" or v.phase == "closing") ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(v.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(v.target == "gone") aria-hidden=(v.target == "gone") -exact-layout-transition=rowLayout(reduced) animation=rowEntry(reduced, v.arriving)
+        column id=`${prefix}-pr-${v.row.id}` gap=4 padding=(v.target == "gone" ? "0px" : v.row.kind == "group" ? "12px 16px 4px 40px" : "6px 16px 6px 40px") background-color=(isPrOpen(v, selected) ? "surface.selected" : "transparent") transition=rowBgFade(reduced) height=(v.target == "gone" ? "0px" : "auto") overflow="hidden" inert=(v.target == "gone") aria-hidden=(v.target == "gone") -exact-layout-transition=rowLayout(reduced) animation=rowEntry(reduced, v.arriving)
           if v.row.kind == "block" and not v.row.isFirstBlock
             box height=1 margin="6px 0 12px 0" background-color="surface.soft"
           if isPrRow(v.row)
-            button press=onFold(v.row.id, v.row.collapse) appearance="none" background-color="transparent" border-width=0 display="flex" width="100%" min-height=(compact ? 24 : 36) padding=0 text-align="left" align-items="start" aria-expanded=(selected == v.row.id) testId=`pr-select-${v.row.id}`
+            button press=onFold(v.row.id, v.row.collapse) appearance="none" background-color="transparent" border-width=0 display="flex" width="100%" min-height=(compact ? 24 : 36) padding=0 text-align="left" align-items="start" aria-expanded=isPrOpen(v, selected) testId=`pr-select-${v.row.id}`
               :hover
                 background-color="transparent"
               row gap=8 align-items="start" width="100%"
@@ -43,8 +45,8 @@ component PrPane
                   if v.row.mark != "" or v.row.running
                     MarkGlyph(mark=v.row.mark, color=v.row.color, running=v.row.running, reduced=reduced, size=8)
                 column flex=1 min-width=0 gap=0
-                  text v.row.title color="ink.primary" font-weight=(v.target == "open" or v.phase == "closing" ? 600 : 400) line-clamp=(v.target == "open" or v.phase == "closing" ? 0 : 2) text-overflow=(v.target == "open" or v.phase == "closing" ? "clip" : "ellipsis")
-                  if v.row.detail != "" and selected != v.row.id
+                  text v.row.title color="ink.primary" font-weight=(isPrOpen(v, selected) ? 600 : 400) line-clamp=(isPrOpen(v, selected) ? 0 : 2) text-overflow=(isPrOpen(v, selected) ? "clip" : "ellipsis")
+                  if v.row.detail != "" and not isPrOpen(v, selected)
                     text v.row.detail color="ink.age" line-clamp=1 text-overflow="ellipsis"
           else if v.row.kind == "block"
             text
@@ -54,7 +56,7 @@ component PrPane
             text v.row.title font-weight=(v.row.kind == "heading" or v.row.kind == "group" ? 600 : 400) color=(v.row.failed ? "tone.error" : v.row.kind == "group" or v.row.kind == "heading" ? "ink.primary" : "ink.muted")
           if v.row.detail != "" and not isPrRow(v.row)
             text v.row.detail color=(v.row.kind == "block" ? v.row.color : "ink.muted")
-          column padding-left=(isPrRow(v.row) ? 24 : 0) gap=6 height=(not isPrRow(v.row) or v.target == "open" ? "auto" : "0px") overflow="hidden" inert=(isPrRow(v.row) and v.target != "open") aria-hidden=(isPrRow(v.row) and v.target != "open") -exact-layout-transition=rowLayout(reduced)
+          column padding-left=(isPrRow(v.row) ? 24 : 0) gap=6 height=(not isPrRow(v.row) or isPrOpen(v, selected) ? "auto" : "0px") overflow="hidden" inert=(isPrRow(v.row) and not isPrOpen(v, selected)) aria-hidden=(isPrRow(v.row) and not isPrOpen(v, selected)) opacity=(not isPrRow(v.row) or isPrOpen(v, selected) ? 1 : 0) transition=rowPanelFade(reduced)
             if v.panel.quote.length > 0
               column white-space="pre-line" color="ink.primary"
                 InlineText(parts=v.panel.quote)
@@ -66,7 +68,7 @@ component PrPane
             if v.panel.controls.length > 0
               row appearance="none" gap=8 flex-wrap="wrap" align-items="center" padding-top=2
                 for control in v.panel.controls key=control.key
-                  ActionPill(label=control.label, icon=control.icon, emphasis=control.emphasis, compact=compact, disabled=(control.disabled or busy or (control.scope == "row" and (guarded or v.guarded or v.target != "open")) or (control.command == "local" and localActive) or (sending and submittedKey == control.key)), dimmed=control.out, testId=`pr-action-${control.key}`, onPress=onAction(control))
+                  ActionPill(label=control.label, icon=control.icon, emphasis=control.emphasis, compact=compact, disabled=(control.disabled or busy or (control.scope == "row" and (guarded or v.guarded or not isPrOpen(v, selected))) or (control.command == "local" and localActive) or (sending and submittedKey == control.key)), dimmed=control.out, testId=`pr-action-${control.key}`, onPress=onAction(control))
           if v.localText != ""
             text v.localText padding-left=(isPrRow(v.row) ? 24 : 0) color=(v.localFailed ? "tone.error" : "ink.muted")
           else if sending and v.row.controls.map(c => c.key).includes(submittedKey)

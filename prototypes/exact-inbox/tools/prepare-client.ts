@@ -1,4 +1,4 @@
-import { FADE_MS, ENTER_FADE_MS, LEAVE_FADE_MS, SLIDE_PX } from '../../../core/view/row-motion'
+import { ENTER_FADE_MS, LEAVE_FADE_MS, SLIDE_PX } from '../../../core/view/row-motion'
 import { HEIGHT_SPRING } from '../../../core/view/springs'
 import {
   DARK_TONES,
@@ -80,8 +80,7 @@ function buildForma(): string {
 }
 
 export async function prepareClient(): Promise<void> {
-  const frequency = (2 * Math.PI) / (HEIGHT_SPRING.response / 1000)
-  const spring = `-exact-spring(${frequency * frequency}, ${2 * HEIGHT_SPRING.damping * frequency}, 1)`
+  const layout = `${HEIGHT_SPRING.response}ms cubic-bezier(0.22, 1, 0.36, 1)`
   const motion = [
     'keyframes inboxEnter',
     `  from opacity=0 translate="0px -${SLIDE_PX}px"`,
@@ -93,9 +92,8 @@ export async function prepareClient(): Promise<void> {
     'keyframes runningPulse',
     '  50% opacity=0.3',
     '',
-    `fn rowLayout(still: bool): string = still ? "none" : "${spring}"`,
-    `fn rowFade(still: bool): string = still ? "none" : "opacity ${FADE_MS}ms ease-out, translate ${FADE_MS}ms ease-out"`,
-    `fn rowCloseFade(still: bool): string = still ? "none" : "opacity ${LEAVE_FADE_MS}ms ease-out, translate ${LEAVE_FADE_MS}ms ease-out"`,
+    `fn rowLayout(still: bool): string = still ? "none" : "${layout}"`,
+    `fn rowPanelFade(still: bool): string = still ? "none" : "opacity ${ENTER_FADE_MS}ms ease-out"`,
     `fn rowBgFade(still: bool): string = still ? "none" : "background-color ${LEAVE_FADE_MS}ms ease-out"`,
     `fn rowEntry(still: bool, arriving: bool): string = still or not arriving ? "none" : "inboxEnter ${ENTER_FADE_MS}ms ease-out both"`,
     `fn rowExit(still: bool): string = still ? "none" : "inboxLeave ${LEAVE_FADE_MS}ms ease-out both"`,
