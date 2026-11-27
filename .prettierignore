@@ -15,7 +15,7 @@ herdr/bun.lock
 omp/dist/
 
 # Built by herdr/build.ts
-herdr/mod/
+herdr/mods/
 
 # Worktrees Claude Code makes inside the repo, each with its own built files
 .claude/

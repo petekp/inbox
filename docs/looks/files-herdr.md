@@ -2,7 +2,7 @@
 
 Part of [the look map](../looks.md#files).
 
-The Herdr look is a Herdr app mod. It draws the inbox of the session that a host publishes for the terminal it follows. `herdr/build.ts` bundles `herdr/src` and the shared modules it imports into `herdr/mod/inbox/`, the folder an install copies into the app's `mods` folder.
+The Herdr look is a Herdr app mod. It draws the inbox of the session that a host publishes for the terminal it follows. `herdr/build.ts` bundles `herdr/src` and the shared modules it imports into `herdr/mods/inbox/`, the folder an install copies into the app's `mods` folder.
 
 | File | Role |
 | --- | --- |

@@ -7,7 +7,7 @@ import { HERDR_GLOBALS, globalsOf, herdrContext, loadBuiltMod } from './herdr-ru
 
 setSystemTime(new Date(NOW))
 
-const BUILT_MOD = join(import.meta.dir, '..', 'mod', 'inbox', 'main.js')
+const BUILT_MOD = join(import.meta.dir, '..', 'mods', 'inbox', 'main.js')
 
 test('the load context holds exactly the globals of Herdr’s mod runtime', () => {
   expect(globalsOf(herdrContext(standInWindow))).toEqual(HERDR_GLOBALS.toSorted())

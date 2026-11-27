@@ -153,7 +153,7 @@ fi
 if command -v herdr-app >/dev/null 2>&1; then
     herdr_scratch=$(mktemp -d)
     mkdir "$herdr_scratch/home" "$herdr_scratch/inbox"
-    cp "$DIR/herdr/mod/inbox/main.js" "$DIR/herdr/mod/inbox/mod.json" "$herdr_scratch/inbox/"
+    cp "$DIR/herdr/mods/inbox/main.js" "$DIR/herdr/mods/inbox/mod.json" "$herdr_scratch/inbox/"
     check "herdr app check" env -i PATH="$PATH" HOME="$herdr_scratch/home" HERDR_APP_HOME="$herdr_scratch/home" \
         herdr-app check "$herdr_scratch/inbox"
     rm -rf "$herdr_scratch"

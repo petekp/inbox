@@ -34,4 +34,4 @@ The runtime freezes `Object.prototype`, `Array.prototype` and `String.prototype`
 
 With no `Intl`, QuickJS formats dates and numbers its own way and ignores the options. `toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })` gives `08:33:05 PM`, with seconds. `(1234.5).toLocaleString()` gives `1234.5`. The load spec runs on Bun's formatting, so it cannot catch a difference in this output.
 
-`herdr/tests/mod-load.spec.ts` loads the built `herdr/mod/inbox/main.js` with only these globals. After a Herdr app update, run the probe again and update `HERDR_GLOBALS` to match.
+`herdr/tests/mod-load.spec.ts` loads the built `herdr/mods/inbox/main.js` with only these globals. After a Herdr app update, run the probe again and update `HERDR_GLOBALS` to match.
