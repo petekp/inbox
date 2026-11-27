@@ -9,29 +9,6 @@ import { MOD_SEEDS } from './seeds-mod'
  * that finds only these passes, so a fixed-seed run fails only on something new.
  */
 const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string; details: (string | string[])[] }[] = [
-  { issue: 811, look: 'herdr', rule: 'cut', details: ['"✓ Copied'] },
-  {
-    issue: 827,
-    look: 'herdr',
-    rule: 'cut',
-    details: [
-      ['"Send"', 'in its box panel '],
-      ['"Cancel"', 'in its box panel '],
-      ['"Discard"', 'in its box panel '],
-      ['"Sending…"', 'in its box status '],
-    ],
-  },
-  {
-    issue: 927,
-    look: 'herdr',
-    rule: 'cut',
-    details: [
-      ['"Reply"', 'in its box panel '],
-      ['"Explain"', 'in its box panel '],
-    ],
-  },
-  { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
-  { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
   {
     issue: 1007,
     look: 'herdr',
@@ -52,9 +29,21 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   },
 ]
 
+const openSeedIssues = () => new Set([...SEEDS, ...CODEX_SEEDS, ...MOD_SEEDS].filter(s => s.isOpen).map(s => s.issue))
+
+/**
+ * The issues `KNOWN` names that no open seed holds. Such an entry never matches, so it is dead data, and a closed
+ * issue's entry goes in the PR that marks its seed closed.
+ */
+export const staleKnownIssues = (): number[] => {
+  const open = openSeedIssues()
+
+  return [...new Set(KNOWN.map(k => k.issue))].filter(n => !open.has(n))
+}
+
 /** The open issue a failure is already filed as, or null when it is new. */
 export function knownIssueOf(f: { look: string; rule: string; detail: string }): number | null {
-  const open = new Set([...SEEDS, ...CODEX_SEEDS, ...MOD_SEEDS].filter(s => s.isOpen).map(s => s.issue))
+  const open = openSeedIssues()
   const k = KNOWN.find(
     k =>
       open.has(k.issue) &&

@@ -213,10 +213,21 @@ describe('a long earlier answer', () => {
     'Use the staging box for the first week, then move the whole queue over once the backfill has caught up, the alerts have stayed quiet for two full days, and the on-call engineer has signed off on the plan in writing'
   const match = { doc: doc('long', 'Where should it run?', typed), score: 0.5 }
 
-  test('stays whole on the item, so a repeat of it counts as the same answer', () => {
+  test('is cut on the item, and a repeat of it still counts as the same answer', () => {
     const earlier = earlierOf(match, true)
-    expect(earlier.answer).toBe(typed)
+    expect(earlier.answer.length).toBeLessThanOrEqual(200)
+    expect(earlier.answer.endsWith('…')).toBe(true)
     const item = { ...question('i1', 'Where should it run?', ['staging', 'production']), earlier }
+    const ledger = closeItem({ ...EMPTY, items: [item] }, 'i1', { how: 'answered', outcome: typed }, NOW)
+    const file = questionHistory(null, { ...emptySession(), ledger }, { host: 'codex', session: 's1', repo: null }, NOW)
+    expect(file.questions.map(q => q.isAnsweredWithEarlier)).toEqual([true])
+  })
+
+  test('counts a repeat as the same answer when the item saved the earlier answer whole', () => {
+    const item = {
+      ...question('i1', 'Where should it run?', ['staging', 'production']),
+      earlier: { ...earlierOf(match, true), answer: typed },
+    }
     const ledger = closeItem({ ...EMPTY, items: [item] }, 'i1', { how: 'answered', outcome: typed }, NOW)
     const file = questionHistory(null, { ...emptySession(), ledger }, { host: 'codex', session: 's1', repo: null }, NOW)
     expect(file.questions.map(q => q.isAnsweredWithEarlier)).toEqual([true])

@@ -1,4 +1,5 @@
 import type { Earlier, Item } from '../../types'
+import { RECORD_LIMITS } from './field-limits'
 import { cutLine } from './text'
 
 /** An answer the person gave to an earlier question. `key` names the question across hosts and sessions. */
@@ -20,10 +21,15 @@ const B = 0.75
  * of question rows whether the history is weeks or days old.
  */
 const RELATIVE_FLOOR = 0.22
-/** The most characters of an earlier ask or answer a row draws before it cuts the text at a word. */
-const EARLIER_TEXT_CHARS = 200
+/**
+ * The most characters of an earlier ask or answer an item keeps and a row draws: the `record` limit on an ask. An ask
+ * and an answer can be longer, since a typed dialog answer and the ledger model's closing text have no limit, so a
+ * longer one is cut at a word with an ellipsis, as `field-limits.ts` refuses a longer `record` field and shows why.
+ */
+const EARLIER_TEXT_CHARS = RECORD_LIMITS.ask
 
-const shortText = (text: string) => cutLine(text, t => t.length <= EARLIER_TEXT_CHARS)
+/** `text` as an item keeps it, and as an earlier answer is compared with a repeat of it. */
+export const shortText = (text: string) => cutLine(text.trim(), t => t.length <= EARLIER_TEXT_CHARS)
 
 const STOP_WORDS = new Set(
   `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
@@ -112,8 +118,8 @@ export function earlierOf(match: { doc: AnswerDoc; score: number }, isShown: boo
   const { doc } = match
 
   return {
-    ask: doc.ask,
-    answer: doc.answer,
+    ask: shortText(doc.ask),
+    answer: shortText(doc.answer),
     at: doc.at,
     repo: doc.repo,
     score: Math.round(match.score * 1000) / 1000,

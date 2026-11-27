@@ -1,4 +1,5 @@
 import type { Closed, Earlier, Session } from '../../types'
+import { shortText } from './earlier-answers'
 import type { AnswerDoc } from './earlier-answers'
 import { OVERTAKEN_OUTCOMES } from './ledger-close'
 
@@ -87,7 +88,7 @@ export function questionHistory(
     how: c.how,
     isAfterReply: c.how === 'update' && s.lastActions[c.id]?.action === 'type',
     earlier: c.item?.earlier ?? null,
-    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false,
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(shortText(c.outcome), shortText(c.item.earlier.answer)) : false,
   }))
   const open = new Set(s.ledger.items.map(i => keyOf({ id: i.id, askedAt: i.at })))
   const byKey = new Map((previous?.questions ?? []).map(q => [keyOf(q), q]))
