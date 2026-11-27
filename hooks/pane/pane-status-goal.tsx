@@ -202,6 +202,7 @@ export function paneStatusGoal(
       { text: m.mark, isRunning: x?.isRunning ?? false },
       m.id,
       m.tone ? pal.mark[m.tone] : pal.muted,
+      m.tone ?? undefined,
     )
     if (m.foldId !== null) {
       const fold = path.foldedName(

@@ -81,7 +81,16 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
           e.on_click((e, cx) => (toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)),
         )
         .child(partEl('mark', markEl(s.mark, t)))
-        .child(h_flex().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron)),
+        .child(
+          h_flex()
+            .relative()
+            .flex_1()
+            .min_w(0)
+            .flex_wrap()
+            .child(partEl('name', name))
+            .children(stall)
+            .children(chevron),
+        ),
     )
     .child(
       partEl('under', v_flex().children(s.under.map(l => lineEl(l.text, l.level === 'faint' ? faintOf(t) : t.muted)))),

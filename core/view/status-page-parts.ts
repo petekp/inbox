@@ -247,14 +247,17 @@ export function unplacedChildren(
   return { loose: unshown.filter(l => !isFoldedFinished(l)), settled }
 }
 
-/** The words of the item `ask` names, on one line, or null when it names none or has no words. */
+/**
+ * The words of the item `ask` names, on one line, or its label when it has no words, or what kind of ask it is. Null
+ * when it names no item.
+ */
 function askWords(items: readonly Item[], ask: { id: string } | null): string | null {
-  const words = items
-    .find(i => i.id === ask?.id)
-    ?.ask.replace(/\s+/g, ' ')
-    .trim()
+  const item = items.find(i => i.id === ask?.id)
+  if (item === undefined) return null
 
-  return words || null
+  return (
+    item.ask.replace(/\s+/g, ' ').trim() || item.label?.trim() || (item.kind === 'task' ? 'Open task' : 'Open question')
+  )
 }
 
 /**
@@ -275,7 +278,7 @@ export type StatusAskRow = {
   branch: StatusBranch | null
 }
 
-/** The ask row under the row `parentId`, for `ask`, or none when the ask has no words. */
+/** The ask row under the row `parentId`, for `ask`, or none when it names no item. */
 export function askRows(
   parentId: string,
   ask: { id: string; kind: Item['kind'] } | null,

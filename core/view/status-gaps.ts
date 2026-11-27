@@ -5,6 +5,7 @@ import type { StatusRow } from './status-page'
 
 /** A Status row that shows its name line alone, with no line or button under it. */
 function isOneLineStatusRow(r: StatusRow): boolean {
+  if (r.kind === 'ask') return false
   if (r.kind !== 'subject') return true
 
   return !r.text && !r.merged && !r.was && statusKeyPlan(r).length === 0

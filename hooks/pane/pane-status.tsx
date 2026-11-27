@@ -332,7 +332,12 @@ export function paneStatus(
     },
   )
   const statusMark = (r: Pick<StatusRow & { kind: 'subject' }, 'id' | 'mark' | 'tone' | 'isRunning'>) =>
-    markGlyph({ text: r.mark, isRunning: r.isRunning }, r.id, r.tone ? pal.mark[r.tone] : pal.muted)
+    markGlyph(
+      { text: r.mark, isRunning: r.isRunning },
+      r.id,
+      r.tone ? pal.mark[r.tone] : pal.muted,
+      r.tone ?? undefined,
+    )
   // On desktop a row's first line starts under its frame's border and padding.
   const firstLine = (padY: number) => (look === 'desktop' ? desktopSpaceLines(padY) + DESKTOP_HAIR_LINES : 0)
   const seenTops = (r: StatusRow, padY = STATUS_PAD_Y) =>
@@ -402,7 +407,7 @@ export function paneStatus(
       return statusRowLine({
         key: `status-${r.id}`,
         depth: r.depth,
-        mark: markGlyph({ text: r.mark, isRunning: false }, r.id, pal.mark[r.tone]),
+        mark: markGlyph({ text: r.mark, isRunning: false }, r.id, pal.mark[r.tone], r.tone),
         content: [
           statusPageText(`status-${r.id}-text`, [askSpan(r)], r.depth),
           ...keysRow({ id: r.id, keys: statusKeyPlan(r) }, statusTextWidth(r.depth)),
