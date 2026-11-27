@@ -229,6 +229,20 @@ test('a goal taken from the suggestion waits for its milestones, and is not read
   expect(after(taken, 'RETIRE: moved on', later).goal?.text).toBe('Notes 2.6 on TestFlight')
 })
 
+test('a goal still waiting for its milestones after a Status call read it can be read as left, and retired', () => {
+  const met = after(
+    linked(),
+    'DONE: m2 | merged\nDONE: m3 | landed\nDONE: m4 | live\nDONE: s1 | merged\nDONE: s2 | landed\nSUGGEST: Notes 2.6 on TestFlight',
+    20 * MIN,
+  )
+  const read = { ...takeSuggestedGoal(met, 21 * MIN), lastCallReadAt: 22 * MIN }
+  const later = 21 * MIN + 51 * MIN
+
+  expect(read.goal?.isAwaitingMilestones).toBe(true)
+  expect(goalBlock(read, later)).toBe('Notes 2.6 on TestFlight (just set, no work for 51m)')
+  expect(after(read, 'RETIRE: moved on', later).goal).toBeNull()
+})
+
 test('a SERVES line whose subject names another version than its milestone links it under none', () => {
   const o = after(
     linked(),
