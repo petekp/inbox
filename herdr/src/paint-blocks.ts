@@ -339,7 +339,6 @@ function textLineEl(b: LineBlock, p: Paint, isInert: boolean): Element {
     .when(b.feedback !== null, e => e.child(feedbackEl(b.feedback!, t)))
 }
 
-/** A group's heading. A marked one hangs its mark in the mark column, with its text where its rows' text starts. One with no mark starts at the edge, where its rows' marks do. A label heading starts at the edge and rules the goal's text to its buttons. */
 /**
  * A heading's count after its text. A count that goes fades out over `LEAVE_FADE_MS` from the draw after it went, so
  * it never drops in one frame.
@@ -355,6 +354,7 @@ function countEls(b: Extract<Block, { kind: 'heading' }>, left: CountLeft | null
   return [fadeEl(el, name, opacity, { duration: isGoing ? LEAVE_FADE_MS : 0, delay: 0 }, p)]
 }
 
+/** A group's heading. A marked one hangs its mark in the mark column, with its text where its rows' text starts. One with no mark starts at the edge, where its rows' marks do. A label heading starts at the edge and rules the goal's text to its buttons. */
 function headingEl(b: Extract<Block, { kind: 'heading' }>, p: Paint, isInert: boolean): Element {
   const { t } = p
   const buttons = h_flex()

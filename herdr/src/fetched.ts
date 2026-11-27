@@ -52,23 +52,26 @@ export function fetchedIds(
  */
 export class FetchedReads {
   private drawn: { read: Read | null; at: number; before: Read | null } = { read: null, at: 0, before: null }
-  private ids = NONE_FETCHED
+  private noted = { ids: NONE_FETCHED, inFrame: NONE_FETCHED }
 
   /** Notes the read `read`, which lands with a move the next draw shows. */
   note(look: Look, read: Read | null, ui: UiState, now: number): void {
     const { at, before } = this.drawn
-    this.ids = fetchedIds(look, at === now ? before : this.drawn.read, read, ui, now)
+    const ids = fetchedIds(look, this.drawn.read, read, ui, now)
+    this.noted = { ids, inFrame: at === now ? fetchedIds(look, before, read, ui, now) : ids }
   }
 
   /**
    * The blocks a read changed for the draw at `now` that shows `read`. An answer draw shows the reply as input. Draws
-   * in the same millisecond are one frame, as moves that start in them start together.
+   * in the same millisecond are one frame, so a draw in the millisecond of the draw before it also counts what a read
+   * changed for that one.
    */
   drew(read: Read | null, isAnswer: boolean, now: number): ReadonlySet<string> {
-    const ids = isAnswer ? NONE_FETCHED : this.ids
-    const before = this.drawn.at === now ? this.drawn.before : this.drawn.read
+    const isSameFrame = this.drawn.at === now
+    const ids = isAnswer ? NONE_FETCHED : isSameFrame ? this.noted.inFrame : this.noted.ids
+    const before = isSameFrame ? this.drawn.before : this.drawn.read
     this.drawn = { read, at: now, before }
-    this.ids = NONE_FETCHED
+    this.noted = { ids: NONE_FETCHED, inFrame: NONE_FETCHED }
     return ids
   }
 }

@@ -40,12 +40,14 @@ const realMoveRows = motion.moveRows
 let wasInput = false
 let wasFirst = false
 let wasMoved = false
+let wasFetched: ReadonlySet<string> = new Set()
 mock.module('../herdr/src/motion', () => ({
   ...motion,
   moveRows: (...args: Parameters<typeof realMoveRows>) => {
     wasMoved = true
     wasFirst = args[3]
     wasInput = args[4] ?? false
+    wasFetched = args[6] ?? new Set()
     return realMoveRows(...args)
   },
 }))
@@ -160,7 +162,7 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     wasInput = false
     wasFirst = false
     wasMoved = false
-    const isMove = p.panel.movedAt > p.panel.tracks.drawnAt
+    wasFetched = new Set()
     const root = p.paint()
     const isInput = wasInput
     const isMessageShown = !wasMoved && !wasMessage
@@ -168,7 +170,7 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     if ((wasFirst || isMessageShown) && pageAt.at(-1) !== clock - START) pageAt.push(clock - START)
     const blocks = p.panel.blocks
     const read = p.panel.readSession
-    const fetched = isInput && !isMove ? [] : [...fetchedIds(p.panel, drawnRead, read, p.panel.ui, clock)]
+    const fetched = isInput ? [...wasFetched] : [...fetchedIds(p.panel, drawnRead, read, p.panel.ui, clock)]
     drawnRead = read
     if (fetched.length > 0) fetchedAt.set(clock - START, new Set([...(fetchedAt.get(clock - START) ?? []), ...fetched]))
     const view = read && readView(read, clock, holdsOf(p.panel.ui, clock), notesOf(p.panel.ui))

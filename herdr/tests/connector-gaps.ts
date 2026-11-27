@@ -1,13 +1,11 @@
 import type { Painted } from './gpui-stand-in'
 import type { Box } from './layout'
 
-/** A connector stroke as drawn: its x, the span it shows, whether it runs in from its box's top or on to its bottom. */
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean; isHidden: boolean }
 
 const lengthIn = (length: number | string, height: number): number =>
   typeof length === 'string' && length.endsWith('%') ? (parseFloat(length) / 100) * height : Number(length)
 
-/** The connector strokes under `root`, each clipped by the boxes that clip it. */
 export function segmentsOf(root: Painted, placed: Map<Painted, Box>, isHidden: (n: Painted) => boolean): Segment[] {
   const out: Segment[] = []
   const walk = (n: Painted, clip: [number, number], id: string) => {
@@ -42,7 +40,6 @@ export function segmentsOf(root: Painted, placed: Map<Painted, Box>, isHidden: (
   return out
 }
 
-/** The ends of shown strokes that meet no other stroke at the same x, above the list's end `end`. */
 export function gapsOf(segments: Segment[], end: number): { id: string; x: number; y: number }[] {
   const isMet = (s: Segment, y: number) =>
     segments.some(o => o !== s && !o.isHidden && o.x === s.x && o.y0 <= y + 0.5 && o.y1 >= y - 0.5)
