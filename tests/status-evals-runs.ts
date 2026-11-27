@@ -344,7 +344,13 @@ export const GOOD_RUNS: Record<string, string[]> = {
       'SERVES: s2 | -',
     ].join('\n'),
   ],
-  'milestone-decided': ['SET: s1 | working | Decided "!", edit not made yet\nLINK: i2 | s1'],
+  'milestone-decided': [
+    'SET: s1 | working | Decided "!", edit not made yet\nLINK: i2 | s1',
+    'DONE: s1 | "!" added, not run\nDONE: m1 | ending is "!"',
+  ],
+  'goal-work-unnamed': [
+    'NEW: working | Import progress bar | reports every 500 rows, not tried on the big file\nMILESTONE: working | Progress bar works | fix not tried yet\nSERVES: Import progress bar | Progress bar works',
+  ],
   'milestone-held-by-ask': [
     'SET: s3 | working | cap wired, oldest dropped for now',
     'DONE: m1 | sync fixed\nSET: s2 | working | flush built, tests pass, check left',

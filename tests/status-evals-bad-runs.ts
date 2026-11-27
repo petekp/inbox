@@ -211,5 +211,11 @@ export const BAD_RUNS: Record<string, { at: number; answer: string; breaks: stri
     answer: 'SET: s3 | working | cap wired, oldest dropped for now\nSET: s2 | queued | flush on background built',
     breaks: 'marks-true',
   },
+  'goal-work-unnamed': {
+    at: 0,
+    answer:
+      'NEW: working | Import progress bar | reports every 500 rows, not tried on the big file\nSERVES: Import progress bar | -',
+    breaks: 'serves-linked',
+  },
   'head-after-done': { at: 2, answer: 'HEAD: Greet flags | Adding options to greet', breaks: 'head-follows' },
 }
