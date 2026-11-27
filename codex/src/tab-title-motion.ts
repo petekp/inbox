@@ -11,9 +11,8 @@ import type { SpringState } from '../../core/view/springs'
 import { fade, fadeShown, glide, glides, isFadingOut, isRunning, springOf, stopFadeOut, waitLeftMs } from './tab-glide'
 
 /**
- * A row's line. While the row opens or closes it is a block that draws the title, wrapped as the open row's is, with
- * its after-label inline, so its height can glide between the closed title's and the open one's. The line clips while
- * it glides.
+ * A row's line. While the row opens or closes it draws the title, wrapped as the open row's is, with its after-label,
+ * so its height can glide between the closed title's and the open one's. The line clips while it glides.
  */
 export const LINE = '.line'
 
@@ -55,10 +54,10 @@ function swapTitle(
 }
 
 /**
- * Starts an opening row's title move, after `delay` ms. The line grows from the closed title's height to the open
+ * Starts an opening row's title move, after `delay` ms. The line moves from the closed title's height to the open
  * title's, with the title in its closed form, and the title fades to its open form once the line comes to rest
- * (`titleSwapMs`). A line that was held or gliding, as when the open turns a close back, grows from where it was,
- * `held`. A line already at the open title's height shows the open form at once.
+ * (`titleSwapMs`). A line that was held or gliding, as when the open turns a close back, moves from where it was,
+ * `held`, and may shrink to the open title's height. A line already at the open title's height shows the open form at once.
  */
 export function openTitle(el: HTMLElement, delay: number, held: SpringState | null) {
   const line = el.querySelector<HTMLElement>(OWN_LINE)
@@ -67,7 +66,7 @@ export function openTitle(el: HTMLElement, delay: number, held: SpringState | nu
   glides.get(line)?.anim.cancel()
   const to = line.getBoundingClientRect().height
   const from: SpringState = held ?? { x: Math.min(title.short.getBoundingClientRect().height, to), v: 0 }
-  const isAtOpen = to - from.x < 0.5 && Math.abs(from.v) * FRAME_MS < 0.5
+  const isAtOpen = Math.abs(to - from.x) < 0.5 && Math.abs(from.v) * FRAME_MS < 0.5
   const shows = isAtOpen ? 0 : delay + titleSwapMs(to, from)
   for (const part of aftersOf(line))
     if (fadeShown(part) !== null) fade(part, fadeShown(part) ?? 0, 1, ENTER_FADE_MS, false, false, shows)

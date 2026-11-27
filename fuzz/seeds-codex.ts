@@ -290,7 +290,7 @@ export const CODEX_SEEDS: {
     rule: 'cut',
     detail: '"✓ Opened previews"',
     issue: 982,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'dark',
@@ -309,7 +309,7 @@ export const CODEX_SEEDS: {
     rule: 'jump',
     detail: 'press-d22',
     issue: 983,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'light',
@@ -333,7 +333,7 @@ export const CODEX_SEEDS: {
     rule: 'cut',
     detail: '"Explaining…"',
     issue: 987,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'dark',

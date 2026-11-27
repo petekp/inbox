@@ -189,11 +189,14 @@ const titleHeightOf = (r: RowBlock, p: Paint): number | undefined => {
 /**
  * A row's title in a box whose height springs to `titleHeightOf`. The box clips. An opening title fades to its wrapped
  * form once its box comes to rest, and a closing title fades to its closed form while its box holds, before the box shrinks
- * (`stepTitle`). An open row's title box takes its content's height in a draw that takes heights at once.
+ * (`stepTitle`). In a draw that takes heights at once, the title box takes its content's height, as the row's box
+ * does, unless the title of a row that is not open is moving between its forms, whose box holds the move's height.
  */
 export function titleEl(r: RowBlock, p: Paint, el: Element): Element {
   const key = titleId(r.id)
-  const height = isOpenRow(r) && p.isAtOnce(key) ? undefined : titleHeightOf(r, p)
+  const isTitleMoving = (p.motion.get(r.id)?.title ?? null) !== null
+  const isTakenAtOnce = p.isAtOnce(key) && (isOpenRow(r) || !isTitleMoving)
+  const height = isTakenAtOnce ? undefined : titleHeightOf(r, p)
 
   return springBox(`fit ${key}`, height).child(sizeEl(key, p, el))
 }

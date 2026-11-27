@@ -374,16 +374,19 @@ class Frames {
     const lines: ShownLine[] = []
     for (const [id, fade] of this.fades.states)
       this.fading.push({ at: now, id, height: boxes.get(id)?.height ?? 0, opacity: fade.shown })
+    const plainOf = (node: Painted) => {
+      let plain = 1
+      for (let up: Painted | null = node; up; up = up.parent) if (!fadesOn(up.id)) plain *= up.style.opacity ?? 1
+      return plain
+    }
     for (const { node, share } of cutTexts(placed)) {
       const box = boxOf(node)
-      const opacity = this.fades.opacityOf(node)
+      const opacity = this.fades.opacityOf(node) * plainOf(node)
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
       if (opacity >= CUT_OPACITY) this.cuts.push({ at: now, box: box ?? '', text, share, opacity })
     }
     for (const { node, share } of shownTexts(placed)) {
-      let plain = 1
-      for (let up: Painted | null = node; up; up = up.parent) if (!fadesOn(up.id)) plain *= up.style.opacity ?? 1
-      const opacity = this.fades.opacityOf(node) * plain
+      const opacity = this.fades.opacityOf(node) * plainOf(node)
       const text = node.text ?? (node.field ? `text field: ${node.field.value()}` : '')
       this.shown.push({ at: now, block: blockOf(node), text, opacity, share, isFormPart: isFormPart(node) })
       const box = placed.get(node)

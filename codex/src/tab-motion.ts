@@ -247,6 +247,10 @@ function moveRow(
   const track = drawnRows.get(key)?.track
   const state = track?.state
   const isFresh = !was || was.el !== el
+  if (isInClosingPanel(el) && state !== 'leaving') {
+    if (isFresh) fade(el, 0, 0, 0, true)
+    return
+  }
   const part = drawnRows.has(key) ? el.querySelector<HTMLElement>(OPEN_PART) : null
   if (part && !part.classList.contains('closing')) part.style.marginTop = ''
   const from = springOf(el, isFresh ? el.getBoundingClientRect().height : was.height)
@@ -283,6 +287,13 @@ function moveRow(
   if (part && state === 'opening' && changed.has(key))
     openPanel(part, was?.openPart === part, delay, target, from, leftShown)
 }
+
+/**
+ * Whether an element is drawn in a panel that is closing or leaving, such as a press's status in a closing row's panel
+ * or a row in a closing PR block's body. It goes with the panel, which fades as it closes, so it starts no move of its
+ * own, and one drawn new during the close shows nothing. A line that was shown and starts to leave still fades out.
+ */
+const isInClosingPanel = (el: HTMLElement): boolean => (el.parentElement?.closest('.closing[inert]') ?? null) !== null
 
 /** The form a row leaves, drawn over the form it takes. */
 const FORM_LEFT = '.form-left'
