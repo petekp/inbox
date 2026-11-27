@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T00:43:32.367Z. 409206 characters follow.
+// Built at 2026-11-27T02:25:49.590Z. 410588 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -3015,6 +3015,9 @@ function feedbackTone(f) {
 function hasAge(f) {
   return f.is === "done" || f.is === "working" || f.is === "stillOpen" || f.is === "noComparison" || f.is === "sending" || f.is === "queued" || f.is === "unconfirmed" || f.is === "closed";
 }
+function rowAgeAt(last, arrivedAt) {
+  return last && hasAge(last) ? last.at : arrivedAt;
+}
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
@@ -5883,12 +5886,14 @@ var addedLinesId = (id) => `added lines ${id}`;
 var panelId = (id) => `panel ${id}`;
 
 // src/held-line.ts
+var statusKindOf = (l) => l.source?.is === "local" ? `local ${l.source.result.state}` : l.source?.is;
 var NO_LINES_ABOVE = {
   held: new Map,
   lineless: new Set,
   bare: new Set,
   comes: new Map,
-  options: new Map,
+  kinds: new Map,
+  bodies: new Map,
   added: new Map
 };
 var HELD_LEAVE_MS = HOLD_MS + HEIGHT_SETTLE_MS;
@@ -5896,53 +5901,75 @@ var LINE_COMES_MS = NEXT_FRAME_MS + HEIGHT_SETTLE_MS;
 var heldKey = (r) => r.settled ? `settled ${r.id}` : r.id;
 var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
 var isStatusUnder = (r) => r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)));
-var lineOf = (f, cameAt) => ({
+var lineOf = (f, cameAt, isAgain) => ({
   text: f.text,
   tone: f.tone,
+  kind: statusKindOf(f),
   ...f.aged ? { aged: f.aged } : {},
-  ...cameAt === undefined ? {} : { cameAt }
+  ...cameAt === undefined ? {} : { cameAt },
+  ...isAgain ? { isAgain: true } : {}
+});
+var comingRow = (b, l) => ({
+  ...b,
+  lineCameAt: l.cameAt,
+  ...l.isAgain ? { isLineAgain: true } : {}
 });
 var isComing = (l, now) => l?.cameAt !== undefined && now < l.cameAt + LINE_COMES_MS;
-function stepAdded(was, last, ids, now, isAtOnce) {
+var bodyKey = (l) => `${l.part} ${l.optionId ?? l.text}`;
+function addedAt(keys, added) {
+  const isThere = added.keys.length > 0 && added.keys.every((k, i) => keys[added.at + i] === k);
+  return isThere ? added.at : -1;
+}
+function stepAdded(was, last, keys, now, isAtOnce) {
   if (isAtOnce)
     return null;
-  if (was && ids.includes(was.firstId) && now < was.cameAt + LINE_COMES_MS)
+  if (was && now < was.cameAt + LINE_COMES_MS && addedAt(keys, was) >= 0)
     return was;
-  const isAdded = last !== undefined && last.length > 0 && ids.length > last.length && last.every((id, n) => ids[n] === id);
-  const firstId = isAdded ? ids[last.length] : undefined;
-  return firstId === undefined ? null : { firstId, cameAt: now };
+  if (last === undefined || keys.length <= last.length)
+    return null;
+  let head = 0;
+  while (head < last.length && keys[head] === last[head])
+    head++;
+  let tail = 0;
+  while (tail < last.length - head && keys[keys.length - 1 - tail] === last[last.length - 1 - tail])
+    tail++;
+  return head + tail < last.length ? null : { keys: keys.slice(head, keys.length - tail), at: head, cameAt: now };
 }
-function addOptions(blocks, last, now, isAtOnce) {
-  const options = new Map;
+function addLines(blocks, last, now, isAtOnce) {
+  const bodies = new Map;
   const added = new Map;
   const shown = blocks.map((b) => {
     if (b.kind !== "row" || !isOpenRow(b) || !hasActions(b))
       return b;
-    const ids = b.buttons.filter((x) => x.isOption).map((x) => x.id);
-    options.set(b.id, ids);
-    const a = stepAdded(last.added.get(b.id), last.options.get(b.id), ids, now, isAtOnce);
+    const keys = b.body.map(bodyKey);
+    bodies.set(b.id, keys);
+    const a = stepAdded(last.added.get(b.id), last.bodies.get(b.id), keys, now, isAtOnce);
     if (a)
       added.set(b.id, a);
-    return a ? { ...b, addedOptions: a } : b;
+    return a ? { ...b, addedLines: a } : b;
   });
   const ends = [...added.values()].flatMap((a) => [a.cameAt + NEXT_FRAME_MS, a.cameAt + LINE_COMES_MS]);
-  return { blocks: shown, options, added, ends: ends.filter((at) => at > now) };
+  return { blocks: shown, bodies, added, ends: ends.filter((at) => at > now) };
 }
 function holdLinesAbove(blocks, last, now, isAtOnce = false) {
   const next = new Map;
   const lineless = new Set;
   const bare = new Set;
   const comes = new Map;
+  const kinds = new Map;
   const bareRow = (b, key) => {
     if (b.feedback === null || isStatusUnder(b))
       return bare.add(key), b;
+    const kind = statusKindOf(b.feedback);
+    kinds.set(key, kind);
     const was = last.comes.get(key);
     const isNew = !isAtOnce && last.bare.has(key);
-    const cameAt = was !== undefined && now < was + LINE_COMES_MS ? was : isNew ? now : undefined;
-    if (cameAt === undefined)
+    const isNewKind = !isAtOnce && last.kinds.has(key) && last.kinds.get(key) !== kind;
+    const come = isNewKind ? { at: now, isAgain: true } : was !== undefined && now < was.at + LINE_COMES_MS ? was : isNew ? { at: now, isAgain: false } : undefined;
+    if (come === undefined)
       return b;
-    comes.set(key, cameAt);
-    return { ...b, lineCameAt: cameAt };
+    comes.set(key, come);
+    return { ...b, lineCameAt: come.at, ...come.isAgain ? { isLineAgain: true } : {} };
   };
   const shown = blocks.map((b) => {
     if (b.kind !== "row")
@@ -5965,8 +5992,11 @@ function holdLinesAbove(blocks, last, now, isAtOnce = false) {
       return kept === null && f !== null && !isUnder ? { ...b, isStatusHeldUnder: true } : b;
     }
     const isNewLine = kept === undefined && !isAtOnce && last.lineless.has(key);
-    const cameAt = isNewLine ? now : kept?.leftAt === null ? kept.line.cameAt : undefined;
-    const own = f !== null && !isUnder ? lineOf(f, cameAt) : null;
+    const isDrawn = kept?.leftAt === null;
+    const isNewKind = !isAtOnce && isDrawn && f !== null && !isUnder && kept.line.kind !== statusKindOf(f);
+    const cameAt = isNewLine || isNewKind ? now : isDrawn ? kept.line.cameAt : undefined;
+    const isAgain = isNewKind || isDrawn && !isNewLine && kept.line.isAgain === true;
+    const own = f !== null && !isUnder ? lineOf(f, cameAt, isAgain) : null;
     const isOwnFailure = f !== null && isFailure(f.source);
     const step = stepHeldLine(kept, { own, isOwnFailure, isUnder: f !== null && isUnder, isPressUnderWay: isUnderWay }, now, HELD_LEAVE_MS);
     if (step.kept)
@@ -5975,30 +6005,35 @@ function holdLinesAbove(blocks, last, now, isAtOnce = false) {
     if (!d && !own)
       lineless.add(key);
     if (!d)
-      return own && isComing(own, now) ? { ...b, lineCameAt: own.cameAt } : b;
+      return own && isComing(own, now) ? comingRow(b, own) : b;
     const text = d.line.aged ? agedText(d.line.aged, now) : d.line.text;
     return {
       ...b,
       heldLine: { text, tone: d.line.tone, isHidden: d.isHidden, ...d.leftAt === null ? {} : { leftAt: d.leftAt } }
     };
   });
-  const withAdded = addOptions(shown, last, now, isAtOnce);
+  const withAdded = addLines(shown, last, now, isAtOnce);
   const ends = [...next.values()].flatMap((k) => {
     if (isComing(k?.line, now))
       return [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter((at) => at > now);
     const end = heldLineEndsAt(k, HELD_LEAVE_MS);
     return end === null || k?.leftAt == null ? [] : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter((at) => at > now);
   });
-  for (const at of comes.values())
+  for (const { at } of comes.values())
     ends.push(...[at + NEXT_FRAME_MS, at + LINE_COMES_MS].filter((t) => t > now));
   ends.push(...withAdded.ends);
-  const held = { held: next, lineless, bare, comes, options: withAdded.options, added: withAdded.added };
+  const held = { held: next, lineless, bare, comes, kinds, bodies: withAdded.bodies, added: withAdded.added };
   return { blocks: withAdded.blocks, held, nextAt: ends.length === 0 ? null : Math.min(...ends) };
 }
 var isHeldLineShutting = (r, now) => r.heldLine?.leftAt !== undefined && now >= r.heldLine.leftAt + HOLD_MS;
 var heldLineDrop = (r, now, heights) => isHeldLineShutting(r, now) ? heights.get(aboveId(r.id)) ?? 0 : 0;
-var lineRise = (r, now, heights) => r.lineCameAt === undefined || now === r.lineCameAt ? 0 : Math.max(0, (heights.get(aboveLineId(r.id)) ?? 0) - (heights.get(aboveId(r.id)) ?? 0));
-var addedRise = (r, now, heights) => r.addedOptions === undefined || now === r.addedOptions.cameAt ? 0 : Math.max(0, (heights.get(addedLinesId(r.id)) ?? 0) - (heights.get(addedId(r.id)) ?? 0));
+function lineRise(r, now, heights) {
+  if (r.lineCameAt === undefined || now === r.lineCameAt)
+    return 0;
+  const rise = (heights.get(aboveLineId(r.id)) ?? 0) - (heights.get(aboveId(r.id)) ?? 0);
+  return r.isLineAgain ? rise : Math.max(0, rise);
+}
+var addedRise = (r, now, heights) => r.addedLines === undefined || now === r.addedLines.cameAt ? 0 : Math.max(0, (heights.get(addedLinesId(r.id)) ?? 0) - (heights.get(addedId(r.id)) ?? 0));
 
 // ../core/view/layout.ts
 var SPACE_UNIT = 4;
@@ -6295,8 +6330,7 @@ var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
 var LEAVE_ENDS_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
 var restsAfter = (u) => u.waitMs === undefined ? ROW_STATE_MS.entering : u.waitMs + ENTER_FADE_MS;
 var lineOf2 = (b) => b.kind === "row" && isStatusUnder(b) ? b.feedback : null;
-var kindOf = (l) => l.source?.is === "local" ? `local ${l.source.result.state}` : l.source?.is;
-var stepUnder = (last, b, now, isInput = false) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput, (x, y) => kindOf(x) === kindOf(y));
+var stepUnder = (last, b, now, isInput = false) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput, (x, y) => statusKindOf(x) === statusKindOf(y));
 function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true) {
   if (line && last?.isLeaving)
     return { line, since: now, isLeaving: false, isInput, isBack: true };
@@ -7644,8 +7678,8 @@ function shortTitleEl(s) {
 import { v_flex as v_flex6 } from "gpui-base";
 var linesOf = (r) => [
   ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
-  ...r.feedback && !isStatusUnder(r) ? [{ ...r.feedback, cameAt: r.lineCameAt }] : [],
-  ...r.heldLine ? [r.heldLine] : []
+  ...r.feedback && !isStatusUnder(r) ? [{ ...r.feedback, cameAt: r.lineCameAt, isAgain: r.isLineAgain, isStatus: true }] : [],
+  ...r.heldLine ? [{ ...r.heldLine, isStatus: true }] : []
 ];
 function titleLineEls(r, shown, m, p, lineEl, withPanel) {
   const drawn = (l, n) => leavingEl(r, l, lineEl(l, n).id(`status above ${r.id} line ${n}`), n, p);
@@ -7671,37 +7705,42 @@ function titleLineEls(r, shown, m, p, lineEl, withPanel) {
 function leavingEl(r, l, el, n, p) {
   const leftAt = l.leftAt;
   if (l.cameAt !== undefined)
-    return comingEl(r, l.cameAt, el, n, p);
+    return comingEl(r, l, l.cameAt, el, n, p);
   if (leftAt === undefined)
-    return el;
+    return l.isStatus ? sizeEl(aboveId(r.id), p, sizeEl(aboveLineId(r.id), p, el)) : el;
   const isFading = p.now < leftAt + HOLD_MS;
   const name = `status above ${r.id} line ${n}`;
   const shown = l.isHidden ? el : fadeEl(el, name, p.now === leftAt ? 1 : 0, { duration: LEAVE_FADE_MS, delay: 0 }, p);
   const box = springBox(`fit ${aboveId(r.id)}`, isFading ? p.heights.get(aboveLineId(r.id)) : 0);
   return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)));
 }
-function comingEl(r, cameAt, el, n, p) {
+function comingEl(r, l, cameAt, el, n, p) {
   const isStart = p.now === cameAt;
   const height = p.heights.get(aboveLineId(r.id));
+  const from = l.isAgain ? p.heights.get(aboveId(r.id)) ?? 0 : 0;
   const name = `status above ${r.id} line ${n}`;
-  const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) };
+  const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0, { x: from, v: 0 }) };
   const shown = fadeEl(el, name, isStart ? FAINT_OPACITY : 1, fade, p);
-  const box = springBox(`fit ${aboveId(r.id)}`, isStart ? 0 : height);
+  const box = springBox(`fit ${aboveId(r.id)}`, isStart ? from : height);
   return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)));
 }
-function addedOptionsEls(r, lines, els, p) {
-  const added = r.addedOptions;
-  const from = added ? lines.findIndex((l) => l.optionId === added.firstId) : -1;
-  const end = lines.findLastIndex((l) => l.optionId !== undefined || l.isOptionNote === true) + 1;
-  if (!added || from < 0 || end <= from)
-    return els;
+function addedLinesEls(r, lines, els, p) {
+  const added = r.addedLines;
+  const from = added ? addedAt(lines.map(bodyKey), added) : -1;
+  if (!added || from < 0)
+    return els.flat();
+  const end = from + added.keys.length;
   const height = p.heights.get(addedLinesId(r.id));
   const isStart = p.now === added.cameAt || height === undefined;
   const name = addedId(r.id);
   const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) };
-  const shown = fadeEl(v_flex6().id(name).children(els.slice(from, end)), name, isStart ? FAINT_OPACITY : 1, fade, p);
+  const shown = fadeEl(v_flex6().id(name).children(els.slice(from, end).flat()), name, isStart ? FAINT_OPACITY : 1, fade, p);
   const box = springBox(`fit ${name}`, isStart ? 0 : height);
-  return [...els.slice(0, from), sizeEl(name, p, box.child(sizeEl(addedLinesId(r.id), p, shown))), ...els.slice(end)];
+  return [
+    ...els.slice(0, from).flat(),
+    sizeEl(name, p, box.child(sizeEl(addedLinesId(r.id), p, shown))),
+    ...els.slice(end).flat()
+  ];
 }
 
 // src/paint-notes.ts
@@ -7843,7 +7882,7 @@ function bodyEls(from, isSelected, p, isInert, titleEnd, warn) {
   }) : from.body;
   let end = titleEnd;
   let isWarned = false;
-  const els = shown.flatMap((l) => {
+  const els = shown.map((l) => {
     const isFirstAnswer = !isWarned && (l.optionId !== undefined || l.part === "answers");
     const warning = isFirstAnswer ? warn(partPt(end, l.part), partPt("status", l.part), l.tree !== undefined) : null;
     const above = warning ? 0 : partPt(end, l.part);
@@ -7852,7 +7891,7 @@ function bodyEls(from, isSelected, p, isInert, titleEnd, warn) {
     const buttons = l.part === "answers" ? answers : buttonOf(l.optionId);
     return [...warning ? [warning] : [], bodyLineEl(l, above, p.t, isSelected, buttons, p, isInert)];
   });
-  return { els: addedOptionsEls(from, shown, els, p), end, isWarned };
+  return { els: addedLinesEls(from, shown, els, p), end, isWarned };
 }
 var swapFadeEl = (swap, el) => swap ? el.opacity(swap.opacity).transition("opacity", { duration: swap.fadeMs, easing: "ease-out" }) : el;
 function panelEl(r, shown, m, p, isLeaving, titleEnd) {
@@ -9013,7 +9052,7 @@ function sideBySideOf(row, isAllShown) {
 function rowAge(row, now) {
   if (row.state.is === "settled")
     return null;
-  const at = row.feedback && hasAge(row.feedback) ? row.feedback.at : row.at;
+  const at = rowAgeAt(row.feedback, row.at);
   return at === null ? null : shortAgo(now - at);
 }
 function rowBlock(row, ui, selected, screen) {

@@ -6775,6 +6775,12 @@ function feedbackTone(f) {
     return "error";
   return f?.is === "done" || f?.is === "local" && f.result.state === "done" ? "done" : "muted";
 }
+function hasAge(f) {
+  return f.is === "done" || f.is === "working" || f.is === "stillOpen" || f.is === "noComparison" || f.is === "sending" || f.is === "queued" || f.is === "unconfirmed" || f.is === "closed";
+}
+function rowAgeAt(last, arrivedAt) {
+  return last && hasAge(last) ? last.at : arrivedAt;
+}
 function isPressOut(f) {
   return f?.is === "working" || f?.is === "sending" || f?.is === "queued" || f?.is === "unconfirmed" || f?.is === "local" && f.result.state === "pending";
 }
@@ -10708,7 +10714,7 @@ function lineOfRow(row, isAllShown) {
     mark: rowResultMark(row),
     title: rowTitle(row, AGENT),
     isDim: state.is === "settled",
-    age: f?.is === "done" ? f.at : row.at,
+    age: rowAgeAt(f, row.at),
     detail: row.detail,
     file: row.fileName,
     feedback: feedbackLabel && f ? { text: feedbackLabel, tone: feedbackToneOf(f), source: f } : null,
