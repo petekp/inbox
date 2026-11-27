@@ -33,8 +33,7 @@ Long sentences, one huge word with no spaces, CJK, emoji and ZWJ sequences, flag
 ### Settings
 
 - omp: widths from 10 to 220 columns, with no terminal height. A height is next.
-- Herdr: the frame stand-in in `herdr/tests/frames.ts` lays out at a fixed pane width and wraps text at a fixed count of characters. It models the layout and does not measure glyphs, so Herdr's width rule is not checked. Its glyph rule runs on the painted text.
-- Reduced motion: Herdr has none. The shared row stepper (`stepRow` in `core/view/row-motion.ts`) takes `isReduced`, and the Codex tab reads it. The stepper has the reduced-motion rule; the Codex tab gets it next.
+- Herdr: the frame stand-in in `herdr/tests/frames.ts` lays out at a fixed pane width and wraps text at a fixed count of characters. It models the layout and does not measure glyphs, so Herdr's width rule is not checked. Its glyph rule runs on the painted text. It places layers drawn over a parent.- Reduced motion: Herdr has none. The shared row stepper (`stepRow` in `core/view/row-motion.ts`) takes `isReduced`, and the Codex tab reads it. The stepper has the reduced-motion rule; the Codex tab gets it next.
 - Themes: omp's line layout does not depend on its theme. Herdr's paint reads its theme for colors only, so the rule there, next, is that every tone a block names has a color in both themes.
 
 ### The host
@@ -115,7 +114,7 @@ Recent bugs are seed cases in `fuzz/seeds.ts`, and the Codex tab's in `fuzz/seed
 
 A known failure in `KNOWN` matches on part of its detail, so keep that part as narrow as its issue. #832's part, any cut in a panel's box, also matched a cut that a tab shown again makes. That cut is now #898.
 
-- Herdr: #771 (a row that settles while it opens), #811's second Copy press, #827's four seeds, #828's leave just after Explain, #832's collapse just after Explain, #833's fold of every Status fold, #950's, #956's Reply after an option, #957's Fix whose refresh fails, #967, #971 and #972 pass. #980, #981 and #988 have open seeds. #811's collapse right after Undo does not reproduce: the stand-in cuts no second title line.
+- Herdr: #771 (a row that settles while it opens), #811's second Copy press, #827's four seeds, #828's leave just after Explain, #832's collapse just after Explain, #833's fold of every Status fold, #950's, #956's Reply after an option, #957's Fix whose refresh fails, #967, #971, #972, #980, #981 and #988 pass. #811's collapse right after Undo does not reproduce: the stand-in cuts no second title line.
 - From the first runs: #827, #828, #830, #831, #832 and #833, each with its seed. #898 has its seed too. #829 was a false report from the frame replay animating a tab switch, and is closed.
 
 ## Shrinking
