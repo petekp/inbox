@@ -18,7 +18,7 @@ export const PRESS_SEEDS: {
     rule: 'press-shows',
     detail: HOST_ANSWER,
     issue: 1005,
-    isOpen: true,
+    isOpen: false,
     case: herdr(demo, [
       { is: 'click', on: 'tab', n: 3, label: 'prs' },
       { is: 'wait', ms: 400 },
@@ -31,7 +31,7 @@ export const PRESS_SEEDS: {
     rule: 'press-shows',
     detail: '"✓ Opened README.md"',
     issue: 1006,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([]), [
         {
@@ -51,8 +51,8 @@ export const PRESS_SEEDS: {
   },
   {
     name: 'Remove on the Status goal',
-    rule: 'cut',
-    detail: '"No goal yet.',
+    rule: 'connector-gap',
+    detail: 'in fit m2',
     issue: 1007,
     isOpen: true,
     case: {
@@ -69,7 +69,7 @@ export const PRESS_SEEDS: {
     rule: 'cut',
     detail: '"text field: ',
     issue: 1013,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([]), [
         { is: 'click', on: 'tab', n: 4, label: 'overview' },
@@ -84,7 +84,7 @@ export const PRESS_SEEDS: {
     rule: 'cut',
     detail: '"Could not refresh PR',
     issue: 1015,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([], ['acme/visor#31']), [
         { is: 'click', on: 'tab', n: 3, label: 'prs' },
@@ -103,7 +103,7 @@ export const PRESS_SEEDS: {
     rule: 'vanish',
     detail: '"Sending…" in d14',
     issue: 1008,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only(['d14']), [
         { is: 'click', on: 'button', n: 4, label: 'Dismiss' },
@@ -118,7 +118,7 @@ export const PRESS_SEEDS: {
     rule: 'vanish',
     detail: 'in empty overview',
     issue: 1009,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(emptySession(), [
         { is: 'click', on: 'tab', n: 4, label: 'overview' },
@@ -143,6 +143,68 @@ export const PRESS_SEEDS: {
         { is: 'click', on: 'button', n: 7, label: 'Address' },
       ]),
       takeAfterMs: 200,
+    },
+  },
+  {
+    name: 'the agent closing the only question',
+    rule: 'vanish',
+    detail: '" · 1" in group question',
+    issue: 1017,
+    isOpen: true,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'question', ask: 'Ship the beta?', options: ['Ship it', 'No'] } },
+        { is: 'wait', ms: 85 },
+        { is: 'close', n: 0, reason: 'answered' },
+      ]),
+      takeAfterMs: 600,
+    },
+  },
+  {
+    name: 'o on a check row that is still opening',
+    rule: 'press-shows',
+    detail: '"✓ Opened the log"',
+    issue: 1018,
+    isOpen: true,
+    case: {
+      ...herdr(only([], ['acme/visor#31']), [
+        { is: 'click', on: 'tab', n: 3, label: 'prs' },
+        { is: 'wait', ms: 16 },
+        { is: 'click', on: 'row', n: 1 },
+        { is: 'key', key: 'o' },
+      ]),
+      takeAfterMs: 800,
+    },
+  },
+  {
+    name: 'Address on a PR thread',
+    rule: 'press-shows',
+    detail: HOST_ANSWER,
+    issue: 1019,
+    isOpen: true,
+    case: {
+      ...herdr(only([], ['acme/visor#31']), [
+        { is: 'click', on: 'tab', n: 3, label: 'prs' },
+        { is: 'wait', ms: 72 },
+        { is: 'click', on: 'button', n: 7, label: 'Address' },
+      ]),
+      takeAfterMs: 600,
+    },
+  },
+  {
+    name: 'Send on a Reply field, drawn when the host takes the press and closes the row',
+    rule: 'press-shows',
+    detail: HOST_ANSWER,
+    issue: 1019,
+    isOpen: true,
+    case: {
+      ...herdr(emptySession(), [
+        { is: 'record', args: { kind: 'finding', finding_kind: '', title: 'R', detail: 'D' } },
+        { is: 'click', on: 'button', n: 2, label: 'Reply' },
+        { is: 'key', key: 'b' },
+        { is: 'click', on: 'button', n: 6, label: 'Send' },
+      ]),
+      takeAfterMs: 2000,
     },
   },
   {

@@ -32,21 +32,24 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
-  { issue: 1005, look: 'herdr', rule: 'press-shows', details: ["in the draw after the host's answer"] },
-  { issue: 1006, look: 'herdr', rule: 'press-shows', details: [['in its own draw', '"✓ Opened ']] },
-  { issue: 1007, look: 'herdr', rule: 'cut', details: ['"No goal yet.'] },
   {
     issue: 1007,
     look: 'herdr',
     rule: 'connector-gap',
     details: ['in fit m', 'in space m', 'in space s', 'in space c'],
   },
-  { issue: 1015, look: 'herdr', rule: 'cut', details: [['"Could not refresh PR', 'in its box status result pr:']] },
-  { issue: 1013, look: 'herdr', rule: 'cut', details: [['"text field: ', 'in its box box goal field']] },
-  { issue: 1008, look: 'herdr', rule: 'vanish', details: ['"Sending…" in d'] },
-  { issue: 1008, look: 'herdr', rule: 'connector-gap', details: ['in panel '] },
-  { issue: 1009, look: 'herdr', rule: 'vanish', details: ['in empty overview'] },
   { issue: 1010, look: 'herdr', rule: 'cut', details: [['"Undo"', 'in its box panel pr:']] },
+  { issue: 1017, look: 'herdr', rule: 'vanish', details: [['the line " · ', 'in group ']] },
+  { issue: 1018, look: 'herdr', rule: 'press-shows', details: [['in its own draw', '"✓ Opened ']] },
+  {
+    issue: 1019,
+    look: 'herdr',
+    rule: 'press-shows',
+    details: [
+      ["in the draw after the host's answer", ' thread '],
+      ["in the draw after the host's answer", '"Sending reply: '],
+    ],
+  },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */

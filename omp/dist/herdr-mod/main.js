@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T08:30:19.175Z. 422240 characters follow.
+// Built at 2026-11-27T12:16:17.706Z. 424395 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -5267,6 +5267,121 @@ function keptUiStates(states, shownId) {
   return Object.fromEntries([...shown, ...others]);
 }
 
+// src/out.ts
+var SENDING = "Sending…";
+var REREAD_AFTER_MS = 5000;
+var GIVE_UP_MS = 15000;
+var outAction2 = (p) => ("id" in p) ? actionId(p) : p.action;
+function rowSignature(view, rowId) {
+  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
+  const state = rows.find((r) => r.id === rowId)?.state.is ?? null;
+  const goal = rowId === GOAL_KEYS_ID ? view.statusPage.goal?.text ?? null : null;
+  return JSON.stringify([view.lastActions[rowId] ?? null, state, goal]);
+}
+var resultLine = (result) => ({
+  text: feedbackText({ is: "local", result }, "herdr"),
+  tone: feedbackTone({ is: "local", result }),
+  source: { is: "local", result }
+});
+function unconfirmedLine(out, now) {
+  if (out.result)
+    return resultLine(out.result);
+  const label = deliveryLabel("unconfirmed", out.label, out.reply);
+  return { text: label, tone: "muted", source: { is: "unconfirmed", label, at: now } };
+}
+function notSentLine(reason) {
+  const source = { is: "notSent", reason, retry: null };
+  return { text: feedbackText(source, "herdr"), tone: "error", source };
+}
+var notAppliedLine = (out, agent) => out.result ? resultLine(out.result) : notAppliedText(`${agent}'s inbox did not answer.`);
+var refusedLine = (why) => ({
+  text: why,
+  tone: "error",
+  source: { is: "notSent", reason: why, retry: null }
+});
+var notAppliedText = (why) => ({
+  text: `Not applied: ${why}`,
+  tone: "error",
+  source: { is: "notSent", reason: why, retry: null }
+});
+var UNCONFIRMED = { error: null, note: null, isUnconfirmed: true };
+var STALE = { error: null, note: "stale", isUnconfirmed: false };
+function appliedOutcome(view, rowId) {
+  const delivery = view.lastActions[rowId]?.delivery;
+  return {
+    error: delivery?.state === "failed" ? delivery.reason : null,
+    note: null,
+    isUnconfirmed: delivery?.state === "unconfirmed"
+  };
+}
+function settleOuts(outs, view, lastPress, now) {
+  const settled = { outs: [], lines: {}, ended: [], toClaim: [] };
+  const end = (out, outcome) => settled.ended.push({ uiPressId: out.uiPressId, outcome });
+  for (const out of outs) {
+    if (lastPress?.id === out.pressId && lastPress.outcome === "refused") {
+      settled.lines[out.rowId] = refusedLine(lastPress.why);
+      end(out, { error: lastPress.why, note: null, isUnconfirmed: false });
+      continue;
+    }
+    if (lastPress?.id === out.pressId) {
+      end(out, lastPress.outcome === "stale" ? STALE : appliedOutcome(view, out.rowId));
+      continue;
+    }
+    if (rowSignature(view, out.rowId) !== out.before) {
+      end(out, appliedOutcome(view, out.rowId));
+      continue;
+    }
+    const isPassed = lastPress !== null && lastPress.id > out.pressId;
+    const isGivenUp = out.waitingSince !== null && now - out.waitingSince >= GIVE_UP_MS;
+    if (out.isWritten && out.isTaken && (isPassed || isGivenUp)) {
+      settled.lines[out.rowId] = unconfirmedLine(out, now);
+      end(out, UNCONFIRMED);
+    } else if (!out.isWritten || !isGivenUp)
+      settled.outs.push(out);
+    else
+      settled.toClaim.push(out);
+  }
+  return settled;
+}
+function nextOutCheckAt(outs, now) {
+  const times = outs.flatMap((out) => out.waitingSince === null ? [] : [out.waitingSince + REREAD_AFTER_MS, out.waitingSince + GIVE_UP_MS]);
+  const later = times.filter((at) => at > now);
+  return later.length ? Math.min(...later) : null;
+}
+var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
+function drawOuts(blocks, outs, lines, now) {
+  const byRow = new Map(outs.map((o) => [o.rowId, o]));
+  const outRows = new Set(byRow.keys());
+  const lineOf = (id) => {
+    const out = byRow.get(id);
+    const refused = lines[id];
+    if (!out || holdsStatusWhileOut(out.kind) || refused)
+      return refused ?? null;
+    const source = out.pending ?? { is: "sending", label: SENDING, at: now, sentAt: now };
+    if (out.result)
+      return { ...resultLine(out.result), source };
+    return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted", source };
+  };
+  return blocks.map((b) => {
+    if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
+      const line = lineOf(b.id);
+      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
+    }
+    if (b.kind === "empty" && b.under) {
+      const line = lineOf(b.under.id);
+      const under = {
+        ...b.under,
+        buttons: withOutButtons(b.under.buttons, outRows),
+        ...line ? { feedback: line } : {}
+      };
+      return { ...b, under };
+    }
+    if (b.kind === "status" || b.kind === "heading")
+      return { ...b, buttons: withOutButtons(b.buttons, outRows) };
+    return b;
+  });
+}
+
 // src/fold-all.ts
 function foldClickOpens(does, ui) {
   if (does.is === "collapse")
@@ -5376,12 +5491,25 @@ function keptLeft(left, hasPressOut) {
   const out = Object.entries(left).filter(([id]) => hasPressOut(id));
   return { ...keptUiStates(left, null), ...Object.fromEntries(out) };
 }
+var NO_DRAW = { tab: "needsYou", rows: null, outs: [], lastPressId: null };
+var drawOf = (tab, rows, outs, read) => ({
+  tab,
+  rows,
+  outs: outs.map((o) => ({ pressId: o.pressId, rowId: o.rowId, before: o.before, hasRun: o.result !== null })),
+  lastPressId: read?.is === "read" && read.lastPress?.id || null
+});
 var waitsIn = (rows, id) => rows.some((r) => r.id === id && r.isWaiting);
-function isAnswerDraw(last, tab, rows) {
-  const lastRows = last.tab === tab ? last.rows : null;
+function isAnswerDraw(last, now, view) {
+  const hasRun = (o) => !o.hasRun && now.outs.some((n) => n.pressId === o.pressId && n.hasRun);
+  const isNamed = (o) => now.lastPressId === o.pressId && last.lastPressId !== o.pressId;
+  const isChanged = (o) => view !== null && rowSignature(view, o.rowId) !== o.before;
+  if (last.outs.some((o) => hasRun(o) || isNamed(o) || isChanged(o)))
+    return true;
+  const lastRows = last.tab === now.tab ? last.rows : null;
+  const rows = now.rows;
   if (rows === null || lastRows === null)
     return false;
-  return last.pressed.some((id) => waitsIn(lastRows, id) && !waitsIn(rows, id));
+  return last.outs.some((o) => waitsIn(lastRows, o.rowId) && !waitsIn(rows, o.rowId));
 }
 
 // src/files.ts
@@ -6542,11 +6670,12 @@ function movedOf(blocks, was) {
 
 // src/pr-status.ts
 var lineOf3 = (b) => b.kind === "pr" && (b.status !== null || b.unlisted.length > 0) ? { status: b.status, unlisted: b.unlisted } : null;
-function stepPrLine(last, line, b, now, isFirst, isInput) {
+function stepPrLine(last, line, b, now, isFirst, isInput, isSameLine) {
   if (isFirst)
     return line && { line, since: -Infinity, isLeaving: false, isInput: false };
-  return stepLine(last, line, b.kind === "pr", now, isInput);
+  return stepLine(last, line, b.kind === "pr", now, isInput, isSameLine);
 }
+var isSameResult = (a, b) => a.tone === b.tone;
 var stepPrStatus = (last, b, now, isFirst) => stepPrLine(last, lineOf3(b), b, now, isFirst, false);
 function stepPrTail(last, b, now, isFirst, isInput) {
   const pr = b.kind === "pr" ? b : null;
@@ -6554,7 +6683,7 @@ function stepPrTail(last, b, now, isFirst, isInput) {
   return {
     error: stepPrLine(last?.error ?? null, pr?.error ?? null, b, now, isFirst, isInput),
     buttons: stepPrLine(last?.buttons ?? null, buttons, b, now, isFirst, false),
-    result: stepPrLine(last?.result ?? null, pr?.feedback ?? null, b, now, isFirst, isInput)
+    result: stepPrLine(last?.result ?? null, pr?.feedback ?? null, b, now, isFirst, isInput, isSameResult)
   };
 }
 var prTailId = (part, id) => `status ${part} ${id}`;
@@ -6663,8 +6792,9 @@ var swapTimes = (s) => s === null ? [] : [
 // src/held-form.ts
 function heldForm(b, was, motion) {
   const last = was.rows.get(b.id)?.block;
-  const state = motion.get(b.id)?.state;
-  const isHeld = last !== undefined && b.kind !== "row" && b.kind !== "empty" && state !== undefined && !isMoving(state);
+  const m = motion.get(b.id);
+  const isSwappedIn = (m?.blockSwap?.formKey ?? null) !== null;
+  const isHeld = last !== undefined && b.kind !== "row" && b.kind !== "empty" && m !== undefined && !isMoving(m.state) && !isSwappedIn;
   return isHeld && JSON.stringify(last) !== JSON.stringify(b) ? last : b;
 }
 function heldTabs(tabs, last, motion) {
@@ -6742,16 +6872,40 @@ var PART_KEYS = {
 var STATUS_PARTS = Object.keys(PART_KEYS);
 var changedParts = (was, b) => STATUS_PARTS.filter((part) => PART_KEYS[part](was) !== PART_KEYS[part](b));
 var endsAt2 = (s) => (s.inAt ?? Infinity) + NEXT_FRAME_MS + HEIGHT_SETTLE_MS + ENTER_FADE_MS;
-var isFormOf = (s, b) => s.parts === null ? s.from.kind === b.kind : s.from.kind === "status" && b.kind === "status" && changedParts(s.from, b).length === 0;
-var partsOf = (was, b) => was.kind !== b.kind ? null : was.kind === "status" && b.kind === "status" ? changedParts(was, b) : [];
+var wordsOf = (b) => b.kind === "note" ? b.text : b.kind === "line" ? `${b.text ?? ""}
+${b.under ?? ""}` : null;
+function partsOf(was, b) {
+  if (was.kind !== b.kind)
+    return null;
+  if (was.kind === "status" && b.kind === "status")
+    return changedParts(was, b);
+  return wordsOf(was) !== wordsOf(b) ? null : [];
+}
+var isFormOf = (s, b) => partsOf(s.from, b)?.length === 0;
 var isOtherForm = (was, b) => partsOf(was, b)?.length !== 0;
+var isWholeInPlace = (was, b) => was.kind === b.kind && partsOf(was, b) === null;
+function startSwap(was, b, parts, now, isInput, height) {
+  const isAdded = was.kind === "status" && parts !== null && parts.every((part) => PART_KEYS[part](was) === "");
+  return {
+    from: was,
+    to: b,
+    parts,
+    since: now,
+    outUntil: now + NEXT_FRAME_MS + LEAVE_FADE_MS,
+    inAt: isAdded || isInput ? now : null,
+    isBack: false,
+    isInput,
+    fromHeight: height
+  };
+}
 function stepBlockSwap(last, was, b, now, isBoxAtRest, isInput, height) {
   const live = last !== null && now < endsAt2(last) ? last : null;
   if (live?.inAt === null) {
     if (isFormOf(live, b))
       return { ...live, to: b, inAt: now, isBack: true };
-    if (isInput && isOtherForm(live.to, b))
-      return null;
+    if (isInput && isOtherForm(live.to, b)) {
+      return isWholeInPlace(live.from, b) ? startSwap(live.from, b, null, now, true, live.fromHeight) : null;
+    }
     const more = live.from.kind === "status" && b.kind === "status" ? changedParts(live.from, b) : null;
     const added = live.parts && more ? more.filter((part) => !live.parts?.includes(part)) : [];
     const parts = live.parts && more && [...live.parts, ...added];
@@ -6759,20 +6913,11 @@ function stepBlockSwap(last, was, b, now, isBoxAtRest, isInput, height) {
     return { ...live, to: b, parts, outUntil, inAt: now >= outUntil ? now : null };
   }
   const parts = was === undefined ? [] : partsOf(was, b);
-  if (was === undefined || !isBoxAtRest || isInput || parts?.length === 0)
+  if (was === undefined || !isBoxAtRest || parts?.length === 0)
     return live;
-  const isAdded = was.kind === "status" && parts !== null && parts.every((part) => PART_KEYS[part](was) === "");
-  const outUntil = now + NEXT_FRAME_MS + LEAVE_FADE_MS;
-  return {
-    from: was,
-    to: b,
-    parts,
-    since: now,
-    outUntil,
-    inAt: isAdded ? now : null,
-    isBack: false,
-    fromHeight: height
-  };
+  if (isInput && !isWholeInPlace(was, b))
+    return live;
+  return startSwap(was, b, parts, now, isInput, height);
 }
 function withPartsOf(b, from, parts) {
   const { waitsOn, ...rest } = b;
@@ -6791,15 +6936,19 @@ function swapDrawn(s, b) {
     return b;
   return s.parts !== null && s.from.kind === "status" && b.kind === "status" ? withPartsOf(b, s.from, s.parts) : s.from;
 }
+var formKeyOf = (s) => s.inAt !== null && s.parts === null && s.from.kind === s.to.kind ? `swapped ${s.to.id} ${s.since}` : null;
 var blockSwapMotion = (s, now, height) => s && {
   from: s.from,
+  formKey: formKeyOf(s),
   parts: s.parts,
   isOut: s.inAt === null,
   isFirst: s.since === now,
+  isInput: s.isInput,
+  fromHeight: s.fromHeight,
   inDelayMs: s.inAt === null || !s.isBack && now === s.inAt ? null : s.isBack ? 0 : enterDelayMs(height ?? 0, { x: s.fromHeight ?? height ?? 0, v: 0 })
 };
 var blockSwapTimes = (s) => s === null ? [] : s.inAt === null ? [s.since + NEXT_FRAME_MS, s.outUntil] : [s.inAt + NEXT_FRAME_MS, endsAt2(s)];
-var swapPartFade = (m, inDelayMs) => m.isOut ? { opacity: m.isFirst ? 1 : 0, duration: LEAVE_FADE_MS, delay: 0 } : inDelayMs === null ? { opacity: 0, duration: 0, delay: 0 } : { opacity: 1, duration: ENTER_FADE_MS, delay: inDelayMs };
+var swapPartFade = (m, inDelayMs) => m.isOut ? { opacity: m.isFirst ? 1 : 0, duration: LEAVE_FADE_MS, delay: 0 } : inDelayMs === null ? { opacity: m.isInput ? FAINT_OPACITY : 0, duration: 0, delay: 0 } : { opacity: 1, duration: ENTER_FADE_MS, delay: inDelayMs };
 
 // src/motion.ts
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
@@ -6812,7 +6961,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
   const copies = new Map([...moved].map((id) => [id, copyIdOf(id, now)]));
   const isDrawn = new Set(blocks.map((b) => b.id));
   const isFieldBack = (id) => !wasDrawn.has(id) || was.rows.get(id)?.track.state === "leaving";
-  const isFieldPressed = !isFirst && blocks.some((b) => b.kind === "field" && isFieldBack(b.id));
+  const isFieldPressed = !isFirst && isInput && blocks.some((b) => b.kind === "field" && isFieldBack(b.id));
   const startsLeave = was.order.some((id) => {
     const old = was.rows.get(id);
     const holdsSpace = old !== undefined && old.track.state !== "leaving" && old.glide?.box !== "shut" && !isShownAtOnce(old.glide, now, heightOf(id));
@@ -6857,7 +7006,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isOpen = block.kind === "row" && isOpenRow(block);
     const opened = isOpen ? block : drawsPanel(track) && isMoving(track.state) ? last?.opened ?? null : null;
     const isStart = track.since === now && isMoving(track.state);
-    const isPressed = block.kind === "field";
+    const isPressed = block.kind === "field" && isInput;
     const glide = glideOf(track, isStart, last?.glide ?? null, now, Math.max(holdsUntil, closeHoldsUntil), isPressed, isFieldPressed, heightOf(block.id));
     const isReleased = isInput && opensRow && track.state === "closing";
     const isInputMove = isStart ? isInput : (last?.isInputMove ?? false) || isReleased;
@@ -7310,10 +7459,12 @@ function fadeEl(el, name, opacity, glide, p) {
 function fieldEl(f, p, indent, isInert = false, opening = null) {
   const { t } = p;
   const state = p.input(f.rowId);
-  const input = state ? [
-    div4().min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
-  ] : [];
   const glide = { duration: ENTER_FADE_MS, delay: opening?.delayMs ?? 0 };
+  const fieldKey = `text field ${f.rowId}`;
+  const faded = (e) => opening === null ? e : fadeEl(e.id(fieldKey), fieldKey, opening.isOpen ? 1 : FAINT_OPACITY, glide, p);
+  const input = state ? [
+    faded(div4()).min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
+  ] : [];
   const key = `buttons ${f.rowId}`;
   return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => fadeEl(e.id(key), key, opening?.isOpen ? 1 : 0, glide, p)));
 }
@@ -7624,7 +7775,8 @@ function fitHeight(b, m, p) {
     return head + (prStatusHeight(b, m, p) ?? status) + lines;
   }
   if (b.kind !== "row") {
-    const measured = p.heights.get(id);
+    const formKey = m?.blockSwap?.formKey ?? null;
+    const measured = p.heights.get(formKey ?? id) ?? (formKey !== null ? m?.blockSwap?.fromHeight : undefined);
     return measured === undefined ? former() : measured - panel + warningRise(b, m, p);
   }
   const title = titleHeightOf(b, p);
@@ -7635,8 +7787,8 @@ function fitHeight(b, m, p) {
   return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + rise;
 }
 function kindFadeEl(el, b, m, s, key, p) {
-  const height = s.isOut ? undefined : fitHeight(b, { ...m, former: null }, p);
-  const from = fitHeight(s.from, undefined, p) ?? height;
+  const height = s.isOut ? undefined : s.formKey !== null ? p.heights.get(s.formKey) : fitHeight(b, { ...m, former: null }, p);
+  const from = (s.formKey !== null ? s.fromHeight : fitHeight(s.from, undefined, p)) ?? height;
   const delay = height === undefined ? null : enterDelayMs(height, { x: from ?? height, v: 0 });
   const fade = swapPartFade(s, delay);
   return fadeEl(el, `kind ${key}`, fade.opacity, fade, p);
@@ -7646,10 +7798,11 @@ function contentEl(b, m, p, el, strokes) {
   const isRow = b.kind === "row";
   const isAtOnce = isRow ? p.isAtOnce(titleId(id)) || p.isAtOnce(restId(id)) : p.isAtOnce(id);
   const measured = fitHeight(b, m, p);
+  const formKey = m?.blockSwap?.formKey ?? null;
   const atRest = isAtOnce || b.kind === "empty" ? undefined : measured;
   const open = isAtOnce ? undefined : measured ?? 0;
   const height = m?.box === "shut" ? 0 : m?.box === "open" ? open : atRest;
-  return springBox(`fit ${m?.springId ?? id}`, height).when(strokes.length > 0, (e) => e.relative()).child(isRow ? el : sizeEl(id, p, el)).children(strokes);
+  return springBox(`fit ${m?.springId ?? id}`, height).when(strokes.length > 0, (e) => e.relative()).child(isRow ? el : sizeEl(id, p, formKey !== null ? sizeEl(formKey, p, el) : el)).children(strokes);
 }
 function spaceEl(s, p, columns) {
   const id = `space ${p.motion.get(s.block.id)?.springId ?? s.block.id}`;
@@ -8185,8 +8338,10 @@ function panelFadeEl(r, m, p, el) {
     return el;
   const height = p.heights.get(panelId(r.id)) ?? 0;
   const turnBackFadeMs = m?.panelFadeMs ?? null;
-  const delay = m?.isPanelWaiting && turnBackFadeMs === null ? enterDelayMs(height) : 0;
-  const duration = turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? "open"];
+  const isWaiting = m?.isPanelWaiting === true && turnBackFadeMs === null;
+  const isHidden = isWaiting && opacity === 0;
+  const delay = isWaiting && !isHidden ? enterDelayMs(height) : 0;
+  const duration = isHidden ? 0 : turnBackFadeMs ?? ROW_FADE_MS[m?.state ?? "open"];
   return fadeEl(el, panelId(r.id), opacity, { duration, delay }, p);
 }
 function underEls(r, from, m, p, above) {
@@ -8276,8 +8431,9 @@ function blockEl(b, p) {
   if (b.kind === "field") {
     const isShownAsOpening = m?.state === "entering" && m.box !== null && m.fadeMs === 0;
     const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null;
-    const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0);
-    const opening = isShownAsOpening ? { isOpen: m.box === "open", delayMs } : keepsButtonsFade;
+    const height = p.heights.get(b.id);
+    const delayMs = enterDelayMs(height ?? 0);
+    const opening = isShownAsOpening ? { isOpen: m.box === "open" && height !== undefined, delayMs } : keepsButtonsFade;
     return div18().pl(b.isAtEdge ? EDGE : TEXT_X).pr(EDGE).child(fieldEl(b.field, p, 0, isLeaving, opening));
   }
   if (b.kind === "note")
@@ -8287,121 +8443,6 @@ function blockEl(b, p) {
   if (b.kind === "banner")
     return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? feedbackEl(b.feedback, t) : null);
   return div18();
-}
-
-// src/out.ts
-var SENDING = "Sending…";
-var REREAD_AFTER_MS = 5000;
-var GIVE_UP_MS = 15000;
-var outAction2 = (p) => ("id" in p) ? actionId(p) : p.action;
-function rowSignature(view, rowId) {
-  const rows = [...view.needsYou.questions, ...view.needsYou.tasks, ...view.findings.rows];
-  const state = rows.find((r) => r.id === rowId)?.state.is ?? null;
-  const goal = rowId === GOAL_KEYS_ID ? view.statusPage.goal?.text ?? null : null;
-  return JSON.stringify([view.lastActions[rowId] ?? null, state, goal]);
-}
-var resultLine = (result) => ({
-  text: feedbackText({ is: "local", result }, "herdr"),
-  tone: feedbackTone({ is: "local", result }),
-  source: { is: "local", result }
-});
-function unconfirmedLine(out, now) {
-  if (out.result)
-    return resultLine(out.result);
-  const label = deliveryLabel("unconfirmed", out.label, out.reply);
-  return { text: label, tone: "muted", source: { is: "unconfirmed", label, at: now } };
-}
-function notSentLine(reason) {
-  const source = { is: "notSent", reason, retry: null };
-  return { text: feedbackText(source, "herdr"), tone: "error", source };
-}
-var notAppliedLine = (out, agent) => out.result ? resultLine(out.result) : notAppliedText(`${agent}'s inbox did not answer.`);
-var refusedLine = (why) => ({
-  text: why,
-  tone: "error",
-  source: { is: "notSent", reason: why, retry: null }
-});
-var notAppliedText = (why) => ({
-  text: `Not applied: ${why}`,
-  tone: "error",
-  source: { is: "notSent", reason: why, retry: null }
-});
-var UNCONFIRMED = { error: null, note: null, isUnconfirmed: true };
-var STALE = { error: null, note: "stale", isUnconfirmed: false };
-function appliedOutcome(view, rowId) {
-  const delivery = view.lastActions[rowId]?.delivery;
-  return {
-    error: delivery?.state === "failed" ? delivery.reason : null,
-    note: null,
-    isUnconfirmed: delivery?.state === "unconfirmed"
-  };
-}
-function settleOuts(outs, view, lastPress, now) {
-  const settled = { outs: [], lines: {}, ended: [], toClaim: [] };
-  const end = (out, outcome) => settled.ended.push({ uiPressId: out.uiPressId, outcome });
-  for (const out of outs) {
-    if (lastPress?.id === out.pressId && lastPress.outcome === "refused") {
-      settled.lines[out.rowId] = refusedLine(lastPress.why);
-      end(out, { error: lastPress.why, note: null, isUnconfirmed: false });
-      continue;
-    }
-    if (lastPress?.id === out.pressId) {
-      end(out, lastPress.outcome === "stale" ? STALE : appliedOutcome(view, out.rowId));
-      continue;
-    }
-    if (rowSignature(view, out.rowId) !== out.before) {
-      end(out, appliedOutcome(view, out.rowId));
-      continue;
-    }
-    const isPassed = lastPress !== null && lastPress.id > out.pressId;
-    const isGivenUp = out.waitingSince !== null && now - out.waitingSince >= GIVE_UP_MS;
-    if (out.isWritten && out.isTaken && (isPassed || isGivenUp)) {
-      settled.lines[out.rowId] = unconfirmedLine(out, now);
-      end(out, UNCONFIRMED);
-    } else if (!out.isWritten || !isGivenUp)
-      settled.outs.push(out);
-    else
-      settled.toClaim.push(out);
-  }
-  return settled;
-}
-function nextOutCheckAt(outs, now) {
-  const times = outs.flatMap((out) => out.waitingSince === null ? [] : [out.waitingSince + REREAD_AFTER_MS, out.waitingSince + GIVE_UP_MS]);
-  const later = times.filter((at) => at > now);
-  return later.length ? Math.min(...later) : null;
-}
-var withOutButtons = (buttons, outRows) => buttons.map((b) => b.does.is === "press" && outRows.has(pressRowId(b.does.press)) ? { ...b, isOut: true } : b);
-function drawOuts(blocks, outs, lines, now) {
-  const byRow = new Map(outs.map((o) => [o.rowId, o]));
-  const outRows = new Set(byRow.keys());
-  const lineOf = (id) => {
-    const out = byRow.get(id);
-    const refused = lines[id];
-    if (!out || holdsStatusWhileOut(out.kind) || refused)
-      return refused ?? null;
-    const source = out.pending ?? { is: "sending", label: SENDING, at: now, sentAt: now };
-    if (out.result)
-      return { ...resultLine(out.result), source };
-    return { text: out.pending ? feedbackText(out.pending, "herdr") : SENDING, tone: "muted", source };
-  };
-  return blocks.map((b) => {
-    if (b.kind === "row" || b.kind === "pr" || b.kind === "line" || b.kind === "banner") {
-      const line = lineOf(b.id);
-      return { ...b, buttons: withOutButtons(b.buttons, outRows), ...line ? { feedback: line } : {} };
-    }
-    if (b.kind === "empty" && b.under) {
-      const line = lineOf(b.under.id);
-      const under = {
-        ...b.under,
-        buttons: withOutButtons(b.under.buttons, outRows),
-        ...line ? { feedback: line } : {}
-      };
-      return { ...b, under };
-    }
-    if (b.kind === "status" || b.kind === "heading")
-      return { ...b, buttons: withOutButtons(b.buttons, outRows) };
-    return b;
-  });
 }
 
 // src/run-here.ts
@@ -9767,7 +9808,7 @@ class Inbox extends View {
   });
   tracksOf = "";
   blocks = [];
-  lastDraw = { tab: "needsYou", rows: null, pressed: [] };
+  lastDraw = NO_DRAW;
   timeLeft = new Map;
   linesAbove = NO_LINES_ABOVE;
   focus = null;
@@ -10019,7 +10060,7 @@ class Inbox extends View {
       this.timeLeft = new Map;
       this.tracksOf = "";
       this.blocks = [];
-      this.lastDraw = { tab: ui.tab, rows: null, pressed: [] };
+      this.lastDraw = { ...NO_DRAW, tab: ui.tab };
       this.look.status.drew(null, now);
       this.fades.drew();
       return root.child(messageEl(screen.message, t));
@@ -10027,8 +10068,9 @@ class Inbox extends View {
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
     this.blocks = shown;
     this.hints = fieldHints(shown);
-    const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits);
-    this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map((o) => o.rowId) };
+    const thisDraw = drawOf(ui.tab, screen.waits, this.queue.outs, this.read);
+    const isAnswer = isAnswerDraw(this.lastDraw, thisDraw, raw);
+    this.lastDraw = thisDraw;
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt;
     const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove;
     const held = holdLinesAbove(shown, lastAbove, now, isForming, isInput);
