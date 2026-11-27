@@ -1,6 +1,6 @@
 import { faintCloseFades, turnBackFades } from '../../core/view/row-motion'
 import type { FadeStep, RowState, RowTrack } from '../../core/view/row-motion'
-import { springStep } from '../../core/view/springs'
+import { HEIGHT_SPRING, springStep } from '../../core/view/springs'
 import type { SpringState } from '../../core/view/springs'
 import { NEXT_FRAME_MS } from './block-glide'
 import { isOpenRow } from './blocks'
@@ -21,6 +21,13 @@ export type PanelSpace = { box: SpringState; at: number; to: number }
 
 /** Where the panel space is at `now`, and how fast it moves. */
 export const spaceNow = (s: PanelSpace, now: number): SpringState => springStep(s.box, s.to, now - s.at)
+
+/**
+ * Whether `space` aims taller than `rest`, the space it last rested at, by more than the height spring's rest distance,
+ * so a measure that differs from the last only in its last digits is no growth.
+ */
+export const isGrowingFrom = (rest: PanelSpace | null, space: PanelSpace): boolean =>
+  rest !== null && space.to > rest.to + HEIGHT_SPRING.epsilon
 
 /** The panel space with its target set to `to` px in this draw, from where it is, or at rest there if it is new. */
 export function aimSpace(last: PanelSpace | null, to: number, now: number): PanelSpace {

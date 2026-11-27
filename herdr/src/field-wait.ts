@@ -2,6 +2,7 @@ import { ENTER_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import { HEIGHT_SETTLE_MS } from '../../core/view/springs'
 import type { Block } from './blocks'
 import { NEXT_FRAME_MS } from './block-glide'
+import { isGrowingFrom } from './panel-steps'
 import type { PanelSpace } from './panel-steps'
 
 /**
@@ -35,9 +36,10 @@ export function stepFieldWait(
   if (b.field === null) return wait === null || wait.goneShown !== null ? wait : goneWait(wait, now)
   if (last.block.kind !== 'row' || last.block.field === null) return { since: now, waitMs: null, goneShown: null }
   if (wait === null || wait.waitMs !== null) return wait
-  const isGrowing = last.restSpace !== null && space.to > last.restSpace.to
 
-  return isGrowing ? { ...wait, waitMs: now - wait.since + enterDelayMs(space.to, space.box) } : wait
+  return isGrowingFrom(last.restSpace, space)
+    ? { ...wait, waitMs: now - wait.since + enterDelayMs(space.to, space.box) }
+    : wait
 }
 
 /** The wait of a field the row stopped drawing at `now`: its buttons stay hidden unless their fade had started. */

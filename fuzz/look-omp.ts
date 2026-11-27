@@ -29,7 +29,7 @@ const { countCellsAsOmp } = await import('../omp/src/panel-view')
 
 /** omp's TUI module, which counts cells as the installed omp does. Its source fails this project's strict type check, so tsc does not follow it. */
 const PI_TUI: string = '../omp/node_modules/@oh-my-pi/pi-tui/src/index'
-countCellsAsOmp(await import(PI_TUI))
+const piTui = await import(PI_TUI)
 
 /** As `wakeLater` in `omp/src/host-sessions.ts` waits past the settle window. */
 const WAKE_MARGIN_MS = 250
@@ -60,8 +60,20 @@ const flush = async () => {
   for (let i = 0; i < 4; i++) await new Promise(resolve => setTimeout(resolve, 0))
 }
 
-/** Runs a case through omp's own panel controller, over a source the in-memory host backs, as `omp/src/host-panel.ts` builds the live one. */
+/**
+ * Runs a case through omp's own panel controller, over a source the in-memory host backs, as `omp/src/host-panel.ts`
+ * builds the live one. It counts cells as omp does only while the case runs, since Herdr cases run in the same process.
+ */
 export async function runOmp(c: Case, restMs = 3000): Promise<OmpRun> {
+  const restore = countCellsAsOmp(piTui)
+  try {
+    return await runOmpCase(c, restMs)
+  } finally {
+    restore()
+  }
+}
+
+async function runOmpCase(c: Case, restMs: number): Promise<OmpRun> {
   let clock = START
   setSystemTime(new Date(clock))
   const host = fuzzHost(structuredClone(c.session), c.outcomes)

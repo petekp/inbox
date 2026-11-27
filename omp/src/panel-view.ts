@@ -27,9 +27,12 @@ type Panel = {
   dispose(): void
 }
 
-/** Makes the panel and the band count cells as omp does, so omp never cuts the end of a line they fit to its width. */
-export function countCellsAsOmp(tui: TuiModule): void {
-  if (tui.visibleWidth) countCellsWith(tui.visibleWidth)
+/**
+ * Makes the panel and the band count cells as omp does, so omp never cuts the end of a line they fit to its width.
+ * Returns a call that puts back the count it replaced.
+ */
+export function countCellsAsOmp(tui: TuiModule): () => void {
+  return tui.visibleWidth ? countCellsWith(tui.visibleWidth) : () => {}
 }
 
 export const screenRows = (ui: UiHost): number => ('size' in ui ? ui.size().rows : ui.terminal.rows)

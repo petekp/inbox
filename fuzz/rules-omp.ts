@@ -32,12 +32,13 @@ function widthCause(line: string, panel: number): string {
 /**
  * The combining marks the open reply field's draft holds with no letter before them, at its start or after a space, as
  * when the key that opened the field took the letter they followed. The field draws them as typed, as omp's own editor
- * does, so a line that starts with one cut nothing.
+ * does, so a line of the draft that starts with one cut nothing.
  */
 function loneMarks(d: OmpDraw): string[] {
-  const draft = d.ui?.typing ? (d.ui.drafts[d.ui.typing]?.text ?? '') : ''
-  return [...draft.matchAll(/(?:^|\s)(\p{M}+)/gu)].flatMap(m => (m[1] ? [m[1]] : []))
+  return [...draftOf(d).matchAll(/(?:^|\s)(\p{M}+)/gu)].flatMap(m => (m[1] ? [m[1]] : []))
 }
+
+const draftOf = (d: OmpDraw): string => (d.ui?.typing ? (d.ui.drafts[d.ui.typing]?.text ?? '') : '')
 
 /** omp's TUI module that measures a line before it cuts one. Its source fails this project's strict type check, so tsc does not follow it. */
 const PI_TUI_UTILS: string = '../omp/node_modules/@oh-my-pi/pi-tui/src/utils'
@@ -121,7 +122,10 @@ export function ompFailures(run: OmpRun, input: string): Failure[] {
           seen: JSON.stringify(line),
         })
       const cut = glyphCut(line.trim())
-      const isTyped = cut === STARTS_WITH_MARK && loneMarks(d).some(m => line.trim().startsWith(m))
+      const isTyped =
+        cut === STARTS_WITH_MARK &&
+        draftOf(d).includes(line.trim()) &&
+        loneMarks(d).some(m => line.trim().startsWith(m))
       if (cut && !isTyped)
         out.push({ ...at, rule: 'glyph-cut', detail: `line ${i}: ${cut}`, seen: JSON.stringify(line) })
       const bad = badText(line, input)

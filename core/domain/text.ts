@@ -202,10 +202,15 @@ let cellsOf: (grapheme: string) => number = graphemeCells
 
 /**
  * Makes `cellWidth` and `cutToCells` count each grapheme with `measure`. A host whose terminal UI measures a line and
- * cuts one it counts too wide passes that measure, so a line a look fits to its width is never cut.
+ * cuts one it counts too wide passes that measure, so a line a look fits to its width is never cut. Returns a call that
+ * puts back the measure it replaced.
  */
-export function countCellsWith(measure: (text: string) => number): void {
+export function countCellsWith(measure: (text: string) => number): () => void {
+  const was = cellsOf
   cellsOf = measure
+  return () => {
+    cellsOf = was
+  }
 }
 
 /**
