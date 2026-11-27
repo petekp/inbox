@@ -41,7 +41,6 @@ export const AGENT = 'omp'
 /** Cells a lead and the space after it take before a led line's title. */
 export const LEAD_CELLS = 3
 export const STOP_ID = 'stop'
-export const HERDR_ASK_ID = 'herdr-ask'
 
 export type Button = {
   label: string
@@ -81,8 +80,6 @@ export type Line = {
   /** The mark before the result: the settled label, a Closed line's outcome, or a handed-off row's feedback. */
   mark: ResultMark | null
   title: string
-  /** Draws the title bold in this tone, as the install question's. */
-  titleTone: Tone | null
   isDim: boolean
   /** The status words after a PR's title. */
   status: { text: string; tone: Tone | null; rest: string } | null
@@ -151,7 +148,6 @@ export const blankLine = (id: string): Line => ({
   lead: { text: '', tone: null },
   mark: null,
   title: '',
-  titleTone: null,
   isDim: false,
   status: null,
   age: null,
@@ -406,8 +402,7 @@ export function focusOf(line: Line, ui: PanelUi): number {
 export const pageFocus = (target: StatusKeyTarget, ui: PanelUi): number =>
   ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0
 
-const isSentPress = (p: PanelPress): p is RowPress | PrPress =>
-  p.action !== 'resume' && p.action !== 'herdr-ask' && p.action !== 'all-options'
+const isSentPress = (p: PanelPress): p is RowPress | PrPress => p.action !== 'resume' && p.action !== 'all-options'
 
 /** The opens, copies and reads a press on `line` runs first, which its row reads while they are under way. */
 function pressEffects(screen: PanelScreen, line: Line, press: RowPress | PrPress, kind: PressKind | null): Effect[] {

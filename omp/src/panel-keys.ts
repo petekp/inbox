@@ -1,4 +1,5 @@
 import { isPrPress } from '../../core/view/pr-press'
+import { HERDR_ASK_BUTTONS } from '../../core/remote/herdr-ask'
 import { drawableText } from '../../core/domain/text'
 import { CLEAR_FINISHED_ID, PR_REFRESH_ID, RANK_AGAIN_ID } from '../../core/view/pr-rows'
 import { shownTabs, isRowTab } from '../../core/view/tabs'
@@ -85,7 +86,7 @@ export function applyEvents(screen: PanelScreen, ui: PanelUi, events: UiEvent[],
 
 /**
  * The line the shown row tab's cursor is on. A cursor on no row, or on a line it cannot land on, rests on the first
- * line that waits, which may be the stop or the install question, else the first line the cursor can land on. A row
+ * line that waits, which may be the stop, else the first line the cursor can land on. A row
  * the agent closed keeps the cursor while the person's keys hold the close. One of the PRs tab's own lines keeps the
  * cursor after its press while it draws, though its button is gone. Once it is gone, the cursor rests on no line, so the
  * first waiting PR's Merge never sits one Enter after Refresh PRs.
@@ -118,7 +119,6 @@ function activate(screen: PanelScreen, ui: PanelUi, line: Line, button: Button):
 
     return { patch: { focus: null, resuming: { stopAt: stop.at, is: 'sending' } }, press }
   }
-  if (press.action === 'herdr-ask') return { patch: { focus: null }, press }
   if (!isPrPress(press) && press.action === 'type')
     return { events: [{ type: 'open-field', id: line.id }], patch: { focus: null } }
   if (!isPrPress(press) && press.action === 'discard')
@@ -173,7 +173,17 @@ function rowTabKey(screen: PanelScreen, ui: PanelUi, lines: Line[], selected: Li
   return activate(screen, ui, selected, button)
 }
 
+/** The press of Install or Don't install when `key` is its hotkey and the question asks, on any tab. */
+function herdrAnswerOf(screen: PanelScreen, key: string): LocalPress | null {
+  const button = HERDR_ASK_BUTTONS.find(a => a.hotkey === key)
+  if (screen.herdrAsk?.is !== 'asking' || !button) return null
+
+  return { action: 'herdr-ask', isYes: button.isYes }
+}
+
 function planKey(screen: PanelScreen, ui: PanelUi, lines: Line[], selected: Line | null, key: string, now: number) {
+  const answer = herdrAnswerOf(screen, key)
+  if (answer) return { patch: { focus: null }, press: answer } as KeyPlan
   const shown = shownTabs()
   const isTabKey = key === 'tab' || key === 'shift+tab' || shown.some(t => t.hotkey === key)
   if (key === '?' || (ui.isHelpShown && key === 'escape'))

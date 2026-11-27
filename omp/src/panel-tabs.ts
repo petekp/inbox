@@ -1,5 +1,6 @@
 import type { Tab } from '../../types'
 import type { ToneName } from '../../core/view/tones'
+import { HERDR_ASK_BUTTONS } from '../../core/remote/herdr-ask'
 import { ROW_COPY } from '../../core/view/rows'
 import { shownTabs, tabBadge, fitTabs, tabName, isRowTab } from '../../core/view/tabs'
 import { GOAL_KEYS_ID, goalSubmitLabel, statusKeyRows, statusSelected } from '../../core/view/status-keys'
@@ -69,7 +70,11 @@ function inboxModelText({ modelName, isSignedIn }: InboxModel): string {
 export function footer(d: Draw, isPageScrolling: boolean): string[] {
   const { screen, ui, width, style: s } = d
   const out: string[] = [s.dim('─'.repeat(width))]
-  const hints =
+  const askHints =
+    screen.herdrAsk?.is === 'asking' && ui.typing === null && !ui.isHelpShown
+      ? HERDR_ASK_BUTTONS.map(a => `${a.hotkey} ${a.label.toLowerCase()}`)
+      : []
+  const keyHints =
     ui.typing !== null
       ? [
           `↵ ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
@@ -90,6 +95,7 @@ export function footer(d: Draw, isPageScrolling: boolean): string[] {
               'tab switch',
               '? help',
             ]
+  const hints = [...askHints, ...keyHints]
   const model = `${inboxModelText(screen)} `
   const hintLine = ` ${hints.map(h => s.dim(h)).join(` ${s.tone('sep', '·')} `)}`
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2

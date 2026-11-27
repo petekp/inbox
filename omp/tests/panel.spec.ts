@@ -13,7 +13,6 @@ import { sessionView } from '../../core/view/session-view'
 import { demoState } from '../src/demo'
 import { INITIAL_UI } from '../src/panel'
 import type { PanelUi } from '../src/panel'
-import { HERDR_ASK_ID } from '../src/panel-lines'
 import {
   buttonLine,
   buttonLines,
@@ -352,31 +351,35 @@ test('a row keeps its age at a narrow width and beside a long outcome, and its t
     expect(strip(line).length).toBeLessThanOrEqual(48)
 })
 
-test('the Herdr install question sits above the Asks rows, its buttons and their y and q keys answer it once', () => {
+test('the Herdr install question is a banner under the tab bar on every tab, and y and q answer it from any of them', () => {
   const asking = herdrAskOf('/app', undefined, null)
   const screen = screenOf({ herdrAsk: asking })
-  const onAsk: PanelUi = withCursorOn({ ...INITIAL_UI }, HERDR_ASK_ID)
-  const lines = text(screen, INITIAL_UI).split('\n')
-  const askAt = lines.findIndex(l => l.includes("Install the inbox's Herdr mod?"))
 
-  expect(askAt).toBeGreaterThan(-1)
-  expect(askAt).toBeLessThan(lines.findIndex(l => l.includes(firstQuestion(screen).title)))
-  const install = keyed(screen, onAsk, 'enter', NOW)
-  expect(install.press).toEqual({ action: 'herdr-ask', isYes: true })
-  expect(install.ui.focus).toBe(null)
-  expect(keyed(screen, keys(screen, onAsk, 'right'), 'enter', NOW).press).toEqual({
-    action: 'herdr-ask',
-    isYes: false,
-  })
+  for (const tab of ['needsYou', 'findings', 'prs', 'overview'] as const) {
+    const ui: PanelUi = { ...INITIAL_UI, tab }
+    const lines = text(screen, ui).split('\n')
+    const tabsAt = lines.findIndex(l => l.includes('[1]'))
+    const askAt = lines.findIndex(l => l.includes("Install the inbox's Herdr mod?"))
 
-  expect(text(screen, INITIAL_UI)).toMatch(/Install \(recommended\) +q .*Don't install/)
-  expect(keyed(screen, INITIAL_UI, 'y', NOW).press).toEqual({ action: 'herdr-ask', isYes: true })
-  expect(keyed(screen, INITIAL_UI, 'q', NOW).press).toEqual({ action: 'herdr-ask', isYes: false })
+    expect(tabsAt).toBeGreaterThan(-1)
+    expect(askAt).toBeGreaterThan(tabsAt)
+    expect(text(screen, ui)).toMatch(/y Install \(recommended\) +q Don't install/)
+    expect(keyed(screen, ui, 'y', NOW).press).toEqual({ action: 'herdr-ask', isYes: true })
+    expect(keyed(screen, ui, 'q', NOW).press).toEqual({ action: 'herdr-ask', isYes: false })
+  }
+  const onFinds: PanelUi = { ...INITIAL_UI, tab: 'findings' }
+  expect(keyed(screen, onFinds, 'y', NOW).ui.tab).toBe('findings')
+  expect(text(screen, onFinds)).toMatch(/y install · q don't install · /)
 
   const saving = screenOf({ herdrAsk: answeringOf(asking, false) })
-  expect(text(saving, onAsk)).toContain('Saving the answer…')
-  expect(keyed(saving, onAsk, 'y', NOW).press).toBeUndefined()
-  expect(keyed(saving, onAsk, 'enter', NOW).press?.action).not.toBe('herdr-ask')
+  expect(text(saving, INITIAL_UI)).toContain('Saving the answer…')
+  expect(text(saving, INITIAL_UI)).not.toContain("q Don't install")
+  expect(keyed(saving, INITIAL_UI, 'y', NOW).press).toBeUndefined()
+  expect(keyed(saving, INITIAL_UI, 'q', NOW).press).toBeUndefined()
+
+  const answered = screenOf({ herdrAsk: { is: 'answered', text: '✓ Installed the inbox mod in Herdr.' } })
+  expect(text(answered, { ...INITIAL_UI, tab: 'prs' })).toContain('✓ Installed the inbox mod in Herdr.')
+  expect(keyed(screenOf(), INITIAL_UI, 'y', NOW).press).toBeUndefined()
 })
 
 test('the w key folds every fold of the shown tab, then opens them all, and saves each row it collapses', () => {
