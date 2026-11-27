@@ -441,7 +441,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'motion-id',
     detail: 'stroke m1 path bottom became stroke m1 path top',
     issue: 980,
-    isOpen: true,
+    isOpen: false,
     case: herdr(emptySession(), [
       { is: 'key', key: 'left' },
       { is: 'key', key: 'left' },
@@ -461,7 +461,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'vanish',
     detail: 'in d18 went from 1.00 to gone',
     issue: 981,
-    isOpen: true,
+    isOpen: false,
     case: herdr(
       {
         ...demo,
@@ -480,7 +480,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'jump',
     detail: 'd20 moved',
     issue: 988,
-    isOpen: true,
+    isOpen: false,
     case: herdr(
       {
         ...demo,
@@ -554,12 +554,9 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
-  { issue: 980, look: 'herdr', rule: 'motion-id', details: ['stroke m1 path bottom became stroke m1 path top'] },
-  { issue: 981, look: 'herdr', rule: 'vanish', details: [['"aaaaaaaaaa', 'in d18 went from 1.00 to gone']] },
   { issue: 982, look: 'codex', rule: 'cut', details: [['"✓ Opened previews"', 'in its box d11']] },
   { issue: 983, look: 'codex', rule: 'jump', details: ['press-d22 moved'] },
   { issue: 987, look: 'codex', rule: 'cut', details: [['"Explaining…"', 'in its box d17']] },
-  { issue: 988, look: 'herdr', rule: 'jump', details: [['d20 moved', 'in one frame, off its spring']] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
 ]
 
