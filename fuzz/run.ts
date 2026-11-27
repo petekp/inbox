@@ -5,7 +5,7 @@ import type { Failure } from './failure'
 import { caseOf } from './gen'
 import { rngOf } from './rng'
 import { shrink } from './shrink'
-import { apartFrom, knownIssueOf, ownFailures } from './known'
+import { apartFrom, knownIssueOf, ownFailures, staleKnownIssues } from './known'
 import { SEEDS } from './seeds'
 
 const USAGE =
@@ -132,6 +132,12 @@ async function main() {
     const isFixedWhileOpen = failures.length === 0 && s.isOpen
     if (isFixedWhileOpen || (failures.length > 0 && !(s.isOpen && isAsIssueSays))) isSeedBroken = true
     seedLines.push(`seed #${s.issue}, ${s.name}: ${verdict}${apartFrom(others)}`)
+  }
+  for (const n of staleKnownIssues()) {
+    isSeedBroken = true
+    seedLines.push(
+      `KNOWN in fuzz/known.ts names #${n}, which no open seed holds. Delete its entries in the PR that marks its seed closed`,
+    )
   }
   const write = (
     name: string,

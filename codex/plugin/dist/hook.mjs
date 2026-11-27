@@ -2104,12 +2104,25 @@ var NAMED_RESULTS_ASK = new RegExp(
   "i"
 );
 
+// ../core/domain/field-limits.ts
+var RECORD_LIMITS = {
+  ask: 200,
+  context: 200,
+  options: 60,
+  option_notes: 120,
+  why: 120,
+  steps: 4e3,
+  title: 120,
+  detail: 600,
+  path: 300
+};
+
 // ../core/domain/earlier-answers.ts
 var K1 = 1.2;
 var B = 0.75;
 var RELATIVE_FLOOR = 0.22;
-var EARLIER_TEXT_CHARS = 200;
-var shortText = (text2) => cutLine(text2, (t) => t.length <= EARLIER_TEXT_CHARS);
+var EARLIER_TEXT_CHARS = RECORD_LIMITS.ask;
+var shortText = (text2) => cutLine(text2.trim(), (t) => t.length <= EARLIER_TEXT_CHARS);
 var STOP_WORDS2 = new Set(
   `a an the and or of to in on for with at by from into onto is are was were be been being it its this that these
 those i you we he she they me my your our their them as if then than so do does did done can could should would will
@@ -2167,8 +2180,8 @@ function bestEarlier(index, question, skip) {
 function earlierOf(match, isShown) {
   const { doc } = match;
   return {
-    ask: doc.ask,
-    answer: doc.answer,
+    ask: shortText(doc.ask),
+    answer: shortText(doc.answer),
     at: doc.at,
     repo: doc.repo,
     score: Math.round(match.score * 1e3) / 1e3,
@@ -4249,7 +4262,7 @@ function questionHistory(previous, s, place, now) {
     how: c.how,
     isAfterReply: c.how === "update" && s.lastActions[c.id]?.action === "type",
     earlier: c.item?.earlier ?? null,
-    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(c.outcome, c.item.earlier.answer) : false
+    isAnsweredWithEarlier: c.item?.earlier ? sameAnswer(shortText(c.outcome), shortText(c.item.earlier.answer)) : false
   }));
   const open2 = new Set(s.ledger.items.map((i) => keyOf({ id: i.id, askedAt: i.at })));
   const byKey = new Map((previous?.questions ?? []).map((q) => [keyOf(q), q]));
