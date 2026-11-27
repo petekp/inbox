@@ -337,7 +337,7 @@ function MilestonesFold({ line: { id, fold } }: { line: DrawnStatus['fold'][numb
 
 /**
  * The goal's section, first on every page that is not empty: its heading row, the title, a rule and the goal's buttons at
- * the right edge, then the goal's text with its was and Now lines, or the line that says no goal is set, then
+ * the right edge, then the goal's text with its Now and Prev lines, or the line that says no goal is set, then
  * the milestones, each with its rows on the lines under it. A met goal's heading hangs its ✓ in the mark column, its
  * lines start at the text column, and its milestones fold into one line. While the person types a
  * goal, the field takes the text's place and the buttons leave the heading.

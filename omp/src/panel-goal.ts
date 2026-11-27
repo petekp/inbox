@@ -42,7 +42,7 @@ import { cellWidth } from '../../core/domain/text'
 
 /**
  * A part of the goal's section on the Status page: its heading row with the goal's buttons, the goal's text with its
- * was and Now lines, the line a met goal's milestones fold into, a blank line before a milestone with the
+ * Now and Prev lines, the line a met goal's milestones fold into, a blank line before a milestone with the
  * path's line through it, the Later label, a milestone, or on the empty page New or its field.
  */
 export type GoalPart =

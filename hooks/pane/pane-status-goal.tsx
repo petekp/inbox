@@ -397,7 +397,7 @@ export function paneStatusGoal(
   }
   /**
    * The goal's section, first on every page that is not empty: its heading row with the goal's buttons at its right,
-   * then the goal's text with its was and Now lines, or the line that says no goal is set, then the
+   * then the goal's text with its Now and Prev lines, or the line that says no goal is set, then the
    * milestones, each after a blank line. While the person types a goal, the field and its Cancel take the text's place,
    * and the buttons leave the heading. While the suggested goal shows, its offer takes the text's place with its
    * buttons after it, and the heading keeps only Undo.
