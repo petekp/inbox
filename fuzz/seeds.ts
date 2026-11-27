@@ -25,9 +25,9 @@ const ESC = String.fromCodePoint(0x1b)
 const BEL = String.fromCodePoint(7)
 const LONG_URL = `https://example.com/${'path/'.repeat(30)}`
 
-/** Fixed cases from bugs the looks had, which every run includes. A seed whose issue is open is expected to fail. */
 /**
- * A seed for an open issue is expected to fail with `rule`, on a failure whose detail holds `detail` when it is given.
+ * Fixed cases from bugs the looks had, which every run includes. A seed for an open issue is expected to fail with
+ * `rule`, on a failure whose detail holds `detail` when it is given.
  */
 export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string; detail?: string; case: Case }[] = [
   {

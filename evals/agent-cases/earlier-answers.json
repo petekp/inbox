@@ -21,6 +21,26 @@
     ]
   },
   {
+    "name": "earlier-answer-long",
+    "about": "The record answer lists a long earlier answer to the same question, cut at a word. The agent closes the question as answered before and goes on with that answer instead of asking again.",
+    "history": [
+      {
+        "ask": "Which cache should the product API use, Redis or an in-process memory cache?",
+        "answer": "In-process memory cache, sized at 256 MB per instance, with a five minute expiry on every entry and no persistence at all, because the product API restarts nightly and the catalog data it holds is rebuilt from the database each morning before traffic starts, so nothing in it is ever worth keeping across a restart",
+        "daysAgo": 3,
+        "repo": "shop-api"
+      }
+    ],
+    "prompt": "Task: add caching to the product API in shop-api. Before you build it, the cache has to be chosen: Redis or an in-process memory cache. The choice is mine to make. Once the cache is chosen, tell me which one you will build with. Building it is a later step, and the shop-api code is not in this workspace.",
+    "checks": [
+      { "calls": "record", "kind": "question", "count": 1 },
+      { "calls": "record", "kind": "question", "result": "answered similar questions" },
+      { "calls": "close", "match": { "reason": "answered before" }, "count": 1 },
+      { "reply": "memory" },
+      { "noIds": true }
+    ]
+  },
+  {
     "name": "earlier-answer-covered",
     "about": "The record answer lists an earlier rule that covers this question. The person asks for the question anyway, and the record answer closes only a question an earlier answer settles exactly, so the agent leaves it open.",
     "history": [

@@ -305,7 +305,8 @@ export function applyGoalOp(
     const placed = new Map(
       servesLines.flatMap(l => {
         const s = findSubject(l.subject)
-        return s ? [[s.id, l.milestone] as const] : []
+        const target = l.milestone === null ? null : (findMilestone(settled, l.milestone)?.name ?? l.milestone)
+        return s ? [[s.id, target] as const] : []
       }),
     )
     const unplaced = op.kind === 'goal' ? goalRevision(settled, start, milestones, placed) : null

@@ -285,8 +285,11 @@ function failedSibling(pr, c) {
   const run2 = c.bucket === "cancelled" ? runOf(c) : null;
   return run2 ? pr.checks.find((f) => f.bucket === "fail" && isSameRun(run2, runOf(f))) ?? null : null;
 }
+function listedChecks(pr) {
+  return [...failingChecks(pr), ...cancelledChecks(pr)];
+}
 function blockingChecks(pr) {
-  return [...failingChecks(pr), ...cancelledChecks(pr).filter((c) => !failedSibling(pr, c))];
+  return listedChecks(pr).filter((c) => !failedSibling(pr, c));
 }
 
 // ../core/domain/text.ts
@@ -1046,6 +1049,9 @@ function isHeldSend(last) {
 }
 
 // ../core/view/press-reducer.ts
+function isDoneNoticeDue(c, turn) {
+  return c.how === "done" && c.outcome === "done" && !c.isSentToAgent && !c.doneNotification && c.item?.turn === turn;
+}
 function withArrival(lastActions, message2, pressedAt, deliveryId) {
   const isWaiting = (a) => (a.delivery?.state === "queued" || a.delivery?.state === "unconfirmed") && a.delivery.message === message2;
   const waiting = Object.values(lastActions).filter(
@@ -1091,6 +1097,10 @@ var withRecord = (log, id, record2) => ({
   ...log,
   commands: { ...log.commands, [id]: record2 }
 });
+function awaitsDoneNotice(c, s) {
+  return c.doneNotification ? !c.doneNotification.error : isDoneNoticeDue(c, s.ledger.turn);
+}
+var isDoneAwaited = (s, row) => s.ledger.closed.some((c) => c.id === row && awaitsDoneNotice(c, s));
 function remoteCommandState(log, s) {
   let commands = log.commands;
   for (const [row, last] of Object.entries(s.lastActions)) {
@@ -1100,7 +1110,7 @@ function remoteCommandState(log, s) {
     const delivery = last.delivery;
     const deliveryId = delivery && "id" in delivery ? delivery.id ?? command.deliveryId : command.deliveryId;
     const delivered = command.delivered || delivery?.state === "arrived";
-    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery);
+    const pendingDelivery = !delivered && (delivery?.state === "held" || delivery?.state === "queued" || delivery?.state === "unconfirmed" || last.action === "done" && !delivery && isDoneAwaited(s, row));
     const error = delivery?.state === "failed" ? delivery.reason.slice(0, 256) : command.error;
     const state = delivery?.state === "failed" ? "failed" : command.state;
     if (deliveryId === command.deliveryId && delivered === command.delivered && pendingDelivery === command.pendingDelivery && error === command.error && state === command.state)
@@ -1113,7 +1123,7 @@ function remoteCommandState(log, s) {
     if (!id || !command || command.state === "cancelled" || command.state === "expired" || command.state === "refused")
       continue;
     const deliveryId = closed.doneNotification?.id ?? command.deliveryId;
-    const pendingDelivery = !command.delivered && !closed.doneNotification?.error;
+    const pendingDelivery = !command.delivered && awaitsDoneNotice(closed, s);
     if (deliveryId !== command.deliveryId || pendingDelivery !== command.pendingDelivery)
       commands = { ...commands, [id]: { ...command, deliveryId, pendingDelivery } };
   }
@@ -1128,10 +1138,10 @@ function hasCommandRows(s) {
 function pendingCommandRows(s) {
   const rows = Object.entries(s.lastActions).flatMap(([row, last]) => {
     const delivery = last.delivery;
-    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === void 0 || last.action === "done" && !delivery;
+    const isWaiting = delivery?.state === "held" || (delivery?.state === "queued" || delivery?.state === "unconfirmed") && delivery.id === void 0 || last.action === "done" && !delivery && isDoneAwaited(s, row);
     return last.commandId && isWaiting ? [row] : [];
   });
-  const closed = s.ledger.closed.flatMap((c) => c.commandId && !c.doneNotification ? [c.id] : []);
+  const closed = s.ledger.closed.flatMap((c) => c.commandId && isDoneNoticeDue(c, s.ledger.turn) ? [c.id] : []);
   return [...rows, ...closed];
 }
 async function markArrived(store, deliveryId) {
@@ -1664,7 +1674,7 @@ function newsByRow({ ledger, prViews, lastActions }) {
       })
     ),
     ...prs.flatMap(
-      (pr) => blockingChecks(pr).map((c) => {
+      (pr) => listedChecks(pr).map((c) => {
         const id = prCheckId(pr, c);
         const untimedUrl = c.finishedAt === void 0 ? c.url ?? "" : null;
         return [id, timed(latest(c.finishedAt, pressed2(id)), untimedUrl)];
@@ -1802,9 +1812,9 @@ function dialogActivity(questions, outcome) {
   const head = `asked the user in a dialog${asked}`;
   switch (outcome.kind) {
     case "answered":
-      return `${head}; answer: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+      return `${head}; answer: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`;
     case "timed-out":
-      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${outcome.answer.slice(0, DIALOG_ANSWER_MAX)}`;
+      return `${head}; it timed out while the user was away, so the user did not answer; it went on with: ${clip(outcome.answer, DIALOG_ANSWER_MAX)}`;
     case "dismissed":
       return `${head}; the user dismissed it without answering`;
     case "open":
@@ -2875,21 +2885,22 @@ function hash(text2) {
   h2 = Math.imul(h2 ^ h2 >>> 16, 2246822507) ^ Math.imul(h1 ^ h1 >>> 13, 3266489909);
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
-function rowVersion(s, id) {
+function rowFields(s, id) {
   const l = s.ledger;
   if (id === "goal") {
     const o = l.overview;
-    return hash(canonical([o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null]));
+    return [o?.goal?.text ?? null, o?.goalRemoved?.goal.text ?? null, o?.suggestedGoal ?? null];
   }
   const item = l.items.find((row) => row.id === id);
-  return hash(
-    canonical([
-      item ? { ...item, dialog: void 0 } : null,
-      l.findings.find((row) => row.id === id) ?? null,
-      l.closed.findLast((row) => row.id === id) ?? null,
-      l.closedFindings.findLast((row) => row.id === id) ?? null
-    ])
-  );
+  return [
+    item ? { ...item, dialog: void 0 } : null,
+    l.findings.find((row) => row.id === id) ?? null,
+    l.closed.findLast((row) => row.id === id) ?? null,
+    l.closedFindings.findLast((row) => row.id === id) ?? null
+  ];
+}
+function rowVersion(s, id) {
+  return hash(canonical(rowFields(s, id)));
 }
 
 // ../core/view/press-preconditions.ts

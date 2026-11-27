@@ -7,7 +7,7 @@ import { makeServer } from '../src/server'
 import { readState, updateState } from '../src/state'
 import { codexCommandStore } from '../src/command-log'
 import { readViewers } from '../src/viewers'
-import { remoteRowVersion } from '../../core/remote/remote-commands'
+import { rowVersion } from '../../core/domain/preconditions'
 import type { RemoteCommand } from '../../core/remote/remote-commands'
 import { tempDir, removeTempDir } from './helpers'
 
@@ -139,7 +139,7 @@ test('companion goal controls reject stale views and retain outcomes across retr
     id: `${now.toString(36)}-goal-control-fixture-${++sequence}`,
     session,
     issuedAt: now,
-    expected: remoteRowVersion(await readState(dir, session), 'goal'),
+    expected: rowVersion(await readState(dir, session), 'goal'),
     press,
   })
   const apply = (file: RemoteCommand) => {
@@ -246,7 +246,7 @@ test('a companion Compare queues once and keeps the design question open', async
       id: `${now.toString(36)}-compare-command-fixture`,
       session,
       issuedAt: now,
-      expected: remoteRowVersion(await readState(dir, session), 'i1'),
+      expected: rowVersion(await readState(dir, session), 'i1'),
       press: { action: 'compare', id: 'i1' },
     }
     const parsed = pressFile(JSON.stringify(command))

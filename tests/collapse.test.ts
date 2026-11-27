@@ -3,7 +3,7 @@ import { test } from './test-with-timeout'
 
 import { collapsedRows, withCollapse } from '../core/view/collapse'
 import { closeFinding, closeItem } from '../core/domain/ledger-close'
-import { prCheckId, prThreadId } from '../core/view/pr-rows'
+import { prCheckId, prRowWaits, prThreadId } from '../core/view/pr-rows'
 import { emptySession, upgradeSession } from '../core/view/session-files'
 import type { Item, PrCheck, PrThread, PrView, Session } from '../types'
 import { BLOCKED_PR, FIX_REF } from './session-helpers'
@@ -83,6 +83,22 @@ test('a collapsed row opens on a new report of its question, a new comment on it
   expect(
     collapsedRows({ ...collapsed, prViews: { ...collapsed.prViews, views: { [FIX_REF]: failedAgain } } }),
   ).not.toContain(checkId)
+})
+
+test('a check its failing sibling cancelled stays collapsed and is listed for selection, without waiting on the person', () => {
+  const run = 'https://github.com/acme/app/actions/runs/9/job'
+  const failed = check({ name: 'test', url: `${run}/1`, finishedAt: 50 })
+  const cancelled = check({ name: 'lint', bucket: 'cancelled', url: `${run}/2`, finishedAt: 50 })
+  const s = session([], { threads: [], checks: [failed, cancelled] })
+  const pr = s.prViews.views[FIX_REF]!
+  const cancelledId = prCheckId(pr, cancelled)
+  const collapsed = withCollapse(s, cancelledId, true, COLLAPSED_AT)
+
+  expect(collapsedRows(collapsed)).toEqual([cancelledId])
+  expect(prRowWaits([pr], {}, [cancelledId])).toEqual([
+    { id: prCheckId(pr, failed), isWaiting: true, isCollapsed: false },
+    { id: cancelledId, isWaiting: false, isCollapsed: true },
+  ])
 })
 
 test('a comment or a failed run GitHub gave no time counts as new once it is not the one there at the collapse', () => {

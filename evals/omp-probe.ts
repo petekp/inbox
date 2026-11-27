@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 
 import { EMPTY } from '../core/domain/ledger'
 import { guidanceText } from '../core/domain/model-text'
@@ -22,7 +22,8 @@ import { ompNotes, probeTools, type CaseTools } from './probe-tools'
  * from, the person's latest press on each row, the case's tools, whether the session is a delegate, and the earlier
  * answers the `record` answer searches. INBOX_EVAL_LOG is the file each call is appended to. INBOX_EVAL_TOOLS is the
  * file where the probe writes the tools the session offers, which the runner checks. INBOX_EVAL_NO_GUIDANCE=1
- * leaves the guidance out, for the control run.
+ * leaves the guidance out, for the control run. The probe removes the state file and these variables once read, so the
+ * agent's shell cannot find them.
  */
 const MESSAGE_TYPE = 'inbox'
 
@@ -47,6 +48,8 @@ const logPath = required('INBOX_EVAL_LOG')
 const toolsPath = required('INBOX_EVAL_TOOLS')
 const isGuided = process.env.INBOX_EVAL_NO_GUIDANCE !== '1'
 const state: State = JSON.parse(readFileSync(statePath, 'utf8'))
+rmSync(statePath)
+for (const name of ['INBOX_EVAL_STATE', 'INBOX_EVAL_LOG', 'INBOX_EVAL_TOOLS']) delete process.env[name]
 const shown = { ...EMPTY, ...state.shown } as Ledger
 let ledger = { ...EMPTY, ...state.ledger } as Ledger
 const presses = { lastActions: state.lastActions, turnStartedAt: Date.now() }

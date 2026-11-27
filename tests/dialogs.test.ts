@@ -1,6 +1,7 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
+import { dialogActivity } from '../core/domain/catch-up-text'
 import { descriptionsFor, noteDialog } from '../core/domain/dialogs'
 import { emptySession } from '../core/view/session-files'
 import type { DialogQuestion, Item, Session } from '../types'
@@ -51,4 +52,12 @@ test('a dialog question whose options two questions share stays unlinked when ne
   )
   expect(s.dialogQuestions.map(q => q.itemId)).toEqual([null])
   expect(s.ledger.items.map(i => i.dialog)).toEqual([undefined, undefined])
+})
+
+test('a long dialog answer in the activity line ends with a cut marker', () => {
+  const answer = 'Move the queue to the staging box first. '.repeat(20)
+  const line = dialogActivity([{ question: 'Where?', options: [], descriptions: {} }], { kind: 'answered', answer })
+  expect(line).toContain(answer.slice(0, 400))
+  expect(line.endsWith(' …[cut]')).toBe(true)
+  expect(dialogActivity([], { kind: 'answered', answer: 'Yes' })).toBe('asked the user in a dialog; answer: Yes')
 })

@@ -205,12 +205,11 @@ export function parseReply(text: string, source: string | null = null): Update |
       const isDesignField = rest.length > 2 && (last === null || /^design$/i.test(last ?? ''))
       if (isDesignField) rest.pop()
       const rec = rest.length > 1 ? rest.pop() : null
-      const isAskTheChoices = readKind(kind) === 'question' && readsAsChoices(ask ?? '')
-      if (!ask || isAskTheChoices) {
+      const options = readKind(kind) === 'question' ? rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : []
+      if (!ask || (readKind(kind) === 'question' && isOnlyItsAnswers(ask, options))) {
         newLines.push(undefined)
         continue
       }
-      const options = readKind(kind) === 'question' ? rest.flatMap(o => o?.split(/\s+\/\s+/) ?? []).filter(Boolean) : []
       const isDesignChoice = isDesignField && last !== null && readKind(kind) === 'question'
       const item = {
         kind: readKind(kind),
@@ -260,7 +259,14 @@ function readsAsChoices(field: string): boolean {
   const text = field.trim()
   const choices = text.split(/\s+\/\s+/)
 
-  return choices.length > 1 && !text.endsWith('?') && choices.every(c => c !== '' && words(c).length <= 5)
+  return choices.length > 1 && !/[?？]$/.test(text) && choices.every(c => c !== '' && words(c).length <= 5)
+}
+
+/** Whether a question's ask is only its answer list: it reads as choices, and each option is one of its parts. */
+function isOnlyItsAnswers(ask: string, options: readonly string[]): boolean {
+  const parts = new Set(ask.split(/\s+\/\s+/).map(part => part.trim().toLowerCase()))
+
+  return readsAsChoices(ask) && options.every(option => parts.has(option.trim().toLowerCase()))
 }
 
 function isTakenUp(work: string, reply: string | null): boolean {

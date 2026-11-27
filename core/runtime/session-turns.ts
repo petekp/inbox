@@ -52,8 +52,10 @@ export function cleared<S extends Session>(s: S): S {
   }
 }
 
-/** A message a press sent, matched to a prompt that arrived. `press` is null for a message no row press sent. */
-/** The press that sent a message that arrived, and the delivery id the message went out with, if it had one. */
+/**
+ * The press that sent a message that arrived, or null for a message no row press sent, and the delivery id the message
+ * went out with, if it had one.
+ */
 export type SentBy = { press: Press | null; deliveryId?: string | null }
 
 /**

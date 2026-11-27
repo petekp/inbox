@@ -30,6 +30,10 @@ Answer `y` to add the marketplace, then choose a scope. It starts working in
 that session. A user-scope install also covers Code sessions in the Claude
 desktop app on this machine.
 
+A desktop Code session over SSH ignores project and local scope plugins on
+your computer, so install the inbox on the remote host too. Whether it draws
+over SSH is not checked.
+
 To install from the Claude desktop app instead, open a Code session:
 
 1. Click **+** beside the prompt, then **Plugins**, then **Manage plugins**.
@@ -59,8 +63,12 @@ claude plugin marketplace update inbox
 claude plugin update inbox
 ```
 
+Auto-update is off for this marketplace by default. Turn it on in the
+**Marketplaces** tab of `/plugin`, and the desktop app also updates the
+inbox in local Code sessions.
+
 - It makes two Sonnet calls after each of Claude's replies, one for the rows and one for the Status tab. See [Cost](#cost).
-- It was built and tested with Claude Code 2.1.300.
+- It needs Claude Code 2.1.292 or later, and was built and tested with 2.1.300. `plugin.json` declares it, and Claude Code 2.1.332 refuses to install the inbox below it.
 
 ### Codex
 

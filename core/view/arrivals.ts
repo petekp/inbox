@@ -1,4 +1,4 @@
-import { cancelledChecks, failingChecks } from '../domain/pr-checks'
+import { listedChecks } from '../domain/pr-checks'
 import { waitingThreads } from '../domain/prs'
 import { prCheckId, prMarkId, prThreadId } from './pr-rows'
 import type { DrawnPr } from './pr-views'
@@ -119,10 +119,7 @@ export function prRowIds(drawn: readonly DrawnPr[]): string[] {
     prMarkId(pr.ref),
     ...(state.is === 'settled'
       ? []
-      : [
-          ...waitingThreads(pr).map(t => prThreadId(pr, t)),
-          ...[...failingChecks(pr), ...cancelledChecks(pr)].map(c => prCheckId(pr, c)),
-        ]),
+      : [...waitingThreads(pr).map(t => prThreadId(pr, t)), ...listedChecks(pr).map(c => prCheckId(pr, c))]),
   ])
 }
 

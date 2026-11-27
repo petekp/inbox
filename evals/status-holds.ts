@@ -33,14 +33,14 @@ function listIds(page: StatusPage, isOther: (id: string) => boolean): { main: st
     : { main: ids(page.rows.slice(0, start)), other: ids(page.rows.slice(start)) }
 }
 
-/**
- * Whether a subject belongs under Other work: the goal does not need it, or the goal shows milestones and it serves
- * none of them.
- */
 /** The id of the saved milestone a page milestone draws, which is not the row's own id when a subject is drawn in its place. */
 const savedMilestoneId = (serves: Record<string, string>, row: MilestoneRow) =>
   row.subject ? (serves[row.id] ?? row.id) : row.id
 
+/**
+ * Whether a subject belongs under Other work: the goal does not need it, or the goal shows milestones and it serves
+ * none of them.
+ */
 function isOtherWork(serves: Record<string, string>, page: StatusPage, id: string): boolean {
   const shown = new Set((page.goal?.milestones ?? []).map(m => savedMilestoneId(serves, m)))
   const to = serves[id]

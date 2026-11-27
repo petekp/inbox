@@ -16,7 +16,7 @@ import {
 } from './pane-sizes'
 import { actionLabel, fieldExit, ROW_COPY } from '../../core/view/rows'
 import { wrapped } from './terminal-text'
-import { cellWidth, cutForEllipsis } from '../../core/domain/text'
+import { cellWidth, cutLine } from '../../core/domain/text'
 
 export const HOTKEY_SEPARATOR = ': '
 
@@ -67,7 +67,7 @@ export function paneRowKeys(
     const fits = (label: string) => desktopButtonPt(icon + label, a.variant === 'primary') <= desktopRowTextPt
     const label = actionLabel({ label: a.label, isPrimary: a.variant === 'primary' }, fits)
 
-    return icon + (fits(label) ? label : `${cutForEllipsis(label, fits)}…`)
+    return icon + cutLine(label, fits)
   }
   /** A terminal button's label, wrapped to `width` cells when it is given and the label is wider. */
   const terminalLabel = (a: Pick<KeyAction, 'label' | 'variant' | 'hotkey'>, width = Infinity) =>

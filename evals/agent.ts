@@ -34,7 +34,8 @@ import {
   PROBE_TOOLS,
   TIMEOUT_MS,
   tomlString,
-  writesOnlyUnder,
+  ompSandboxProfile,
+  assertOmpSawNoHarness,
 } from './agent-cli'
 import { codexCli } from './codex-cli'
 import {
@@ -324,18 +325,21 @@ async function ompIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome> {
   const home = join(s.dir, 'omp-home')
   mkdirSync(home)
   const toolsFile = join(s.dir, 'tools.json')
-  const r = await exec(['sandbox-exec', '-p', writesOnlyUnder(s.dir), 'omp', ...OMP_FLAGS, '-e', ompProbe, c.prompt], {
-    cwd: s.work,
-    env: {
-      PATH: s.path,
-      HOME: home,
-      ANTHROPIC_OAUTH_TOKEN: signIn.token,
-      INBOX_EVAL_STATE: s.state,
-      INBOX_EVAL_LOG: s.log,
-      INBOX_EVAL_TOOLS: toolsFile,
-      ...(isGuided ? {} : { INBOX_EVAL_NO_GUIDANCE: '1' }),
+  const r = await exec(
+    ['sandbox-exec', '-p', ompSandboxProfile(s.dir), 'omp', ...OMP_FLAGS, '-e', ompProbe, c.prompt],
+    {
+      cwd: s.work,
+      env: {
+        PATH: s.path,
+        HOME: home,
+        ANTHROPIC_OAUTH_TOKEN: signIn.token,
+        INBOX_EVAL_STATE: s.state,
+        INBOX_EVAL_LOG: s.log,
+        INBOX_EVAL_TOOLS: toolsFile,
+        ...(isGuided ? {} : { INBOX_EVAL_NO_GUIDANCE: '1' }),
+      },
     },
-  })
+  )
   const events = lines(r.stdout)
   if (!existsSync(toolsFile) && r.code !== 0) {
     const why = r.code === -1 ? `timed out after ${TIMEOUT_MS / 1000}s or was killed` : `exited ${r.code}`
@@ -350,6 +354,7 @@ async function ompIn(c: Case, s: ReturnType<typeof sandbox>): Promise<Outcome> {
   if (!existsSync(toolsFile))
     return { reply: '', calls: s.calls(), error: 'omp did not load the probe extension', model: null, raw: r.stdout }
   assertOnlyOmpProbe(toolsFile)
+  assertOmpSawNoHarness(events)
   // Like the Claude run, the reply is every assistant message's text, since the text after a tool call is not the whole reply.
   const reply = events
     .filter(e => e.type === 'message_end' && e.message?.role === 'assistant')

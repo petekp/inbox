@@ -9,5 +9,6 @@
   "supportUrl": "https://github.com/petekp/inbox/issues",
   "privacyPolicyUrl": "https://github.com/petekp/inbox#what-it-runs-sends-and-changes",
   "license": "MIT",
+  "engines": { "claude-code": ">=2.1.292" },
   "types": "./types/index.d.ts"
 }
