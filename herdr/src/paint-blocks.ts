@@ -30,7 +30,7 @@ import { underId } from './under-line'
 import { statusEl, statusPartEl } from './paint-status-line'
 import type { RowMotion } from './motion'
 import type { SwapMotion } from './form-swap'
-import { padOf, sizeEl, titleEl } from './paint-space'
+import { isHighlightOnBox, isRowHoverable, padOf, sizeEl, titleEl } from './paint-space'
 import { panelId, prHeadId, restId } from './heights'
 import { prStatusEl, prTailEls } from './paint-pr-status'
 import type { PrLine } from './pr-status'
@@ -93,10 +93,10 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .pl(EDGE + r.depth * NEST)
     .pr(EDGE)
     .py(padOf(r))
-    .when(r.isSelected && m?.box != null, e => e.bg(t.selected))
-    .when(isPressable && !isOpen, e =>
+    .when(r.isSelected && !isHighlightOnBox(r, m), e => e.bg(t.selected))
+    .when(isRowHoverable(r, m), e =>
       e
-        .hover(s => s.bg(t.hover))
+        .when(!isHighlightOnBox(r, m), h => h.hover(s => s.bg(t.hover)))
         .on_click((e, cx) => (r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))),
     )
     .child(titleEl(r, p, line))

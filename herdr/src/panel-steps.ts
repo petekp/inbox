@@ -122,7 +122,8 @@ export const isPanelFaint = (t: Pick<Tracked, 'track' | 'panelSteps'>, now: numb
  * A press that steps a row's panel to `FAINT_OPACITY` at once, so it shows in the press's own draw. `close` is the
  * press's answer closing the row with a status after its title, such as "Addressing…": the panel fades out from faint,
  * and the status shows faint over it until the panel has gone. `open` brings a status under the buttons of a row whose
- * panel still waits for its space: the panel and the status hold faint until any box is nearly open.
+ * panel still waits for its space: the panel and the status hold faint until its space is nearly open, then fade in by
+ * the time the row is open.
  */
 type PanelPress = 'close' | 'open' | null
 
@@ -148,7 +149,8 @@ export const bringsStatusUnder = (was: Block | undefined, b: Block): boolean =>
  * The press that steps a row's panel to faint in this draw, from the row as last drawn, `last`, the open form a
  * closing row keeps, `closing`, the block, its status under the buttons, `under`, whether the draw follows the
  * person's input to it, and whether its panel shows whole, `isShown`. A panel that does not yet show whole fades as
- * `stepPanel` says without a press.
+ * `stepPanel` says without a press, as does the panel of a row that turns back from closing, or one a press already
+ * stepped.
  */
 export function panelPressOf(
   track: RowTrack,
