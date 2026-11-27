@@ -13,7 +13,11 @@ const KNOWN: {
   look: Case['look'] | 'codex' | 'mod'
   rule: string
   details: (string | string[] | RegExp)[]
-}[] = [{ issue: 1007, look: 'herdr', rule: 'connector-gap', details: [/ in (space|fit) [msc]\d/] }]
+}[] = [
+  { issue: 1032, look: 'herdr', rule: 'jump', details: ['other moved'] },
+  { issue: 1034, look: 'herdr', rule: 'connector-gap', details: [/in (fit|space) [msc]\d(~to \d+)? breaks/] },
+  { issue: 1032, look: 'herdr', rule: 'vanish', details: ['"5 done" in other-done', '"Undo" in goal heading'] },
+]
 
 const openSeedIssues = () => new Set([...SEEDS, ...CODEX_SEEDS, ...MOD_SEEDS].filter(s => s.isOpen).map(s => s.issue))
 

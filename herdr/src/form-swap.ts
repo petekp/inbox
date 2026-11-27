@@ -9,20 +9,22 @@ import type { PanelSpace, PanelStep } from './panel-steps'
 /**
  * A row's change between its settled form and another, as it settles or as Undo brings it back. `from` is the form it
  * leaves, as last drawn, and `fromShown` the opacity its lines under the title showed then: less than 1 when a change
- * before this one had not yet shown them whole. Those lines, its mark when `isMarkSwapped` says the two forms' marks
- * differ, and its age when `isAgeSwapped` says their ages differ, fade out from the draw after `since`, while the row's height holds, until `showsAt`. `isSettled` is the form
- * the row goes to. `inAt` is the first draw of that form's lines, which show nothing until their wait ends. It is null
+ * before this one had not yet shown them whole. Those lines, its mark when `isMarkFaded` says one form has a mark and
+ * the other none, and its age when `isAgeSwapped` says their ages differ, fade out from the draw after `since`, while
+ * the row's height holds, until `showsAt`. `isSettled` is the form the row goes to. A mark that turns into another
+ * takes its new form in the draw at `inAt`, with no fade, as the Codex tab's mark does, so the mark's column never
+ * shows empty. `inAt` is the first draw of that form's lines, which show nothing until their wait ends. It is null
  * until the row draws that form, which a row the selection opens does only once the panel it waits for has faded.
- * `panelShown` is the opacity `from`'s panel showed as the change started, less than 1 while that panel still waited
- * or faded in as its row opened. `restIn` is the height the part of the row's box under its title measured in that
- * draw, which is still the old form's. `inWait` is the draw that set how long the new form's lines wait, `from`, and
- * that wait, `ms`: until the row's box is nearly at the new form's height, so the edge of a box still growing never
- * cuts them. It is null until a draw after `inAt` has the new form's measured height, or `MEASURE_WAIT_MS` has passed.
+ * `panelShown` is the opacity `from`'s panel showed as the change started, less than 1 while that panel still waited or
+ * faded in as its row opened. `restIn` is the height the part of the row's box under its title measured in that draw,
+ * which is still the old form's. `inWait` is the draw that set how long the new form's lines wait, `from`, and that
+ * wait, `ms`: until the row's box is nearly at the new form's height, so the edge of a box still growing never cuts
+ * them. It is null until a draw after `inAt` has the new form's measured height, or `MEASURE_WAIT_MS` has passed.
  */
 export type FormSwap = {
   from: RowBlock
   isSettled: boolean
-  isMarkSwapped: boolean
+  isMarkFaded: boolean
   isAgeSwapped: boolean
   since: number
   showsAt: number
@@ -34,13 +36,14 @@ export type FormSwap = {
 }
 
 /**
- * How a row's lines under its title, and its mark and age when the forms' differ, draw while it changes form: `from`'s
- * in place of its own while they fade out, and the opacity of what it draws, with the length of its fade. `panel` is
- * the opacity `from`'s panel keeps while it fades out with them, when it showed less than whole, and null otherwise.
+ * How a row's lines under its title, and its mark and age when `isMarkFaded` and `isAgeSwapped` say, draw while it
+ * changes form: `from`'s in place of its own while they fade out, and the opacity of what it draws, with the length of
+ * its fade. `panel` is the opacity `from`'s panel keeps while it fades out with them, when it showed less than whole,
+ * and null otherwise.
  */
 export type SwapMotion = {
   from: RowBlock | null
-  isMarkSwapped: boolean
+  isMarkFaded: boolean
   isAgeSwapped: boolean
   opacity: number
   fadeMs: number
@@ -96,18 +99,18 @@ export function stepSwap(
     return {
       ...live,
       isSettled,
-      isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text,
+      isMarkFaded: live.isMarkFaded || (live.from.mark === null) !== (b.mark === null),
       isAgeSwapped: live.isAgeSwapped || live.from.age !== b.age,
     }
   }
-  const isMarkSwapped = was.mark?.text !== b.mark?.text
+  const isMarkFaded = (was.mark === null) !== (b.mark === null)
   const isAgeSwapped = was.age !== b.age
   const fromShown = live === null ? 1 : linesShownOf(live, now)
   const showsAt = now + NEXT_FRAME_MS + (fromShown > 0 ? LEAVE_FADE_MS : 0)
   const swap = {
     from: was,
     isSettled,
-    isMarkSwapped,
+    isMarkFaded,
     isAgeSwapped,
     since: now,
     showsAt,
@@ -157,13 +160,13 @@ export const swapWaitsUntil = (s: FormSwap | null): number => (s?.inAt === null 
 
 export function swapMotion(s: FormSwap | null, now: number): SwapMotion | null {
   if (s === null) return null
-  const { from, isMarkSwapped, isAgeSwapped } = s
+  const { from, isMarkFaded, isAgeSwapped } = s
   if (s.inAt === null) {
     const panel = s.panelShown < 1 ? s.panelShown : null
 
     return {
       from,
-      isMarkSwapped,
+      isMarkFaded,
       isAgeSwapped,
       opacity: now === s.since ? s.fromShown : 0,
       fadeMs: LEAVE_FADE_MS,
@@ -172,7 +175,7 @@ export function swapMotion(s: FormSwap | null, now: number): SwapMotion | null {
   }
   const opacity = s.inWait !== null && now >= s.inWait.from + s.inWait.ms ? 1 : 0
 
-  return { from: null, isMarkSwapped, isAgeSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null }
+  return { from: null, isMarkFaded, isAgeSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null }
 }
 
 /** The times a form change changes how it draws, so the look draws again then. */

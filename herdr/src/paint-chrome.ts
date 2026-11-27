@@ -5,9 +5,12 @@ import type { BannerView } from '../../core/view/banners'
 import type { BannerTone } from '../../core/view/tones'
 import { HELP_COPY } from '../../core/view/help'
 import { BANNER_PAD_Y_PT } from '../../core/view/layout'
+import { ENTER_FADE_MS, LEAVE_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
+import { HEIGHT_SPRING } from '../../core/view/springs'
 import type { Button, Tone } from './blocks'
-import type { TabCell } from './draw'
 import type { Message } from './screen'
+import { fadeEl } from './paint-parts'
+import type { DrawnTab } from './tab-counts'
 import {
   BOX_RADIUS,
   BUTTON_H,
@@ -55,7 +58,7 @@ const helpIconEl = (t: Theme, isSelected: boolean): Element =>
  * A tab is a pill of a button's size, and only the selected tab's label is bold. While Help shows, the Help tab is the
  * selected one and the others are not. Herdr's pane header names the pane, so the look draws no title.
  */
-export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element {
+export function tabsEl(tabs: DrawnTab[], isHelpShown: boolean, p: Paint): Element {
   const { t } = p
 
   return h_flex()
@@ -70,6 +73,7 @@ export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element
     .children(
       tabs.map(tab => {
         const isTabSelected = tab.isSelected && !isHelpShown
+        const isCountGone = tab.count === 'fading' || tab.count === 'closing'
 
         return h_flex()
           .id(`tab ${tab.id}`)
@@ -77,20 +81,12 @@ export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element
           .px(INSET)
           .items_center()
           .rounded(TAB_RADIUS)
-          .accessibility_label(tab.badge ? `${tab.label}, ${tab.badge}` : tab.label)
+          .accessibility_label(tab.badge && !isCountGone ? `${tab.label}, ${tab.badge}` : tab.label)
           .when(isTabSelected, e => e.bg(t.raised).text_color(t.foreground).font_semibold())
           .when(!isTabSelected, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
           .on_click((_e, cx) => p.pick(tab.id, cx))
           .child(tab.label)
-          .when(tab.badge !== null, e =>
-            e.child(
-              div()
-                .ml(SMALL_GAP)
-                .font_normal()
-                .text_color(colorOf(t, tab.id === 'overview' ? null : tab.id))
-                .child(tab.badge ?? ''),
-            ),
-          )
+          .when(tab.badge !== null, e => e.child(countEl(tab, p)))
       }),
     )
     .child(div().flex_1())
@@ -106,6 +102,38 @@ export function tabsEl(tabs: TabCell[], isHelpShown: boolean, p: Paint): Element
         .when(!isHelpShown, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
         .on_click((_e, cx) => p.press(helpButton, cx))
         .child(helpIconEl(t, isHelpShown)),
+    )
+}
+
+/**
+ * A tab's count, in a box whose width springs, so the tabs after it never move in one draw. A count that comes fades in
+ * once its box has nearly opened, and a count that goes fades out before its box shuts, as a block's space does.
+ */
+function countEl(tab: DrawnTab, p: Paint): Element {
+  const key = `count ${tab.id}`
+  const width = p.heights.widthOf(key)
+  const boxWidth = { rest: undefined, opening: width ?? 0, fading: width ?? 0, closing: 0 }[tab.count]
+  const isShown = tab.count === 'rest' || (tab.count === 'opening' && width !== undefined)
+  const delay = tab.count === 'opening' ? enterDelayMs(width ?? 0) : 0
+  const glide = { duration: isShown ? ENTER_FADE_MS : LEAVE_FADE_MS, delay }
+  const text = div()
+    .id(key)
+    .font_normal()
+    .text_color(colorOf(p.t, tab.id === 'overview' ? null : tab.id))
+    .child(tab.badge ?? '')
+
+  return h_flex()
+    .id(`count box ${tab.id}`)
+    .flex_none()
+    .overflow_hidden()
+    .spring('width', HEIGHT_SPRING)
+    .when(boxWidth !== undefined, e => e.w(boxWidth ?? 0))
+    .child(
+      div()
+        .flex_none()
+        .pl(SMALL_GAP)
+        .on_size_change((size, cx) => p.measure(key, size, cx, true))
+        .child(fadeEl(text, key, isShown ? 1 : 0, glide, p)),
     )
 }
 
