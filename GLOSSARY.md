@@ -79,7 +79,8 @@ A closed item or finding that stays in place while the person replies to it.
 A row is held when its reply field is open or its draft holds unsent words,
 and the reply began before the close. It shows why it closed, does not count
 toward Asks, and offers Reply and Discard. After its reply sends, it
-becomes a settled row. After Discard, it folds at once.
+becomes a settled row. When that reply is not confirmed, it stays held and
+reads "Reply not confirmed" with the reply's words. After Discard, it folds at once.
 
 **Settled row**:
 A row drawn in place with its result after the person pressed it or the agent
