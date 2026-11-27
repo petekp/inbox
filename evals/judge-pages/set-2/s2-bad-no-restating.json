@@ -3,7 +3,7 @@
   "breaks": "no-restating",
   "na": ["child-labels", "was-lines", "goal", "milestones", "split"],
   "note": "Bad no-restating: \"awaiting your pick\" restates the open question about which streak the watch shows; the rest of the text, both built, is the state.",
-  "page": "Add an Apple Watch app to Kettle\n\n◆ Streak display\n  both built, awaiting your pick\n● Complications\n  circular and corner built\n── Seen\n○ Store screenshots\n  not started\n✓ 1 done",
+  "page": "Add an Apple Watch app to Kettle\n\n○ Streak display\n  both built, awaiting your pick\n  └ ? Should the watch show the current streak or the best streak?\n● Complications\n  circular and corner built\n── Seen\n○ Store screenshots\n  not started\n✓ 1 done",
   "previous": null,
   "facts": "Focus now: Adding an Apple Watch app to the Kettle habit tracker\nPieces of work:\n- Streak display (also called the streak badge): set aside, not being worked on now. The watch can show a streak count; a version for each kind of streak is built behind a setting. Changed at this step.\n- Complications (also called watch face complications): being worked on now. The circular and corner complications show the next habit. Changed at this step.\n- Store screenshots: not started yet. Watch screenshots for the App Store page; nothing is made yet.\n- Watch habit list (also called the watch app's main screen): delivered. It lists today's habits, a habit can be checked off on the watch, and check-offs reach the phone. Merged into it: Watch sync.\n- Watch sync: dropped. Merged into Watch habit list.\nOpen asks:\n- \"Should the watch show the current streak or the best streak?\" holds up Streak display\nNot work:\n- rule: Support watchOS 10 and later\nRunning work:\n- none"
 }

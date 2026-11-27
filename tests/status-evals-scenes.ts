@@ -1,5 +1,4 @@
 import { statusListRows } from '../core/view/status-folds'
-import { HELD_MARK } from '../core/view/help'
 import { nameKey } from '../core/domain/status-limits'
 import type { SubjectStatus } from '../types'
 import { minutes } from '../evals/status-replay'
@@ -286,7 +285,7 @@ export const SCENES: Record<string, { bad: (s: Scene) => void; good?: (s: Scene)
     good: withGoal,
     bad: s => {
       withGoal(s)
-      s.page = p => (p.goal!.milestones[0]!.mark = HELD_MARK.mark)
+      s.page = p => (p.goal!.milestones[0]!.tone = 'needsYou')
     },
   },
   'held-milestone-open': {

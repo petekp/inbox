@@ -1,7 +1,6 @@
 import { Icon } from './row-actions'
 import { STATUS_TEXT_LINES } from '../../core/view/status-page'
 import { textLevelOf } from '../../core/view/status-page-parts'
-import { milestoneKeyPlan } from '../../core/view/status-keys'
 import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { isOneLineMilestone } from '../../core/view/status-gaps'
 import { tabState } from './tab-state'
@@ -11,7 +10,7 @@ import { chevronOf, ParentName } from './tab-status-fold'
 import { markClassOf, MarkGlyph, pulseInStep } from './tab-parts'
 import { SUBJECTS_ATTRIBUTE } from './tab-shown'
 import { connectorClass, lineMotion, type ConnectorMotion } from './tab-line-steps'
-import { fitMergedLine, Keys } from './tab-status-line'
+import { fitMergedLine } from './tab-status-line'
 
 /** A milestone's line. A subject drawn in its place adds what a subject's row draws. */
 export function MilestoneLine({
@@ -62,11 +61,6 @@ export function MilestoneLine({
             <Icon name={tabState.ui.statusUnfolded.includes(fold) ? 'down' : 'right'} />
           </button>
         )}
-        {x?.waitsOn ? (
-          <div class={`tone-${x.waitsOn.tone} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
-            {x.waitsOn.text}
-          </div>
-        ) : null}
         {m.text ? (
           <div class={`${textLevelOf(m)} clamp`} style={{ '--lines': STATUS_TEXT_LINES }}>
             {m.text}
@@ -80,7 +74,6 @@ export function MilestoneLine({
           />
         ) : null}
         {m.was ? <WasLine was={m.was} /> : null}
-        {fold === null ? <Keys keys={milestoneKeyPlan(m)} /> : null}
       </div>
     </div>
   )

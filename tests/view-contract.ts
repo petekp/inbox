@@ -75,7 +75,6 @@ const STATUS_ROW_FIELDS: { [K in StatusRow['kind']]: Rules<Kind<K>> } = {
     name: text(r => [r.name]),
     text: text(r => [r.text]),
     stall: text(r => [r.stall?.text ?? null]),
-    waitsOn: text(r => [r.waitsOn?.text ?? null]),
     merged: text(r => [r.merged]),
     was: text(r => [r.was && `${WAS_PREFIX}${r.was}`]),
     hasChildren: STYLE,
@@ -91,6 +90,16 @@ const STATUS_ROW_FIELDS: { [K in StatusRow['kind']]: Rules<Kind<K>> } = {
     isRunning: STYLE,
     name: text(r => [r.name]),
     text: text(r => [r.text]),
+    branch: STYLE,
+  },
+  ask: {
+    depth: STYLE,
+    kind: KEY,
+    id: KEY,
+    mark: STYLE,
+    tone: STYLE,
+    text: text(r => [r.text]),
+    ask: BUTTON,
     branch: STYLE,
   },
   more: { depth: STYLE, kind: KEY, id: KEY, text: text(r => [r.text]), branch: STYLE },
@@ -129,11 +138,8 @@ const MILESTONE_FIELDS: Rules<MilestoneRow> = {
   foldCount: BUTTON,
   text: text(m => [m.text]),
   was: text(m => [m.was && `${WAS_PREFIX}${m.was}`]),
-  ask: BUTTON,
   rows: NESTED,
-  subject: text(m =>
-    m.subject ? [m.subject.stall?.text ?? null, m.subject.waitsOn?.text ?? null, m.subject.merged] : [],
-  ),
+  subject: text(m => (m.subject ? [m.subject.stall?.text ?? null, m.subject.merged] : [])),
 }
 
 type GoalPlace = { goal: GoalBlock; isOffered: boolean }

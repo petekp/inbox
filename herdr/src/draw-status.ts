@@ -6,7 +6,14 @@ import type { MilestoneRow } from '../../core/view/status-goal-page'
 import { WAS_PREFIX } from '../../core/view/status-page'
 import { foldLevelOf, mergedLine, nameLevelOf, textLevelOf, WAS_LEVEL } from '../../core/view/status-page-parts'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
-import { COUNTS_LABEL, countsText, isParentCollapsed, milestoneRows, unfoldedRows } from '../../core/view/status-folds'
+import {
+  COUNTS_LABEL,
+  countsText,
+  hasTreeDown,
+  isParentCollapsed,
+  milestoneRows,
+  unfoldedRows,
+} from '../../core/view/status-folds'
 import { statusGaps } from '../../core/view/status-gaps'
 import { LATER_TEXT, isSpacedAbove, workJoints } from '../../core/view/status-path'
 import type { PathLine, WorkJoint } from '../../core/view/status-path'
@@ -86,14 +93,30 @@ function rowBlocks(row: StatusRow, isUnfolded: (id: string) => boolean, isCollap
         isBold: false,
         nameLevel: nameLevelOf(row, 'plain'),
         stall: row.stall,
-        ...(row.waitsOn ? { waitsOn: row.waitsOn } : {}),
         under,
         buttons: keyButtons(row.id, statusKeyPlan(row)),
         ...foldOf(row, isCollapsed),
-        ...(row.hasChildren && !isCollapsed(row.id) ? { tree: [{ depth: row.depth, is: 'down' as const }] } : {}),
+        ...(hasTreeDown(row, isCollapsed) ? { tree: [{ depth: row.depth, is: 'down' as const }] } : {}),
       },
     ]
   }
+  if (row.kind === 'ask')
+    return [
+      {
+        kind: 'status',
+        id: row.id,
+        depth: row.depth,
+        mark: markOf(row.mark, row.tone, false),
+        name: row.text,
+        isBold: false,
+        nameLevel: 'plain',
+        nameTone: row.tone,
+        stall: null,
+        under: [],
+        buttons: keyButtons(row.id, statusKeyPlan(row)),
+        ...(row.branch ? { tree: [{ depth: row.depth - 1, is: row.branch }] } : {}),
+      },
+    ]
   if (row.kind === 'child')
     return [
       {
@@ -209,7 +232,6 @@ function milestoneBlock(
     isBold: m.isBold,
     nameLevel: nameLevelOf(m, m.isMuted ? 'muted' : 'plain'),
     stall: x?.stall ?? null,
-    ...(x?.waitsOn ? { waitsOn: x.waitsOn } : {}),
     under: underLines(m.text ? { text: m.text, level: textLevelOf(m) } : null, x?.merged ?? null, m.was),
     buttons: keyButtons(m.id, milestoneKeyPlan(m)),
     ...foldOf(m, isCollapsed),

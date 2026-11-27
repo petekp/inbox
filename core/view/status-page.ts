@@ -18,7 +18,7 @@ import {
   textBeyondName,
   unplacedChildren,
 } from './status-page-parts'
-import type { ListContext, PartSplit, StatusWaitsOn } from './status-page-parts'
+import type { ListContext, PartSplit, StatusAskRow } from './status-page-parts'
 import { headPart, milestoneAsSubject, subjectInPlaceOf, withoutRepeatedNow } from './status-repeats'
 
 /** Where a row under a subject sits in its tree: `last` ends the line that ties the rows to the subject. */
@@ -29,8 +29,8 @@ export type StatusStall = { text: string; tone: 'muted' }
 
 /**
  * One line of the Status's list, in the order to draw it. Each look lays out the parts; none chooses them. A subject
- * draws its name with its stall word after it, past `STALL_GAP`. A subject an open ask holds up draws the ask's words in
- * the tone of the ask's kind under its name, and where it stands on the line after.
+ * draws its name with its stall word after it, past `STALL_GAP`. A subject an open ask holds up keeps its own mark in
+ * the tone of that ask's kind, and the ask hangs under it as an `ask` row.
  */
 export type StatusRow = {
   /** How many steps in from the list's edge it draws: a subject under a milestone at 1, a child under that subject at 2. */ depth: number
@@ -45,19 +45,17 @@ export type StatusRow = {
       name: string
       /** Where it stands. Null for a finished row the person has seen, as in a done fold. */
       text: string | null
-      /** "idle 2d" once it has gone without a change. Null while `waitsOn` is set. */
+      /** "idle 2d" once it has gone without a change. Null while an ask hangs under it. */
       stall: StatusStall | null
-      /** The words of the open ask that sets its mark. */
-      waitsOn: StatusWaitsOn | null
       /** The names of the subjects merged into it, while the person has not seen them. */
       merged: string | null
       /** The plan a reversal replaced, while the person has not seen it. */
       was: string | null
-      /** Whether rows of its children follow, so its tree line runs down from its mark. */
+      /** Whether rows of its children follow, so its tree line runs down from its mark while it is not folded. */
       hasChildren: boolean
       /** Its children, which a fold on its name hides. 0 while it draws none, and its name then takes no press. */
       foldCount: number
-      /** The open ask that sets its mark, a question before a task, which its View button opens. Null while no open ask holds it up. */
+      /** The open ask hung under it as its `ask` row, a question before a task. Null while no open ask holds it up. */
       ask: { id: string; kind: Item['kind'] } | null
     }
   | {
@@ -82,6 +80,7 @@ export type StatusRow = {
    * the last row under its subject. Its branch is null under a subject drawn in a milestone's place, as a child's is.
    */
   | { kind: 'more'; id: string; text: string; branch: 'last' | null }
+  | Omit<StatusAskRow, 'depth'>
   /**
    * Rows folded into one line: open rows into a count, as "○ 2 more", or work that closed since the last look past the
    * rows drawn for it, named, as "✓ Done: Sync merge, Search speed".
@@ -381,7 +380,7 @@ export function statusPage(
     const hasLooseWork = loose.some(l => l.milestoneId === m.id)
     const inPlace = o && milestone && !hasLooseWork ? subjectInPlaceOf(o, milestone, s.ledger.items) : null
     if (inPlace) return milestoneAsSubject(m, partRows([inPlace], isNew(inPlace) || isOpen(inPlace) ? ctx : foldCtx, 0))
-    const rows = [...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)]
+    const rows = [...m.rows, ...looseRows(m.id, 1), ...foldedPart(`${m.id}-`, p, 1)]
     const changedAt = milestone?.changedAt ?? Infinity
     const isShrunk = m.place === 'done' && look !== null && changedAt <= look && isAllSeen(m, p)
     return isShrunk

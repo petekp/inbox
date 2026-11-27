@@ -24,7 +24,7 @@ const isAnswer = (en: AskEntry | undefined) => en?.option !== undefined || en?.o
 const isJoined = (en: AskEntry) => en.noteOf !== undefined
 
 /**
- * A selected row's card on desktop when its lines hang from the row's ◆ or □ on a tree: the title, each branch, and the
+ * A selected row's card on desktop when its lines hang from the row's ?, ◆ or □ on a tree: the title, each branch, and the
  * answer buttons. The card's border, fill and top and bottom padding sit on one Box around the frames, so the app
  * rounds the whole card once. The app rounds each filled Box, so the frames inside draw no fill or border.
  */

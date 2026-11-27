@@ -12,7 +12,7 @@ import { UNDO_KEY } from '../../core/view/help'
 import { DOT, ROW_COPY, settledLabel, type SettledState } from '../../core/view/rows'
 import { RESULT_MARK_CELLS } from './desktop-svg'
 import { parseInline, type Span } from '../../core/view/inline'
-import type { NameLevel, StatusWaitsOn } from '../../core/view/status-page-parts'
+import type { NameLevel, StatusAskRow } from '../../core/view/status-page-parts'
 
 /**
  * `spans` cut to what desktop draws in `limit` lines `widthPt` wide, with an ellipsis when cut. With `isCutAtWord`, the
@@ -89,8 +89,8 @@ export type TerminalSpan = Span & {
 }
 
 /** An ask's words under the work it holds up, in the tone of the ask's kind. */
-export const waitsOnSpan = (w: StatusWaitsOn): TerminalSpan =>
-  w.tone === 'tasks' ? { text: w.text, isTasks: true } : { text: w.text, isNeedsYou: true }
+export const askSpan = (a: Pick<StatusAskRow, 'text' | 'tone'>): TerminalSpan =>
+  a.tone === 'tasks' ? { text: a.text, isTasks: true } : { text: a.text, isNeedsYou: true }
 
 export function terminalTextLines(text: string, width: number, limit = Infinity): TerminalSpan[][] {
   if (!text) return []

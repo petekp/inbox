@@ -103,8 +103,8 @@ settled PR takes no tint.
 
 **Mark**:
 The glyph before a row or a group title that says where its work stands or what
-kind it is, such as ◆, waits on your answer, or □, waits on a step only you can do. Each glyph means one thing wherever a look
-draws it. `core/view/help.ts:MARK_LEGEND` lists them all.
+kind it is, such as ? for a question to you, □ for a step only you can do, or ◆, waits on your answer or approval
+for something that is not one of your questions. Each glyph means one thing wherever a look draws it. `core/view/help.ts:MARK_LEGEND` lists them all.
 Help calls them Indicators.
 
 **Result mark**:
@@ -153,11 +153,11 @@ release. It has a name, a status, a few words on where it stands, and the time
 it last changed. Its status (a subject's status, not the Status tab) is one of
 working, queued, waits on others, done and dropped. The inbox model adds and changes subjects by id, and code keeps their
 times. The inbox model also links an open question or task to the subject it
-holds up. While that item is open, the subject's mark reads ◆ in place of its
-status's mark, or □ in the tasks tone when only open tasks hold it up, and the item's Asks row reads "Holds up" and the subject's name.
-Its row then has a View question or View task button, which opens Asks with
-the item that sets the mark selected (the oldest question while one is open, else
-the oldest task), and a line under its name with that item's own words.
+holds up. While that item is open, the subject keeps its status's mark, drawn
+in the needs-you tone while an open question holds it up, else in the tasks tone, and the item's Asks row reads "Holds up" and the subject's name.
+The item then hangs under the subject's description on the tree connector, as a child does: the item's mark, ? for a
+question or □ for a task, its own words in that tone, and a View question or View task button, which opens Asks with
+that item selected (the oldest question while one is open, else the oldest task).
 _Avoid_: workstream, stream, item (an item is a question or task)
 
 **Goal**:
@@ -220,11 +220,9 @@ _Avoid_: subitem, job
 The words after a Status subject's name when its work has stalled. An open
 subject with no change for a day or more, and no child of it running, reads
 how long it has been idle, as "idle 2d", muted. Other rows show no word. A
-row that waits on the person, such as a subject held by an open question or
-task, a milestone it holds up, or a delegate at a question or an approval,
-shows the ◆ mark in the needs-you tone, or □ in the tasks tone when only open
-tasks hold it up, not a word; a held subject also
-draws the item's own words on a line under its name. The code calls the
+row that waits on the person shows no word. A subject held by an open question or
+task, or a milestone it holds up, draws its own mark in the needs-you tone, or in the tasks tone when only open
+tasks hold it up, with the item on its own line under it. A delegate at a question or an approval shows ◆. The code calls the
 words `stall`.
 _Avoid_: age
 

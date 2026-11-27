@@ -1,7 +1,7 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
-import { HELD_MARK, TASK_MARK } from '../core/view/help'
+import { QUESTION_MARK, SUBJECT_MARKS, TASK_MARK } from '../core/view/help'
 import type { SessionStatus } from '../types'
 import { after, askItem, page } from './status-helpers'
 
@@ -14,18 +14,31 @@ const WORK = [
 const GOAL = 'GOAL: Import ready to demo | done Parsing works; working Errors explained; queued Demo script'
 const withGoal = (): SessionStatus => after(after(null, WORK, 10), GOAL, 20)
 
-test('a subject and its milestone that only open tasks hold up draw the task mark, and an open question that holds them too gives them ◆', () => {
+test('a subject and its milestone that only open tasks hold up keep their own marks in the tasks color, with the task’s mark on the line under the subject, and an open question that holds them too turns them and that line to the question’s', () => {
   const task = { ...askItem('i1'), kind: 'task' as const }
   const held = after(withGoal(), 'SERVES: s2 | m2\nLINK: i1 | s2', 30, new Set(['i1']))
   const both = after(held, 'LINK: i2 | s2', 35, new Set(['i1', 'i2']))
   const marksOf = (o: SessionStatus, items: ReturnType<typeof askItem>[]) => {
     const m = page(o, 40, {}, items).goal?.milestones.find(x => x.id === 'm2')
     const row = m?.rows.find(r => r.kind === 'subject')
-    return [m && { mark: m.mark, tone: m.tone }, row?.kind === 'subject' && { mark: row.mark, tone: row.tone }]
+    const ask = m?.rows.find(r => r.kind === 'ask')
+    return [
+      m && { mark: m.mark, tone: m.tone },
+      row?.kind === 'subject' && { mark: row.mark, tone: row.tone },
+      ask?.kind === 'ask' && { mark: ask.mark, tone: ask.tone },
+    ]
   }
 
-  expect(marksOf(held, [task])).toEqual([TASK_MARK, TASK_MARK])
-  expect(marksOf(both, [task, askItem('i2')])).toEqual([HELD_MARK, HELD_MARK])
+  expect(marksOf(held, [task])).toEqual([
+    { mark: SUBJECT_MARKS.working.mark, tone: 'tasks' },
+    { mark: SUBJECT_MARKS.queued.mark, tone: 'tasks' },
+    TASK_MARK,
+  ])
+  expect(marksOf(both, [task, askItem('i2')])).toEqual([
+    { mark: SUBJECT_MARKS.working.mark, tone: 'needsYou' },
+    { mark: SUBJECT_MARKS.queued.mark, tone: 'needsYou' },
+    QUESTION_MARK,
+  ])
 })
 
 test('a GOAL line gives each milestone where it stands after a colon', () => {

@@ -28,7 +28,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-press.ts` | Codex adapter. Reads of the presses out in the controller's state that need no rows: the press out on a row, the Undos under way, and when the oldest press began. |
 | `codex/src/tab-rows.tsx` | Codex adapter. Each tab's rows, built from the view, with the actions each row's buttons press. |
 | `codex/src/tab-part-gap.ts` | Codex adapter. `partAttrs` names a part of an open row and sets its top padding, and `--above` for the tree's strokes, from `partGap`. |
-| `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's Holds up line, context and option lines as the `.tree` its ◆ or □ starts. |
+| `codex/src/tab-ask-tree.tsx` | Codex adapter. An open row's Holds up line, context and option lines as the `.tree` its ? or □ starts. |
 | `codex/src/tab-parts.tsx` | Codex adapter. Parts several views draw: marks, group titles, banners, key buttons, the Undo place, inline text, and a row's feedback. |
 | `codex/src/tab-parted.tsx` | Codex adapter. `Sep`, the ` · ` that leads each part of a `.parted` line, so a part that starts a line hides its dot. Its layout is in `tab-css/parted.css`. |
 | `codex/src/tab-list.tsx` | Codex adapter. A list's rows: the motion state of each, the row line, its open panel, and settled rows with Undo. |

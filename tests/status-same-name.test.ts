@@ -47,7 +47,8 @@ test('a sole child named like its subject draws no row, and its state shows on t
     [askItem('i1')],
   ).rows
   expect(held).toMatchObject([
-    { kind: 'subject', mark: '◆', stall: null, waitsOn: { text: 'Ask i1?', tone: 'needsYou' }, hasChildren: false },
+    { kind: 'subject', mark: '◐', tone: 'needsYou', stall: null, hasChildren: false },
+    { kind: 'ask', id: 's1-ask', mark: '?', tone: 'needsYou', text: 'Ask i1?', branch: 'last' },
   ])
 
   const taskHeld = (state: Child['delegateState']) =>
@@ -57,8 +58,14 @@ test('a sole child named like its subject draws no row, and its state shows on t
       {},
       [{ ...askItem('i1'), kind: 'task' as const }],
     ).rows
-  expect(taskHeld(null)).toMatchObject([{ kind: 'subject', mark: '□', tone: 'tasks', isRunning: false }])
-  expect(taskHeld('blocked')).toMatchObject([{ kind: 'subject', mark: '◆', tone: 'needsYou', isRunning: false }])
+  expect(taskHeld(null)).toMatchObject([
+    { kind: 'subject', mark: '◐', tone: 'tasks', isRunning: false },
+    { kind: 'ask', mark: '□', tone: 'tasks' },
+  ])
+  expect(taskHeld('blocked')).toMatchObject([
+    { kind: 'subject', mark: '◆', tone: 'needsYou', isRunning: false },
+    { kind: 'ask', mark: '□', tone: 'tasks' },
+  ])
 })
 
 test('a child with another name, or one of several children, keeps its row', () => {
@@ -72,7 +79,7 @@ test('a child with another name, or one of several children, keeps its row', () 
   expect(page(two, now).rows.map(r => r.kind)).toEqual(['subject', 'child', 'child'])
 })
 
-test('a subject an open ask holds up says what it waits on, in the ask own words on one line, and keeps its ask button target', () => {
+test('an open ask hangs on its own row under the subject it holds up, in its own words on one line, and keeps its ask button target', () => {
   const o = after(
     after(null, 'NEW: working | Release | cut 0.2.0', 10 * MIN),
     'LINK: i1 | s1\nLINK: i2 | s1',
@@ -83,11 +90,14 @@ test('a subject an open ask holds up says what it waits on, in the ask own words
     { ...askItem('i2'), kind: 'task' as const, ask: 'Approve\n  the   store listing', at: 300 },
     { ...askItem('i1'), ask: 'Which\n  version?', at: 200 },
   ]
-  const [row] = page(o, 20 * MIN, {}, items).rows
+  const [row, askRow] = page(o, 20 * MIN, {}, items).rows
 
-  expect(row).toMatchObject({
-    waitsOn: { text: 'Which version?', tone: 'needsYou' },
-    stall: null,
+  expect(row).toMatchObject({ stall: null, ask: { id: 'i1', kind: 'question' } })
+  expect(askRow).toMatchObject({
+    kind: 'ask',
+    id: 's1-ask',
+    text: 'Which version?',
+    tone: 'needsYou',
     ask: { id: 'i1', kind: 'question' },
   })
 })

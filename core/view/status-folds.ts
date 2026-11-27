@@ -8,8 +8,8 @@ import type { StatusCount, StatusPage, StatusRow } from './status-page'
  * Status parents and what waits on the person under each, by parent id. A parent is a subject with a delegate under it,
  * or a milestone of the goal that a subject serves, which the person can fold by its name. Under a subject, what waits
  * is each running delegate of it that Herdr shows blocked. Under a milestone, it is each open ask that holds up a subject
- * serving it, and each blocked delegate of such a subject. An ask that holds up the parent itself shows on the parent's
- * own line, so it waits on no fold.
+ * serving it, and each blocked delegate of such a subject. An ask that holds up the parent itself shows in the ask row
+ * under it, which shows while the parent is folded, so it waits on no fold.
  */
 export function waitingUnderParents(ledger: Pick<Ledger, 'overview' | 'items'>): Map<string, string[]> {
   const o = ledger.overview
@@ -67,16 +67,30 @@ export type IsCollapsed = (id: string) => boolean
 
 const NONE_COLLAPSED: IsCollapsed = () => false
 
-/** `rows` without the rows under each subject `isCollapsed` names, which sit deeper than it until the next row at its depth. */
+/**
+ * `rows` without the rows under each subject `isCollapsed` names, which sit deeper than it until the next row at its
+ * depth. Its ask row stays, as the last row under it.
+ */
 function withoutCollapsed(rows: StatusRow[], isCollapsed: IsCollapsed): StatusRow[] {
   let hiddenBelow: number | null = null
 
-  return rows.filter(r => {
-    if (hiddenBelow !== null && r.depth > hiddenBelow) return false
+  return rows.flatMap(r => {
+    if (hiddenBelow !== null && r.depth > hiddenBelow)
+      return r.kind === 'ask' && r.depth === hiddenBelow + 1 ? [{ ...r, branch: 'last' as const }] : []
     hiddenBelow = r.kind === 'subject' && isParentCollapsed(r, isCollapsed) ? r.depth : null
-    return true
+    return [r]
   })
 }
+
+/** A milestone's own ask rows, one step in from it, which show while the person folded it. */
+const askRowsOf = (rows: StatusRow[]) => rows.filter(r => r.kind === 'ask' && r.depth === 1)
+
+/**
+ * Whether a subject's tree line runs down from its mark: an ask hangs under it, or rows of its children follow and the
+ * person has not folded it.
+ */
+export const hasTreeDown = (r: StatusRow & { kind: 'subject' }, isCollapsed: IsCollapsed): boolean =>
+  r.ask !== null || (r.hasChildren && !isParentCollapsed(r, isCollapsed))
 
 /**
  * `rows` as a look draws them: each done fold and counts fold that `isUnfolded` names by id followed by the rows it
@@ -98,17 +112,17 @@ export const isParentCollapsed = (p: { id: string; foldCount: number }, isCollap
   p.foldCount > 0 && isCollapsed(p.id)
 
 /**
- * The rows a look draws under a milestone: none while it is a done milestone folded to its name, or folded by the
- * person, else its rows with each unfolded done fold opened.
+ * The rows a look draws under a milestone: none while it is a done milestone folded to its name, only its ask row
+ * while the person folded it, else its rows with each unfolded done fold opened.
  */
 export function milestoneRows(
   m: Pick<MilestoneRow, 'id' | 'foldId' | 'foldCount' | 'rows'>,
   isUnfolded: (id: string) => boolean,
   isCollapsed: IsCollapsed = NONE_COLLAPSED,
 ): StatusRow[] {
-  const isShut = (m.foldId !== null && !isUnfolded(m.foldId)) || isParentCollapsed(m, isCollapsed)
+  if (m.foldId !== null && !isUnfolded(m.foldId)) return []
 
-  return isShut ? [] : unfoldedRows(m.rows, isUnfolded, isCollapsed)
+  return isParentCollapsed(m, isCollapsed) ? askRowsOf(m.rows) : unfoldedRows(m.rows, isUnfolded, isCollapsed)
 }
 
 const listRows = (milestones: MilestoneRow[], rows: StatusRow[]) => [
@@ -136,7 +150,7 @@ export function drawnStatusRows(
 ): StatusRow[] {
   const fold = page.goal?.milestonesFold ?? null
   const milestones = fold !== null && !isUnfolded(fold.id) ? [] : (page.goal?.milestones ?? [])
-  const shown = milestones.map(m => (isParentCollapsed(m, isCollapsed) ? { ...m, rows: [] } : m))
+  const shown = milestones.map(m => (isParentCollapsed(m, isCollapsed) ? { ...m, rows: askRowsOf(m.rows) } : m))
 
   return withoutCollapsed(listRows(shown, page.rows), isCollapsed)
 }

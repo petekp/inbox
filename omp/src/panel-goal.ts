@@ -255,7 +255,6 @@ function milestoneLines(m: MilestoneRow, d: Draw, isSelected: boolean): string[]
     text: m.text,
     chevron,
     stall: x?.stall ?? null,
-    waitsOn: x?.waitsOn ?? null,
   })
   const merged = x?.merged
     ? indented(

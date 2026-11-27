@@ -88,13 +88,15 @@ export function headPart(
 
 /**
  * A milestone drawn as the subject in its place, from the rows `partRows` gives that subject at depth 0: the
- * subject's row takes the milestone's place on the path, and its children sit one step in, joined to the milestone's
+ * subject's row takes the milestone's place on the path, and its ask row and children sit one step in, joined to the milestone's
  * column as loose work is.
  */
 export function milestoneAsSubject(m: MilestoneRow, subjectRows: StatusRow[]): MilestoneRow {
   const [row, ...under] = subjectRows
   if (row?.kind !== 'subject') return m
-  const work = under.map(r => (r.kind === 'child' || r.kind === 'more' ? { ...r, branch: null } : r))
+  const work = under.map(r =>
+    r.kind === 'child' || r.kind === 'more' || r.kind === 'ask' ? { ...r, branch: null } : r,
+  )
 
   return {
     ...m,
@@ -106,7 +108,6 @@ export function milestoneAsSubject(m: MilestoneRow, subjectRows: StatusRow[]): M
     foldCount: work.length === 0 ? 0 : row.foldCount,
     text: row.text,
     was: row.was,
-    ask: row.ask,
     rows: work,
     subject: row,
   }

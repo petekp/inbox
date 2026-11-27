@@ -4,14 +4,13 @@ import type { StatusKeyTarget } from '../../core/view/status-keys'
 import { STATUS_TEXT_LINES, WAS_PREFIX } from '../../core/view/status-page'
 import { mergedLine, nameBeforeStall, nameLevelOf, STALL_GAP } from '../../core/view/status-page-parts'
 import type { StatusBranch, StatusRow, StatusStall } from '../../core/view/status-page'
-import type { StatusWaitsOn } from '../../core/view/status-page-parts'
 import { faceLines, feedbackPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { pageFocus } from './panel-lines'
 import type { ButtonFace } from './panel-lines'
 import { collapsedIn, indented, wrapText } from './panel-text'
 import { foldGlyph } from '../../core/view/fold-chevron'
-import { COUNTS_LABEL, isParentCollapsed, parentChevron } from '../../core/view/status-folds'
+import { COUNTS_LABEL, hasTreeDown, isParentCollapsed, parentChevron } from '../../core/view/status-folds'
 import type { Style } from './panel'
 
 /** Where a Status row's mark sits: in the head's column, so the list lines up with it. A subject's text starts at `PAGE_TEXT_AT`. */
@@ -43,8 +42,7 @@ const GLUE = '\uE000'
 
 /**
  * One row of the Status's list: a mark and its name wrapped after it, with its stall word after `STALL_GAP` in the
- * muted on the line of the name's last word, then a parent's fold chevron. Then what it waits on, in the needs-you tone,
- * and where it stands, dim.
+ * muted on the line of the name's last word, then a parent's fold chevron. Then where it stands, dim.
  */
 export function pageLine(
   d: Draw,
@@ -54,12 +52,10 @@ export function pageLine(
   namePaint: (t: string) => string,
   {
     stall = null,
-    waitsOn = null,
     text = null,
     chevron = null,
   }: {
     stall?: StatusStall | null
-    waitsOn?: StatusWaitsOn | null
     text?: string | null
     chevron?: { text: string; paint: (t: string) => string } | null
   } = {},
@@ -71,9 +67,8 @@ export function pageLine(
   const names = stall
     ? stalledName(name, stall, room, namePaint, s)
     : pageText(name, room, STATUS_TEXT_LINES, namePaint)
-  const waits = waitsOn ? pageText(waitsOn.text, room, STATUS_TEXT_LINES, t => s.tone(waitsOn.tone, t)) : []
   if (chevron) names[Math.max(0, names.length - 1)] = `${names.at(-1) ?? ''} ${chevron.paint(chevron.text)}`
-  const seconds = [...waits, ...(text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : [])]
+  const seconds = text ? pageText(text, room, STATUS_TEXT_LINES, s.dim) : []
 
   return [
     `${' '.repeat(indent)}${mark} ${names[0] ?? ''}`,
@@ -185,11 +180,9 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
   if (row.kind === 'subject') {
     const mark = paintMark(row, now, s)
     const chevron = foldChevron(row, d, isSelected)
-    const isFolded = isParentCollapsed(row, collapsedIn(d.screen.view))
     const quiet = nameLevelOf(row, 'plain') === 'plain' ? (t: string) => t : s.dim
     const out = pageLine(d, at, mark, row.name, t => quiet(chevron && isSelected ? s.bold(t) : t), {
       stall: row.stall,
-      waitsOn: row.waitsOn,
       text: row.text,
       chevron,
     })
@@ -205,9 +198,20 @@ export function drawPageRow(row: StatusRow, d: Draw, isSelected = false): string
         ),
       )
     if (row.was) out.push(...indented(`${WAS_PREFIX}${row.was}`, textAt, width, STATUS_TEXT_LINES, s.dim))
-    out.push(...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, textAt))
 
-    return row.hasChildren && !isFolded ? withTree(out, at, null, '│', s) : out
+    return hasTreeDown(row, collapsedIn(d.screen.view)) ? withTree(out, at, null, '│', s) : out
+  }
+  if (row.kind === 'ask') {
+    const mark = paintMark({ ...row, isRunning: false }, now, s)
+    const askAt = row.branch ? childAt(row.depth - 1) : at
+    const out = [
+      ...pageLine(d, askAt, mark, row.text, t => s.tone(row.tone, t)),
+      ...pageButtonLines({ id: row.id, keys: statusKeyPlan(row) }, d, isSelected, askAt + PAGE_TEXT_AT - PAGE_MARK_AT),
+    ]
+    if (!row.branch) return out
+    const arm = TREE_ARMS[row.branch]
+
+    return withTree(out, markAt(row.depth - 1), arm.first, arm.rest, s)
   }
   if (row.kind === 'child') {
     const mark = paintMark(row, now, s)

@@ -95,7 +95,7 @@ Each mark on a subject row fits its piece's state in the facts, and every open p
 
 Judge it in two steps:
 
-1. Check the mark of each row of work against the list of marks above. For a `◆` or `□` row, check only that an open ask in the facts holds up that piece. Do not compare its mark with the piece's state.
+1. Check the mark of each row of work against the list of marks above. A piece an open ask holds up keeps the mark of its own state, so judge it as any other row. A `?` or `□` line under a row is an open ask, not a row of work: do not judge its mark.
 2. List the open pieces in the facts that have no row on the page. Leave out each piece whose line says `The goal does not need it.`: Other work's counts line counts those that are under way, and those not started yet or set aside leave the page with no count. Leave out, too, a piece not started yet whose whole outcome is an open milestone on the page. The `○ N more` fold accounts for the rest. The check fails when that list is not empty and the page has no `○ N more` fold, or the fold counts fewer pieces than the list holds.
 
 The check fails when any of these is on the page:
@@ -103,7 +103,6 @@ The check fails when any of these is on the page:
 - A mark that does not fit its piece's state.
 - An open mark on a row for a piece the facts say is closed, under one of the piece's names or the name its row had on the previous page.
 - An open mark or `✗` on filed work.
-- `◆` or `□` on a piece that no open ask holds up.
 - Open pieces that are missing, as step 2 finds.
 
 Examples:
@@ -111,13 +110,12 @@ Examples:
 - Pass: `✓ SMS codes: live in the US` beside `● Recovery codes: generated, not shown yet`.
 - Pass: `○ Authenticator setup: QR code works`, set aside while the agent fixes SMS codes.
 - Pass: `◌ 3.0 release: in security review`, while another team reviews it.
-- Pass: `◆ SMS codes: US numbers work`, while "Offer SMS codes outside the US?" holds up SMS codes.
+- Pass: `◐ SMS codes: US numbers work` with `└ ? Offer SMS codes outside the US?` under it, while that question holds up SMS codes.
 - Pass: `✗ Email codes: dropped, too easy to phish`.
 - Fail: `● 3.0 release: live, billing bug next`, when the facts say the release is delivered.
 - Pass: `✓ Passkeys: filed for later`. Filed work closes as delivered, and its words say it is filed.
 - Fail: `○ Passkeys: filed for later`. Filed work is closed.
 - Fail: `✗ Passkeys: filed for later`. Filed work closes as delivered, not dropped.
-- Fail: `◆ Recovery codes`, when no open ask holds up recovery codes.
 - Fail: the facts list nine open pieces. The page shows six open rows and no `○ N more` fold.
 
 ### where-it-stands
@@ -194,9 +192,9 @@ The check fails when a row's text or Prev line does any of these:
 
 Examples:
 
-- Pass: `◆ SMS codes: US numbers work`, while "Offer SMS codes outside the US?" is open.
-- Fail: `◆ SMS codes: waiting on your call`.
-- Fail: `◆ SMS codes: US only, or every country?`.
+- Pass: `◐ SMS codes: US numbers work`, while "Offer SMS codes outside the US?" is open.
+- Fail: `◐ SMS codes: waiting on your call`.
+- Fail: `◐ SMS codes: US only, or every country?`.
 - Fail: `● Recovery codes: reset link expires too fast`, which puts the finding on a row of work.
 
 ### was-lines
@@ -259,7 +257,7 @@ Judge a milestone's mark by the work it stands for: the facts' milestones it cov
 - `●` or `◐` fits when any of it is being worked on now.
 - `○` fits when none of it has started, or all of it is set aside.
 - `◌` fits when it waits on something outside the session and none of it is being worked on.
-- `◆` or `□` fits when an open ask holds up the milestone, or a piece that serves it.
+- A milestone an open ask holds up, itself or through a piece that serves it, keeps the mark of its work.
 
 The check passes when every milestone row is an outcome the goal needs, its mark fits the work it stands for, and together the rows cover every outcome the goal needs.
 

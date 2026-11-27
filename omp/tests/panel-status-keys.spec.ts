@@ -66,11 +66,11 @@ test('on a Status page taller than the panel, each ↑↓ press shows one more o
   expect(keys(screen, down, 'up', 'up', 'up').pageTop).toBe(0)
 })
 
-test('on the Status page, a subject an open ask holds up draws View, named for the ask’s kind, under its text in the plan’s order, and only the selected row draws it focused and keyed', () => {
+test('on the Status page, the ask under a subject it holds up draws View, named for the ask’s kind, under its words in the plan’s order, and only the selected row draws it focused and keyed', () => {
   const screen = goallessScreen()
   const page = screen.view.statusPage
-  const held = page.rows.filter(r => r.kind === 'subject' && statusKeyPlan(r).length > 0)
-  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's3', 's1', 'done'])
+  const held = page.rows.filter(r => r.kind === 'ask')
+  expect(statusKeyRows(page).map(t => t.id)).toEqual(['goal', 's2', 's2-ask', 's3-ask', 's1', 'done'])
   const lines = text(screen, onPage).split('\n')
   const nameAt = (row: StatusRow) => lines.findIndex(l => l.includes(labelOf(row)))
   const buttonAt = (row: StatusRow) => lines.findIndex((l, n) => n > nameAt(row) && l.includes('View '))
@@ -93,7 +93,8 @@ test('on the Status page, a subject an open ask holds up draws View, named for t
   expect(moved[buttonAt(held[1]!)]).toContain('↵ View question')
   expect(cursorOf(keys(screen, second, 'j'))).toBe('s1')
   expect(cursorOf(keys(screen, second, 'j', 'j', 'j'))).toBe('goal')
-  expect(cursorOf(keys(screen, onPage, 'k'))).toBe('goal')
+  expect(cursorOf(keys(screen, onPage, 'k'))).toBe('s2')
+  expect(cursorOf(keys(screen, onPage, 'k', 'k'))).toBe('goal')
   expect(text(screen, onPage).split('\n').at(-1)).toContain('j k select')
   expect(text(unheldScreen(), onPage)).not.toContain('View ')
 })
@@ -201,7 +202,9 @@ const foldedScreen = (screen: ReturnType<typeof screenOf>, ...ids: string[]) => 
 
 test('on the Status page, j reaches a subject with rows under it, f folds them behind › and their count and a second f opens them, with no Fold button drawn', () => {
   const screen = goallessScreen()
-  const parent = screen.view.statusPage.rows.find(r => r.kind === 'subject' && r.foldCount > 0 && r.hasChildren)!
+  const parent = screen.view.statusPage.rows.find(
+    r => r.kind === 'subject' && r.foldCount > 0 && r.hasChildren && r.ask === null,
+  )!
   if (parent.kind !== 'subject') throw new Error('expected a subject')
   const rows = screen.view.statusPage.rows
   const after = rows.slice(rows.indexOf(parent) + 1)

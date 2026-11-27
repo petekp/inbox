@@ -18,10 +18,9 @@ const isShown = (s: ShownText) => s.opacity * s.share >= CUT_OPACITY && s.text.t
 const stem = (t: string) => t.replace(/…$/, '')
 const isRunningMark = (text: string) => (RUNNING_FRAMES as readonly string[]).includes(text)
 
-/** The part of a Status line a text is: its mark, what it waits on, a button, or another line. */
+/** The part of a Status line a text is: its mark, a button, or another line. */
 function statusPartOf(b: Extract<Block, { kind: 'status' }>, text: string): string {
   if (b.mark?.text === text) return 'the mark'
-  if (b.waitsOn?.text === text) return 'what it waits on'
   if (b.buttons.some(x => x.label === text)) return 'the button'
   return 'the line'
 }

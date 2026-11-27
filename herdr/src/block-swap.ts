@@ -4,11 +4,11 @@ import { NEXT_FRAME_MS } from './block-glide'
 import type { Block, StatusLine } from './blocks'
 
 /** The parts of a Status line that fade on their own as they change. */
-export type StatusPart = 'mark' | 'waitsOn' | 'under' | 'buttons'
+export type StatusPart = 'mark' | 'name' | 'under' | 'buttons'
 
 const PART_KEYS: Record<StatusPart, (s: StatusLine) => string> = {
-  mark: s => s.mark?.text ?? '',
-  waitsOn: s => s.waitsOn?.text ?? '',
+  mark: s => (s.mark ? `${s.mark.text} ${s.mark.tone}` : ''),
+  name: s => `${s.name} ${s.nameTone ?? ''}`,
   under: s => s.under.map(l => l.text).join('\n'),
   buttons: s => s.buttons.map(b => b.label).join('\n'),
 }
@@ -21,7 +21,8 @@ const changedParts = (was: StatusLine, b: StatusLine): StatusPart[] =>
  * A block that changes form and has no motion of its own for it. A block that keeps its id and changes kind, as a PR's
  * block does when a fetch finds the PR closed and it becomes a settled row, fades whole, and `parts` is null. So does a
  * note or a line whose text changes, as a PR's order line when the agent orders the PRs again. A Status
- * line fades only the `parts` that change, as its question's line and button when the question is answered. What
+ * line fades only the `parts` that change, as its mark when the ask that held it up closes, or an ask line's words when
+ * another ask takes its place. What
  * changes fades out from `since` until `outUntil`, which a part that starts to change meanwhile puts off until it has
  * faded out too. The new form, `to`, draws from `inAt`, null until then, and what is new fades in once the block's box
  * is nearly at its new height, from `fromHeight`. `isBack` says the change turned back to the former form while it
@@ -140,13 +141,12 @@ export function stepBlockSwap(
 
 /** `b` with the parts of `from` that fade out in place of its own. */
 function withPartsOf(b: StatusLine, from: StatusLine, parts: StatusPart[]): StatusLine {
-  const { waitsOn, ...rest } = b
   const held = (part: StatusPart) => parts.includes(part)
-  const shownWaitsOn = held('waitsOn') ? from.waitsOn : waitsOn
   return {
-    ...rest,
-    ...(shownWaitsOn ? { waitsOn: shownWaitsOn } : {}),
+    ...b,
     mark: held('mark') ? from.mark : b.mark,
+    name: held('name') ? from.name : b.name,
+    nameTone: held('name') ? from.nameTone : b.nameTone,
     under: held('under') ? from.under : b.under,
     buttons: held('buttons') ? from.buttons : b.buttons,
   }

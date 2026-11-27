@@ -46,14 +46,13 @@ test('a goal shows its milestones as a path, its Edit comes before its milestone
   expect(p.head).not.toBeNull()
   expect(p.goal?.milestones.map(m => `${m.mark} ${m.name}`)).toEqual([
     '✓ Parsing works',
-    '◆ Errors explained',
+    '● Errors explained',
     '○ Demo script',
   ])
-  expect(p.goal?.milestones[1]?.ask).toEqual({ id: 'i1', kind: 'question' })
   expect(statusKeyRows(p).map(t => [t.id, t.keys.map(k => k.label)])).toEqual([
     ['goal', ['Edit', 'Remove']],
-    ['m2', ['View question', 'Fold']],
-    ['s2', ['View question']],
+    ['m2', ['Fold']],
+    ['s2-ask', ['View question']],
   ])
 })
 
@@ -64,7 +63,7 @@ test('work that serves a milestone draws under it one step in, and work the goal
 
   expect(p.goal?.milestones.map(m => shape(m.rows))).toEqual([
     [],
-    ['◆ Error copy: not started · Ask i1?', '◐ CSV import: bad rows skipped'],
+    ['○ Error copy: not started', '└ ? Ask i1?', '◐ CSV import: bad rows skipped'],
     [],
   ])
   expect(shape(p.rows)).toEqual(['== Other work', 'Also open: ● 1 working ›'])
@@ -84,12 +83,13 @@ test('finished work under a milestone shows as a row until the person looks, the
   const finished = after({ ...linked(), lastLookAt: 35 }, 'DONE: s1 | import ships', 50, new Set(['i1']))
   const rowsOf = (o: SessionStatus) => page(o, 80, {}, [askItem('i1')]).goal?.milestones[1]?.rows ?? []
 
-  expect(shape(rowsOf(finished))).toEqual(['◆ Error copy: not started · Ask i1?', '✓ CSV import: import ships'])
+  expect(shape(rowsOf(finished))).toEqual(['○ Error copy: not started', '└ ? Ask i1?', '✓ CSV import: import ships'])
   expect(shape(rowsOf({ ...finished, lastLookAt: 70 }))).toEqual([
-    '◆ Error copy: not started · Ask i1?',
+    '○ Error copy: not started',
+    '└ ? Ask i1?',
     '✓ CSV import',
   ])
-  expect(rowsOf({ ...finished, lastLookAt: 70 }).map(r => r.depth)).toEqual([1, 1])
+  expect(rowsOf({ ...finished, lastLookAt: 70 }).map(r => r.depth)).toEqual([1, 2, 1])
   expect(
     page({ ...finished, lastLookAt: 70 }, 80, {}, [askItem('i1')]).rows.some(
       r => r.kind === 'fold' || r.kind === 'done-fold',
@@ -125,7 +125,8 @@ test('under a milestone and under Other work, closed work past two rows that the
   const p = page(closed, 80, {}, [askItem('i1')])
 
   expect(shape(p.goal?.milestones[1]?.rows ?? [])).toEqual([
-    '◆ Error copy: not started · Ask i1?',
+    '○ Error copy: not started',
+    '└ ? Ask i1?',
     '✓ Sniffer: sniffs',
     '✓ Parser: parses',
     '✓ Done: CSV import',
@@ -174,8 +175,10 @@ test('under Other work, a queued subject an ask holds up stays a row, seen queue
 
   expect(shape(page({ ...held, lastLookAt: 40 }, 45, {}, asks).rows)).toEqual([
     '== Other work',
-    '◆ Error copy: not started · Ask i2?',
-    '◆ Logo refresh: not started · Ask i1?',
+    '○ Error copy: not started',
+    '└ ? Ask i2?',
+    '○ Logo refresh: not started',
+    '└ ? Ask i1?',
     '○ Release notes: not started',
   ])
   expect(shape(page({ ...held, lastLookAt: 40 }, 45).rows)).toEqual([
@@ -260,7 +263,7 @@ test('a met goal keeps its milestones drawn while work under them is open or hel
   expect(held.goal?.milestonesFold).toBeNull()
   expect(
     statusKeyRows(held)
-      .find(t => t.id === 's2')
+      .find(t => t.id === 's2-ask')
       ?.keys.map(k => k.label),
   ).toEqual(['View question'])
 })
@@ -402,11 +405,11 @@ test('a milestone or a subject with rows under it folds by its name, which hides
       () => false,
       id => id === 's1',
     ).map(r => r.id),
-  ).toEqual(['s2', 's1'])
-  expect(statusKeyRows(p).map(t => t.id)).toEqual(['goal', 'm2', 's2', 's1'])
+  ).toEqual(['s2', 's2-ask', 's1'])
+  expect(statusKeyRows(p).map(t => t.id)).toEqual(['goal', 'm2', 's2-ask', 's1'])
   expect(statusKeyRows(p, () => false, isCollapsed).map(t => [t.id, t.keys.map(k => k.press)])).toEqual([
     ['goal', [{ action: 'type-goal', text: 'Import ready to demo' }, { action: 'remove-goal' }]],
-    ['m2', [{ action: 'show-ask', askId: 'i1' }, foldPress('m2')]],
+    ['m2', [foldPress('m2')]],
   ])
 })
 

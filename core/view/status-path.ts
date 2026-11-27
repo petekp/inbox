@@ -107,7 +107,6 @@ type SpacedMilestone = {
   rows: StatusRow[]
   text: string | null
   was: string | null
-  ask: unknown
 }
 
 /**
@@ -122,7 +121,7 @@ export function isSpacedAbove(
   isCollapsed: IsCollapsed = () => false,
 ): boolean {
   const drawsNameOnly = (m: SpacedMilestone) =>
-    m.text === null && m.was === null && m.ask === null && milestoneRows(m, isUnfolded, isCollapsed).length === 0
+    m.text === null && m.was === null && milestoneRows(m, isUnfolded, isCollapsed).length === 0
   const above = milestones[n - 1]
   const m = milestones[n]
 

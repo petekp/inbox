@@ -13,7 +13,7 @@ A step with no call, or a step before its call, can press a goal button as the p
 | 2 | A delegate reports the sync merge done, and the coordinator publishes 2.4. The reply is full of times. | Both milestones close, and the goal is met. No time word reaches the page. The text names no step. |
 | 3 | The person files dark mode and widgets for later, and asks for a fix to the vanishing-notes bug, then 2.5. A delegate starts on the bug. | Checkpoint. The met 2.4 goal makes way for a 2.5 goal, set with no press, with every subject linked. The head leaves 2.4. Both filed pieces close. The delegate sits under the bug, in plain words. |
 | 4 | The delegate calls it "the archive bug", and the person asks for a long extra on the same fix | One piece, not two. The fix links to its milestone, and the pieces the goal does not need link to Other work. |
-| 5 | The coordinator asks whether 2.5 waits for the fix. The ask opens. | ◆ on 2.5 only. Its text does not restate the question. |
+| 5 | The coordinator asks whether 2.5 waits for the fix. The ask opens. | Only 2.5 is held, with the question on its own line under it. Its text does not restate the question. |
 | Look | The person answers in the inbox, and reads the page | No call. The ask closes, and the page counts the rows shown as seen. |
 | 8 | The coordinator records a flaky test elsewhere as a finding | No subject for it, and nothing moves |
 | 9 | The fix's PR opens, and a reviewer subagent starts | Checkpoint. No new "PR" piece. The text says the state of the fix. The reviewer sits under the fix. |
@@ -31,13 +31,13 @@ At every step, the pieces set aside or waiting on a vendor stay on the page.
 | Step | What happens | What it checks |
 | --- | --- | --- |
 | 1 | The person asks for offline sync, shipped in 2.5. The agent plans the engine, conflicts and a settings toggle, and starts the engine. | The goal is set, and each piece links to a milestone. The head names the aim. Four pieces: the three planned, and the 2.5 release. |
-| 2 | The engine works. The agent fixes a lint error, runs two review subagents and asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine. ◆ on conflicts, from the ledger's new ask. Each piece links to its milestone. |
-| 3 | The person answers "manual merge" | The ask closes, ◆ clears, and the conflicts row shows the choice |
+| 2 | The engine works. The agent fixes a lint error, runs two review subagents and asks "last-write-wins or manual merge?" | The head holds. The subagents sit under the engine. Conflicts is held, with the ledger's new ask under it. Each piece links to its milestone. |
+| 3 | The person answers "manual merge" | The ask closes, its line and the held color clear, and the conflicts row shows the choice |
 | 4 | The person reverses: last-write-wins with a backup copy | Checkpoint. A Prev line on conflicts, and no new piece |
 | 5 | Conflicts progress. The person sets the toggle aside and asks for an offline banner first. | The toggle is ○ and keeps its link. The banner links to a milestone. No new Prev line. |
 | 6 | The person asks how the backup copy is named and why the plan changed. Nothing is decided. | Nothing moves |
-| 7 | The banner shows on phones, and the agent asks whether it shows on web too | ◆ on the banner, from the ledger's new ask |
-| 8 | The person dismisses the web question. Device tests: Android syncs, and iOS loses edits after a crash. | Checkpoint. The ask closes as dismissed, and ◆ clears. The banner closes as ✓. The engine row keeps both states, or splits. |
+| 7 | The banner shows on phones, and the agent asks whether it shows on web too | The banner is held, with the ledger's new ask under it |
+| 8 | The person dismisses the web question. Device tests: Android syncs, and iOS loses edits after a crash. | Checkpoint. The ask closes as dismissed, and its line and the held color clear. The banner closes as ✓. The engine row keeps both states, or splits. |
 | 9 | The agent fixes the iOS edit loss. Its notes between tool calls say the fix works. Its last message only says where it saved the results. | The engine and its milestone close, from text before the last message. The goal stays unmet. |
 
 **Replay C: a long turn and a catch-up.** Status calls only, 3 of them, with no goal.
