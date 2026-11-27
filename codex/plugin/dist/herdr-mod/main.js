@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T05:33:00.726Z. 411336 characters follow.
+// Built at 2026-11-27T06:53:29.913Z. 412599 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -6336,8 +6336,11 @@ var titleTimes = (g) => g === null ? [] : [g.swapsAt ?? 0, g.endsAt];
 var LEAVE_ENDS_MS = NEXT_FRAME_MS + LEAVE_FADE_MS;
 var restsAfter = (u) => u.waitMs === undefined ? ROW_STATE_MS.entering : u.waitMs + ENTER_FADE_MS;
 var lineOf2 = (b) => b.kind === "row" && isStatusUnder(b) ? b.feedback : null;
-var stepUnder = (last, b, now, isInput = false) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput, (x, y) => statusKindOf(x) === statusKindOf(y));
-function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true) {
+var stepUnder = (last, b, now, isInput = false, height) => stepLine(last, lineOf2(b), b.kind === "row" && isOpenRow(b) && !b.settled, now, isInput, (x, y) => statusKindOf(x) === statusKindOf(y), height);
+function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true, height) {
+  const isReplaced = last !== null && line !== null && !isSameLine(last.line, line) && isSameForm && !isInput;
+  if (last?.next !== undefined || isReplaced && (last.isLeaving || isShown(last, now, height)))
+    return replaced(last, line, isSameForm, now, isInput, isSameLine);
   if (line && last?.isLeaving)
     return { line, since: now, isLeaving: false, isInput, isBack: true };
   if (!line)
@@ -6355,6 +6358,24 @@ function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true)
     isInput: isInput || isEntering && last.isInput,
     ...isEntering && waitMs > 0 ? { waitMs } : {}
   };
+}
+function isShown(u, now, height) {
+  const fadedInAt = u.waitMs === undefined && height !== undefined ? u.since + NEXT_FRAME_MS + enterDelayMs(height) + ENTER_FADE_MS : u.since + restsAfter(u);
+  return u.isBack === true || now >= Math.min(fadedInAt, u.since + restsAfter(u));
+}
+function replaced(last, line, isSameForm, now, isInput, isSameLine) {
+  const { next: _, ...old } = last;
+  if (!line)
+    return leaving(old, isSameForm, now, isInput);
+  if (isSameLine(old.line, line))
+    return old.isLeaving ? { line, since: now, isLeaving: false, isInput, isBack: true } : { ...old, line };
+  if (isInput || !isSameForm)
+    return { line, since: now, isLeaving: false, isInput };
+  if (!old.isLeaving)
+    return { ...old, since: now, isLeaving: true, next: line };
+  if (now < old.since + LEAVE_ENDS_MS)
+    return { ...old, next: line };
+  return { line, since: now, isLeaving: false, isInput: false, waitMs: NEXT_FRAME_MS };
 }
 function leaving(last, isSameForm, now, isInput) {
   if (!last || !isSameForm || isInput)
@@ -6682,7 +6703,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isPanelLeftOut = isLeftOut || wasClosing && block.kind === "row";
     const leftOut = isPanelLeftOut ? panelHeight ?? 0 : 0;
     const restSpace = aimSpace(last?.restSpace ?? null, (rest ?? 0) - leftOut, now);
-    const under = pushUnder(stepUnder(last?.under ?? null, block, now, isInput), underPushMs(last, block, restSpace), now);
+    const under = pushUnder(stepUnder(last?.under ?? null, block, now, isInput, heightOf(underId(block.id))), underPushMs(last, block, restSpace), now);
     const waited = waitSwap(swap, restSpace, rest, now);
     const fieldWait = stepFieldWait(last, block, restSpace, now);
     const panelSpace = aimSpace(last?.panelSpace ?? null, holdsPanel ? panelHeight ?? last?.panelSpace?.to ?? 0 : 0, now);
