@@ -74,7 +74,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
         .child(shown.age ?? '')
       return e.child(swap?.isAgeSwapped ? swapFadeEl(swap, age) : age)
     })
-  const lines = titleLineEls(
+  const { lines, over } = titleLineEls(
     r,
     shown,
     m,
@@ -108,6 +108,7 @@ function rowEl(r: RowBlock, p: Paint): Element {
           .id(`form ${r.id}`)
           .when(swap !== null, e => swapFadeEl(swap, e))
           .children(lines)
+          .children(over)
           .children(panelEl(r, shown, m, p, isInert, titleEnd)),
       ),
     )

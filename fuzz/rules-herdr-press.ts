@@ -63,7 +63,8 @@ const draws = (text: string, word: string) =>
  * view gives the pressed block in its draws after the press, until the person's next input or the next press, that it
  * did not give it in the draw before. When the block draws one at `CUT_OPACITY` or more before the next input and within
  * `WINDOW_MS`, one must start to show within `SHOWS_WITHIN_MS` of the first frame after the press, or the pressed
- * button's label must go.
+ * button's label must go. A word drawn at `STARTED` or more within that time, and in every frame after it until its growing
+ * box reaches it, also shows the press, as a status under the buttons of a row that is still opening.
  */
 export function pressShowsFailures(run: HerdrRun, shown: ShownText[], at: At): Failure[] {
   const out: Failure[] = []
@@ -107,10 +108,17 @@ export function pressShowsFailures(run: HerdrRun, shown: ShownText[], at: At): F
     if (!later) continue
     const isEarly = (s: ShownText) => s.at >= first && s.at <= first + SHOWS_WITHIN_MS
     const isShown = shown.some(s => isEarly(s) && ofPress(s) && s.opacity >= STARTED && s.share > 0)
+    const isDrawnFaint = (s: ShownText) => ofPress(s) && s.opacity >= STARTED
+    const reached = shown.find(s => s.at >= first && isDrawnFaint(s) && s.share > 0)?.at
+    const frames = [...new Set(shown.filter(s => s.at >= first && s.at <= (reached ?? first)).map(s => s.at))]
+    const waitsForBox =
+      reached !== undefined &&
+      shown.some(s => isEarly(s) && isDrawnFaint(s)) &&
+      frames.every(at => at <= first + SHOWS_WITHIN_MS || shown.some(s => s.at === at && isDrawnFaint(s)))
     const isButtonGone =
       drewBefore.has(p.label) &&
       !shown.some(s => s.at === first && baseOf(s.block) === p.block && s.text === p.label && s.opacity > 0)
-    if (isShown || isButtonGone) continue
+    if (isShown || waitsForBox || isButtonGone) continue
     const answer = p.by === 'person' ? 'its own draw' : "the draw after the host's answer"
     out.push({
       ...at(first),
