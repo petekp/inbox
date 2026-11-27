@@ -167,8 +167,8 @@ type StrokeMove = { isMoving: boolean; isGone: boolean; isHiding: boolean }
  * joins the nearest block that stays or where it ends. It runs past a row that stays nested beside it, a block that has
  * left, and a block that enters or leaves while the column runs on below it, as the path runs past a subject's mark. A
  * column whose two ends stay never fades, so it stays whole past a block that comes or goes. Otherwise it fades along
- * its whole way with an end that enters or leaves: the end whose content hides, as while it leaves or waits for its
- * space, else the block where the part is drawn, else the upper end. So a fold's rows fade with the column from their
+ * its whole way with an end that enters or leaves: the upper end whose content hides, as while it leaves or waits for
+ * its space, else the upper end. So a fold's rows fade with the column from their
  * parent, and a column stays whole past a copy that has left while both its ends show. A column of a block that has left
  * that no longer joins two blocks hides at once, since its content has already faded.
  */
@@ -196,7 +196,7 @@ export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: Strok
     return { stays: false, first, end: null }
   }
   const joinsAt = (r: ColumnReach): number | null | undefined => (r.stays ? null : (r.end ?? undefined))
-  /** The fade of the end that shows last among `ends`, where null is an end that stays. */
+  /** The fade of the upper end among `ends` whose content hides, else of the upper end, where null is an end that stays. */
   const shownLast = (ends: (number | null)[]): Fade => {
     const moving = ends.filter(j => j !== null)
     const end = moving.find(j => moves[j]?.isHiding) ?? moving[0]
@@ -217,7 +217,7 @@ export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: Strok
         const below = hasOn ? joinsAt(reach(i, depth, 1)) : i
         if (above === undefined || below === undefined) return off
 
-        return shownLast(isThrough ? [above, below] : [i, hasIn ? above : below])
+        return shownLast([above, below])
       }
 
       return { own, above: side, below: side }

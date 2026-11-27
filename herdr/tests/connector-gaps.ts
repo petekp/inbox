@@ -1,12 +1,10 @@
 import type { Painted } from './gpui-stand-in'
 import type { Box } from './layout'
 
-/** How a stroke is hidden: faded out after it showed, hidden since its first draw, or not at all. */
 export type Hidden = 'faded' | 'unopened' | null
 
 type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean; hidden: Hidden }
 
-/** Where a column breaks, and the hidden box it runs into there, if any. */
 export type Gap = { id: string; x: number; y: number; into: string | null }
 
 const lengthIn = (length: number | string, height: number): number =>

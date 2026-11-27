@@ -18,13 +18,13 @@ const KNOWN: {
     issue: 1032,
     look: 'herdr',
     rule: 'jump',
-    details: ['other moved', /~(from|to) \d+ moved/, /^(size|fit|box) done moved/],
+    details: ['other moved'],
   },
   {
     issue: 1032,
     look: 'herdr',
     rule: 'connector-gap',
-    details: [/in fit m\d breaks at y [\d.]+(, where it runs into a box that has not opened \(fit m\d\))?$/],
+    details: [/in fit m\d breaks at y [\d.]+, where it runs into a box that has not opened \(fit m\d\)$/],
   },
   {
     issue: 1041,
