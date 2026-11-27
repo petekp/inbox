@@ -14,7 +14,7 @@ A new folder, `herdr/`, holds the look. It follows `omp/`: the decisions import 
 | `herdr/src/follow.ts` | Picks the session to show from focus, panes and labels. Pure, so it is tested without Herdr. |
 | `herdr/src/files.ts` | Reads an envelope and builds a press file. Checks `format`, and runs `upgradeSession`. |
 | `herdr/src/draw.ts` | Maps the shared view and plans to element descriptions, in plan order. |
-| `herdr/build.ts` | Bundles `main.ts` and the shared modules into `herdr/mod/inbox/main.js`, with `mod.json`. |
+| `herdr/build.ts` | Bundles `main.ts` and the shared modules into `herdr/mods/inbox/main.js`, with `mod.json`. |
 | `herdr/tests/` | Tests for `follow`, `files` and the plan order in `draw`. |
 
 **A build trap the spike hit.** Bun's browser target replaced `import * as fs from 'fs/promises'` with an empty object, even with `fs/promises` marked external. The spike's first press then failed with "not a function". The look should use only the `herdr` module's file calls, and `herdr/build.ts` should fail when the bundle holds an empty stand-in for any module.
