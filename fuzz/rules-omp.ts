@@ -89,6 +89,30 @@ function countBreak(d: OmpDraw): string | null {
 
 const LOOK = 'omp'
 
+/**
+ * The `press-shows` rule: a key shows what it did in its own draw. When the draw after the work it started settled
+ * differs from the draw before it, its own draw must differ too.
+ */
+function pressShowsFailures(run: OmpRun): Failure[] {
+  return run.keys.flatMap(k => {
+    const [before, own, settled] = [run.draws[k.before], run.draws[k.own], run.draws[k.settled]]
+    if (!before || !own || !settled) return []
+    const isSame = (a: OmpDraw, b: OmpDraw) => a.styled.join('\n') === b.styled.join('\n')
+    if (isSame(before, settled) || !isSame(before, own)) return []
+    const line = settled.styled.findIndex((l, i) => l !== before.styled[i])
+    return [
+      {
+        look: LOOK,
+        rule: 'press-shows',
+        at: own.at,
+        after: own.after,
+        detail: `the key "${k.key}" changed nothing in its own draw, and the draw after its work settled changed line ${line}`,
+        seen: settled.lines.join('\n'),
+      },
+    ]
+  })
+}
+
 /** Every resting rule the omp panel broke in a run. Width is measured as omp's TUI measures a line before it cuts one. */
 export function ompFailures(run: OmpRun, input: string): Failure[] {
   if (run.error)
@@ -102,7 +126,7 @@ export function ompFailures(run: OmpRun, input: string): Failure[] {
         seen: run.error.message,
       },
     ]
-  const out: Failure[] = []
+  const out: Failure[] = pressShowsFailures(run)
   for (const d of run.draws) {
     const at = { look: LOOK, at: d.at, after: d.after }
     for (const [i, line] of d.lines.entries()) {

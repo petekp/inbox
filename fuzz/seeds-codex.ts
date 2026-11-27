@@ -351,4 +351,35 @@ export const CODEX_SEEDS: {
       ],
     },
   },
+  {
+    name: 'opening a PR comment from its thread, as the press shows',
+    rule: 'press-shows',
+    detail: '"✓ Opened the comment"',
+    issue: 1012,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'light',
+      width: 360,
+      isReduced: false,
+      events: [
+        { is: 'click', on: 'tab', n: 3 },
+        { is: 'click', on: 'button', n: 4 },
+      ],
+    },
+  },
+  {
+    name: 'Open previews on a task, as its result shows',
+    rule: 'press-shows',
+    detail: '"✓ Opened previews"',
+    issue: 1014,
+    isOpen: true,
+    case: {
+      look: 'codex',
+      theme: 'dark',
+      width: 360,
+      isReduced: false,
+      events: [{ is: 'click', on: 'button', n: 2 }],
+    },
+  },
 ]

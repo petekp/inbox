@@ -81,9 +81,14 @@ export type HerdrRun = {
   pageAt: number[]
   /** The times of the draws that followed the person's key, click or typing. */
   inputAt: number[]
+  /** Each press and the host's answer to it: the draw's time, the block pressed and the press's label or key. */
+  presses: Press[]
   notes: string[]
   error: { at: number; after: number; message: string } | null
 }
+
+/** A draw that answers a press: the person's own draw, or the draw after the host applied the press file. */
+export type Press = { at: number; block: string; label: string; by: 'person' | 'host' }
 
 type Timer = { at: number; every: number | null; fn: (cx: unknown) => void; isCancelled: boolean }
 
@@ -135,6 +140,9 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
   const steps: Step[] = []
   const pageAt: number[] = []
   const inputAt: number[] = []
+  const presses: Press[] = []
+  /** The block and label of each press file the look wrote, by path, so the host's answer names them. */
+  const pressed = new Map<string, Omit<Press, 'at' | 'by'>>()
   let after = -1
   let wasMessage = false
   const draw = () => {
@@ -175,6 +183,8 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
       files.delete(path)
       const read = pressFile(f.text)
       if (!read.ok) continue
+      const from = pressed.get(path)
+      if (from) presses.push({ ...from, at: clock - START, by: 'host' })
       const started = startedFile(await startHerdrFile(host, read.file, 's1'), outcome => {
         if (outcome.wakesAfterSettle) add(WAKE_AFTER_MS, () => void wakeAfterSettle(host), null)
       })
@@ -218,8 +228,19 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
   try {
     for (const [i, e] of c.events.entries()) {
       after = i
-      notes.push((await apply(e)) ?? '')
+      const filesBefore = new Set(files.keys())
+      const outBefore = new Set(Object.keys(p.panel.ui.pressesOut))
+      const target = { block: null as string | null }
+      notes.push((await apply(e, target)) ?? '')
       await settle()
+      const outNow = Object.entries(p.panel.ui.pressesOut).filter(([id]) => !outBefore.has(id))
+      const block = target.block ?? outNow[0]?.[1].rowId ?? null
+      if (block !== null && (e.is === 'click' || e.is === 'key')) {
+        const label = e.is === 'key' ? e.key : (notes.at(-1)?.match(/"(.*)"/)?.[1] ?? '')
+        presses.push({ at: clock - START, block, label, by: 'person' })
+        for (const path of files.keys())
+          if (path.includes('/presses/') && !filesBefore.has(path)) pressed.set(path, { block, label })
+      }
       await reread()
       draw()
       if (isPersonEv(e)) inputAt.push(clock - START)
@@ -233,14 +254,15 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
       steps,
       pageAt,
       inputAt,
+      presses,
       notes,
       error: { at: clock - START, after, message: err instanceof Error ? (err.stack ?? err.message) : String(err) },
     }
   }
 
-  return { draws, steps, pageAt, inputAt, notes, error: null }
+  return { draws, steps, pageAt, inputAt, presses, notes, error: null }
 
-  async function apply(e: Ev): Promise<string | void> {
+  async function apply(e: Ev, target: { block: string | null }): Promise<string | void> {
     if (e.is === 'wait') return wait(e.ms)
     if (isAgentEv(e)) return runAgent(host, e)
     if (e.is === 'end') {
@@ -272,12 +294,22 @@ export async function runHerdr(c: Case, restMs = 3000): Promise<HerdrRun> {
     }
     const selected = p.panel.blocks.find(b => b.kind === 'row' && b.isSelected)
     const row = selected && nodes.find(n => n.id === `row ${selected.id}`)
-    const buttons = row ? allOf(row).filter(n => n.click !== null && n.label !== null) : []
-    const button = pickOf(buttons, e)
+    const own = row ? allOf(row).filter(n => n.click !== null && n.label !== null) : []
+    const others = nodes.filter(
+      n => n.id?.startsWith('button ') && n.click !== null && n.label !== null && !own.includes(n),
+    )
+    const button = pickOf([...own, ...others], e)
     if (!button) return 'no button to click'
     p.click(button)
-    return `clicked "${button.label}" on ${row?.id}`
+    target.block = own.includes(button) ? (selected?.id ?? null) : blockOfNode(button)
+    return `clicked "${button.label}" on ${target.block ?? 'the list'}`
   }
+}
+
+/** The block a drawn node belongs to: the id of the nearest box around it, as the frame stand-in names a text's block. */
+function blockOfNode(n: Painted): string | null {
+  for (let up: Painted | null = n; up; up = up.parent) if (up.id?.startsWith('box ')) return up.id.slice(4)
+  return null
 }
 
 const isPersonEv = (e: Ev): boolean => e.is === 'key' || e.is === 'click' || e.is === 'type'

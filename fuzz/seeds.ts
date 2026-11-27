@@ -1,34 +1,9 @@
-import { demoSession } from '../core/view/demo'
 import { emptySession } from '../core/view/session-files'
-import type { Case, Ev } from './case'
+import type { Case } from './case'
 import { openIds } from './agent'
-import { START } from './gen'
-import type { HostOutcomes } from './host'
+import { UNCONFIRMED, demo, herdr, omp, only } from './seed-cases'
+import { PRESS_SEEDS } from './seeds-press'
 
-const ACCEPTED: HostOutcomes = { deliver: ['accepted'], isHeldUntilRun: false, performFails: [false] }
-const UNCONFIRMED: HostOutcomes = { deliver: ['unconfirmed'], isHeldUntilRun: false, performFails: [false] }
-
-const herdr = (session: Case['session'], events: Ev[]): Case => ({
-  look: 'herdr',
-  session,
-  outcomes: ACCEPTED,
-  takeAfterMs: 80,
-  width: 80,
-  events,
-})
-
-const omp = (events: Ev[]): Case => ({ ...herdr(emptySession(), events), look: 'omp' })
-
-const demo = demoSession(START, 'Claude')
-/** The demo session with only the items `ids` and the PRs `prs`, and no findings or closed items. */
-const only = (ids: string[], prs: string[] = []): Case['session'] => ({
-  ...demo,
-  ledger: { ...demo.ledger, items: demo.ledger.items.filter(i => ids.includes(i.id)), findings: [], closed: [] },
-  prViews: {
-    ...demo.prViews,
-    views: Object.fromEntries(Object.entries(demo.prViews.views).filter(([k]) => prs.includes(k))),
-  },
-})
 export const ESC = String.fromCodePoint(0x1b)
 export const BEL = String.fromCodePoint(7)
 const LONG_URL = `https://example.com/${'path/'.repeat(30)}`
@@ -650,4 +625,5 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
       width: 40,
     },
   },
+  ...PRESS_SEEDS,
 ]

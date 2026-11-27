@@ -181,9 +181,92 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
     lastSteps = steps
     lastBoxes = boxes
     wasPageFrame = isPageFrame
+    pressShows()
     if (isRunning && !isFrozen) win.requestAnimationFrame(sample)
   }
   win.requestAnimationFrame(sample)
+
+  /**
+   * The `press-shows` rule: the frames that answer a press, the first after the click and the first after the server's
+   * reply to it, show what the press brought to the pressed button's box. What it brought is a text the box did not
+   * show when the press or reply came. When the box shows one at the cut opacity before the next input, the next
+   * reply or `PRESS_WINDOW_MS`, one must start to show, or the pressed label go, within `SHOWS_WITHIN_MS` of the first frame.
+   * A press that settles a row or brings it back swaps its form, fading the old out before the new comes in, and the
+   * row closing shows the press.
+   */
+  const PRESS_WINDOW_MS = 1000
+  const SHOWS_WITHIN_MS = 40
+  const STARTED = 0.01
+  type Answer = {
+    at: number
+    box: string
+    label: string
+    by: string
+    had: Set<string>
+    first?: number
+    isShown?: boolean
+    isDone?: boolean
+  }
+  const answers: Answer[] = []
+  const inputs: number[] = []
+  const rootOf = (box: string) => d.querySelector(`[data-motion="${win.CSS.escape(box)}"]`)
+  const textsOf = (box: string) => {
+    const out = new Map<string, number>()
+    for (const el of rootOf(box)?.querySelectorAll('*') ?? []) {
+      const own = [...el.childNodes]
+        .filter(n => n.nodeType === 3)
+        .map(n => n.textContent ?? '')
+        .join('')
+        .trim()
+      if (own) out.set(own, Math.max(out.get(own) ?? 0, opacityOf(el)))
+    }
+    return out
+  }
+  const answer = (box: string, label: string, by: string) => {
+    const had = new Set([...textsOf(box)].filter(([, o]) => o > 0).map(([t]) => t))
+    answers.push({ at: now(), box, label, by, had })
+  }
+  const pressShows = () => {
+    const t = now()
+    for (const a of answers.filter(a => !a.isDone)) {
+      if (t - a.at > PRESS_WINDOW_MS || inputs.some(x => x > a.at && x <= t)) {
+        a.isDone = true
+        continue
+      }
+      a.first ??= t
+      const isFormSwap = rootOf(a.box)?.classList.contains('swaps-form') === true
+      if (isFormSwap && t === a.first) {
+        a.isDone = true
+        continue
+      }
+      const texts = textsOf(a.box)
+      const brought = [...texts].filter(([text]) => !a.had.has(text))
+      const isEarly = t - a.first <= SHOWS_WITHIN_MS
+      if (isEarly && (brought.some(([, o]) => o >= STARTED) || !(texts.get(a.label) ?? 0))) a.isShown = true
+      const later = brought.find(([, o]) => o >= spec.cutOpacity)
+      if (!later) continue
+      a.isDone = true
+      const own = a.by === 'person' ? 'its own frame' : "the frame after the server's reply"
+      if (!a.isShown)
+        fail(
+          'press-shows',
+          `the press "${a.label}" on ${a.box} showed nothing it brought in ${own}: "${later[0].slice(0, 50)}" first showed ${t - a.first} ms later`,
+        )
+    }
+  }
+  const replies = new Map<unknown, { box: string; label: string }>()
+  let lastPress: { box: string; label: string } | null = null
+  addEventListener('message', e => {
+    const m = e.data
+    if (e.source === win && m?.method === 'tools/call' && m.params?.name === 'inbox_press' && lastPress)
+      replies.set(m.id, lastPress)
+  })
+  win.addEventListener('message', e => {
+    const p = replies.get(e.data?.id)
+    if (!p || e.data.method) return
+    inputs.push(now())
+    answer(p.box, p.label, 'server')
+  })
 
   const opacityOf = (el: Element) => {
     let opacity = 1
@@ -272,6 +355,7 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
   for (const [i, e] of spec.events.entries()) {
     if (isFrozen) break
     after = i
+    if (e.is !== 'wait') inputs.push(now())
     if (e.is === 'wait') {
       await sleep(e.ms)
       notes.push('')
@@ -298,6 +382,11 @@ export async function drive(spec: CodexSpec): Promise<PageRun> {
       }
       const list = sets[e.on]
       const el = list[e.n % Math.max(1, list.length)]
+      const box = el?.closest<HTMLElement>('[data-motion]')?.dataset.motion
+      if (el && box !== undefined && e.on === 'button') {
+        lastPress = { box, label: label(el) }
+        answer(box, label(el), 'person')
+      }
       if (el) {
         press(el)
         if (e.on === 'tab') pageAt = now()

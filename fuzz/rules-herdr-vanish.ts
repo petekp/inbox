@@ -12,7 +12,12 @@ const FIELD_TEXT = 'text field: '
 type ShownText = { at: number; block: string; text: string; opacity: number; share: number }
 type At = (t: number) => Pick<Failure, 'look' | 'at' | 'after'>
 
-const keyOf = (s: ShownText) => `${s.block}|${s.text}`
+/** A moved block's copy and its boxes at its new place carry its id, then `~from` or `~to` and the time it moved. */
+export const baseOf = (block: string) => block.replace(/~(from|to) \d+$/, '')
+/** The place a block draws in: a moved block's copy draws in the place the block left. */
+const placeOf = (block: string) => block.replace(/~from \d+$/, '')
+
+const keyOf = (s: ShownText) => `${placeOf(s.block)}|${s.text}`
 const isShown = (s: ShownText) => s.opacity * s.share >= CUT_OPACITY && s.text.trim() !== ''
 const stem = (t: string) => t.replace(/…$/, '')
 const isRunningMark = (text: string) => (RUNNING_FRAMES as readonly string[]).includes(text)
@@ -81,7 +86,8 @@ export function vanishFailures(run: HerdrRun, shown: ShownText[], at: At): Failu
   const times = [...frames.keys()].sort((a, b) => a - b)
   const inputs = inputDraws(run)
   const isInputDraw = (t: number) => inputs.some(s => s > t - FRAME_MS && s <= t)
-  const blockAt = (t: number, block: string) => run.draws.findLast(d => d.at <= t)?.blocks.find(x => x.id === block)
+  const blockAt = (t: number, block: string) =>
+    run.draws.findLast(d => d.at <= t)?.blocks.find(x => x.id === baseOf(block))
   const markAt = (t: number, block: string) => {
     const b = blockAt(t, block)
     return b?.kind === 'row' ? b.mark : null
@@ -93,12 +99,12 @@ export function vanishFailures(run: HerdrRun, shown: ShownText[], at: At): Failu
     const before = frames.get(was) ?? []
     const now = new Map((frames.get(t) ?? []).filter(s => s.opacity > 0).map(s => [keyOf(s), s]))
     const wasShown = new Set(before.filter(isShown).map(keyOf))
-    const blocksNow = new Set([...now.values()].map(s => s.block))
+    const blocksNow = new Set((frames.get(t) ?? []).map(s => baseOf(s.block)))
     const comes = [...now.values()].filter(n => !wasShown.has(keyOf(n)))
     const goesOn = (s: ShownText) =>
       comes.some(
         n =>
-          n.block === s.block &&
+          placeOf(n.block) === placeOf(s.block) &&
           (n.text.startsWith(stem(s.text)) || n.text.endsWith(s.text) || s.text.startsWith(stem(n.text))),
       )
     const isMarkSwap = (s: ShownText) => {
@@ -106,16 +112,17 @@ export function vanishFailures(run: HerdrRun, shown: ShownText[], at: At): Failu
       const isLastMark = last !== null && (last.text === s.text || (last.isRunning && isRunningMark(s.text)))
       return isLastMark && markAt(t, s.block) !== null
     }
-    const shownIn = (block: string) => new Set(before.filter(s => s.block === block && isShown(s)).map(s => s.text))
-    const opensField = (block: string) => comes.some(n => n.block === block && n.text.startsWith(FIELD_TEXT))
+    const shownIn = (block: string) =>
+      new Set(before.filter(s => placeOf(s.block) === block && isShown(s)).map(s => s.text))
+    const opensField = (block: string) => comes.some(n => placeOf(n.block) === block && n.text.startsWith(FIELD_TEXT))
     const gone = before.filter(
-      s => isShown(s) && !now.has(keyOf(s)) && blocksNow.has(s.block) && !goesOn(s) && !isMarkSwap(s),
+      s => isShown(s) && !now.has(keyOf(s)) && blocksNow.has(baseOf(s.block)) && !goesOn(s) && !isMarkSwap(s),
     )
-    for (const block of new Set(gone.map(s => s.block))) {
-      const went = gone.filter(s => s.block === block)
-      const came = comes.filter(n => n.block === block && isShown(n) && !isMarkSwap(n)).length
+    for (const block of new Set(gone.map(s => placeOf(s.block)))) {
+      const went = gone.filter(s => placeOf(s.block) === block)
+      const came = comes.filter(n => placeOf(n.block) === block && isShown(n) && !isMarkSwap(n)).length
       if (opensField(block) || came >= went.length) continue
-      const faint = comes.find(n => n.block === block && n.text.trim() !== '' && !isShown(n))
+      const faint = comes.find(n => placeOf(n.block) === block && n.text.trim() !== '' && !isShown(n))
       const instead = faint ? `"${faint.text}" came at ${faint.opacity.toFixed(2)}` : 'nothing came in its place'
       for (const s of went)
         out.push({
