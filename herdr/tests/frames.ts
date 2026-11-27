@@ -12,6 +12,7 @@ const { moveRows } = await import('../src/motion')
 const { NO_TRACKS } = await import('../src/tracks')
 const { Heights, MOVED_TO } = await import('../src/heights')
 const { holdLinesAbove, NO_LINES_ABOVE } = await import('../src/held-line')
+const { heldAsDrawn } = await import('../src/held-drawn')
 const { LINE, LINE_HEIGHT, TEXT } = await import('../src/paint-theme')
 const { CUT_OPACITY } = await import('../../core/view/row-motion')
 const { easeOut } = await import('../src/panel-steps')
@@ -181,6 +182,12 @@ const retargetedFrom = (s: Fade): number => {
   return s.from + (s.target - s.from) * easeOut(done)
 }
 
+const isBoxFade = (n: Painted): boolean =>
+  n.transitions.get('opacity') !== undefined &&
+  n.style.opacity !== undefined &&
+  !n.style.isAbsolute &&
+  boxOf(n) !== null
+
 /** The opacity of the content of each block's box that fades. A change of the declared opacity starts an eased fade. */
 class Fades {
   states = new Map<string, Fade>()
@@ -346,9 +353,10 @@ class Frames {
     const isFirst = this.last === null
     const resized = this.heights.takeResized()
     const isForming = this.heights.isForming(isFirst, now)
-    const held = holdLinesAbove(blocks, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming)
-    this.linesAbove = held.held
+    const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove
+    const held = holdLinesAbove(blocks, lastAbove, now, isForming, isInput)
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
+    this.linesAbove = heldAsDrawn(held, lastAbove, moved)
     this.tracks = moved.tracks
     const paint = paintOf(
       moved.motion,
@@ -376,7 +384,8 @@ class Frames {
       this.fading.push({ at: now, id, height: boxes.get(id)?.height ?? 0, opacity: fade.shown })
     const plainOf = (node: Painted) => {
       let plain = 1
-      for (let up: Painted | null = node; up; up = up.parent) if (!fadesOn(up.id)) plain *= up.style.opacity ?? 1
+      for (let up: Painted | null = node; up; up = up.parent)
+        if (!fadesOn(up.id) && !isBoxFade(up)) plain *= up.style.opacity ?? 1
       return plain
     }
     for (const { node, share } of cutTexts(placed)) {

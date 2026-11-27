@@ -64,27 +64,25 @@ function rowEl(r: RowBlock, p: Paint): Element {
     .when(hasTree, e => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk)))
     .child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark)
     .child(titleTextEl(r, p, titleColorOf(r, p)))
-    .when(r.age !== null, e =>
-      e.child(
-        div()
-          .flex_none()
-          .ml(INSET)
-          .text_color(faintOf(t, r.isSelected ? t.selected : t.background))
-          .child(r.age ?? ''),
-      ),
-    )
+    .when(shown.age !== null, e => {
+      const age = div()
+        .id(`age ${r.id}`)
+        .flex_none()
+        .ml(INSET)
+        .text_color(faintOf(t, r.isSelected ? t.selected : t.background))
+        .child(shown.age ?? '')
+      return e.child(swap?.isAgeSwapped ? swapFadeEl(swap, age) : age)
+    })
   const lines = titleLineEls(
     r,
     shown,
     m,
     p,
     (l, n) => {
-      const above = partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus')
-      const trunk = panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`))
-      const el = bodyLineEl(l, above, t, r.isSelected).when(hasTree, e => e.child(trunk))
-
+      const el = bodyLineEl(l, partPt(n === 0 ? 'title' : 'titleStatus', 'titleStatus'), t, r.isSelected)
       return l.isHidden ? el.opacity(0) : el
     },
+    n => (hasTree ? panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`)) : null),
     el => panelFadeEl(r, m, p, el),
   )
   const titleEnd: RowPart = lines.length > 0 ? 'titleStatus' : 'title'

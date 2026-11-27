@@ -31,6 +31,8 @@ import { stepWarning, warningId } from './warning-line'
 import { fieldOpening, fieldTimes, stepFieldWait } from './field-wait'
 import type { FieldOpening } from './field-wait'
 import { NO_TRACKS } from './tracks'
+import { blockSwapMotion, blockSwapTimes, stepBlockSwap, swapDrawn } from './block-swap'
+import type { BlockSwap, BlockSwapMotion } from './block-swap'
 import type { Tracked, Tracks } from './tracks'
 
 /**
@@ -50,7 +52,8 @@ import type { Tracked, Tracks } from './tracks'
  * back had been springing shut. `springId` is what names the block's boxes in place of its id, for a block that moved: the boxes it left behind are
  * still drawn, and a new box starts from the height it is drawn at. `under` is how the status under a row's buttons
  * draws as it comes and goes, `status` and `prTail` how a PR block's lines do, and `warning` the stopped warning. `former` is the block's last form in the draw it changes kind, as a PR's block does when it
- * is dismissed, so its box keeps that form's height until the new form measures. `field` is how the buttons of a row's reply field draw
+ * is dismissed, so its box keeps that form's height until the new form measures, and `blockSwap` how its content fades from
+ * the one form to the other, as a Status line's parts do as they change. `field` is how the buttons of a row's reply field draw
  * while the field comes, null at rest.
  */
 export type RowMotion = {
@@ -74,6 +77,7 @@ export type RowMotion = {
   prTail: PrTailMotion | null
   warning: UnderMotion<string> | null
   former: Block | null
+  blockSwap: BlockSwapMotion | null
   swap: SwapMotion | null
   field: FieldOpening | null
 }
@@ -170,6 +174,7 @@ export function moveRows(
     return old !== undefined && targetOf(b) === 'open' && targetOf(old.block) !== 'open'
   })
   const waiting = new Map<string, Block>()
+  const blockSwaps = new Map<string, BlockSwap>()
   const rows = new Map<string, Tracked>()
   const motion = new Map<string, RowMotion>()
   const add = (block: Block, track: RowTrack, last: Tracked | undefined, springId: string | null = null) => {
@@ -268,6 +273,7 @@ export function moveRows(
       swap: waited,
       restSpace,
       fieldWait,
+      blockSwap: blockSwaps.get(block.id) ?? null,
     })
     motion.set(block.id, {
       state: track.state,
@@ -290,6 +296,7 @@ export function moveRows(
       prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
       warning: underMotion(warning, now, heightOf(warningId(block.id))),
       former: last && last.block.kind !== block.kind ? last.block : null,
+      blockSwap: blockSwapMotion(blockSwaps.get(block.id) ?? null, now, heightOf(block.id)),
       swap: swapMotion(waited, now),
       field: fieldOpening(fieldWait, now),
     })
@@ -299,6 +306,12 @@ export function moveRows(
     const isMovedOn = prior?.track.state === 'entering' && prior.springId?.includes(MOVED_TO) === true
     const isMoved = moved.has(b.id) && !isMovedOn
     const old = isMoved ? undefined : prior
+    const isBoxAtRest = old !== undefined && (old.glide === null || now >= old.glide.endsAt)
+    const blockSwap = isFirst
+      ? null
+      : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, heightOf(b.id))
+    if (blockSwap) blockSwaps.set(b.id, blockSwap)
+    const given = swapDrawn(blockSwap, b)
     const opens = old !== undefined && targetOf(b) === 'open' && targetOf(old.block) !== 'open'
     const waitsForLeave = opens && !isInput && isHolding
     const isTurningBack = old?.track.state === 'closing' && old.swap?.inAt !== null
@@ -307,8 +320,8 @@ export function moveRows(
       ? old.block
       : waitsForClose
         ? { ...old.block, isSelected: true, isCollapsed: true as const }
-        : b
-    if (waitsForLeave || waitsForClose) waiting.set(b.id, drawn)
+        : given
+    if (waitsForLeave || waitsForClose || given !== b) waiting.set(b.id, drawn)
     const track = stepRow(old?.track, targetOf(drawn), now, isMoved || (!isFirst && !wasDrawn.has(b.id)))
     if (track) add(drawn, track, old, isMoved ? `${b.id}${MOVED_TO}${now}` : (old?.springId ?? null))
   }
@@ -344,6 +357,7 @@ export function moveRows(
       ...underTimes(t.warning),
       ...swapTimes(t.swap),
       ...fieldTimes(t.fieldWait),
+      ...blockSwapTimes(t.blockSwap),
       holdsUntil,
       closeHoldsUntil,
       opensAfterClose,

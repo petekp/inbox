@@ -231,20 +231,17 @@ test('a dismissed PR’s block glides between its open and dismissed forms in bo
   }
 })
 
-test.failing(
-  'D2, a press that grows the block it changes: a dismissed PR whose status line is hidden cuts no text as its block grows',
-  () => {
-    const unread = demoSession(NOW, AGENT)
-    const frames = framesOf(
-      [
-        [0, tabBlocks(demoScreen(unread), uiOn('prs'))],
-        [0, dismissedPr('acme/visor#29', NOW - 500, [], unread).blocks],
-      ],
-      900,
-    )
-    expect(frames.cuts.filter(c => c.at >= 0)).toEqual([])
-  },
-)
+test('D2, a press that grows the block it changes: a dismissed PR whose status line is hidden cuts no text as its block grows', () => {
+  const unread = demoSession(NOW, AGENT)
+  const frames = framesOf(
+    [
+      [0, tabBlocks(demoScreen(unread), uiOn('prs'))],
+      [0, dismissedPr('acme/visor#29', NOW - 500, [], unread).blocks],
+    ],
+    900,
+  )
+  expect(frames.cuts.filter(c => c.at >= 0)).toEqual([])
+})
 
 test('a Dismiss whose reply lands 16, 100 or 300 ms after its press moves the list only toward its new height, on an open row and on a PR’s block', () => {
   const ref = 'acme/visor#29'

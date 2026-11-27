@@ -45,6 +45,6 @@ Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so t
 - `title`: each recorded row shows the first 8 letters and digits of its title, which a cut title still shows.
 - `bad-text` and `raw-escape`: no drawn text holds `NaN`, `undefined` or `[object Object]`, or a control character.
 
-The shrinker drops records. On seeds 1 and 2 with 40 and 150 cases, no generated case fails. A fixed seed in `MOD_SEEDS` (`fuzz/seeds.ts`) holds the escape case of #830, which is closed, so it must pass, and the run fails when it does not. An open issue's seed is expected to fail, and the run fails when it passes. `check.sh` does not run this look, since its fuzz step covers the Herdr look, the omp panel and the row stepper.
+The shrinker drops records. On seeds 1 and 2 with 40 and 150 cases, no generated case fails. A fixed seed in `MOD_SEEDS` (`fuzz/seeds-mod.ts`) holds the escape case of #830, which is closed, so it must pass, and the run fails when it does not. An open issue's seed is expected to fail, and the run fails when it passes. `check.sh` does not run this look, since its fuzz step covers the Herdr look, the omp panel and the row stepper.
 
 The terminal does not glide, and the test engine lays out no pixels, so neither look has motion rules. Desktop pixels need the VM. Plan order in both looks is already checked on the demo by the demo test in `tests/hooks.test.ts`. Next: presses, keys and widths of drawn lines in the terminal.

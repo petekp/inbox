@@ -83,7 +83,7 @@ export function stepLine<L>(
   const isReplaced = last !== null && line !== null && !isSameLine(last.line, line) && isSameForm && !isInput
   if (last?.next !== undefined || (isReplaced && (last.isLeaving || isShown(last, now, height))))
     return replaced(last, line, isSameForm, now, isInput, isSameLine)
-  if (line && last?.isLeaving) return { line, since: now, isLeaving: false, isInput, isBack: true }
+  if (line && last?.isLeaving) return cameBack(line, now, isInput)
   if (!line) return leaving(last, isSameForm, now, isInput)
   if (!last) return { line, since: now, isLeaving: false, isInput }
   if (isSameLine(last.line, line)) return { ...last, line }
@@ -128,14 +128,22 @@ function replaced<L>(
 ): UnderLine<L> | null {
   const { next: _, ...old } = last
   if (!line) return leaving(old, isSameForm, now, isInput)
-  if (isSameLine(old.line, line))
-    return old.isLeaving ? { line, since: now, isLeaving: false, isInput, isBack: true } : { ...old, line }
+  if (isSameLine(old.line, line)) return old.isLeaving ? cameBack(line, now, isInput) : { ...old, line }
   if (isInput || !isSameForm) return { line, since: now, isLeaving: false, isInput }
   if (!old.isLeaving) return { ...old, since: now, isLeaving: true, next: line }
   if (now < old.since + LEAVE_ENDS_MS) return { ...old, next: line }
 
   return { line, since: now, isLeaving: false, isInput: false, waitMs: NEXT_FRAME_MS }
 }
+
+/**
+ * A line that comes back while the line before it leaves, in the space that line holds: it fades back in from the
+ * opacity the leaving line shows, or, when the person's input brings it, starts faint, as a line their press brings does.
+ */
+const cameBack = <L>(line: L, now: number, isInput: boolean): UnderLine<L> =>
+  isInput
+    ? { line, since: now, isLeaving: false, isInput, waitMs: NEXT_FRAME_MS }
+    : { line, since: now, isLeaving: false, isInput, isBack: true }
 
 function leaving<L>(
   last: UnderLine<L> | null,
@@ -153,8 +161,7 @@ function leaving<L>(
  * A line that comes is drawn in its first draw, which sets the row's box growing, and fades in once the box is nearly
  * open, `height` being the line's measured height, so the growing box never cuts it while it shows. A line the
  * person's press brings starts at `FAINT_OPACITY`, so the press shows in its own draw, faint enough that the growing box
- * may cut it, and others start hidden. A line that comes back while it leaves keeps its space and fades back in from
- * the opacity it shows. A line that goes fades out from the draw after it starts.
+ * may cut it, and others start hidden. A line that comes back while it leaves keeps its space, as `cameBack` says. A line that goes fades out from the draw after it starts.
  */
 export function underMotion<L>(u: UnderLine<L> | null, now: number, height: number | undefined): UnderMotion<L> | null {
   if (!u) return null

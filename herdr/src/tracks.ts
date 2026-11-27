@@ -3,6 +3,7 @@ import type { Block, RowBlock } from './blocks'
 import type { Glide } from './block-glide'
 import type { FieldWait } from './field-wait'
 import type { FormSwap } from './form-swap'
+import type { BlockSwap } from './block-swap'
 import type { PanelSpace, PanelStep } from './panel-steps'
 import type { PrLine, PrTail } from './pr-status'
 import type { TitleGlide } from './title-motion'
@@ -18,7 +19,7 @@ import type { UnderLine } from './under-line'
  * panel fades in, each with its start, when the open turned a close back, or the steps a closing row's panel fades out
  * in when the close started while that panel was still faint (`faintCloseFades`). `panelHeldUntil` is when a closing row's
  * panel has faded out, so its box lets go of the panel's height. `restSpace` is the spring of the part of a row's box
- * under its title. `fieldWait` is a row's reply field as its press brings it in.
+ * under its title. `fieldWait` is a row's reply field as its press brings it in, and `blockSwap` the block's change of form.
  */
 export type Tracked = {
   track: RowTrack
@@ -38,6 +39,7 @@ export type Tracked = {
   swap: FormSwap | null
   restSpace: PanelSpace | null
   fieldWait: FieldWait | null
+  blockSwap: BlockSwap | null
 }
 
 /**

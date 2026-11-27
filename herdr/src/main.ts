@@ -53,6 +53,7 @@ import { helpBlocks } from './draw-help'
 import { isFieldDrawn, keyMove } from './keys'
 import { writeCollapse } from './collapse'
 import { NO_LINES_ABOVE, holdLinesAbove } from './held-line'
+import { heldAsDrawn } from './held-drawn'
 import type { LinesAbove } from './held-line'
 import { moveRows } from './motion'
 import { NO_TRACKS } from './tracks'
@@ -411,12 +412,13 @@ export default class Inbox extends View {
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks
     this.blocks = shown
     this.hints = fieldHints(shown)
-    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming)
-    this.linesAbove = held.held
     const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits)
     this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map(o => o.rowId) }
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt
+    const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove
+    const held = holdLinesAbove(shown, lastAbove, now, isForming, isInput)
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights)
+    this.linesAbove = heldAsDrawn(held, lastAbove, moved)
     this.tracks = moved.tracks
     this.tracksOf = tracksOf
     paint.motion = moved.motion

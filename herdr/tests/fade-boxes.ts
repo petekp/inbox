@@ -10,6 +10,7 @@ const FADE_PREFIXES = [
   'form ',
   'trunk ',
   'mark ',
+  'age ',
   'spent ',
   'warning ',
   'added ',

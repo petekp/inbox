@@ -12,7 +12,7 @@ The looks are tested on the demo session and a few hand-picked states. Bugs such
 
 - Bun runs `fuzz/run.ts`. Case `i` of a run draws every choice from a PRNG seeded with `(seed, i)`, so `--seed N --case i` runs that case again. `--time` stops after that many seconds, `--runs` after that many cases.
 - Each failure writes `fuzz/out/<run>/<look>-<rule>-<n>.json`, the shrunk case, which `--replay` runs again. Beside it, a `.md` gives the look, the rule, what it saw, the time of the draw or frame, the drawn lines or the frame's boxes, the case's size before and after shrinking, and the replay command. Each rule is shrunk at most `--shrinks` times a run, and a shrunk case already written is not written again. With `--shrinks 0`, the first failing case of each rule is written as it is. `fuzz/out/` is Git-ignored.
-- A failure that an open issue already describes is known: `KNOWN` in `fuzz/known.ts` names each one by look, rule and a text in its detail. Known failures are counted but not shrunk or written, unless `--known` asks for them. A run exits 0 when every failure is known and no seed fails differently from its issue, and 1 on anything else, except that a Codex run or replay exits 2 when a case's tab page did not load and nothing failed. A seed whose issue is open but that now passes also fails the run, and its line says to close the issue and mark the seed closed in `fuzz/seeds.ts` in the same PR. A known failure that no case hit does not fail the run.
+- A failure that an open issue already describes is known: `KNOWN` in `fuzz/known.ts` names each one by look, rule and a text in its detail. Known failures are counted but not shrunk or written, unless `--known` asks for them. A run exits 0 when every failure is known and no seed fails differently from its issue, and 1 on anything else, except that a Codex run or replay exits 2 when a case's tab page did not load and nothing failed. A seed whose issue is open but that now passes also fails the run, and its line says to close the issue and mark the seed closed in its seeds file in the same PR. A known failure that no case hit does not fail the run.
 - `check.sh` runs a short fixed-seed run of it, described under "A fixed-seed run for check.sh" below.
 - No model calls, no screen, no VM. Everything is headless and in one process.
 
@@ -100,7 +100,7 @@ None. A seeded PRNG is ten lines, and the shrinker works on the case's own JSON.
 - `host.ts`: the in-memory host. `agent.ts`: the agent's events through the shared code.
 - `look-omp.ts`, `look-herdr.ts`: each look's driver. `look-codex.ts` and `codex-page.ts`: the Codex tab's driver and the code it runs in the page. `look-mod.ts`, `mod-look.ts` and `mod-case.ts`: the mod's looks, with `tsconfig.mod.json` to type-check the part that runs in the test engine. `look-rows.ts`: the shared row stepper, with its own generator, rules and shrinking, since a case there is a list of draws rather than a session.
 - `rules-text.ts`, `rules-omp.ts`, `rules-herdr.ts`, `rules-herdr-vanish.ts`, `failure.ts`: the rules.
-- `seeds.ts` and `seeds-codex.ts`: the seeds. `known.ts`: the failures open issues already describe.
+- `seeds.ts`, `seeds-codex.ts` and `seeds-mod.ts`: the seeds. `known.ts`: the failures open issues already describe.
 - `shrink.ts`, `tsconfig.json`.
 
 `scripts/fuzz.sh` runs it. Reports go to `fuzz/out/`, which Git ignores. Each file stays at 5,000 tokens or under.
