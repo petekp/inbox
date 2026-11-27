@@ -23,3 +23,21 @@ Checked on 2026-11-25 against `@oh-my-pi/pi-coding-agent` 19.2.1, installed from
 
 - **`session_clear` fires once the context is reset [source 19.2.1, live 19.2.1].** It is the last step of `resetContext` (`agent-session.ts`), and the session keeps its id. omp's notes date the event to 18.20.1. The inbox resets the session as Claude Code and Codex do at `/clear` (`omp/src/host-turns.ts:onSessionClear`).
 - **18.12.3's `/clear` sends no extension event [live 18.12.3].** The command exists there, but the event log showed nothing, so the inbox keeps the cleared conversation's rows.
+
+## Loading, turning off and turning on again
+
+Checked on 2026-11-26 on 19.2.1, live in tmux with a fresh `HOME`, and in its source.
+
+- **The extension's id comes from its file name [source 19.2.1].** omp names a loaded file `extension-module:<name>`. The inbox's `omp/dist/host.js` is `extension-module:host`, so `disabledExtensions: [extension-module:inbox]` turns nothing off.
+- **An extension added while omp runs loads at once [live 19.2.1].** An edit to `extensions` or `disabledExtensions` makes omp load what changed. omp sends the session's `session_start` again to an extension it adds, so the band appeared and `/inbox` worked without a restart.
+- **Turning an extension off leaves it loaded [live 19.2.1, source 19.2.1].** omp stops calling its handlers, commands and tools: `/inbox` went to the agent as a prompt. It sends no event, and keeps the module, its timers and the widgets it set with `setWidget`. The band "Nothing needed · /inbox to open" stayed on screen. From the source, the inbox's timers and its Herdr press follower (`omp/src/host-presses.ts`) keep running too.
+- **Turning it on again resumes the same module [live 19.2.1].** omp never unloads a module, so one band showed and `/inbox` worked, with no second copy.
+- **A fresh `HOME` needs `setupVersion: 3` [live 19.2.1 and 18.12.3].** 19.2.1 opens its setup wizard at `setupVersion: 2`. 18.12.3 skips it at 3.
+- **Tools marked `essential` never become bash commands [source 19.2.1].** The agent eval's probe registers `record`, `close` and `order_prs` as native tools, and `evals/agent-cli.ts:assertOnlyOmpProbe` stops a run whose tools are not bash and those three.
+
+## In a Herdr app terminal
+
+Checked on 2026-11-26 on 19.2.1 with hc 0.1.22, in a hidden terminal `hc run` made, with a scratch `HOME` and `XDG_STATE_HOME`.
+
+- **Herdr's agent menu starts `omp` with `HC_TERMINAL_ID` set [Herdr app binary, live].** The menu entry runs `["omp"]`, and herdr-core sets `HC_TERMINAL_ID`, `HC_TERMINAL_SOCKET` and `HC_SCOPE` in each terminal it runs. So the inbox reports to the app terminal (`core/remote/herdr.ts:herdrTarget`).
+- **The inbox published its session file and set `inbox.session` on its terminal [live 19.2.1].** `hc` takes its socket path from `XDG_STATE_HOME`. A long scratch path there made `hc` fail with "the socket path … is too long here (121 bytes; this system allows 103)", which the inbox logged to `herdr.log`.

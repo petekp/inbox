@@ -55,6 +55,10 @@ conversation's list at your first message. A permission prompt reaches the
 inbox about a second and a half after it appears. To get everything, ask
 an admin to list the inbox in your organization's managed settings.
 
+If your organization turns on `allowManagedModsOnly`, the inbox never
+appears, and nothing says why. Listing it in managed settings does not help.
+Ask an admin to ship it as one of your organization's mods.
+
 To update, run these, then `/reload-plugins` in any session that's already
 open:
 
