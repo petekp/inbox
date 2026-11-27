@@ -150,8 +150,19 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     name: 'a task in Devanagari',
     rule: 'width',
     issue: 831,
-    isOpen: true,
+    isOpen: false,
     case: omp([{ is: 'record', args: { kind: 'task', ask: 'नमस्ते क्षत्रिय' } }]),
+  },
+  {
+    name: 'a combining mark typed just after the key that opened the reply field',
+    rule: 'glyph-cut',
+    issue: 841,
+    isOpen: false,
+    case: omp([
+      { is: 'record', args: { kind: 'task', ask: 'Log in to the registry' } },
+      { is: 'key', key: '2' },
+      { is: 'type', text: `t${String.fromCodePoint(0x303)} abc` },
+    ]),
   },
   {
     name: 'pressing Explain on a task',
@@ -506,7 +517,7 @@ export const SEEDS: { name: string; issue: number; isOpen: boolean; rule: string
     rule: 'vanish',
     detail: '"Queued: Explain" in d17',
     issue: 991,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr({ ...demo, ledger: { ...demo.ledger, items: demo.ledger.items.filter(i => i.id === 'd17') } }, [
         { is: 'wait', ms: 3751 },
@@ -568,8 +579,6 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
-  { issue: 991, look: 'herdr', rule: 'vanish', details: ['"Queued: '] },
-  { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
 ]
 
 /** The open issue a failure is already filed as, or null when it is new. */
