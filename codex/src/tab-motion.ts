@@ -247,7 +247,7 @@ function moveRow(
   const track = drawnRows.get(key)?.track
   const state = track?.state
   const isFresh = !was || was.el !== el
-  if (isInClosingPanel(el)) {
+  if (isInClosingPanel(el) && state !== 'leaving') {
     if (isFresh) fade(el, 0, 0, 0, true)
     return
   }
@@ -289,8 +289,9 @@ function moveRow(
 }
 
 /**
- * Whether an element is a line in a closing row's panel, such as a press's status. It leaves with the panel, whose
- * close fades it (`collapse`), so it starts no move of its own, and one drawn new during the close shows nothing.
+ * Whether an element is drawn in a panel that is closing or leaving, such as a press's status in a closing row's panel
+ * or a row in a closing PR block's body. It goes with the panel, which fades as it closes, so it starts no move of its
+ * own, and one drawn new during the close shows nothing. A line that was shown and starts to leave still fades out.
  */
 const isInClosingPanel = (el: HTMLElement): boolean => (el.parentElement?.closest('.closing[inert]') ?? null) !== null
 

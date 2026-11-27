@@ -56,8 +56,8 @@ function swapTitle(
 /**
  * Starts an opening row's title move, after `delay` ms. The line moves from the closed title's height to the open
  * title's, with the title in its closed form, and the title fades to its open form once the line comes to rest
- * (`titleSwapMs`). A line that was held or gliding, as when the open turns a close back, grows from where it was,
- * `held`. A line already at the open title's height shows the open form at once.
+ * (`titleSwapMs`). A line that was held or gliding, as when the open turns a close back, moves from where it was,
+ * `held`, and may shrink to the open title's height. A line already at the open title's height shows the open form at once.
  */
 export function openTitle(el: HTMLElement, delay: number, held: SpringState | null) {
   const line = el.querySelector<HTMLElement>(OWN_LINE)
