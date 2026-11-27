@@ -31,7 +31,7 @@ Results so far, on seeds 1 to 3 with 30 to 50 cases each. The fixed seeds for #8
 
 The Codex run exits 0 only when every failure is known (`KNOWN` in `fuzz/seeds.ts`) and no seed fails differently from its issue. A seed whose issue is open but that now passes fails the run, and its line says to close the issue and mark the seed closed. A case whose tab page did not load, as can happen when the machine is under load, is judged neither passed nor failed. Its line says it could not run and why, and the run exits 2 when nothing failed. The seed for #836 fails in about 2 of 3 runs, so it can pass and fail the run. `check.sh` does not run this look, since it runs in real time.
 
-Every seed for #834 to #837, #959 and #968 now passes. #982, #983 and #987 have open seeds. #772 and #783 (open or close just after Undo) have no seed yet.
+Every seed for #834 to #837, #959, #968, #982, #983 and #987 now passes. #772 and #783 (open or close just after Undo) have no seed yet.
 
 Not built yet: `vanish` and `plan-order`. The driver sends no agent events, so the seeds for #798 (Status subjects move into milestones) and #806 (Dismiss after Explain drops the result line) cannot run there.
 ## Terminal and desktop

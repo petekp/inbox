@@ -554,9 +554,6 @@ const KNOWN: { issue: number; look: Case['look'] | 'codex' | 'mod'; rule: string
   },
   { issue: 950, look: 'herdr', rule: 'cut', details: [['"Not applied', 'in its box status above ']] },
   { issue: 833, look: 'herdr', rule: 'connector-gap', details: ['in space '] },
-  { issue: 982, look: 'codex', rule: 'cut', details: [['"✓ Opened previews"', 'in its box d11']] },
-  { issue: 983, look: 'codex', rule: 'jump', details: ['press-d22 moved'] },
-  { issue: 987, look: 'codex', rule: 'cut', details: [['"Explaining…"', 'in its box d17']] },
   { issue: 831, look: 'omp', rule: 'width', details: ['where cellWidth counts'] },
 ]
 
