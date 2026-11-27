@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-26T23:34:33.343Z. 408969 characters follow.
+// Built at 2026-11-27T00:43:32.367Z. 409206 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -22,6 +22,7 @@ import {
   window as herdrWindow,
   writeTextFile
 } from "herdr";
+import * as herdr from "herdr";
 
 // ../core/domain/option-previews.ts
 var OPEN_PREVIEWS_LABEL = "Open previews";
@@ -9423,8 +9424,30 @@ class LookReports {
   }
 }
 
+// src/background.ts
+function startBackground(look, app, cx) {
+  if (app.isChecking())
+    return;
+  cx.spawn(async (cx) => {
+    for (;; ) {
+      const changed = await app.watchFolder(publishedSessionsFolder(app.appHome())).catch(() => null);
+      if (changed === null)
+        await cx.sleep(REREAD_MS);
+      else if (look.sessionId && isSessionChange(changed, app.appHome(), look.sessionId))
+        look.load(look.sessionId, cx);
+    }
+  });
+  cx.timer.every(REREAD_MS, (cx) => look.sessionId && look.load(look.sessionId, cx));
+  cx.timer.every(AGE_TICK_MS, (cx) => {
+    look.viewCache.prepare(cx, true);
+    cx.notify();
+  });
+  cx.timer.every(LOOK_TICK_MS, (cx) => cx.spawn(() => look.checkLook()));
+}
+
 // src/main.ts
 var { queueIo, hereIo } = herdrIo({ exec, hc, readTextFile, writeTextFile, home });
+var isChecking = () => herdr.checking?.() ?? false;
 
 class Inbox extends View {
   tab = null;
@@ -9463,21 +9486,7 @@ class Inbox extends View {
   look = new LookReports;
   init(_props, cx) {
     this.focus = cx.focus_handle();
-    cx.spawn(async (cx) => {
-      for (;; ) {
-        const changed = await watchFolder(publishedSessionsFolder(appHome())).catch(() => null);
-        if (changed === null)
-          await cx.sleep(REREAD_MS);
-        else if (this.sessionId && isSessionChange(changed, appHome(), this.sessionId))
-          this.load(this.sessionId, cx);
-      }
-    });
-    cx.timer.every(REREAD_MS, (cx) => this.sessionId && this.load(this.sessionId, cx));
-    cx.timer.every(AGE_TICK_MS, (cx) => {
-      this.viewCache.prepare(cx, true);
-      cx.notify();
-    });
-    cx.timer.every(LOOK_TICK_MS, (cx) => cx.spawn(() => this.checkLook()));
+    startBackground(this, { isChecking, appHome, watchFolder }, cx);
   }
   get readSession() {
     return this.read?.is === "read" ? this.read : null;
