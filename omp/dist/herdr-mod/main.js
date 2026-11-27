@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T06:53:29.913Z. 412599 characters follow.
+// Built at 2026-11-27T08:30:19.175Z. 422240 characters follow.
 
 // src/main.ts
 import { View, div as div19 } from "gpui-kit";
@@ -5897,7 +5897,8 @@ var NO_LINES_ABOVE = {
   lineless: new Set,
   bare: new Set,
   comes: new Map,
-  kinds: new Map,
+  afterTitle: new Map,
+  goes: new Map,
   bodies: new Map,
   added: new Map
 };
@@ -5906,18 +5907,35 @@ var LINE_COMES_MS = NEXT_FRAME_MS + HEIGHT_SETTLE_MS;
 var heldKey = (r) => r.settled ? `settled ${r.id}` : r.id;
 var hasActions = (r) => r.buttons.length > 0 || r.field !== null;
 var isStatusUnder = (r) => r.feedback !== null && (r.isStatusHeldUnder === true || isStatusUnderActions(r.feedback.source, hasActions(r)));
-var lineOf = (f, cameAt, isAgain) => ({
+var lineOf = (f, cameAt, isAgain, isSwapped = false) => ({
   text: f.text,
   tone: f.tone,
   kind: statusKindOf(f),
   ...f.aged ? { aged: f.aged } : {},
   ...cameAt === undefined ? {} : { cameAt },
-  ...isAgain ? { isAgain: true } : {}
+  ...isAgain ? { isAgain: true } : {},
+  ...isSwapped ? { isSwapped: true } : {}
 });
 var comingRow = (b, l) => ({
   ...b,
   lineCameAt: l.cameAt,
-  ...l.isAgain ? { isLineAgain: true } : {}
+  ...l.isAgain ? { isLineAgain: true } : {},
+  ...l.isSwapped ? { isLineSwapped: true } : {}
+});
+var isOtherLine = (l, f) => l.kind !== statusKindOf(f) && l.text !== f.text;
+var lettingGo = (line, now) => ({
+  line,
+  isFailure: false,
+  isHidden: false,
+  leftAt: now
+});
+var isFadingOut = (k, now) => k?.leftAt != null && !k.isHidden && now < k.leftAt + HOLD_MS;
+var isLetGo = (k, now) => k?.leftAt != null && now < k.leftAt + HELD_LEAVE_MS;
+var heldLineOf = (d, now) => ({
+  text: d.line.aged ? agedText(d.line.aged, now) : d.line.text,
+  tone: d.line.tone,
+  isHidden: d.isHidden,
+  ...d.leftAt === null ? {} : { leftAt: d.leftAt }
 });
 var isComing = (l, now) => l?.cameAt !== undefined && now < l.cameAt + LINE_COMES_MS;
 var bodyKey = (l) => `${l.part} ${l.optionId ?? l.text}`;
@@ -5956,52 +5974,81 @@ function addLines(blocks, last, now, isAtOnce) {
   const ends = [...added.values()].flatMap((a) => [a.cameAt + NEXT_FRAME_MS, a.cameAt + LINE_COMES_MS]);
   return { blocks: shown, bodies, added, ends: ends.filter((at) => at > now) };
 }
-function holdLinesAbove(blocks, last, now, isAtOnce = false) {
+function holdLinesAbove(blocks, last, now, isAtOnce = false, isInput = false) {
   const next = new Map;
   const lineless = new Set;
   const bare = new Set;
   const comes = new Map;
-  const kinds = new Map;
+  const afterTitle = new Map;
+  const goes = new Map;
+  const isEased = !isAtOnce && !isInput;
+  const waiting = (b, k) => ({
+    ...b,
+    heldLine: heldLineOf(k, now),
+    isLineWaiting: true
+  });
   const bareRow = (b, key) => {
-    if (b.feedback === null || isStatusUnder(b))
+    const own = b.feedback !== null && !isStatusUnder(b) ? b.feedback : null;
+    const was = last.afterTitle.get(key);
+    const isGone = isEased && was !== undefined && (own === null || isOtherLine(was, own));
+    const going = isGone ? lettingGo(was, now) : last.goes.get(key);
+    const letGo = isLetGo(going, now) ? going : undefined;
+    if (letGo && (own === null || isFadingOut(letGo, now))) {
+      goes.set(key, letGo);
+      return own === null ? { ...b, heldLine: heldLineOf(letGo, now) } : waiting(b, letGo);
+    }
+    if (own === null)
       return bare.add(key), b;
-    const kind = statusKindOf(b.feedback);
-    kinds.set(key, kind);
-    const was = last.comes.get(key);
-    const isNew = !isAtOnce && last.bare.has(key);
-    const isNewKind = !isAtOnce && last.kinds.has(key) && last.kinds.get(key) !== kind;
-    const come = isNewKind ? { at: now, isAgain: true } : was !== undefined && now < was.at + LINE_COMES_MS ? was : isNew ? { at: now, isAgain: false } : undefined;
+    const prior = last.comes.get(key);
+    const isNewKind = !isAtOnce && was !== undefined && isOtherLine(was, own);
+    const come = letGo ? { at: now, isAgain: true, isSwapped: true } : isNewKind ? { at: now, isAgain: true, isSwapped: false } : prior !== undefined && now < prior.at + LINE_COMES_MS ? prior : !isAtOnce && last.bare.has(key) ? { at: now, isAgain: false, isSwapped: false } : undefined;
+    afterTitle.set(key, lineOf(own, come?.at, come?.isAgain === true));
     if (come === undefined)
       return b;
     comes.set(key, come);
-    return { ...b, lineCameAt: come.at, ...come.isAgain ? { isLineAgain: true } : {} };
+    return comingRow(b, { cameAt: come.at, isAgain: come.isAgain, isSwapped: come.isSwapped });
   };
   const shown = blocks.map((b) => {
     if (b.kind !== "row")
       return b;
     const key = heldKey(b);
-    const kept = last.held.get(key);
     const f = b.feedback;
     const source = f?.source ?? null;
     const isUnderWay = isPressUnderWay(source);
     if (!hasActions(b)) {
-      if (kept !== undefined && isUnderWay)
-        next.set(key, kept);
+      const held = last.held.get(key);
+      if (held !== undefined && isUnderWay)
+        next.set(key, held);
       return bareRow(b, key);
     }
     const isUnder = isStatusUnder(b);
+    const ownStatus = f !== null && !isUnder ? f : null;
+    const wasAfter = last.afterTitle.get(key);
+    const goingAfter = last.goes.get(key);
+    const held = last.held.get(key);
+    const kept = held !== undefined ? held : !isAtOnce && wasAfter !== undefined && ownStatus === null ? lettingGo(wasAfter, now) : isLetGo(goingAfter, now) ? goingAfter : undefined;
     const isStarting = kept === undefined && f !== null && isUnder && (isUnderWay || source?.is === "queued");
     if (kept === null || isStarting) {
       next.set(key, null);
       lineless.add(key);
       return kept === null && f !== null && !isUnder ? { ...b, isStatusHeldUnder: true } : b;
     }
+    const isOtherKind = ownStatus !== null && kept?.leftAt === null && isOtherLine(kept.line, ownStatus);
+    const letGo = isEased && isOtherKind && !kept.isHidden ? lettingGo(kept.line, now) : kept;
+    if (ownStatus !== null && isEased && isFadingOut(letGo, now)) {
+      next.set(key, letGo);
+      return waiting(b, letGo);
+    }
+    const isAfterLeave = ownStatus !== null && isEased && isLetGo(kept, now);
     const isNewLine = kept === undefined && !isAtOnce && last.lineless.has(key);
     const isDrawn = kept?.leftAt === null;
-    const isNewKind = !isAtOnce && isDrawn && f !== null && !isUnder && kept.line.kind !== statusKindOf(f);
-    const cameAt = isNewLine || isNewKind ? now : isDrawn ? kept.line.cameAt : undefined;
-    const isAgain = isNewKind || isDrawn && !isNewLine && kept.line.isAgain === true;
-    const own = f !== null && !isUnder ? lineOf(f, cameAt, isAgain) : null;
+    const isNewKind = !isAtOnce && isDrawn && isOtherKind;
+    const isComeAgain = isNewKind || isAfterLeave;
+    const isKeptComing = isDrawn && !isNewLine && !isComeAgain;
+    const cameAt = isNewLine || isComeAgain ? now : isDrawn ? kept.line.cameAt : undefined;
+    const isAgain = isComeAgain || isKeptComing && kept.line.isAgain === true;
+    const isSwapped = isAfterLeave || isKeptComing && kept.line.isSwapped === true;
+    const own = ownStatus !== null ? lineOf(ownStatus, cameAt, isAgain, isSwapped) : null;
     const isOwnFailure = f !== null && isFailure(f.source);
     const step = stepHeldLine(kept, { own, isOwnFailure, isUnder: f !== null && isUnder, isPressUnderWay: isUnderWay }, now, HELD_LEAVE_MS);
     if (step.kept)
@@ -6011,24 +6058,21 @@ function holdLinesAbove(blocks, last, now, isAtOnce = false) {
       lineless.add(key);
     if (!d)
       return own && isComing(own, now) ? comingRow(b, own) : b;
-    const text = d.line.aged ? agedText(d.line.aged, now) : d.line.text;
-    return {
-      ...b,
-      heldLine: { text, tone: d.line.tone, isHidden: d.isHidden, ...d.leftAt === null ? {} : { leftAt: d.leftAt } }
-    };
+    return { ...b, heldLine: heldLineOf(d, now) };
   });
   const withAdded = addLines(shown, last, now, isAtOnce);
-  const ends = [...next.values()].flatMap((k) => {
-    if (isComing(k?.line, now))
-      return [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter((at) => at > now);
-    const end = heldLineEndsAt(k, HELD_LEAVE_MS);
-    return end === null || k?.leftAt == null ? [] : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter((at) => at > now);
-  });
+  const ends = [...next.values()].flatMap((k) => isComing(k?.line, now) ? [k.line.cameAt + NEXT_FRAME_MS, k.line.cameAt + LINE_COMES_MS].filter((at) => at > now) : leaveEnds(k, now));
   for (const { at } of comes.values())
     ends.push(...[at + NEXT_FRAME_MS, at + LINE_COMES_MS].filter((t) => t > now));
+  for (const k of goes.values())
+    ends.push(...leaveEnds(k, now));
   ends.push(...withAdded.ends);
-  const held = { held: next, lineless, bare, comes, kinds, bodies: withAdded.bodies, added: withAdded.added };
+  const held = { held: next, lineless, bare, comes, afterTitle, goes, bodies: withAdded.bodies, added: withAdded.added };
   return { blocks: withAdded.blocks, held, nextAt: ends.length === 0 ? null : Math.min(...ends) };
+}
+function leaveEnds(k, now) {
+  const end = heldLineEndsAt(k, HELD_LEAVE_MS);
+  return end === null || k?.leftAt == null ? [] : [k.leftAt + NEXT_FRAME_MS, k.leftAt + HOLD_MS, end].filter((at) => at > now);
 }
 var isHeldLineShutting = (r, now) => r.heldLine?.leftAt !== undefined && now >= r.heldLine.leftAt + HOLD_MS;
 var heldLineDrop = (r, now, heights) => isHeldLineShutting(r, now) ? heights.get(aboveId(r.id)) ?? 0 : 0;
@@ -6039,6 +6083,47 @@ function lineRise(r, now, heights) {
   return r.isLineAgain ? rise : Math.max(0, rise);
 }
 var addedRise = (r, now, heights) => r.addedLines === undefined || now === r.addedLines.cameAt ? 0 : Math.max(0, (heights.get(addedLinesId(r.id)) ?? 0) - (heights.get(addedId(r.id)) ?? 0));
+
+// src/held-drawn.ts
+function heldAsDrawn(held, last, moved) {
+  const given = new Map(held.blocks.map((b) => [b.id, b]));
+  const isClosingHeld = (m) => m !== undefined && m.closing !== null && !m.isPanelLeftOut;
+  const isKept = (b) => given.get(b.id) !== b || isClosingHeld(moved.motion.get(b.id));
+  const keys = moved.blocks.flatMap((b) => b.kind === "row" && given.has(b.id) && isKept(b) ? [b.id, `settled ${b.id}`] : []);
+  if (keys.length === 0)
+    return held.held;
+  const now = held.held;
+  const pick = (to, from) => {
+    const out = new Map(to);
+    for (const k of keys) {
+      const v = from.get(k);
+      if (v === undefined)
+        out.delete(k);
+      else
+        out.set(k, v);
+    }
+    return out;
+  };
+  const pickSet = (to, from) => {
+    const out = new Set(to);
+    for (const k of keys)
+      if (from.has(k))
+        out.add(k);
+      else
+        out.delete(k);
+    return out;
+  };
+  return {
+    held: pick(now.held, last.held),
+    lineless: pickSet(now.lineless, last.lineless),
+    bare: pickSet(now.bare, last.bare),
+    comes: pick(now.comes, last.comes),
+    afterTitle: pick(now.afterTitle, last.afterTitle),
+    goes: pick(now.goes, last.goes),
+    bodies: pick(now.bodies, last.bodies),
+    added: pick(now.added, last.added)
+  };
+}
 
 // ../core/view/layout.ts
 var SPACE_UNIT = 4;
@@ -6342,7 +6427,7 @@ function stepLine(last, line, isSameForm, now, isInput, isSameLine = () => true,
   if (last?.next !== undefined || isReplaced && (last.isLeaving || isShown(last, now, height)))
     return replaced(last, line, isSameForm, now, isInput, isSameLine);
   if (line && last?.isLeaving)
-    return { line, since: now, isLeaving: false, isInput, isBack: true };
+    return cameBack(line, now, isInput);
   if (!line)
     return leaving(last, isSameForm, now, isInput);
   if (!last)
@@ -6368,7 +6453,7 @@ function replaced(last, line, isSameForm, now, isInput, isSameLine) {
   if (!line)
     return leaving(old, isSameForm, now, isInput);
   if (isSameLine(old.line, line))
-    return old.isLeaving ? { line, since: now, isLeaving: false, isInput, isBack: true } : { ...old, line };
+    return old.isLeaving ? cameBack(line, now, isInput) : { ...old, line };
   if (isInput || !isSameForm)
     return { line, since: now, isLeaving: false, isInput };
   if (!old.isLeaving)
@@ -6377,6 +6462,7 @@ function replaced(last, line, isSameForm, now, isInput, isSameLine) {
     return { ...old, next: line };
   return { line, since: now, isLeaving: false, isInput: false, waitMs: NEXT_FRAME_MS };
 }
+var cameBack = (line, now, isInput) => isInput ? { line, since: now, isLeaving: false, isInput, waitMs: NEXT_FRAME_MS } : { line, since: now, isLeaving: false, isInput, isBack: true };
 function leaving(last, isSameForm, now, isInput) {
   if (!last || !isSameForm || isInput)
     return null;
@@ -6511,12 +6597,28 @@ function stepSwap(last, was, b, now, panelShown = 1) {
     const isBack = isSettledRow(live.from) === isSettled && isOpenRow(live.from) === isOpenRow(b);
     if (isBack)
       return { ...live, isSettled, showsAt: now, inAt: now - NEXT_FRAME_MS, inWait: { from: now, ms: 0 } };
-    return { ...live, isSettled, isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text };
+    return {
+      ...live,
+      isSettled,
+      isMarkSwapped: live.isMarkSwapped || live.from.mark?.text !== b.mark?.text,
+      isAgeSwapped: live.isAgeSwapped || live.from.age !== b.age
+    };
   }
   const isMarkSwapped = was.mark?.text !== b.mark?.text;
+  const isAgeSwapped = was.age !== b.age;
   const fromShown = live === null ? 1 : linesShownOf(live, now);
   const showsAt = now + NEXT_FRAME_MS + (fromShown > 0 ? LEAVE_FADE_MS : 0);
-  const swap = { from: was, isSettled, isMarkSwapped, since: now, showsAt, inAt: null, fromShown, panelShown };
+  const swap = {
+    from: was,
+    isSettled,
+    isMarkSwapped,
+    isAgeSwapped,
+    since: now,
+    showsAt,
+    inAt: null,
+    fromShown,
+    panelShown
+  };
   return { ...swap, restIn: undefined, inWait: null };
 }
 function takeSwap(s, drawn, now, rest) {
@@ -6536,13 +6638,20 @@ var swapWaitsUntil = (s) => s?.inAt === null ? s.showsAt + NEXT_FRAME_MS : 0;
 function swapMotion(s, now) {
   if (s === null)
     return null;
-  const { from, isMarkSwapped } = s;
+  const { from, isMarkSwapped, isAgeSwapped } = s;
   if (s.inAt === null) {
     const panel = s.panelShown < 1 ? s.panelShown : null;
-    return { from, isMarkSwapped, opacity: now === s.since ? s.fromShown : 0, fadeMs: LEAVE_FADE_MS, panel };
+    return {
+      from,
+      isMarkSwapped,
+      isAgeSwapped,
+      opacity: now === s.since ? s.fromShown : 0,
+      fadeMs: LEAVE_FADE_MS,
+      panel
+    };
   }
   const opacity = s.inWait !== null && now >= s.inWait.from + s.inWait.ms ? 1 : 0;
-  return { from: null, isMarkSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null };
+  return { from: null, isMarkSwapped, isAgeSwapped, opacity, fadeMs: ENTER_FADE_MS, panel: null };
 }
 var swapTimes = (s) => s === null ? [] : [
   s.since + NEXT_FRAME_MS,
@@ -6621,6 +6730,77 @@ var fieldTimes = (w) => w === null || w.goneShown !== null ? [] : [w.since + NEX
 // src/tracks.ts
 var NO_TRACKS = { rows: new Map, order: [], holdsUntil: 0, drawnAt: 0 };
 
+// src/block-swap.ts
+var PART_KEYS = {
+  mark: (s) => s.mark?.text ?? "",
+  waitsOn: (s) => s.waitsOn?.text ?? "",
+  under: (s) => s.under.map((l) => l.text).join(`
+`),
+  buttons: (s) => s.buttons.map((b) => b.label).join(`
+`)
+};
+var STATUS_PARTS = Object.keys(PART_KEYS);
+var changedParts = (was, b) => STATUS_PARTS.filter((part) => PART_KEYS[part](was) !== PART_KEYS[part](b));
+var endsAt2 = (s) => (s.inAt ?? Infinity) + NEXT_FRAME_MS + HEIGHT_SETTLE_MS + ENTER_FADE_MS;
+var isFormOf = (s, b) => s.parts === null ? s.from.kind === b.kind : s.from.kind === "status" && b.kind === "status" && changedParts(s.from, b).length === 0;
+var partsOf = (was, b) => was.kind !== b.kind ? null : was.kind === "status" && b.kind === "status" ? changedParts(was, b) : [];
+var isOtherForm = (was, b) => partsOf(was, b)?.length !== 0;
+function stepBlockSwap(last, was, b, now, isBoxAtRest, isInput, height) {
+  const live = last !== null && now < endsAt2(last) ? last : null;
+  if (live?.inAt === null) {
+    if (isFormOf(live, b))
+      return { ...live, to: b, inAt: now, isBack: true };
+    if (isInput && isOtherForm(live.to, b))
+      return null;
+    const more = live.from.kind === "status" && b.kind === "status" ? changedParts(live.from, b) : null;
+    const added = live.parts && more ? more.filter((part) => !live.parts?.includes(part)) : [];
+    const parts = live.parts && more && [...live.parts, ...added];
+    const outUntil = added.length > 0 ? Math.max(live.outUntil, now + LEAVE_FADE_MS) : live.outUntil;
+    return { ...live, to: b, parts, outUntil, inAt: now >= outUntil ? now : null };
+  }
+  const parts = was === undefined ? [] : partsOf(was, b);
+  if (was === undefined || !isBoxAtRest || isInput || parts?.length === 0)
+    return live;
+  const isAdded = was.kind === "status" && parts !== null && parts.every((part) => PART_KEYS[part](was) === "");
+  const outUntil = now + NEXT_FRAME_MS + LEAVE_FADE_MS;
+  return {
+    from: was,
+    to: b,
+    parts,
+    since: now,
+    outUntil,
+    inAt: isAdded ? now : null,
+    isBack: false,
+    fromHeight: height
+  };
+}
+function withPartsOf(b, from, parts) {
+  const { waitsOn, ...rest } = b;
+  const held = (part) => parts.includes(part);
+  const shownWaitsOn = held("waitsOn") ? from.waitsOn : waitsOn;
+  return {
+    ...rest,
+    ...shownWaitsOn ? { waitsOn: shownWaitsOn } : {},
+    mark: held("mark") ? from.mark : b.mark,
+    under: held("under") ? from.under : b.under,
+    buttons: held("buttons") ? from.buttons : b.buttons
+  };
+}
+function swapDrawn(s, b) {
+  if (s === null || s.inAt !== null)
+    return b;
+  return s.parts !== null && s.from.kind === "status" && b.kind === "status" ? withPartsOf(b, s.from, s.parts) : s.from;
+}
+var blockSwapMotion = (s, now, height) => s && {
+  from: s.from,
+  parts: s.parts,
+  isOut: s.inAt === null,
+  isFirst: s.since === now,
+  inDelayMs: s.inAt === null || !s.isBack && now === s.inAt ? null : s.isBack ? 0 : enterDelayMs(height ?? 0, { x: s.fromHeight ?? height ?? 0, v: 0 })
+};
+var blockSwapTimes = (s) => s === null ? [] : s.inAt === null ? [s.since + NEXT_FRAME_MS, s.outUntil] : [s.inAt + NEXT_FRAME_MS, endsAt2(s)];
+var swapPartFade = (m, inDelayMs) => m.isOut ? { opacity: m.isFirst ? 1 : 0, duration: LEAVE_FADE_MS, delay: 0 } : inDelayMs === null ? { opacity: 0, duration: 0, delay: 0 } : { opacity: 1, duration: ENTER_FADE_MS, delay: inDelayMs };
+
 // src/motion.ts
 var targetOf = (b) => b.kind !== "row" ? "closed" : b.settled ? "settled" : isOpenRow(b) ? "open" : "closed";
 var isFolding = (state) => state === "opening" || state === "closing";
@@ -6670,6 +6850,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     return old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
   });
   const waiting = new Map;
+  const blockSwaps = new Map;
   const rows = new Map;
   const motion = new Map;
   const add = (block, track, last, springId = null) => {
@@ -6725,7 +6906,8 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       panelHeldUntil,
       swap: waited,
       restSpace,
-      fieldWait
+      fieldWait,
+      blockSwap: blockSwaps.get(block.id) ?? null
     });
     motion.set(block.id, {
       state: track.state,
@@ -6748,6 +6930,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
       prTail: prTail && prTailMotion(prTail, block.id, now, heightOf),
       warning: underMotion(warning, now, heightOf(warningId(block.id))),
       former: last && last.block.kind !== block.kind ? last.block : null,
+      blockSwap: blockSwapMotion(blockSwaps.get(block.id) ?? null, now, heightOf(block.id)),
       swap: swapMotion(waited, now),
       field: fieldOpening(fieldWait, now)
     });
@@ -6757,12 +6940,17 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     const isMovedOn = prior?.track.state === "entering" && prior.springId?.includes(MOVED_TO) === true;
     const isMoved = moved.has(b.id) && !isMovedOn;
     const old = isMoved ? undefined : prior;
+    const isBoxAtRest = old !== undefined && (old.glide === null || now >= old.glide.endsAt);
+    const blockSwap = isFirst ? null : stepBlockSwap(old?.blockSwap ?? null, old?.block, b, now, isBoxAtRest, isInput, heightOf(b.id));
+    if (blockSwap)
+      blockSwaps.set(b.id, blockSwap);
+    const given = swapDrawn(blockSwap, b);
     const opens = old !== undefined && targetOf(b) === "open" && targetOf(old.block) !== "open";
     const waitsForLeave = opens && !isInput && isHolding;
     const isTurningBack = old?.track.state === "closing" && old.swap?.inAt !== null;
     const waitsForClose = opens && old.block.kind === "row" && opensAfterClose > now && !isTurningBack;
-    const drawn = waitsForLeave ? old.block : waitsForClose ? { ...old.block, isSelected: true, isCollapsed: true } : b;
-    if (waitsForLeave || waitsForClose)
+    const drawn = waitsForLeave ? old.block : waitsForClose ? { ...old.block, isSelected: true, isCollapsed: true } : given;
+    if (waitsForLeave || waitsForClose || given !== b)
       waiting.set(b.id, drawn);
     const track = stepRow(old?.track, targetOf(drawn), now, isMoved || !isFirst && !wasDrawn.has(b.id));
     if (track)
@@ -6794,6 +6982,7 @@ function moveRows(blocks, last, now, isFirst, isInput = false, sizes = NO_SIZES)
     ...underTimes(t.warning),
     ...swapTimes(t.swap),
     ...fieldTimes(t.fieldWait),
+    ...blockSwapTimes(t.blockSwap),
     holdsUntil,
     closeHoldsUntil,
     opensAfterClose,
@@ -7445,6 +7634,13 @@ function fitHeight(b, m, p) {
   const rise = lineRise(b, p.now, p.heights) + addedRise(b, p.now, p.heights) + warningRise(b, m, p);
   return 2 * padOf(b) + title + rest - panel - heldLineDrop(b, p.now, p.heights) + rise;
 }
+function kindFadeEl(el, b, m, s, key, p) {
+  const height = s.isOut ? undefined : fitHeight(b, { ...m, former: null }, p);
+  const from = fitHeight(s.from, undefined, p) ?? height;
+  const delay = height === undefined ? null : enterDelayMs(height, { x: from ?? height, v: 0 });
+  const fade = swapPartFade(s, delay);
+  return fadeEl(el, `kind ${key}`, fade.opacity, fade, p);
+}
 function contentEl(b, m, p, el, strokes) {
   const id = b.id;
   const isRow = b.kind === "row";
@@ -7497,7 +7693,8 @@ function spacedEls(blocks, p, el) {
       throw new Error(`no look for block ${b.id}`);
     const { m, isShown, glide, fade } = look;
     const key = m?.springId ?? b.id;
-    const drawing = v_flex2().id(`drawing ${key}`).child(el(b));
+    const drawn = v_flex2().id(`drawing ${key}`).child(el(b));
+    const drawing = m?.blockSwap && m.blockSwap.parts === null && !m.box ? kindFadeEl(drawn, b, m, m.blockSwap, key, p) : drawn;
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
     return v_flex2().id(`box ${key}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => spaceColumnEl(key, c, f, p.t)))).child(contentEl(b, m, p, slide(fade(drawing)), contentStrokeEls(key, b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? [])));
   });
@@ -7572,10 +7769,18 @@ var statusPartEl = (text) => div9().min_w(0).max_w_full().whitespace_normal().ch
 function keyEl(s, does, t) {
   return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div9().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div9().font_semibold().child(s.name))).child(div9().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
 }
+var SHOWN_PART = { opacity: 1, duration: LEAVE_FADE_MS, delay: 0 };
 function statusEl(s, p, isInert) {
   const { t } = p;
   if (s.does !== undefined)
     return keyEl(s, s.does, t);
+  const swap = p.motion.get(s.id)?.blockSwap ?? null;
+  const areButtonsLeaving = swap?.isOut === true && swap.parts?.includes("buttons") === true;
+  const partEl = (part, el) => {
+    const name = `status ${part} ${s.id}`;
+    const fade = swap?.parts?.includes(part) ? swapPartFade(swap, swap.inDelayMs) : SHOWN_PART;
+    return fadeEl(el.id(name), name, fade.opacity, fade, p);
+  };
   const name = statusPartEl(s.stall ? `${s.name}${STALL_GAP}` : s.name).when(s.isBold, (e) => e.font_semibold()).when(s.nameLevel !== "plain", (e) => e.text_color(s.nameLevel === "faint" ? faintOf(t) : t.muted));
   const stall = s.stall ? [statusPartEl(s.stall.text).text_color(colorOf(t, s.stall.tone))] : [];
   const toggle = s.fold?.toggle;
@@ -7587,7 +7792,7 @@ function statusEl(s, p, isInert) {
       ...s.fold.isFolded ? { count: { id: `fold count ${s.id}`, value: s.fold.count } } : {}
     })
   ] : [];
-  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(markEl(s.mark, t)).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(lineEl(s.waitsOn?.text ?? "", colorOf(t, s.waitsOn?.tone ?? "needsYou")))).children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))).when(s.buttons.length > 0, (e) => e.child(buttonsEl(s.buttons, p, MARK_W, isInert)));
+  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(partEl("mark", markEl(s.mark, t))).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(name).children(stall).children(chevron))).when(s.waitsOn !== undefined, (e) => e.child(partEl("waitsOn", lineEl(s.waitsOn?.text ?? "", colorOf(t, s.waitsOn?.tone ?? "needsYou"))))).child(partEl("under", v_flex4().children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))))).when(s.buttons.length > 0, (e) => e.child(partEl("buttons", buttonsEl(s.buttons, p, MARK_W, isInert || areButtonsLeaving))));
 }
 
 // src/paint-pr-status.ts
@@ -7713,11 +7918,20 @@ function shortTitleEl(s) {
 import { v_flex as v_flex6 } from "gpui-base";
 var linesOf = (r) => [
   ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
-  ...r.feedback && !isStatusUnder(r) ? [{ ...r.feedback, cameAt: r.lineCameAt, isAgain: r.isLineAgain, isStatus: true }] : [],
+  ...r.feedback && !isStatusUnder(r) && !r.isLineWaiting ? [
+    {
+      ...r.feedback,
+      cameAt: r.lineCameAt,
+      isAgain: r.isLineAgain,
+      isSwapped: r.isLineSwapped,
+      isStatus: true
+    }
+  ] : [],
   ...r.heldLine ? [{ ...r.heldLine, isStatus: true }] : []
 ];
-function titleLineEls(r, shown, m, p, lineEl, withPanel) {
-  const drawn = (l, n) => leavingEl(r, l, lineEl(l, n).id(`status above ${r.id} line ${n}`), n, p);
+var withTrunk = (el, trunk) => trunk ? v_flex6().relative().child(el).child(trunk) : el;
+function titleLineEls(r, shown, m, p, lineEl, trunkOf, withPanel) {
+  const drawn = (l, n) => leavingEl(r, l, lineEl(l, n).id(`status above ${r.id} line ${n}`), n, p, trunkOf(n));
   const closing = m?.closing ?? null;
   const lines = linesOf(shown);
   if (closing === null)
@@ -7731,31 +7945,34 @@ function titleLineEls(r, shown, m, p, lineEl, withPanel) {
     return kept.map((l, n) => isDropped(l) ? withPanel(drawn(l, n)) : drawn(l, n));
   }
   return lines.map((l, n) => {
-    if (!isAdded(l))
+    const isMovedByHold = l.cameAt !== undefined || l.leftAt !== undefined;
+    if (!isAdded(l) || isMovedByHold)
       return drawn(l, n);
     const name = fadeName(n);
-    return fadeEl(lineEl(l, n).id(name), name, 1, { duration: ENTER_FADE_MS, delay: NEXT_FRAME_MS }, p);
+    return withTrunk(fadeEl(lineEl(l, n).id(name), name, 1, { duration: ENTER_FADE_MS, delay: NEXT_FRAME_MS }, p), trunkOf(n));
   });
 }
-function leavingEl(r, l, el, n, p) {
+function leavingEl(r, l, el, n, p, trunk) {
   const leftAt = l.leftAt;
   if (l.cameAt !== undefined)
-    return comingEl(r, l, l.cameAt, el, n, p);
+    return comingEl(r, l, l.cameAt, el, n, p, trunk);
+  const whole = withTrunk(el, trunk);
   if (leftAt === undefined)
-    return l.isStatus ? sizeEl(aboveId(r.id), p, sizeEl(aboveLineId(r.id), p, el)) : el;
+    return l.isStatus ? sizeEl(aboveId(r.id), p, sizeEl(aboveLineId(r.id), p, whole)) : whole;
   const isFading = p.now < leftAt + HOLD_MS;
   const name = `status above ${r.id} line ${n}`;
-  const shown = l.isHidden ? el : fadeEl(el, name, p.now === leftAt ? 1 : 0, { duration: LEAVE_FADE_MS, delay: 0 }, p);
+  const faded = l.isHidden ? el : fadeEl(el, name, p.now === leftAt ? 1 : 0, { duration: LEAVE_FADE_MS, delay: 0 }, p);
+  const shown = withTrunk(faded, trunk);
   const box = springBox(`fit ${aboveId(r.id)}`, isFading ? p.heights.get(aboveLineId(r.id)) : 0);
   return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)));
 }
-function comingEl(r, l, cameAt, el, n, p) {
+function comingEl(r, l, cameAt, el, n, p, trunk) {
   const isStart = p.now === cameAt;
   const height = p.heights.get(aboveLineId(r.id));
   const from = l.isAgain ? p.heights.get(aboveId(r.id)) ?? 0 : 0;
   const name = `status above ${r.id} line ${n}`;
   const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0, { x: from, v: 0 }) };
-  const shown = fadeEl(el, name, isStart ? FAINT_OPACITY : 1, fade, p);
+  const shown = withTrunk(fadeEl(el, name, isStart ? l.isSwapped ? 0 : FAINT_OPACITY : 1, fade, p), trunk);
   const box = springBox(`fit ${aboveId(r.id)}`, isStart ? from : height);
   return sizeEl(aboveId(r.id), p, box.child(sizeEl(aboveLineId(r.id), p, shown)));
 }
@@ -7877,23 +8094,24 @@ var rowWarningEl = (box, gap, trunk) => div17().relative().pt(gap).child(box).ch
 function rowEl(r, p) {
   const { t } = p;
   const m = p.motion.get(r.id);
-  const isLeaving = m?.state === "leaving";
+  const isInert = m?.state === "leaving" || m?.blockSwap?.isOut === true;
   const isOpen = isOpenRow(r);
-  const isPressable = r.isSelectable && !isLeaving;
+  const isPressable = r.isSelectable && !isInert;
   const swap = m?.swap ?? null;
   const shown = swap?.from ?? r;
   const hasTree = (m?.closing ?? shown).body.some((l) => l.tree !== undefined);
   const mark = markEl(shown.mark, t, markTintOf(shown, p)).id(`mark ${r.id}`);
   const trunk = trunkEl(LINE_HEIGHT, null, t, r.isSelected).id(`trunk ${r.id}`);
-  const line = h_flex11().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(r.age !== null, (e) => e.child(div18().flex_none().ml(INSET).text_color(faintOf(t, r.isSelected ? t.selected : t.background)).child(r.age ?? "")));
+  const line = h_flex11().id(`title ${r.id}`).items_start().when(isPressable && isOpen, (e) => e.on_click((e, cx) => p.collapse(r.id, true, cx, e.modifiers.alt))).when(hasTree, (e) => e.relative().child(swap?.from ? swapFadeEl(swap, trunk) : panelFadeEl(r, m, p, trunk))).child(swap?.isMarkSwapped ? swapFadeEl(swap, mark) : mark).child(titleTextEl(r, p, titleColorOf(r, p))).when(shown.age !== null, (e) => {
+    const age = div18().id(`age ${r.id}`).flex_none().ml(INSET).text_color(faintOf(t, r.isSelected ? t.selected : t.background)).child(shown.age ?? "");
+    return e.child(swap?.isAgeSwapped ? swapFadeEl(swap, age) : age);
+  });
   const lines = titleLineEls(r, shown, m, p, (l, n) => {
-    const above = partPt(n === 0 ? "title" : "titleStatus", "titleStatus");
-    const trunk = panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`));
-    const el = bodyLineEl(l, above, t, r.isSelected).when(hasTree, (e) => e.child(trunk));
+    const el = bodyLineEl(l, partPt(n === 0 ? "title" : "titleStatus", "titleStatus"), t, r.isSelected);
     return l.isHidden ? el.opacity(0) : el;
-  }, (el) => panelFadeEl(r, m, p, el));
+  }, (n) => hasTree ? panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`)) : null, (el) => panelFadeEl(r, m, p, el));
   const titleEnd = lines.length > 0 ? "titleStatus" : "title";
-  return v_flex7().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex7().id(`form ${r.id}`).when(swap !== null, (e) => swapFadeEl(swap, e)).children(lines).children(panelEl(r, shown, m, p, isLeaving, titleEnd))));
+  return v_flex7().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected, (e) => e.bg(t.selected)).when(isPressable && !isOpen, (e) => e.hover((s) => s.bg(t.hover)).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex7().id(`form ${r.id}`).when(swap !== null, (e) => swapFadeEl(swap, e)).children(lines).children(panelEl(r, shown, m, p, isInert, titleEnd))));
 }
 function bodyEls(from, isSelected, p, isInert, titleEnd, warn) {
   const buttonOf = (id) => from.buttons.filter((b) => b.id === id);
@@ -8036,25 +8254,26 @@ function foldEl(b, p, isInert) {
 }
 function blockEl(b, p) {
   const { t } = p;
-  const isLeaving = p.motion.get(b.id)?.state === "leaving";
+  const m = p.motion.get(b.id);
+  const isLeaving = m?.state === "leaving";
+  const isInert = isLeaving || m?.blockSwap?.isOut === true && m.blockSwap.parts === null;
   if (b.kind === "row")
     return rowEl(b, p);
   if (b.kind === "status")
     return statusEl(b, p, isLeaving);
   if (b.kind === "pr")
-    return prEl(b, p, isLeaving);
+    return prEl(b, p, isInert);
   if (b.kind === "line")
-    return textLineEl(b, p, isLeaving);
+    return textLineEl(b, p, isInert);
   if (b.kind === "heading")
-    return headingEl(b, p, isLeaving);
+    return headingEl(b, p, isInert);
   if (b.kind === "empty")
-    return emptyEl(b, p, isLeaving);
+    return emptyEl(b, p, isInert);
   if (b.kind === "fold" || b.kind === "more")
-    return foldEl(b, p, isLeaving);
+    return foldEl(b, p, isInert);
   if (b.kind === "rule")
     return ruleEl(b, t);
   if (b.kind === "field") {
-    const m = p.motion.get(b.id);
     const isShownAsOpening = m?.state === "entering" && m.box !== null && m.fadeMs === 0;
     const keepsButtonsFade = isLeaving ? { isOpen: true, delayMs: 0 } : null;
     const delayMs = enterDelayMs(p.heights.get(b.id) ?? 0);
@@ -9808,12 +10027,13 @@ class Inbox extends View {
     const shown = ui.isHelpShown ? helpBlocks(screen.helpVersion) : screen.blocks;
     this.blocks = shown;
     this.hints = fieldHints(shown);
-    const held = holdLinesAbove(shown, isFirst ? NO_LINES_ABOVE : this.linesAbove, now, isForming);
-    this.linesAbove = held.held;
     const isAnswer = isAnswerDraw(this.lastDraw, ui.tab, screen.waits);
     this.lastDraw = { tab: ui.tab, rows: screen.waits, pressed: this.queue.outs.map((o) => o.rowId) };
     const isInput = isAnswer || this.movedAt > this.tracks.drawnAt;
+    const lastAbove = isFirst ? NO_LINES_ABOVE : this.linesAbove;
+    const held = holdLinesAbove(shown, lastAbove, now, isForming, isInput);
     const moved = moveRows(held.blocks, this.tracks, now, isFirst, isInput, this.heights);
+    this.linesAbove = heldAsDrawn(held, lastAbove, moved);
     this.tracks = moved.tracks;
     this.tracksOf = tracksOf;
     paint.motion = moved.motion;
