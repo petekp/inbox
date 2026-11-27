@@ -3,6 +3,7 @@ import { ago, cellWidth } from '../../core/domain/text'
 import { actionLabel, replyHint } from '../../core/view/rows'
 import { actionLines } from '../../core/view/action-plan'
 import { isStatusUnderActions } from '../../core/view/feedback'
+import { SENDING } from '../../core/view/unshown-press'
 import { resultGlyph, runningMark } from '../../core/view/timing'
 import { closedTitleClock, newRowIn, steppedTitleTint } from '../../core/view/arrivals'
 import { UNDO_KEY } from '../../core/view/help'
@@ -228,7 +229,11 @@ export function drawLine(line: Line, isSelected: boolean, d: Draw): string[] {
   const head = isOnTree
     ? `${cursor}${s.dim(line.tree === 'mid' ? '├─' : '└─')} ${lead}`
     : `${line.tree === 'off' ? ' ' : ''} ${' '.repeat(pad)}${cursor} ${lead}`
-  const age = line.age !== null && line.settled === null ? s.dim(ago(now - line.age)) : ''
+  const age = line.isSending
+    ? s.dim(SENDING)
+    : line.age !== null && line.settled === null
+      ? s.dim(ago(now - line.age))
+      : ''
   const besideAge = age ? width - visibleLength(`  ${age} `) : width
   const settledLabel = line.settled
     ? cutSettledLabel(

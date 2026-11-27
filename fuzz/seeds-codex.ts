@@ -356,7 +356,7 @@ export const CODEX_SEEDS: {
     rule: 'press-shows',
     detail: '"✓ Opened the comment"',
     issue: 1012,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'light',
@@ -373,7 +373,7 @@ export const CODEX_SEEDS: {
     rule: 'press-shows',
     detail: '"✓ Opened previews"',
     issue: 1014,
-    isOpen: true,
+    isOpen: false,
     case: {
       look: 'codex',
       theme: 'dark',

@@ -1,14 +1,10 @@
 import { earliestOf } from '../../core/view/timing'
+import { lastActionKey } from '../../core/view/session-view'
 import type { PressOut } from '../../core/view/ui-controller-types'
 import type { TabView as View } from './core'
 import type { Feedback } from '../../core/view/feedback'
 import type { PressKind } from '../../types'
 import { localOuts, tabState } from './tab-state'
-
-/** A row's saved last press, so the tab can tell when a view shows a press it has out. */
-export function lastPressKey(v: View | null, id: string): string {
-  return JSON.stringify(v?.lastActions[id] ?? null)
-}
 
 const pressesOut = (): PressOut[] => Object.values(tabState.ui.pressesOut)
 
@@ -16,9 +12,7 @@ const pressesOut = (): PressOut[] => Object.values(tabState.ui.pressesOut)
  * The latest press out on row `id`, or null: its action, so its button draws as out before the view says so, which is
  * null for a reply, since a reply is never out, and what the tab keeps of it in `localOuts`.
  */
-export function outOn(
-  id: string,
-): { action: string | null; pending: Feedback | null; kind: PressKind | null; lastBefore: string } | null {
+export function outOn(id: string): { action: string | null; pending: Feedback | null; kind: PressKind | null } | null {
   const out = pressesOut()
     .filter(p => p.rowId === id)
     .pop()
@@ -29,7 +23,6 @@ export function outOn(
     action: out.isReply ? null : out.action,
     pending: local?.pending ?? null,
     kind: local?.kind ?? null,
-    lastBefore: local?.lastBefore ?? '',
   }
 }
 
@@ -53,11 +46,9 @@ export const sendingSince = (): number | null => earliestOf(pressesOut().map(p =
 export function outPending(v: View | null, id: string, isUnderLatest = false): Feedback | null {
   const outs = pressesOut().filter(p => p.rowId === id)
   const looked = isUnderLatest ? outs : outs.slice(-1)
-  const local = looked
-    .map(p => localOuts.get(p.pressId))
-    .filter(l => l?.pending != null)
-    .pop()
-  if (!local?.pending) return null
+  const out = looked.filter(p => localOuts.get(p.pressId)?.pending != null).pop()
+  const pending = out ? localOuts.get(out.pressId)?.pending : null
+  if (!out || !pending) return null
 
-  return lastPressKey(v, id) === local.lastBefore ? local.pending : null
+  return lastActionKey(v, id) === out.lastBefore ? pending : null
 }

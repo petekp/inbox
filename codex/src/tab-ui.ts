@@ -33,7 +33,6 @@ import { callTool, cancelTimer, later, READ_TIMEOUT_MS } from './tab-host'
 import { revealSelected } from './tab-wake'
 import { PAGE, swapPage } from './tab-swap'
 import { takeShownRows } from './tab-shown'
-import { lastPressKey } from './tab-press'
 
 const hostFacts = (v: View): HostFacts => ({
   isFetchingPrs: v.isFetchingPrs,
@@ -160,7 +159,7 @@ async function runPress(c: Extract<UiCommand, { kind: 'press' }>) {
   const generation = tabState.viewGeneration
   const v = tabState.serverView
   const rowId = pressRowId(c.press)
-  localOuts.set(c.pressId, { rowId, ...pressing, lastBefore: lastPressKey(v, rowId) })
+  localOuts.set(c.pressId, { rowId, ...pressing })
   copies.delete(rowId)
   tabState.activePresses++
   let outcome: SettledOutcome
@@ -241,13 +240,16 @@ function applyView(next: View, seq: number, answers: UiEvent[] = []) {
   ]
   isFreshOpen = false
   const before = tabState.ui.rowsSeen
+  const answered = answers.flatMap(a => (a.type === 'press-settled' ? [tabState.ui.pressesOut[a.pressId]?.rowId] : []))
   dispatch(events, { isDrawn: false })
   markEntering(before, tabState.ui.rowsSeen)
   tabState.isReadDraw = true
+  tabState.answeredRows = new Set(answered.filter(id => id !== undefined))
   try {
     tabState.draw()
   } finally {
     tabState.isReadDraw = false
+    tabState.answeredRows = new Set()
   }
 }
 
