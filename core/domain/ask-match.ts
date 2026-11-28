@@ -25,7 +25,7 @@ export function recommendedOption(options: string[], rec: string | null): string
   return best ?? (byLabel ? (options.find(o => label(o) === byLabel) ?? null) : null)
 }
 
-const QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i
+const QUESTION_WORD = /^\s*(?:what|why|how|which|where|when|who)\b/i
 
 /**
  * Whether an answer to a question is a question back, which leaves the question open. It ends with a question

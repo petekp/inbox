@@ -12,7 +12,7 @@ A question in the inbox should be answerable from its row alone. Three changes m
 
 ## Change 1: a question back keeps the question open
 
-A question back is an answer that ends with a question mark and starts with a question word: what, why, how, which, where or who. "Why not Redis?" is one. "Redis?" picks Redis, and "Sure, why not?" answers yes.
+A question back is an answer that ends with a question mark and starts with a question word: what, why, how, which, where, when or who. "Why not Redis?" is one. "Redis?" picks Redis, and "Sure, why not?" answers yes.
 
 - `isQuestionBack` in `core/domain/ask-match.ts` is the one rule.
 - The `close` tool refuses a question back: "Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide."
