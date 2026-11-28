@@ -249,7 +249,8 @@ export function checkMotionIds(root: Painted, last: Map<string, string> | null):
   const moving = allOf(root).filter(n => motionOf(n).length > 0)
   const unnamed = moving.find(n => n.id === null)
   if (unnamed) throw new Error(`an element with no id moves ${drawnBy(unnamed)}, so gpui-kit loses its move`)
-  const drawn = new Map(moving.map(n => [n.id ?? '', drawnBy(n)]))
+  const restarts = moving.filter(n => motionOf(n).some(m => m !== 'left'))
+  const drawn = new Map(restarts.map(n => [n.id ?? '', drawnBy(n)]))
   if (last === null) return drawn
   const countOf = (all: Map<string, string>, what: string) => [...all.values()].filter(w => w === what).length
   const isOnly = (what: string) => countOf(drawn, what) === 1 && countOf(last, what) === 1

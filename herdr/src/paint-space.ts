@@ -355,6 +355,7 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
 
     return {
       isMoving,
+      isShut: m?.box === 'shut',
       isGone: isMoving && isLeaving && m.box === 'shut',
       isHiding: isMoving && (isLeaving || m.waitsForSpace),
     }

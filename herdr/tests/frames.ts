@@ -137,6 +137,12 @@ const retargetedFrom = (s: Fade): number => {
   return s.from + (s.target - s.from) * easeOut(done)
 }
 
+/** A stroke the draw hides: it, or a box around it, is set to no opacity, whether or not its fade has ended. */
+const declaredHidden = (n: Painted): Hidden => {
+  for (let up: Painted | null = n; up; up = up.parent) if (up.style.opacity === 0) return 'faded'
+  return null
+}
+
 const isBoxFade = (n: Painted): boolean =>
   n.transitions.get('opacity') !== undefined &&
   n.style.opacity !== undefined &&
@@ -270,6 +276,7 @@ class Frames {
   shrinks: Jump[] = []
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
+  breaks: ColumnGap[] = []
   looseArms: (Arm & { at: number })[] = []
   listHeights: number[] = []
   slides: number[][] = []
@@ -370,6 +377,7 @@ class Frames {
     const hidden = this.hiddenStrokes(tree, now)
     const segments = segmentsOf(tree, placed, hidden)
     for (const gap of gapsOf(segments, end)) this.gaps.push({ at: now, ...gap })
+    for (const gap of gapsOf(segmentsOf(tree, placed, declaredHidden), end)) this.breaks.push({ at: now, ...gap })
     for (const arm of looseArmsOf(armsOf(tree, placed, hidden), segments)) this.looseArms.push({ at: now, ...arm })
     this.rest = { fits, lines }
     this.strokes.push(...this.strokeFades.shownIn(placed, now))
@@ -429,6 +437,7 @@ export function framesOf(
   shrinks: Jump[]
   titles: TitleForm[]
   gaps: ColumnGap[]
+  breaks: ColumnGap[]
   looseArms: (Arm & { at: number })[]
   heights: number[]
   slides: number[][]
@@ -446,6 +455,7 @@ export function framesOf(
       shrinks: [],
       titles: [],
       gaps: [],
+      breaks: [],
       looseArms: [],
       heights: [],
       slides: [],
@@ -476,6 +486,7 @@ export function framesOf(
     shrinks: frames.shrinks.map(j => ({ ...j, at: j.at - start })),
     titles: frames.titles.map(t => ({ ...t, at: t.at - start })),
     gaps: frames.gaps.map(g => ({ ...g, at: g.at - start })),
+    breaks: frames.breaks.map(g => ({ ...g, at: g.at - start })),
     looseArms: frames.looseArms.map(a => ({ ...a, at: a.at - start })),
     heights: frames.listHeights,
     slides: frames.slides,

@@ -12,9 +12,11 @@ import {
   BUTTON_PAD_X,
   BUTTON_PAD_Y,
   CONTROL_GAP,
+  EDGE,
   INSIDE_GAP,
   LINE_HEIGHT,
   MARK_W,
+  NEST,
   colorOf,
   supportingOf,
 } from './paint-theme'
@@ -22,6 +24,7 @@ import type { Paint, Theme } from './paint-theme'
 import { checkboxEl } from './paint-checkbox'
 import { TIMED_W, timeLeftEl } from './paint-timer'
 import type { HeldFades } from './held-fades'
+import { HEIGHT_SPRING } from '../../core/view/springs'
 
 /**
  * A button takes the look of its emphasis: `primary` filled, `normal` outlined, `quiet` a label with no side padding,
@@ -161,6 +164,18 @@ export const markEl = (m: Mark | null, t: Theme, tint: Theme[keyof Theme] | null
 
 export const lineEl = (text: string, color: Theme[keyof Theme], indent: number = MARK_W) =>
   div().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text)
+
+/**
+ * `el` set `depth` nesting steps in from where it starts, with its right edge kept inside the panel's. Its left edge
+ * springs, so a change of nesting slides the line, and the connectors that keep their names slide with it. `el` needs
+ * an id for the spring to follow.
+ */
+export const nestedEl = (el: Element, depth: number): Element =>
+  el
+    .relative()
+    .left(depth * NEST)
+    .spring('left', HEIGHT_SPRING)
+    .pr(EDGE + depth * NEST)
 
 /** `el` fading to `opacity`, eased out, as the paint's `HeldFades` holds the fade named `name`. */
 export function fadeEl(

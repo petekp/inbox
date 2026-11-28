@@ -1,6 +1,6 @@
 import { emptySession } from '../core/view/session-files'
 import type { Case } from './case'
-import { UNCONFIRMED, demo, herdr, omp, only } from './seed-cases'
+import { UNCONFIRMED, demo, demoWithMore, herdr, omp, only } from './seed-cases'
 
 const HOST_ANSWER = "in the draw after the host's answer"
 
@@ -262,6 +262,34 @@ export const PRESS_SEEDS: {
       { is: 'key', key: 'left' },
       { is: 'click', on: 'button', n: 7, label: 'Remove' },
     ]),
+  },
+  {
+    name: 'Remove on the Status goal, in a pane as wide as the VM pass drew it',
+    rule: 'connector-break',
+    detail: 'in fit m2',
+    issue: 1055,
+    isOpen: false,
+    case: {
+      ...herdr(demo, [
+        { is: 'key', key: 'left' },
+        { is: 'click', on: 'button', n: 7, label: 'Remove' },
+      ]),
+      width: 140,
+    },
+  },
+  {
+    name: 'Remove on the Status goal, with a "+ 1 more" line under the children of a subject that moves',
+    rule: 'connector-break',
+    detail: 'in fit c3',
+    issue: 1056,
+    isOpen: false,
+    case: {
+      ...herdr(demoWithMore, [
+        { is: 'key', key: 'left' },
+        { is: 'click', on: 'button', n: 7, label: 'Remove' },
+      ]),
+      width: 140,
+    },
   },
   {
     name: 'Escape on an open Reply field',
