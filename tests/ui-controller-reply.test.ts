@@ -193,6 +193,14 @@ test('a press whose row is gone reports its error or stale note under the tabs i
   expect(stale.ui.notes.i2).toEqual({ note: 'stale', at: T0 + 20 })
 })
 
+test('a refused Resume reports nothing under the tabs, since the stop banner shows its failure', () => {
+  const { ui } = openOn(S)
+  const pressed = send(ui, S, { type: 'press', press: { action: 'resume', id: 'session' }, by: 'click' }, T0 + 10)
+  expect(Object.values(pressed.ui.pressesOut).map(o => o.action)).toEqual(['resume'])
+  const refused = send(pressed.ui, S, { type: 'press-settled', pressId: 1, outcome: REFUSED }, T0 + 20)
+  expect([noticeOf(refused.ui, T0 + 20), refused.ui.pressesOut]).toEqual([null, {}])
+})
+
 test('a new press on a row clears the error and stale note of its last press', () => {
   const { ui } = openOn(S)
   const first = send(ui, S, { type: 'press', press: { action: 'explain', id: 'i2' }, by: 'key' }, T0 + 10)

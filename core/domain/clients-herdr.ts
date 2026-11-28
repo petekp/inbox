@@ -33,7 +33,11 @@ export const HERDR: LookTable = {
     'status-tab': { kind: 'full' },
     'turn-working': { kind: 'host' },
     'host-task-list': { kind: 'host' },
-    'hooks-need-trust': { kind: 'full' },
+    'hooks-need-trust': {
+      kind: 'different',
+      reason:
+        "Shows the hook-trust banner only for a Codex chat whose hooks ran once in its Codex run, as when an update changed the plugin. A Codex in a Herdr app terminal publishes a chat only once the chat's SessionStart hook claims the terminal, so a chat whose hooks never ran publishes nothing.",
+    },
     'compare-in-background': { kind: 'host' },
     'compare-page': { kind: 'host' },
     'running-marks': {

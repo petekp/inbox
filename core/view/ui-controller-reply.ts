@@ -167,7 +167,10 @@ function hasNotMoved(ui: UiState, out: PressOut): boolean {
 const isNotSentShown = (view: SessionView, id: string) =>
   allRows(view).find(r => r.id === id)?.feedback?.is === 'notSent'
 
-/** What a press's answer does: notes, errors, a reopened field, Undo's restored row, the demo's reply. */
+/**
+ * What a press's answer does: notes, errors, a reopened field, Undo's restored row, the demo's reply. A Resume press's
+ * answer does none of these, since the stop banner draws its failure from the session's last action.
+ */
 export function pressSettled(
   ui: UiState,
   view: SessionView,
@@ -179,6 +182,7 @@ export function pressSettled(
   if (out === undefined) return withCommands(ui)
   const { [pressId]: _out, ...pressesOut } = ui.pressesOut
   let next: UiState = { ...ui, pressesOut }
+  if (out.action === 'resume') return withCommands(next)
   const row = out.rowId
   const isUndo = out.action === 'undo' || out.action === 'pr-undo'
   const hasUndoTimeEnded = isUndo && !isUndoShown(ui, view, row, now)
