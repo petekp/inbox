@@ -29,6 +29,7 @@ Every source file in `core/`, `hooks/`, `codex/src`, `omp/src`, `herdr/src`, `ex
 - [Codex](looks/files-codex.md)
 - [omp](looks/files-omp.md)
 - [The Herdr look](looks/files-herdr.md)
+- [The Herdr look's painting](looks/files-herdr-paint.md)
 - [Exact Web and iOS (private)](looks/files-exact.md)
 
 ## Who owns each rule

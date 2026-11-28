@@ -99,8 +99,11 @@ export async function pressTitle(m: PaneInputCalls, id: string, isAll?: unknown)
   await m.sendUi([{ type: 'fold-all', isOpening: view.collapsed.includes(id) }])
 }
 
+/** Shows Help at its start, or closes it. */
 export async function toggleHelp(m: PaneInputCalls) {
-  await m.sendUi([{ type: 'show-help', isShown: !(await readUi(m)).isHelpShown }])
+  const isShown = !(await readUi(m)).isHelpShown
+  await m.sendUi([{ type: 'show-help', isShown }])
+  if (isShown) await m.pane.scrollToStart().catch(() => undefined)
 }
 
 /** A press on a Status parent's name or its Fold key. With `isAll`, every fold of the page goes the same way. */

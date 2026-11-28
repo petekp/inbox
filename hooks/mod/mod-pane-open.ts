@@ -209,9 +209,10 @@ export async function showTab(m: PaneOpenCalls, tab: ShownTab) {
   await m.sendUi([{ type: 'show-tab', tab }])
 }
 
-/** The controller showed `tab`: the look follows it, and a row tab scrolls to its open row. */
+/** The controller showed `tab`: the look follows it, a row tab scrolls to its open row and the Status to its start. */
 export async function tabShown(m: PaneOpenCalls, tab: ShownTab) {
   cancelUndoScroll()
   void m.syncLook()
   if (isRowTab(tab)) await scrollToOpenRow(m, tab)
+  else await m.pane.scrollToStart().catch(() => undefined)
 }
