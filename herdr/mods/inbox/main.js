@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-28T04:49:34.185Z. 445048 characters follow.
+// Built at 2026-11-28T05:01:49.374Z. 445763 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -6617,7 +6617,8 @@ function stepPanel(track, last, now, height, press, heldUntil) {
 }
 
 // src/reshape-hold.ts
-var isReshaped = (was, b) => was.kind === "status" && b.kind === "status" && (was.depth !== b.depth || JSON.stringify([was.tree, was.path]) !== JSON.stringify([b.tree, b.path]));
+var isTreeKind = (b) => b.kind === "status" || b.kind === "note" || b.kind === "fold";
+var isReshaped = (was, b) => isTreeKind(was) && isTreeKind(b) && was.kind === b.kind && (was.depth !== b.depth || JSON.stringify([was.tree, was.path]) !== JSON.stringify([b.tree, b.path]));
 var holdsShape = (was, b, isHolding) => isHolding && isReshaped(was, b);
 
 // src/title-motion.ts
@@ -7680,6 +7681,7 @@ var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, ab
 };
 var markEl = (m, t, tint = null) => m?.text === NEEDS_YOU_MARKS.task.mark || m?.text === TASK_MARK.mark ? h_flex().w(MARK_W).h(LINE_HEIGHT).flex_none().items_center().child(checkboxEl(tint ?? (m.tone === null ? t.muted : colorOf(t, m.tone)), m.text === NEEDS_YOU_MARKS.task.mark)) : div3().w(MARK_W).flex_none().text_color(tint ?? (m === null || m.tone === null ? t.muted : colorOf(t, m.tone))).when(m?.isRunning === true, (e) => e.loop("opacity", { from: 1, to: 0.3, period: RUNNING_PULSE_MS })).child(m?.text ?? "");
 var lineEl = (text, color, indent = MARK_W) => div3().pl(indent).pt(INSIDE_GAP).whitespace_normal().text_color(color).child(text);
+var nestedEl = (el, depth) => el.relative().left(depth * NEST).spring("left", HEIGHT_SPRING).pr(EDGE + depth * NEST);
 function fadeEl(el, name, opacity, glide, p) {
   const handed = p.fades.fade(name, opacity, glide.duration, glide.delay, p.now);
   return el.opacity(handed.opacity).transition("opacity", { duration: handed.ms, easing: "ease-out" });
@@ -7713,7 +7715,7 @@ var TREE_LINE_SHARE = 0.2;
 var lineColor = (t, under = t.background) => mixInto(t.foreground, flatten(under, t.background), TREE_LINE_SHARE);
 var PATH_X = EDGE + 4;
 function lineEl2(id, c, top, height, t) {
-  const el = div5().id(id).absolute().left(PATH_X + c.depth * NEST).top(top).w(1).border_l_1().border_color(lineColor(t));
+  const el = div5().id(id).absolute().left(PATH_X + c.depth * NEST).spring("left", HEIGHT_SPRING).top(top).w(1).border_l_1().border_color(lineColor(t));
   const sized = height === null ? el.bottom(0) : el.h(height);
   return c.isDashed ? sized.border_dashed() : sized;
 }
@@ -7734,6 +7736,7 @@ function runsOn(b) {
   return [...pathColumn(line), ...columns.map((s) => ({ depth: s.depth, isDashed: false }))];
 }
 var depthOf = (b) => ("depth" in b) ? b.depth : 0;
+var stepOf = (b, depth) => ("depth" in b) ? b.depth - depth : depth;
 function meetsAt(b, depth) {
   const tree = "tree" in b ? b.tree ?? [] : [];
   const isMilestone = "path" in b && b.path?.is === "milestone";
@@ -7807,11 +7810,18 @@ function strokeFadesOf(blocks, passing, moves, fades) {
   };
   const reach = (i, depth, by) => {
     let first = null;
+    let shut = null;
     for (let j = i + by;j >= 0 && j < blocks.length; j += by) {
       const move = moves[j];
       if (move?.isGone)
         continue;
-      if (!(by === 1 ? ins[j] : ons[j])?.has(depth))
+      const isRunInto = (by === 1 ? ins[j] : ons[j])?.has(depth) === true;
+      if (move?.isShut && !moves[i]?.isShut) {
+        if (isRunInto)
+          shut ??= j;
+        continue;
+      }
+      if (!isRunInto)
         break;
       if (!move?.isMoving && !isPassed(j, depth))
         return { stays: true, first, end: null };
@@ -7821,7 +7831,7 @@ function strokeFadesOf(blocks, passing, moves, fades) {
       if (!(by === 1 ? ons[j] : ins[j])?.has(depth))
         return { stays: false, first, end: j };
     }
-    return { stays: false, first, end: null };
+    return first === null && shut !== null ? { stays: false, first: shut, end: shut } : { stays: false, first, end: null };
   };
   const joinsAt = (r) => r.stays ? null : r.end ?? undefined;
   const shownLast = (ends) => {
@@ -7870,7 +7880,7 @@ function feedsOf(blocks, moves) {
 }
 var spaceColumnEl = (key, b, c, f, t) => {
   const isPathLine = c.depth === 0 && "path" in b && b.path !== undefined;
-  const id = isPathLine ? `space path ${key}` : `space column ${key} ${c.depth}`;
+  const id = isPathLine ? `space path ${key}` : `space column ${key} ${stepOf(b, c.depth)}`;
   return f.above(c.depth)(lineEl2(id, c, 0, null, t));
 };
 function contentStrokeEls(key, b, top, t, f, passes, feeds) {
@@ -7921,7 +7931,7 @@ function contentStrokeEls(key, b, top, t, f, passes, feeds) {
     if (is === "down" || is === "past")
       return [];
     return [
-      armFade(depth)(div5().id(`stroke ${key} arm ${depth}`).absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)))
+      armFade(depth)(div5().id(`stroke ${key} arm ${stepOf(b, depth)}`).absolute().left(PATH_X + depth * NEST + 1).spring("left", HEIGHT_SPRING).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)))
     ];
   });
   passes.forEach(reachWhole);
@@ -7933,7 +7943,7 @@ function contentStrokeEls(key, b, top, t, f, passes, feeds) {
     const upperHeight = r.toEnd && !isSplit ? null : hasUpper ? armAt + 1 : 0;
     const lowerFrom = r.toEnd ? armAt + 1 : r.lowerFrom ?? armAt + 1;
     const lowerHeight = r.toEnd ? isSplit ? null : 0 : r.lowerFrom === null ? 0 : null;
-    const id = (part) => `stroke ${key} column ${depth} ${part}`;
+    const id = (part) => `stroke ${key} column ${stepOf(b, depth)} ${part}`;
     return [
       f.above(depth)(lineEl2(id("top"), c, hasUpper ? 0 : armAt + 1, upperHeight, t)),
       f.below(depth)(lineEl2(id("bottom"), c, lowerFrom, lowerHeight, t))
@@ -8114,6 +8124,7 @@ function spacedEls(blocks, p, el) {
     const isLeaving = m?.state === "leaving";
     return {
       isMoving,
+      isShut: m?.box === "shut",
       isGone: isMoving && isLeaving && m.box === "shut",
       isHiding: isMoving && (isLeaving || m.waitsForSpace)
     };
@@ -8239,7 +8250,7 @@ function statusEl(s, p, isInert) {
       ...s.fold.isFolded ? { count: { id: `fold count ${s.id}`, value: s.fold.count } } : {}
     })
   ] : [];
-  return v_flex5().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(partEl("mark", markEl(s.mark, t))).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(partEl("name", name)).children(stall).children(chevron))).child(partEl("under", v_flex5().children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))))).when(s.buttons.length > 0, (e) => e.child(partEl("buttons", buttonsEl(s.buttons, p, MARK_W, isInert || areButtonsLeaving))));
+  return nestedEl(v_flex5().id(`indent ${s.id}`), s.depth).pl(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(partEl("mark", markEl(s.mark, t))).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(partEl("name", name)).children(stall).children(chevron))).child(partEl("under", v_flex5().children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))))).when(s.buttons.length > 0, (e) => e.child(partEl("buttons", buttonsEl(s.buttons, p, MARK_W, isInert || areButtonsLeaving))));
 }
 
 // src/paint-pr-status.ts
@@ -8479,7 +8490,7 @@ function ruleEl(b, t) {
 }
 function noteEl(b, t, buttons = []) {
   const text = div14().min_w(0).when(b.isStrong, (e) => e.font_semibold()).text_color(b.isStrong ? t.foreground : b.level === "faint" ? faintOf(t) : colorOf(t, b.tone)).child(b.text);
-  return h_flex6().flex_wrap().gap_x(CONTROL_GAP).items_baseline().pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST).pr(EDGE).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex6().flex_none().items_center().gap(CONTROL_GAP).children(buttons)));
+  return nestedEl(h_flex6().id(`indent ${b.id}`), b.depth).flex_wrap().gap_x(CONTROL_GAP).items_baseline().pl(b.isAtEdge ? EDGE : TEXT_X).whitespace_normal().when(b.isStrong, (e) => e.text_size(HEAD_TEXT).line_height(HEAD_LINE)).child(text).when(buttons.length > 0, (e) => e.child(h_flex6().flex_none().items_center().gap(CONTROL_GAP).children(buttons)));
 }
 
 // src/paint-parted.ts
@@ -8735,7 +8746,7 @@ function foldEl(b, p, isInert) {
   };
   const fold = b.kind === "fold" ? b : null;
   const mark = fold?.mark;
-  return h_flex11().id(`fold ${b.id}`).pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE).pr(EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div19().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert, level: fold?.level ?? "muted" })));
+  return nestedEl(h_flex11().id(`fold ${b.id}`), mark === undefined ? b.depth : 0).pl(mark === undefined ? TEXT_X : EDGE).py(padOf(b)).items_start().text_color(fold?.level === "faint" ? faintOf(t) : t.muted).accessibility_label(b.text).when(!isInert, (e) => e.on_click((e, cx) => p.press(press, cx, e.modifiers.alt))).when(mark !== undefined, (e) => e.child(markEl(mark ?? null, t))).child(fold?.counts ? countsEl(fold.counts, t) : div19().min_w(0).whitespace_normal().child(b.text)).when(fold !== null, (e) => e.child(foldChevronEl(t, { isOpen: fold?.isOpen ?? false, isLive: !isInert, level: fold?.level ?? "muted" })));
 }
 function blockEl(b, p) {
   const { t } = p;
