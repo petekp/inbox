@@ -1,7 +1,7 @@
 import type { RenderSurface, UiScrollBlock, UiScrollResult } from 'claude-code'
 
 import type { Tab } from '../../types'
-import { drawnState, readUi } from './mod-drawn'
+import { drawnState, later, readUi, redraw } from './mod-drawn'
 import type { Mod } from './mod-ports'
 import { conversation } from './mod-sessions'
 import { cancelUndoScroll, paneState, suspendUndoReveal } from './mod-state'
@@ -12,6 +12,26 @@ import { SETTLED_MS } from '../../core/view/timing'
 import { selectedOf } from '../../core/view/ui-controller-selection'
 
 type PaneScrollCalls = Pick<Mod, 'atoms' | 'clock' | 'pane' | 'sendUi'>
+
+const RAIL_REDRAW_MS = 50
+
+/**
+ * Draws the inline terminal pane once more, after the last of a burst of draws. Its tab column moves down by the
+ * window's offset, and on the terminal the engine's own scrolls, a clamp or an end followed, draw nothing, so only a
+ * new draw reads where the window stands.
+ */
+export function followRailOffset(m: PaneScrollCalls) {
+  if (paneState.isRailRedraw) {
+    paneState.isRailRedraw = false
+    return
+  }
+  const draw = ++paneState.railDraws
+  later(m, RAIL_REDRAW_MS, () => {
+    if (draw !== paneState.railDraws) return
+    paneState.isRailRedraw = true
+    return redraw(m)
+  })
+}
 
 export async function scrollToKey(
   m: PaneScrollCalls,

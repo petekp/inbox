@@ -6,6 +6,8 @@ Status: building. Each item stays until the change that does it lands.
 
 Gaps in the live pass in the VM, step 4 of `docs/release.md`, are in [release-pass-follow-ups-vm.md](release-pass-follow-ups-vm.md).
 
+Gaps in the mod's tests are in [release-pass-follow-ups-mod-tests.md](release-pass-follow-ups-mod-tests.md).
+
 Gaps in the Herdr frame harness are in [release-pass-follow-ups-herdr.md](release-pass-follow-ups-herdr.md).
 
 - **Say which installs a fresh worktree needs before section 1.** In a worktree made for the pass at 23aac5a9, `check.sh` and `bundles.sh check` failed at once, because the worktree had no root `node_modules`. After `npm ci --ignore-scripts`, `check.sh` failed again until Codex, omp and Herdr had their tools: `npm --prefix codex ci`, then `bun install --cwd omp --frozen-lockfile --ignore-scripts` and the same for `herdr`. Section 1 of `docs/release.md` does not name them. Listing those four commands before the table would catch a pass that reads missing tools as a failing release.

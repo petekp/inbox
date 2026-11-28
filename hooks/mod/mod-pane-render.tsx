@@ -9,7 +9,7 @@ import { drawnState, later } from './mod-drawn'
 import { closeField } from './mod-pane-input'
 import { noteStatusTop, paneHandlers, paneViewKeys, restoreDesktopFocus } from './mod-pane-handlers'
 import { matchPaneEscape, paneDrawnOnDesktop, paneOpened } from './mod-pane-open'
-import { scrollToOpenRow } from './mod-pane-scroll'
+import { followRailOffset, scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { cancelUndoScroll, paneState, sessionState } from './mod-state'
 import { currentOwner } from './mod-sessions'
@@ -23,6 +23,7 @@ import { paneFrame } from '../pane/pane-frame'
 import { paneHelp } from '../pane/pane-help'
 import {
   closeKeysWithoutRow,
+  FOCUS_REST_KEY,
   KEY_BINDING_SUFFIX,
   openedField,
   openFields,
@@ -182,6 +183,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
   const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
   const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
   const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
+  if (hasRail) followRailOffset(m)
   const railWidth = Math.max(...tabList.map(t => cellWidth(tabText(t.id, t.label)))) + 2 * TAB_PAD.length
   const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
   const ids = rows[tab].map(r => r.id)
@@ -573,19 +575,20 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
         : tab === 'prs'
           ? prsView()
           : needsYouView()
+  const demoNotice = showsDemoNotices ? (
+    <Box flexDirection="column" paddingX={isInline && !hasRail ? 2 : 1} marginBottom={blankLine}>
+      {banner(bannerOf('demo', DEMO_NOTICE), {
+        action: <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo(m, false)} />,
+      })}
+    </Box>
+  ) : null
   const tree = (
     <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
-      {showsDemoNotices ? (
-        <Box flexDirection="column" paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
-          {banner(bannerOf('demo', DEMO_NOTICE), {
-            action: <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo(m, false)} />,
-          })}
-        </Box>
-      ) : null}
       {hasRail ? (
         <Box flexDirection="row" flexGrow={1}>
           {rail}
           <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+            {demoNotice}
             {statusBlock}
             <Box flexDirection="column" paddingRight={1} flexGrow={1}>
               {tabView}
@@ -594,6 +597,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
         </Box>
       ) : (
         [
+          demoNotice,
           tabs,
           statusBlock,
           <Box flexDirection="column" paddingX={1} paddingTop={blankLine} flexGrow={1}>
@@ -604,6 +608,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
       {/* Desktop takes no keys: a Button's hotkey does nothing there, so it gets neither the list of keys nor the hidden Buttons. */}
       {look === 'desktop' ? null : (
         <Box display="none">
+          <Button key={FOCUS_REST_KEY} plain label="Inbox" onPress={() => undefined} />
           {keyBindings(viewKeys)}
           {keyBindings([...rowKeys, ...herdrAskKeys()], KEY_BINDING_SUFFIX)}
         </Box>
