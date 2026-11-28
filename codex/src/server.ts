@@ -113,8 +113,8 @@ export type PressReply = {
 }
 
 /**
- * Answers one message. `settled` resolves once the PR fetches, their state updates, the prune, the delegate check and
- * the reads of heard saves it started have ended.
+ * Answers one message. `settled` resolves once the PR fetches, their state updates, the prune, the delegate check, the
+ * reads of heard saves and the asks about the hooks' trust, with their saves, it started have ended.
  */
 export type Server = ((m: Message) => Promise<Record<string, unknown> | null>) & {
   settled(): Promise<void>
@@ -129,15 +129,14 @@ export function makeServer(given: ServerDeps): Server {
   const prunedFor = new Set<string>()
   /** Each chat's newest turn in its rollout, as its last view read it. */
   const newestTurns = new Map<string, string>()
-  const hooksTrustNow = makeHooksTrustNow(deps, newestTurns)
-  void deps
-    .herdrSession?.()
-    .then(async id => void (id && hooksTrustNow(await readState(dir, id), id)))
-    .catch(() => undefined)
+  const background = makeBackground()
+  const hooksTrustNow = makeHooksTrustNow(deps, newestTurns, background.track)
+  const herdrSession = deps.herdrSession?.()
+  if (herdrSession)
+    background.track(herdrSession.then(async id => void (id && hooksTrustNow(await readState(dir, id), id))))
   const catchUpOnOpen = makeCatchUpOnOpen(deps)
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml
-  const background = makeBackground()
   const { wakeAfterSettle, fetchPrsNow, fetchPrsWhenDue, checkDelegatesWhenDue, served, onPress, onHerdrFile } =
     makeSessionHost(deps, newestTurns, hooksTrustNow, currentPage, background)
   const { demoOf, onDemoPress, collapseDemo } = makeDemo(deps, served)

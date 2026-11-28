@@ -237,23 +237,16 @@ test('a clear answer about the hooks is saved to the chat its Herdr terminal run
   await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
   const saved = async () => (await readState(dir, 's1')).hooksTrust
   const startAnswering = async (answer: () => Promise<'modified' | 'trusted' | null>) => {
-    let isAnswered = false
-    makeServer({
+    await makeServer({
       comparePage: '/plugin/dist/compare-page.html',
       dir,
       now: () => 1000,
       exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
       tabHtml: '',
       fallbackCli: async () => 'codex',
-      hooksTrust: async () => {
-        const given = await answer()
-        isAnswered = true
-        return given
-      },
+      hooksTrust: answer,
       herdrSession: async () => 's1',
-    })
-    for (let n = 0; n < 200 && !isAnswered; n++) await new Promise(resolve => setTimeout(resolve, 5))
-    for (let n = 0; n < 20; n++) await new Promise(resolve => setImmediate(resolve))
+    }).settled()
   }
 
   await startAnswering(async () => 'modified')
