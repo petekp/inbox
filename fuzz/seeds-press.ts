@@ -264,6 +264,20 @@ export const PRESS_SEEDS: {
     ]),
   },
   {
+    name: 'Remove on the Status goal, in a pane as wide as the VM pass drew it',
+    rule: 'connector-break',
+    detail: 'in fit m2',
+    issue: 1055,
+    isOpen: false,
+    case: {
+      ...herdr(demo, [
+        { is: 'key', key: 'left' },
+        { is: 'click', on: 'button', n: 7, label: 'Remove' },
+      ]),
+      width: 140,
+    },
+  },
+  {
     name: 'Escape on an open Reply field',
     rule: 'jump',
     detail: 'the highlight of row ',

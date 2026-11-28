@@ -168,20 +168,22 @@ type StrokeFades = { own: Fade; above: (depth: number) => Fade; below: (depth: n
 type ColumnReach = { stays: boolean; first: number | null; end: number | null }
 
 /**
- * What a block of the list is to its strokes: whether it enters or leaves, whether it has left, and whether its content
- * hides, as it does while it leaves or while it enters and waits for its space.
+ * What a block of the list is to its strokes: whether it enters or leaves, whether its box is shut, whether it has left,
+ * and whether its content hides, as it does while it leaves or while it enters and waits for its space.
  */
-type StrokeMove = { isMoving: boolean; isGone: boolean; isHiding: boolean }
+type StrokeMove = { isMoving: boolean; isShut: boolean; isGone: boolean; isHiding: boolean }
 
 /**
  * Who each block's strokes fade with, so a connector shows only while both things it joins show. Up and down, a column
  * joins the nearest block that stays or where it ends. It runs past a row that stays nested beside it, a block that has
  * left, and a block that enters or leaves while the column runs on below it, as the path runs past a subject's mark. A
- * column whose two ends stay never fades, so it stays whole past a block that comes or goes. Otherwise it fades along
- * its whole way with an end that enters or leaves: the upper end whose content hides, as while it leaves or waits for
- * its space, else the upper end. So a fold's rows fade with the column from their
- * parent, and a column stays whole past a copy that has left while both its ends show. A column of a block that has left
- * that no longer joins two blocks hides at once, since its content has already faded.
+ * column from an open block runs past a block that waits, shut, to enter while another holds its space, since that block
+ * takes no room, and ends there only when no open block carries the column past it. A column whose two ends stay never
+ * fades, so it stays whole past a block that comes or goes. Otherwise it fades along its whole way with an end that
+ * enters or leaves: the upper end whose content hides, as while it leaves or waits for its space, else the upper end. So
+ * a fold's rows fade with the column from their parent, and a column stays whole past a copy that has left while both
+ * its ends show. A column of a block that has left that no longer joins two blocks hides at once, since its content has
+ * already faded.
  */
 export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: StrokeMove[], fades: Fade[]): StrokeFades[] {
   const depths = (cs: Column[], i: number) => new Set([...cs, ...(passing[i] ?? [])].map(c => c.depth))
@@ -194,17 +196,23 @@ export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: Strok
   }
   const reach = (i: number, depth: number, by: 1 | -1): ColumnReach => {
     let first: number | null = null
+    let shut: number | null = null
     for (let j = i + by; j >= 0 && j < blocks.length; j += by) {
       const move = moves[j]
       if (move?.isGone) continue
-      if (!(by === 1 ? ins[j] : ons[j])?.has(depth)) break
+      const isRunInto = (by === 1 ? ins[j] : ons[j])?.has(depth) === true
+      if (move?.isShut && !moves[i]?.isShut) {
+        if (isRunInto) shut ??= j
+        continue
+      }
+      if (!isRunInto) break
       if (!move?.isMoving && !isPassed(j, depth)) return { stays: true, first, end: null }
       if (!move?.isMoving) continue
       first ??= j
       if (!(by === 1 ? ons[j] : ins[j])?.has(depth)) return { stays: false, first, end: j }
     }
 
-    return { stays: false, first, end: null }
+    return first === null && shut !== null ? { stays: false, first: shut, end: shut } : { stays: false, first, end: null }
   }
   const joinsAt = (r: ColumnReach): number | null | undefined => (r.stays ? null : (r.end ?? undefined))
   /** The fade of the upper end among `ends` whose content hides, else of the upper end, where null is an end that stays. */
