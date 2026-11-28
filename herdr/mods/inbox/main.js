@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-28T01:47:03.595Z. 438105 characters follow.
+// Built at 2026-11-28T02:29:44.721Z. 439167 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -7701,26 +7701,33 @@ function passingOf(blocks, isShut) {
   }
   return out;
 }
-function joinedWaits(blocks, passing, waits) {
+function joinedWaits(blocks, passing, waits, hasLeft) {
   const depths = (cs, i) => new Set([...cs, ...passing[i] ?? []].map((c) => c.depth));
-  const isJoined = (i) => {
-    const above = blocks[i - 1];
+  const isJoined = (j, i) => {
+    const above = blocks[j];
     const b = blocks[i];
-    if (!above || !b || waits[i - 1] == null || waits[i] == null)
+    if (!above || !b || waits[j] == null || waits[i] == null)
       return false;
-    const ons = depths(runsOn(above), i - 1);
+    const ons = depths(runsOn(above), j);
     return [...depths(runsIn(b), i)].some((d) => ons.has(d));
   };
-  const out = [];
-  let start = 0;
-  for (let i = 0;i <= blocks.length; i++) {
-    if (i < blocks.length && i > 0 && isJoined(i))
+  const out = blocks.map(() => 0);
+  let run = [];
+  const endRun = () => {
+    const longest = Math.max(0, ...run.map((j) => waits[j] ?? 0));
+    for (const j of run)
+      out[j] = waits[j] == null ? 0 : longest;
+    run = [];
+  };
+  for (const i of blocks.keys()) {
+    if (hasLeft[i])
       continue;
-    const run = waits.slice(start, i).map((w) => w ?? 0);
-    const longest = Math.max(0, ...run);
-    out.push(...waits.slice(start, i).map((w) => w === null ? 0 : longest));
-    start = i;
+    const last = run.at(-1);
+    if (last === undefined || !isJoined(last, i))
+      endRun();
+    run.push(i);
   }
+  endRun();
   return out;
 }
 var NO_FADE = (el) => el;
@@ -7742,31 +7749,44 @@ function strokeFadesOf(blocks, passing, moves, fades) {
       if (!(by === 1 ? ins[j] : ons[j])?.has(depth))
         break;
       if (!move?.isMoving && !isPassed(j, depth))
-        return { stays: true, first };
+        return { stays: true, first, end: null };
       if (!move?.isMoving)
         continue;
       first ??= j;
       if (!(by === 1 ? ons[j] : ins[j])?.has(depth))
-        break;
+        return { stays: false, first, end: j };
     }
-    return { stays: false, first };
+    return { stays: false, first, end: null };
+  };
+  const joinsAt = (r) => r.stays ? null : r.end ?? undefined;
+  const shownLast = (ends) => {
+    const moving = ends.filter((j) => j !== null);
+    const end = moving.find((j) => moves[j]?.isHiding) ?? moving[0];
+    return end === undefined ? NO_FADE : fades[end] ?? NO_FADE;
   };
   return blocks.map((_, i) => {
     const own = fades[i] ?? NO_FADE;
     if (moves[i]?.isMoving) {
-      const isThrough = (depth) => ins[i]?.has(depth) === true && ons[i]?.has(depth) === true && reach(i, depth, -1).stays && reach(i, depth, 1).stays;
       const off = moves[i]?.isGone ? HIDDEN : own;
-      const side = (depth) => isThrough(depth) ? NO_FADE : off;
+      const side = (depth) => {
+        const hasIn = ins[i]?.has(depth) === true;
+        const hasOn = ons[i]?.has(depth) === true;
+        const isThrough = hasIn && hasOn;
+        if (moves[i]?.isGone && !isThrough)
+          return off;
+        const above = hasIn ? joinsAt(reach(i, depth, -1)) : i;
+        const below = hasOn ? joinsAt(reach(i, depth, 1)) : i;
+        if (above === undefined || below === undefined)
+          return off;
+        return shownLast([above, below]);
+      };
       return { own, above: side, below: side };
     }
     const endOf = (depth, by) => {
-      const { stays, first } = reach(i, depth, by);
-      return stays ? null : first;
+      const { stays, first, end } = reach(i, depth, by);
+      return stays ? null : end ?? first;
     };
-    const side = (by) => (depth) => {
-      const end = isPassed(i, depth) ? endOf(depth, -1) ?? endOf(depth, 1) : endOf(depth, by);
-      return end === null ? NO_FADE : fades[end] ?? NO_FADE;
-    };
+    const side = (by) => (depth) => isPassed(i, depth) ? shownLast([endOf(depth, -1), endOf(depth, 1)]) : shownLast([endOf(depth, by)]);
     return { own, above: side(-1), below: side(1) };
   });
 }
@@ -7783,7 +7803,11 @@ function feedsOf(blocks, moves) {
     return runsIn(below).filter((c) => c.depth === depth && !c.isDashed && !own.has(c.depth));
   });
 }
-var spaceColumnEl = (key, c, f, t) => f.above(c.depth)(lineEl2(`space column ${key} ${c.depth}`, c, 0, null, t));
+var spaceColumnEl = (key, b, c, f, t) => {
+  const isPathLine = c.depth === 0 && "path" in b && b.path !== undefined;
+  const id = isPathLine ? `space path ${key}` : `space column ${key} ${c.depth}`;
+  return f.above(c.depth)(lineEl2(id, c, 0, null, t));
+};
 function contentStrokeEls(key, b, top, t, f, passes, feeds) {
   const path = "path" in b ? b.path : undefined;
   const tree = "tree" in b ? b.tree ?? [] : [];
@@ -7820,6 +7844,7 @@ function contentStrokeEls(key, b, top, t, f, passes, feeds) {
     const r = reachOf(c);
     r.lowerFrom = Math.min(r.lowerFrom ?? Infinity, top + LINE_HEIGHT);
   };
+  const armFade = (depth) => f.above(depth) === NO_FADE ? f.own : f.above(depth);
   const arms = tree.flatMap(({ depth, is }) => {
     const c = { depth, isDashed: false };
     if (is === "down")
@@ -7831,7 +7856,7 @@ function contentStrokeEls(key, b, top, t, f, passes, feeds) {
     if (is === "down" || is === "past")
       return [];
     return [
-      f.own(div5().id(`stroke ${key} arm ${depth}`).absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)))
+      armFade(depth)(div5().id(`stroke ${key} arm ${depth}`).absolute().left(PATH_X + depth * NEST + 1).top(armAt).w(NEST - (PATH_X - EDGE) - 1 - SMALL_GAP).h(1).border_t_1().border_color(lineColor(t)))
     ];
   });
   passes.forEach(reachWhole);
@@ -8018,17 +8043,24 @@ function spacedEls(blocks, p, el) {
     const height = heights[i];
     return m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : null;
   });
-  const delays = joinedWaits(drawn, passing, waits);
+  const moves = drawn.map((b) => {
+    const m = p.motion.get(b.id);
+    const isMoving = m?.box != null;
+    const isLeaving = m?.state === "leaving";
+    return {
+      isMoving,
+      isGone: isMoving && isLeaving && m.box === "shut",
+      isHiding: isMoving && (isLeaving || m.waitsForSpace)
+    };
+  });
+  const delays = joinedWaits(drawn, passing, waits, moves.map((move) => move.isGone));
   const looks = drawn.map((b, i) => {
     const m = p.motion.get(b.id);
     const isShown = m?.box === "open" && m.isShown && heights[i] !== undefined;
     const glide = { duration: m?.fadeMs ?? 0, delay: delays[i] ?? 0, easing: "ease-out" };
     const fade = (e) => m?.box ? fadeEl(e, `box ${m.springId ?? b.id}`, isShown ? 1 : 0, glide, p) : e;
-    const isMoving = m?.box != null;
-    const move = { isMoving, isGone: isMoving && m?.state === "leaving" && m.box === "shut" };
-    return { m, isShown, glide, fade, move };
+    return { m, isShown, glide, fade };
   });
-  const moves = looks.map((l) => l.move);
   const strokeFades = strokeFadesOf(drawn, passing, moves, looks.map((l) => l.fade));
   const feeds = feedsOf(drawn, moves);
   return spaces.map((s, i) => {
@@ -8045,7 +8077,7 @@ function spacedEls(blocks, p, el) {
     const drawn = v_flex2().id(`drawing ${key}`).child(el(b));
     const drawing = m?.blockSwap && m.blockSwap.parts === null && !m.box ? kindFadeEl(drawn, b, m, m.blockSwap, key, p) : drawn;
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
-    return v_flex2().id(`box ${key}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => spaceColumnEl(key, c, f, p.t)))).child(contentEl(b, m, p, slide(fade(drawing)), contentStrokeEls(key, b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? [])));
+    return v_flex2().id(`box ${key}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => spaceColumnEl(key, b, c, f, p.t)))).child(contentEl(b, m, p, slide(fade(drawing)), contentStrokeEls(key, b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? [])));
   });
 }
 
