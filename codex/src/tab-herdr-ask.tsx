@@ -1,6 +1,7 @@
 import { answeringOf, HERDR_ASK_BUTTONS, herdrAskBanner } from '../../core/remote/herdr-ask'
 import { SETTLED_MS } from '../../core/view/timing'
 import type { HerdrAsk, OpenHerdrAsk } from '../../core/remote/herdr-ask'
+import type { BannerView } from '../../core/view/banners'
 import type { TabView as View } from './core'
 import { callTool, later } from './tab-host'
 import { read } from './tab-ui'
@@ -36,11 +37,14 @@ export function pressHerdrAskKey(v: View, key: string): boolean {
   return true
 }
 
-/** The question before the tab installs the inbox's Herdr mod, with Install and Don't install while it asks. */
-export function HerdrAskBanner({ v }: { v: View }) {
+/** The question before the tab installs the inbox's Herdr mod, as a banner among the host's own, or null while none shows. */
+export function herdrAskBannerOf(v: View): BannerView | null {
+  return herdrAskBanner(tabState.herdrAsk ?? v.herdrAsk ?? null)
+}
+
+/** The question's banner, with Install and Don't install while it asks. */
+export function HerdrAskBanner({ v, banner }: { v: View; banner: BannerView }) {
   const ask = tabState.herdrAsk ?? v.herdrAsk ?? null
-  const banner = herdrAskBanner(ask)
-  if (!banner) return null
   const asked = ask?.is === 'asking' ? ask : null
 
   return (

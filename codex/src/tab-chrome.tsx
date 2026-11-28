@@ -13,7 +13,7 @@ import { tabState } from './tab-state'
 import { dispatch, drawnTab, read, resetView } from './tab-ui'
 import { swapPage } from './tab-swap'
 import { pulseInStep, MarkGlyph, markClassOf, GroupTitle, Banner } from './tab-parts'
-import { HerdrAskBanner } from './tab-herdr-ask'
+import { HerdrAskBanner, herdrAskBannerOf } from './tab-herdr-ask'
 import { bannerMotion, lineMotion } from './tab-line-steps'
 import type { BannerLine } from './tab-line-steps'
 import { countMotion } from './tab-count-motion'
@@ -79,6 +79,7 @@ export function tabBanners(v: View): BannerLine[] {
       ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
       ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
       ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
+      ...[herdrAskBannerOf(v)].filter(b => b !== null),
     ],
     footerErrorOf(v),
     noticeOf(tabState.ui, Date.now()),
@@ -176,12 +177,13 @@ export function TabBar({ v }: { v: View }) {
                   if (page) void swapPage(page)
                 }}
               />
+            ) : b.kind === 'herdr-mod-ask' ? (
+              <HerdrAskBanner v={v} banner={b} />
             ) : (
               <Banner banner={b} />
             )}
           </div>
         ))}
-        <HerdrAskBanner v={v} />
       </div>
     </nav>
   )
