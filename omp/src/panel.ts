@@ -5,6 +5,7 @@ import type { SessionView } from '../../core/view/session-view'
 import type { BannerTone, ToneName } from '../../core/view/tones'
 import { ago } from '../../core/domain/text'
 import { DEMO_NOTICE, bannerOf, stopBanner, tabBarBanners, stopFix, stopText } from '../../core/view/banners'
+import type { BannerView } from '../../core/view/banners'
 import { shownTabs, isRowTab } from '../../core/view/tabs'
 import { bandCounts, bandIdleText, nothingMark } from '../../core/view/band'
 import { footerError } from '../../core/view/view'
@@ -15,11 +16,12 @@ import { noticeOf } from '../../core/view/ui-controller'
 import { shownTab } from '../../core/view/ui-controller-tabs'
 import { freshUi } from '../../core/view/ui-controller-types'
 import type { LookConfig, UiState } from '../../core/view/ui-controller-types'
-import { bannerLines, boxed, drawLine, leadPaint, paintMark } from './panel-draw'
+import { bannerLines, boxed, drawLine, herdrAskKeyLines, leadPaint, paintMark } from './panel-draw'
 import type { Draw } from './panel-draw'
 import { entriesOf } from './panel-entries'
 import { selectedLine, withCollapses, withShared } from './panel-keys'
-import { AGENT, HERDR_ASK_ID, STOP_ID, linesOf } from './panel-lines'
+import { AGENT, STOP_ID, linesOf } from './panel-lines'
+import { herdrAskBanner } from '../../core/remote/herdr-ask'
 import type { HerdrAsk } from '../../core/remote/herdr-ask'
 import { drawGoalPart, goalPartId, goalPartSubjects, workRowLines } from './panel-goal'
 import { drawPageRow } from './panel-page'
@@ -34,7 +36,7 @@ type HerdrAskPress = { action: 'herdr-ask'; isYes: boolean }
 type OptionsPress = { action: 'all-options'; id: string }
 /** A press the panel runs itself, outside the shared controller. */
 export type LocalPress = ResumePress | HerdrAskPress
-export type PanelPress = RowPress | PrPress | LocalPress | OptionsPress
+export type PanelPress = RowPress | PrPress | ResumePress | OptionsPress
 
 /** What the panel draws: the session's view and the host facts the shared view does not hold. */
 export type PanelScreen = {
@@ -148,14 +150,25 @@ export function drawPanel(
   const selected = selectedLine(linesOf(entries), ui)
   const rule = style.dim('─'.repeat(width))
   const error = footerError(ui.tab, screen.view.status, screen.view.statusPage)
-  const host = screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []
+  const ask = herdrAskBanner(screen.herdrAsk ?? null)
+  const host = [
+    ...(screen.herdrModFailure ? [bannerOf('herdr-mod-failed', screen.herdrModFailure)] : []),
+    ...(ask ? [ask] : []),
+  ]
   const banners = tabBarBanners(host, error, noticeOf(ui, now))
+  const bannerDrawn = (b: BannerView) =>
+    bannerLines(
+      b,
+      width,
+      style,
+      b.kind === 'herdr-mod-ask' && screen.herdrAsk?.is === 'asking' ? herdrAskKeyLines(width, style) : [],
+    )
   const head = [
     ...(screen.isDemo ? bannerLines(bannerOf('demo', DEMO_NOTICE), width, style) : []),
     rule,
     tabBar(d),
     rule,
-    ...banners.flatMap(b => bannerLines(b, width, style)),
+    ...banners.flatMap(bannerDrawn),
   ]
   const body: string[] = []
   let selectedAt = [0, 0]
@@ -216,11 +229,16 @@ export function drawPanel(
     else {
       const isSelected = e.line.id === selected?.id
       const start = body.length
-      // The stop and the install question stay rows their buttons can focus, drawn as banners.
-      const bannerTone =
-        e.line.id === HERDR_ASK_ID ? 'ask' : e.line.id === STOP_ID && screen.stop ? stopBanner(screen.stop).tone : null
-      if (bannerTone)
-        body.push(...boxed(drawLine(e.line, isSelected, { ...d, width: width - 4 }), bannerTone, width, style))
+      // The stop stays a row its Resume button can focus, drawn as a banner.
+      if (e.line.id === STOP_ID && screen.stop)
+        body.push(
+          ...boxed(
+            drawLine(e.line, isSelected, { ...d, width: width - 4 }),
+            stopBanner(screen.stop).tone,
+            width,
+            style,
+          ),
+        )
       else body.push(...drawLine(e.line, isSelected, d))
       if (isSelected) selectedAt = [start, body.length - 1]
     }

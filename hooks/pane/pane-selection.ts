@@ -1,8 +1,8 @@
 import type { UiScrollBlock } from 'claude-code'
-import type { Closed, FoldKind, LastAction, PrView, RowNote, Tab } from '../../types'
+import type { FoldKind, LastAction, PrView, RowNote, Tab } from '../../types'
 import { prRowWaits } from '../../core/view/pr-rows'
 import type { DrawnPr } from '../../core/view/pr-views'
-import { NEEDS_YOU_GROUPS, type ResultMark, type settledLabel } from '../../core/view/rows'
+import { NEEDS_YOU_GROUPS } from '../../core/view/rows'
 import { drawnLists } from '../../core/view/action-plan'
 import { type InboxView } from '../../core/view/view'
 import { SETTLED_MS } from '../../core/view/timing'
@@ -68,11 +68,4 @@ export function tabRowIds(view: InboxView, prViews: PrView[]): Record<Tab, strin
   ).byTab
 
   return { ...listed, prs: prRowWaits(prViews, {}).map(r => r.id) }
-}
-
-export type ClosedLine = Pick<Closed, 'id' | 'ask' | 'at' | 'how'> & {
-  canRestore?: boolean
-  outcomeLabel: string
-  delivery: Parameters<typeof settledLabel>[1]
-  mark: ResultMark
 }

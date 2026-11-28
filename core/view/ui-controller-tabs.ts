@@ -4,7 +4,7 @@ import {
   closedGroups,
   followTo,
   isPrsTabEmpty,
-  isTabEmpty,
+  isEmptyForFollowing,
   listedRowIds,
   NEW_FADE_MS,
   NEW_HOLD_MS,
@@ -37,7 +37,7 @@ function isShownEmpty(ui: UiState, view: SessionView, tab: Tab): boolean {
   if (tab === 'prs') return isPrsTabEmpty(view.prs.drawn.length, ui.host.isFetchingPrs)
   const rows = tab === 'needsYou' ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows
 
-  return isTabEmpty({
+  return isEmptyForFollowing({
     rows,
     settled: new Set(settledRowIds(rows)),
     closed: closedGroups(view, tab, kind => ui.unfolded.includes(kind)),

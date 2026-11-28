@@ -15,7 +15,8 @@ import { followUpPresses } from './pane-keys'
 import { UNDO_KEY } from '../../core/view/help'
 import type { PaneRowFrame } from './pane-row-frame'
 import { childPos, type PaneRowLines } from './pane-row-lines'
-import { type ClosedLine, settledScrollKey } from './pane-selection'
+import { settledScrollKey } from './pane-selection'
+import type { ClosedLineView } from '../../core/view/closed-line'
 import {
   DESKTOP_CELL_PT,
   DESKTOP_HAIR_LINES,
@@ -38,8 +39,6 @@ import { pressRowId, type PrPress } from '../../core/view/pr-press'
 import type { RowPress } from '../../core/domain/presses'
 import { foldGapRows } from '../../core/view/row-parts'
 import {
-  canUndoRefused,
-  closedLinePlan,
   DOT,
   ROW_COPY,
   earlierLabel,
@@ -237,10 +236,10 @@ export function paneRowParts(
       label
     )
   /** A Closed line's press: the Undo of a refused notification, or Reopen on a row the person dismissed. */
-  const lineAction = (d: ClosedLine) => {
-    const action = closedLinePlan(d).action
+  const lineAction = (d: ClosedLineView) => {
+    const { action } = d
     if (!action) return null
-    if (canUndoRefused(d.delivery)) return undoButton(action.press, null)
+    if (d.isUndoOfRefusal) return undoButton(action.press, null)
     return (
       <Box key={`reopen-${d.id}`} flexDirection="row">
         <Button
@@ -251,7 +250,7 @@ export function paneRowParts(
       </Box>
     )
   }
-  const closedRow = (d: ClosedLine, pos: TreePos) =>
+  const closedRow = (d: ClosedLineView, pos: TreePos) =>
     look === 'desktop'
       ? desktopFrame({
           key: `closed-${d.id}`,
@@ -262,10 +261,10 @@ export function paneRowParts(
           side: <Text color={pal.faint}>{shortAgo(now - d.at)}</Text>,
           children: [
             <Text wrap="wrap" color={pal.muted}>
-              {d.ask}
+              {d.title}
             </Text>,
             <Text wrap="wrap" color={pal.age}>
-              {settledLabel(d.outcomeLabel, d.delivery)}
+              {d.outcome}
             </Text>,
             lineAction(d),
           ],
@@ -276,14 +275,14 @@ export function paneRowParts(
           <Box flexDirection="row">
             <Box flexDirection="column" flexGrow={1} flexShrink={1}>
               <Text wrap="wrap" color={pal.muted}>
-                {d.ask}
+                {d.title}
               </Text>
               {resultLine(
                 d.mark,
                 `closed-${d.id}`,
                 pal.muted,
                 <Text wrap="wrap" color={pal.age}>
-                  {settledLabel(d.outcomeLabel, d.delivery)}
+                  {d.outcome}
                 </Text>,
               )}
               {lineAction(d)}
@@ -368,7 +367,7 @@ export function paneRowParts(
    */
   const closedFold = (
     kind: FoldKind,
-    closed: ClosedLine[],
+    closed: ClosedLineView[],
     total: number,
     isUnfolded: boolean,
     isAfterOpenRow: boolean,

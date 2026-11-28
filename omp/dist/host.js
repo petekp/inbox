@@ -1254,10 +1254,10 @@ function recommendedOption(options, rec) {
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
-var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
-function isQuestionBack(answer, options) {
+var QUESTION_WORD = /^\s*(?:what|why|how|which|where|when|who)\b/i;
+function isQuestionBack(answer) {
   const text = answer.trim();
-  return text.endsWith("?") && (QUESTION_WORD.test(text) || recommendedOption(options, text) === null);
+  return text.endsWith("?") && QUESTION_WORD.test(text);
 }
 var FILLER = new Set([
   "the",
@@ -1887,7 +1887,7 @@ function quotedAsk(item) {
 Options: ${item.options.join(" / ")}` : ""}`;
 }
 var messages = {
-  answer: (item, answer) => isQuestionBack(answer, item.options) ? `About this question you asked me: ${answer}
+  answer: (item, answer) => isQuestionBack(answer) ? `About this question you asked me: ${answer}
 ${quotedAsk(item)}` : `Re "${item.ask}": ${answer}`,
   explain: (item) => {
     const what = item.kind === "task" ? "this task you left for me is about: why it came up, and what doing it involves" : "this question you asked me is about: why it came up, what each choice would do, and which you would pick";
@@ -4285,7 +4285,7 @@ function applyUpdate(ledger, u, now, turn, promptAt = now) {
   for (const item of ledger.items) {
     const outcome = closing.get(item.id);
     const helps = u.helped.filter((h) => h.id === item.id).reduce((all, h) => withHelp(all, h.help), item.helps);
-    const isQuestionBackOutcome = outcome !== undefined && item.kind === "question" && isQuestionBack(outcome, item.options);
+    const isQuestionBackOutcome = outcome !== undefined && item.kind === "question" && isQuestionBack(outcome);
     const isClosing = outcome !== undefined && !isQuestionBackOutcome && (item.from !== "record" || isPersonsAnswer(outcome));
     if (isClosing)
       closed.push(closedRecord(item, { outcome, how: "update" }, now));
@@ -4805,7 +4805,7 @@ NEW: <kind> | <label> | <ask> | <options> | <rec> | <design>
   One line per thing in <reply> that waits on the person and is not already in <open> or <findings>. A finding the agent recorded is not NEW unless the reply asks the person to decide or do something about it now; then also write an ASKED line for it. Also one line per dialog in <activity> that the person dismissed or left unanswered, with an ASKED line when the dialog asks about a finding. When the reply restates, rewords or narrows an item in <open>, it is not new: add HELP lines to that item's id instead.
   kind: "decide" (a choice, approval, or information only the person has, explicitly put to them, without which the agent cannot go on with its task) or "do" (an action only the person can take, without which the agent cannot continue or finish: sign in, run a command needing their password, test on their device, reply to a teammate).
   label: the reply's own number or id for it ("1", "D3"), or "-".
-  ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means. Name an item or finding by what it says, never by its id: the person does not see ids.
+  ask: plain words, readable without the reply, at most 12 words, or up to 16 when 12 would lose meaning. Keep the question's meaning and every alternative it names. Replace any term the reply coined with what it means. Name an item or finding by what it says, never by its id: the person does not see ids. Name what the ask is about, such as a PR's number or a file's name. When the reply says "it" or "this", use the name the reply gave it: "Merge PR #1015?", never "Merge it?".
   options: the answers the person can pick, separated by " / ", at most 5 words each, in words the person would say, without links, URL parameters, file paths or names from code; "-" for kind "do". For kind "decide", always at least one, so one press can answer. Use the choices the reply offers, plus the answer it recommends when that is not one of them. When the reply offers none, predict the answers the person would most likely give: the yes and the no for an approval or a yes-or-no question ("Approve / Not yet"); the 1 to 3 likeliest answers to an open question, from the conversation; or, when the conversation suggests no answer, what the person would most likely ask the agent to do instead ("${LIST_CHOICES}", "Pick one for me").
   rec: the option the reply states it recommends for this question ("I'd go with X", "I recommend X"), copied from options, or "-" when it states none for this question. A reason the reply gives for one answer is not a recommendation: it must say it recommends or prefers that answer.
   design: "design" for a "decide" item whose options are designs or approaches the agent could try and show side by side, such as two layouts or two ways to build a feature. Otherwise "-", as for a fact, an approval or a preference.
@@ -5174,15 +5174,6 @@ function sessionKeyOf(reason, canShowSession) {
 }
 function resumeLabel(isSending) {
   return isSending ? "Resuming\u2026" : "Resume";
-}
-function closedLinePlan(d, canShowSession = false) {
-  const sessionKey = sessionKeyOf(refusalOf2(d.delivery), canShowSession);
-  if (d.canRestore === false)
-    return { action: null, sessionKey };
-  if (canUndoRefused(d.delivery))
-    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
-  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
-  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
 }
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
@@ -8076,7 +8067,7 @@ function recordClose(host, ledger, input, now, presses) {
   if (answer === "" && isRecordedAfterCompare(ledger, id, presses))
     return unchanged(ledger, "Not closed: your record updated this question, and it stays open for the user.");
   const item = ledger.items.find((i) => i.id === id);
-  if (item?.kind === "question" && answer !== "" && isQuestionBack(answer, item.options))
+  if (item?.kind === "question" && answer !== "" && isQuestionBack(answer))
     return unchanged(ledger, "Not closed: the user asked a question back, so it stays open. Answer them in your reply, and close it when they decide.");
   const r = closeByAgent(host, ledger, id, answer ? { answer } : { reason }, now);
   if (r.closed && "item" in r.closed)
@@ -8181,7 +8172,7 @@ function isRowTabRunning(v, tab, isUnfolded) {
   const closed = closedGroups(v, tab, isUnfolded).flatMap((g) => g.isUnfolded ? closedShown(g.rows, settled) : []);
   return rows.some((r) => rowResultMark(r)?.isRunning) || closed.some((d) => d.mark.isRunning);
 }
-function isTabEmpty({
+function isEmptyForFollowing({
   rows,
   settled,
   closed,
@@ -10193,7 +10184,7 @@ function isShownEmpty(ui, view, tab) {
   if (tab === "prs")
     return isPrsTabEmpty(view.prs.drawn.length, ui.host.isFetchingPrs);
   const rows = tab === "needsYou" ? [...view.needsYou.questions, ...view.needsYou.tasks] : view.findings.rows;
-  return isTabEmpty({
+  return isEmptyForFollowing({
     rows,
     settled: new Set(settledRowIds(rows)),
     closed: closedGroups(view, tab, (kind) => ui.unfolded.includes(kind)),
@@ -10604,6 +10595,197 @@ var UNDER_TITLE = gap("inside");
 var UNDER_TEXT = gap("control", 1);
 var COLLAPSED_TITLE_LINES = 2;
 
+// ../core/remote/herdr-install.ts
+var BUILD_BANNER = "// Built by herdr/build.ts ";
+var BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)\. (\d+) characters follow\.$/;
+var isInboxMod = (mainJs) => mainJs.startsWith(BUILD_BANNER);
+function modBuiltAt(mainJs) {
+  const firstEnd = mainJs.indexOf(`
+`);
+  const secondEnd = firstEnd === -1 ? -1 : mainJs.indexOf(`
+`, firstEnd + 1);
+  if (secondEnd === -1)
+    return null;
+  const stamp = BUILT_AT.exec(mainJs.slice(firstEnd + 1, secondEnd));
+  return stamp && mainJs.length - secondEnd - 1 === Number(stamp[2]) ? stamp[1] : null;
+}
+async function bundledMod(read, folder) {
+  const [mainJs, modJson] = await Promise.all([read(`${folder}/main.js`), read(`${folder}/mod.json`)]).catch(() => []);
+  const builtAt = mainJs === undefined ? null : modBuiltAt(mainJs);
+  return mainJs !== undefined && modJson !== undefined && builtAt ? { mainJs, modJson, builtAt } : null;
+}
+var modFolder = (appHome) => `${appHome}/mods/inbox`;
+async function installedMod(files, appHome) {
+  const kind = await files.kind(modFolder(appHome));
+  if (kind === null)
+    return { is: "missing" };
+  if (kind !== "folder")
+    return { is: "own" };
+  const fileKinds = await Promise.all(["main.js", "mod.json"].map((name) => files.kind(`${modFolder(appHome)}/${name}`)));
+  if (fileKinds.some((k) => k !== "file"))
+    return { is: "own" };
+  const mainJs = await files.read(`${modFolder(appHome)}/main.js`).catch(() => null);
+  if (mainJs === null || !isInboxMod(mainJs))
+    return { is: "own" };
+  return { is: "inbox", builtAt: modBuiltAt(mainJs) };
+}
+var ANSWER_FORMAT = 1;
+var answerPath = (appHome) => `${appHome}/inbox/herdr-mod.json`;
+async function savedRecord(files, appHome) {
+  try {
+    const saved = JSON.parse(await files.read(answerPath(appHome)));
+    const at = typeof saved?.at === "number" ? saved.at : null;
+    const isNewerFormat = Number.isInteger(saved?.format) && saved.format > ANSWER_FORMAT;
+    if (isNewerFormat)
+      return { answer: "newer", at };
+    const answer = saved?.format === ANSWER_FORMAT ? saved.answer : null;
+    return answer === "yes" || answer === "no" || answer === "installed" ? { answer, at } : null;
+  } catch {
+    return null;
+  }
+}
+var savedAnswer = async (files, appHome) => (await savedRecord(files, appHome))?.answer ?? null;
+async function herdrModNow(files, appHome) {
+  const [installed, record] = await Promise.all([installedMod(files, appHome), savedRecord(files, appHome)]);
+  return { installed: installed.is, answer: record?.answer ?? null, answeredAt: record?.at ?? null };
+}
+var temporaryName = (name, at) => `${name}.${Math.round(at)}-${Math.random().toString(36).slice(2)}.tmp`;
+var MOD_TEMPORARY = /^herdr-mod(?:\.json)?\.(\d{1,15})-[a-z0-9]{1,20}\.tmp$/;
+function modTemporaryWrittenAt(name) {
+  const match = MOD_TEMPORARY.exec(name);
+  return match ? Number(match[1]) : null;
+}
+async function saveAnswer(files, appHome, answer, at) {
+  const path = answerPath(appHome);
+  const temporary = temporaryName(path, at);
+  await files.write(temporary, `${JSON.stringify({ format: ANSWER_FORMAT, answer, at })}
+`);
+  await files.move(temporary, path);
+}
+function modStep(installed, answer, bundled, now) {
+  if (installed.is === "missing")
+    return answer === "yes" ? "install" : answer === null ? "ask" : null;
+  if (installed.is === "own")
+    return null;
+  const installedAt = installed.builtAt ?? "";
+  const isFromTheFuture = installedAt > new Date(now).toISOString();
+  const isOlder = bundled.builtAt > installedAt || isFromTheFuture && bundled.builtAt !== installedAt;
+  return isOlder ? "update" : null;
+}
+async function writeMod(files, appHome, bundled, step, now) {
+  const name = temporaryName("herdr-mod", now);
+  const temporary = `${appHome}/inbox/${name}`;
+  const target = modFolder(appHome);
+  try {
+    await files.write(`${temporary}/mod.json`, bundled.modJson);
+    await files.write(`${temporary}/main.js`, bundled.mainJs);
+    if (step === "install") {
+      await files.makeFolder(`${appHome}/mods`);
+      if (await files.kind(target) !== null)
+        return;
+      const isOtherFirst = await files.move(temporary, target).then(() => false, async (err) => {
+        if ((await installedMod(files, appHome)).is === "missing")
+          throw err;
+        return true;
+      });
+      if (!isOtherFirst)
+        await files.removeFolder(`${target}/${name}`);
+      return;
+    }
+    if (modStep(await installedMod(files, appHome), null, bundled, now) !== "update")
+      return;
+    const installedJson = await files.read(`${target}/mod.json`).catch(() => null);
+    if (installedJson !== bundled.modJson)
+      await files.move(`${temporary}/mod.json`, `${target}/mod.json`);
+    await files.move(`${temporary}/main.js`, `${target}/main.js`);
+  } finally {
+    await files.removeFolder(temporary).catch(() => {
+      return;
+    });
+  }
+}
+var message = (err) => err instanceof Error ? err.message : String(err);
+async function keepHerdrModCurrent(files, appHome, bundledFolder, now) {
+  const bundled = await bundledMod(files.read, bundledFolder);
+  if (!bundled)
+    return { is: "failed", text: `Could not read the inbox mod for Herdr in ${bundledFolder}.` };
+  const step = await Promise.all([installedMod(files, appHome), savedAnswer(files, appHome)]).then(([installed, answer]) => modStep(installed, answer, bundled, now)).catch((err) => new Error(message(err)));
+  if (step instanceof Error)
+    return { is: "failed", text: `Could not read the Herdr app's mods folder. ${step.message}` };
+  if (step === null)
+    return { is: "current" };
+  if (step === "ask")
+    return { is: "ask" };
+  try {
+    await writeMod(files, appHome, bundled, step, now);
+    if (step === "install")
+      await saveAnswer(files, appHome, "installed", now);
+    return { is: step === "install" ? "installed" : "updated" };
+  } catch (err) {
+    return { is: "failed", text: `Could not ${step} the inbox mod in Herdr. ${message(err)}` };
+  }
+}
+var NEWER_ANSWER_TEXT = "A newer build of the inbox saved the answer about its Herdr mod. Update the inbox here to answer again.";
+async function answerHerdrMod(files, appHome, bundledFolder, isYes, now) {
+  if (await savedAnswer(files, appHome) === "newer")
+    return { is: "failed", text: NEWER_ANSWER_TEXT };
+  try {
+    await saveAnswer(files, appHome, isYes ? "yes" : "no", now);
+  } catch (err) {
+    return { is: "failed", text: `Could not save the answer about the inbox mod in Herdr. ${message(err)}` };
+  }
+  return isYes ? keepHerdrModCurrent(files, appHome, bundledFolder, now) : { is: "current" };
+}
+
+// ../core/remote/herdr-ask.ts
+var LEAD = "Install the inbox's Herdr mod?";
+var INSTALLING_TEXT = "Installing the inbox mod in Herdr\u2026";
+var SAVING_TEXT = "Saving the answer\u2026";
+var INSTALLED_TEXT = "\u2713 Installed the inbox mod in Herdr.";
+var HERDR_ASK_BUTTONS = [
+  { id: "herdr-install", label: "Install", isYes: true, hotkey: "y" },
+  { id: "herdr-skip", label: "Don't install", isYes: false, hotkey: "q" }
+];
+function herdrAskOf(appHome, home, answeredAt) {
+  const folder = `${appHome}/mods/inbox`;
+  const shown = home && folder.startsWith(`${home}/`) ? `~${folder.slice(home.length)}` : folder;
+  return { is: "asking", appHome, folder: shown, answeredAt };
+}
+function herdrAskBanner(ask) {
+  if (!ask)
+    return null;
+  const isAsking = ask.is === "asking";
+  const lead = ask.is === "answered" ? ask.text : ask.is === "asking" ? LEAD : ask.isYes ? INSTALLING_TEXT : SAVING_TEXT;
+  const body = isAsking ? `It adds the inbox panel to the Herdr app, in ${ask.folder}, and keeps it up to date with the inbox.` : null;
+  return { kind: "herdr-mod-ask", tone: "ask", lead, body };
+}
+var answeringOf = (ask, isYes) => ({ ...ask, is: "answering", isYes });
+async function answerHerdrAsk(files, ask, bundledFolder, isYes, now, later) {
+  const result = await answerHerdrMod(files, ask.appHome, bundledFolder, isYes, now);
+  if (result.is === "failed")
+    return { ask: null, failure: result.text };
+  return { ask: { is: "answered", text: isYes ? INSTALLED_TEXT : `${later} to install it later.` }, failure: null };
+}
+async function isHerdrAskOpen(files, ask) {
+  const state = await herdrModNow(files, ask.appHome).catch(() => null);
+  return state === null || state.installed === "missing" && state.answer !== "newer" && state.answeredAt === ask.answeredAt;
+}
+async function askHerdrAgain(files, appHome, home) {
+  if (!appHome)
+    return "Run /inbox herdr in a Herdr app terminal to install the inbox mod there.";
+  const state = await herdrModNow(files, appHome).catch((err) => err instanceof Error ? err : new Error(String(err)));
+  if (state instanceof Error)
+    return `Could not read the Herdr app's mods folder. ${state.message}`;
+  const ask = herdrAskOf(appHome, home, state.answeredAt);
+  if (state.installed === "inbox")
+    return "The inbox mod is already installed in Herdr.";
+  if (state.installed === "own")
+    return `${ask.folder} holds another mod, so the inbox leaves it alone.`;
+  if (state.answer === "newer")
+    return NEWER_ANSWER_TEXT;
+  return ask;
+}
+
 // src/panel-text.ts
 var ANSI = /\x1b\[[0-9;]*m/g;
 var visibleLength = (s) => cellWidth(s.replace(ANSI, ""));
@@ -10746,14 +10928,12 @@ function askTreeLines(line, at, width, s, cell, labelCells) {
 var AGENT = "omp";
 var LEAD_CELLS = 3;
 var STOP_ID = "stop";
-var HERDR_ASK_ID = "herdr-ask";
 var blankLine = (id) => ({
   id,
   depth: 0,
   lead: { text: "", tone: null },
   mark: null,
   title: "",
-  titleTone: null,
   isDim: false,
   status: null,
   age: null,
@@ -10871,7 +11051,7 @@ var isGroupEmpty = (g) => g.rows.length === 0 && closedTotal(g.closed, settledIn
 var closedId = (id) => `closed ${id}`;
 var foldId = (kind) => `fold ${kind}`;
 function closedLines(d) {
-  const action = closedLinePlan(d).action;
+  const { action } = d;
   const buttons = action ? [{ label: action.label, key: null, press: action.press, isRecommended: false, isFollowUp: false }] : [];
   return {
     ...blankLine(closedId(d.id)),
@@ -10881,7 +11061,7 @@ function closedLines(d) {
     title: d.title,
     isDim: true,
     age: d.at,
-    feedback: { text: settledLabel(d.outcomeLabel, d.delivery), tone: null, source: null },
+    feedback: { text: d.outcome, tone: null, source: null },
     buttons,
     isStatic: buttons.length === 0,
     isWaiting: false
@@ -10957,7 +11137,7 @@ function focusOf2(line, ui) {
   return kept >= 0 ? kept : defaultFocus(line);
 }
 var pageFocus = (target, ui) => ui.focus?.rowId === target.id ? Math.min(ui.focus.index, target.keys.length - 1) : 0;
-var isSentPress = (p) => p.action !== "resume" && p.action !== "herdr-ask" && p.action !== "all-options";
+var isSentPress = (p) => p.action !== "resume" && p.action !== "all-options";
 function pressEffects(screen, line, press, kind) {
   if (!isPrPress(press))
     return kind === "local" && line.row ? localEffects(line.row, press) : [];
@@ -11002,12 +11182,22 @@ function boxed(inner, tone, width, s) {
 }
 var BODY_LINES = 8;
 var LEAD_TONES = { error: "error", warning: "needsYou", notice: "key", ask: "key" };
-function bannerLines(b, width, s) {
+function bannerLines(b, width, s, under = []) {
   const text = b.body ? `${b.lead} ${b.body}` : b.lead;
   const lead = (w) => s.tone(LEAD_TONES[b.tone], s.bold(w));
   let leadWords = b.lead.split(/\s+/).length;
   const lines = wrapText(text, width - 4).map((line) => line.split(" ").map((w) => leadWords-- > 0 ? lead(w) : w).join(" "));
-  return boxed(lines, b.tone, width, s);
+  return boxed([...lines, ...under], b.tone, width, s);
+}
+function herdrAskKeyLines(width, s) {
+  const room = width - 4;
+  const cells = HERDR_ASK_BUTTONS.map((a) => {
+    const face = { label: a.label, key: a.hotkey, isRecommended: a.isYes, isFollowUp: false };
+    const mark = a.isYes ? labelMark(face, room, s) : "";
+    return buttonCell(face, false, s, mark).trimEnd();
+  });
+  const together = cells.join("  ");
+  return visibleLength(together) <= room ? [together] : cells;
 }
 var buttonLabelCells = (b) => b.key ? b.key.length + 2 : 1;
 function buttonCell(b, isFocused, s, mark = "") {
@@ -11120,7 +11310,7 @@ function drawLine(line, isSelected, d) {
   const settledLabel = line.settled ? cutSettledLabel(line.settled.label, besideAge - visibleLength(head) - visibleLength(`  ${mark}`) - (line.settled.undo ? visibleLength(`  ${UNDO_KEY} Undo`) : 0)) : "";
   const after = line.settled ? `  ${mark}${line.settled.tone === "done" ? s.tone("done", settledLabel) : s.dim(settledLabel)}${line.settled.undo ? `  ${s.dim(`${UNDO_KEY} Undo`)}` : ""}` : line.feedback && !statusUnder ? `  ${mark}${feedbackPaint(line.feedback.tone, s)(line.feedback.text)}` : "";
   const paintTitle = (text) => {
-    const own = line.isDim ? s.dim(text) : line.titleTone ? s.tone(line.titleTone, s.bold(text)) : isOpen ? s.bold(text) : text;
+    const own = line.isDim ? s.dim(text) : isOpen ? s.bold(text) : text;
     return tint ? s.tint(tint.tone, tint.share, own) : own;
   };
   const gutter = line.tree === "mid" ? ` ${s.dim("\u2502")} ` : line.tree === "last" ? "   " : "";
@@ -11572,227 +11762,31 @@ function drawGoalPart(part, d, isSelected) {
   return fieldLines(d, PAGE_MARK_AT);
 }
 
-// ../core/remote/herdr-install.ts
-var BUILD_BANNER = "// Built by herdr/build.ts ";
-var BUILT_AT = /^\/\/ Built at (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)\. (\d+) characters follow\.$/;
-var isInboxMod = (mainJs) => mainJs.startsWith(BUILD_BANNER);
-function modBuiltAt(mainJs) {
-  const firstEnd = mainJs.indexOf(`
-`);
-  const secondEnd = firstEnd === -1 ? -1 : mainJs.indexOf(`
-`, firstEnd + 1);
-  if (secondEnd === -1)
-    return null;
-  const stamp = BUILT_AT.exec(mainJs.slice(firstEnd + 1, secondEnd));
-  return stamp && mainJs.length - secondEnd - 1 === Number(stamp[2]) ? stamp[1] : null;
+// ../core/view/closed-line.ts
+function closedLinePlan(d, canShowSession = false) {
+  const sessionKey = sessionKeyOf(refusalOf2(d.delivery), canShowSession);
+  if (d.canRestore === false)
+    return { action: null, sessionKey };
+  if (canUndoRefused(d.delivery))
+    return { action: { label: ROW_COPY.undo, press: { id: d.id, action: "undo" } }, sessionKey };
+  const reopen = { label: ROW_COPY.reopen, press: { id: d.id, action: "undo" } };
+  return { action: d.how === "dismissed" ? reopen : null, sessionKey };
 }
-async function bundledMod(read, folder) {
-  const [mainJs, modJson] = await Promise.all([read(`${folder}/main.js`), read(`${folder}/mod.json`)]).catch(() => []);
-  const builtAt = mainJs === undefined ? null : modBuiltAt(mainJs);
-  return mainJs !== undefined && modJson !== undefined && builtAt ? { mainJs, modJson, builtAt } : null;
-}
-var modFolder = (appHome) => `${appHome}/mods/inbox`;
-async function installedMod(files, appHome) {
-  const kind = await files.kind(modFolder(appHome));
-  if (kind === null)
-    return { is: "missing" };
-  if (kind !== "folder")
-    return { is: "own" };
-  const fileKinds = await Promise.all(["main.js", "mod.json"].map((name) => files.kind(`${modFolder(appHome)}/${name}`)));
-  if (fileKinds.some((k) => k !== "file"))
-    return { is: "own" };
-  const mainJs = await files.read(`${modFolder(appHome)}/main.js`).catch(() => null);
-  if (mainJs === null || !isInboxMod(mainJs))
-    return { is: "own" };
-  return { is: "inbox", builtAt: modBuiltAt(mainJs) };
-}
-var ANSWER_FORMAT = 1;
-var answerPath = (appHome) => `${appHome}/inbox/herdr-mod.json`;
-async function savedRecord(files, appHome) {
-  try {
-    const saved = JSON.parse(await files.read(answerPath(appHome)));
-    const at = typeof saved?.at === "number" ? saved.at : null;
-    const isNewerFormat = Number.isInteger(saved?.format) && saved.format > ANSWER_FORMAT;
-    if (isNewerFormat)
-      return { answer: "newer", at };
-    const answer = saved?.format === ANSWER_FORMAT ? saved.answer : null;
-    return answer === "yes" || answer === "no" || answer === "installed" ? { answer, at } : null;
-  } catch {
-    return null;
-  }
-}
-var savedAnswer = async (files, appHome) => (await savedRecord(files, appHome))?.answer ?? null;
-async function herdrModNow(files, appHome) {
-  const [installed, record] = await Promise.all([installedMod(files, appHome), savedRecord(files, appHome)]);
-  return { installed: installed.is, answer: record?.answer ?? null, answeredAt: record?.at ?? null };
-}
-var temporaryName = (name, at) => `${name}.${Math.round(at)}-${Math.random().toString(36).slice(2)}.tmp`;
-var MOD_TEMPORARY = /^herdr-mod(?:\.json)?\.(\d{1,15})-[a-z0-9]{1,20}\.tmp$/;
-function modTemporaryWrittenAt(name) {
-  const match = MOD_TEMPORARY.exec(name);
-  return match ? Number(match[1]) : null;
-}
-async function saveAnswer(files, appHome, answer, at) {
-  const path = answerPath(appHome);
-  const temporary = temporaryName(path, at);
-  await files.write(temporary, `${JSON.stringify({ format: ANSWER_FORMAT, answer, at })}
-`);
-  await files.move(temporary, path);
-}
-function modStep(installed, answer, bundled, now) {
-  if (installed.is === "missing")
-    return answer === "yes" ? "install" : answer === null ? "ask" : null;
-  if (installed.is === "own")
-    return null;
-  const installedAt = installed.builtAt ?? "";
-  const isFromTheFuture = installedAt > new Date(now).toISOString();
-  const isOlder = bundled.builtAt > installedAt || isFromTheFuture && bundled.builtAt !== installedAt;
-  return isOlder ? "update" : null;
-}
-async function writeMod(files, appHome, bundled, step, now) {
-  const name = temporaryName("herdr-mod", now);
-  const temporary = `${appHome}/inbox/${name}`;
-  const target = modFolder(appHome);
-  try {
-    await files.write(`${temporary}/mod.json`, bundled.modJson);
-    await files.write(`${temporary}/main.js`, bundled.mainJs);
-    if (step === "install") {
-      await files.makeFolder(`${appHome}/mods`);
-      if (await files.kind(target) !== null)
-        return;
-      const isOtherFirst = await files.move(temporary, target).then(() => false, async (err) => {
-        if ((await installedMod(files, appHome)).is === "missing")
-          throw err;
-        return true;
-      });
-      if (!isOtherFirst)
-        await files.removeFolder(`${target}/${name}`);
-      return;
-    }
-    if (modStep(await installedMod(files, appHome), null, bundled, now) !== "update")
-      return;
-    const installedJson = await files.read(`${target}/mod.json`).catch(() => null);
-    if (installedJson !== bundled.modJson)
-      await files.move(`${temporary}/mod.json`, `${target}/mod.json`);
-    await files.move(`${temporary}/main.js`, `${target}/main.js`);
-  } finally {
-    await files.removeFolder(temporary).catch(() => {
-      return;
-    });
-  }
-}
-var message = (err) => err instanceof Error ? err.message : String(err);
-async function keepHerdrModCurrent(files, appHome, bundledFolder, now) {
-  const bundled = await bundledMod(files.read, bundledFolder);
-  if (!bundled)
-    return { is: "failed", text: `Could not read the inbox mod for Herdr in ${bundledFolder}.` };
-  const step = await Promise.all([installedMod(files, appHome), savedAnswer(files, appHome)]).then(([installed, answer]) => modStep(installed, answer, bundled, now)).catch((err) => new Error(message(err)));
-  if (step instanceof Error)
-    return { is: "failed", text: `Could not read the Herdr app's mods folder. ${step.message}` };
-  if (step === null)
-    return { is: "current" };
-  if (step === "ask")
-    return { is: "ask" };
-  try {
-    await writeMod(files, appHome, bundled, step, now);
-    if (step === "install")
-      await saveAnswer(files, appHome, "installed", now);
-    return { is: step === "install" ? "installed" : "updated" };
-  } catch (err) {
-    return { is: "failed", text: `Could not ${step} the inbox mod in Herdr. ${message(err)}` };
-  }
-}
-var NEWER_ANSWER_TEXT = "A newer build of the inbox saved the answer about its Herdr mod. Update the inbox here to answer again.";
-async function answerHerdrMod(files, appHome, bundledFolder, isYes, now) {
-  if (await savedAnswer(files, appHome) === "newer")
-    return { is: "failed", text: NEWER_ANSWER_TEXT };
-  try {
-    await saveAnswer(files, appHome, isYes ? "yes" : "no", now);
-  } catch (err) {
-    return { is: "failed", text: `Could not save the answer about the inbox mod in Herdr. ${message(err)}` };
-  }
-  return isYes ? keepHerdrModCurrent(files, appHome, bundledFolder, now) : { is: "current" };
-}
-
-// ../core/remote/herdr-ask.ts
-var LEAD = "Install the inbox's Herdr mod?";
-var INSTALLING_TEXT = "Installing the inbox mod in Herdr\u2026";
-var SAVING_TEXT = "Saving the answer\u2026";
-var INSTALLED_TEXT = "\u2713 Installed the inbox mod in Herdr.";
-var HERDR_ASK_BUTTONS = [
-  { id: "herdr-install", label: "Install", isYes: true, hotkey: "y" },
-  { id: "herdr-skip", label: "Don't install", isYes: false, hotkey: "q" }
-];
-function herdrAskOf(appHome, home, answeredAt) {
-  const folder = `${appHome}/mods/inbox`;
-  const shown = home && folder.startsWith(`${home}/`) ? `~${folder.slice(home.length)}` : folder;
-  return { is: "asking", appHome, folder: shown, answeredAt };
-}
-function herdrAskBanner(ask) {
-  if (!ask)
-    return null;
-  const isAsking = ask.is === "asking";
-  const lead = ask.is === "answered" ? ask.text : ask.is === "asking" ? LEAD : ask.isYes ? INSTALLING_TEXT : SAVING_TEXT;
-  const body = isAsking ? `It adds the inbox panel to the Herdr app, in ${ask.folder}, and keeps it up to date with the inbox.` : null;
-  return { kind: "herdr-mod-ask", tone: "ask", lead, body };
-}
-var answeringOf = (ask, isYes) => ({ ...ask, is: "answering", isYes });
-async function answerHerdrAsk(files, ask, bundledFolder, isYes, now, later) {
-  const result = await answerHerdrMod(files, ask.appHome, bundledFolder, isYes, now);
-  if (result.is === "failed")
-    return { ask: null, failure: result.text };
-  return { ask: { is: "answered", text: isYes ? INSTALLED_TEXT : `${later} to install it later.` }, failure: null };
-}
-async function isHerdrAskOpen(files, ask) {
-  const state = await herdrModNow(files, ask.appHome).catch(() => null);
-  return state === null || state.installed === "missing" && state.answer !== "newer" && state.answeredAt === ask.answeredAt;
-}
-async function askHerdrAgain(files, appHome, home) {
-  if (!appHome)
-    return "Run /inbox herdr in a Herdr app terminal to install the inbox mod there.";
-  const state = await herdrModNow(files, appHome).catch((err) => err instanceof Error ? err : new Error(String(err)));
-  if (state instanceof Error)
-    return `Could not read the Herdr app's mods folder. ${state.message}`;
-  const ask = herdrAskOf(appHome, home, state.answeredAt);
-  if (state.installed === "inbox")
-    return "The inbox mod is already installed in Herdr.";
-  if (state.installed === "own")
-    return `${ask.folder} holds another mod, so the inbox leaves it alone.`;
-  if (state.answer === "newer")
-    return NEWER_ANSWER_TEXT;
-  return ask;
+function closedLineView(d, canShowSession = false) {
+  const { action, sessionKey } = closedLinePlan(d, canShowSession);
+  return {
+    id: d.id,
+    title: "ask" in d ? d.ask : d.title,
+    at: "ask" in d ? d.at : d.closedAt,
+    mark: d.mark,
+    outcome: settledLabel(d.outcomeLabel, d.delivery),
+    action,
+    isUndoOfRefusal: canUndoRefused(d.delivery),
+    sessionKey
+  };
 }
 
 // src/panel-entries.ts
-function herdrAskEntries(screen) {
-  const banner = herdrAskBanner(screen.herdrAsk ?? null);
-  if (!banner)
-    return [];
-  const isAsking = screen.herdrAsk?.is === "asking";
-  const buttons = HERDR_ASK_BUTTONS.map((a) => ({
-    label: a.label,
-    key: a.hotkey,
-    press: { action: "herdr-ask", isYes: a.isYes },
-    isRecommended: a.isYes,
-    isFollowUp: false
-  }));
-  return [
-    {
-      kind: "row",
-      line: {
-        ...blankLine(HERDR_ASK_ID),
-        lead: null,
-        title: banner.lead,
-        titleTone: "key",
-        detail: banner.body,
-        isDetailShown: true,
-        buttons: isAsking ? buttons : [],
-        isStatic: !isAsking,
-        isWaiting: isAsking
-      }
-    }
-  ];
-}
 function stopEntries(screen, ui) {
   const { stop } = screen;
   if (!stop)
@@ -11841,16 +11835,16 @@ function rowEntries(screen, ui, tab, now) {
     mark: { text: g.mark.mark, tone: g.mark.tone },
     isRowLed: true,
     rows: view.needsYou[g.list].filter((r) => isDrawnInPlace(r, ui.shownSince)),
-    closed: view.needsYou.closed[g.list].map((d) => ({ ...d, title: d.ask }))
+    closed: view.needsYou.closed[g.list].map((d) => closedLineView(d))
   })) : Object.keys(FINDING_GROUPS).map((kind) => ({
     kind,
     title: FINDING_GROUPS[kind].title,
     mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
     isRowLed: false,
     rows: view.findings.rows.filter((r) => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
-    closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => ({ ...f, at: f.closedAt }))
+    closed: view.findings.closed.filter((f) => f.kind === kind).map((f) => closedLineView(f))
   }));
-  const stops = tab === "needsYou" ? [...herdrAskEntries(screen), ...stopEntries(screen, ui)] : [];
+  const stops = tab === "needsYou" ? stopEntries(screen, ui) : [];
   const empty = emptyTab(view, {
     tab,
     agent: AGENT,
@@ -12164,8 +12158,6 @@ function activate(screen, ui, line, button) {
       return {};
     return { patch: { focus: null, resuming: { stopAt: stop.at, is: "sending" } }, press };
   }
-  if (press.action === "herdr-ask")
-    return { patch: { focus: null }, press };
   if (!isPrPress(press) && press.action === "type")
     return { events: [{ type: "open-field", id: line.id }], patch: { focus: null } };
   if (!isPrPress(press) && press.action === "discard")
@@ -12223,7 +12215,16 @@ function rowTabKey(screen, ui, lines, selected, key, now) {
     return {};
   return activate(screen, ui, selected, button);
 }
+function herdrAnswerOf(screen, key) {
+  const button = HERDR_ASK_BUTTONS.find((a) => a.hotkey === key);
+  if (screen.herdrAsk?.is !== "asking" || !button)
+    return null;
+  return { action: "herdr-ask", isYes: button.isYes };
+}
 function planKey(screen, ui, lines, selected, key, now) {
+  const answer = herdrAnswerOf(screen, key);
+  if (answer)
+    return { patch: { focus: null }, press: answer };
   const shown = shownTabs();
   const isTabKey = key === "tab" || key === "shift+tab" || shown.some((t) => t.hotkey === key);
   if (key === "?" || ui.isHelpShown && key === "escape")
@@ -12359,7 +12360,8 @@ function inboxModelText({ modelName, isSignedIn }) {
 function footer(d, isPageScrolling) {
   const { screen, ui, width, style: s } = d;
   const out = [s.dim("\u2500".repeat(width))];
-  const hints = ui.typing !== null ? [
+  const askHints = screen.herdrAsk?.is === "asking" && ui.typing === null && !ui.isHelpShown ? HERDR_ASK_BUTTONS.map((a) => `${a.hotkey} ${a.label.toLowerCase()}`) : [];
+  const keyHints = ui.typing !== null ? [
     `\u21B5 ${ui.typing === GOAL_KEYS_ID ? goalSubmitLabel(screen.view.statusPage) : ROW_COPY.send}`,
     `esc ${ROW_COPY.cancel}`
   ] : ui.isHelpShown ? [...isPageScrolling ? ["\u2191\u2193 scroll"] : [], "esc close help"] : isRowTab(ui.tab) ? ["\u2190\u2192 pick", "\u21B5 press", "\u2191\u2193 move", "tab switch", "? help"] : [
@@ -12368,6 +12370,7 @@ function footer(d, isPageScrolling) {
     "tab switch",
     "? help"
   ];
+  const hints = [...askHints, ...keyHints];
   const model = `${inboxModelText(screen)} `;
   const hintLine = ` ${hints.map((h) => s.dim(h)).join(` ${s.tone("sep", "\xB7")} `)}`;
   const fitsBesideHints = width - visibleLength(hintLine) - visibleLength(model) >= 2;
@@ -12434,14 +12437,19 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
   const selected = selectedLine(linesOf(entries), ui);
   const rule = style.dim("\u2500".repeat(width));
   const error = footerError(ui.tab, screen.view.status, screen.view.statusPage);
-  const host = screen.herdrModFailure ? [bannerOf("herdr-mod-failed", screen.herdrModFailure)] : [];
+  const ask = herdrAskBanner(screen.herdrAsk ?? null);
+  const host = [
+    ...screen.herdrModFailure ? [bannerOf("herdr-mod-failed", screen.herdrModFailure)] : [],
+    ...ask ? [ask] : []
+  ];
   const banners = tabBarBanners(host, error, noticeOf(ui, now));
+  const bannerDrawn = (b) => bannerLines(b, width, style, b.kind === "herdr-mod-ask" && screen.herdrAsk?.is === "asking" ? herdrAskKeyLines(width, style) : []);
   const head = [
     ...screen.isDemo ? bannerLines(bannerOf("demo", DEMO_NOTICE), width, style) : [],
     rule,
     tabBar(d),
     rule,
-    ...banners.flatMap((b) => bannerLines(b, width, style))
+    ...banners.flatMap(bannerDrawn)
   ];
   const body = [];
   let selectedAt = [0, 0];
@@ -12473,9 +12481,8 @@ function drawPanel(screen, ui, width, now, style, height, minHeight = 0) {
     else {
       const isSelected = e.line.id === selected?.id;
       const start = body.length;
-      const bannerTone = e.line.id === HERDR_ASK_ID ? "ask" : e.line.id === STOP_ID && screen.stop ? stopBanner(screen.stop).tone : null;
-      if (bannerTone)
-        body.push(...boxed(drawLine(e.line, isSelected, { ...d, width: width - 4 }), bannerTone, width, style));
+      if (e.line.id === STOP_ID && screen.stop)
+        body.push(...boxed(drawLine(e.line, isSelected, { ...d, width: width - 4 }), stopBanner(screen.stop).tone, width, style));
       else
         body.push(...drawLine(e.line, isSelected, d));
       if (isSelected)
@@ -16920,8 +16927,9 @@ async function digestText(text) {
     throw new Error("The host returned an invalid command hash.");
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+var ROW_DIGEST_PREFIX = "row-sha256-v2:";
 async function remoteRowDigest(s, id) {
-  return `row-sha256-v2:${await digestText(canonical(remoteFields(s, id)))}`;
+  return ROW_DIGEST_PREFIX + await digestText(canonical(remoteFields(s, id)));
 }
 async function matchesRow(s, command) {
   const id = pressRowId(command.press);

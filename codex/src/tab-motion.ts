@@ -35,6 +35,7 @@ import { fadeThrough, fadingParts, openHoldsUp, shownPanel, trunkBeside } from '
 import { collapse, naturalHeight, retargetClose, topIn } from './tab-collapse'
 import { showConnectors } from './tab-connectors'
 import { drawnKeys, showNewKeys } from './tab-new-keys'
+import { isCountMoving, moveCounts } from './tab-count-motion'
 
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -166,6 +167,7 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>, stepA
         carried.add(up)
     }
   }
+  moveCounts(changed)
   glideTabs(before.tabWidths)
   showNotes(before)
   showNewKeys(before.keys, before.heights)
@@ -393,13 +395,14 @@ function isInsideLeaving(el: HTMLElement): boolean {
 
 /**
  * Glides each tab whose width changed, as when its count gains a digit, so the tabs after it slide over. A tab that
- * was shown or stops being shown takes its width at once, since a tab switch draws at once.
+ * was shown or stops being shown takes its width at once, since a tab switch draws at once. A tab whose count comes or
+ * goes follows its count's box (`moveCounts`).
  */
 function glideTabs(widths: Drawing['tabWidths']) {
   for (const el of root.querySelectorAll<HTMLElement>('[data-tab]')) {
     const was = widths.get(el.dataset.tab!)
     if (!was || was.el !== el) continue
-    if (was.isShown !== isShownTab(el)) {
+    if (was.isShown !== isShownTab(el) || isCountMoving(el)) {
       glides.get(el)?.anim.cancel()
       continue
     }

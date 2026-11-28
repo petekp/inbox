@@ -43,10 +43,9 @@ import { PAGE_TEXT_AT } from './panel-page'
 import { collapsedIn } from './panel-text'
 import { unfoldedRows } from '../../core/view/status-folds'
 import type { ShownTab } from '../../core/view/tabs'
-import { HERDR_ASK_BUTTONS, herdrAskBanner } from '../../core/remote/herdr-ask'
+import { closedLineView } from '../../core/view/closed-line'
 import {
   AGENT,
-  HERDR_ASK_ID,
   STOP_ID,
   blankLine,
   doneAt,
@@ -60,37 +59,6 @@ import {
 import type { Button, Entry, Group, Lead, Line } from './panel-lines'
 import { rowErrorOf } from '../../core/view/ui-controller'
 import type { PanelScreen, PanelUi } from './panel'
-
-/** The question before omp installs the inbox's Herdr mod, as a row its buttons can focus, while it shows. */
-function herdrAskEntries(screen: PanelScreen): Entry[] {
-  const banner = herdrAskBanner(screen.herdrAsk ?? null)
-  if (!banner) return []
-  const isAsking = screen.herdrAsk?.is === 'asking'
-  const buttons: Button[] = HERDR_ASK_BUTTONS.map(a => ({
-    label: a.label,
-    key: a.hotkey,
-    press: { action: 'herdr-ask', isYes: a.isYes },
-    isRecommended: a.isYes,
-    isFollowUp: false,
-  }))
-
-  return [
-    {
-      kind: 'row',
-      line: {
-        ...blankLine(HERDR_ASK_ID),
-        lead: null,
-        title: banner.lead,
-        titleTone: 'key',
-        detail: banner.body,
-        isDetailShown: true,
-        buttons: isAsking ? buttons : [],
-        isStatic: !isAsking,
-        isWaiting: isAsking,
-      },
-    },
-  ]
-}
 
 function stopEntries(screen: PanelScreen, ui: PanelUi): Entry[] {
   const { stop } = screen
@@ -147,7 +115,7 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
           mark: { text: g.mark.mark, tone: g.mark.tone },
           isRowLed: true,
           rows: view.needsYou[g.list].filter(r => isDrawnInPlace(r, ui.shownSince)),
-          closed: view.needsYou.closed[g.list].map(d => ({ ...d, title: d.ask })),
+          closed: view.needsYou.closed[g.list].map(d => closedLineView(d)),
         }))
       : (Object.keys(FINDING_GROUPS) as (keyof typeof FINDING_GROUPS)[]).map(kind => ({
           kind,
@@ -155,9 +123,9 @@ function rowEntries(screen: PanelScreen, ui: PanelUi, tab: 'needsYou' | 'finding
           mark: { text: FINDING_GROUPS[kind].mark, tone: FINDING_GROUPS[kind].tone },
           isRowLed: false,
           rows: view.findings.rows.filter(r => r.finding?.kind === kind && isDrawnInPlace(r, ui.shownSince)),
-          closed: view.findings.closed.filter(f => f.kind === kind).map(f => ({ ...f, at: f.closedAt })),
+          closed: view.findings.closed.filter(f => f.kind === kind).map(f => closedLineView(f)),
         }))
-  const stops = tab === 'needsYou' ? [...herdrAskEntries(screen), ...stopEntries(screen, ui)] : []
+  const stops = tab === 'needsYou' ? stopEntries(screen, ui) : []
   const empty = emptyTab(view, {
     tab,
     agent: AGENT,

@@ -447,5 +447,55 @@
       "reply": "I added `--wave` to greet.js. It puts 👋 at the very start of the line, before the greeting, as you chose.\n\n```\n$ node greet.js --wave Ana\n👋 Hola, Ana\n$ node greet.js --wave --shout --lang en --times 2\n👋 HI, WORLD\n👋 HI, WORLD\n```\n\nIt also works with `--shout`, `--lang` and `--times`, and the output without `--wave` hasn't changed. Nothing is committed yet."
     },
     "checks": [{ "added": 0 }]
+  },
+  {
+    "name": "ask-names-its-subject",
+    "about": "A reply that names two PRs and asks \"Merge it?\" about one of them files one ask that names that PR, by its number or by what it fixes.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 4,
+      "card": {
+        "goal": "Land the checkout fixes",
+        "done": [],
+        "now": "Checking the open PRs",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "where are the two checkout PRs at?",
+      "turn": 6,
+      "activity": ["ran: gh pr view 2207", "ran: gh pr view 2210"],
+      "reply": "PR #2207, the retry for failed card payments, still has a failing test: the payment stub times out on CI. I am looking into it.\n\nPR #2210, the fix for the coupon total rounding, passed every check and has an approval. Merge it?"
+    },
+    "checks": [
+      {
+        "new": "2210|coupon|rounding",
+        "kind": "question"
+      },
+      {
+        "notNew": "2207|retry"
+      },
+      {
+        "added": 1
+      }
+    ]
+  },
+  {
+    "name": "push-and-pr-ask-names-the-work",
+    "about": "A reply that ends \"Ready to push and open a draft PR?\" files an ask that names the work, so the subject rule keeps it.",
+    "ledger": {
+      "turn": 5,
+      "nextId": 3,
+      "card": { "goal": "Fix the login timeout", "done": [], "now": "Fix the login timeout", "running": [] },
+      "items": []
+    },
+    "exchange": {
+      "person": "fix the login timeout",
+      "turn": 5,
+      "activity": ["ran: npm test"],
+      "reply": "The login timeout is fixed: the session cookie now refreshes on every request, and the tests pass. It's committed on the branch.\n\nReady to push and open a draft PR?"
+    },
+    "checks": [{ "new": "login|timeout|cookie|session", "kind": "question" }, { "added": 1 }]
   }
 ]

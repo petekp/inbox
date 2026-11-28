@@ -46,7 +46,7 @@ test('local preparation refuses caller paths, changed versions, and another sess
   const valid = request('Copy visor pair')
   for (const invalid of [
     { ...valid, path: '/fixture/not-allowed' },
-    { ...valid, version: 'row-sha256-v1:' + '0'.repeat(64) },
+    { ...valid, version: valid.version.replace(/[a-f0-9]{64}$/, '0'.repeat(64)) },
     { ...valid, session: 'f'.repeat(64) },
   ])
     expect((await post('/api/local', invalid)).status).toBe(400)

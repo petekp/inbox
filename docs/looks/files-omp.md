@@ -34,13 +34,13 @@ Part of [the look map](../looks.md#files).
 | `omp/src/panel.ts` | omp adapter. The panel's ui state, which is the shared controller's `UiState` plus the panel's focus, scroll and open row, its `LookConfig`, the screen it draws, and `drawPanel` and the band. It and the `panel-*.ts` files import no omp package. |
 | `omp/src/panel-lines.ts` | omp adapter. The `Line` and `Entry` types, the lines for rows, buttons and Closed groups, and which button of a line or a Status target has focus. `withUnshownPress` draws a press from its key until the view shows it. |
 | `omp/src/panel-entries.ts` | omp adapter. Each tab's entries: the Asks and Finds groups, the stop line, the PRs tab, the Status page and Help. |
-| `omp/src/panel-keys.ts` | omp adapter. `handleKey`, which maps each key to controller events and the panel's own focus and scroll, `applyEvents`, which runs them through `reduceUi`, and `selectedLine`, the line the cursor draws on. |
+| `omp/src/panel-keys.ts` | omp adapter. `handleKey`, which maps each key to controller events and the panel's own focus and scroll, `applyEvents`, which runs them through `reduceUi`, `selectedLine`, the line the cursor draws on, and `herdrAnswerOf`, which answers the Herdr install question from y and q on any tab. |
 | `omp/src/panel-text.ts` | omp adapter. Measures, cuts and wraps text that holds ANSI styles. |
 | `omp/src/panel-ask-tree.ts` | omp adapter. An open row's Holds up line, context and option lines as ├─, └─ and │ lines. |
-| `omp/src/panel-draw.ts` | omp adapter. Draws a line with its marks and buttons, and a banner in its box. |
+| `omp/src/panel-draw.ts` | omp adapter. Draws a line with its marks and buttons, a banner in its box, and the Herdr install question's answers under its banner. |
 | `omp/src/panel-page.ts` | omp adapter. Draws the Status page's rows: the columns they sit at, the tree, stall words, rules and buttons. |
 | `omp/src/panel-goal.ts` | omp adapter. Draws the Status page's goal section: its heading, the goal or the line that says none is set, its buttons, its text field, the Now line and the milestones. |
-| `omp/src/panel-tabs.ts` | omp adapter. The tab bar, the footer and scrolling. |
+| `omp/src/panel-tabs.ts` | omp adapter. The tab bar, the footer, which names y and q while the Herdr install question asks, and scrolling. |
 | `omp/src/controller.ts` | omp adapter. The open panel: the cached screen, the controller state, the commands it runs, and the one wake timer `nextWakeAt` sets. |
 | `omp/src/demo.ts` | omp host. Turns the shared demo data into a panel source for `/inbox demo`. |
 | `omp/build.ts` | omp host. Bundles `omp/src/host.ts` and the shared modules into `omp/dist/host.js`. `--check` fails when the bundle is stale. |

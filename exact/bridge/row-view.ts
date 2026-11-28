@@ -10,11 +10,10 @@ import type { ToneName } from '../../core/view/tones'
 import { parseInline } from '../../core/view/inline'
 import { earlierLineText } from '../../core/domain/earlier-answers'
 import { groupEmptyText } from '../../core/view/banners'
-import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../core/view/help'
+import { FINDING_GROUPS } from '../../core/view/help'
 import { LEGACY_REMOTE_ACTIONS } from '../../core/remote/remote-commands'
 import {
   ROW_COPY,
-  closedLinePlan,
   closedShown,
   closedTotal,
   earlierLabel,
@@ -28,8 +27,10 @@ import {
   closedTitleTone,
   shortAgo,
   waitingCount,
+  NEEDS_YOU_GROUPS,
 } from '../../core/view/rows'
 import type { RowView } from '../../core/view/rows'
+import { closedLineView } from '../../core/view/closed-line'
 import type { SessionView } from '../../core/view/session-view'
 import type { Effect } from '../../core/view/press-reducer'
 import { stepEffects } from '../../core/domain/help-steps'
@@ -291,9 +292,7 @@ export function projectRowGroups(
     const drawn = new Set(rows.filter(row => row.state.is === 'settled').map(row => row.id))
     const total = closedTotal(closed, drawn)
     const closedRows = closedShown(closed, drawn, true).map(d => {
-      const action = closedLinePlan(d).action
-      const title = 'ask' in d ? d.ask : d.title
-      const at = 'closedAt' in d ? d.closedAt : d.at
+      const { action, title, at, outcome, mark } = closedLineView(d)
       const actions: Button[] = []
       if (action) {
         const target: Target = {
@@ -326,10 +325,10 @@ export function projectRowGroups(
         id: d.id,
         version: versions.get(d.id) ?? '',
         title: inlineParts(title),
-        outcome: settledLabel(d.outcomeLabel, d.delivery),
-        mark: d.mark.text,
-        tone: d.mark.tone ?? '',
-        color: toneColor(d.mark.tone),
+        outcome,
+        mark: mark.text,
+        tone: mark.tone ?? '',
+        color: toneColor(mark.tone),
         age: shortAgo(now - at),
         actions,
       }
@@ -355,24 +354,9 @@ export function projectRowGroups(
     }
   }
   const groups = {
-    askGroups: [
-      group(
-        'questions',
-        'Questions',
-        NEEDS_YOU_MARKS.question.mark,
-        NEEDS_YOU_MARKS.question.tone,
-        view.needsYou.questions,
-        view.needsYou.closed.questions,
-      ),
-      group(
-        'tasks',
-        'Tasks',
-        NEEDS_YOU_MARKS.task.mark,
-        NEEDS_YOU_MARKS.task.tone,
-        view.needsYou.tasks,
-        view.needsYou.closed.tasks,
-      ),
-    ],
+    askGroups: NEEDS_YOU_GROUPS.map(g =>
+      group(g.list, g.title, g.mark.mark, g.mark.tone, view.needsYou[g.list], view.needsYou.closed[g.list]),
+    ),
     findingGroups: Object.entries(FINDING_GROUPS).map(([kind, info]) =>
       group(
         kind,

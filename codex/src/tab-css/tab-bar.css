@@ -45,6 +45,10 @@ nav {
   align-self: stretch;
   margin-left: auto;
 }
+/* The box a count comes and goes in. Its width glides, so the count's space before it is inside it. */
+.count-box {
+  display: inline-flex;
+}
 .tab .count {
   font-weight: 600;
   margin-left: var(--unit);

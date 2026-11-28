@@ -13,9 +13,11 @@ import { tabState } from './tab-state'
 import { dispatch, drawnTab, read, resetView } from './tab-ui'
 import { swapPage } from './tab-swap'
 import { pulseInStep, MarkGlyph, markClassOf, GroupTitle, Banner } from './tab-parts'
-import { HerdrAskBanner } from './tab-herdr-ask'
+import { HerdrAskBanner, herdrAskBannerOf } from './tab-herdr-ask'
 import { bannerMotion, lineMotion } from './tab-line-steps'
 import type { BannerLine } from './tab-line-steps'
+import { countMotion } from './tab-count-motion'
+import type { CountLine } from './tab-count-motion'
 
 /** The Help tab's icon: a question mark in a circle, in the tab's text color. */
 function HelpIcon() {
@@ -77,10 +79,22 @@ export function tabBanners(v: View): BannerLine[] {
       ...(v.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[v.hooksTrust])] : []),
       ...(tabState.updateError ? [bannerOf('tab-update-failed', tabState.updateError.text)] : []),
       ...(tabState.herdrFailure ? [bannerOf('herdr-mod-failed', tabState.herdrFailure)] : []),
+      ...[herdrAskBannerOf(v)].filter(b => b !== null),
     ],
     footerErrorOf(v),
     noticeOf(tabState.ui, Date.now()),
   ).map(banner => ({ id: banner.kind, banner }))
+}
+
+/** Each row tab's count, for the tabs that have one. */
+export function tabCountLines(v: View): CountLine[] {
+  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
+
+  return shownTabs().flatMap(t => {
+    const badge = isRowTab(t.id) ? tabBadge(t.id, counts) : null
+
+    return isRowTab(t.id) && badge !== null ? [{ id: t.id, badge }] : []
+  })
 }
 
 function footerErrorOf(v: View) {
@@ -101,9 +115,19 @@ export function Status() {
   )
 }
 
+/** A tab's count, in a box whose width glides as the count comes and goes. */
+function TabCount({ line }: { line: CountLine | null }) {
+  if (!line) return null
+
+  return (
+    <span class="count-box" data-count={countMotion(line.id)}>
+      <span class={`count tone-${line.id}`}>{line.badge}</span>
+    </span>
+  )
+}
+
 export function TabBar({ v }: { v: View }) {
-  const counts: Record<Tab, number> = { needsYou: v.needsYou.count, findings: v.findings.count, prs: v.prs.count }
-  const badgeOf = (id: ShownTab) => tabBadge(id, counts)
+  const countOf = (id: ShownTab) => tabState.lastCounts?.find(c => c.id === id) ?? null
   const shown = drawnTab()
 
   return (
@@ -123,9 +147,7 @@ export function TabBar({ v }: { v: View }) {
             <span class="tab-word" data-label={t.label}>
               {t.label}
             </span>
-            {badgeOf(t.id) === null ? null : (
-              <span class={isRowTab(t.id) ? `count tone-${t.id}` : 'count'}>{badgeOf(t.id)}</span>
-            )}
+            <TabCount line={countOf(t.id)} />
           </button>
         ))}
       </div>
@@ -155,12 +177,13 @@ export function TabBar({ v }: { v: View }) {
                   if (page) void swapPage(page)
                 }}
               />
+            ) : b.kind === 'herdr-mod-ask' ? (
+              <HerdrAskBanner v={v} banner={b} />
             ) : (
               <Banner banner={b} />
             )}
           </div>
         ))}
-        <HerdrAskBanner v={v} />
       </div>
     </nav>
   )

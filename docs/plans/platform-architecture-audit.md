@@ -66,7 +66,7 @@ existing worker and submission paths.
 | PR-opening help | `core/domain/pr-fetch.ts:sessionPrs` supplies both view construction and press validation. |
 | Failed updates | Codex separates an active update from a failed exchange awaiting its next retry trigger. A failure that will not retry makes no retry promise. |
 | Row and action meaning | `RowView`, `ActionView` and view helpers own content, reply intent, marks, emphasis and icon kinds. `rowKeyPlan` owns order. Renderers style actions in that order. Native desktop keeps Help before Done. |
-| Navigation | `firstWaiting`, `keptOpen`, `rowAfterClose`, `isTabEmpty` and `followTo` own selection and empty-tab decisions. Hosts supply drawn rows and blockers. New rows above the selected row remain closed. |
+| Navigation | `firstWaiting`, `keptOpen`, `rowAfterClose`, `isEmptyForFollowing` and `followTo` own selection and empty-tab decisions. Hosts supply drawn rows and blockers. New rows above the selected row remain closed. |
 | Inline Undo | `hooks/mod/mod-press-run.ts` and `hooks/mod/mod-pane-scroll.ts` advance selection and reveals the existing Undo control. On expiry it reveals the current selected row, including a new default selection. Manual scrolling cancels that tracking. |
 | Terminal fitting | `hooks/mod/mod-pane-render.tsx:listColumns` accounts for the inline tab column. `terminalTextLines` fits parsed display spans to the body budget and preserves planned breaks, styles, link addresses and explicit newlines. |
 | Update bookkeeping | `applyExchangeUpdate` preserves the item being explained. `addActivity` owns the activity cap and duplicate filter. Press results identify actual reopens for closed-note acknowledgement cleanup. |

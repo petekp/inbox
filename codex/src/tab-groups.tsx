@@ -1,20 +1,20 @@
 import { Icon, inputOf } from './row-actions'
 import {
-  closedLinePlan,
   closedShown,
+  NEEDS_YOU_GROUPS,
   closedTotal,
   earlierLabel,
   foldLabel,
   waitingCount,
-  settledLabel,
   shortAgo,
 } from '../../core/view/rows'
 import { groupEmptyText } from '../../core/view/banners'
 import { LEAVE_FADE_MS } from '../../core/view/row-motion'
 import { emptyTab } from '../../core/view/empty-tab'
 import { entryId, settledIn } from '../../core/view/action-plan'
-import { FINDING_GROUPS, NEEDS_YOU_MARKS } from '../../core/view/help'
-import type { ResultMark } from '../../core/view/rows'
+import { FINDING_GROUPS } from '../../core/view/help'
+import { closedLineView } from '../../core/view/closed-line'
+import type { ClosedLineView } from '../../core/view/closed-line'
 import type { Finding } from '../../types'
 import type { FoldGroup } from './arrivals'
 import type { TabView as View } from './core'
@@ -26,26 +26,18 @@ import { dispatch, pressRow } from './tab-ui'
 import { ResultMarkView, GroupTitle, EmptyState } from './tab-parts'
 import { Entries } from './tab-list'
 
-function itemsClosed(v: View, kind: 'question' | 'task', entries: Entry[]): ClosedLine[] {
-  const closed = v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks']
+type NeedsYouGroup = (typeof NEEDS_YOU_GROUPS)[number]
 
-  return closedShown(closed, settledIn(entries), tabState.ui.closedAll.includes(kind)).map(d => ({
-    id: d.id,
-    how: d.how,
-    canRestore: d.canRestore,
-    ask: d.ask,
-    outcomeLabel: d.outcomeLabel,
-    mark: d.mark,
-    at: d.at,
-    delivery: d.delivery,
-  }))
+function itemsClosed(v: View, group: NeedsYouGroup, entries: Entry[]): ClosedLineView[] {
+  const closed = v.needsYou.closed[group.list]
+
+  return closedShown(closed, settledIn(entries), tabState.ui.closedAll.includes(group.kind)).map(d => closedLineView(d))
 }
 
-function ItemGroup({ v, kind, entries, now }: { v: View; kind: 'question' | 'task'; entries: Entry[]; now: number }) {
-  const title = kind === 'question' ? 'Questions' : 'Tasks'
-  const mark = NEEDS_YOU_MARKS[kind]
+function ItemGroup({ v, group, entries, now }: { v: View; group: NeedsYouGroup; entries: Entry[]; now: number }) {
+  const { kind, title, mark } = group
   const rest = staying(entries)
-  const closed = itemsClosed(v, kind, entries)
+  const closed = itemsClosed(v, group, entries)
   const rows = rest.flatMap(x => ('row' in x ? [x.row] : []))
 
   return (
@@ -56,7 +48,7 @@ function ItemGroup({ v, kind, entries, now }: { v: View; kind: 'question' | 'tas
         group={kind}
         empty={groupEmpty(title, rest)}
         closed={closed}
-        total={closedTotal(v.needsYou.closed[kind === 'question' ? 'questions' : 'tasks'], settledIn(entries))}
+        total={closedTotal(v.needsYou.closed[group.list], settledIn(entries))}
         now={now}
       />
     </section>
@@ -83,17 +75,6 @@ function groupEmpty(title: string, rest: Entry[]): GroupEmpty | null {
   return rest.length === 0 || isArriving ? { text: groupEmptyText(title), isLeaving: rest.length > 0 } : null
 }
 
-type ClosedLine = {
-  id: string
-  how: Parameters<typeof closedLinePlan>[0]['how']
-  canRestore?: boolean
-  ask: string
-  outcomeLabel: string
-  mark: ResultMark
-  at: number
-  delivery: Parameters<typeof settledLabel>[1]
-}
-
 function GroupEnd({
   group,
   empty,
@@ -103,7 +84,7 @@ function GroupEnd({
 }: {
   group: FoldGroup
   empty: GroupEmpty | null
-  closed: ClosedLine[]
+  closed: ClosedLineView[]
   total: number
   now: number
 }) {
@@ -136,14 +117,14 @@ function GroupEnd({
       {isListed ? (
         <div class="list closed-list" data-motion={`closed-${group}`}>
           {closed.map(d => {
-            const action = closedLinePlan(d).action
+            const { action } = d
             return (
               <div class="entry" key={`closed-${d.id}`}>
                 <div class="row">
                   <ResultMarkView mark={d.mark} />
                   <div class="content tight">
-                    <div class="muted">{d.ask}</div>
-                    <div class="outcome">{settledLabel(d.outcomeLabel, d.delivery)}</div>
+                    <div class="muted">{d.title}</div>
+                    <div class="outcome">{d.outcome}</div>
                     {action ? (
                       <button
                         type="button"
@@ -179,12 +160,12 @@ function notHeardText(v: View): [string, string?] | null {
 }
 
 export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number }) {
-  const closedCount = itemsClosed(v, 'question', lists.questions).length + itemsClosed(v, 'task', lists.tasks).length
+  const closedCount = NEEDS_YOU_GROUPS.reduce((n, g) => n + itemsClosed(v, g, lists[g.list]).length, 0)
   const notHeard = notHeardText(v)
   const empty = emptyTab(v, {
     tab: 'needsYou',
     agent: 'Codex',
-    drawn: lists.questions.length + lists.tasks.length + closedCount,
+    drawn: NEEDS_YOU_GROUPS.reduce((n, g) => n + lists[g.list].length, 0) + closedCount,
     hasBlocker: false,
     hostText: notHeard ? { title: notHeard[0], hint: notHeard[1] ?? null } : null,
   })
@@ -200,8 +181,9 @@ export function NeedsYou({ v, lists, now }: { v: View; lists: Lists; now: number
           </div>
         </section>
       ) : null}
-      <ItemGroup v={v} kind="question" entries={lists.questions} now={now} />
-      <ItemGroup v={v} kind="task" entries={lists.tasks} now={now} />
+      {NEEDS_YOU_GROUPS.map(g => (
+        <ItemGroup v={v} group={g} entries={lists[g.list]} now={now} />
+      ))}
     </main>
   )
 }
@@ -210,16 +192,7 @@ export function Findings({ v, lists, now }: { v: View; lists: Lists; now: number
   const settled = settledIn(lists.findings)
   const closedOf = (kind: Finding['kind']) => v.findings.closed.filter(f => f.kind === kind)
   const shown = (kind: Finding['kind']) =>
-    closedShown(closedOf(kind), settled, tabState.ui.closedAll.includes(kind)).map(f => ({
-      id: f.id,
-      how: f.how,
-      canRestore: f.canRestore,
-      ask: f.title,
-      outcomeLabel: f.outcomeLabel,
-      mark: f.mark,
-      at: f.closedAt,
-      delivery: f.delivery,
-    }))
+    closedShown(closedOf(kind), settled, tabState.ui.closedAll.includes(kind)).map(f => closedLineView(f))
   const empty = emptyTab(v, {
     tab: 'findings',
     agent: 'Codex',
