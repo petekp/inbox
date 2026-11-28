@@ -249,6 +249,8 @@ export type Paint = {
   listRoom: number | null
   /** The width of a top-level row's text column, from the text's left edge to the pane's padding. */
   rowTextRoom: number
+  /** The width the tab row holds inside the pane's padding. */
+  tabRowRoom: number
   /** The look's fades, held across draws so that gpui-kit gets no delay. */
   fades: HeldFades
 }
@@ -261,6 +263,7 @@ export const paneFit = (reported: { paneWidth: number; listHeight: number | null
   isNarrow: reported.paneWidth / zoom < NARROW_PANE,
   listRoom: reported.listHeight === null ? null : Math.max(0, reported.listHeight / zoom - EDGE - END_SPACE),
   rowTextRoom: Math.max(0, reported.paneWidth / zoom - TEXT_X - EDGE),
+  tabRowRoom: Math.max(0, reported.paneWidth / zoom - 2 * EDGE),
 })
 
 /** A size callback that keeps what `read` takes from a box's size as `view[key]`, and draws again when that changed. */

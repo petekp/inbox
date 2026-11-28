@@ -4,6 +4,7 @@ import { h_flex, v_flex } from 'gpui-base'
 import type { BannerView } from '../../core/view/banners'
 import type { BannerTone } from '../../core/view/tones'
 import { HELP_COPY } from '../../core/view/help'
+import { fitTabs, tabName } from '../../core/view/tabs'
 import { BANNER_PAD_Y_PT } from '../../core/view/layout'
 import { ENTER_FADE_MS, LEAVE_FADE_MS, enterDelayMs } from '../../core/view/row-motion'
 import { HEIGHT_SPRING } from '../../core/view/springs'
@@ -57,11 +58,16 @@ const helpIconEl = (t: Theme, isSelected: boolean): Element =>
  * The tab row: the tabs with their counts, then the Help tab at its right end, inside the panel's padding.
  * A tab is a pill of a button's size, and only the selected tab's label is bold. While Help shows, the Help tab is the
  * selected one and the others are not. Herdr's pane header names the pane, so the look draws no title.
+ * The tabs show their words where the row in words fits on one line, else their symbols, as `fitTabs` decides.
  */
 export function tabsEl(tabs: DrawnTab[], isHelpShown: boolean, p: Paint): Element {
   const { t } = p
+  const wordsWidth = p.heights.widthOf(TAB_WORDS)
+  const isWordsFit = wordsWidth === undefined || wordsWidth <= p.tabRowRoom
+  const { naming } = fitTabs([p.tabRowRoom], name => name === 'symbols' || isWordsFit)
 
   return h_flex()
+    .relative()
     .flex_none()
     .flex_wrap()
     .px(EDGE)
@@ -84,8 +90,9 @@ export function tabsEl(tabs: DrawnTab[], isHelpShown: boolean, p: Paint): Elemen
           .accessibility_label(tab.badge && !isCountGone ? `${tab.label}, ${tab.badge}` : tab.label)
           .when(isTabSelected, e => e.bg(t.raised).text_color(t.foreground).font_semibold())
           .when(!isTabSelected, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
+          .when(naming === 'symbols', e => e.tooltip(tab.label))
           .on_click((_e, cx) => p.pick(tab.id, cx))
-          .child(tab.label)
+          .child(tabName(tab, naming))
           .when(tab.badge !== null, e => e.child(countEl(tab, p)))
       }),
     )
@@ -102,6 +109,49 @@ export function tabsEl(tabs: DrawnTab[], isHelpShown: boolean, p: Paint): Elemen
         .when(!isHelpShown, e => e.text_color(t.muted).hover(s => s.text_color(t.foreground)))
         .on_click((_e, cx) => p.press(helpButton, cx))
         .child(helpIconEl(t, isHelpShown)),
+    )
+    .child(tabWordsEl(tabs, p))
+}
+
+/** The key the tab row in words reports its width under. */
+const TAB_WORDS = 'tab words'
+
+/**
+ * The tab row in words on one line, drawn hidden, whose width says whether the words fit. Every label is bold, as the
+ * selected tab's is, so a switch of tab does not change the fit. It measures the words while the row shows symbols.
+ */
+function tabWordsEl(tabs: DrawnTab[], p: Paint): Element {
+  return h_flex()
+    .id(TAB_WORDS)
+    .absolute()
+    .top(0)
+    .left(0)
+    .opacity(0)
+    .whitespace_nowrap()
+    .gap_x(SMALL_GAP)
+    .font_semibold()
+    .on_size_change((size, cx) => p.measure(TAB_WORDS, size, cx, true))
+    .children(
+      tabs.map(tab =>
+        h_flex()
+          .flex_none()
+          .px(INSET)
+          .child(tab.label)
+          .when(tab.badge !== null, e =>
+            e.child(
+              div()
+                .pl(SMALL_GAP)
+                .font_normal()
+                .child(tab.badge ?? ''),
+            ),
+          ),
+      ),
+    )
+    .child(div())
+    .child(
+      div()
+        .flex_none()
+        .w(HELP_ICON + 2 * INSET),
     )
 }
 

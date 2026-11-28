@@ -344,7 +344,7 @@ test('each case of the followed terminal draws its own message, and a read sessi
 })
 
 test('the PRs tab draws Clear merged and closed above the first PR, m presses it from any row, and it does not draw for the branch’s own PR alone', () => {
-  const tabs = [{ id: 'prs' as const, label: 'PRs', badge: null, isSelected: true }]
+  const tabs = [{ id: 'prs' as const, label: 'PRs', symbol: '', badge: null, isSelected: true }]
   const blocks = tabBlocks(finishedScreen({ 'acme/visor#29': 'MERGED', 'acme/visor#33': 'CLOSED' }), uiOn('prs'))
   const at = blocks.findIndex(b => b.id === CLEAR_FINISHED_ID)
   const line = blocks[at]
