@@ -178,8 +178,8 @@ test('the PRs tab draws each PR’s and each selected row’s buttons in the sha
 test('keys switch tabs, step rows, press a selected row’s hotkey, and leave the look', () => {
   const screen = demoScreen()
   const tabs = [
-    { id: 'needsYou' as const, label: 'Asks', badge: null, isSelected: true },
-    { id: 'findings' as const, label: 'Finds', badge: null, isSelected: false },
+    { id: 'needsYou' as const, label: 'Asks', symbol: '', badge: null, isSelected: true },
+    { id: 'findings' as const, label: 'Finds', symbol: '', badge: null, isSelected: false },
   ]
   const blocks = tabBlocks(screen, uiOn('needsYou'))
   const ids = rowsOf(blocks)
@@ -197,7 +197,7 @@ test('keys switch tabs, step rows, press a selected row’s hotkey, and leave th
   expect(keyMove('escape', tabs, blocks, null)).toEqual({ is: 'leave' })
 })
 
-const ASKS = [{ id: 'needsYou' as const, label: 'Asks', badge: null, isSelected: true }]
+const ASKS = [{ id: 'needsYou' as const, label: 'Asks', symbol: '', badge: null, isSelected: true }]
 
 function dismissedRows(
   ats: Record<string, number>,
@@ -330,7 +330,7 @@ test('u presses a dismissed PR’s Undo, which runs out with the settle window',
   const { view, blocks } = dismissedPr(ref)
   const undo = undoOf(blocks, prMarkId(ref))
   expect(undo?.runsOutAt).toBe(NOW - 500 + SETTLED_MS)
-  const prs = [{ id: 'prs' as const, label: 'PRs', badge: null, isSelected: true }]
+  const prs = [{ id: 'prs' as const, label: 'PRs', symbol: '', badge: null, isSelected: true }]
   expect(keyMove('u', prs, blocks, null)).toEqual({ is: 'event', event: { type: 'undo-key' } })
   expect(pressOfKey(view, freshUi(HERDR_LOOK, 'prs')).press).toEqual({ action: 'pr-undo', ref })
 })
@@ -363,7 +363,7 @@ test('while a field is open, keys type into it and escape closes it, keeping its
     .map(r => r.id)
   const blocks = tabBlocks(demoScreen(), uiOn('needsYou', { selected: firstId! }))
   const first = rowsOf(blocks).find(r => r.id === firstId)
-  const tabs = [{ id: 'needsYou' as const, label: 'Asks', badge: null, isSelected: true }]
+  const tabs = [{ id: 'needsYou' as const, label: 'Asks', symbol: '', badge: null, isSelected: true }]
   expect(['j', 'right', first!.buttons[0]!.hotkey ?? 'x'].map(k => keyMove(k, tabs, blocks, first!.id))).toEqual([
     null,
     null,

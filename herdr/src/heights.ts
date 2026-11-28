@@ -93,8 +93,9 @@ export class Heights {
     return this.formingSince !== null
   }
 
-  clear() {
-    this.sizes.clear()
+  /** Forgets every size but those under `kept`, which belong to the pane rather than to a session's blocks. */
+  clear(kept: readonly string[] = []) {
+    for (const key of this.sizes.keys()) if (!kept.includes(key)) this.sizes.delete(key)
     this.resized.clear()
   }
 }

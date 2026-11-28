@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-28T02:29:44.721Z. 439167 characters follow.
+// Built at 2026-11-28T04:11:50.010Z. 440570 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -205,6 +205,17 @@ var numbered = (tabs) => tabs.map((t, n) => ({ ...t, hotkey: String(n + 1) }));
 var SHOWN_TABS = numbered(TAB_NAMES);
 function shownTabs() {
   return SHOWN_TABS;
+}
+var TAB_NAMINGS = ["words", "symbols"];
+function tabName(tab, naming) {
+  return naming === "words" ? tab.label : tab.symbol;
+}
+function fitTabs(layouts, fits) {
+  for (const naming of TAB_NAMINGS)
+    for (const layout of layouts)
+      if (fits(naming, layout))
+        return { naming, layout };
+  return { naming: "symbols", layout: layouts.at(-1) };
 }
 function tabBadge(id, counts) {
   return isRowTab(id) && counts[id] > 0 ? String(counts[id]) : null;
@@ -6055,8 +6066,10 @@ class Heights {
     this.formingSince = isFirst ? now : since !== null && isChanged && now - since < PAGE_FORMS_MS ? since : null;
     return this.formingSince !== null;
   }
-  clear() {
-    this.sizes.clear();
+  clear(kept = []) {
+    for (const key of this.sizes.keys())
+      if (!kept.includes(key))
+        this.sizes.delete(key);
     this.resized.clear();
   }
 }
@@ -7540,7 +7553,8 @@ var SEP = " · ";
 var paneFit = (reported, zoom) => ({
   isNarrow: reported.paneWidth / zoom < NARROW_PANE,
   listRoom: reported.listHeight === null ? null : Math.max(0, reported.listHeight / zoom - EDGE - END_SPACE),
-  rowTextRoom: Math.max(0, reported.paneWidth / zoom - TEXT_X - EDGE)
+  rowTextRoom: Math.max(0, reported.paneWidth / zoom - TEXT_X - EDGE),
+  tabRowRoom: Math.max(0, reported.paneWidth / zoom - 2 * EDGE)
 });
 var onSize = (view, key, read) => (size, cx) => {
   const value = read(size);
@@ -8222,11 +8236,18 @@ var helpButton = {
 var helpIconEl = (t, isSelected) => h_flex5().w(HELP_ICON).h(HELP_ICON).flex_none().items_center().justify_center().rounded(HELP_ICON / 2).border_1().border_color(isSelected ? t.foreground : t.muted).when(!isSelected, (e) => e.hover((s) => s.border_color(t.foreground))).text_size(HELP_ICON_TEXT).font_semibold().child(HELP_COPY.icon);
 function tabsEl(tabs, isHelpShown, p) {
   const { t } = p;
-  return h_flex5().flex_none().flex_wrap().px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(SMALL_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => {
+  const wordsWidth = p.heights.widthOf(TAB_WORDS);
+  const isWordsFit = wordsWidth === undefined || wordsWidth <= p.tabRowRoom;
+  const { naming } = fitTabs([p.tabRowRoom], (name) => name === "symbols" || isWordsFit);
+  return h_flex5().relative().flex_none().when(naming === "symbols", (e) => e.flex_wrap()).px(EDGE).pt(EDGE).pb(CONTROL_GAP).gap_x(SMALL_GAP).gap_y(CONTROL_GAP).items_center().children(tabs.map((tab) => {
     const isTabSelected = tab.isSelected && !isHelpShown;
     const isCountGone = tab.count === "fading" || tab.count === "closing";
-    return h_flex5().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge && !isCountGone ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.pick(tab.id, cx)).child(tab.label).when(tab.badge !== null, (e) => e.child(countEl(tab, p)));
-  })).child(div11().flex_1()).child(h_flex5().id("help").h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(helpButton.label).when(isHelpShown, (e) => e.bg(t.raised).text_color(t.foreground)).when(!isHelpShown, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.press(helpButton, cx)).child(helpIconEl(t, isHelpShown)));
+    return h_flex5().id(`tab ${tab.id}`).h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(tab.badge && !isCountGone ? `${tab.label}, ${tab.badge}` : tab.label).when(isTabSelected, (e) => e.bg(t.raised).text_color(t.foreground).font_semibold()).when(!isTabSelected, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).when(naming === "symbols", (e) => e.tooltip(tab.label)).on_click((_e, cx) => p.pick(tab.id, cx)).child(tabName(tab, naming)).when(tab.badge !== null, (e) => e.child(countEl(tab, p)));
+  })).child(div11().flex_1()).child(h_flex5().id("help").h(BUTTON_H).px(INSET).items_center().rounded(TAB_RADIUS).accessibility_label(helpButton.label).when(isHelpShown, (e) => e.bg(t.raised).text_color(t.foreground)).when(!isHelpShown, (e) => e.text_color(t.muted).hover((s) => s.text_color(t.foreground))).on_click((_e, cx) => p.press(helpButton, cx)).child(helpIconEl(t, isHelpShown))).child(tabWordsEl(tabs, p));
+}
+var TAB_WORDS = "tab words";
+function tabWordsEl(tabs, p) {
+  return h_flex5().id(TAB_WORDS).absolute().top(0).left(0).opacity(0).whitespace_nowrap().gap_x(SMALL_GAP).font_semibold().on_size_change((size, cx) => p.measure(TAB_WORDS, size, cx, true)).children(tabs.map((tab) => h_flex5().flex_none().px(INSET).child(tab.label).when(tab.badge !== null, (e) => e.child(div11().pl(SMALL_GAP).font_normal().child(tab.badge ?? ""))))).child(div11()).child(div11().flex_none().w(HELP_ICON + 2 * INSET));
 }
 function countEl(tab, p) {
   const key = `count ${tab.id}`;
@@ -9808,6 +9829,7 @@ function tabCells(screen, tab) {
   return shownTabs().map((t) => ({
     id: t.id,
     label: t.label,
+    symbol: t.symbol,
     badge: tabBadge(t.id, counts),
     isSelected: t.id === tab
   }));
@@ -10335,7 +10357,7 @@ class Inbox extends View {
     this.wake?.timer.cancel();
     this.wake = null;
     this.releaseField();
-    this.heights.clear();
+    this.heights.clear([TAB_WORDS]);
     if (sessionId)
       this.load(sessionId, cx);
   }

@@ -6,4 +6,3 @@ These rows are drift. The Herdr look lacks each feature and no Herdr limit expla
 
 | Topic | Herdr look | Why | Where |
 | --- | --- | --- | --- |
-| Tab names in a narrow pane (`tab-symbols`) | The tab row wraps its words onto a second line and never switches to symbols. | No reason recorded: [#672](https://github.com/petekp/inbox/issues/672). | `herdr/src/paint-chrome.ts:tabsEl` |
