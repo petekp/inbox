@@ -81,6 +81,11 @@ export type Button = {
   isSpent?: true
   /** When a spent Undo started to leave: it fades out while its place holds, then its place closes. */
   leftAt?: number
+  /**
+   * Every label the button shows, as Resume and Resuming…. It keeps the width of the widest, so a press that changes
+   * its label does not move what is around it.
+   */
+  labels?: string[]
 }
 
 export const button = (

@@ -35,7 +35,7 @@ import { panelId, prHeadId, restId } from './heights'
 import { prStatusEl, prTailEls } from './paint-pr-status'
 import type { PrLine } from './pr-status'
 import type { Paint, Theme } from './paint-theme'
-import { bannerEl } from './paint-chrome'
+import { bannerEl, bannerFillOf } from './paint-chrome'
 import { markTintOf, titleColorOf } from './paint-title-tint'
 import { titleTextEl } from './paint-title-text'
 import { addedLinesEls, titleLineEls } from './paint-row-lines'
@@ -489,7 +489,7 @@ export function blockEl(b: Block, p: Paint): Element {
     return bannerEl(
       b.banner,
       t,
-      b.buttons.map(x => buttonEl(x, p, isLeaving)),
+      b.buttons.map(x => buttonEl(x, p, isLeaving, false, bannerFillOf(b.banner, t))),
       b.feedback ? feedbackEl(b.feedback, t) : null,
       b.after,
     )

@@ -33,12 +33,15 @@ export function stopScreenOf(read: Extract<ReadSession, { is: 'read' }>): StopSc
 /** The stop's banner at the top of Asks: "Stopped", how long ago, why, and Resume or the fix. */
 export function stopBlocks(stop: StopScreen | null, now: number): Block[] {
   if (!stop) return []
-  const resume = button(STOP_ID, resumeLabel(stop.isResumeSent), 'primary', {
-    is: 'press',
-    press: { action: 'resume', id: STOP_ID },
-    effects: [],
-    kind: 'handoff',
-  })
+  const resume = {
+    ...button(STOP_ID, resumeLabel(stop.isResumeSent), 'primary', {
+      is: 'press',
+      press: { action: 'resume', id: STOP_ID },
+      effects: [],
+      kind: 'handoff',
+    }),
+    labels: [resumeLabel(false), resumeLabel(true)],
+  }
 
   return [
     {

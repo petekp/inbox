@@ -140,6 +140,11 @@ function countEl(tab: DrawnTab, p: Paint): Element {
 /** A question draws in a notice's blue, as in the other looks. */
 const BANNER_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'warning', notice: 'notice', ask: 'notice' }
 
+const toneOf = (b: BannerView, t: Theme) => colorOf(t, BANNER_TONES[b.tone])
+
+/** A banner's fill: its tone at a faint share. */
+export const bannerFillOf = (b: BannerView, t: Theme) => tint(toneOf(b, t), 0.09)
+
 /**
  * A message in a box tinted with the tone of what it says, from edge to edge. The buttons that act on its problem draw
  * at its right end, as the Codex tab's banner draws its key. `under`, such as a press's result, goes below the text and
@@ -152,7 +157,7 @@ export function bannerEl(
   under: Element | null = null,
   after?: string,
 ): Element {
-  const tone = colorOf(t, BANNER_TONES[b.tone])
+  const tone = toneOf(b, t)
   const lead = div().font_semibold().text_color(tone).child(b.lead)
   const text = v_flex()
     .flex_1()
@@ -173,7 +178,7 @@ export function bannerEl(
     .rounded(BOX_RADIUS)
     .border_1()
     .border_color(tint(tone, 0.3))
-    .bg(tint(tone, 0.09))
+    .bg(bannerFillOf(b, t))
     .child(row)
     .children(under ? [under] : [])
 }
