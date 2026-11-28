@@ -112,7 +112,7 @@ export function passingOf(blocks: Block[], isShut: (b: Block) => boolean): Colum
  * How long each block's content waits before it fades in, from `waits`, each block's own wait, or null for one that does
  * not wait for its space. Blocks that wait and that a column joins one to the next wait for the longest of them, so they
  * fade in together, and a short line's connector never shows while the taller line it joins is still hidden. A block
- * that has left (`hasLeft`) is no block between them, as the copy a moved line leaves behind.
+ * that has left (`hasLeft`), once its box has shut, is no block between them, as the copy a moved line leaves behind.
  */
 export function joinedWaits(
   blocks: Block[],

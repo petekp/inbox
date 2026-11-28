@@ -15,7 +15,9 @@ type Overview = NonNullable<ReturnType<typeof demoSession>['ledger']['overview']
 function statusOf(change: (o: Overview) => Overview): Block[] {
   const s = demoSession(NOW, AGENT)
   const holds = { replies: {}, discarded: {}, shownSince: NOW, listInput: null }
-  const ledger = { ...s.ledger, overview: change(s.ledger.overview!) }
+  const overview = s.ledger.overview
+  if (!overview) throw new Error('the demo session has no Status')
+  const ledger = { ...s.ledger, overview: change(overview) }
   const view = sessionView({ ...s, ledger }, NOW, SETTLED_MS, holds)
 
   return tabBlocks({ ...demoScreen(), view }, uiOn('overview'))
