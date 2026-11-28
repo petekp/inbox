@@ -111,27 +111,38 @@ export function passingOf(blocks: Block[], isShut: (b: Block) => boolean): Colum
 /**
  * How long each block's content waits before it fades in, from `waits`, each block's own wait, or null for one that does
  * not wait for its space. Blocks that wait and that a column joins one to the next wait for the longest of them, so they
- * fade in together, and a short line's connector never shows while the taller line it joins is still hidden.
+ * fade in together, and a short line's connector never shows while the taller line it joins is still hidden. A block
+ * that has left (`hasLeft`), once its box has shut, is no block between them, as the copy a moved line leaves behind.
  */
-export function joinedWaits(blocks: Block[], passing: Column[][], waits: (number | null)[]): number[] {
+export function joinedWaits(
+  blocks: Block[],
+  passing: Column[][],
+  waits: (number | null)[],
+  hasLeft: boolean[],
+): number[] {
   const depths = (cs: Column[], i: number) => new Set([...cs, ...(passing[i] ?? [])].map(c => c.depth))
-  const isJoined = (i: number) => {
-    const above = blocks[i - 1]
+  const isJoined = (j: number, i: number) => {
+    const above = blocks[j]
     const b = blocks[i]
-    if (!above || !b || waits[i - 1] == null || waits[i] == null) return false
-    const ons = depths(runsOn(above), i - 1)
+    if (!above || !b || waits[j] == null || waits[i] == null) return false
+    const ons = depths(runsOn(above), j)
 
     return [...depths(runsIn(b), i)].some(d => ons.has(d))
   }
-  const out: number[] = []
-  let start = 0
-  for (let i = 0; i <= blocks.length; i++) {
-    if (i < blocks.length && i > 0 && isJoined(i)) continue
-    const run = waits.slice(start, i).map(w => w ?? 0)
-    const longest = Math.max(0, ...run)
-    out.push(...waits.slice(start, i).map(w => (w === null ? 0 : longest)))
-    start = i
+  const out = blocks.map(() => 0)
+  let run: number[] = []
+  const endRun = () => {
+    const longest = Math.max(0, ...run.map(j => waits[j] ?? 0))
+    for (const j of run) out[j] = waits[j] == null ? 0 : longest
+    run = []
   }
+  for (const i of blocks.keys()) {
+    if (hasLeft[i]) continue
+    const last = run.at(-1)
+    if (last === undefined || !isJoined(last, i)) endRun()
+    run.push(i)
+  }
+  endRun()
 
   return out
 }
@@ -141,7 +152,7 @@ type Fade = (el: Element) => Element
 
 const NO_FADE: Fade = el => el
 
-/** A column of a block that has left, once it no longer runs between two blocks that stay. */
+/** A column of a block that has left, where the column no longer joins two blocks. */
 const HIDDEN: Fade = el => el.opacity(0)
 
 /**
@@ -150,17 +161,27 @@ const HIDDEN: Fade = el => el.opacity(0)
  */
 type StrokeFades = { own: Fade; above: (depth: number) => Fade; below: (depth: number) => Fade }
 
-/** What a block of the list is to its strokes: whether it enters or leaves, and whether it has left. */
-type StrokeMove = { isMoving: boolean; isGone: boolean }
+/**
+ * Where a column runs from a block, up or down: to a block that stays, or to the block that enters or leaves where it
+ * ends, `end`, past `first`, the nearest such block it passes.
+ */
+type ColumnReach = { stays: boolean; first: number | null; end: number | null }
 
 /**
- * Who each block's strokes fade with, so a connector shows only while both things it joins show. A column that runs
- * from a block that stays to another that stays never fades, so it stays whole past a block that comes or goes. A
- * column that ends at a block that enters or leaves fades with that block, in the block's own box and in the box it
- * joins, as a fold's rows fade with the column from their parent. A block that stays and that a column only passes,
- * as a row nested beside it, joins nothing there: the column fades past it as it does at the blocks it joins. A block
- * that has left joins nothing, and a column of its own that no longer runs between two blocks that stay hides at once,
- * since its content has already faded, as when the blocks around it take their new forms.
+ * What a block of the list is to its strokes: whether it enters or leaves, whether it has left, and whether its content
+ * hides, as it does while it leaves or while it enters and waits for its space.
+ */
+type StrokeMove = { isMoving: boolean; isGone: boolean; isHiding: boolean }
+
+/**
+ * Who each block's strokes fade with, so a connector shows only while both things it joins show. Up and down, a column
+ * joins the nearest block that stays or where it ends. It runs past a row that stays nested beside it, a block that has
+ * left, and a block that enters or leaves while the column runs on below it, as the path runs past a subject's mark. A
+ * column whose two ends stay never fades, so it stays whole past a block that comes or goes. Otherwise it fades along
+ * its whole way with an end that enters or leaves: the upper end whose content hides, as while it leaves or waits for
+ * its space, else the upper end. So a fold's rows fade with the column from their
+ * parent, and a column stays whole past a copy that has left while both its ends show. A column of a block that has left
+ * that no longer joins two blocks hides at once, since its content has already faded.
  */
 export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: StrokeMove[], fades: Fade[]): StrokeFades[] {
   const depths = (cs: Column[], i: number) => new Set([...cs, ...(passing[i] ?? [])].map(c => c.depth))
@@ -171,44 +192,54 @@ export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: Strok
 
     return b !== undefined && ins[j]?.has(depth) === true && ons[j]?.has(depth) === true && !meetsAt(b, depth)
   }
-  const reach = (i: number, depth: number, by: 1 | -1): { stays: boolean; first: number | null } => {
+  const reach = (i: number, depth: number, by: 1 | -1): ColumnReach => {
     let first: number | null = null
     for (let j = i + by; j >= 0 && j < blocks.length; j += by) {
       const move = moves[j]
       if (move?.isGone) continue
       if (!(by === 1 ? ins[j] : ons[j])?.has(depth)) break
-      if (!move?.isMoving && !isPassed(j, depth)) return { stays: true, first }
+      if (!move?.isMoving && !isPassed(j, depth)) return { stays: true, first, end: null }
       if (!move?.isMoving) continue
       first ??= j
-      if (!(by === 1 ? ons[j] : ins[j])?.has(depth)) break
+      if (!(by === 1 ? ons[j] : ins[j])?.has(depth)) return { stays: false, first, end: j }
     }
 
-    return { stays: false, first }
+    return { stays: false, first, end: null }
+  }
+  const joinsAt = (r: ColumnReach): number | null | undefined => (r.stays ? null : (r.end ?? undefined))
+  /** The fade of the upper end among `ends` whose content hides, else of the upper end, where null is an end that stays. */
+  const shownLast = (ends: (number | null)[]): Fade => {
+    const moving = ends.filter(j => j !== null)
+    const end = moving.find(j => moves[j]?.isHiding) ?? moving[0]
+
+    return end === undefined ? NO_FADE : (fades[end] ?? NO_FADE)
   }
 
   return blocks.map((_, i) => {
     const own = fades[i] ?? NO_FADE
     if (moves[i]?.isMoving) {
-      const isThrough = (depth: number) =>
-        ins[i]?.has(depth) === true &&
-        ons[i]?.has(depth) === true &&
-        reach(i, depth, -1).stays &&
-        reach(i, depth, 1).stays
       const off = moves[i]?.isGone ? HIDDEN : own
-      const side = (depth: number) => (isThrough(depth) ? NO_FADE : off)
+      const side = (depth: number): Fade => {
+        const hasIn = ins[i]?.has(depth) === true
+        const hasOn = ons[i]?.has(depth) === true
+        const isThrough = hasIn && hasOn
+        if (moves[i]?.isGone && !isThrough) return off
+        const above = hasIn ? joinsAt(reach(i, depth, -1)) : i
+        const below = hasOn ? joinsAt(reach(i, depth, 1)) : i
+        if (above === undefined || below === undefined) return off
+
+        return shownLast([above, below])
+      }
 
       return { own, above: side, below: side }
     }
     const endOf = (depth: number, by: 1 | -1) => {
-      const { stays, first } = reach(i, depth, by)
+      const { stays, first, end } = reach(i, depth, by)
 
-      return stays ? null : first
+      return stays ? null : (end ?? first)
     }
-    const side = (by: 1 | -1) => (depth: number) => {
-      const end = isPassed(i, depth) ? (endOf(depth, -1) ?? endOf(depth, 1)) : endOf(depth, by)
-
-      return end === null ? NO_FADE : (fades[end] ?? NO_FADE)
-    }
+    const side = (by: 1 | -1) => (depth: number) =>
+      isPassed(i, depth) ? shownLast([endOf(depth, -1), endOf(depth, 1)]) : shownLast([endOf(depth, by)])
 
     return { own, above: side(-1), below: side(1) }
   })
@@ -234,14 +265,23 @@ export function feedsOf(blocks: Block[], moves: StrokeMove[]): Column[][] {
 /** How far a nesting column reaches beside a block: to its end, to the arm, or from `lowerFrom` down. */
 type Reach = { isDashed: boolean; toEnd: boolean; toArm: boolean; lowerFrom: number | null }
 
-/** A column drawn across the space of the block drawn under `key`, which the column joins from above. */
-export const spaceColumnEl = (key: string, c: Column, f: StrokeFades, t: Theme): Element =>
-  f.above(c.depth)(lineEl(`space column ${key} ${c.depth}`, c, 0, null, t))
+/**
+ * A column drawn across the space of block `b`, drawn under `key`, which the column joins from above. It is named as
+ * `contentStrokeEls` names the block's strokes at its depth, so a column that turns from a nesting column into the
+ * path's line, or back, is a new line in the space too, as it is in the block.
+ */
+export const spaceColumnEl = (key: string, b: Block, c: Column, f: StrokeFades, t: Theme): Element => {
+  const isPathLine = c.depth === 0 && 'path' in b && b.path !== undefined
+  const id = isPathLine ? `space path ${key}` : `space column ${key} ${c.depth}`
+
+  return f.above(c.depth)(lineEl(id, c, 0, null, t))
+}
 
 /**
  * The path's line and the nesting connectors beside a block's content, each in the column under the marks of rows at
  * its depth, the column the path's line takes at depth 0. An arm starts a pixel right of its column, and a column that
- * ends at an arm takes the arm's row, so no two strokes cover the same pixel. Arms belong to their row and fade with it.
+ * ends at an arm takes the arm's row, so no two strokes cover the same pixel. An arm fades with the column it meets,
+ * above the block's first line, or with its row where that column does not fade, so it never shows without its column.
  * A column fades above and below the block's first line as `f` says, split at the arm where the two differ. `top` is
  * the block's padding above its first line. Each stroke is named for the block's `key`, its depth and its part, never
  * for the row or column it serves, so a line keeps its name, and the state of its fade, while what it joins changes.
@@ -298,6 +338,7 @@ export function contentStrokeEls(
     const r = reachOf(c)
     r.lowerFrom = Math.min(r.lowerFrom ?? Infinity, top + LINE_HEIGHT)
   }
+  const armFade = (depth: number): Fade => (f.above(depth) === NO_FADE ? f.own : f.above(depth))
   const arms = tree.flatMap(({ depth, is }): Element[] => {
     const c = { depth, isDashed: false }
     if (is === 'down') reachBelow(c)
@@ -306,7 +347,7 @@ export function contentStrokeEls(
     if (is === 'down' || is === 'past') return []
 
     return [
-      f.own(
+      armFade(depth)(
         div()
           .id(`stroke ${key} arm ${depth}`)
           .absolute()

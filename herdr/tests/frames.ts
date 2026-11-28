@@ -5,7 +5,10 @@ import { checkMotionIds, columnOf, fieldOf } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 import { boxOf, checkFadeIds, fadesOn } from './fade-boxes'
 import { type Box, layout, linesOf } from './layout'
-import { gapsOf, segmentsOf } from './connector-gaps'
+import { armsOf, gapsOf, looseArmsOf, segmentsOf } from './connector-gaps'
+import type { Arm, Gap, Hidden } from './connector-gaps'
+import { StrokeFades } from './stroke-fades'
+import type { StrokeShown } from './stroke-fades'
 
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
@@ -28,7 +31,7 @@ const LEADING_PX = (LINE_HEIGHT - TEXT) / 2
 type Spring = { x: number; v: number; target: number | undefined }
 type Jump = { at: number; id: string; by: number }
 type TitleForm = { at: number; id: string; tall: number; short: number; box: number; isBoxResting: boolean }
-type ColumnGap = { at: number; id: string; x: number; y: number }
+type ColumnGap = Gap & { at: number }
 type Cut = { at: number; box: string; text: string; share: number; opacity: number }
 type Fading = { at: number; id: string; height: number; opacity: number }
 type Shown = { at: number; block: string; text: string; opacity: number; share: number; isFormPart: boolean }
@@ -255,6 +258,7 @@ class Frames {
   private linesAbove = NO_LINES_ABOVE
   private springs = new Springs()
   private fades = new Fades()
+  private strokeFades = new StrokeFades()
   private held = new HeldFades()
   private closedSeen = new Map<string, number>()
   private lastShown = new Map<string, number>()
@@ -266,11 +270,13 @@ class Frames {
   shrinks: Jump[] = []
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
+  looseArms: (Arm & { at: number })[] = []
   listHeights: number[] = []
   slides: number[][] = []
   cuts: Cut[] = []
   fading: Fading[] = []
   shown: Shown[] = []
+  strokes: StrokeShown[] = []
   rest: Rest = { fits: [], lines: [] }
 
   showPage() {
@@ -280,7 +286,7 @@ class Frames {
     this.motionIds = null
   }
 
-  private hiddenStrokes(root: Painted, now: number): (n: Painted) => boolean {
+  private hiddenStrokes(root: Painted, now: number): (n: Painted) => Hidden {
     const fadeEnds = new Map<string, number>()
     const drawn = new Set<string>()
     const walk = (n: Painted) => {
@@ -294,11 +300,14 @@ class Frames {
     walk(root)
     this.fadeEnds = fadeEnds
     this.drawnIds = drawn
-    const isFadedOut = (n: Painted) => now >= (n.id ? (fadeEnds.get(n.id) ?? Infinity) : Infinity)
+    const hiddenAs = (n: Painted): Hidden => {
+      const end = n.id ? (fadeEnds.get(n.id) ?? Infinity) : Infinity
+      return now < end ? null : end === -Infinity ? 'unopened' : 'faded'
+    }
 
     return n => {
-      for (let up: Painted | null = n; up; up = up.parent) if (isFadedOut(up)) return true
-      return false
+      for (let up: Painted | null = n; up; up = up.parent) if (hiddenAs(up)) return hiddenAs(up)
+      return null
     }
   }
 
@@ -331,6 +340,7 @@ class Frames {
     this.springs.declare(tree)
     const shown = this.springs.shown()
     this.fades.declare(tree)
+    this.strokeFades.declare(tree)
     const { boxes, sized, floating, placed, fits } = layout(tree, id => shown.get(id))
     const lines: ShownLine[] = []
     for (const [id, fade] of this.fades.states)
@@ -357,9 +367,12 @@ class Frames {
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
     this.slides.push(sized.flatMap(({ node }) => (node.transitions.has('top') ? [node.style.top ?? 0] : [])))
-    for (const gap of gapsOf(segmentsOf(tree, placed, this.hiddenStrokes(tree, now)), end))
-      this.gaps.push({ at: now, ...gap })
+    const hidden = this.hiddenStrokes(tree, now)
+    const segments = segmentsOf(tree, placed, hidden)
+    for (const gap of gapsOf(segments, end)) this.gaps.push({ at: now, ...gap })
+    for (const arm of looseArmsOf(armsOf(tree, placed, hidden), segments)) this.looseArms.push({ at: now, ...arm })
     this.rest = { fits, lines }
+    this.strokes.push(...this.strokeFades.shownIn(placed, now))
     const startsHere = [...moved.motion].filter(([, m]) => m.springId?.endsWith(`${MOVED_TO}${now}`)).map(([id]) => id)
     const isInMovedBlock = (id: string) => startsHere.some(b => id.endsWith(` ${b}`))
     if (this.last && !isForming) {
@@ -399,6 +412,7 @@ class Frames {
     this.lastShown = shown
     this.springs.step(FRAME_MS)
     this.fades.step(FRAME_MS)
+    this.strokeFades.step(FRAME_MS)
     this.last = boxes
   }
 }
@@ -415,11 +429,13 @@ export function framesOf(
   shrinks: Jump[]
   titles: TitleForm[]
   gaps: ColumnGap[]
+  looseArms: (Arm & { at: number })[]
   heights: number[]
   slides: number[][]
   cuts: Cut[]
   fading: Fading[]
   shown: Shown[]
+  strokes: StrokeShown[]
   rest: Rest
 } {
   const frames = new Frames(measureLagMs)
@@ -430,11 +446,13 @@ export function framesOf(
       shrinks: [],
       titles: [],
       gaps: [],
+      looseArms: [],
       heights: [],
       slides: [],
       cuts: [],
       fading: [],
       shown: [],
+      strokes: [],
       rest: frames.rest,
     }
   const start = 1_000_000
@@ -458,11 +476,13 @@ export function framesOf(
     shrinks: frames.shrinks.map(j => ({ ...j, at: j.at - start })),
     titles: frames.titles.map(t => ({ ...t, at: t.at - start })),
     gaps: frames.gaps.map(g => ({ ...g, at: g.at - start })),
+    looseArms: frames.looseArms.map(a => ({ ...a, at: a.at - start })),
     heights: frames.listHeights,
     slides: frames.slides,
     cuts: frames.cuts.map(c => ({ ...c, at: c.at - start })),
     fading: frames.fading.map(f => ({ ...f, at: f.at - start })),
     shown: frames.shown.map(s => ({ ...s, at: s.at - start })),
+    strokes: frames.strokes.map(s => ({ ...s, at: s.at - start })),
     rest: frames.rest,
   }
 }

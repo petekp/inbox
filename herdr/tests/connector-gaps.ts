@@ -1,12 +1,16 @@
 import type { Painted } from './gpui-stand-in'
 import type { Box } from './layout'
 
-type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean; isHidden: boolean }
+export type Hidden = 'faded' | 'unopened' | null
+
+type Segment = { id: string; x: number; y0: number; y1: number; runsIn: boolean; runsOn: boolean; hidden: Hidden }
+
+export type Gap = { id: string; x: number; y: number; into: string | null }
 
 const lengthIn = (length: number | string, height: number): number =>
   typeof length === 'string' && length.endsWith('%') ? (parseFloat(length) / 100) * height : Number(length)
 
-export function segmentsOf(root: Painted, placed: Map<Painted, Box>, isHidden: (n: Painted) => boolean): Segment[] {
+export function segmentsOf(root: Painted, placed: Map<Painted, Box>, hiddenAs: (n: Painted) => Hidden): Segment[] {
   const out: Segment[] = []
   const walk = (n: Painted, clip: [number, number], id: string) => {
     const box = placed.get(n)
@@ -29,10 +33,10 @@ export function segmentsOf(root: Painted, placed: Map<Painted, Box>, isHidden: (
       if (shown.y1 < shown.y0) {
         const isBelowClip = y0 > own[1] && Number.isFinite(own[1])
         if (isBelowClip)
-          out.push({ id, x: k.style.left ?? 0, y0: own[1], y1: own[1], runsIn: false, runsOn, isHidden: isHidden(k) })
+          out.push({ id, x: k.style.left ?? 0, y0: own[1], y1: own[1], runsIn: false, runsOn, hidden: hiddenAs(k) })
         continue
       }
-      out.push({ id, x: k.style.left ?? 0, ...shown, runsIn: (k.style.top ?? 0) === 0, runsOn, isHidden: isHidden(k) })
+      out.push({ id, x: k.style.left ?? 0, ...shown, runsIn: (k.style.top ?? 0) === 0, runsOn, hidden: hiddenAs(k) })
     }
   }
   walk(root, [-Infinity, Infinity], '')
@@ -40,15 +44,60 @@ export function segmentsOf(root: Painted, placed: Map<Painted, Box>, isHidden: (
   return out
 }
 
-export function gapsOf(segments: Segment[], end: number): { id: string; x: number; y: number }[] {
-  const isMet = (s: Segment, y: number) =>
-    segments.some(o => o !== s && !o.isHidden && o.x === s.x && o.y0 <= y + 0.5 && o.y1 >= y - 0.5)
+export type Arm = { id: string; x: number; y: number; hidden: Hidden }
+
+const ARM = / arm \d+$/
+
+export function armsOf(root: Painted, placed: Map<Painted, Box>, hiddenAs: (n: Painted) => Hidden): Arm[] {
+  const out: Arm[] = []
+  const walk = (n: Painted, clip: [number, number]) => {
+    const box = placed.get(n)
+    if (!box) return
+    const own: [number, number] = n.style.isClipped
+      ? [Math.max(clip[0], box.top), Math.min(clip[1], box.top + box.height)]
+      : clip
+    for (const k of n.kids) {
+      if (!k.style.isAbsolute) {
+        walk(k, own)
+        continue
+      }
+      if (k.style.h !== 1 || !ARM.test(k.id ?? '')) continue
+      const y = box.top + lengthIn(k.style.top ?? 0, box.height)
+      if (y >= own[0] && y <= own[1]) out.push({ id: k.id ?? '', x: (k.style.left ?? 0) - 1, y, hidden: hiddenAs(k) })
+    }
+  }
+  walk(root, [-Infinity, Infinity])
+
+  return out
+}
+
+export function looseArmsOf(arms: Arm[], segments: Segment[]): Arm[] {
+  const meets = (a: Arm, s: Segment) => !s.hidden && s.x === a.x && s.y0 <= a.y + 0.5 && s.y1 >= a.y - 0.5
+
+  return arms.filter(a => !a.hidden && !segments.some(s => meets(a, s)))
+}
+
+function hiddenBoxOf(s: Segment): string {
+  if (s.id.includes('~from ')) return `a faded-out copy (${s.id})`
+
+  return s.hidden === 'unopened' ? `a box that has not opened (${s.id})` : `a faded-out box (${s.id})`
+}
+
+export function gapsOf(segments: Segment[], end: number): Gap[] {
+  const covers = (o: Segment, s: Segment, y: number) => o.x === s.x && o.y0 <= y + 0.5 && o.y1 >= y - 0.5
+  const isMet = (s: Segment, y: number) => segments.some(o => o !== s && !o.hidden && covers(o, s, y))
+  const into = (s: Segment, y: number, by: 1 | -1): string | null => {
+    const reach = (o: Segment) => (by === 1 ? o.y1 - y : y - o.y0)
+    const hidden = segments.filter(o => o.hidden && covers(o, s, y)).sort((a, b) => reach(b) - reach(a))
+
+    return hidden[0] ? hiddenBoxOf(hidden[0]) : null
+  }
   const ends = segments
-    .filter(s => !s.isHidden)
+    .filter(s => !s.hidden)
     .flatMap(s => [
-      ...(s.runsIn && s.y0 > 0.5 ? [{ s, y: s.y0 }] : []),
-      ...(s.runsOn && s.y1 < end - 0.5 ? [{ s, y: s.y1 }] : []),
+      ...(s.runsIn && s.y0 > 0.5 ? [{ s, y: s.y0, by: -1 as const }] : []),
+      ...(s.runsOn && s.y1 < end - 0.5 ? [{ s, y: s.y1, by: 1 as const }] : []),
     ])
 
-  return ends.filter(({ s, y }) => !isMet(s, y)).map(({ s, y }) => ({ id: s.id, x: s.x, y }))
+  return ends.filter(({ s, y }) => !isMet(s, y)).map(({ s, y, by }) => ({ id: s.id, x: s.x, y, into: into(s, y, by) }))
 }

@@ -313,7 +313,7 @@ export const PRESS_SEEDS: {
     rule: 'connector-gap',
     detail: 'in fit m4',
     issue: 1034,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([]), [
         { is: 'click', on: 'tab', n: 4, label: 'overview' },
@@ -328,6 +328,44 @@ export const PRESS_SEEDS: {
       },
       takeAfterMs: 20,
       width: 80,
+    },
+  },
+  {
+    name: 'Undo pressed 200 ms after Remove on the Status goal, in a narrow pane',
+    rule: 'connector-gap',
+    detail: 'in space c1',
+    issue: 1041,
+    isOpen: false,
+    case: {
+      ...herdr(only([]), [
+        { is: 'click', on: 'tab', n: 4, label: 'overview' },
+        { is: 'click', on: 'button', n: 3, label: 'Remove' },
+        { is: 'wait', ms: 200 },
+        { is: 'click', on: 'button', n: 2, label: 'Undo' },
+      ]),
+      outcomes: {
+        deliver: ['accepted', 'rejected', 'accepted', 'accepted', 'rejected', 'accepted', 'accepted', 'accepted'],
+        isHeldUntilRun: false,
+        performFails: [true, false, false, false, true, true, false, false],
+      },
+      takeAfterMs: 20,
+      width: 80,
+    },
+  },
+  {
+    name: 'Undo pressed 220 ms after Remove on the Status goal',
+    rule: 'loose-arm',
+    detail: 'stroke s1 arm 0',
+    issue: 1051,
+    isOpen: false,
+    case: {
+      ...herdr(only([]), [
+        { is: 'click', on: 'tab', n: 4, label: 'overview' },
+        { is: 'click', on: 'button', n: 3, label: 'Remove' },
+        { is: 'wait', ms: 220 },
+        { is: 'click', on: 'button', n: 2, label: 'Undo' },
+      ]),
+      width: 140,
     },
   },
   {
