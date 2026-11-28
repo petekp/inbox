@@ -49,11 +49,7 @@ export const HERDR: LookTable = {
       reason: 'Steps the fade in `NEW_STEPS` opaque colors, since GPUI glides no text color.',
     },
     'pending-answer-mark': { kind: 'full' },
-    'tab-symbols': {
-      kind: 'different',
-      reason:
-        'The tab row wraps its words onto a second line and never switches to symbols. No reason is recorded: issue #672.',
-    },
+    'tab-symbols': { kind: 'full' },
     'dim-pressed-button': {
       kind: 'different',
       reason:
