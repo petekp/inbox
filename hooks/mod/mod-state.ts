@@ -62,6 +62,9 @@ class PaneState {
   /** The row whose field opened while the keys stayed elsewhere, as over text in the prompt. */
   fieldWithoutKeys: string | null = null
   herdrCheckTimer: Timer | null = null
+  /** The inline terminal pane's draws, so only the last of a burst draws once more to read the window's offset. */
+  railDraws = 0
+  isRailRedraw = false
 }
 
 export const paneState = new PaneState()

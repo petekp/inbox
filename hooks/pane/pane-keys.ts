@@ -9,7 +9,7 @@ import { UNDO_KEY } from '../../core/view/help'
 export function focusHintFor(element: string): string | null {
   return element.startsWith('typekey-') ? `type-${element.slice('typekey-'.length)}` : null
 }
-/** A hidden Button that does nothing, where the terminal puts the focus ring when the element holding it is gone. */
+/** A hidden Button that does nothing, where the terminal pane's focus ring goes when a reply field closes. */
 export const FOCUS_REST_KEY = 'focus-rest'
 export const followUpPresses = new Map<string, (press: UiPressArgument) => void>()
 

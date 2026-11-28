@@ -116,7 +116,8 @@ export async function matchPaneEscape(m: PaneOpenCalls) {
   paneState.paneClosesOnEscape = closesOnEscape
   if ((await m.pane.find()) === undefined) return
   await m.pane.open(closesOnEscape ? { closeOnEscape: true } : {})
-  if (closesOnEscape && paneHasKeys.get('terminal') === true) await m.pane.focus(FOCUS_REST_KEY)
+  const isFieldClosed = closesOnEscape && paneState.paneClosesOnEscape
+  if (isFieldClosed && paneHasKeys.get('terminal') === true) await m.pane.focus(FOCUS_REST_KEY)
 }
 
 /** How long a press waits for the desktop app to draw the pane again before it counts the pane as hidden. */

@@ -9,7 +9,7 @@ import { drawnState, later } from './mod-drawn'
 import { closeField } from './mod-pane-input'
 import { noteStatusTop, paneHandlers, paneViewKeys, restoreDesktopFocus } from './mod-pane-handlers'
 import { matchPaneEscape, paneDrawnOnDesktop, paneOpened } from './mod-pane-open'
-import { scrollToOpenRow } from './mod-pane-scroll'
+import { followRailOffset, scrollToOpenRow } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { cancelUndoScroll, paneState, sessionState } from './mod-state'
 import { currentOwner } from './mod-sessions'
@@ -183,6 +183,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
   const tabTone = (id: ShownTab) => (isRowTab(id) ? pal.tone[id] : undefined)
   const tabText = (id: ShownTab, name: string) => `${name}${badgeOf(id) === null ? '' : ` ${badgeOf(id)}`}`
   const hasRail = isInline && look === 'terminal' && e.props.bodyColumns >= INLINE_RAIL_AT
+  if (hasRail) followRailOffset(m)
   const railWidth = Math.max(...tabList.map(t => cellWidth(tabText(t.id, t.label)))) + 2 * TAB_PAD.length
   const listColumns = e.props.bodyColumns - 2 - (hasRail ? railWidth + RAIL_GUTTER : 0)
   const ids = rows[tab].map(r => r.id)

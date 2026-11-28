@@ -435,8 +435,7 @@ export function paneFrame(
     </Box>
   )
   const helpFill = ' '.repeat(railWidth - cellWidth(HELP_COPY.icon) - TAB_PAD.length)
-  // The pane scrolls its whole tree, so the rail moves down by the window's offset to stay in view. A scroll through
-  // `ui.scroll` draws the pane again with the new offset.
+  // The pane scrolls its whole tree, so the rail moves down by the window's offset to stay in view.
   const rail = (
     <Box
       flexDirection="column"
