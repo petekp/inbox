@@ -1,8 +1,7 @@
 import { spawn } from 'node:child_process'
 import { homedir } from 'node:os'
 
-/** Why Codex does not run the inbox's hooks: it never trusted them, or it trusted them before an update changed the plugin. */
-export type HooksTrust = 'untrusted' | 'modified'
+import type { HooksTrust } from '../../core/view/hooks-trust'
 
 type ListedHook = { pluginId?: string | null; trustStatus?: string }
 

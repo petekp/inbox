@@ -34,7 +34,7 @@ recorded, so the bundle claims cannot be rechecked against a build.
 
 The Hooks-need-trust banner now leads with Settings, then Hooks, then Inbox, then
 Trust all, and mentions the composer's hook icon as a shortcut that may appear. See
-"Hooks need trust" in [differences-hosts](../../looks/differences-hosts.md).
+"Hooks need trust" in [differences-hosts-hooks](../../looks/differences-hosts-hooks.md).
 
 **Not checked**
 

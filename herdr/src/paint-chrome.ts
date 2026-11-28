@@ -191,18 +191,30 @@ function countEl(tab: DrawnTab, p: Paint): Element {
 /** A question draws in a notice's blue, as in the other looks. */
 const BANNER_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'warning', notice: 'notice', ask: 'notice' }
 
+const toneOf = (b: BannerView, t: Theme) => colorOf(t, BANNER_TONES[b.tone])
+
+/** A banner's fill: its tone at a faint share. */
+export const bannerFillOf = (b: BannerView, t: Theme) => tint(toneOf(b, t), 0.09)
+
 /**
  * A message in a box tinted with the tone of what it says, from edge to edge. The buttons that act on its problem draw
  * at its right end, as the Codex tab's banner draws its key. `under`, such as a press's result, goes below the text and
  * the buttons, so the buttons stay still when it appears.
  */
-export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under: Element | null = null): Element {
-  const tone = colorOf(t, BANNER_TONES[b.tone])
+export function bannerEl(
+  b: BannerView,
+  t: Theme,
+  buttons: Element[] = [],
+  under: Element | null = null,
+  after?: string,
+): Element {
+  const tone = toneOf(b, t)
+  const lead = div().font_semibold().text_color(tone).child(b.lead)
   const text = v_flex()
     .flex_1()
     .min_w(0)
     .whitespace_normal()
-    .child(div().font_semibold().text_color(tone).child(b.lead))
+    .child(after ? h_flex().child(lead).child(div().text_color(t.muted).child(after)) : lead)
     .when(b.body !== null, e => e.child(div().child(b.body ?? '')))
   const row = h_flex()
     .gap(INSET)
@@ -217,7 +229,7 @@ export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under
     .rounded(BOX_RADIUS)
     .border_1()
     .border_color(tint(tone, 0.3))
-    .bg(tint(tone, 0.09))
+    .bg(bannerFillOf(b, t))
     .child(row)
     .children(under ? [under] : [])
 }

@@ -99,7 +99,7 @@ export function faintOf(t: Theme, under: Theme[keyof Theme] = t.background): Col
  * The supporting text level in `t`: its muted color moved toward its text color, as `supportingOver` gives it, both
  * made opaque over `under` laid over the background, as `faintOf` takes it.
  */
-function supportingOf(t: Theme, under: Theme[keyof Theme] = t.background): Color {
+export function supportingOf(t: Theme, under: Theme[keyof Theme] = t.background): Color {
   const page = flatten(under, t.background)
 
   return supportingOver(flatten(t.muted, page), flatten(t.foreground, page)) as Color

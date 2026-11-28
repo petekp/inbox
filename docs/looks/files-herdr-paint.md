@@ -1,0 +1,30 @@
+# Files: how the Herdr look paints
+
+Part of [the look map](../looks.md#files).
+
+The `herdr/src/paint-*.ts` files turn the blocks the other Herdr files decide on into `gpui-kit` elements. With `herdr/src/main.ts`, they are the only files that import `gpui-kit` and `gpui-base`.
+
+| File | Role |
+| --- | --- |
+| `herdr/src/paint-row-lines.ts` | Herdr adapter. The lines a row draws under its title and above its panel: its settled label, its status and a held line. A held line that lets go fades out in a box that then springs shut with the row's box. A row that closes keeps its open form's lines while its panel holds its height, then fades in a line its closed form adds, such as "Sending…". |
+| `herdr/src/paint-pr-status.ts` | Herdr adapter. Paints a PR block's status line, and each line under it, in a box whose height springs (`lineBoxEl`), so the lines under each move with its edge. A line fades in once its box is nearly open, and out while its box holds its height. |
+| `herdr/src/paint-warning.ts` | Herdr adapter. Paints the stopped warning in a `lineBoxEl` box: on an open row before its answers, else above its buttons, on a PR block above its buttons, and above the Rank again line. A row with no warning draws no box, so its parts keep their gaps. |
+| `herdr/src/paint-theme.ts` | Herdr adapter. Maps the blocks' tones onto Herdr's theme, the text sizes, the spacing scale and column positions the paint files share, and what they share for one draw, with whether the pane is narrow and the list's room, from the sizes the app reported, at zoom 1. |
+| `herdr/src/paint-space.ts` | Herdr adapter. The space above each block, from what comes before it, so every distance in the list takes a step of the scale. Puts each block in a box that keeps its height when the list overflows. Inside it, the space above the block and the block's content each sit in a box whose height springs, the content's at its measured height. A block that enters or leaves springs both to or from none and fades, and the blocks around it take their space from the last block that is not shut. A row's height is its title's and the rest's, each measured on its own. A PR's is its title's, its status line box's and the lines' under it. The tab bar and the banners above the list sit in a box that springs the same way. A row's title sits in a box at its closed form's height, up to two lines, unless the row is open or its box holds the taller form's height while its title moves. |
+| `herdr/src/paint-strokes.ts` | Herdr adapter. Paints a tree's columns and arms in each block, and which fade each part takes: a part that joins a block that comes or goes fades with that block, and a column between blocks that stay does not fade. |
+| `herdr/src/paint-title-text.ts` | Herdr adapter. Paints a row's title text, both forms at once while the title moves, and the hidden copies `title-cut.ts` measures. |
+| `herdr/src/paint-checkbox.ts` | Herdr adapter. The Tasks heading's ☑ and an open task's □, a box drawn as a shape, since the font's boxes are small beside the other marks. |
+| `herdr/src/paint-chevron.ts` | Herdr adapter. A fold's chevron, drawn as a path from the Codex tab's chevron icon, turned down when open, with the count of the rows a folded parent hides. A bright copy lies over it and shows on hover, since the kit styles an element only on its own hover. |
+| `herdr/src/paint-blocks.ts` | Herdr adapter. Paints each block with `gpui-kit` and `gpui-base`: rows, with a leaving block's buttons, text field and fold inert, text fields, Status lines, PRs, headings, folds, rules, notes, empty states and banner blocks. |
+| `herdr/src/paint-parted.ts` | Herdr adapter. `partedEl`: parts joined by a dot, wrapping whole, with the dot of a part that starts a line hidden. |
+| `herdr/src/paint-text.ts` | Herdr adapter. Text that wraps word by word in two colors, a line of dot-joined parts that breaks between them, and a press's result line, with an aged result's age faint. |
+| `herdr/src/paint-field.ts` | Herdr adapter. A text field with its buttons under it, for a row's reply field and any other field block. |
+| `herdr/src/paint-status-line.ts` | Herdr adapter. A Status line and a Help line: the mark or key, the name, its stall, fold chevron and buttons, and the parts a line is built from. |
+| `herdr/src/paint-empty.ts` | Herdr adapter. An empty tab's block: its title, hint and any line, buttons, field or feedback under them, centred across and down the list's room. |
+| `herdr/src/paint-body-line.ts` | Herdr adapter. Paints a line under a row's title with its part of the tree that hangs from the row's mark, or a row's answers' buttons in its place. |
+| `herdr/src/paint-tree.ts` | Herdr adapter. Paints the parts of a row's tree: its trunk and arms, and its answers' buttons, stacked or side by side, with the test of whether they fit side by side. |
+| `herdr/src/paint-parts.ts` | Herdr adapter. The small parts every block draws with: a button, a row of buttons, a mark, a line of text and a press's result line. |
+| `herdr/src/paint-chrome.ts` | Herdr adapter. Paints the tab row with Help at its right end, the banners, the session notes, the fades at the list's scroll edges, and the message for a terminal with no inbox. Herdr's pane header names the pane, so the look draws no title. |
+| `herdr/src/paint-notes.ts` | Herdr adapter. A rule's line and its optional text, and a note line, such as the session note or a strong heading line. |
+| `herdr/src/paint-timer.ts` | Herdr adapter. The fill behind a timed button's label, which empties over the button's time left, as the Codex tab's Undo does. The fill is a pill of the shape inside the button's border, cut straight at the share left, so it never draws outside the button. Each draw sets the share from the button's clock, so a new element shows the right fill. A timed button keeps a fixed width, so nothing shifts while its time runs. |
+| `herdr/src/paint-title-tint.ts` | Herdr adapter. The color a row's title takes while its tint lasts, and when the look draws again for it. |

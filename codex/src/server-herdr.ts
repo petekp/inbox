@@ -82,6 +82,17 @@ export function codexHerdrAsk(env: NodeJS.ProcessEnv, bundledFolder: string) {
 
 export type CodexHerdrAsk = ReturnType<typeof codexHerdrAsk>
 
+/** The Codex session that runs in this Herdr app terminal, from the terminal's claim. Undefined outside an app terminal. */
+export function herdrClaimedSession(env: NodeJS.ProcessEnv, dir: string): (() => Promise<string | null>) | undefined {
+  const target = herdrTarget(env)
+  if (target?.kind !== 'terminal') return undefined
+
+  return async () => {
+    const claim = await readClaim(dir, target.terminal)
+    return claim && runsHere(claim, claim.sessionId, isPidRunning) ? claim.sessionId : null
+  }
+}
+
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
 /**

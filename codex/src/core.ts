@@ -1,4 +1,4 @@
-import type { HooksTrust } from './hook-trust'
+import type { HooksTrust } from '../../core/view/hooks-trust'
 import { endTurn as endSessionTurn, notePrompt as notePromptIn } from '../../core/runtime/session-turns'
 import { lookEndedOn, withLook } from '../../core/runtime/session-status'
 import { sessionView } from '../../core/view/session-view'
@@ -80,8 +80,9 @@ export function noteHook(
               : h.promptTurns,
           }
         : { ...h, stopAt: now, stops: h.stops + 1 }
+  const { hooksTrust: _trust, ...ran } = s
 
-  return { ...s, heard }
+  return { ...ran, heard }
 }
 
 /**

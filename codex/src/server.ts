@@ -13,7 +13,7 @@ import type { StartedFile } from '../../core/remote/herdr-app'
 import { withCollapse } from '../../core/view/collapse'
 import { lookOnView, noteToolCall, viewOf } from './core'
 import type { TabView } from './core'
-import type { HooksTrust } from './hook-trust'
+import type { HooksTrust } from '../../core/view/hooks-trust'
 import { codexStore } from './host'
 import type { OnWrite } from './host'
 import { makeCatchUpOnOpen } from './server-catch-up'
@@ -92,6 +92,12 @@ export type ServerDeps = {
   herdrAsk?: CodexHerdrAsk
   /** The delegate session Codex runs as, as `core/remote/hc-terminals.ts:delegateSession` reads it. Without it, none. */
   delegate?: () => Promise<DelegateSession | null>
+  /**
+   * The Codex session that runs in the Herdr app terminal the server runs in, from the terminal's claim. The server asks
+   * whether Codex runs the inbox's hooks for it as it starts, since a plugin update both stops the hooks and starts a new
+   * server. Without it, none.
+   */
+  herdrSession?: () => Promise<string | null>
 }
 
 type Message = { jsonrpc: '2.0'; id?: number | string; method?: string; params?: Record<string, unknown> }
@@ -124,6 +130,10 @@ export function makeServer(given: ServerDeps): Server {
   /** Each chat's newest turn in its rollout, as its last view read it. */
   const newestTurns = new Map<string, string>()
   const hooksTrustNow = makeHooksTrustNow(deps, newestTurns)
+  void deps
+    .herdrSession?.()
+    .then(async id => void (id && hooksTrustNow(await readState(dir, id), id)))
+    .catch(() => undefined)
   const catchUpOnOpen = makeCatchUpOnOpen(deps)
 
   const currentPage = async () => (await deps.devPage?.()) ?? deps.tabHtml

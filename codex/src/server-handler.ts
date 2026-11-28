@@ -17,7 +17,13 @@ import { herdrOnWrite } from './host'
 import { eachOnWrite, registryOnWrite } from './registry'
 import { codexPreviewPages } from './preview-pages'
 import { herdrLog } from './herdr-log'
-import { codexHerdrAsk, followCodexPresses, followCodexSaves, startCodexInHerdrApp } from './server-herdr'
+import {
+  codexHerdrAsk,
+  followCodexPresses,
+  followCodexSaves,
+  startCodexInHerdrApp,
+  herdrClaimedSession,
+} from './server-herdr'
 import { COMPARE_PAGE_FILE } from '../../core/domain/press-messages'
 import { NEXT_BUILD_MARK } from '../../core/view/banners'
 import { delegateReader } from '../../core/remote/hc-terminals'
@@ -117,6 +123,7 @@ export function createHandler(
     followSaves: following(CODEX_SAVES, heard => followCodexSaves(process.env, dir, heard, log)),
     herdrAsk: codexHerdrAsk(process.env, join(here, 'herdr-mod')),
     delegate: delegateReader(herdrTarget(process.env), run),
+    herdrSession: herdrClaimedSession(process.env, dir),
     openCatchUp: startUpdate && {
       codexHome,
       startUpdate,

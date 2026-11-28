@@ -1,7 +1,8 @@
 import { homedir } from 'node:os'
 
 import { isTurnHeard } from './core'
-import type { HooksTrust } from './hook-trust'
+import type { HooksTrust } from '../../core/view/hooks-trust'
+import { codexStore } from './host'
 import type { ServerDeps } from './server'
 import type { SessionState } from './state'
 
@@ -10,13 +11,35 @@ const HOOKS_UNCLEAR_CACHE_MS = 30_000
 /** How long an answer that Codex does not run the hooks stands, so its notice leaves soon after the person trusts them. */
 const HOOKS_STOPPED_CACHE_MS = 5_000
 
+/** When the chat last heard one of the inbox's hooks, or -Infinity when it heard none. */
+const lastHookAt = (s: SessionState): number =>
+  Math.max(...[s.heard.startAt, s.heard.promptAt, s.heard.stopAt].map(at => at ?? -Infinity))
+
 export function makeHooksTrustNow(deps: ServerDeps, newestTurns: Map<string, string>) {
   const { now } = deps
-  /** Codex's last answer about the hooks' trust in each chat folder. */
-  const hooksTrust = new Map<string, { at: number; answer: HooksTrust | 'trusted' | null }>()
+  /** Codex's last answer about the hooks' trust in each chat folder, with when it was asked for. */
+  const hooksTrust = new Map<string, { at: number; askedAt: number; answer: HooksTrust | 'trusted' | null }>()
   const askingHooksIn = new Set<string>()
   /** The unheard turn each chat last asked about. */
   const askedTurns = new Map<string, string>()
+
+  /**
+   * Saves a clear answer to the chat when it differs from the one it holds, so the chat's Herdr publish carries it. A
+   * failed or unclear answer keeps what the chat holds. So does an answer that the hooks do not run, asked for before
+   * the chat's last hook ran, since that hook shows they run.
+   */
+  async function saveTrust(id: string, answer: HooksTrust | 'trusted' | null, askedAt: number): Promise<void> {
+    if (answer === null) return
+    const trust = answer === 'trusted' ? undefined : answer
+    const isSaved = (s: SessionState) => s.hooksTrust === trust || (trust !== undefined && lastHookAt(s) >= askedAt)
+    const store = codexStore(deps.dir, id, now, deps.onWrite)
+    if (isSaved(await store.read())) return
+    await store.update(s => {
+      if (isSaved(s)) return s
+      const { hooksTrust: _old, ...rest } = s
+      return trust ? { ...rest, hooksTrust: trust } : rest
+    })
+  }
 
   /** The chat's newest turn, when the inbox heard neither its prompt nor its Stop, as while Codex skips the hooks. */
   function unheardTurnOf(s: SessionState, id: string): string | null {
@@ -47,15 +70,24 @@ export function makeHooksTrustNow(deps: ServerDeps, newestTurns: Map<string, str
     if (isAskDue && !askingHooksIn.has(folder)) {
       askingHooksIn.add(folder)
       if (unheardTurn !== null) askedTurns.set(id, unheardTurn)
+      const askedAt = now()
       void (async () => {
         const answer = await Promise.resolve(s.cliPath ?? deps.fallbackCli())
           .then(cli => ask(cli, folder))
           .catch(() => null)
-        hooksTrust.set(folder, { at: now(), answer })
+        hooksTrust.set(folder, { at: now(), askedAt, answer })
         askingHooksIn.delete(folder)
+        await saveTrust(id, answer, askedAt).catch(() => undefined)
       })()
     }
     const answer = known?.answer
+    if (
+      known &&
+      answer !== undefined &&
+      answer !== null &&
+      (answer === 'trusted' ? undefined : answer) !== s.hooksTrust
+    )
+      void saveTrust(id, answer, known.askedAt).catch(() => undefined)
 
     return answer === 'untrusted' || answer === 'modified' ? answer : null
   }

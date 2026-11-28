@@ -2,6 +2,7 @@ import type { remoteViewerReceipts } from '../runtime/remote-viewers'
 import type { remoteReceipts } from '../runtime/remote-command-state'
 import type { Dialog, HerdrPressOutcome, Session } from '../../types'
 import type { ClientId } from '../domain/client-features'
+import type { HooksTrust } from '../view/hooks-trust'
 import { presentedSession } from '../view/session-presentation'
 import { HERDR_FORMAT } from './herdr'
 
@@ -37,6 +38,8 @@ export type EnvelopeSource = {
   version?: string
   /** Whether the host's folder holds `NEXT_BUILD_MARK`, which adds "next" to the version. */
   isNextBuild?: boolean
+  /** Why Codex does not run the inbox's hooks, while Codex's own list of hooks names a cause. Only Codex sets it. */
+  hooksTrust?: HooksTrust
 }
 
 /**

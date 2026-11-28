@@ -231,3 +231,42 @@ test('a chat whose folder is not known yet asks Codex’s hook list for the home
 
   assert.deepEqual(asked, [homedir()])
 })
+
+test('a clear answer about the hooks is saved to the chat its Herdr terminal runs as the server starts, a failed one keeps it, and a trusted one or a hook clears it, even a hook that runs while Codex answers', async () => {
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const saved = async () => (await readState(dir, 's1')).hooksTrust
+  const startAnswering = async (answer: () => Promise<'modified' | 'trusted' | null>) => {
+    let isAnswered = false
+    makeServer({
+      comparePage: '/plugin/dist/compare-page.html',
+      dir,
+      now: () => 1000,
+      exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+      tabHtml: '',
+      fallbackCli: async () => 'codex',
+      hooksTrust: async () => {
+        const given = await answer()
+        isAnswered = true
+        return given
+      },
+      herdrSession: async () => 's1',
+    })
+    for (let n = 0; n < 200 && !isAnswered; n++) await new Promise(resolve => setTimeout(resolve, 5))
+    for (let n = 0; n < 20; n++) await new Promise(resolve => setImmediate(resolve))
+  }
+
+  await startAnswering(async () => 'modified')
+  assert.equal(await saved(), 'modified')
+  await startAnswering(async () => null)
+  assert.equal(await saved(), 'modified')
+  assert.equal(noteHook(await readState(dir, 's1'), 'prompt', 2000, 't1').hooksTrust, undefined)
+  await startAnswering(async () => 'trusted')
+  assert.equal(await saved(), undefined)
+
+  await startAnswering(async () => {
+    await updateState(dir, 's1', s => noteHook(s, 'prompt', 1500, 't2'))
+    return 'modified'
+  })
+  assert.equal(await saved(), undefined)
+})

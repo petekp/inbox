@@ -178,6 +178,8 @@ describe('pressFile', () => {
       const tabPress = { ...PRESS, press: { action } }
       expect(pressFile(JSON.stringify(tabPress))).toEqual(read(tabPress))
     }
+    const resume = { ...PRESS, press: { action: 'resume', id: 'session' } }
+    expect(pressFile(JSON.stringify(resume))).toEqual(read(resume))
     for (const error of [null, 'no browser']) {
       const opened = { ...PRESS, result: { error } }
       expect(pressFile(JSON.stringify(opened))).toEqual(read(opened))
@@ -210,6 +212,7 @@ describe('pressFile', () => {
       [{ ...PRESS, press: { action: 'launch', id: 'q3' } }, 'unknown action launch'],
       [{ ...PRESS, press: { action: 'toString', id: 'q3' } }, 'unknown action toString'],
       [{ ...PRESS, press: { action: 'done' } }, 'done has no id'],
+      [{ ...PRESS, press: { action: 'resume' } }, 'resume has no id'],
       [{ ...PRESS, press: { action: 'pr-merge', id: 'q3' } }, 'pr-merge has no ref'],
       [{ ...PRESS, holds: { ...PRESS.holds, replies: { q2: 'now' } } }, 'holds without replies or discarded times'],
       [{ ...PRESS, holds: { ...PRESS.holds, shownSince: undefined } }, 'holds without shownSince'],
