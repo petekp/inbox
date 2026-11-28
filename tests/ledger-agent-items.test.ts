@@ -37,7 +37,7 @@ describe('items the agent recorded', () => {
       1,
     )
     for (const ledger of [recorded(), asked])
-      for (const outcome of ['Why not Memcached?', 'How much does Redis cost?'])
+      for (const outcome of ['Why not Memcached?', 'How much does Redis cost?', 'When would we need Memcached?'])
         expect(applyUpdate(ledger, parseReply(`CLOSED: i1 | ${outcome}`)!, 2000, 1).items.map(i => i.id)).toEqual([
           'i1',
         ])
