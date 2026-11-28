@@ -1,9 +1,9 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-28T05:01:49.374Z. 445763 characters follow.
+// Built at 2026-11-28T05:39:36.421Z. 447019 characters follow.
 
 // src/main.ts
-import { View, div as div20 } from "gpui-kit";
-import { InputState, Scrollbar, v_flex as v_flex9 } from "gpui-base";
+import { View } from "gpui-kit";
+import { InputState, v_flex as v_flex10 } from "gpui-base";
 import {
   appHome,
   exec,
@@ -5045,7 +5045,7 @@ function isShownEmpty(ui, view, tab) {
 }
 function moveTo(ui, tab, now) {
   const selection = isRowTab(tab) ? { ...ui.selection, [tab]: NO_UI_CURSOR } : ui.selection;
-  return withCommands(shownTab({ ...ui, selection }, tab, now), { kind: "tab-shown", tab });
+  return withCommands(shownTab({ ...ui, selection }, tab, now), { kind: "tab-shown", tab, startsOver: true });
 }
 function shownTab(ui, tab, now) {
   const isChanged = tab !== ui.tab;
@@ -5308,7 +5308,7 @@ function showAsk(ui, view, id, by, now) {
   const index = tabWaits(shown, view, "needsYou").findIndex((r) => r.id === id);
   const selected = withCursor(shown, "needsYou", { id, index, guard: { by, at: now } });
   const commands = [
-    { kind: "tab-shown", tab: "needsYou" },
+    { kind: "tab-shown", tab: "needsYou", startsOver: false },
     { kind: "reveal", tab: "needsYou", id, closedId: null }
   ];
   return withCommands(selected, ...commands);
@@ -5332,7 +5332,7 @@ function handle(ui, view, e, now) {
     case "visible":
       return withCommands(visible(ui, e.isVisible));
     case "show-tab":
-      return withCommands(shownTab(ui, e.tab, now), { kind: "tab-shown", tab: e.tab });
+      return withCommands(shownTab(ui, e.tab, now), { kind: "tab-shown", tab: e.tab, startsOver: false });
     case "show-help":
       return withCommands(helpShown(ui, e.isShown, now));
     case "show-ask":
@@ -8786,6 +8786,32 @@ function blockEl(b, p) {
   return div19();
 }
 
+// src/paint-list.ts
+import { div as div20 } from "gpui-kit";
+import { ScrollHandle, Scrollbar, v_flex as v_flex9 } from "gpui-base";
+var LIST_ID = "inbox-list";
+
+class ListScroll {
+  handles;
+  constructor() {
+    const places = [...shownTabs().map((t) => t.id), "help"];
+    this.handles = new Map(places.map((place) => [place, ScrollHandle.new()]));
+  }
+  of(place) {
+    return this.handles.get(place) ?? null;
+  }
+  startOver(place) {
+    this.handles.get(place)?.scroll_to_item(0);
+  }
+  startAllOver() {
+    for (const place of this.handles.keys())
+      this.startOver(place);
+  }
+}
+function listEl({ t, scroll, rows, onHeight, onUse, onClick }) {
+  return div20().flex_1().min_h(0).relative().child(v_flex9().id(LIST_ID).when(scroll !== null, (e) => scroll ? e.track_scroll(scroll) : e).absolute().inset_0().overflow_y_scroll().pb(END_SPACE).on_size_change(onHeight).on_scroll_wheel((_e, cx) => onUse(cx)).on_mouse_move((_e, cx) => onUse(cx)).on_click(() => onClick()).child(div20().flex_none().h(EDGE)).children(rows)).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical(LIST_ID).absolute().inset_0());
+}
+
 // ../core/remote/herdr-press-write.ts
 function pressFileText(id, pressedAt, press, holds, result = null, when = []) {
   const { replies, discarded, shownSince, listInput } = holds;
@@ -10312,8 +10338,10 @@ class Inbox extends View {
   fades = new HeldFades;
   wake = null;
   look = new LookReports;
+  scroll = null;
   init(_props, cx) {
     this.focus = cx.focus_handle();
+    this.scroll = new ListScroll;
     startBackground(this, { isChecking, appHome, watchFolder }, cx);
   }
   get readSession() {
@@ -10334,6 +10362,8 @@ class Inbox extends View {
     this.ui = applied.ui;
     if (isMove)
       this.movedAt = now;
+    if (events.some((e) => e.type === "show-help" && e.isShown))
+      this.scroll?.startOver("help");
     this.syncInput(isMove);
     for (const c of applied.commands)
       this.run(c, from, cx);
@@ -10359,6 +10389,8 @@ class Inbox extends View {
       cx.spawn(() => writeCollapse(queueIo, to, read, c.id, collapse));
     } else if (c.kind === "read" && sessionId)
       this.load(sessionId, cx);
+    else if (c.kind === "tab-shown" && c.startsOver)
+      this.scroll?.startOver(c.tab);
   }
   syncInput(isMove) {
     const typing = this.ui.typing;
@@ -10476,6 +10508,7 @@ class Inbox extends View {
     this.wake = null;
     this.releaseField();
     this.heights.clear([TAB_WORDS]);
+    this.scroll?.startAllOver();
     if (sessionId)
       this.load(sessionId, cx);
   }
@@ -10545,7 +10578,7 @@ class Inbox extends View {
       ...paneFit(this, zoomOf(settings())),
       fades: this.fades
     };
-    const root = v_flex9().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
+    const root = v_flex10().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
@@ -10582,13 +10615,20 @@ class Inbox extends View {
       if (isNew)
         this.apply([{ type: "list-input" }], cx);
     };
-    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(tabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex9().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div20().flex_1().min_h(0).relative().child(v_flex9().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
-      const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
-      if (field)
-        field.state.focus();
-      else
-        this.focus?.focus();
-    }).children(spacedEls(moved.blocks, paint, (b) => blockEl(b, paint)))).child(scrollFadeEl(t, "top")).child(scrollFadeEl(t, "bottom")).child(Scrollbar.vertical("inbox-list").absolute().inset_0()));
+    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(tabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex10().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(listEl({
+      t,
+      scroll: this.scroll?.of(ui.isHelpShown ? "help" : ui.tab) ?? null,
+      rows: spacedEls(moved.blocks, paint, (b) => blockEl(b, paint)),
+      onHeight: onSize(this, "listHeight", (s) => s.height),
+      onUse: listInput,
+      onClick: () => {
+        const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
+        if (field)
+          field.state.focus();
+        else
+          this.focus?.focus();
+      }
+    }));
     const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt, this.tabCounts.nextAt]);
     if (wakeAt !== null)
       this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), (cx) => cx.notify());
