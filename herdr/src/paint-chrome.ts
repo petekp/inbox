@@ -58,7 +58,8 @@ const helpIconEl = (t: Theme, isSelected: boolean): Element =>
  * The tab row: the tabs with their counts, then the Help tab at its right end, inside the panel's padding.
  * A tab is a pill of a button's size, and only the selected tab's label is bold. While Help shows, the Help tab is the
  * selected one and the others are not. Herdr's pane header names the pane, so the look draws no title.
- * The tabs show their words where the row in words fits on one line, else their symbols, as `fitTabs` decides.
+ * The tabs show their words where the row in words fits on one line, else their symbols, as `fitTabs` decides. The
+ * words never wrap, so a draw before the copy's new width reaches the look cuts the row instead of changing its height.
  */
 export function tabsEl(tabs: DrawnTab[], isHelpShown: boolean, p: Paint): Element {
   const { t } = p
@@ -69,7 +70,7 @@ export function tabsEl(tabs: DrawnTab[], isHelpShown: boolean, p: Paint): Elemen
   return h_flex()
     .relative()
     .flex_none()
-    .flex_wrap()
+    .when(naming === 'symbols', e => e.flex_wrap())
     .px(EDGE)
     .pt(EDGE)
     .pb(CONTROL_GAP)
@@ -113,8 +114,8 @@ export function tabsEl(tabs: DrawnTab[], isHelpShown: boolean, p: Paint): Elemen
     .child(tabWordsEl(tabs, p))
 }
 
-/** The key the tab row in words reports its width under. */
-const TAB_WORDS = 'tab words'
+/** The key the tab row in words reports its width under. A session switch keeps it, since it holds no session's rows. */
+export const TAB_WORDS = 'tab words'
 
 /**
  * The tab row in words on one line, drawn hidden, whose width says whether the words fit. Every label is bold, as the
