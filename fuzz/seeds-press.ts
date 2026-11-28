@@ -353,6 +353,22 @@ export const PRESS_SEEDS: {
     },
   },
   {
+    name: 'Undo pressed 220 ms after Remove on the Status goal',
+    rule: 'loose-arm',
+    detail: 'stroke s1 arm 0',
+    issue: 1051,
+    isOpen: false,
+    case: {
+      ...herdr(only([]), [
+        { is: 'click', on: 'tab', n: 4, label: 'overview' },
+        { is: 'click', on: 'button', n: 3, label: 'Remove' },
+        { is: 'wait', ms: 220 },
+        { is: 'click', on: 'button', n: 2, label: 'Undo' },
+      ]),
+      width: 140,
+    },
+  },
+  {
     name: 'a Status answer while Remove on the Status goal moves its lines',
     rule: 'jump',
     detail: 'other moved',

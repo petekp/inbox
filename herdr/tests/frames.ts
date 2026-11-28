@@ -5,8 +5,8 @@ import { checkMotionIds, columnOf, fieldOf } from './gpui-stand-in'
 import type { Painted } from './gpui-stand-in'
 import { boxOf, checkFadeIds, fadesOn } from './fade-boxes'
 import { type Box, layout, linesOf } from './layout'
-import { gapsOf, segmentsOf } from './connector-gaps'
-import type { Gap, Hidden } from './connector-gaps'
+import { armsOf, gapsOf, looseArmsOf, segmentsOf } from './connector-gaps'
+import type { Arm, Gap, Hidden } from './connector-gaps'
 import { StrokeFades } from './stroke-fades'
 import type { StrokeShown } from './stroke-fades'
 
@@ -270,6 +270,7 @@ class Frames {
   shrinks: Jump[] = []
   titles: TitleForm[] = []
   gaps: ColumnGap[] = []
+  looseArms: (Arm & { at: number })[] = []
   listHeights: number[] = []
   slides: number[][] = []
   cuts: Cut[] = []
@@ -366,8 +367,10 @@ class Frames {
     const end = placed.get(tree)?.height ?? 0
     this.listHeights.push(end)
     this.slides.push(sized.flatMap(({ node }) => (node.transitions.has('top') ? [node.style.top ?? 0] : [])))
-    for (const gap of gapsOf(segmentsOf(tree, placed, this.hiddenStrokes(tree, now)), end))
-      this.gaps.push({ at: now, ...gap })
+    const hidden = this.hiddenStrokes(tree, now)
+    const segments = segmentsOf(tree, placed, hidden)
+    for (const gap of gapsOf(segments, end)) this.gaps.push({ at: now, ...gap })
+    for (const arm of looseArmsOf(armsOf(tree, placed, hidden), segments)) this.looseArms.push({ at: now, ...arm })
     this.rest = { fits, lines }
     this.strokes.push(...this.strokeFades.shownIn(placed, now))
     const startsHere = [...moved.motion].filter(([, m]) => m.springId?.endsWith(`${MOVED_TO}${now}`)).map(([id]) => id)
@@ -426,6 +429,7 @@ export function framesOf(
   shrinks: Jump[]
   titles: TitleForm[]
   gaps: ColumnGap[]
+  looseArms: (Arm & { at: number })[]
   heights: number[]
   slides: number[][]
   cuts: Cut[]
@@ -442,6 +446,7 @@ export function framesOf(
       shrinks: [],
       titles: [],
       gaps: [],
+      looseArms: [],
       heights: [],
       slides: [],
       cuts: [],
@@ -471,6 +476,7 @@ export function framesOf(
     shrinks: frames.shrinks.map(j => ({ ...j, at: j.at - start })),
     titles: frames.titles.map(t => ({ ...t, at: t.at - start })),
     gaps: frames.gaps.map(g => ({ ...g, at: g.at - start })),
+    looseArms: frames.looseArms.map(a => ({ ...a, at: a.at - start })),
     heights: frames.listHeights,
     slides: frames.slides,
     cuts: frames.cuts.map(c => ({ ...c, at: c.at - start })),

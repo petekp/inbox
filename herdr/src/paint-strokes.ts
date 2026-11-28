@@ -280,7 +280,8 @@ export const spaceColumnEl = (key: string, b: Block, c: Column, f: StrokeFades, 
 /**
  * The path's line and the nesting connectors beside a block's content, each in the column under the marks of rows at
  * its depth, the column the path's line takes at depth 0. An arm starts a pixel right of its column, and a column that
- * ends at an arm takes the arm's row, so no two strokes cover the same pixel. Arms belong to their row and fade with it.
+ * ends at an arm takes the arm's row, so no two strokes cover the same pixel. An arm fades with the column it meets,
+ * above the block's first line, or with its row where that column does not fade, so it never shows without its column.
  * A column fades above and below the block's first line as `f` says, split at the arm where the two differ. `top` is
  * the block's padding above its first line. Each stroke is named for the block's `key`, its depth and its part, never
  * for the row or column it serves, so a line keeps its name, and the state of its fade, while what it joins changes.
@@ -337,6 +338,7 @@ export function contentStrokeEls(
     const r = reachOf(c)
     r.lowerFrom = Math.min(r.lowerFrom ?? Infinity, top + LINE_HEIGHT)
   }
+  const armFade = (depth: number): Fade => (f.above(depth) === NO_FADE ? f.own : f.above(depth))
   const arms = tree.flatMap(({ depth, is }): Element[] => {
     const c = { depth, isDashed: false }
     if (is === 'down') reachBelow(c)
@@ -345,7 +347,7 @@ export function contentStrokeEls(
     if (is === 'down' || is === 'past') return []
 
     return [
-      f.own(
+      armFade(depth)(
         div()
           .id(`stroke ${key} arm ${depth}`)
           .absolute()
