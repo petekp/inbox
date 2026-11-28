@@ -447,5 +447,38 @@
       "reply": "I added `--wave` to greet.js. It puts 👋 at the very start of the line, before the greeting, as you chose.\n\n```\n$ node greet.js --wave Ana\n👋 Hola, Ana\n$ node greet.js --wave --shout --lang en --times 2\n👋 HI, WORLD\n👋 HI, WORLD\n```\n\nIt also works with `--shout`, `--lang` and `--times`, and the output without `--wave` hasn't changed. Nothing is committed yet."
     },
     "checks": [{ "added": 0 }]
+  },
+  {
+    "name": "ask-names-its-subject",
+    "about": "A reply that names two PRs and asks \"Merge it?\" about one of them files an ask that names that PR.",
+    "ledger": {
+      "turn": 6,
+      "nextId": 4,
+      "card": {
+        "goal": "Land the checkout fixes",
+        "done": [],
+        "now": "Checking the open PRs",
+        "running": []
+      },
+      "items": []
+    },
+    "exchange": {
+      "person": "where are the two checkout PRs at?",
+      "turn": 6,
+      "activity": ["ran: gh pr view 1012", "ran: gh pr view 1015"],
+      "reply": "PR #1012, the retry for failed card payments, still has a failing test: the payment stub times out on CI. I am looking into it.\n\nPR #1015, the fix for the coupon total rounding, passed every check and has an approval. Merge it?"
+    },
+    "checks": [
+      {
+        "new": "1015",
+        "kind": "question"
+      },
+      {
+        "notNew": "1012|retry"
+      },
+      {
+        "added": 1
+      }
+    ]
   }
 ]
