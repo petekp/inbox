@@ -974,6 +974,10 @@ var RESUME_TEXT = "Continue";
 function isResumable(stop) {
   return stop.kind === "api-error";
 }
+function isResumeRequested(s) {
+  const last = s.lastActions.session;
+  return s.stop !== null && last !== undefined && last.at >= s.stop.at && last.turnsStarted === s.presence.turnsStarted && last.delivery?.state !== "failed";
+}
 function stopText(stop) {
   switch (stop.kind) {
     case "sign-in":
@@ -1025,13 +1029,13 @@ function bannerOf(kind, hostText) {
   const body = end < 0 ? null : text.slice(end + 2);
   return { kind, tone: BANNER_TONES[kind], lead, body };
 }
-function stopBanner(stop) {
+function stopBanner(stop, canResume = isResumable(stop)) {
   const why = `${capitalized(stopText(stop))}.`;
   return {
     kind: "stopped",
     tone: BANNER_TONES.stopped,
     lead: "Stopped",
-    body: isResumable(stop) ? why : `${why} ${stopFix(stop)}`
+    body: canResume ? why : `${why} ${stopFix(stop)}`
   };
 }
 function tabBarBanners(host, statusError, pressNote) {
@@ -9292,9 +9296,7 @@ function isRepeatWhileOut(s, p, at, drawn) {
 }
 function pressOn(s, p, at, drawn, texts, localPressId) {
   if (p.action === "resume") {
-    const previous = s.lastActions.session;
-    const alreadyRequested = s.stop && previous && previous.at >= s.stop.at && previous.turnsStarted === s.presence.turnsStarted && previous.delivery?.state !== "failed";
-    if (p.id !== "session" || !s.stop || !isResumable(s.stop) || s.presence.isTurnRunning || alreadyRequested)
+    if (p.id !== "session" || !s.stop || !isResumable(s.stop) || s.presence.isTurnRunning || isResumeRequested(s))
       return { stale: true };
     return {
       ledger: s.ledger,
@@ -10132,6 +10134,8 @@ function pressSettled(ui, view, pressId, outcome, now) {
     return withCommands(ui);
   const { [pressId]: _out, ...pressesOut } = ui.pressesOut;
   let next = { ...ui, pressesOut };
+  if (out.action === "resume")
+    return withCommands(next);
   const row = out.rowId;
   const isUndo = out.action === "undo" || out.action === "pr-undo";
   const hasUndoTimeEnded = isUndo && !isUndoShown(ui, view, row, now);
@@ -16417,6 +16421,7 @@ var isStatusShownFile = (file) => ("statusShown" in file);
 var isPressFile = (file) => file.format === HERDR_FORMAT && ("press" in file);
 var fileTime = (file) => file.format === 2 ? file.issuedAt : isLookFile(file) ? file.look.endedAt : isPrsShownFile(file) ? file.prsShown.at : isStatusShownFile(file) ? file.statusShown.at : isPressFile(file) ? file.pressedAt : file.collapse.at;
 var PRESS_TARGETS = {
+  resume: "id",
   answer: "id",
   type: "id",
   explain: "id",

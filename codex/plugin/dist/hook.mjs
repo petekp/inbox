@@ -4921,7 +4921,8 @@ function noteHook(s, hook, now, turnId) {
     prompts: h.prompts + 1,
     promptTurns: turnId ? [...h.promptTurns.filter((t) => t !== turnId), turnId].slice(-MAX_PROMPT_TURNS) : h.promptTurns
   } : { ...h, stopAt: now, stops: h.stops + 1 };
-  return { ...s, heard };
+  const { hooksTrust: _trust, ...ran } = s;
+  return { ...ran, heard };
 }
 function isPromptMissed(h, turnId) {
   if (turnId !== null && (h.promptTurns.length > 0 || h.promptAt === null)) return !h.promptTurns.includes(turnId);
@@ -5582,6 +5583,7 @@ function herdrOnWrite(env, run2, dir, now, log = herdrLog(dir)) {
           projectFolder: s.root,
           isFetchingPrs: isPrFetchRunning(s),
           turnReadFailedAt: s.turnReadFailedAt,
+          hooksTrust: s.hooksTrust,
           version: "0.8.0",
           isNextBuild: existsSync(join7(dirname3(dirname3(fileURLToPath(import.meta.url))), NEXT_BUILD_MARK))
         },

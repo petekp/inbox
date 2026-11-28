@@ -43,6 +43,9 @@ export function demoScreen(sample = readSample()): LookScreen {
     isGhMissing: false,
     isFetchingPrs: false,
     isSendHeld: false,
+    stop: null,
+    hooksTrust: null,
+    pressNote: null,
   }
 }
 

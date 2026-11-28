@@ -1,6 +1,6 @@
 import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
-import { h_flex } from 'gpui-base'
+import { h_flex, v_flex } from 'gpui-base'
 import { NEEDS_YOU_MARKS, TASK_MARK } from '../../core/view/help'
 import { RUNNING_PULSE_MS } from '../../core/view/timing'
 import { LEAVE_FADE_MS } from '../../core/view/row-motion'
@@ -16,6 +16,7 @@ import {
   LINE_HEIGHT,
   MARK_W,
   colorOf,
+  supportingOf,
 } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { checkboxEl } from './paint-checkbox'
@@ -29,9 +30,11 @@ import type { HeldFades } from './held-fades'
  * its press is out. A spent Undo keeps its place, drawn as quiet as a button whose press is out. A button of a block that is leaving draws but
  * takes no clicks, so the block keeps its height as it fades. A button that takes no clicks shows no hover or pressed
  * change. A button that `canWrap` narrows to its line and wraps its label onto more lines, growing a line's height for
- * each. A timed button keeps one line, since its time left fills it.
+ * each. A timed button keeps one line, since its time left fills it. A button on a tinted fill, such as a banner's, names
+ * that fill as `under`: its label while its press is out takes the supporting text level over it, since a faded muted
+ * label is hard to read there.
  */
-export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false): Element {
+export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false, under?: Theme[keyof Theme]): Element {
   const { t } = p
   const isPill = b.emphasis !== 'quiet'
   const runsOutAt = b.runsOutAt
@@ -51,7 +54,7 @@ export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false):
         .rounded(BUTTON_H / 2),
     )
     .when(left !== undefined, e => (left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e))
-    .child(isWrapping ? div().min_w(0).whitespace_normal().child(b.label) : b.label)
+    .child(isWrapping ? div().min_w(0).whitespace_normal().child(b.label) : labelEl(b))
   const shaped = !isPill
     ? base
     : runsOutAt === undefined
@@ -66,6 +69,7 @@ export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false):
     const opacity = p.now < b.leftAt + NEXT_FRAME_MS ? SPENT_OPACITY : 0
     return fadeEl(spent, `spent ${b.id}`, opacity, { duration: LEAVE_FADE_MS, delay: 0 }, p)
   }
+  if (b.isOut && under) return shaped.border_color(CLEAR).text_color(supportingOf(t, under)).disabled(true)
   if (b.isOut) return shaped.border_color(CLEAR).text_color(t.muted).opacity(SPENT_OPACITY).disabled(true)
   const styled =
     b.emphasis === 'primary'
@@ -86,6 +90,15 @@ export function buttonEl(b: Button, p: Paint, isInert = false, canWrap = false):
     p.press(b, cx, e.modifiers.alt)
   })
 }
+
+/** The label, over hidden copies of the button's other labels, which hold the width of the widest. */
+const labelEl = (b: Button): Element | string =>
+  b.labels
+    ? v_flex()
+        .items_center()
+        .child(b.label)
+        .children(b.labels.filter(l => l !== b.label).map(l => div().invisible().h(0).child(l)))
+    : b.label
 
 const CLEAR = '#00000000'
 

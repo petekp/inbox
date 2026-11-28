@@ -1,9 +1,9 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-28T04:11:50.010Z. 440570 characters follow.
+// Built at 2026-11-28T04:49:34.185Z. 445048 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
-import { InputState, Scrollbar, v_flex as v_flex8 } from "gpui-base";
+import { InputState, Scrollbar, v_flex as v_flex9 } from "gpui-base";
 import {
   appHome,
   exec,
@@ -153,6 +153,37 @@ function clockTime(ms) {
 function groupEmptyText(title) {
   return `No open ${title.toLowerCase()}`;
 }
+function isResumable(stop) {
+  return stop.kind === "api-error";
+}
+function isResumeRequested(s) {
+  const last = s.lastActions.session;
+  return s.stop !== null && last !== undefined && last.at >= s.stop.at && last.turnsStarted === s.presence.turnsStarted && last.delivery?.state !== "failed";
+}
+function stopText(stop) {
+  switch (stop.kind) {
+    case "sign-in":
+      return "sign-in expired";
+    case "billing":
+      return "billing problem";
+    case "usage-limit":
+      return "usage limit reached";
+    default:
+      return stop.apiError?.cause === "rate-limit" ? "the API is limiting requests" : stop.apiError?.cause === "overloaded" ? "the API is overloaded" : `API error (${drawableText(stop.apiError?.text ?? "unknown")})`;
+  }
+}
+function stopFix(stop) {
+  switch (stop.kind) {
+    case "sign-in":
+      return "Run /login, then send a message to resume.";
+    case "billing":
+      return "Check billing in the Claude console, then resume.";
+    case "usage-limit":
+      return stop.resets ? `Resume after ${stop.resets}.` : "Resume when the limit resets.";
+    default:
+      return "Send a message to resume.";
+  }
+}
 var BANNER_TONES = {
   demo: "notice",
   "update-failed": "warning",
@@ -179,6 +210,15 @@ function bannerOf(kind, hostText) {
   const lead = end < 0 ? text : text.slice(0, end + 1);
   const body = end < 0 ? null : text.slice(end + 2);
   return { kind, tone: BANNER_TONES[kind], lead, body };
+}
+function stopBanner(stop, canResume = isResumable(stop)) {
+  const why = `${capitalized(stopText(stop))}.`;
+  return {
+    kind: "stopped",
+    tone: BANNER_TONES.stopped,
+    lead: "Stopped",
+    body: canResume ? why : `${why} ${stopFix(stop)}`
+  };
 }
 function tabBarBanners(host, statusError, pressNote) {
   return [
@@ -2196,6 +2236,9 @@ var ROW_COPY = {
 var STOPPED_REASON = "you stopped this session. It takes inbox messages again after you write to it.";
 function sessionKeyOf(reason, canShowSession) {
   return canShowSession && reason === STOPPED_REASON ? { label: ROW_COPY.goToSession, emphasis: "normal" } : null;
+}
+function resumeLabel(isSending) {
+  return isSending ? "Resuming…" : "Resume";
 }
 function optionDescriptionsOf(item, actions) {
   const descriptions = item?.optionDescriptions;
@@ -4910,6 +4953,8 @@ function pressSettled(ui, view, pressId, outcome, now) {
     return withCommands(ui);
   const { [pressId]: _out, ...pressesOut } = ui.pressesOut;
   let next = { ...ui, pressesOut };
+  if (out.action === "resume")
+    return withCommands(next);
   const row = out.rowId;
   const isUndo = out.action === "undo" || out.action === "pr-undo";
   const hasUndoTimeEnded = isUndo && !isUndoShown(ui, view, row, now);
@@ -5337,6 +5382,9 @@ function reduceUi(ui, view, event, now) {
   return { ...result, nextWakeAt: nextWakeAt(result.ui, view, now) };
 }
 var notesOf = (ui) => ui.notes;
+function noticeOf(ui, now) {
+  return ui.notice !== null && now < ui.notice.at + SETTLED_MS ? ui.notice : null;
+}
 var isUiWorthKeeping = (ui) => Object.values(ui.drafts).some((d) => d.text.trim() !== "") || Object.keys(ui.sentReplies).length > 0;
 function keptUiStates(states, shownId) {
   const others = Object.entries(states).filter(([id, s]) => id !== shownId && isUiWorthKeeping(s.ui)).sort(([, a], [, b]) => b.shownAt - a.shownAt).slice(0, MAX_KEPT_UI);
@@ -5487,7 +5535,7 @@ function applyEvents(ui, view, events, now) {
 }
 var hostFactsOf = (read) => ({
   isFetchingPrs: read.isFetchingPrs,
-  hasAsksBlocker: false,
+  hasAsksBlocker: read.session.stop !== null,
   lastTypedMessageAt: read.session.presence.lastTypedMessageAt
 });
 var lookUiOf = (ui, view) => ({
@@ -7400,7 +7448,7 @@ function nextHeld(was, to, delayMs, now) {
 
 // src/paint-blocks.ts
 import { div as div19 } from "gpui-kit";
-import { h_flex as h_flex11, v_flex as v_flex7 } from "gpui-base";
+import { h_flex as h_flex11, v_flex as v_flex8 } from "gpui-base";
 
 // ../core/view/tones.ts
 var DARK_ORANGE = "#ffae42";
@@ -7566,11 +7614,11 @@ var onSize = (view, key, read) => (size, cx) => {
 
 // src/paint-field.ts
 import { div as div4 } from "gpui-kit";
-import { Input, v_flex } from "gpui-base";
+import { Input, v_flex as v_flex2 } from "gpui-base";
 
 // src/paint-parts.ts
 import { div as div3 } from "gpui-kit";
-import { h_flex } from "gpui-base";
+import { h_flex, v_flex } from "gpui-base";
 
 // src/paint-checkbox.ts
 import { PathBuilder, div } from "gpui-kit";
@@ -7593,13 +7641,13 @@ function timeLeftEl(id, left, runsOutAt, now, t) {
 }
 
 // src/paint-parts.ts
-function buttonEl(b, p, isInert = false, canWrap = false) {
+function buttonEl(b, p, isInert = false, canWrap = false, under) {
   const { t } = p;
   const isPill = b.emphasis !== "quiet";
   const runsOutAt = b.runsOutAt;
   const left = p.timeLeft.get(b.id);
   const isWrapping = canWrap && runsOutAt === undefined;
-  const base = h_flex().id(b.isSpent ? `spent ${b.id}` : `button ${b.id}`).when(!isWrapping, (e) => e.flex_none().h(BUTTON_H)).when(isWrapping, (e) => e.flex_shrink_1().min_w(0).min_h(BUTTON_H).py(BUTTON_PAD_Y)).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isWrapping ? div3().min_w(0).whitespace_normal().child(b.label) : b.label);
+  const base = h_flex().id(b.isSpent ? `spent ${b.id}` : `button ${b.id}`).when(!isWrapping, (e) => e.flex_none().h(BUTTON_H)).when(isWrapping, (e) => e.flex_shrink_1().min_w(0).min_h(BUTTON_H).py(BUTTON_PAD_Y)).items_center().justify_center().accessibility_label(b.label).when(runsOutAt !== undefined, (e) => e.relative().w(TIMED_W).rounded(BUTTON_H / 2)).when(left !== undefined, (e) => left ? e.child(timeLeftEl(b.id, left, runsOutAt ?? 0, p.now, t)) : e).child(isWrapping ? div3().min_w(0).whitespace_normal().child(b.label) : labelEl(b));
   const shaped = !isPill ? base : runsOutAt === undefined ? base.px(BUTTON_PAD_X).rounded(BUTTON_H / 2).border_1() : base.border_1();
   if (b.isSpent) {
     const spent = shaped.text_color(t.muted).opacity(SPENT_OPACITY).disabled(true);
@@ -7608,6 +7656,8 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
     const opacity = p.now < b.leftAt + NEXT_FRAME_MS ? SPENT_OPACITY : 0;
     return fadeEl(spent, `spent ${b.id}`, opacity, { duration: LEAVE_FADE_MS, delay: 0 }, p);
   }
+  if (b.isOut && under)
+    return shaped.border_color(CLEAR).text_color(supportingOf(t, under)).disabled(true);
   if (b.isOut)
     return shaped.border_color(CLEAR).text_color(t.muted).opacity(SPENT_OPACITY).disabled(true);
   const styled = b.emphasis === "primary" ? shaped.border_color(t.solid).bg(t.solid).text_color(t.solid_foreground) : b.emphasis === "normal" ? shaped.border_color(t.input).text_color(t.foreground) : shaped.text_color(t.muted);
@@ -7619,6 +7669,7 @@ function buttonEl(b, p, isInert = false, canWrap = false) {
     p.press(b, cx, e.modifiers.alt);
   });
 }
+var labelEl = (b) => b.labels ? v_flex().items_center().child(b.label).children(b.labels.filter((l) => l !== b.label).map((l) => div3().invisible().h(0).child(l))) : b.label;
 var CLEAR = "#00000000";
 var SPENT_OPACITY = 0.5;
 var buttonsEl = (buttons, p, indent, isInert = false, followsAnswers = false, above = CONTROL_GAP) => {
@@ -7645,16 +7696,16 @@ function fieldEl(f, p, indent, isInert = false, opening = null) {
     faded(div4()).min_h(BUTTON_H).px(INSET).py(SMALL_GAP).rounded(BOX_RADIUS).border_1().border_color(t.input).child(Input.new(state).w_full())
   ] : [];
   const key = `buttons ${f.rowId}`;
-  return v_flex().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => fadeEl(e.id(key), key, opening?.isOpen ? 1 : 0, glide, p)));
+  return v_flex2().pl(indent).children(input).child(buttonsEl(f.buttons, p, 0, isInert).when(opening !== null, (e) => fadeEl(e.id(key), key, opening?.isOpen ? 1 : 0, glide, p)));
 }
 
 // src/paint-empty.ts
 import { div as div7 } from "gpui-kit";
-import { h_flex as h_flex2, v_flex as v_flex3 } from "gpui-base";
+import { h_flex as h_flex2, v_flex as v_flex4 } from "gpui-base";
 
 // src/paint-space.ts
 import { div as div6 } from "gpui-kit";
-import { v_flex as v_flex2 } from "gpui-base";
+import { v_flex as v_flex3 } from "gpui-base";
 
 // src/paint-strokes.ts
 import { div as div5 } from "gpui-kit";
@@ -7967,7 +8018,7 @@ function spacesOf(blocks, isShut, formOf = (b) => b) {
   return out;
 }
 var springHeight = (el) => el.spring("height", HEIGHT_SPRING);
-var springBox = (id, height) => springHeight(v_flex2().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
+var springBox = (id, height) => springHeight(v_flex3().id(id).flex_none().overflow_hidden().when(height !== undefined, (e) => e.h(height ?? 0)));
 var sizeEl = (key, p, el, name = key) => div6().id(`size ${name}`).flex_none().on_size_change((size, cx) => p.measure(key, size, cx)).child(el);
 function fitEl(key, p, el, isPaneSized = false) {
   const height = isPaneSized || p.isAtOnce(key) ? undefined : p.heights.get(key);
@@ -8088,16 +8139,16 @@ function spacedEls(blocks, p, el) {
       throw new Error(`no look for block ${b.id}`);
     const { m, isShown, glide, fade } = look;
     const key = m?.springId ?? b.id;
-    const drawn = v_flex2().id(`drawing ${key}`).child(el(b));
+    const drawn = v_flex3().id(`drawing ${key}`).child(el(b));
     const drawing = m?.blockSwap && m.blockSwap.parts === null && !m.box ? kindFadeEl(drawn, b, m, m.blockSwap, key, p) : drawn;
     const slide = (e) => m?.box ? e.relative().top(isShown ? 0 : -SLIDE_PX).transition("top", glide) : e;
-    return v_flex2().id(`box ${key}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => spaceColumnEl(key, b, c, f, p.t)))).child(contentEl(b, m, p, slide(fade(drawing)), contentStrokeEls(key, b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? [])));
+    return v_flex3().id(`box ${key}`).flex_none().child(spaceEl(s, p, intoSpace.map((c) => spaceColumnEl(key, b, c, f, p.t)))).child(contentEl(b, m, p, slide(fade(drawing)), contentStrokeEls(key, b, Math.round(padOf(b)), p.t, f, passes, feeds[i] ?? [])));
   });
 }
 
 // src/paint-empty.ts
 function emptyEl(b, p, isInert) {
-  return v_flex3().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(fitEl(contentKey(b), p, emptyContentEl(b, p, isInert)));
+  return v_flex4().items_center().justify_center().when(p.listRoom !== null, (e) => e.min_h(p.listRoom ?? 0)).p(END_SPACE).child(fitEl(contentKey(b), p, emptyContentEl(b, p, isInert)));
 }
 var contentKey = (b) => `${b.id} content`;
 function controlsEl(b, p, isInert) {
@@ -8107,7 +8158,7 @@ function controlsEl(b, p, isInert) {
   const height = p.heights.get(key) ?? 0;
   const opening = { isOpen: height > 0 || p.isAtOnce(contentKey(b)), delayMs: enterDelayMs(height) };
   const fieldBox = field ? div7().w_full().pt(CONTROL_GAP).child(fieldEl(field, p, 0, isInert, opening)) : div7();
-  return v_flex3().w_full().items_center().child(sizeEl(key, p, fieldBox).w_full()).when(buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(buttons.map((x) => buttonEl(x, p, isInert)))));
+  return v_flex4().w_full().items_center().child(sizeEl(key, p, fieldBox).w_full()).when(buttons.length > 0, (e) => e.child(h_flex2().flex_wrap().justify_center().gap(CONTROL_GAP).pt(CONTROL_GAP).children(buttons.map((x) => buttonEl(x, p, isInert)))));
 }
 function titleWithMarkEl(title, isRunning, p) {
   const mark = { text: isRunning ? RUNNING_MARK : "", tone: null, isRunning };
@@ -8117,7 +8168,7 @@ function emptyContentEl(b, p, isInert) {
   const { t } = p;
   const { empty, under } = b;
   const centred = (text, color = t.foreground) => div7().text_center().whitespace_normal().text_color(color).child(text);
-  return v_flex3().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(b.titleMark ? titleWithMarkEl(empty.title, b.titleMark.isRunning, p) : centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0 || under?.field != null, (e) => e.child(controlsEl(b, p, isInert))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)));
+  return v_flex4().items_center().max_w(EMPTY_STATE_MAX_WIDTH_PT).gap(INSIDE_GAP).child(b.titleMark ? titleWithMarkEl(empty.title, b.titleMark.isRunning, p) : centred(empty.title).font_semibold()).when(empty.hint !== null, (e) => e.child(centred(empty.hint ?? "", t.muted))).when(under?.text != null, (e) => e.child(centred(under?.text ?? "").pt(CONTROL_GAP))).when((under?.buttons.length ?? 0) > 0 || under?.field != null, (e) => e.child(controlsEl(b, p, isInert))).when(under?.feedback != null, (e) => e.child(centred(under?.feedback?.text ?? "", colorOf(t, under?.feedback?.tone ?? null)).pt(CONTROL_GAP)));
 }
 
 // src/paint-chevron.ts
@@ -8159,7 +8210,7 @@ function foldChevronEl(t, fold) {
 
 // src/paint-status-line.ts
 import { div as div9 } from "gpui-kit";
-import { h_flex as h_flex4, v_flex as v_flex4 } from "gpui-base";
+import { h_flex as h_flex4, v_flex as v_flex5 } from "gpui-base";
 var statusPartEl = (text) => div9().min_w(0).max_w_full().whitespace_normal().child(text);
 function keyEl(s, does, t) {
   return h_flex4().items_start().pl(EDGE + HELP_INDENT).pr(EDGE).pb(LIST_GAP).child(div9().flex_none().w(HELP_COLUMN).child(s.mark ? markEl(s.mark, t) : div9().font_semibold().child(s.name))).child(div9().flex_1().min_w(0).whitespace_normal().text_color(t.muted).child(does));
@@ -8188,7 +8239,7 @@ function statusEl(s, p, isInert) {
       ...s.fold.isFolded ? { count: { id: `fold count ${s.id}`, value: s.fold.count } } : {}
     })
   ] : [];
-  return v_flex4().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(partEl("mark", markEl(s.mark, t))).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(partEl("name", name)).children(stall).children(chevron))).child(partEl("under", v_flex4().children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))))).when(s.buttons.length > 0, (e) => e.child(partEl("buttons", buttonsEl(s.buttons, p, MARK_W, isInert || areButtonsLeaving))));
+  return v_flex5().pl(EDGE + s.depth * NEST).pr(EDGE).child(h_flex4().id(`fold ${s.id}`).items_start().when(toggle !== undefined && !isInert, (e) => e.on_click((e, cx) => toggle ? p.press(toggle, cx, e.modifiers.alt) : undefined)).child(partEl("mark", markEl(s.mark, t))).child(h_flex4().relative().flex_1().min_w(0).flex_wrap().child(partEl("name", name)).children(stall).children(chevron))).child(partEl("under", v_flex5().children(s.under.map((l) => lineEl(l.text, l.level === "faint" ? faintOf(t) : t.muted))))).when(s.buttons.length > 0, (e) => e.child(partEl("buttons", buttonsEl(s.buttons, p, MARK_W, isInert || areButtonsLeaving))));
 }
 
 // src/paint-pr-status.ts
@@ -8224,7 +8275,7 @@ function prTailEls(b, p, els) {
 
 // src/paint-chrome.ts
 import { Background, PathBuilder as PathBuilder3, div as div11 } from "gpui-kit";
-import { h_flex as h_flex5, v_flex as v_flex5 } from "gpui-base";
+import { h_flex as h_flex5, v_flex as v_flex6 } from "gpui-base";
 var helpButton = {
   id: "help",
   label: HELP_COPY.name,
@@ -8260,15 +8311,18 @@ function countEl(tab, p) {
   return h_flex5().id(`count box ${tab.id}`).flex_none().overflow_hidden().spring("width", HEIGHT_SPRING).when(boxWidth !== undefined, (e) => e.w(boxWidth ?? 0)).child(div11().flex_none().pl(SMALL_GAP).on_size_change((size, cx) => p.measure(key, size, cx, true)).child(fadeEl(text, key, isShown ? 1 : 0, glide, p)));
 }
 var BANNER_TONES2 = { error: "error", warning: "warning", notice: "notice", ask: "notice" };
-function bannerEl(b, t, buttons = [], under = null) {
-  const tone = colorOf(t, BANNER_TONES2[b.tone]);
-  const text = v_flex5().flex_1().min_w(0).whitespace_normal().child(div11().font_semibold().text_color(tone).child(b.lead)).when(b.body !== null, (e) => e.child(div11().child(b.body ?? "")));
+var toneOf = (b, t) => colorOf(t, BANNER_TONES2[b.tone]);
+var bannerFillOf = (b, t) => tint(toneOf(b, t), 0.09);
+function bannerEl(b, t, buttons = [], under = null, after) {
+  const tone = toneOf(b, t);
+  const lead = div11().font_semibold().text_color(tone).child(b.lead);
+  const text = v_flex6().flex_1().min_w(0).whitespace_normal().child(after ? h_flex5().child(lead).child(div11().text_color(t.muted).child(after)) : lead).when(b.body !== null, (e) => e.child(div11().child(b.body ?? "")));
   const row = h_flex5().gap(INSET).items_center().child(text).when(buttons.length > 0, (e) => e.child(h_flex5().flex_none().gap(CONTROL_GAP).children(buttons)));
-  return v_flex5().mx(EDGE).px(INSET).py(BANNER_PAD_Y_PT).rounded(BOX_RADIUS).border_1().border_color(tint(tone, 0.3)).bg(tint(tone, 0.09)).child(row).children(under ? [under] : []);
+  return v_flex6().mx(EDGE).px(INSET).py(BANNER_PAD_Y_PT).rounded(BOX_RADIUS).border_1().border_color(tint(tone, 0.3)).bg(bannerFillOf(b, t)).child(row).children(under ? [under] : []);
 }
 var sessionNoteEl = (text, t) => div11().px(EDGE).pt(EDGE).whitespace_normal().text_color(t.muted).child(text);
 function messageEl(m, t) {
-  return v_flex5().flex_1().justify_center().items_center().p(END_SPACE).gap(INSIDE_GAP).child(div11().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div11().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
+  return v_flex6().flex_1().justify_center().items_center().p(END_SPACE).gap(INSIDE_GAP).child(div11().font_semibold().text_center().text_color(m.isError ? t.ansi1 : t.foreground).child(m.title)).when(m.hint !== null, (e) => e.child(div11().whitespace_normal().text_center().text_color(t.muted).child(m.hint ?? "")));
 }
 var FILL = PathBuilder3.fill().add_polygon([
   [0, 0],
@@ -8330,7 +8384,7 @@ function shortTitleEl(s) {
 
 // src/paint-row-lines.ts
 import { div as div13 } from "gpui-kit";
-import { v_flex as v_flex6 } from "gpui-base";
+import { v_flex as v_flex7 } from "gpui-base";
 var linesOf = (r) => [
   ...r.settled ? [{ text: r.settled.label, tone: r.settled.tone }] : [],
   ...r.feedback && !isStatusUnder(r) && !r.isLineWaiting ? [
@@ -8344,7 +8398,7 @@ var linesOf = (r) => [
   ] : [],
   ...r.heldLine ? [{ ...r.heldLine, isStatus: true }] : []
 ];
-var withTrunk = (el, trunk) => trunk ? v_flex6().relative().child(el).child(trunk) : el;
+var withTrunk = (el, trunk) => trunk ? v_flex7().relative().child(el).child(trunk) : el;
 function titleLineEls(r, shown, m, p, lineEl, trunkOf, withPanel) {
   const drawn = (l, n) => leavingEl(r, l, lineEl(l, n).id(`status above ${r.id} line ${n}`), n, p, trunkOf(n));
   const closing = m?.closing ?? null;
@@ -8370,7 +8424,7 @@ function titleLineEls(r, shown, m, p, lineEl, trunkOf, withPanel) {
   });
   return { lines: comes, over: [] };
 }
-var overEl = (els) => div13().relative().child(div13().absolute().top(0).left(0).w_full().child(v_flex6().children(els)));
+var overEl = (els) => div13().relative().child(div13().absolute().top(0).left(0).w_full().child(v_flex7().children(els)));
 function leavingEl(r, l, el, n, p, trunk) {
   const leftAt = l.leftAt;
   if (l.cameAt !== undefined)
@@ -8405,7 +8459,7 @@ function addedLinesEls(r, lines, els, p) {
   const isStart = p.now === added.cameAt || height === undefined;
   const name = addedId(r.id);
   const fade = { duration: ENTER_FADE_MS, delay: isStart ? 0 : enterDelayMs(height ?? 0) };
-  const shown = fadeEl(v_flex6().id(name).children(els.slice(from, end).flat()), name, isStart ? FAINT_OPACITY : 1, fade, p);
+  const shown = fadeEl(v_flex7().id(name).children(els.slice(from, end).flat()), name, isStart ? FAINT_OPACITY : 1, fade, p);
   const box = springBox(`fit ${name}`, isStart ? 0 : height);
   return [
     ...els.slice(0, from).flat(),
@@ -8530,7 +8584,7 @@ function rowEl(r, p) {
     return l.isHidden ? el.opacity(0) : el;
   }, (n) => hasTree ? panelFadeEl(r, m, p, trunkEl(0, null, t, r.isSelected).id(`trunk ${r.id} ${n}`)) : null, (el) => panelFadeEl(r, m, p, el));
   const titleEnd = lines.length > 0 ? "titleStatus" : "title";
-  return v_flex7().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected && !isHighlightOnBox(r, m), (e) => e.bg(t.selected)).when(isRowHoverable(r, m), (e) => e.when(!isHighlightOnBox(r, m), (h) => h.hover((s) => s.bg(t.hover))).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex7().id(`form ${r.id}`).when(swap !== null, (e) => swapFadeEl(swap, e)).children(lines).children(over).children(panelEl(r, shown, m, p, isInert, titleEnd))));
+  return v_flex8().id(`row ${r.id}`).pl(EDGE + r.depth * NEST).pr(EDGE).py(padOf(r)).when(r.isSelected && !isHighlightOnBox(r, m), (e) => e.bg(t.selected)).when(isRowHoverable(r, m), (e) => e.when(!isHighlightOnBox(r, m), (h) => h.hover((s) => s.bg(t.hover))).on_click((e, cx) => r.isCollapsed ? p.collapse(r.id, false, cx, e.modifiers.alt) : p.select(r.id, cx))).child(titleEl(r, p, line)).child(sizeEl(restId(r.id), p, v_flex8().id(`form ${r.id}`).when(swap !== null, (e) => swapFadeEl(swap, e)).children(lines).children(over).children(panelEl(r, shown, m, p, isInert, titleEnd))));
 }
 function bodyEls(from, isSelected, p, isInert, titleEnd, warn) {
   const buttonOf = (id) => from.buttons.filter((b) => b.id === id);
@@ -8595,7 +8649,7 @@ function panelEl(r, shown, m, p, isLeaving, titleEnd) {
     return [];
   const key = panelId(r.id);
   return [
-    panelFadeEl(r, m, p, v_flex7().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts))
+    panelFadeEl(r, m, p, v_flex8().id(key).on_size_change((size, cx) => p.measure(key, size, cx)).children(parts))
   ];
 }
 function panelFadeEl(r, m, p, el) {
@@ -8637,11 +8691,11 @@ function prEl(b, p, isInert) {
     result: (f) => feedbackEl(f, t)
   });
   const warning = warningBoxEl(b.id, b.warning, p, (text) => lineEl(text, colorOf(t, "error"), 0).pt(CONTROL_GAP));
-  return v_flex7().pl(EDGE).pr(EDGE).child(sizeEl(prHeadId(b.id), p, title)).child(prStatusEl(b, p, (l) => div19().pt(INSIDE_GAP).child(partedEl(statusParts(l), t.muted)))).children([...tail.slice(0, 1), warning, ...tail.slice(1)]);
+  return v_flex8().pl(EDGE).pr(EDGE).child(sizeEl(prHeadId(b.id), p, title)).child(prStatusEl(b, p, (l) => div19().pt(INSIDE_GAP).child(partedEl(statusParts(l), t.muted)))).children([...tail.slice(0, 1), warning, ...tail.slice(1)]);
 }
 function textLineEl(b, p, isInert) {
   const { t } = p;
-  return v_flex7().pl(EDGE).pr(EDGE).child(warningBoxEl(b.id, b.warning ?? null, p, (text) => lineEl(text, colorOf(t, "error"), 0).pb(LIST_GAP))).child(h_flex11().gap(CONTROL_GAP).items_center().child(div19().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex11().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
+  return v_flex8().pl(EDGE).pr(EDGE).child(warningBoxEl(b.id, b.warning ?? null, p, (text) => lineEl(text, colorOf(t, "error"), 0).pb(LIST_GAP))).child(h_flex11().gap(CONTROL_GAP).items_center().child(div19().flex_1().min_w(0).whitespace_normal().child(b.text ?? "")).when(b.buttons.length > 0, (e) => e.child(h_flex11().flex_none().gap(CONTROL_GAP).children(b.buttons.map((x) => buttonEl(x, p, isInert)))))).when(b.under !== null, (e) => e.child(lineEl(b.under ?? "", t.muted, 0))).when(b.feedback !== null, (e) => e.child(feedbackEl(b.feedback, t)));
 }
 function countEls(b, left, p) {
   const count = b.count ?? left?.count ?? null;
@@ -8717,7 +8771,7 @@ function blockEl(b, p) {
   if (b.kind === "caption")
     return div19().pl(EDGE).pr(EDGE).text_color(t.muted).child(b.text);
   if (b.kind === "banner")
-    return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving)), b.feedback ? feedbackEl(b.feedback, t) : null);
+    return bannerEl(b.banner, t, b.buttons.map((x) => buttonEl(x, p, isLeaving, false, bannerFillOf(b.banner, t))), b.feedback ? feedbackEl(b.feedback, t) : null, b.after);
   return div19();
 }
 
@@ -8931,6 +8985,53 @@ function closedLineView(d, canShowSession = false) {
     isUndoOfRefusal: canUndoRefused(d.delivery),
     sessionKey
   };
+}
+
+// ../core/view/hooks-trust.ts
+var HOOKS_TRUST_TEXT = {
+  untrusted: "Codex is not running the inbox’s hooks, so the inbox is not reading Codex’s replies. Open Settings, then Hooks, then Inbox, then Trust all. A hook icon beside the approval setting may also offer Allow all.",
+  modified: "Codex stopped the inbox’s hooks when the inbox updated, so the inbox is not reading Codex’s replies. To trust them again, open Settings, then Hooks, then Inbox, then Trust all. A hook icon beside the approval setting may also offer Allow all."
+};
+var isHooksTrust = (x) => x === "untrusted" || x === "modified";
+
+// src/draw-stop.ts
+var STOP_ID = "session";
+function stopScreenOf(read) {
+  const { session } = read;
+  const { stop } = session;
+  if (!stop)
+    return null;
+  const last = session.lastActions[STOP_ID];
+  const delivery = last && last.at >= stop.at ? last.delivery : undefined;
+  return {
+    stop,
+    canResume: isResumable(stop) && read.envelope.remoteActions?.includes("resume") === true,
+    isResumeSent: isResumeRequested(session),
+    failure: delivery?.state === "failed" ? delivery.reason : null
+  };
+}
+function stopBlocks(stop, now) {
+  if (!stop)
+    return [];
+  const resume = {
+    ...button(STOP_ID, resumeLabel(stop.isResumeSent), "primary", {
+      is: "press",
+      press: { action: "resume", id: STOP_ID },
+      effects: [],
+      kind: "handoff"
+    }),
+    labels: [resumeLabel(false), resumeLabel(true)]
+  };
+  return [
+    {
+      kind: "banner",
+      id: STOP_ID,
+      banner: stopBanner(stop.stop, stop.canResume),
+      after: `${DOT}${ago(now - stop.stop.at)}`,
+      buttons: stop.canResume ? [{ ...resume, isOut: stop.isResumeSent }] : [],
+      feedback: stop.failure ? { text: `Not sent: ${stop.failure}`, tone: "error" } : null
+    }
+  ];
 }
 
 // ../core/view/empty-tab.ts
@@ -9276,10 +9377,10 @@ var LATER_PAD_PT = LIST_GAP_PT / 2;
 
 // src/draw-status.ts
 var MERGED_CELLS = 150;
-var toneOf = (t) => t ?? "muted";
+var toneOf2 = (t) => t ?? "muted";
 var markOf2 = (mark, tone, isRunning) => ({
   text: mark,
-  tone: toneOf(tone),
+  tone: toneOf2(tone),
   isRunning
 });
 function doesOf(k) {
@@ -9810,18 +9911,20 @@ function rowWaits({ view, shownSince }, tab) {
 }
 function rowTabBlocks(screen, ui, tab) {
   const groups = groupsOf(screen.view, tab, screen.shownSince);
-  const empty = emptyTab(screen.view, {
-    tab,
-    agent: screen.agent,
-    drawn: groups.filter((g) => g.rows.length > 0 || g.closed.length > 0).length,
-    hasBlocker: false
-  });
+  const stop = tab === "needsYou" ? stopBlocks(screen.stop, screen.now) : [];
+  const drawn = groups.filter((g) => g.rows.length > 0 || g.closed.length > 0).length;
+  const empty = emptyTab(screen.view, { tab, agent: screen.agent, drawn, hasBlocker: stop.length > 0 });
   if (empty)
     return [emptyBlock(tab, empty)];
-  return groups.flatMap((g, n) => [
-    ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null }] : [],
-    ...groupBlocks(g, ui, ui.selected, screen)
-  ]);
+  if (drawn === 0)
+    return stop;
+  return [
+    ...stop,
+    ...groups.flatMap((g, n) => [
+      ...n > 0 ? [{ kind: "rule", id: `rule ${g.kind}`, text: null }] : [],
+      ...groupBlocks(g, ui, ui.selected, screen)
+    ])
+  ];
 }
 function tabCells(screen, tab) {
   const { view } = screen;
@@ -9836,7 +9939,8 @@ function tabCells(screen, tab) {
 }
 function chrome(screen, tab) {
   const error = footerError(tab, screen.view.status, screen.view.statusPage);
-  return { banners: tabBarBanners([], error, null) };
+  const host = screen.hooksTrust ? [bannerOf("hooks-trust", HOOKS_TRUST_TEXT[screen.hooksTrust])] : [];
+  return { banners: tabBarBanners(host, error, screen.pressNote) };
 }
 function tabBlocks(screen, ui) {
   if (ui.tab === "overview") {
@@ -9896,7 +10000,10 @@ function screenOf(followed, read, ui, o) {
     shownSince: o.shownSince ?? o.now,
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs,
-    isSendHeld: read.isSendHeld
+    isSendHeld: read.isSendHeld,
+    stop: stopScreenOf(read),
+    hooksTrust: isHooksTrust(read.envelope.hooksTrust) ? read.envelope.hooksTrust : null,
+    pressNote: o.pressNote ?? null
   };
   return {
     is: "inbox",
@@ -9913,7 +10020,7 @@ function screenOf(followed, read, ui, o) {
 // src/fetched.ts
 function screenAt(look, read, ui, view, now) {
   const collapsed = (v) => collapsedOf(ui, v);
-  const presses = { now, view, shownSince: ui.shownSince, collapsed, queue: look.queue };
+  const presses = { now, view, shownSince: ui.shownSince, collapsed, queue: look.queue, pressNote: noticeOf(ui, now) };
   const lookUi = lookUiOf(ui, view && { ...view, collapsed: collapsed(view) });
   return screenOf(look.followed, read, lookUi, presses);
 }
@@ -10427,7 +10534,7 @@ class Inbox extends View {
       ...paneFit(this, zoomOf(settings())),
       fades: this.fades
     };
-    const root = v_flex8().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
+    const root = v_flex9().id("inbox").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(TEXT).line_height(LINE).on_size_change(onSize(this, "paneWidth", (s) => s.width));
     if (screen.is === "message") {
       this.timeLeft = new Map;
       this.tracksOf = "";
@@ -10464,7 +10571,7 @@ class Inbox extends View {
       if (isNew)
         this.apply([{ type: "list-input" }], cx);
     };
-    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(tabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex8().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div20().flex_1().min_h(0).relative().child(v_flex8().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
+    const drawn = root.when(focus !== null, (e) => focus ? e.track_focus(focus) : e).on_key_down((event, cx) => this.onKey(event.keystroke, screen.tabs, shown, cx)).child(fitEl("tabs", paint, tabsEl(tabs, ui.isHelpShown, paint))).child(fitEl("chrome", paint, v_flex9().children(screen.banners.map((b) => bannerEl(b, t).mt(EDGE))).when(screen.trimmedNote !== null, (e) => e.child(sessionNoteEl(screen.trimmedNote ?? "", t))))).child(div20().flex_1().min_h(0).relative().child(v_flex9().id("inbox-list").absolute().inset_0().overflow_y_scroll().pt(EDGE).pb(END_SPACE).on_size_change(onSize(this, "listHeight", (s) => s.height)).on_scroll_wheel((_e, cx) => listInput(cx)).on_mouse_move((_e, cx) => listInput(cx)).on_click((_e, _cx) => {
       const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null;
       if (field)
         field.state.focus();

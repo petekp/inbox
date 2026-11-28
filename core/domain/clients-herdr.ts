@@ -21,9 +21,9 @@ export const HERDR: LookTable = {
     'link-open-rule': { kind: 'full' },
     'fork-ledger': { kind: 'host' },
     'band-and-stop-rows': {
-      kind: 'unsupported',
+      kind: 'different',
       reason:
-        'The look draws no stop row and no Resume, though the published session carries the stop. Only the Herdr sidebar shows it. No reason is recorded: issue #674.',
+        'Draws no band, since the Herdr sidebar shows the counts. The stop draws as a banner at the top of Asks, with Resume while the host takes it from the look.',
     },
     'exchange-trigger': { kind: 'host' },
     'settle-window': { kind: 'full' },
@@ -34,9 +34,9 @@ export const HERDR: LookTable = {
     'turn-working': { kind: 'host' },
     'host-task-list': { kind: 'host' },
     'hooks-need-trust': {
-      kind: 'unsupported',
+      kind: 'different',
       reason:
-        'The session Codex publishes carries no hook-trust state, so the look shows no banner when Codex is not running the hooks. No reason is recorded: issue #681.',
+        "Shows the hook-trust banner only for a Codex chat whose hooks ran once in its Codex run, as when an update changed the plugin. A Codex in a Herdr app terminal publishes a chat only once the chat's SessionStart hook claims the terminal, so a chat whose hooks never ran publishes nothing.",
     },
     'compare-in-background': { kind: 'host' },
     'compare-page': { kind: 'host' },

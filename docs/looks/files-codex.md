@@ -105,4 +105,3 @@ Part of [the look map](../looks.md#files).
 | `codex/src/detached-update.ts` | Codex host. Starts the update in a detached process, so a long model call still finishes. |
 | `codex/src/companion-listener.ts` | Codex host. Private socket, explicit chat scope and bounded requests. |
 | `codex/src/server-companion.ts` | Codex host. Companion access through the existing state and effects. |
-| `codex/src/hook-trust-text.ts` | Codex adapter. Shared wording for hook-trust notices. |

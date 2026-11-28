@@ -26,6 +26,7 @@ import { followCommandRows, movedLegacyCommands } from '../../core/runtime/comma
 import { herdrLog } from './herdr-log'
 import { isShownTab } from '../../core/view/tabs'
 import type { ShownTab } from '../../core/view/tabs'
+import type { HooksTrust } from '../../core/view/hooks-trust'
 
 /** A failed `codex exec` call as builds before `callFailures` saved it, with the fields each build added. */
 type SavedModelFailure = {
@@ -127,6 +128,12 @@ export type SessionState = Session & {
    * and updates publish the chat for the Herdr look from their own processes, so the server saves it for them. Codex only.
    */
   turnReadFailedAt?: number
+  /**
+   * Why Codex does not run the inbox's hooks, from the server's last clear answer for this chat's folder. The hooks and
+   * updates publish the chat for the Herdr look from their own processes, so the server saves it for them. A hook that
+   * runs clears it, since Codex runs only the hooks it trusts. Codex only.
+   */
+  hooksTrust?: HooksTrust
   /**
    * When a hook, an update or the MCP server in Herdr last changed this state, in ms, and always above the change
    * before it. Each of their changes sets it, even one that changes nothing else. A report to a Herdr pane carries it as

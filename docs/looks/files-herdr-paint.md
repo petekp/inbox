@@ -1,8 +1,8 @@
-# Files: the Herdr look's painting
+# Files: how the Herdr look paints
 
 Part of [the look map](../looks.md#files).
 
-These files paint the blocks `herdr/src` decides on with `gpui-kit` and `gpui-base`. With `herdr/src/main.ts`, they are the only files of [the Herdr look](files-herdr.md) that import those.
+The `herdr/src/paint-*.ts` files turn the blocks the other Herdr files decide on into `gpui-kit` elements. With `herdr/src/main.ts`, they are the only files that import `gpui-kit` and `gpui-base`.
 
 | File | Role |
 | --- | --- |

@@ -350,6 +350,7 @@ function preconditionsOf(raw) {
 
 // ../core/remote/herdr-press-file.ts
 var PRESS_TARGETS = {
+  resume: "id",
   answer: "id",
   type: "id",
   explain: "id",

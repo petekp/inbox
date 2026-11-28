@@ -33,10 +33,10 @@ export function applyEvents(ui: UiState, view: SessionView, events: readonly UiE
   return applied
 }
 
-/** What the published session says about its host. The look draws no stop, so nothing holds the Asks tab's place. */
+/** What the published session says about its host. The stop's banner at the top of Asks holds the tab's place. */
 export const hostFactsOf = (read: Extract<ReadSession, { is: 'read' }>): HostFacts => ({
   isFetchingPrs: read.isFetchingPrs,
-  hasAsksBlocker: false,
+  hasAsksBlocker: read.session.stop !== null,
   lastTypedMessageAt: read.session.presence.lastTypedMessageAt,
 })
 
