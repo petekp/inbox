@@ -8,7 +8,8 @@
 # with scripts/check-versions.mjs, that the comparison page matches its parts, with
 # scripts/build-compare-page.mjs, that types/index.d.ts matches its parts, with
 # scripts/build-types.mjs, that the inbox tools' input types match their
-# schemas, with scripts/build-tool-inputs.mjs, its types with tsc, and its tests with
+# schemas, with scripts/build-tool-inputs.mjs, that no Codex server test waits on ticks, with
+# scripts/check-tick-waits.mjs, its types with tsc, and its tests with
 # `claude plugin test`. Then the Codex plugin in codex/, the omp extension in
 # omp/, the Herdr look in herdr/ (each built into the working tree), the Exact
 # client tests in exact/tests, and, when the Herdr app is installed, a load of
@@ -82,6 +83,7 @@ check "types parts" node "$DIR/scripts/build-types.mjs" --check
 # The inbox tools' inputs come from their schemas, not from the MCP tools of
 # the session that last wrote the engine types, which tsconfig.json leaves out.
 check "tool inputs" node "$DIR/scripts/build-tool-inputs.mjs" --check
+check "tick waits" node "$DIR/scripts/check-tick-waits.mjs"
 # Claude Code writes these types into this folder when a session loads the mod
 # from it, through --plugin-dir or CLAUDE_CODE_PLUGIN_DIRS, with or without -p.
 # A session that only starts here writes none. The types name no paths, so a
