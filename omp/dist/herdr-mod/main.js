@@ -1,5 +1,5 @@
 // Built by herdr/build.ts with Bun 1.4.4 from herdr/src and core/. Do not edit.
-// Built at 2026-11-27T22:23:49.093Z. 437437 characters follow.
+// Built at 2026-11-28T01:34:13.535Z. 437442 characters follow.
 
 // src/main.ts
 import { View, div as div20 } from "gpui-kit";
@@ -360,7 +360,7 @@ function recommendedOption(options, rec) {
   const byLabel = /^\s*(?:option\s+)?([a-z]|\d{1,2})\s*[.!]?\s*$/i.exec(rec)?.[1]?.toLowerCase();
   return best ?? (byLabel ? options.find((o) => label(o) === byLabel) ?? null : null);
 }
-var QUESTION_WORD = /^\s*(?:what|why|how|which|where|who)\b/i;
+var QUESTION_WORD = /^\s*(?:what|why|how|which|where|when|who)\b/i;
 function isQuestionBack(answer) {
   const text = answer.trim();
   return text.endsWith("?") && QUESTION_WORD.test(text);
