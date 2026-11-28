@@ -23,6 +23,7 @@ import { paneFrame } from '../pane/pane-frame'
 import { paneHelp } from '../pane/pane-help'
 import {
   closeKeysWithoutRow,
+  FOCUS_REST_KEY,
   KEY_BINDING_SUFFIX,
   openedField,
   openFields,
@@ -573,19 +574,20 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
         : tab === 'prs'
           ? prsView()
           : needsYouView()
+  const demoNotice = showsDemoNotices ? (
+    <Box flexDirection="column" paddingX={isInline && !hasRail ? 2 : 1} marginBottom={blankLine}>
+      {banner(bannerOf('demo', DEMO_NOTICE), {
+        action: <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo(m, false)} />,
+      })}
+    </Box>
+  ) : null
   const tree = (
     <Box flexDirection="column" minHeight={e.props.scroll.bodyRows} backgroundColor={pal.body}>
-      {showsDemoNotices ? (
-        <Box flexDirection="column" paddingX={isInline ? 2 : 1} marginBottom={blankLine}>
-          {banner(bannerOf('demo', DEMO_NOTICE), {
-            action: <Button key="hide-demo" label="Hide demo" onPress={() => void setDemo(m, false)} />,
-          })}
-        </Box>
-      ) : null}
       {hasRail ? (
         <Box flexDirection="row" flexGrow={1}>
           {rail}
           <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+            {demoNotice}
             {statusBlock}
             <Box flexDirection="column" paddingRight={1} flexGrow={1}>
               {tabView}
@@ -594,6 +596,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
         </Box>
       ) : (
         [
+          demoNotice,
           tabs,
           statusBlock,
           <Box flexDirection="column" paddingX={1} paddingTop={blankLine} flexGrow={1}>
@@ -604,6 +607,7 @@ export async function paneTree(m: Mod, e: RenderInput<'Pane'>, elements: Element
       {/* Desktop takes no keys: a Button's hotkey does nothing there, so it gets neither the list of keys nor the hidden Buttons. */}
       {look === 'desktop' ? null : (
         <Box display="none">
+          <Button key={FOCUS_REST_KEY} plain label="Inbox" onPress={() => undefined} />
           {keyBindings(viewKeys)}
           {keyBindings([...rowKeys, ...herdrAskKeys()], KEY_BINDING_SUFFIX)}
         </Box>

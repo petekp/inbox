@@ -435,8 +435,17 @@ export function paneFrame(
     </Box>
   )
   const helpFill = ' '.repeat(railWidth - cellWidth(HELP_COPY.icon) - TAB_PAD.length)
+  // The pane scrolls its whole tree, so the rail moves down by the window's offset to stay in view. A scroll through
+  // `ui.scroll` draws the pane again with the new offset.
   const rail = (
-    <Box flexDirection="column" flexShrink={0} paddingLeft={1} marginRight={RAIL_GUTTER}>
+    <Box
+      flexDirection="column"
+      flexShrink={0}
+      paddingLeft={1}
+      marginRight={RAIL_GUTTER}
+      position="relative"
+      top={e.props.scroll.offset}
+    >
       {tabList.map(({ id, label }) => {
         const badge = badgeOf(id)
         const fill = ' '.repeat(railWidth - cellWidth(tabText(id, label)) - TAB_PAD.length)

@@ -11,7 +11,7 @@ import { findPrs } from './mod-prs'
 import { currentOwner } from './mod-sessions'
 import { cancelUndoScroll, paneState } from './mod-state'
 import type { RenderSurface } from 'claude-code'
-import { fieldKey, openedField, openFields, paneHasKeys } from '../pane/pane-keys'
+import { fieldKey, FOCUS_REST_KEY, openedField, openFields, paneHasKeys } from '../pane/pane-keys'
 import { takeShownRows } from '../pane/pane-status-shown'
 import { upgradeSession } from '../../core/view/session-files'
 import { statusChanged, withLook } from '../../core/runtime/session-status'
@@ -105,13 +105,18 @@ export function checkDelegatesIfDue(m: PaneOpenCalls): Promise<void> {
   return checkDelegates(delegateCallsOf(m), m.herdr)
 }
 
-/** Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. */
+/**
+ * Opens the open pane again, without asking for the keyboard, once a reply field opened or closed. A field that closed
+ * held the focus ring, and Claude Code moves it onto another element, whose mark stays while the selection moves. So
+ * when the terminal pane keeps the keys, the ring goes to a hidden Button.
+ */
 export async function matchPaneEscape(m: PaneOpenCalls) {
   const closesOnEscape = (await readUi(m)).typing === null
   if (closesOnEscape === paneState.paneClosesOnEscape) return
   paneState.paneClosesOnEscape = closesOnEscape
   if ((await m.pane.find()) === undefined) return
   await m.pane.open(closesOnEscape ? { closeOnEscape: true } : {})
+  if (closesOnEscape && paneHasKeys.get('terminal') === true) await m.pane.focus(FOCUS_REST_KEY)
 }
 
 /** How long a press waits for the desktop app to draw the pane again before it counts the pane as hidden. */
