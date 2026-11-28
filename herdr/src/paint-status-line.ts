@@ -3,14 +3,13 @@ import type { Element } from 'gpui-kit'
 import { h_flex, v_flex } from 'gpui-base'
 import { STALL_GAP } from '../../core/view/status-page-parts'
 import type { StatusLine } from './blocks'
-import { EDGE, HELP_COLUMN, HELP_INDENT, LIST_GAP, MARK_W, NEST, colorOf, faintOf } from './paint-theme'
+import { EDGE, HELP_COLUMN, HELP_INDENT, LIST_GAP, MARK_W, colorOf, faintOf } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
-import { buttonsEl, fadeEl, lineEl, markEl } from './paint-parts'
+import { buttonsEl, fadeEl, lineEl, markEl, nestedEl } from './paint-parts'
 import { LEAVE_FADE_MS } from '../../core/view/row-motion'
 import { swapPartFade } from './block-swap'
 import type { StatusPart } from './block-swap'
 import { foldChevronEl } from './paint-chevron'
-import { HEIGHT_SPRING } from '../../core/view/springs'
 
 /**
  * One part of a line built from parts, such as a PR's status line or a Status line's name and stall. gpui-kit has no
@@ -43,8 +42,7 @@ const SHOWN_PART = { opacity: 1, duration: LEAVE_FADE_MS, delay: 0 }
  * gives them, and the buttons that fade out take no press. A mark that turns into another takes its new form when the
  * new parts come, with no fade, so the mark's column never shows empty. A part that does not change still declares its
  * fade, since gpui-kit animates only a later change of opacity, and a part that starts to change while the others fade
- * out must fade from where it is. Its indent springs, so a change of nesting slides the line, and the connectors that keep
- * their names slide with it.
+ * out must fade from where it is. Its indent springs, as `nestedEl` sets it.
  */
 export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
   const { t } = p
@@ -74,13 +72,8 @@ export function statusEl(s: StatusLine, p: Paint, isInert: boolean): Element {
       ]
     : []
 
-  return v_flex()
-    .id(`indent ${s.id}`)
-    .relative()
-    .left(s.depth * NEST)
-    .spring('left', HEIGHT_SPRING)
+  return nestedEl(v_flex().id(`indent ${s.id}`), s.depth)
     .pl(EDGE)
-    .pr(EDGE + s.depth * NEST)
     .child(
       h_flex()
         .id(`fold ${s.id}`)

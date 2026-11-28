@@ -23,7 +23,7 @@ import {
 } from './paint-theme'
 import { fieldEl } from './paint-field'
 import { emptyEl } from './paint-empty'
-import { buttonEl, buttonsEl, fadeEl, lineEl, markEl } from './paint-parts'
+import { buttonEl, buttonsEl, fadeEl, lineEl, markEl, nestedEl } from './paint-parts'
 import { foldChevronEl } from './paint-chevron'
 import { isStatusUnder } from './held-line'
 import { underId } from './under-line'
@@ -433,10 +433,8 @@ function foldEl(b: Extract<Block, { kind: 'fold' | 'more' }>, p: Paint, isInert:
   const fold = b.kind === 'fold' ? b : null
   const mark = fold?.mark
 
-  return h_flex()
-    .id(`fold ${b.id}`)
-    .pl(mark === undefined ? TEXT_X + b.depth * NEST : EDGE)
-    .pr(EDGE)
+  return nestedEl(h_flex().id(`fold ${b.id}`), mark === undefined ? b.depth : 0)
+    .pl(mark === undefined ? TEXT_X : EDGE)
     .py(padOf(b))
     .items_start()
     .text_color(fold?.level === 'faint' ? faintOf(t) : t.muted)

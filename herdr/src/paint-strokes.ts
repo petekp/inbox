@@ -189,8 +189,8 @@ type StrokeMove = { isMoving: boolean; isShut: boolean; isGone: boolean; isHidin
  * Who each block's strokes fade with, so a connector shows only while both things it joins show. Up and down, a column
  * joins the nearest block that stays or where it ends. It runs past a row that stays nested beside it, a block that has
  * left, and a block that enters or leaves while the column runs on below it, as the path runs past a subject's mark. A
- * column from an open block runs past a block that waits, shut, to enter while another holds its space, since that block
- * takes no room, and ends there only when no open block carries the column past it. A column whose two ends stay never
+ * column from an open block runs past a block whose box is shut, as one that waits to enter while another holds its
+ * space, since that block takes no room, and ends there only when no open block carries the column past it. A column whose two ends stay never
  * fades, so it stays whole past a block that comes or goes. Otherwise it fades along its whole way with an end that
  * enters or leaves: the upper end whose content hides, as while it leaves or waits for its space, else the upper end. So
  * a fold's rows fade with the column from their parent, and a column stays whole past a copy that has left while both

@@ -10,7 +10,7 @@ import { isReshaped } from './reshape-hold'
  * last form for that draw. The move's first draw only sets where its boxes move from, so the change lands in the draw
  * that sets them moving. Rows and an empty tab's text take their new form at once, since a press or a field on a row
  * must show at once, and so does a block whose new form fades in as it changes whole (`formKey`), which measures it. A
- * Status line whose place in the tree changes outside the reshape hold, as when a field the person opened replaces the
+ * block whose place in the Status tree changes outside the reshape hold, as when a field the person opened replaces the
  * lines that leave, takes its new form at once too, since its old connectors would join lines that hid at once.
  */
 export function heldForm(b: Block, was: Tracks, motion: ReadonlyMap<string, RowMotion>): Block {

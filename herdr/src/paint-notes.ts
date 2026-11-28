@@ -2,8 +2,9 @@ import { div } from 'gpui-kit'
 import type { Element } from 'gpui-kit'
 import { h_flex } from 'gpui-base'
 import type { Block } from './blocks'
-import { CONTROL_GAP, EDGE, HEAD_LINE, HEAD_TEXT, NEST, TEXT_X, colorOf, faintOf } from './paint-theme'
+import { CONTROL_GAP, EDGE, HEAD_LINE, HEAD_TEXT, TEXT_X, colorOf, faintOf } from './paint-theme'
 import type { Theme } from './paint-theme'
+import { nestedEl } from './paint-parts'
 
 /** A rule's line, filling the space beside its text. */
 export const ruleLine = (t: Theme): Element => div().flex_1().border_t(1).border_color(t.border)
@@ -34,12 +35,11 @@ export function noteEl(b: Extract<Block, { kind: 'note' }>, t: Theme, buttons: E
     .text_color(b.isStrong ? t.foreground : b.level === 'faint' ? faintOf(t) : colorOf(t, b.tone))
     .child(b.text)
 
-  return h_flex()
+  return nestedEl(h_flex().id(`indent ${b.id}`), b.depth)
     .flex_wrap()
     .gap_x(CONTROL_GAP)
     .items_baseline()
-    .pl((b.isAtEdge ? EDGE : TEXT_X) + b.depth * NEST)
-    .pr(EDGE)
+    .pl(b.isAtEdge ? EDGE : TEXT_X)
     .whitespace_normal()
     .when(b.isStrong, e => e.text_size(HEAD_TEXT).line_height(HEAD_LINE))
     .child(text)
