@@ -99,6 +99,7 @@ function pagedFrames(run: HerdrRun, end: number): Frames {
     shrinks: shown(f.shrinks),
     titles: shown(f.titles),
     gaps: shown(f.gaps),
+    breaks: shown(f.breaks),
     looseArms: shown(f.looseArms),
     heights: [],
     slides: [],
@@ -195,6 +196,13 @@ function motionFailures(run: HerdrRun): Failure[] {
       ...at(g.at),
       rule: 'connector-gap',
       detail: `a connector in ${g.id} breaks at y ${g.y.toFixed(1)}${g.into ? `, where it runs into ${g.into}` : ''}`,
+      seen: g,
+    })
+  for (const g of f.breaks)
+    out.push({
+      ...at(g.at),
+      rule: 'connector-break',
+      detail: `a draw hides a connector in ${g.id} at y ${g.y.toFixed(1)}${g.into ? `, where it runs into ${g.into}` : ''}, while the part it joins shows`,
       seen: g,
     })
   for (const a of f.looseArms)
