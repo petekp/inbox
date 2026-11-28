@@ -402,7 +402,7 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
         spaceEl(
           s,
           p,
-          intoSpace.map(c => spaceColumnEl(key, c, f, p.t)),
+          intoSpace.map(c => spaceColumnEl(key, b, c, f, p.t)),
         ),
       )
       .child(

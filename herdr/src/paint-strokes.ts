@@ -254,9 +254,17 @@ export function feedsOf(blocks: Block[], moves: StrokeMove[]): Column[][] {
 /** How far a nesting column reaches beside a block: to its end, to the arm, or from `lowerFrom` down. */
 type Reach = { isDashed: boolean; toEnd: boolean; toArm: boolean; lowerFrom: number | null }
 
-/** A column drawn across the space of the block drawn under `key`, which the column joins from above. */
-export const spaceColumnEl = (key: string, c: Column, f: StrokeFades, t: Theme): Element =>
-  f.above(c.depth)(lineEl(`space column ${key} ${c.depth}`, c, 0, null, t))
+/**
+ * A column drawn across the space of block `b`, drawn under `key`, which the column joins from above. It is named as
+ * `contentStrokeEls` names the block's strokes at its depth, so a column that turns from a nesting column into the
+ * path's line, or back, is a new line in the space too, as it is in the block.
+ */
+export const spaceColumnEl = (key: string, b: Block, c: Column, f: StrokeFades, t: Theme): Element => {
+  const isPathLine = c.depth === 0 && 'path' in b && b.path !== undefined
+  const id = isPathLine ? `space path ${key}` : `space column ${key} ${c.depth}`
+
+  return f.above(c.depth)(lineEl(id, c, 0, null, t))
+}
 
 /**
  * The path's line and the nesting connectors beside a block's content, each in the column under the marks of rows at

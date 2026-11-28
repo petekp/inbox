@@ -335,7 +335,7 @@ export const PRESS_SEEDS: {
     rule: 'connector-gap',
     detail: 'in space c1',
     issue: 1041,
-    isOpen: true,
+    isOpen: false,
     case: {
       ...herdr(only([]), [
         { is: 'click', on: 'tab', n: 4, label: 'overview' },

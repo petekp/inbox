@@ -51,6 +51,6 @@ A known failure in `KNOWN`, in `fuzz/known.ts`, matches on part of its detail, s
 
 - Herdr: #771 (a row that settles while it opens), #811's second Copy press, #827's four seeds, #828's leave just after Explain, #832's collapse just after Explain, #833's fold of every Status fold, #950's, #956's Reply after an option, #957's Fix whose refresh fails, #967, #971, #972, #980, #981, #988, #991, #995, #997, #998, #999, #1000, #1001 and #1002 pass. #811's collapse right after Undo does not reproduce: the stand-in cuts no second title line.
 - Open, from the press rules and the clicks that now reach buttons outside rows: Herdr #1005, #1006, #1007, #1008, #1009, #1010, #1013 and #1015. omp #1011 and Codex #1012 and #1014 pass.
-- Herdr: #1007's seeds, #1017 and #1031, a tab count that went in one draw, pass. #1032, a Status answer during Remove on the goal, is open with two seeds. #1034, Undo 25 ms after Remove, passes. #1041, Undo 200 ms after Remove, is open with one seed.
+- Herdr: #1007's seeds, #1017 and #1031, a tab count that went in one draw, pass. #1032, a Status answer during Remove on the goal, is open with two seeds. #1034, Undo 25 ms after Remove, passes. #1041, Undo 200 ms after Remove, passes.
 - From the first runs: #827, #828, #830, #831, #832 and #833, each with its seed. #898 has its seed too. #829 was a false report from the frame replay animating a tab switch, and is closed.
 
