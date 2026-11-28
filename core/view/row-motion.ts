@@ -1,4 +1,4 @@
-import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames } from './springs'
+import { FRAME_MS, HEIGHT_SETTLE_MS, springFrames, springStep } from './springs'
 import type { SpringState } from './springs'
 
 /** How long a fade lasts when it does not move space, such as a hover or a row's fill, in ms. */
@@ -32,6 +32,22 @@ export function enterDelayMs(height: number, from: SpringState = { x: 0, v: 0 },
 
   return Math.min(at * FRAME_MS, HEIGHT_SETTLE_MS - ENTER_FADE_MS)
 }
+
+/** How long a line that moves from one section to another takes to reach its new place, in ms: as long as a height spring. */
+export const LINE_MOVE_MS = HEIGHT_SETTLE_MS
+
+/** The distance the move's spring runs over, in px, so the spring's stop threshold of half a pixel is a tiny share of the way. */
+const LINE_MOVE_UNIT = 1000
+
+/**
+ * How far along its way a line is, from 0 to 1, `ms` after it starts to move from the place of the line it replaces to
+ * its own. A subject that leaves the goal's list for the list after it, as Remove on the goal does, and back, as Undo
+ * does, is two rows with different keys: the old one leaves and the new one enters. The new one is drawn at this share
+ * of the way from the old one's box to its own, so the two read as one line moving, as Herdr's one block does. The
+ * spring does not overshoot.
+ */
+export const lineMoveShare = (ms: number): number =>
+  ms >= LINE_MOVE_MS ? 1 : Math.min(1, Math.max(0, springStep({ x: 0, v: 0 }, LINE_MOVE_UNIT, ms).x / LINE_MOVE_UNIT))
 
 /** Text that the edge of a moving space cuts shows under this opacity. */
 export const CUT_OPACITY = 0.2

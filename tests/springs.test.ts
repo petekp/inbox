@@ -1,6 +1,7 @@
 import { expect } from 'claude-code/testing'
 import { test } from './test-with-timeout'
 
+import { LINE_MOVE_MS, lineMoveShare } from '../core/view/row-motion'
 import { FRAME_MS, springFrames, springStep } from '../core/view/springs'
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000
@@ -21,4 +22,13 @@ test('a spring that passes within half a pixel between frames keeps moving to th
 
   expect(frames.length).toBeGreaterThan(3)
   expect(stepped).toEqual(frames.slice(1, -1))
+})
+
+test('a line that moves between lists covers its way on the spring, not in its first frames', () => {
+  const shares = Array.from({ length: LINE_MOVE_MS / FRAME_MS }, (_, i) => lineMoveShare(i * FRAME_MS))
+
+  expect(shares[0]).toBe(0)
+  expect(shares.every((s, i) => i === 0 || s >= (shares[i - 1] ?? 0))).toBe(true)
+  expect(lineMoveShare(5 * FRAME_MS)).toBeLessThan(0.95)
+  expect(lineMoveShare(LINE_MOVE_MS)).toBe(1)
 })

@@ -36,6 +36,7 @@ import { collapse, naturalHeight, retargetClose, topIn } from './tab-collapse'
 import { showConnectors } from './tab-connectors'
 import { drawnKeys, showNewKeys } from './tab-new-keys'
 import { isCountMoving, moveCounts } from './tab-count-motion'
+import { moveLines } from './tab-line-move'
 
 export const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -168,6 +169,7 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>, stepA
     }
   }
   moveCounts(changed)
+  moveLines(els, changed, heightWaitMs)
   glideTabs(before.tabWidths)
   showNotes(before)
   showNewKeys(before.keys, before.heights)

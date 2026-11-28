@@ -4,6 +4,7 @@ import type { GoalBlock, MilestoneRow } from '../../core/view/status-goal-page'
 import type { StatusPage, StatusRow } from '../../core/view/status-page'
 import { WAS_LEVEL } from '../../core/view/status-page-parts'
 import { tabState } from './tab-state'
+import { goalLineMotion, statusRowMotion } from './tab-motion-keys'
 import { isParentFolded } from './tab-status-fold'
 import { stepLines } from './tab-line-steps'
 import type { TextLine } from './tab-line-steps'
@@ -30,8 +31,7 @@ export type DrawnStatus = {
 /** The Later label, keyed by the milestone it sits above. A label that moves to another milestone leaves and enters. */
 type LaterLine = { id: string }
 
-export const statusRowMotion = (id: string) => `status-${id}`
-export const goalLineMotion = (id: string) => `goal-${id}`
+export { goalLineMotion, statusRowMotion }
 export const goalHeadMotion = (id: string) => `head-${id}`
 export const metFoldMotion = (id: string) => `met-${id}`
 export const laterMotion = (id: string) => `later-${id}`
