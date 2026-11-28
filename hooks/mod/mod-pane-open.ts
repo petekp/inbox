@@ -4,7 +4,7 @@ import { isPaneShown, readUi, redraw } from './mod-drawn'
 import { checkDelegates, followDelegates as followHerdrDelegates, openInHerdr } from './mod-herdr'
 import type { HerdrAgent } from '../../core/remote/herdr'
 import type { HerdrOpened } from '../../core/remote/herdr-open'
-import { scrollToOpenRow } from './mod-pane-scroll'
+import { scrollToTabStart } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { wakeForHeldSends } from './mod-press-run'
 import { findPrs } from './mod-prs'
@@ -15,7 +15,7 @@ import { fieldKey, FOCUS_REST_KEY, openedField, openFields, paneHasKeys } from '
 import { takeShownRows } from '../pane/pane-status-shown'
 import { upgradeSession } from '../../core/view/session-files'
 import { statusChanged, withLook } from '../../core/runtime/session-status'
-import { isRowTab, type ShownTab } from '../../core/view/tabs'
+import type { ShownTab } from '../../core/view/tabs'
 
 type PaneOpenCalls = Pick<
   Mod,
@@ -209,9 +209,9 @@ export async function showTab(m: PaneOpenCalls, tab: ShownTab) {
   await m.sendUi([{ type: 'show-tab', tab }])
 }
 
-/** The controller showed `tab`: the look follows it, and a row tab scrolls to its open row. */
+/** The controller showed `tab`: the look follows it, a row tab scrolls to its open row and the Status to its start. */
 export async function tabShown(m: PaneOpenCalls, tab: ShownTab) {
   cancelUndoScroll()
   void m.syncLook()
-  if (isRowTab(tab)) await scrollToOpenRow(m, tab)
+  await scrollToTabStart(m, tab)
 }

@@ -13,6 +13,7 @@ Part of [the look map](../looks.md#files).
 | `codex/src/tab-panel-fade.ts` | Codex adapter. A row's panel fades: through a list of steps, the parts of a closing panel that fade, and a faint turned-back panel's close. |
 | `codex/src/tab-form-swap.ts` | Codex adapter. The fades of a row's change between its settled form and another: the form it leaves, drawn over the form it takes, fades out while the height holds, and the new form's lines fade in once the height moves. |
 | `codex/src/tab-wake.ts` | Codex adapter. The timed work after a draw: scrolling the open row into view, and the draw when the next move ends. |
+| `codex/src/tab-places.ts` | Codex adapter. Where the page was scrolled on each tab when the tab last showed, so a tab the person goes back to opens there, and a tab the look moved to or Help opens at its top. |
 | `codex/src/tab-scroll.ts` | Codex adapter. Scrolls a row into view with the least move, on two of the row glides' springs in a row, so a scroll eases in and a new target keeps its speed. |
 | `codex/src/tab-glide.ts` | Codex adapter. The Web Animations each move plays: the spring glide of a height or offset, and fades. |
 | `codex/src/tab-new-keys.ts` | Codex adapter. Fades in the buttons a draw brings into a block it drew before, such as a row's buttons that come back as its reply field closes, once the block's box has nearly grown to hold them. |

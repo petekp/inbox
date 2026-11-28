@@ -15,7 +15,11 @@ const HOOKS_STOPPED_CACHE_MS = 5_000
 const lastHookAt = (s: SessionState): number =>
   Math.max(...[s.heard.startAt, s.heard.promptAt, s.heard.stopAt].map(at => at ?? -Infinity))
 
-export function makeHooksTrustNow(deps: ServerDeps, newestTurns: Map<string, string>) {
+export function makeHooksTrustNow(
+  deps: ServerDeps,
+  newestTurns: Map<string, string>,
+  track: (work: Promise<unknown>) => void,
+) {
   const { now } = deps
   /** Codex's last answer about the hooks' trust in each chat folder, with when it was asked for. */
   const hooksTrust = new Map<string, { at: number; askedAt: number; answer: HooksTrust | 'trusted' | null }>()
@@ -71,14 +75,16 @@ export function makeHooksTrustNow(deps: ServerDeps, newestTurns: Map<string, str
       askingHooksIn.add(folder)
       if (unheardTurn !== null) askedTurns.set(id, unheardTurn)
       const askedAt = now()
-      void (async () => {
-        const answer = await Promise.resolve(s.cliPath ?? deps.fallbackCli())
-          .then(cli => ask(cli, folder))
-          .catch(() => null)
-        hooksTrust.set(folder, { at: now(), askedAt, answer })
-        askingHooksIn.delete(folder)
-        await saveTrust(id, answer, askedAt).catch(() => undefined)
-      })()
+      track(
+        (async () => {
+          const answer = await Promise.resolve(s.cliPath ?? deps.fallbackCli())
+            .then(cli => ask(cli, folder))
+            .catch(() => null)
+          hooksTrust.set(folder, { at: now(), askedAt, answer })
+          askingHooksIn.delete(folder)
+          await saveTrust(id, answer, askedAt)
+        })(),
+      )
     }
     const answer = known?.answer
     if (
@@ -87,7 +93,7 @@ export function makeHooksTrustNow(deps: ServerDeps, newestTurns: Map<string, str
       answer !== null &&
       (answer === 'trusted' ? undefined : answer) !== s.hooksTrust
     )
-      void saveTrust(id, answer, known.askedAt).catch(() => undefined)
+      track(saveTrust(id, answer, known.askedAt))
 
     return answer === 'untrusted' || answer === 'modified' ? answer : null
   }

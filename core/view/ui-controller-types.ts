@@ -62,7 +62,8 @@ export type UiCommand =
   | { kind: 'read' }
   | { kind: 'focus-field'; id: string }
   | { kind: 'reveal'; tab: Tab; id: string; closedId: string | null }
-  | { kind: 'tab-shown'; tab: ShownTab }
+  /** `startsOver` when the look made the move, so the tab opens at its top rather than where the person left it. */
+  | { kind: 'tab-shown'; tab: ShownTab; startsOver: boolean }
   | { kind: 'demo-reply'; pressId: number }
 
 export type UiStep = { ui: UiState; commands: UiCommand[] }

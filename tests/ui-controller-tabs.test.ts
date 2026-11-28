@@ -26,7 +26,7 @@ test('opening on another tab moves to Asks while a question waits there', () => 
   const s = sessionWith({ items: [question('i1')], findings: [finding('f1')] })
   const run = openOn(s, T0, 'findings')
   expect(run.ui.tab).toBe('needsYou')
-  expect(run.commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou' })
+  expect(run.commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou', startsOver: true })
   expect(run.ui.isOpening).toBe(false)
 })
 
@@ -57,7 +57,7 @@ test('a look that opens on its Status page with no tab of its own moves to Asks 
     return read(opened.ui, s, T0)
   }
   expect(first(asked).ui.tab).toBe('needsYou')
-  expect(first(asked).commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou' })
+  expect(first(asked).commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou', startsOver: true })
   expect(first(sessionWith({ findings: [finding('f1')] })).ui.tab).toBe('overview')
   expect(first(asked).ui.isFirstOpen).toBe(false)
   const again = send(first(sessionWith({})).ui, asked, { type: 'visible', isVisible: false }, T0 + 10)
@@ -76,7 +76,7 @@ test('a row that arrives on another tab is followed only when it arrives while t
   const folded = read(read(start.ui, closed, quiet).ui, closed, quiet + 2 * SETTLED_MS)
   const run = read(folded.ui, arrived, quiet + 2 * SETTLED_MS + 10)
   expect(run.ui.tab).toBe('needsYou')
-  expect(run.commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou' })
+  expect(run.commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou', startsOver: true })
 })
 
 test('an arrival waits while the list is in use and is followed once the list has been quiet for FOLD_QUIET_MS', () => {
@@ -158,7 +158,7 @@ test('a row recorded while Help shows starts its new-row tint when Help closes',
   expect(closedHelp.ui.newRows.f2?.shownAt).toBe(T0 + 5000)
 })
 
-test('the person switching tabs keeps that tab’s cursor and closes Help', () => {
+test('the person switching tabs keeps that tab’s cursor and place and closes Help', () => {
   const s = sessionWith({ items: [question('i1'), question('i2')], findings: [finding('f1')] })
   const start = openOn(s)
   const picked = send(start.ui, s, { type: 'select', tab: 'needsYou', id: 'i2', by: 'key' }, T0 + 10)
@@ -167,10 +167,10 @@ test('the person switching tabs keeps that tab’s cursor and closes Help', () =
   const back = send(helped.ui, s, { type: 'show-tab', tab: 'needsYou' }, T0 + 40)
   expect(back.ui.selection.needsYou.id).toBe('i2')
   expect(back.ui.isHelpShown).toBe(false)
-  expect(back.commands).toEqual([{ kind: 'tab-shown', tab: 'needsYou' }])
+  expect(back.commands).toEqual([{ kind: 'tab-shown', tab: 'needsYou', startsOver: false }])
 })
 
-test('following an arrival starts the target tab’s cursor over', () => {
+test('following an arrival starts the target tab’s cursor and scroll over', () => {
   const s = sessionWith({ items: [question('i1'), question('i2')] })
   const start = openOn(s)
   const picked = send(start.ui, s, { type: 'select', tab: 'needsYou', id: 'i2', by: 'key' }, T0 + 10)
@@ -178,6 +178,7 @@ test('following an arrival starts the target tab’s cursor over', () => {
   const run = read(away.ui, withItems(s, [question('i1'), question('i2'), question('i3')]), T0 + 20 + FOLD_QUIET_MS)
   expect(run.ui.tab).toBe('needsYou')
   expect(run.ui.selection.needsYou.id).toBe(null)
+  expect(run.commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou', startsOver: true })
 })
 
 test('switching the demo on or off starts the look over as it opens and keeps drafts and folds', () => {
@@ -245,5 +246,15 @@ test('a PR listed while PRs load is not new, and its waiting thread is followed 
   expect(loading.ui.newRows).toEqual({})
   const loaded = reduceUi(loading.ui, withPr, { type: 'read', host: FACTS }, T0 + 20)
   expect(loaded.ui.tab).toBe('prs')
-  expect(loaded.commands).toContainEqual({ kind: 'tab-shown', tab: 'prs' })
+  expect(loaded.commands).toContainEqual({ kind: 'tab-shown', tab: 'prs', startsOver: true })
+})
+
+test('showing an ask from another tab keeps the Asks tab’s place and reveals the ask', () => {
+  const s = sessionWith({ items: [question('i1'), question('i2')], findings: [finding('f1')] })
+  const start = openOn(s)
+  const away = send(start.ui, s, { type: 'show-tab', tab: 'findings' }, T0 + 10)
+  const asked = send(away.ui, s, { type: 'show-ask', id: 'i2', by: 'click' }, T0 + 20)
+  expect(asked.ui.tab).toBe('needsYou')
+  expect(asked.commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou', startsOver: false })
+  expect(asked.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i2', closedId: null })
 })
