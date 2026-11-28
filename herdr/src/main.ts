@@ -65,7 +65,7 @@ import { Heights, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
 import type { TimeLeft } from './time-left'
-import { bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { TAB_WORDS, bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
 import { fitEl, spacedEls } from './paint-space'
 import { EDGE, END_SPACE, LINE, onSize, paneFit, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
@@ -308,7 +308,7 @@ export default class Inbox extends View {
     this.wake?.timer.cancel()
     this.wake = null
     this.releaseField()
-    this.heights.clear()
+    this.heights.clear([TAB_WORDS])
     if (sessionId) this.load(sessionId, cx)
   }
 

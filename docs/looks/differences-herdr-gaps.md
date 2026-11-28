@@ -7,5 +7,4 @@ These rows are drift. The Herdr look lacks each feature and no Herdr limit expla
 | Topic | Herdr look | Why | Where |
 | --- | --- | --- | --- |
 | Stop rows (`band-and-stop-rows`) | Draws no stop row and no Resume. Only the Herdr sidebar shows a stop. The published session carries it. | No reason recorded: [#674](https://github.com/petekp/inbox/issues/674). | `herdr/src/draw.ts:tabBlocks` |
-| Tab names in a narrow pane (`tab-symbols`) | The tab row wraps its words onto a second line and never switches to symbols. | No reason recorded: [#672](https://github.com/petekp/inbox/issues/672). | `herdr/src/paint-chrome.ts:tabsEl` |
 | Hook trust (`hooks-need-trust`) | Shows nothing when Codex is not running the inbox's hooks. The Codex tab shows a banner that says why and how to trust them. | No reason recorded: [#681](https://github.com/petekp/inbox/issues/681). The session Codex publishes carries no trust state. | `core/remote/herdr-app.ts` |

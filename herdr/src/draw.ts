@@ -389,7 +389,7 @@ function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'finding
   ])
 }
 
-export type TabCell = { id: ShownTab; label: string; badge: string | null; isSelected: boolean }
+export type TabCell = { id: ShownTab; label: string; symbol: string; badge: string | null; isSelected: boolean }
 
 export function tabCells(screen: Pick<LookScreen, 'view'>, tab: ShownTab): TabCell[] {
   const { view } = screen
@@ -398,6 +398,7 @@ export function tabCells(screen: Pick<LookScreen, 'view'>, tab: ShownTab): TabCe
   return shownTabs().map(t => ({
     id: t.id,
     label: t.label,
+    symbol: t.symbol,
     badge: tabBadge(t.id, counts),
     isSelected: t.id === tab,
   }))

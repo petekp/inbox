@@ -3,8 +3,7 @@ import type { Block } from './blocks'
 
 /**
  * The Help page, the same over every tab: the keys the look takes, then every mark with what it means. Which inbox
- * build the host runs, when the host says, sits at the right end of the Keys title. The look names its tabs in words
- * at every width, so it lists no tab symbols.
+ * build the host runs, when the host says, sits at the right end of the Keys title.
  */
 export function helpBlocks(version: string | null): Block[] {
   const keys = helpKeys('herdr')
