@@ -1004,12 +1004,27 @@ function waitingUnderParents(ledger) {
   ]);
 }
 var COUNTS_GAP = STALL_GAP.replace(" ", "\xA0");
+var NONE_COLLAPSED = () => false;
+function withoutCollapsed(rows, isCollapsed) {
+  let hiddenBelow = null;
+  return rows.flatMap((r) => {
+    if (hiddenBelow !== null && r.depth > hiddenBelow)
+      return r.kind === "ask" && r.depth === hiddenBelow + 1 ? [{ ...r, branch: "last" }] : [];
+    hiddenBelow = r.kind === "subject" && isParentCollapsed(r, isCollapsed) ? r.depth : null;
+    return [r];
+  });
+}
+var askRowsOf = (rows) => rows.filter((r) => r.kind === "ask" && r.depth === 1);
+var isParentCollapsed = (p, isCollapsed) => p.foldCount > 0 && isCollapsed(p.id);
 var listRows = (milestones, rows) => [
   ...milestones.flatMap((m) => [...m.subject ? [m.subject] : [], ...m.foldId === null ? m.rows : []]),
   ...rows
 ];
-function statusListRows(page) {
-  return listRows(page.goal?.milestones ?? [], page.rows);
+function statusListRows(page, isCollapsed = NONE_COLLAPSED) {
+  const milestones = (page.goal?.milestones ?? []).map(
+    (m) => isParentCollapsed(m, isCollapsed) ? { ...m, rows: askRowsOf(m.rows) } : m
+  );
+  return withoutCollapsed(listRows(milestones, page.rows), isCollapsed);
 }
 
 // ../core/view/status-path.ts
@@ -2666,9 +2681,13 @@ function inboxView({
     return delivery && "sentAt" in delivery ? delivery.sentAt : void 0;
   };
   const isOpen2 = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
+  const unconfirmedReply = (c) => {
+    const last = lastActions[c.id];
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state === "unconfirmed" ? last : null;
+  };
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(c.id, last.at, false, last) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && !(unconfirmedReply(c) && isHeld(c)) && isInPlace(c.id, last.at, false, last) ? last : null;
   };
   const isPressedAnswer = (c) => c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || isPressedAnswer(c);
@@ -2717,7 +2736,7 @@ function inboxView({
           closedAs: closedState(closed2),
           ...reply.reply !== void 0 ? { reply: reply.reply } : {}
         };
-      if (isHeld(closed2)) return { is: "held", label: heldLabel(closed2), at };
+      if (isHeld(closed2)) return { is: "held", label: heldLabel(closed2, unconfirmedReply(closed2)), at };
       return closedRowState(
         closed2,
         at,
@@ -2853,7 +2872,8 @@ function inboxView({
     collapsed
   };
 }
-function heldLabel(c) {
+function heldLabel(c, unconfirmed) {
+  if (unconfirmed) return deliveryLabel("unconfirmed", doneLabel(unconfirmed), unconfirmed.reply);
   if (c.how === "answered") return `Answered: ${shortOutcome(c.outcome)}`;
   return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
 }
@@ -3033,11 +3053,11 @@ function isNamedAlike(a, b) {
   const [short, long] = x.size <= y.size ? [x, y] : [y, x];
   return short.size > 0 && [...short].every((w) => long.has(w));
 }
-function withoutRepeatedNow(page, o) {
+function withoutRepeatedNow(page, o, isCollapsed) {
   const g = page.goal;
   const nowText = o?.head ? o.head.description || o.head.title : null;
   if (g === null || g.now === null || o === null || nowText === null) return page;
-  const drawnIds = new Set(statusListRows(page).flatMap((r) => r.kind === "subject" ? [r.id] : []));
+  const drawnIds = new Set(statusListRows(page, isCollapsed).flatMap((r) => r.kind === "subject" ? [r.id] : []));
   const isRepeated = o.subjects.some(
     (x) => drawnIds.has(x.id) && x.status === "working" && holdsEveryWordOf(nowText, x.name)
   );
@@ -3093,7 +3113,7 @@ var WAS_MARK = "\u21A9";
 var WAS_PREFIX = `${WAS_MARK} ${WAS_LABEL}`;
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function statusPage(s, now, turn = { is: "fresh" }) {
+function statusPage(s, now, turn = { is: "fresh" }, collapsed = []) {
   const o = s.ledger.overview;
   const sync = statusSync(s);
   const look = o?.lastLookAt ?? null;
@@ -3281,7 +3301,8 @@ function statusPage(s, now, turn = { is: "fresh" }) {
       sync,
       syncText: statusSyncText(sync, now)
     },
-    o
+    o,
+    (id) => collapsed.includes(id)
   );
 }
 
@@ -3308,6 +3329,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
   const sync = viewSync(s, now, inputs);
+  const collapsed = collapsedRows(s);
   const inbox = inboxView({
     ledger: l,
     lastActions,
@@ -3319,7 +3341,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
-    collapsed: collapsedRows(s),
+    collapsed,
     canScrollConversation
   });
   const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
@@ -3329,7 +3351,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs,
-    statusPage: statusPage(s, now, sync.turn),
+    statusPage: statusPage(s, now, sync.turn, collapsed),
     sync,
     drawnVersions: drawnVersions(
       s,
@@ -5383,12 +5405,12 @@ function withoutFoldedClosed(s, now, viewers) {
 function publishedText(source, session, log) {
   const text2 = JSON.stringify(herdrEnvelope(source, session));
   if (!isOverLimit(text2)) return text2;
-  const trimmed = JSON.stringify(
+  const trimmed2 = JSON.stringify(
     herdrEnvelope(source, withoutFoldedClosed(session, source.writtenAt, source.viewers), true)
   );
-  if (isOverLimit(trimmed))
+  if (isOverLimit(trimmed2))
     log(`Herdr publish is over ${PUBLISH_LIMIT_BYTES} bytes after trimming, so the look cannot read it`);
-  return trimmed;
+  return trimmed2;
 }
 async function publishSession(files3, appHome, source, session, log) {
   const path = publishedSessionPath(appHome, source.sessionId);
@@ -5974,18 +5996,18 @@ async function withEarlierHistory(s, history) {
   return { state: { ...covered, presence: { ...covered.presence, ledgerState: "behind" } }, isBehind: true };
 }
 async function withMissedTurns(s, { reads, currentTurnId, canMarkBehind = true, isCleared = false }) {
-  const unchanged = { state: s, isBehind: false };
+  const unchanged2 = { state: s, isBehind: false };
   const isTurnChecked = currentTurnId !== void 0 && isTurnHeard(s, currentTurnId);
-  if (!canMarkBehind || isTurnChecked) return unchanged;
+  if (!canMarkBehind || isTurnChecked) return unchanged2;
   const rows = await reads.turns(
     isCleared ? holdsEndedTurn(currentTurnId) : (turns) => turns.some((t) => t.id === s.coveredTurn)
   );
-  if (rows === null) return unchanged;
+  if (rows === null) return unchanged2;
   if (isCleared) return { state: { ...s, coveredTurn: newestEndedTurn(rows, currentTurnId) }, isBehind: false };
   const coveredAt = rows.findLastIndex((t) => t.id === s.coveredTurn);
   const missed = rows.slice(coveredAt + 1).filter((t) => t.hasEnded && t.id !== currentTurnId);
   const newest = missed.at(-1);
-  if (newest === void 0) return unchanged;
+  if (newest === void 0) return unchanged2;
   const promptTurn = s.heard.promptTurns.at(-1);
   const isRecordedTurnMissed = s.turn.person !== null && missed.some((t) => t.id === promptTurn);
   const { ledgerState } = s.presence;

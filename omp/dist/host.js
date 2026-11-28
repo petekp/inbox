@@ -2025,7 +2025,7 @@ function closeByAgent(host, ledger, id, how, now) {
   const closing = "answer" in how ? { how: "answered", outcome: how.answer } : { how: "claude", outcome: `closed by ${host.agent}: ${how.reason}` };
   const item = ledger.items.find((i) => i.id === id);
   if (item)
-    return { ledger: closeItem(ledger, id, closing, now), closed: { item } };
+    return { ledger: closeItem(ledger, id, { ...closing, closedBy: "agent" }, now), closed: { item } };
   const finding = ledger.findings.find((f) => f.id === id);
   if (finding)
     return { ledger: closeFinding(ledger, id, closing, now), closed: { finding } };
@@ -3026,8 +3026,9 @@ var listRows = (milestones, rows) => [
   ...milestones.flatMap((m) => [...m.subject ? [m.subject] : [], ...m.foldId === null ? m.rows : []]),
   ...rows
 ];
-function statusListRows(page) {
-  return listRows(page.goal?.milestones ?? [], page.rows);
+function statusListRows(page, isCollapsed = NONE_COLLAPSED) {
+  const milestones = (page.goal?.milestones ?? []).map((m) => isParentCollapsed(m, isCollapsed) ? { ...m, rows: askRowsOf(m.rows) } : m);
+  return withoutCollapsed(listRows(milestones, page.rows), isCollapsed);
 }
 
 // ../core/view/status-path.ts
@@ -7671,6 +7672,67 @@ function tooLongText(input, limits, fields = Object.keys(limits)) {
   return "";
 }
 
+// ../core/runtime/tool-answer.ts
+function unchanged(ledger, result) {
+  return { ledger, result, personLine: null };
+}
+function trimmed(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+// ../core/runtime/order-prs-tool.ts
+function orderDescription(host) {
+  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
+}
+var REPO = /^[\w.-]+\/[\w.-]+$/;
+function prNumber(value) {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+function orderPrs(host, ledger, input, now, lastActions) {
+  if (!Array.isArray(input.numbers))
+    return unchanged(ledger, "Not set: numbers must be a list of PR numbers.");
+  if (input.numbers.length === 0) {
+    if (ledger.prOrder === null)
+      return unchanged(ledger, "No order was set.");
+    return {
+      ledger: { ...ledger, prOrder: null },
+      result: `Cleared. The PRs show in their usual order in ${host.prsIn}.`,
+      personLine: "PR order cleared"
+    };
+  }
+  const numbers = input.numbers.map(prNumber);
+  if (numbers.includes(null))
+    return unchanged(ledger, "Not set: numbers must be PR numbers, such as 3401.");
+  const repo = trimmed(input.repo);
+  if (!REPO.test(repo))
+    return unchanged(ledger, "Not set: give repo as owner/name.");
+  const refs = [...new Set(numbers.map((n) => `${repo}#${n}`))];
+  if (refs.length > MAX_ORDERED_PRS)
+    return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`);
+  const label = trimmed(input.label);
+  if (!label)
+    return unchanged(ledger, "Not set: give label, what the user does with the order.");
+  const why = trimmed(input.why);
+  if (!why)
+    return unchanged(ledger, "Not set: give why, the reason for this order.");
+  const tooLong = tooLongText(input, ORDER_LIMITS);
+  if (tooLong)
+    return unchanged(ledger, `Not set: ${tooLong}`);
+  const dismissed = refs.filter((ref) => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref));
+  const onTab = tabPrs(ledger);
+  const added = refs.filter((ref) => !onTab.includes(ref));
+  const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
+  return {
+    ledger: {
+      ...ledger,
+      prOrder: { refs, label, why, statuses: {}, dismissed, by: host.agent, at: now }
+    },
+    result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
+    personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
+  };
+}
+
 // ../core/domain/earlier-answers.ts
 var K1 = 1.2;
 var B = 0.75;
@@ -7896,9 +7958,6 @@ var NAME_BY_CONTENT = "Name it by what it says, never by its id.";
 function closeIdText(id) {
   return ` Its close id is ${id}. ${CLOSE_ID_RULE}`;
 }
-function orderDescription(host) {
-  return `Set the order of the user's PRs in ${host.prsIn}, when the user asks for an order there. Those PRs show first, in this order. Each call replaces the order, and an empty numbers list clears it.`;
-}
 function recordDescription(host) {
   return `Record something the user must see in ${host.surface}, and still say it in your reply. Use it in the turn you raise it, once for each thing.
 - question: a decision, approval or piece of information only the user has, which you need before you go on. Give options, and rec with why when you recommend one. This includes an act you hold until they say so, such as "say when you want those committed".
@@ -7923,23 +7982,17 @@ function toolAnswer(host, ledger, tool, input, now, presses, fields, delegate, e
     case "record":
       if (delegate && (input.kind === "question" || input.kind === "task"))
         return unchanged(ledger, delegateRefusal(delegate));
-      return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields, earlier);
+      return recordAfterCompare(host, ledger, input, now, presses, fields) ?? recordAfterOwnClose(host, ledger, input, now, presses, fields) ?? recordItem(host, ledger, input, now, fields, earlier);
     case "close":
       return recordClose(host, ledger, input, now, presses);
     case "order_prs":
       return orderPrs(host, ledger, input, now, presses.lastActions);
   }
 }
-function trimmed(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
 var MAX_OPTIONS = 8;
 var MAX_STEPS = 3;
 function list(value, max) {
   return Array.isArray(value) ? value.map(trimmed).filter(Boolean).slice(0, max) : [];
-}
-function unchanged(ledger, result) {
-  return { ledger, result, personLine: null };
 }
 function recordItem(host, ledger, input, now, fields, earlier = []) {
   if (input.kind === "finding")
@@ -8055,6 +8108,23 @@ function recordAfterCompare(host, ledger, input, now, presses, fields) {
   const isUpdated = r.ledger.items.some((i) => i.id === closed.id && i.reportedAt === now);
   return isUpdated ? r : null;
 }
+function recordAfterOwnClose(host, ledger, input, now, presses, fields) {
+  const { turnStartedAt } = presses;
+  if (turnStartedAt === null)
+    return null;
+  const isOwnCloseThisTurn = (c) => c.closedBy === "agent" && c.how === "answered" && c.at >= turnStartedAt;
+  for (const closed of ledger.closed.filter(isOwnCloseThisTurn).toReversed()) {
+    const r = recordItem(host, reopenItem(ledger, closed.id), input, now, fields);
+    const reopened = r.ledger.items.find((i) => i.id === closed.id && i.reportedAt === now);
+    if (reopened)
+      return {
+        ledger: r.ledger,
+        result: `Reopened: you closed it earlier in this turn. The user sees it in ${host.surface} again.` + closeIdText(closed.id),
+        personLine: `${reopened.kind === "question" ? "Question" : "Task"}: ${reopened.ask}`
+      };
+  }
+  return null;
+}
 function recordClose(host, ledger, input, now, presses) {
   const id = trimmed(input.id).replace(/^\[|\]$/g, "");
   const answer = trimmed(input.answer);
@@ -8086,54 +8156,6 @@ function recordClose(host, ledger, input, now, presses) {
   if (earlier)
     return unchanged(ledger, `Already closed: ${closedHow(earlier)}.`);
   return unchanged(ledger, `Not closed: no open item or finding has the id ${id}. The open ones are listed beside the user's latest message.`);
-}
-var REPO = /^[\w.-]+\/[\w.-]+$/;
-function prNumber(value) {
-  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim().replace(/^#/, "")) : NaN;
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
-function orderPrs(host, ledger, input, now, lastActions) {
-  if (!Array.isArray(input.numbers))
-    return unchanged(ledger, "Not set: numbers must be a list of PR numbers.");
-  if (input.numbers.length === 0) {
-    if (ledger.prOrder === null)
-      return unchanged(ledger, "No order was set.");
-    return {
-      ledger: { ...ledger, prOrder: null },
-      result: `Cleared. The PRs show in their usual order in ${host.prsIn}.`,
-      personLine: "PR order cleared"
-    };
-  }
-  const numbers = input.numbers.map(prNumber);
-  if (numbers.includes(null))
-    return unchanged(ledger, "Not set: numbers must be PR numbers, such as 3401.");
-  const repo = trimmed(input.repo);
-  if (!REPO.test(repo))
-    return unchanged(ledger, "Not set: give repo as owner/name.");
-  const refs = [...new Set(numbers.map((n) => `${repo}#${n}`))];
-  if (refs.length > MAX_ORDERED_PRS)
-    return unchanged(ledger, `Not set: an order ranks at most ${MAX_ORDERED_PRS} PRs.`);
-  const label = trimmed(input.label);
-  if (!label)
-    return unchanged(ledger, "Not set: give label, what the user does with the order.");
-  const why = trimmed(input.why);
-  if (!why)
-    return unchanged(ledger, "Not set: give why, the reason for this order.");
-  const tooLong = tooLongText(input, ORDER_LIMITS);
-  if (tooLong)
-    return unchanged(ledger, `Not set: ${tooLong}`);
-  const dismissed = refs.filter((ref) => isDismissed(lastActions, ref) || ledger.prOrder?.dismissed.includes(ref));
-  const onTab = tabPrs(ledger);
-  const added = refs.filter((ref) => !onTab.includes(ref));
-  const addedText = added.length === 0 ? "" : added.length === 1 ? " 1 of them was not in the tab yet. It shows after the tab's next refresh, if the user wrote it and it is open." : ` ${added.length} of them were not in the tab yet. They show after the tab's next refresh, if the user wrote them and they are open.`;
-  return {
-    ledger: {
-      ...ledger,
-      prOrder: { refs, label, why, statuses: {}, dismissed, by: host.agent, at: now }
-    },
-    result: `Set. These ${refs.length} PRs show first in ${host.prsIn}, in this order.${addedText}`,
-    personLine: `PR order: ${label}, ${refs.length} ${refs.length === 1 ? "PR" : "PRs"}`
-  };
 }
 
 // ../core/view/arrivals.ts
@@ -8566,9 +8588,13 @@ function inboxView({
     return delivery && "sentAt" in delivery ? delivery.sentAt : undefined;
   };
   const isOpen = (id) => ledger.items.some((i) => i.id === id) || ledger.findings.some((f) => f.id === id);
+  const unconfirmedReply = (c) => {
+    const last = lastActions[c.id];
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state === "unconfirmed" ? last : null;
+  };
   const replyAfter = (c) => {
     const last = lastActions[c.id];
-    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && isInPlace(c.id, last.at, false, last) ? last : null;
+    return last?.action === "type" && last.at >= closedAt(c) && last.delivery?.state !== "failed" && !(unconfirmedReply(c) && isHeld(c)) && isInPlace(c.id, last.at, false, last) ? last : null;
   };
   const isPressedAnswer = (c) => c.how === "answered" && lastActions[c.id]?.kind === "mark" && lastActions[c.id]?.at === closedAt(c);
   const isOwnClose = (c) => c.how === "done" || c.how === "dismissed" || isPressedAnswer(c);
@@ -8608,7 +8634,7 @@ function inboxView({
           ...reply.reply !== undefined ? { reply: reply.reply } : {}
         };
       if (isHeld(closed))
-        return { is: "held", label: heldLabel(closed), at };
+        return { is: "held", label: heldLabel(closed, unconfirmedReply(closed)), at };
       return closedRowState(closed, at, now, settleWindowMs, "doneNotification" in closed && closed.doneNotification?.error !== undefined ? { error: closed.doneNotification.error, canUndo: isUndoable(closed) } : pendingDeliveryAt(pressedSend(closed), now), isPressedAnswer(closed));
     }
     const last = lastActions[id];
@@ -8728,7 +8754,9 @@ function inboxView({
     collapsed
   };
 }
-function heldLabel(c) {
+function heldLabel(c, unconfirmed) {
+  if (unconfirmed)
+    return deliveryLabel("unconfirmed", doneLabel(unconfirmed), unconfirmed.reply);
   if (c.how === "answered")
     return `Answered: ${shortOutcome(c.outcome)}`;
   return c.how === "claude" ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`;
@@ -8923,12 +8951,12 @@ function isNamedAlike(a, b) {
   const [short, long] = x.size <= y.size ? [x, y] : [y, x];
   return short.size > 0 && [...short].every((w) => long.has(w));
 }
-function withoutRepeatedNow(page, o) {
+function withoutRepeatedNow(page, o, isCollapsed) {
   const g = page.goal;
   const nowText = o?.head ? o.head.description || o.head.title : null;
   if (g === null || g.now === null || o === null || nowText === null)
     return page;
-  const drawnIds = new Set(statusListRows(page).flatMap((r) => r.kind === "subject" ? [r.id] : []));
+  const drawnIds = new Set(statusListRows(page, isCollapsed).flatMap((r) => r.kind === "subject" ? [r.id] : []));
   const isRepeated = o.subjects.some((x) => drawnIds.has(x.id) && x.status === "working" && holdsEveryWordOf(nowText, x.name));
   return isRepeated ? { ...page, goal: { ...g, now: null } } : page;
 }
@@ -8983,7 +9011,7 @@ var WAS_PREFIX = `${WAS_MARK} ${WAS_LABEL}`;
 var STATUS_TEXT_LINES = 3;
 var NEW_CLOSED_ROWS = 2;
 var STATUS_PLACES = ["held", "working", "waits-on-other", "queued", "closed"];
-function statusPage(s, now, turn = { is: "fresh" }) {
+function statusPage(s, now, turn = { is: "fresh" }, collapsed = []) {
   const o = s.ledger.overview;
   const sync = statusSync(s);
   const look = o?.lastLookAt ?? null;
@@ -9153,7 +9181,7 @@ function statusPage(s, now, turn = { is: "fresh" }) {
     rows,
     sync,
     syncText: statusSyncText(sync, now)
-  }, o);
+  }, o, (id) => collapsed.includes(id));
 }
 function seenSubjectIds(row) {
   return row.kind === "subject" ? [row.id] : row.kind === "fold" ? row.subjectIds : [];
@@ -9183,6 +9211,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
   const l = s.ledger;
   const lastActions = withoutStalePending(s.lastActions, now);
   const sync = viewSync(s, now, inputs);
+  const collapsed = collapsedRows(s);
   const inbox = inboxView({
     ledger: l,
     lastActions,
@@ -9194,7 +9223,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
-    collapsed: collapsedRows(s),
+    collapsed,
     canScrollConversation
   });
   const prs = prTabOf(s, lastActions, now, holds, settleWindowMs, sync.gh);
@@ -9204,7 +9233,7 @@ function sessionView(s, now, settleWindowMs, holds = NO_HOLDS, notes = {}, canSc
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs,
-    statusPage: statusPage(s, now, sync.turn),
+    statusPage: statusPage(s, now, sync.turn, collapsed),
     sync,
     drawnVersions: drawnVersions(s, rowIds, prs.drawn.map((d) => d.pr))
   };
@@ -14182,17 +14211,32 @@ function withRetryLines(first, retry, keeps) {
 async function askStatus(ask, retryFor = () => null) {
   const first = await ask(null);
   if (first.text === null)
-    return { answer: null, last: first };
+    return { answer: null, text: null, last: first };
   const answer = parseStatus(first.text);
   if (answer === null) {
     const again = await ask(null);
-    return { answer: parseStatus(again.text), last: again };
+    return { answer: parseStatus(again.text), text: again.text, last: again };
   }
   const retry = retryFor(answer, first.text);
   if (retry === null)
-    return { answer, last: first };
+    return { answer, text: first.text, last: first };
   const again = await ask(retry.prompt);
-  return { answer: withRetryLines(answer, parseStatus(again.text), retry.keeps), last: again };
+  const retried = parseStatus(again.text);
+  const unmatched = new Map;
+  for (const op of retried?.kind === "ops" ? retried.ops.filter(retry.keeps) : []) {
+    const key = JSON.stringify(op);
+    unmatched.set(key, (unmatched.get(key) ?? 0) + 1);
+  }
+  const kept = (again.text ?? "").split(NL3).filter((line) => {
+    const one = parseStatus(line);
+    const keys = one?.kind === "ops" ? one.ops.map((op) => JSON.stringify(op)) : [];
+    const isAdded = keys.length > 0 && keys.every((key) => (unmatched.get(key) ?? 0) > 0);
+    if (isAdded)
+      for (const key of keys)
+        unmatched.set(key, (unmatched.get(key) ?? 0) - 1);
+    return isAdded;
+  });
+  return { answer: withRetryLines(answer, retried, retry.keeps), text: [first.text, ...kept].join(NL3), last: again };
 }
 
 // ../core/domain/status-prompt-goal.ts
@@ -14600,7 +14644,7 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
   const prompt = statusCallPrompt(input, call.exchange);
   const system = hostStatusSystem(host.names);
   const heards = [];
-  const { answer, last } = await askStatus(async (retry) => {
+  const { answer, text, last } = await askStatus(async (retry) => {
     const kind = { call: "status", reads: call.exchange.kind, isRetry: heards.length > 0 };
     const heard = await heardCall(call.ask, retry ?? prompt, system, kind, () => host.now());
     heards.push({ kind, heard, retry });
@@ -14610,12 +14654,14 @@ async function askAndWriteStatus(host, { s, at: readAt }, call, tasks, appliedAf
   let before = null;
   let isWritten = false;
   const answeredTurn = (x) => call.exchange.kind === "reply" ? call.exchange.exchange.turn : x.ledger.turn;
+  const unprompted = heards.filter((h) => h.retry === null);
   const noted = (current, now) => {
     const isCurrent = isStatusCallCurrent(current, appliedAfter);
-    return heards.reduce((x, h) => {
-      const isParsed = h.heard.text !== null && parseStatus(h.heard.text) !== null;
-      const recorded = withCall(x, h.kind, h.heard, isParsed, now);
-      return isCurrent ? withAnswer(recorded, h.kind, h.heard, isParsed, now, answeredTurn(x)) : recorded;
+    return unprompted.reduce((x, h, n) => {
+      const heard = n === unprompted.length - 1 ? { ...h.heard, text } : h.heard;
+      const isParsed = heard.text !== null && parseStatus(heard.text) !== null;
+      const recorded = withCall(x, h.kind, heard, isParsed, now);
+      return isCurrent ? withAnswer(recorded, h.kind, heard, isParsed, now, answeredTurn(x)) : recorded;
     }, current);
   };
   const after = await host.update(async (current) => {
