@@ -111,27 +111,38 @@ export function passingOf(blocks: Block[], isShut: (b: Block) => boolean): Colum
 /**
  * How long each block's content waits before it fades in, from `waits`, each block's own wait, or null for one that does
  * not wait for its space. Blocks that wait and that a column joins one to the next wait for the longest of them, so they
- * fade in together, and a short line's connector never shows while the taller line it joins is still hidden.
+ * fade in together, and a short line's connector never shows while the taller line it joins is still hidden. A block
+ * that has left (`hasLeft`) is no block between them, as the copy a moved line leaves behind.
  */
-export function joinedWaits(blocks: Block[], passing: Column[][], waits: (number | null)[]): number[] {
+export function joinedWaits(
+  blocks: Block[],
+  passing: Column[][],
+  waits: (number | null)[],
+  hasLeft: boolean[],
+): number[] {
   const depths = (cs: Column[], i: number) => new Set([...cs, ...(passing[i] ?? [])].map(c => c.depth))
-  const isJoined = (i: number) => {
-    const above = blocks[i - 1]
+  const isJoined = (j: number, i: number) => {
+    const above = blocks[j]
     const b = blocks[i]
-    if (!above || !b || waits[i - 1] == null || waits[i] == null) return false
-    const ons = depths(runsOn(above), i - 1)
+    if (!above || !b || waits[j] == null || waits[i] == null) return false
+    const ons = depths(runsOn(above), j)
 
     return [...depths(runsIn(b), i)].some(d => ons.has(d))
   }
-  const out: number[] = []
-  let start = 0
-  for (let i = 0; i <= blocks.length; i++) {
-    if (i < blocks.length && i > 0 && isJoined(i)) continue
-    const run = waits.slice(start, i).map(w => w ?? 0)
-    const longest = Math.max(0, ...run)
-    out.push(...waits.slice(start, i).map(w => (w === null ? 0 : longest)))
-    start = i
+  const out = blocks.map(() => 0)
+  let run: number[] = []
+  const endRun = () => {
+    const longest = Math.max(0, ...run.map(j => waits[j] ?? 0))
+    for (const j of run) out[j] = waits[j] == null ? 0 : longest
+    run = []
   }
+  for (const i of blocks.keys()) {
+    if (hasLeft[i]) continue
+    const last = run.at(-1)
+    if (last === undefined || !isJoined(last, i)) endRun()
+    run.push(i)
+  }
+  endRun()
 
   return out
 }

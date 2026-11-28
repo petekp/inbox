@@ -104,6 +104,7 @@ function pagedFrames(run: HerdrRun, end: number): Frames {
     cuts: shown(f.cuts),
     fading: shown(f.fading),
     shown: shown(f.shown),
+    strokes: shown(f.strokes),
     rest: f.rest,
   }
 }

@@ -7,6 +7,8 @@ import { boxOf, checkFadeIds, fadesOn } from './fade-boxes'
 import { type Box, layout, linesOf } from './layout'
 import { gapsOf, segmentsOf } from './connector-gaps'
 import type { Gap, Hidden } from './connector-gaps'
+import { StrokeFades } from './stroke-fades'
+import type { StrokeShown } from './stroke-fades'
 
 const { spacedEls } = await import('../src/paint-space')
 const { blockEl } = await import('../src/paint-blocks')
@@ -256,6 +258,7 @@ class Frames {
   private linesAbove = NO_LINES_ABOVE
   private springs = new Springs()
   private fades = new Fades()
+  private strokeFades = new StrokeFades()
   private held = new HeldFades()
   private closedSeen = new Map<string, number>()
   private lastShown = new Map<string, number>()
@@ -272,6 +275,7 @@ class Frames {
   cuts: Cut[] = []
   fading: Fading[] = []
   shown: Shown[] = []
+  strokes: StrokeShown[] = []
   rest: Rest = { fits: [], lines: [] }
 
   showPage() {
@@ -335,6 +339,7 @@ class Frames {
     this.springs.declare(tree)
     const shown = this.springs.shown()
     this.fades.declare(tree)
+    this.strokeFades.declare(tree)
     const { boxes, sized, floating, placed, fits } = layout(tree, id => shown.get(id))
     const lines: ShownLine[] = []
     for (const [id, fade] of this.fades.states)
@@ -364,6 +369,7 @@ class Frames {
     for (const gap of gapsOf(segmentsOf(tree, placed, this.hiddenStrokes(tree, now)), end))
       this.gaps.push({ at: now, ...gap })
     this.rest = { fits, lines }
+    this.strokes.push(...this.strokeFades.shownIn(placed, now))
     const startsHere = [...moved.motion].filter(([, m]) => m.springId?.endsWith(`${MOVED_TO}${now}`)).map(([id]) => id)
     const isInMovedBlock = (id: string) => startsHere.some(b => id.endsWith(` ${b}`))
     if (this.last && !isForming) {
@@ -403,6 +409,7 @@ class Frames {
     this.lastShown = shown
     this.springs.step(FRAME_MS)
     this.fades.step(FRAME_MS)
+    this.strokeFades.step(FRAME_MS)
     this.last = boxes
   }
 }
@@ -424,6 +431,7 @@ export function framesOf(
   cuts: Cut[]
   fading: Fading[]
   shown: Shown[]
+  strokes: StrokeShown[]
   rest: Rest
 } {
   const frames = new Frames(measureLagMs)
@@ -439,6 +447,7 @@ export function framesOf(
       cuts: [],
       fading: [],
       shown: [],
+      strokes: [],
       rest: frames.rest,
     }
   const start = 1_000_000
@@ -467,6 +476,7 @@ export function framesOf(
     cuts: frames.cuts.map(c => ({ ...c, at: c.at - start })),
     fading: frames.fading.map(f => ({ ...f, at: f.at - start })),
     shown: frames.shown.map(s => ({ ...s, at: s.at - start })),
+    strokes: frames.strokes.map(s => ({ ...s, at: s.at - start })),
     rest: frames.rest,
   }
 }

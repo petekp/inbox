@@ -348,24 +348,32 @@ export function spacedEls(blocks: Block[], p: Paint, el: (b: Block) => Element):
     const height = heights[i]
     return m?.waitsForSpace && height !== undefined ? enterDelayMs(height, shutTo(height, m.shutForMs)) : null
   })
-  const delays = joinedWaits(drawn, passing, waits)
+  const moves = drawn.map(b => {
+    const m = p.motion.get(b.id)
+    const isMoving = m?.box != null
+    const isLeaving = m?.state === 'leaving'
+
+    return {
+      isMoving,
+      isGone: isMoving && isLeaving && m.box === 'shut',
+      isHiding: isMoving && (isLeaving || m.waitsForSpace),
+    }
+  })
+  const delays = joinedWaits(
+    drawn,
+    passing,
+    waits,
+    moves.map(move => move.isGone),
+  )
   const looks = drawn.map((b, i) => {
     const m = p.motion.get(b.id)
     const isShown = m?.box === 'open' && m.isShown && heights[i] !== undefined
     const glide = { duration: m?.fadeMs ?? 0, delay: delays[i] ?? 0, easing: 'ease-out' as const }
     const fade = (e: Element): Element =>
       m?.box ? fadeEl(e, `box ${m.springId ?? b.id}`, isShown ? 1 : 0, glide, p) : e
-    const isMoving = m?.box != null
-    const isLeaving = m?.state === 'leaving'
-    const move = {
-      isMoving,
-      isGone: isMoving && isLeaving && m.box === 'shut',
-      isHiding: isMoving && (isLeaving || m.waitsForSpace),
-    }
 
-    return { m, isShown, glide, fade, move }
+    return { m, isShown, glide, fade }
   })
-  const moves = looks.map(l => l.move)
   const strokeFades = strokeFadesOf(
     drawn,
     passing,
