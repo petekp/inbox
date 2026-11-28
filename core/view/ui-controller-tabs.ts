@@ -46,13 +46,13 @@ function isShownEmpty(ui: UiState, view: SessionView, tab: Tab): boolean {
 }
 
 /**
- * Shows `tab` as a move the person did not make: Help closes, the tab's cursor starts over, and an open field closes
- * with its draft kept.
+ * Shows `tab` as a move the person did not make: Help closes, the tab's cursor and scroll start over, and an open
+ * field closes with its draft kept.
  */
 function moveTo(ui: UiState, tab: ShownTab, now: number): UiStep {
   const selection = isRowTab(tab) ? { ...ui.selection, [tab]: NO_UI_CURSOR } : ui.selection
 
-  return withCommands(shownTab({ ...ui, selection }, tab, now), { kind: 'tab-shown', tab })
+  return withCommands(shownTab({ ...ui, selection }, tab, now), { kind: 'tab-shown', tab, startsOver: true })
 }
 
 /** `ui` showing `tab`. The person's own switch keeps the target tab's cursor. */

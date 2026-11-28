@@ -7,7 +7,7 @@ import { conversation } from './mod-sessions'
 import { cancelUndoScroll, paneState, suspendUndoReveal } from './mod-state'
 import { settledLayoutId, settledScrollKey, tabRowIds, undoBlockOf } from '../pane/pane-selection'
 import { openPrViews } from '../../core/view/pr-views'
-import { isRowTab } from '../../core/view/tabs'
+import { isRowTab, type ShownTab } from '../../core/view/tabs'
 import { SETTLED_MS } from '../../core/view/timing'
 import { selectedOf } from '../../core/view/ui-controller-selection'
 
@@ -105,6 +105,12 @@ export async function revealRow(m: PaneScrollCalls, tab: Tab, id: string, closed
     else cancelUndoScroll()
   }
   await scrollToRow(m, id)
+}
+
+/** Scrolls the pane to where a switch opens `tab`: a row tab to its open row, and the Status to its start. */
+export async function scrollToTabStart(m: PaneScrollCalls, tab: ShownTab) {
+  if (isRowTab(tab)) await scrollToOpenRow(m, tab)
+  else await m.pane.scrollToStart().catch(() => undefined)
 }
 
 export async function scrollToOpenRow(m: PaneScrollCalls, tab: Tab, surface?: RenderSurface) {

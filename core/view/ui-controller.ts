@@ -149,7 +149,7 @@ function showAsk(ui: UiState, view: SessionView, id: string, by: 'click' | 'key'
   const index = tabWaits(shown, view, 'needsYou').findIndex(r => r.id === id)
   const selected = withCursor(shown, 'needsYou', { id, index, guard: { by, at: now } })
   const commands: UiCommand[] = [
-    { kind: 'tab-shown', tab: 'needsYou' },
+    { kind: 'tab-shown', tab: 'needsYou', startsOver: false },
     { kind: 'reveal', tab: 'needsYou', id, closedId: null },
   ]
 
@@ -179,7 +179,7 @@ function handle(ui: UiState, view: SessionView, e: UiEvent, now: number): UiStep
     case 'visible':
       return withCommands(visible(ui, e.isVisible))
     case 'show-tab':
-      return withCommands(shownTab(ui, e.tab, now), { kind: 'tab-shown', tab: e.tab })
+      return withCommands(shownTab(ui, e.tab, now), { kind: 'tab-shown', tab: e.tab, startsOver: false })
     case 'show-help':
       return withCommands(helpShown(ui, e.isShown, now))
     case 'show-ask':

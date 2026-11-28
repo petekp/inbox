@@ -1,6 +1,6 @@
-import { View, div } from 'gpui-kit'
+import { View } from 'gpui-kit'
 import type { Context, Element, FocusHandle } from 'gpui-kit'
-import { InputState, Scrollbar, v_flex } from 'gpui-base'
+import { InputState, v_flex } from 'gpui-base'
 import {
   appHome,
   exec,
@@ -65,9 +65,10 @@ import { Heights, zoomOf } from './heights'
 import { blockEl } from './paint-blocks'
 import { timeLeftDraws } from './time-left'
 import type { TimeLeft } from './time-left'
-import { TAB_WORDS, bannerEl, messageEl, scrollFadeEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { TAB_WORDS, bannerEl, messageEl, sessionNoteEl, tabsEl } from './paint-chrome'
+import { ListScroll, listEl } from './paint-list'
 import { fitEl, spacedEls } from './paint-space'
-import { EDGE, END_SPACE, LINE, onSize, paneFit, TEXT } from './paint-theme'
+import { EDGE, LINE, onSize, paneFit, TEXT } from './paint-theme'
 import type { Paint, Theme } from './paint-theme'
 import { PressQueue } from './press-queue'
 import { herdrIo } from './io'
@@ -133,9 +134,11 @@ export default class Inbox extends View {
   fades = new HeldFades()
   wake: { at: number; isRead: boolean; timer: Timer } | null = null
   look = new LookReports()
+  scroll: ListScroll | null = null
 
   init(_props: unknown, cx: Context): void {
     this.focus = cx.focus_handle()
+    this.scroll = new ListScroll()
     startBackground(this, { isChecking, appHome, watchFolder }, cx)
   }
 
@@ -161,6 +164,7 @@ export default class Inbox extends View {
     const applied = applyEvents(this.ui, view, events, now)
     this.ui = applied.ui
     if (isMove) this.movedAt = now
+    if (events.some(e => e.type === 'show-help' && e.isShown)) this.scroll?.startOver('help')
     this.syncInput(isMove)
     for (const c of applied.commands) this.run(c, from, cx)
     this.schedule(applied.nextWakeAt, view, cx)
@@ -189,6 +193,7 @@ export default class Inbox extends View {
       const collapse = { isCollapsed: c.isCollapsed, at: Date.now() }
       cx.spawn(() => writeCollapse(queueIo, to, read, c.id, collapse))
     } else if (c.kind === 'read' && sessionId) this.load(sessionId, cx)
+    else if (c.kind === 'tab-shown' && c.startsOver) this.scroll?.startOver(c.tab)
   }
 
   /**
@@ -309,6 +314,7 @@ export default class Inbox extends View {
     this.wake = null
     this.releaseField()
     this.heights.clear([TAB_WORDS])
+    this.scroll?.startAllOver()
     if (sessionId) this.load(sessionId, cx)
   }
 
@@ -445,31 +451,18 @@ export default class Inbox extends View {
         ),
       )
       .child(
-        div()
-          .flex_1()
-          .min_h(0)
-          .relative()
-          .child(
-            v_flex()
-              .id('inbox-list')
-              .absolute()
-              .inset_0()
-              .overflow_y_scroll()
-              .pt(EDGE)
-              .pb(END_SPACE)
-              .on_size_change(onSize(this, 'listHeight', s => s.height))
-              .on_scroll_wheel((_e, cx) => listInput(cx))
-              .on_mouse_move((_e, cx) => listInput(cx))
-              .on_click((_e, _cx) => {
-                const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null
-                if (field) field.state.focus()
-                else this.focus?.focus()
-              })
-              .children(spacedEls(moved.blocks, paint, b => blockEl(b, paint))),
-          )
-          .child(scrollFadeEl(t, 'top'))
-          .child(scrollFadeEl(t, 'bottom'))
-          .child(Scrollbar.vertical('inbox-list').absolute().inset_0()),
+        listEl({
+          t,
+          scroll: this.scroll?.of(ui.isHelpShown ? 'help' : ui.tab) ?? null,
+          rows: spacedEls(moved.blocks, paint, b => blockEl(b, paint)),
+          onHeight: onSize(this, 'listHeight', s => s.height),
+          onUse: listInput,
+          onClick: () => {
+            const field = isFieldDrawn(this.ui.typing, this.ui.isHelpShown) ? this.input : null
+            if (field) field.state.focus()
+            else this.focus?.focus()
+          },
+        }),
       )
     const wakeAt = nextDrawAt(now, moved, [this.fades.drew(), held.nextAt, this.tabCounts.nextAt])
     if (wakeAt !== null) this.drawTimer = cx.timer.after(Math.max(0, wakeAt - now), cx => cx.notify())

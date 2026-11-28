@@ -95,9 +95,8 @@ export function statusPlaced(
 }
 
 /**
- * The subjects whose row's first line is clear of the edge fades wherever the list is scrolled. gpui-kit does not tell
- * a mod how far a list has scrolled, so a row counts only when its first line is in view at the top of the scroll and
- * at its end.
+ * The subjects whose row's first line is clear of the edge fades wherever the list is scrolled: in view both at the top
+ * of the scroll and at its end.
  */
 export function surelyShown({ rows, height, room }: StatusPlaced): string[] {
   const scrollEnd = Math.max(0, height - room)

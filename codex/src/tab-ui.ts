@@ -33,6 +33,7 @@ import { callTool, cancelTimer, later, READ_TIMEOUT_MS } from './tab-host'
 import { revealSelected } from './tab-wake'
 import { PAGE, swapPage } from './tab-swap'
 import { takeShownRows } from './tab-shown'
+import { startOver } from './tab-places'
 
 const hostFacts = (v: View): HostFacts => ({
   isFetchingPrs: v.isFetchingPrs,
@@ -153,6 +154,7 @@ function run(c: UiCommand) {
     void read()
   } else if (c.kind === 'focus-field') tabState.focusField = c.id
   else if (c.kind === 'reveal') pendingReveal = { id: c.id, closedId: c.closedId }
+  else if (c.kind === 'tab-shown' && c.startsOver) startOver(c.tab)
 }
 
 async function runPress(c: Extract<UiCommand, { kind: 'press' }>) {

@@ -17,6 +17,7 @@ import { applyPageVariables } from './tab-page-variables'
 import './list-input'
 import { afterDraw, dispatch, drawnTab, openFresh, poll, read, redrawView, selectedId } from './tab-ui'
 import { restoreState } from './tab-swap'
+import { enterPlace, leavePlace } from './tab-places'
 import { foldAllHere } from './tab-fold-all'
 import { pressCollapseKey, tabRows } from './tab-rows'
 import { Banner } from './tab-parts'
@@ -100,6 +101,8 @@ function draw() {
   if (tabState.isDisposed || !tabState.isActive) return
   const page = `${drawnTab()}${tabState.ui.isHelpShown ? ' help' : ''}`
   const isPageSwitch = drawnPage !== null && page !== drawnPage
+  const place = tabState.ui.isHelpShown ? 'help' : drawnTab()
+  const isPlaceSwitch = leavePlace(place)
   if (isPageSwitch) document.documentElement.classList.add('page-switched', 'page-switching')
   drawnPage = page
   if (isPageSwitch) restCounts()
@@ -117,6 +120,7 @@ function draw() {
   watchAnswers()
   animateDraw(before, step?.changed ?? new Set(), step?.drawnAt ?? Date.now())
   if (isPageSwitch) endPageSwitch()
+  if (isPlaceSwitch) enterPlace(place)
   noteStatusInView()
   const focusField = tabState.focusField
   const fieldToFocus = focusField !== null ? document.getElementById(`type-${focusField}`) : null

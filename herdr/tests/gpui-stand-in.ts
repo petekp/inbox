@@ -34,6 +34,7 @@ export type Painted = {
   transitions: Map<string, number>
   delays: Map<string, number>
   onSize: ((size: { width: number; height: number }, cx: unknown) => void) | null
+  scroll: StandInScroll | null
 }
 
 type Side = 'pt' | 'pb' | 'mt' | 'mb'
@@ -86,6 +87,16 @@ class StandInField {
   }
   on(event: string, handler: (event: unknown, cx: unknown) => void) {
     this.handlers.set(event, handler)
+    return true
+  }
+}
+
+export class StandInScroll {
+  y = 0
+  scroll_to_item(index: number) {
+    if (index === 0) this.y = 0
+  }
+  release() {
     return true
   }
 }
@@ -156,6 +167,7 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
     transitions: new Map(),
     delays: new Map(),
     onSize: null,
+    scroll: null,
   }
   const adopt = (kid: unknown) => {
     if (typeof kid === 'string') node.text = (node.text ?? '') + kid
@@ -178,6 +190,7 @@ function element(field: StandInField | null = null, flow: Painted['flow'] = 'col
           if (key === 'child') adopt(first)
           if (key === 'children') (first as unknown[]).forEach(adopt)
           if (key === 'id') node.id = String(first)
+          if (key === 'track_scroll') node.scroll = first as StandInScroll
           if (key === 'accessibility_label') node.label = String(first)
           if (key === 'disabled') node.isDisabled = Boolean(first)
           if (key === 'hover') node.hasHover = true
@@ -267,6 +280,7 @@ export const appModules = {
     Input: { new: (state: StandInField) => element(state) },
     InputState: { new: (options?: { value?: string }) => new StandInField(options) },
     Scrollbar: { vertical: () => element() },
+    ScrollHandle: { new: () => new StandInScroll() },
   },
   herdr: {
     appHome: () => '/app',
