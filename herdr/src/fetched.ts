@@ -1,5 +1,5 @@
 import type { SessionView } from '../../core/view/session-view'
-import { notesOf } from '../../core/view/ui-controller'
+import { noticeOf, notesOf } from '../../core/view/ui-controller'
 import { holdsOf } from '../../core/view/ui-controller-reply'
 import { collapsedOf } from '../../core/view/ui-controller-selection'
 import type { UiState } from '../../core/view/ui-controller-types'
@@ -17,7 +17,7 @@ type Look = { followed: Followed; queue: PressQueue }
 /** What the look draws for `read` and the controller state `ui`, with `view` the session's view of them. */
 export function screenAt(look: Look, read: ReadSession | null, ui: UiState, view: SessionView | null, now: number) {
   const collapsed = (v: SessionView) => collapsedOf(ui, v)
-  const presses = { now, view, shownSince: ui.shownSince, collapsed, queue: look.queue }
+  const presses = { now, view, shownSince: ui.shownSince, collapsed, queue: look.queue, pressNote: noticeOf(ui, now) }
   const lookUi = lookUiOf(ui, view && { ...view, collapsed: collapsed(view) })
 
   return screenOf(look.followed, read, lookUi, presses)

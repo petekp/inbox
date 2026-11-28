@@ -1,7 +1,8 @@
 import { homedir } from 'node:os'
 
 import { isTurnHeard } from './core'
-import type { HooksTrust } from './hook-trust'
+import type { HooksTrust } from '../../core/view/hooks-trust'
+import { codexStore } from './host'
 import type { ServerDeps } from './server'
 import type { SessionState } from './state'
 
@@ -17,6 +18,21 @@ export function makeHooksTrustNow(deps: ServerDeps, newestTurns: Map<string, str
   const askingHooksIn = new Set<string>()
   /** The unheard turn each chat last asked about. */
   const askedTurns = new Map<string, string>()
+
+  /**
+   * Saves a clear answer to the chat when it differs from the one it holds, so the chat's Herdr publish carries it. A
+   * failed or unclear answer keeps what the chat holds.
+   */
+  async function saveTrust(id: string, answer: HooksTrust | 'trusted' | null): Promise<void> {
+    if (answer === null) return
+    const trust = answer === 'trusted' ? undefined : answer
+    const store = codexStore(deps.dir, id, now, deps.onWrite)
+    if ((await store.read()).hooksTrust === trust) return
+    await store.update(s => {
+      const { hooksTrust: _old, ...rest } = s
+      return trust ? { ...rest, hooksTrust: trust } : rest
+    })
+  }
 
   /** The chat's newest turn, when the inbox heard neither its prompt nor its Stop, as while Codex skips the hooks. */
   function unheardTurnOf(s: SessionState, id: string): string | null {
@@ -53,9 +69,12 @@ export function makeHooksTrustNow(deps: ServerDeps, newestTurns: Map<string, str
           .catch(() => null)
         hooksTrust.set(folder, { at: now(), answer })
         askingHooksIn.delete(folder)
+        await saveTrust(id, answer).catch(() => undefined)
       })()
     }
     const answer = known?.answer
+    if (answer !== undefined && answer !== null && (answer === 'trusted' ? undefined : answer) !== s.hooksTrust)
+      void saveTrust(id, answer).catch(() => undefined)
 
     return answer === 'untrusted' || answer === 'modified' ? answer : null
   }

@@ -15,6 +15,8 @@ import type { LookUi, TabCell } from './draw'
 import type { ReadSession } from '../../core/remote/herdr-read'
 import type { Followed } from './follow'
 import { drawOuts } from './out'
+import { stopScreenOf } from './draw-stop'
+import { isHooksTrust } from '../../core/view/hooks-trust'
 import type { PressQueue } from './press-queue'
 
 /** What the look shows in place of an inbox, as the case of the terminal it follows says. */
@@ -100,6 +102,8 @@ type LookPresses = {
   shownSince: number | null
   collapsed?: (view: SessionView) => string[]
   queue: Pick<PressQueue, 'outs' | 'lines'>
+  /** The result of a press whose row the tab no longer shows, while it shows. */
+  pressNote?: { text: string; isError: boolean } | null
 }
 
 /** What the look draws now for the terminal it follows, with the session it read for it. */
@@ -121,6 +125,9 @@ export function screenOf(
     isGhMissing: read.session.prViews.isGhMissing === true,
     isFetchingPrs: read.isFetchingPrs,
     isSendHeld: read.isSendHeld,
+    stop: stopScreenOf(read),
+    hooksTrust: isHooksTrust(read.envelope.hooksTrust) ? read.envelope.hooksTrust : null,
+    pressNote: o.pressNote ?? null,
   }
 
   return {

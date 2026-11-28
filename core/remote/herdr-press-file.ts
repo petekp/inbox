@@ -68,7 +68,8 @@ export const fileTime = (file: HerdrFile) =>
             : file.collapse.at
 
 /** The field that names what each press acts on: a row's `id`, a PR's `ref`, or none for the PRs tab's own buttons. */
-const PRESS_TARGETS: Record<Exclude<RowPress['action'], 'resume'> | PrPress['action'], 'id' | 'ref' | null> = {
+const PRESS_TARGETS: Record<RowPress['action'] | PrPress['action'], 'id' | 'ref' | null> = {
+  resume: 'id',
   answer: 'id',
   type: 'id',
   explain: 'id',

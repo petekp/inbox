@@ -31,7 +31,7 @@ import { copyToClipboard } from './clipboard'
 import { viewOf } from './core'
 import type { TabView } from './core'
 import { answerMessage, noteTurnDialogs } from './dialogs'
-import type { HooksTrust } from './hook-trust'
+import type { HooksTrust } from '../../core/view/hooks-trust'
 import { codexStore } from './host'
 import type { PressReply, ServerDeps } from './server'
 import { pageName } from './server-tools'
@@ -304,6 +304,9 @@ export function makeSessionHost(
     const pressed =
       file.format === 2 ? (file.kind === 'command' ? file.press : null) : isPressFile(file) ? file.press : null
     if (pressed) await beforePress(id, pressed)
+    void readState(dir, id)
+      .then(s => hooksTrustNow(s, id))
+      .catch(() => undefined)
 
     return startedFile(await startHerdrFile(hostFor(id), file, id), outcome => wakeAfterPress(id, outcome))
   }

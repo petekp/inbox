@@ -1,4 +1,4 @@
-import type { Stop } from '../../types'
+import type { Session, Stop } from '../../types'
 import { capitalized } from '../domain/press-labels'
 import { drawableText } from '../domain/text'
 import type { BannerTone } from './tones'
@@ -13,6 +13,22 @@ export const RESUME_TEXT = 'Continue'
 /** True when Resume can continue past the stop. */
 export function isResumable(stop: Stop): boolean {
   return stop.kind === 'api-error'
+}
+
+/**
+ * Whether Resume was pressed for the session's stop and its message has not failed. A turn that started since then
+ * means the press no longer holds, so Resume shows again if the session stops again.
+ */
+export function isResumeRequested(s: Pick<Session, 'stop' | 'lastActions' | 'presence'>): boolean {
+  const last = s.lastActions.session
+
+  return (
+    s.stop !== null &&
+    last !== undefined &&
+    last.at >= s.stop.at &&
+    last.turnsStarted === s.presence.turnsStarted &&
+    last.delivery?.state !== 'failed'
+  )
 }
 
 export function stopText(stop: Stop): string {
@@ -105,15 +121,18 @@ export function bannerOf(kind: BannerKind, hostText: string): BannerView {
   return { kind, tone: BANNER_TONES[kind], lead, body }
 }
 
-/** The stop's banner. Its lead is "Stopped", and its body why, with the fix when Resume cannot continue past it. */
-export function stopBanner(stop: Stop): BannerView {
+/**
+ * The stop's banner. Its lead is "Stopped", and its body why, with the fix when the look offers no Resume: the stop is
+ * not one Resume continues past, or the look cannot send Resume to its host.
+ */
+export function stopBanner(stop: Stop, canResume = isResumable(stop)): BannerView {
   const why = `${capitalized(stopText(stop))}.`
 
   return {
     kind: 'stopped',
     tone: BANNER_TONES.stopped,
     lead: 'Stopped',
-    body: isResumable(stop) ? why : `${why} ${stopFix(stop)}`,
+    body: canResume ? why : `${why} ${stopFix(stop)}`,
   }
 }
 

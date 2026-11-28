@@ -25,7 +25,11 @@ import {
 import { rowKeyPlan } from '../../core/view/action-plan'
 import type { RowWait } from '../../core/view/action-plan'
 import { localEffects } from '../../core/domain/help-steps'
-import { groupEmptyText, tabBarBanners } from '../../core/view/banners'
+import { bannerOf, groupEmptyText, tabBarBanners } from '../../core/view/banners'
+import { HOOKS_TRUST_TEXT } from '../../core/view/hooks-trust'
+import type { HooksTrust } from '../../core/view/hooks-trust'
+import { stopBlocks } from './draw-stop'
+import type { StopScreen } from './draw-stop'
 import type { BannerView } from '../../core/view/banners'
 import { emptyTab } from '../../core/view/empty-tab'
 import { feedbackTone, rowAgeAt, rowFeedbackText, stoppedWarningOf } from '../../core/view/feedback'
@@ -76,6 +80,12 @@ export type LookScreen = {
   isFetchingPrs: boolean
   /** Whether Claude Code holds the inbox's messages after the person stopped the session, from the published file. */
   isSendHeld: boolean
+  /** The turn's stop, which the Asks tab draws at its top, or null while the session runs or has not stopped. */
+  stop: StopScreen | null
+  /** Why Codex does not run the inbox's hooks, from the published file, or null when it runs them or did not say. */
+  hooksTrust: HooksTrust | null
+  /** The result of a press whose row the tab no longer shows, while it shows. */
+  pressNote: { text: string; isError: boolean } | null
 }
 
 const markOf = (m: ResultMark | null): Mark | null =>
@@ -375,18 +385,19 @@ export function rowWaits({ view, shownSince }: LookScreen, tab: ShownTab): RowWa
 
 function rowTabBlocks(screen: LookScreen, ui: LookUi, tab: 'needsYou' | 'findings'): Block[] {
   const groups = groupsOf(screen.view, tab, screen.shownSince)
-  const empty = emptyTab(screen.view, {
-    tab,
-    agent: screen.agent,
-    drawn: groups.filter(g => g.rows.length > 0 || g.closed.length > 0).length,
-    hasBlocker: false,
-  })
+  const stop = tab === 'needsYou' ? stopBlocks(screen.stop, screen.now) : []
+  const drawn = groups.filter(g => g.rows.length > 0 || g.closed.length > 0).length
+  const empty = emptyTab(screen.view, { tab, agent: screen.agent, drawn, hasBlocker: stop.length > 0 })
   if (empty) return [emptyBlock(tab, empty)]
+  if (drawn === 0) return stop
 
-  return groups.flatMap((g, n): Block[] => [
-    ...(n > 0 ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null } as const] : []),
-    ...groupBlocks(g, ui, ui.selected, screen),
-  ])
+  return [
+    ...stop,
+    ...groups.flatMap((g, n): Block[] => [
+      ...(n > 0 ? [{ kind: 'rule', id: `rule ${g.kind}`, text: null } as const] : []),
+      ...groupBlocks(g, ui, ui.selected, screen),
+    ]),
+  ]
 }
 
 export type TabCell = { id: ShownTab; label: string; badge: string | null; isSelected: boolean }
@@ -407,7 +418,9 @@ export function tabCells(screen: Pick<LookScreen, 'view'>, tab: ShownTab): TabCe
 export function chrome(screen: LookScreen, tab: ShownTab): { banners: BannerView[] } {
   const error = footerError(tab, screen.view.status, screen.view.statusPage)
 
-  return { banners: tabBarBanners([], error, null) }
+  const host = screen.hooksTrust ? [bannerOf('hooks-trust', HOOKS_TRUST_TEXT[screen.hooksTrust])] : []
+
+  return { banners: tabBarBanners(host, error, screen.pressNote) }
 }
 
 export function tabBlocks(screen: LookScreen, ui: LookUi): Block[] {

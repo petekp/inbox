@@ -1,6 +1,6 @@
 import { isMaybeStale } from '../../core/view/band'
 import { reconcileUpdateStatus } from './update'
-import { HOOKS_TRUST_TEXT } from './hook-trust-text'
+import { HOOKS_TRUST_TEXT } from '../../core/view/hooks-trust'
 import { SETTLE_WINDOW_MS } from './settle'
 import { lstat } from 'node:fs/promises'
 import { basename } from 'node:path'
@@ -16,7 +16,7 @@ import { readViewers } from './viewers'
 import type { SessionState } from './state'
 import type { HerdrFile } from '../../core/remote/herdr-press-file'
 import type { ServerDeps } from './server'
-import type { HooksTrust } from './hook-trust'
+import type { HooksTrust } from '../../core/view/hooks-trust'
 import type { CompanionHandler, CompanionView } from '../../core/remote/companion-protocol'
 
 export function makeCompanion(

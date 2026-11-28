@@ -491,6 +491,7 @@ export function blockEl(b: Block, p: Paint): Element {
       t,
       b.buttons.map(x => buttonEl(x, p, isLeaving)),
       b.feedback ? feedbackEl(b.feedback, t) : null,
+      b.after,
     )
 
   return div()

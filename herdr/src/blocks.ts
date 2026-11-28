@@ -372,5 +372,15 @@ export type Block =
   | { kind: 'gap'; id: string; isMilestoneStep?: true }
   /** A muted line at the edge that names the blocks under it, as Other PRs. */
   | { kind: 'caption'; id: string; text: string }
-  /** A message in the list, as the PRs tab's GitHub notice, with the buttons that act on its problem at its end. */
-  | { kind: 'banner'; id: string; banner: BannerView; buttons: Button[]; feedback: { text: string; tone: Tone } | null }
+  /**
+   * A message in the list, as the PRs tab's GitHub notice, with the buttons that act on its problem at its end. `after`
+   * is muted text after the lead, as the stop's age.
+   */
+  | {
+      kind: 'banner'
+      id: string
+      banner: BannerView
+      after?: string
+      buttons: Button[]
+      feedback: { text: string; tone: Tone } | null
+    }

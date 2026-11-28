@@ -1,4 +1,4 @@
-import { HOOKS_TRUST_TEXT } from './hook-trust-text'
+import { HOOKS_TRUST_TEXT } from '../../core/view/hooks-trust'
 import { ago } from '../../core/domain/text'
 import { HELP_COPY, helpKeys, MARK_LEGEND } from '../../core/view/help'
 import { bannerOf, tabBarBanners } from '../../core/view/banners'

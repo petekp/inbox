@@ -29,6 +29,7 @@ Every source file in `core/`, `hooks/`, `codex/src`, `omp/src`, `herdr/src`, `ex
 - [Codex](looks/files-codex.md)
 - [omp](looks/files-omp.md)
 - [The Herdr look](looks/files-herdr.md)
+- [How the Herdr look paints](looks/files-herdr-paint.md)
 - [Exact Web and iOS (private)](looks/files-exact.md)
 
 ## Who owns each rule
@@ -67,6 +68,7 @@ The parts below hold the main table, split by subject. The omp table is in the p
 - [Text levels](looks/differences-status-text.md)
 - [Spacing](looks/differences-spacing.md)
 - [How each host runs](looks/differences-hosts.md)
+- [How each host runs its hooks](looks/differences-hosts-hooks.md)
 - [How each host runs in Herdr](looks/differences-hosts-herdr.md)
 - [The agent and its turns](looks/differences-agent-and-turns.md)
 

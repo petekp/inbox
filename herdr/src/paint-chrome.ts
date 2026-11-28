@@ -145,13 +145,20 @@ const BANNER_TONES: Record<BannerTone, Tone> = { error: 'error', warning: 'warni
  * at its right end, as the Codex tab's banner draws its key. `under`, such as a press's result, goes below the text and
  * the buttons, so the buttons stay still when it appears.
  */
-export function bannerEl(b: BannerView, t: Theme, buttons: Element[] = [], under: Element | null = null): Element {
+export function bannerEl(
+  b: BannerView,
+  t: Theme,
+  buttons: Element[] = [],
+  under: Element | null = null,
+  after?: string,
+): Element {
   const tone = colorOf(t, BANNER_TONES[b.tone])
+  const lead = div().font_semibold().text_color(tone).child(b.lead)
   const text = v_flex()
     .flex_1()
     .min_w(0)
     .whitespace_normal()
-    .child(div().font_semibold().text_color(tone).child(b.lead))
+    .child(after ? h_flex().child(lead).child(div().text_color(t.muted).child(after)) : lead)
     .when(b.body !== null, e => e.child(div().child(b.body ?? '')))
   const row = h_flex()
     .gap(INSET)

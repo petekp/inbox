@@ -231,3 +231,29 @@ test('a chat whose folder is not known yet asks Codex’s hook list for the home
 
   assert.deepEqual(asked, [homedir()])
 })
+
+test('a clear answer about the hooks is saved to the chat its Herdr terminal runs as the server starts, a failed one keeps it, and a hook that runs clears it', async () => {
+  const answers: ('modified' | 'trusted' | null)[] = ['modified', null]
+  const dir = tempDir()
+  await updateState(dir, 's1', s => ({ ...s, root: '/repo', cliPath: '/apps/codex' }))
+  const settle = () => new Promise(resolve => setTimeout(resolve, 20))
+  const start = () =>
+    makeServer({
+      comparePage: '/plugin/dist/compare-page.html',
+      dir,
+      now: () => 1000,
+      exec: fakeRunner(() => ({ code: 0, stdout: '', stderr: '' })).exec,
+      tabHtml: '',
+      fallbackCli: async () => 'codex',
+      hooksTrust: async () => answers.shift() ?? null,
+      herdrSession: async () => 's1',
+    })
+
+  start()
+  await settle()
+  assert.equal((await readState(dir, 's1')).hooksTrust, 'modified')
+  start()
+  await settle()
+  assert.equal((await readState(dir, 's1')).hooksTrust, 'modified')
+  assert.equal(noteHook(await readState(dir, 's1'), 'prompt', 2000, 't1').hooksTrust, undefined)
+})

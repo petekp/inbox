@@ -1,4 +1,4 @@
-import { isResumable, RESUME_TEXT } from '../view/banners'
+import { isResumable, isResumeRequested, RESUME_TEXT } from '../view/banners'
 import { settledCollapses } from '../view/collapse'
 import { remoteHeldRows } from './remote-viewers'
 import { pendingCommandRows } from './remote-command-state'
@@ -64,14 +64,7 @@ export function pressOn(
   localPressId?: string,
 ): Pressed | { stale: true } {
   if (p.action === 'resume') {
-    const previous = s.lastActions.session
-    const alreadyRequested =
-      s.stop &&
-      previous &&
-      previous.at >= s.stop.at &&
-      previous.turnsStarted === s.presence.turnsStarted &&
-      previous.delivery?.state !== 'failed'
-    if (p.id !== 'session' || !s.stop || !isResumable(s.stop) || s.presence.isTurnRunning || alreadyRequested)
+    if (p.id !== 'session' || !s.stop || !isResumable(s.stop) || s.presence.isTurnRunning || isResumeRequested(s))
       return { stale: true }
     return {
       ledger: s.ledger,
