@@ -18,11 +18,20 @@ type Scroll = {
 
 let scroll: Scroll | null = null
 
-/** When the person last scrolled the page themselves, as `watchScrollInput` hears it, on `performance.now()`'s clock. */
+/**
+ * When the person last scrolled the page themselves, as `watchScrollInput` hears it, or the page went back to where
+ * they left a tab, on `performance.now()`'s clock.
+ */
 let scrolledAt = -Infinity
 
 /** Whether the person has scrolled the page themselves since `at`, on `performance.now()`'s clock. */
 export const hasScrolledSince = (at: number) => scrolledAt >= at
+
+/** The page went back to where the person left a tab: a scroll under way stops, and a reveal that waits does not run. */
+export function notePlaceRestored() {
+  scrolledAt = performance.now()
+  scroll = null
+}
 
 /** The keys the browser scrolls the page with. The tab takes the arrows and j and k itself, to move between rows. */
 const SCROLL_KEYS = new Set([' ', 'PageDown', 'PageUp', 'Home', 'End'])

@@ -1,4 +1,5 @@
 import type { ShownTab } from '../../core/view/tabs'
+import { notePlaceRestored } from './tab-scroll'
 import { root } from './tab-state'
 
 /** What the page shows: a tab, or Help. */
@@ -22,6 +23,7 @@ export function leavePlace(place: Place): boolean {
 
 /** Scrolls the page to where the person left `place`, or to its top. */
 export function enterPlace(place: Place): void {
+  notePlaceRestored()
   page().scrollTop = offsets.get(place) ?? 0
 }
 

@@ -4,7 +4,7 @@ import { withCollapse } from '../../core/view/collapse'
 import { foldOf } from '../pane/fold-keys'
 import { drawnState, readUi } from './mod-drawn'
 import { focusField } from './mod-pane-open'
-import { scrollToKey } from './mod-pane-scroll'
+import { scrollToKey, scrollToTabStart } from './mod-pane-scroll'
 import type { Mod } from './mod-ports'
 import { currentOwner } from './mod-sessions'
 import { type Action, openFields } from '../pane/pane-keys'
@@ -99,11 +99,12 @@ export async function pressTitle(m: PaneInputCalls, id: string, isAll?: unknown)
   await m.sendUi([{ type: 'fold-all', isOpening: view.collapsed.includes(id) }])
 }
 
-/** Shows Help at its start, or closes it. */
+/** Shows Help at its start, or closes it and opens the tab under it as a switch to that tab does. */
 export async function toggleHelp(m: PaneInputCalls) {
-  const isShown = !(await readUi(m)).isHelpShown
-  await m.sendUi([{ type: 'show-help', isShown }])
-  if (isShown) await m.pane.scrollToStart().catch(() => undefined)
+  const { tab, isHelpShown } = await readUi(m)
+  await m.sendUi([{ type: 'show-help', isShown: !isHelpShown }])
+  if (isHelpShown) await scrollToTabStart(m, tab)
+  else await m.pane.scrollToStart().catch(() => undefined)
 }
 
 /** A press on a Status parent's name or its Fold key. With `isAll`, every fold of the page goes the same way. */

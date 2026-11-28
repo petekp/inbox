@@ -248,3 +248,13 @@ test('a PR listed while PRs load is not new, and its waiting thread is followed 
   expect(loaded.ui.tab).toBe('prs')
   expect(loaded.commands).toContainEqual({ kind: 'tab-shown', tab: 'prs', startsOver: true })
 })
+
+test('showing an ask from another tab keeps the Asks tab’s place and reveals the ask', () => {
+  const s = sessionWith({ items: [question('i1'), question('i2')], findings: [finding('f1')] })
+  const start = openOn(s)
+  const away = send(start.ui, s, { type: 'show-tab', tab: 'findings' }, T0 + 10)
+  const asked = send(away.ui, s, { type: 'show-ask', id: 'i2', by: 'click' }, T0 + 20)
+  expect(asked.ui.tab).toBe('needsYou')
+  expect(asked.commands).toContainEqual({ kind: 'tab-shown', tab: 'needsYou', startsOver: false })
+  expect(asked.commands).toContainEqual({ kind: 'reveal', tab: 'needsYou', id: 'i2', closedId: null })
+})

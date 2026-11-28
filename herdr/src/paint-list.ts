@@ -13,7 +13,7 @@ type ListPlace = ShownTab | 'help'
 const LIST_ID = 'inbox-list'
 
 /**
- * The list's scroll position on each tab and on Help, so a tab the person goes back to opens where they left it. A tab
+ * The list's scroll position on each tab, and one for Help, so a tab the person goes back to opens where they left it. A tab
  * opens at its top the first time it shows, after a move the look made to it, and after a switch to another session.
  * Help opens at its top each time.
  */
