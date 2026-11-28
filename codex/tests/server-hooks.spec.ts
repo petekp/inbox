@@ -101,7 +101,7 @@ test('a chat says why Codex is not running the inbox’s hooks from Codex’s ho
         params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 's1' } },
       })) as { result: { structuredContent: { hooksTrust?: string } } }
     ).result.structuredContent.hooksTrust
-  const settle = () => new Promise(resolve => setImmediate(resolve))
+  const settle = () => handle.settled()
 
   assert.equal(await view(), undefined)
   await settle()
@@ -191,7 +191,7 @@ test('each chat folder gets its own answer about the hooks’ trust, and each ch
       })) as { result: { structuredContent: { hooksTrust?: string } } }
     ).result.structuredContent.hooksTrust
 
-  const settle = () => new Promise(resolve => setImmediate(resolve))
+  const settle = () => handle.settled()
   const asksFor = (folder: string) => asked.filter(f => f === folder).length
 
   for (const thread of ['a', 'b', 'c']) await view(thread)
@@ -227,7 +227,7 @@ test('a chat whose folder is not known yet asks Codex’s hook list for the home
     method: 'tools/call',
     params: { name: 'inbox_view', arguments: {}, _meta: { thread_id: 'new' } },
   })
-  await new Promise(resolve => setImmediate(resolve))
+  await handle.settled()
 
   assert.deepEqual(asked, [homedir()])
 })
