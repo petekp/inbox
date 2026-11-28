@@ -169,7 +169,7 @@ export function animateDraw(before: Drawing, changed: ReadonlySet<string>, stepA
     }
   }
   moveCounts(changed)
-  moveLines(els, changed)
+  moveLines(els, changed, heightWaitMs)
   glideTabs(before.tabWidths)
   showNotes(before)
   showNewKeys(before.keys, before.heights)
