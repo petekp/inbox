@@ -224,7 +224,9 @@ export function strokeFadesOf(blocks: Block[], passing: Column[][], moves: Strok
       if (!(by === 1 ? ons[j] : ins[j])?.has(depth)) return { stays: false, first, end: j }
     }
 
-    return first === null && shut !== null ? { stays: false, first: shut, end: shut } : { stays: false, first, end: null }
+    return first === null && shut !== null
+      ? { stays: false, first: shut, end: shut }
+      : { stays: false, first, end: null }
   }
   const joinsAt = (r: ColumnReach): number | null | undefined => (r.stays ? null : (r.end ?? undefined))
   /** The fade of the upper end among `ends` whose content hides, else of the upper end, where null is an end that stays. */
