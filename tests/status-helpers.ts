@@ -44,7 +44,8 @@ export const page = (
   now: number,
   over: Partial<Session['presence']> = {},
   items: Item[] = [],
-) => statusPage({ ledger: { overview: sessionStatus, items }, presence: presence(over) }, now)
+  collapsed: readonly string[] = [],
+) => statusPage({ ledger: { overview: sessionStatus, items }, presence: presence(over) }, now, undefined, collapsed)
 
 const ARMS = { mid: '├ ', last: '└ ' } as const
 

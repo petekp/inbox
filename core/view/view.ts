@@ -22,7 +22,15 @@ import { isHeldSend, isUndoable } from './pressed'
 import { FINDING_GROUPS } from './help'
 import { isSettledInPlace, canUndoClose, isUndoLeft, pendingDeliveryAt, earliestOf } from './timing'
 import type { ListInput } from './timing'
-import { closedRowState, optionDescriptionsOf, isWaitingRow, outcomeLabel, closedMark, shortOutcome } from './rows'
+import {
+  closedRowState,
+  optionDescriptionsOf,
+  isWaitingRow,
+  outcomeLabel,
+  closedMark,
+  shortOutcome,
+  deliveryLabel,
+} from './rows'
 import type { RowView, ClosedDelivery, ResultMark, RowState } from './rows'
 import { doneLabel, feedbackOf, fixLabel, feedbackIn, pressUnderWaySince, pressFeedbackIn } from './feedback'
 import type { ShownTab } from './tabs'
@@ -167,12 +175,19 @@ export function inboxView({
     return delivery && 'sentAt' in delivery ? delivery.sentAt : undefined
   }
   const isOpen = (id: string) => ledger.items.some(i => i.id === id) || ledger.findings.some(f => f.id === id)
+  /** A reply sent after the close that was not confirmed. While a draft still holds the row, the row stays held. */
+  const unconfirmedReply = (c: Closed | ClosedFinding) => {
+    const last = lastActions[c.id]
+
+    return last?.action === 'type' && last.at >= closedAt(c) && last.delivery?.state === 'unconfirmed' ? last : null
+  }
   const replyAfter = (c: Closed | ClosedFinding) => {
     const last = lastActions[c.id]
 
     return last?.action === 'type' &&
       last.at >= closedAt(c) &&
       last.delivery?.state !== 'failed' &&
+      !(unconfirmedReply(c) && isHeld(c)) &&
       isInPlace(c.id, last.at, false, last)
       ? last
       : null
@@ -234,7 +249,7 @@ export function inboxView({
           closedAs: closedState(closed),
           ...(reply.reply !== undefined ? { reply: reply.reply } : {}),
         }
-      if (isHeld(closed)) return { is: 'held', label: heldLabel(closed), at }
+      if (isHeld(closed)) return { is: 'held', label: heldLabel(closed, unconfirmedReply(closed)), at }
 
       return closedRowState(
         closed,
@@ -406,7 +421,9 @@ export function inboxView({
   }
 }
 
-function heldLabel(c: Pick<Closed, 'how' | 'outcome'>): string {
+/** Why a held row closed, or that the reply sent since was not confirmed, with its words. */
+function heldLabel(c: Pick<Closed, 'how' | 'outcome'>, unconfirmed: LastAction | null): string {
+  if (unconfirmed) return deliveryLabel('unconfirmed', doneLabel(unconfirmed), unconfirmed.reply)
   if (c.how === 'answered') return `Answered: ${shortOutcome(c.outcome)}`
 
   return c.how === 'claude' ? capitalized(shortOutcome(c.outcome)) : `Closed: ${shortOutcome(c.outcome)}`

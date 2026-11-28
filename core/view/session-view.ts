@@ -103,6 +103,7 @@ export function sessionView(
   const l = s.ledger
   const lastActions = withoutStalePending(s.lastActions, now)
   const sync = viewSync(s, now, inputs)
+  const collapsed = collapsedRows(s)
 
   const inbox = inboxView({
     ledger: l,
@@ -115,7 +116,7 @@ export function sessionView(
     now,
     ...holds,
     lastTypedMessageAt: s.presence.lastTypedMessageAt,
-    collapsed: collapsedRows(s),
+    collapsed,
     canScrollConversation,
   })
 
@@ -126,7 +127,7 @@ export function sessionView(
     lastActions,
     turns: { turnsStarted: s.presence.turnsStarted, turnsApplied: s.presence.turnsApplied },
     prs,
-    statusPage: statusPage(s, now, sync.turn),
+    statusPage: statusPage(s, now, sync.turn, collapsed),
     sync,
     drawnVersions: drawnVersions(
       s,

@@ -42,6 +42,13 @@ test('under a goal, the Now line stays while the working subject it repeats is b
   expect(p.goal?.now).toBe('Now: Making CSV import ready to demo')
 })
 
+test('under a goal, the Now line stays while the working subject it repeats sits under a milestone the person folded', () => {
+  const served = after(withGoal(), 'SERVES: s1 | m2\nSERVES: s3 | m2', 30)
+
+  expect(page(served, 40).goal?.now).toBeNull()
+  expect(page(served, 40, {}, [], ['m2']).goal?.now).toBe('Now: Making CSV import ready to demo')
+})
+
 test('under a goal, the Now line hides while it repeats a working subject drawn in its milestone’s place', () => {
   const started = after(
     null,

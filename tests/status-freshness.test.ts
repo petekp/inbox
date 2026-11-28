@@ -114,3 +114,36 @@ test('a Status an earlier build saved has no time of its last change and no quie
 
   expect(upgradeStatus(saved)).toMatchObject({ changedAt: null, quietCalls: 0 })
 })
+
+test('after a next-goal retry, the Status call saves the first answer with the retry’s added lines, and no failure when the retry fails, adds none or takes its lines back', async () => {
+  const first =
+    'HEAD: Work offline | Letting the app work without a connection\nNEW: working | Offline mode | queue built'
+  const saved = async (retry: () => Promise<string>) => {
+    const answers = [async () => first, retry]
+    let calls = 0
+    const { host } = fakeHost(async () => {
+      calls += 1
+      return (answers.shift() ?? (async () => 'NO CHANGE'))()
+    })
+    const read = await readForStatus(host)
+    const call: StatusCall = { exchange: { kind: 'reply', exchange: EXCHANGE }, ask: host.ask }
+    await askAndWriteStatus(host, read, call, [], read.s.presence.turnsApplied)
+    const s = await host.read()
+
+    return { calls, failure: s.callFailures.status.lastFailure, answer: s.lastAnswers.status }
+  }
+  const thrown = await saved(async () => {
+    throw new Error('overloaded')
+  })
+  const prose = await saved(async () => 'I would suggest shipping offline mode next.')
+  const suggested = await saved(async () => 'NEW: working | Store page | redone\nSUGGEST: Offline mode shipped')
+  const takenBack = await saved(async () => 'SUGGEST: Offline mode shipped\nNO CHANGE')
+
+  for (const r of [thrown, prose, takenBack])
+    expect(r).toMatchObject({ calls: 2, failure: null, answer: { isParsed: true, text: first } })
+  expect(suggested).toMatchObject({
+    calls: 2,
+    failure: null,
+    answer: { isParsed: true, text: `${first}\nSUGGEST: Offline mode shipped` },
+  })
+})

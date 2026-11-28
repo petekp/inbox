@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { applyPress } from '../../core/view/press-reducer'
+import { applyPress, withUnconfirmed } from '../../core/view/press-reducer'
 import { recordClose, recordItem } from '../../core/runtime/tools'
 import { closedShown } from '../../core/view/rows'
 import { firstWaiting, keptOpen, listWaits, openOnArrival, rowAfterClose } from '../../core/view/action-plan'
@@ -57,7 +57,7 @@ test('the tab keeps a folded row folded when a press begins on another row after
   assert.deepEqual(local(due + 60_000, due + 1), [])
 })
 
-test('a row Codex closes while the person types a reply stays held in place, out of the count and the Closed fold, Discard folds it at once, and its reply sends and settles it as Replied', () => {
+test('a row Codex closes while the person types a reply stays held in place, out of the count and the Closed fold, Discard folds it at once, its reply sends and settles it as Replied, and an unconfirmed reply keeps it held with its words', () => {
   const s = withItems()
   const closed = {
     ...s,
@@ -127,6 +127,19 @@ test('a row Codex closes while the person types a reply stays held in place, out
     },
   )
   const later = 70 + SETTLE_WINDOW_MS
+  const unconfirmed = {
+    ...replied,
+    lastActions: withUnconfirmed(replied.lastActions, 'Re "Fix add.js or the test?": Fix add.js after all'),
+  }
+  for (const now of [71, later + 1])
+    assert.deepEqual(
+      viewOf(unconfirmed, now, { ...NO_HOLDS, replies: { i1: 40 }, shownSince: 40 }).needsYou.questions.map(q => [
+        q.state,
+        q.actions.map(a => a.label),
+      ]),
+      [[{ is: 'held', label: 'Reply not confirmed: Fix add.js after all', at: 50 }, ['Reply', 'Discard']]],
+    )
+  assert.deepEqual(viewOf(unconfirmed, later + 1, { ...NO_HOLDS, discarded: { i1: 80 } }).needsYou.questions, [])
   assert.deepEqual(viewOf(replied, later).needsYou.questions, [])
   assert.deepEqual(
     viewOf(replied, later).needsYou.closed.questions.map(d => d.id),

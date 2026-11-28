@@ -79,7 +79,8 @@ A closed item or finding that stays in place while the person replies to it.
 A row is held when its reply field is open or its draft holds unsent words,
 and the reply began before the close. It shows why it closed, does not count
 toward Asks, and offers Reply and Discard. After its reply sends, it
-becomes a settled row. After Discard, it folds at once.
+becomes a settled row. When that reply is not confirmed, it stays held and
+reads "Reply not confirmed" with the reply's words. After Discard, it folds at once.
 
 **Settled row**:
 A row drawn in place with its result after the person pressed it or the agent
@@ -301,7 +302,7 @@ The line the conversation shows under the agent's `record` or `close` call,
 written for the person, such as "Question: Which cache should the API use?". A
 call that changed nothing shows none. The agent reads its own answer to the
 call, which Codex shows in place of the line. `personLine` in
-`core/runtime/tools.ts:ToolAnswer`.
+`core/runtime/tool-answer.ts:ToolAnswer`.
 
 **Pane**:
 The `/inbox` panel beside the conversation in Claude Code, with its Status,

@@ -1,6 +1,6 @@
 import type { Item, Milestone, SessionStatus, Subject } from '../../types'
 import { isOpen, stems } from '../domain/status-limits'
-import { statusListRows } from './status-folds'
+import { statusListRows, type IsCollapsed } from './status-folds'
 import type { MilestoneRow } from './status-goal-page'
 import type { StatusPage, StatusRow } from './status-page'
 
@@ -22,13 +22,14 @@ function isNamedAlike(a: string, b: string): boolean {
 
 /**
  * The page with the goal's Now line left out when the line holds every key word of a working subject the page draws as
- * a row. A subject behind a fold does not count, so the Now line still says what is under way.
+ * a row. A subject behind a fold, or under a parent `isCollapsed` names, does not count, so the Now line still says
+ * what is under way.
  */
-export function withoutRepeatedNow(page: StatusPage, o: SessionStatus | null): StatusPage {
+export function withoutRepeatedNow(page: StatusPage, o: SessionStatus | null, isCollapsed: IsCollapsed): StatusPage {
   const g = page.goal
   const nowText = o?.head ? o.head.description || o.head.title : null
   if (g === null || g.now === null || o === null || nowText === null) return page
-  const drawnIds = new Set(statusListRows(page).flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
+  const drawnIds = new Set(statusListRows(page, isCollapsed).flatMap(r => (r.kind === 'subject' ? [r.id] : [])))
   const isRepeated = o.subjects.some(
     x => drawnIds.has(x.id) && x.status === 'working' && holdsEveryWordOf(nowText, x.name),
   )
